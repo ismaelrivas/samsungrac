@@ -1,3 +1,4 @@
+import asyncio
 import concurrent.futures
 import json
 import logging
@@ -113,36 +114,33 @@ class ConnectionRequestBase(Connection):
         import requests
         from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
-        params = self._params
+        params = self._params.copy()
         if template is not None:
-            params.update(json.loads(template.render(value=value)))
+            try:
+                params.update(json.loads(template.render(value=value)))
+            except Exception as e:
+                self.logger.error(f"Error rendering template or parsing JSON: {e}")
+                return (None, False, 0)
+
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=InsecureRequestWarning)
             with requests.sessions.Session() as session:
                 self.logger.info("Setting up HTTP Adapter and ssl context")
                 
-                _LOGGER.debug(f"execute_internal - self: {self} - params: {self._params} - template: {template} - value: {value} - device_state: {device_state}")
+                _LOGGER.debug(f"execute_internal - self: {self} - params: {params} - template: {template} - value: {value} - device_state: {device_state}")
 
                 session.mount("https://", SamsungHTTPAdapter())
                     
-                self.logger.info(self._params)
+                self.logger.info(params)
 
                 try:
-                    future = self._thread_pool.submit(session.request, **self._params)
-                except:
-                    # something goes wrong, print callstack and return None
-                    self.logger.error("Request execution failed. Stack trace:")
-                    traceback.print_exc()
+                    # The actual blocking call
+                    resp = session.request(**params)
+                except requests.exceptions.RequestException as e:
+                    self.logger.error(f"Request execution failed: {e}")
                     return (None, False, 0)
 
-                try:
-                    resp = future.result()
-                except:
-                    self.logger.error(
-                        "Request result exception: {}".format(future.exception())
-                    )
-                    return (None, False, 0)
 
                 self.logger.info(
                     "Command executed with code: {}, text: {}".format(
@@ -155,8 +153,9 @@ class ConnectionRequestBase(Connection):
                 try:
                     j = resp.json()
                     return (j, True, resp.status_code)
-                except:
+                except json.JSONDecodeError:
                     self.logger.warning("Parsing response json failed!")
+                    return (None, False, resp.status_code)
             else:
                 return ({}, True, resp.status_code)
 
@@ -172,21 +171,30 @@ class ConnectionRequestBase(Connection):
 
         return (None, False, 0)
 
-    def execute(self, template, value, device_state):
+    async def execute(self, template, value, device_state):
+        """Asynchronously executes the command."""
         if self.embedded_command:
             self.logger.info("Embedded command found, executing...")
-            self.embedded_command.execute(template, value, device_state)
+            await self.embedded_command.execute(template, value, device_state)
 
         if not self.check_execute_condition(device_state):
             self.logger.info("Execute condition not met, skipping command")
-            return ({}, True, 200)
+            return {}
 
         self.logger.info("Executing command...")
-        j, ok, code = self.execute_internal(template, value, device_state)
-        if not j and 500 <= code < 505:
+        loop = asyncio.get_running_loop()
+
+        # Run the blocking execute_internal method in an executor
+        j, ok, code = await loop.run_in_executor(
+            None, self.execute_internal, template, value, device_state
+        )
+        
+        if not ok and 500 <= code < 505:
             # server error, try again
-            time.sleep(1.0)
-            j = self.execute_internal(template, value, device_state)[0]
+            await asyncio.sleep(1.0)
+            j, _, _ = await loop.run_in_executor(
+                None, self.execute_internal, template, value, device_state
+            )
 
         return j
 

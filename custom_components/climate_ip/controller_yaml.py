@@ -40,6 +40,8 @@ from .yaml_const import (
     CONFIG_DEVICE_VALIDATE_PROPS,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
 CONST_CONTROLLER_TYPE = "yaml"
 CONST_MAX_GET_STATUS_RETRIES = 4
 
@@ -64,9 +66,8 @@ class YamlController(ClimateController):
     YAML-based controller, refactored to support asynchronous operations.
     """
 
-    def __init__(self, config, logger):
-        super(YamlController, self).__init__(config, logger)
-        self._logger = logger
+    def __init__(self, config, logger): # logger is kept for compatibility but not used
+        super(YamlController, self).__init__(config, _LOGGER)
         self._operations = {}
         self._operations_list = []
         self._properties = {}
@@ -77,7 +78,6 @@ class YamlController(ClimateController):
         self._debug = config.get("debug", False)
         self._temp_unit = UnitOfTemperature.CELSIUS
         self._service_schema_map = {vol.Optional(ATTR_ENTITY_ID): cv.comp_entity_ids}
-        self._logger.setLevel(logging.INFO if self._debug else logging.ERROR)
         self._yaml = config.get(CONF_CONFIG_FILE)
         self._ip_address = config.get(CONF_IP_ADDRESS, None)
         self._device_id = config.get(CONF_DEVICE_ID, "032000000")
@@ -109,7 +109,7 @@ class YamlController(ClimateController):
         file = self._yaml
         if file is not None and file.find("\\") == -1 and file.find("/") == -1:
             file = os.path.join(os.path.dirname(__file__), file)
-        self._logger.info("Loading configuration file: {}".format(file))
+        _LOGGER.debug("Loading configuration file: %s", file)
 
         try:
             # Use aiofiles for non-blocking file reading
@@ -120,16 +120,16 @@ class YamlController(ClimateController):
                     )
                 )
         except yaml.YAMLError as exc:
-            self._logger.error("YAML error: {}".format(exc))
+            _LOGGER.error("YAML error while loading %s: %s", file, exc)
             return False
         except FileNotFoundError:
-            self._logger.error(
-                "Cannot open YAML configuration file '{}'".format(self._yaml)
+            _LOGGER.error(
+                "Cannot open YAML configuration file '%s'", self._yaml
             )
             return False
 
         if CONFIG_DEVICE not in yaml_device:
-            self._logger.error("Configuration file is missing the 'device' root key.")
+            _LOGGER.error("Configuration file '%s' is missing the 'device' root key.", file)
             return False
 
         ac = yaml_device.get(CONFIG_DEVICE, {})
@@ -137,17 +137,17 @@ class YamlController(ClimateController):
         validate_props = ac.get(CONFIG_DEVICE_VALIDATE_PROPS, False)
         
         connection_node = ac.get(CONFIG_DEVICE_CONNECTION, {})
-        connection = create_connection(connection_node, self._config, self._logger)
+        connection = create_connection(connection_node, self._config, _LOGGER)
 
         if connection is None:
-            self._logger.error("Cannot create connection object!")
+            _LOGGER.error("Cannot create connection object!")
             return False
 
         self._state_getter = create_status_getter(
             "state", ac.get(CONFIG_DEVICE_STATUS, {}), connection
         )
         if self._state_getter is None:
-            self._logger.error("Missing 'status' configuration node.")
+            _LOGGER.error("Missing 'status' configuration node in '%s'.", file)
             return False
 
         nodes = ac.get(CONFIG_DEVICE_OPERATIONS, {})
@@ -170,6 +170,12 @@ class YamlController(ClimateController):
         # Perform the first state update asynchronously
         await self.async_update_state()
 
+        # **** FIX: Check if the initial state update was successful ****
+        # If _last_device_state is still None, it means the connection failed.
+        if self._last_device_state is None:
+            _LOGGER.error("Failed to get initial state from the device. Aborting initialization.")
+            return False
+
         # Property validation logic
         if validate_props:
             device_state = self._state_getter.value
@@ -180,7 +186,7 @@ class YamlController(ClimateController):
             }
             invalid_ops = set(self._operations.keys()) - set(ops.keys())
             if invalid_ops:
-                self._logger.info(f"Removing invalid operations: {', '.join(invalid_ops)}")
+                _LOGGER.debug(f"Removing invalid operations: {', '.join(invalid_ops)}")
             self._operations = ops
 
         self._operations_list = list(self._operations.keys())
@@ -207,7 +213,7 @@ class YamlController(ClimateController):
         Asynchronously updates the state of all properties and attributes.
         """
         debug = self._debug
-        self._logger.info("Updating state asynchronously...")
+        _LOGGER.debug("Updating state asynchronously...")
         if self._state_getter is None:
             return
 
@@ -255,20 +261,20 @@ class YamlController(ClimateController):
         """
         Asynchronously sets a property on the device.
         """
-        self._logger.info(
-            f"Asynchronously setting property '{property_name}' to '{new_value}'"
+        _LOGGER.debug(
+            "Asynchronously setting property '%s' to '%s'", property_name, new_value
         )
         op = self._operations.get(property_name, None)
         if op is not None:
             # The set_value method is now async, so we await it
             result = await op.async_set_value(new_value)
-            self._logger.info(
-                f"Set property '{property_name}' finished with result: {result}"
+            _LOGGER.debug(
+                "Set property '%s' finished with result: %s", property_name, result
             )
             return result
             
-        self._logger.error(
-            f"Failed to set property '{property_name}': property not found."
+        _LOGGER.error(
+            "Failed to set property '%s': property not found.", property_name
         )
         return False
 

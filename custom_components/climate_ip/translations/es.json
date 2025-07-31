@@ -1,0 +1,56 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Seleccionar Tipo de Dispositivo",
+        "description": "Elige el modelo de tu dispositivo o el tipo de conexión que utiliza.",
+        "data": {
+          "device_type": "Tipo de Dispositivo"
+        }
+      },
+      "samsung_2878": {
+        "title": "Detalles del Dispositivo (Puerto 2878)",
+        "description": "Introduce la información de tu aire acondicionado. La dirección MAC es opcional y se intentará obtener automáticamente. Si no tienes un token, déjalo en blanco para iniciar el proceso de adquisición.",
+        "data": {
+          "ip_address": "Dirección IP",
+          "mac": "Dirección MAC (Opcional)",
+          "name": "Nombre (Opcional)",
+          "token": "Token (Opcional)",
+          "cert": "Ruta al certificado (Opcional)"
+        }
+      },
+      "rest_api": {
+        "title": "Detalles del Dispositivo (API REST)",
+        "description": "Introduce los detalles para tu dispositivo. El token y el ID del dispositivo deben obtenerse manualmente según la documentación de tu modelo.",
+        "data": {
+          "ip_address": "Dirección IP o Host",
+          "device_id": "ID del Dispositivo (Opcional)",
+          "token": "Token de la API",
+          "name": "Nombre (Opcional)",
+          "cert": "Ruta al certificado (Opcional)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "No se pudo conectar con el dispositivo. Verifique los datos (IP/Host, Token, etc.) y que el dispositivo esté en línea.",
+      "pairing_init_failed": "No se pudo poner el dispositivo en modo emparejamiento. Verifica la dirección IP y que el dispositivo esté en línea.",
+      "auth_failed_turned_off": "Error de autenticación (Código 301). El emparejamiento ha fallado. Causas posibles: no se pulsó el botón de encendido a tiempo (~20s) o el AC ya estaba encendido. Asegúrate de que el AC esté APAGADO antes de iniciar y ENCIÉNDELO cuando se te pida.",
+      "token_acquisition_failed": "No se pudo obtener el token. Asegúrate de presionar el botón de encendido en la unidad a tiempo y que la IP sea correcta.",
+      "unknown_error": "Ha ocurrido un error inesperado.",
+      "mac_resolve_failed": "No se pudo obtener la dirección MAC automáticamente. Por favor, introdúcela manualmente.",
+      "device_id_required": "El ID del dispositivo es obligatorio para este tipo de configuración."
+    },
+    "abort": {
+      "already_configured": "Este dispositivo (misma dirección MAC o ID) ya ha sido configurado.",
+      "not_implemented": "Este tipo de dispositivo aún no está implementado."
+    },
+    "progress": {
+      "initiating_pairing": "Iniciando emparejamiento... Por favor, espere.",
+      "awaiting_button_press": "Esperando al usuario... Por favor, presiona el botón de encendido en la unidad de aire acondicionado en **{ip_address}**. Tienes unos 20 segundos para completar esta acción antes de que el dispositivo cancele el proceso."
+    }
+  },
+  "common": {
+    "deprecated_yaml_title": "Climate IP - Configuración YAML Obsoleta",
+    "deprecated_yaml_message": "La configuración de Climate IP a través de YAML está obsoleta y ha sido importada a la interfaz de usuario. Por favor, elimine la configuración de `climate_ip` de su archivo `configuration.yaml` y reinicie Home Assistant."
+  }
+}

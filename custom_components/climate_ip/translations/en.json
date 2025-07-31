@@ -1,0 +1,56 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Select Device Type",
+        "description": "Choose your device model or the type of connection it uses.",
+        "data": {
+          "device_type": "Device Type"
+        }
+      },
+      "samsung_2878": {
+        "title": "Device Details (Port 2878)",
+        "description": "Enter your air conditioner's information. The MAC address is optional and will be auto-detected if possible. If you don't have a token, leave it blank to start the acquisition process.",
+        "data": {
+          "ip_address": "IP Address",
+          "mac": "MAC Address (Optional)",
+          "name": "Name (Optional)",
+          "token": "Token (Optional)",
+          "cert": "Certificate Path (Optional)"
+        }
+      },
+      "rest_api": {
+        "title": "Device Details (REST API)",
+        "description": "Enter the details for your device. The token and device ID must be obtained manually according to your model's documentation.",
+        "data": {
+          "ip_address": "IP Address or Host",
+          "device_id": "Device ID (Optional)",
+          "token": "API Token",
+          "name": "Name (Optional)",
+          "cert": "Certificate Path (Optional)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to the device. Please verify the details (IP/Host, Token, etc.) and that the device is online.",
+      "pairing_init_failed": "Failed to put the device in pairing mode. Check the IP address and that the device is online.",
+      "auth_failed_turned_off": "Authentication error (Code 301). Pairing failed. Possible causes: the power button was not pressed in time (~20s) or the AC was already on. Make sure the AC is OFF before starting and turn it ON when prompted.",
+      "token_acquisition_failed": "Failed to get the token. Make sure to press the power button on the unit in time and that the IP is correct.",
+      "unknown_error": "An unexpected error occurred.",
+      "mac_resolve_failed": "Could not get the MAC address automatically. Please enter it manually.",
+      "device_id_required": "The device ID is required for this type of configuration."
+    },
+    "abort": {
+      "already_configured": "This device (same MAC address or ID) is already configured.",
+      "not_implemented": "This device type is not yet implemented."
+    },
+    "progress": {
+      "initiating_pairing": "Initiating pairing... Please wait.",
+      "awaiting_button_press": "Waiting for user... Please press the power button on the air conditioner unit at **{ip_address}**. You have about 20 seconds to complete this action before the device cancels the process."
+    }
+  },
+  "common": {
+    "deprecated_yaml_title": "Climate IP - YAML Configuration Deprecated",
+    "deprecated_yaml_message": "Climate IP configuration via YAML is deprecated and has been imported into the UI. Please remove the `climate_ip` configuration from your `configuration.yaml` file and restart Home Assistant."
+  }
+}
