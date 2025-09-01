@@ -1,10 +1,13 @@
 import json
+import logging
+from typing import Any, Dict, Optional
 
 import homeassistant.helpers.config_validation as cv
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNKNOWN, UnitOfTemperature
 from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .connection import Connection
+from .connection_request import ConnectionRequest
 from .yaml_const import (
     CONFIG_DEVICE_CONNECTION,
     CONFIG_DEVICE_CONNECTION_TEMPLATE,
@@ -17,6 +20,8 @@ from .yaml_const import (
     CONFIG_DEVICE_VALIDATION_TEMPLATE,
     CONFIG_TYPE,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 CLIMATE_IP_PROPERTIES = []
 CLIMATE_IP_STATUS_GETTER = []
@@ -52,36 +57,43 @@ def register_status_getter(getter):
     return getter
 
 
-def create_property(name, node, connection_base):
+def create_property(name, node, connection_base, controller):
     for prop in CLIMATE_IP_PROPERTIES:
         if CONFIG_TYPE in node:
             if prop.match_type(node[CONFIG_TYPE]):
-                op = prop(name, connection_base)
+                op = prop(name, connection_base, controller)
                 if op.load_from_yaml(node):
                     return op
+    _LOGGER.warning("%s Unknown property type: %s", controller.log_prefix, node.get(CONFIG_TYPE))
     return None
 
 
-def create_status_getter(name, node, connection_base):
+def create_status_getter(name, node, connection_base, controller):
     for getter in CLIMATE_IP_STATUS_GETTER:
         if CONFIG_TYPE in node:
             if getter.match_type(node[CONFIG_TYPE]):
-                g = getter(name, connection_base)
+                g = getter(name, connection_base, controller)
                 if g.load_from_yaml(node):
                     return g
     return None
 
 
 class DeviceProperty:
-    def __init__(self, name, connection):
+    def __init__(self, name, connection, controller):
         self._name = name
         self._value = STATE_UNKNOWN
         self._connection = connection
+        self._controller = controller
         self._status_template = None
         self._id = name
         self._connection_template = None
         self._validation_template = None
         self._device_state = None
+
+    @property
+    def log_prefix(self) -> str:
+        """Dynamically gets the log prefix from the controller."""
+        return self._controller.log_prefix
 
     @property
     def id(self):
@@ -95,7 +107,8 @@ class DeviceProperty:
             try:
                 v = self.validation_template.render(device_state=device_state)
                 return str(v).lower() == "valid"
-            except:
+            except Exception as e:
+                _LOGGER.error("%s Error rendering validation template for %s: %s", self.log_prefix, self.id, e)
                 return False
 
     @property
@@ -155,14 +168,14 @@ class DeviceProperty:
         Update property from device state and return current value.
         This method is now async.
         """
+        from jinja2 import Template
         self._device_state = device_state
         v = STATE_UNKNOWN
         if self.status_template is not None and device_state is not None:
             try:
                 v = self.status_template.render(device_state=device_state)
             except Exception as e:
-                # Log template rendering error if needed
-                pass
+                _LOGGER.error("%s Error rendering status template for %s: %s", self.log_prefix, self.id, e)
         if v is not STATE_UNKNOWN:
             self._value = self.convert_dev_to_hass(v)
         return self.value
@@ -175,8 +188,8 @@ class DeviceProperty:
 
 @register_status_getter
 class GetJsonStatus(DeviceProperty):
-    def __init__(self, name, connection):
-        super(GetJsonStatus, self).__init__(name, connection)
+    def __init__(self, name, connection, controller):
+        super(GetJsonStatus, self).__init__(name, connection, controller)
         self._json_status = None
         self._attrs = {}
 
@@ -189,7 +202,10 @@ class GetJsonStatus(DeviceProperty):
         Fetches the device state asynchronously.
         """
         self._device_state = device_state
-        # The execute method is now async, so we must await it
+        if hasattr(self.get_connection(None), 'set_controller_ref'):
+            self.get_connection(None).set_controller_ref(self._controller)
+        
+        # El status getter no necesita un device_id, siempre obtiene el estado completo
         device_state_result = await self.get_connection(None).execute(
             self.connection_template, None, device_state
         )
@@ -202,7 +218,6 @@ class GetJsonStatus(DeviceProperty):
             if self.status_template is not None:
                 try:
                     v = self.status_template.render(device_state=device_state_result)
-                    # Handle different potential return types from templates
                     if isinstance(v, str):
                         v = v.replace("'", '"')
                         v = v.replace("True", '"True"')
@@ -210,7 +225,6 @@ class GetJsonStatus(DeviceProperty):
                     else:
                         self._value = v
                 except Exception:
-                    # Template might not render to JSON, which is fine
                     pass
         else:
             self._attrs = {"device_state": None}
@@ -224,14 +238,22 @@ class GetJsonStatus(DeviceProperty):
 
 
 class DeviceOperation(DeviceProperty):
-    def __init__(self, name, connection):
-        super(DeviceOperation, self).__init__(name, connection)
+    def __init__(self, name, connection, controller):
+        super(DeviceOperation, self).__init__(name, connection, controller)
 
-    async def async_set_value(self, v):
+    # --- MODIFICACIÓN: Se añade device_id para pasarlo a la conexión ---
+    async def async_set_value(self, v, device_id=None):
         """
         Set device property value asynchronously.
         """
-        resp = await self.get_connection(v).execute(
+        connection = self.get_connection(v)
+        if hasattr(connection, 'set_controller_ref'):
+            connection.set_controller_ref(self._controller)
+        
+        # El device_id se pasa al template si es necesario, no directamente al execute de la conexión
+        # ya que no todas las conexiones lo soportan como argumento posicional.
+        # El template ya tiene acceso a self._controller.device_id si es necesario.
+        resp = await connection.execute(
             self.connection_template, self.convert_hass_to_dev(v), self._device_state
         )
         return resp is not None
@@ -246,8 +268,8 @@ class DeviceOperation(DeviceProperty):
 
 
 class BasicDeviceOperation(DeviceOperation):
-    def __init__(self, name, connection):
-        super(BasicDeviceOperation, self).__init__(name, connection)
+    def __init__(self, name, connection, controller):
+        super(BasicDeviceOperation, self).__init__(name, connection, controller)
         self._values_dev_to_ha_map = {}
         self._values_ha_to_dev_map = {}
         self._values = []
@@ -298,8 +320,8 @@ class BasicDeviceOperation(DeviceOperation):
 
 @register_property
 class ModeOperation(BasicDeviceOperation):
-    def __init__(self, name, connection):
-        super(ModeOperation, self).__init__(name, connection)
+    def __init__(self, name, connection, controller):
+        super(ModeOperation, self).__init__(name, connection, controller)
         self._id = name + "_mode"
 
     @staticmethod
@@ -317,8 +339,8 @@ class ModeOperation(BasicDeviceOperation):
 
 @register_property
 class UniqueIdProperty(DeviceProperty):
-    def __init__(self, name, connection):
-        super().__init__(name, connection)
+    def __init__(self, name, connection, controller):
+        super().__init__(name, connection, controller)
 
     @staticmethod
     def match_type(type):
@@ -327,8 +349,8 @@ class UniqueIdProperty(DeviceProperty):
 
 @register_property
 class SwitchOperation(BasicDeviceOperation):
-    def __init__(self, name, connection):
-        super(SwitchOperation, self).__init__(name, connection)
+    def __init__(self, name, connection, controller):
+        super(SwitchOperation, self).__init__(name, connection, controller)
 
     @staticmethod
     def match_type(type):
@@ -349,8 +371,8 @@ class SwitchOperation(BasicDeviceOperation):
 
 
 class BasicNumericOperation(DeviceOperation):
-    def __init__(self, name, connection):
-        super(BasicNumericOperation, self).__init__(name, connection)
+    def __init__(self, name, connection, controller):
+        super(BasicNumericOperation, self).__init__(name, connection, controller)
         self._min = None
         self._max = None
         self._value = 0.0
@@ -397,8 +419,8 @@ class BasicNumericOperation(DeviceOperation):
 
 @register_property
 class NumericOperation(BasicNumericOperation):
-    def __init__(self, name, connection):
-        super(NumericOperation, self).__init__(name, connection)
+    def __init__(self, name, connection, controller):
+        super(NumericOperation, self).__init__(name, connection, controller)
 
     @staticmethod
     def match_type(type):
@@ -407,8 +429,8 @@ class NumericOperation(BasicNumericOperation):
 
 @register_property
 class TemperatureOperation(BasicNumericOperation):
-    def __init__(self, name, connection):
-        super(TemperatureOperation, self).__init__(name, connection)
+    def __init__(self, name, connection, controller):
+        super(TemperatureOperation, self).__init__(name, connection, controller)
         self._unit_template = None
         self._unit = UnitOfTemperature.CELSIUS
 

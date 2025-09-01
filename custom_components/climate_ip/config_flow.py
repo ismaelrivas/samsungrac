@@ -2,10 +2,18 @@
 """Config flow for the Climate IP integration."""
 import asyncio
 import logging
+import os
+from enum import Enum
 import re
 from typing import Any, Dict, Optional
 
 import voluptuous as vol
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
+import homeassistant.helpers.config_validation as cv
 from getmac import get_mac_address
 from homeassistant import config_entries
 from homeassistant.const import (
@@ -22,6 +30,9 @@ from .const import (
     CONF_CERT,
     CONF_CONFIG_FILE,
     CONF_DEVICE_ID,
+    CONF_DEVICES,
+    CONF_DISCOVERED_DEVICES,
+    CONF_SELECTED_DEVICES,
     CONF_DEVICE_TYPE,
     DEVICE_TYPE_MIM_H03,
     DEVICE_TYPE_SAMSUNG_2878,
@@ -37,9 +48,11 @@ from .token_acquirer import (
     SamsungTokenAcquirer,
     TokenAcquisitionError,
 )
+# Importar el nuevo adquisidor de tokens
+from .token_acquirer_8888 import SamsungTokenAcquirer8888
+from .exceptions import CannotConnect, CertNotFound
 
 _LOGGER = logging.getLogger(__name__)
-
 
 class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow implementing a robust, multi-step pairing process with safe task wrappers."""
@@ -50,7 +63,7 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Initialize the config flow."""
         self.flow_data: Dict[str, Any] = {}
         self.task: Optional[asyncio.Task] = None
-        self.acquirer: Optional[SamsungTokenAcquirer] = None
+        self.acquirer: Optional[Any] = None # Puede ser SamsungTokenAcquirer o SamsungTokenAcquirer8888
         _LOGGER.debug("Initializing new Climate IP config flow.")
 
     async def async_step_import(self, import_config: dict[str, Any]) -> FlowResult:
@@ -122,10 +135,14 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if device_type == DEVICE_TYPE_SAMSUNG_2878:
                 return await self.async_step_samsung_2878()
             
-            # Route all new REST API based devices to a single configuration step
+            if device_type == DEVICE_TYPE_SAMSUNG_8888:
+                return await self.async_step_samsung_8888()
+            
+            # CORRECCIÓN: Se enruta el MIM-H03 a su propio paso.
+            if device_type == DEVICE_TYPE_MIM_H03:
+                return await self.async_step_mim_h03()
+
             if device_type in [
-                DEVICE_TYPE_SAMSUNG_8888,
-                DEVICE_TYPE_MIM_H03,
                 DEVICE_TYPE_SMARTTHINGS_HVAC,
                 DEVICE_TYPE_SMARTTHINGS_DHW,
             ]:
@@ -133,15 +150,22 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             return self.async_abort(reason="not_implemented")
 
-        # Expanded list of device types for the user to choose from
-        device_types = {
-            DEVICE_TYPE_SAMSUNG_2878: "Dispositivo Antiguo (Puerto 2878, token automático)",
-            DEVICE_TYPE_SAMSUNG_8888: "Dispositivo Moderno (Puerto 8888, token manual)",
-            DEVICE_TYPE_MIM_H03: "Controlador MIM-H03 (Puerto 8888, token manual)",
-            DEVICE_TYPE_SMARTTHINGS_HVAC: "Controlador SmartThings - Climatización (Nube)",
-            DEVICE_TYPE_SMARTTHINGS_DHW: "Controlador SmartThings - Agua Caliente (Nube)",
-        }
-        schema = vol.Schema({vol.Required(CONF_DEVICE_TYPE): vol.In(device_types)})
+        schema = vol.Schema({
+            vol.Required(CONF_DEVICE_TYPE): SelectSelector(
+                SelectSelectorConfig(
+                    options=[
+                        DEVICE_TYPE_SAMSUNG_2878,
+                        DEVICE_TYPE_SAMSUNG_8888,
+                        DEVICE_TYPE_MIM_H03,
+                        DEVICE_TYPE_SMARTTHINGS_HVAC,
+                        DEVICE_TYPE_SMARTTHINGS_DHW,
+                    ],
+                    translation_key="device_type",  # Esta clave debe estar en tu es.json
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            )
+        })
+
         return self.async_show_form(step_id="user", data_schema=schema)
 
     def _get_samsung_2878_schema(self, mac_required: bool = False) -> vol.Schema:
@@ -207,13 +231,19 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(self.flow_data[CONF_MAC])
             self._abort_if_unique_id_configured()
 
+            # Estandarizar el nombre para asegurar consistencia
+            if not self.flow_data.get(CONF_NAME):
+                mac = self.flow_data[CONF_MAC]
+                # Usamos el formato solicitado "Samsung AC {mac}"
+                self.flow_data[CONF_NAME] = f"Samsung AC {mac}"
+
             if self.flow_data.get(CONF_TOKEN):
                 return await self._create_entry()
 
             self.acquirer = SamsungTokenAcquirer(
                 self.hass, self.flow_data[CONF_IP_ADDRESS], self.flow_data.get(CONF_CERT)
             )
-            return await self.async_step_initiate_pairing()
+            return self.async_show_progress_done(next_step_id="initiate_pairing")
 
         return self.async_show_form(
             step_id="samsung_2878",
@@ -221,51 +251,146 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_samsung_8888(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Handle IP input and token acquisition for modern Samsung devices."""
+        errors: Dict[str, str] = {}
+        if user_input is not None:
+            self.flow_data.update(user_input)
+            ip_address = self.flow_data[CONF_IP_ADDRESS]
+            
+            try:
+                resolved_mac = await self.hass.async_add_executor_job(
+                    lambda: get_mac_address(ip=ip_address)
+                )
+                if resolved_mac:
+                    _LOGGER.info("Using resolved MAC address for unique_id: %s", resolved_mac)
+                    await self.async_set_unique_id(resolved_mac.replace(":", ""))
+                else:
+                    _LOGGER.warning("Could not resolve MAC address for %s. Falling back to IP address for unique_id.", ip_address)
+                    await self.async_set_unique_id(ip_address)
+            except Exception:
+                _LOGGER.exception("Error resolving MAC, falling back to IP address for unique_id.")
+                await self.async_set_unique_id(ip_address)
+
+            self._abort_if_unique_id_configured()
+
+            if self.flow_data.get(CONF_TOKEN):
+                return await self._create_entry()
+
+            cert_path = self.flow_data.get(CONF_CERT)
+            
+            if not cert_path:
+                cert_path = os.path.join(os.path.dirname(__file__), 'ac14k_m.pem')
+            elif not os.path.isabs(cert_path):
+                cert_path = os.path.join(os.path.dirname(__file__), cert_path)
+            
+            if not await self.hass.async_add_executor_job(os.path.exists, cert_path):
+                errors["base"] = "cert_not_found"
+            else:
+                self.flow_data[CONF_CERT] = cert_path
+                self.acquirer = SamsungTokenAcquirer8888(
+                    self.hass, self.flow_data[CONF_IP_ADDRESS], cert_path
+                )
+                return await self.async_step_initiate_pairing()
+
+        return self.async_show_form(
+            step_id="samsung_8888",
+            data_schema=vol.Schema({
+                vol.Required(CONF_IP_ADDRESS, default=self.flow_data.get(CONF_IP_ADDRESS, "")): str,
+                vol.Optional(CONF_NAME, default=self.flow_data.get(CONF_NAME, "")): str,
+                vol.Optional(CONF_TOKEN, default=""): str,
+                vol.Optional(CONF_CERT, default="ac14k_m.pem"): str,
+            }),
+            errors=errors,
+        )
+
+    async def async_step_mim_h03(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Handle IP input and token acquisition for MIM-H03 controllers."""
+        errors: Dict[str, str] = {}
+        if user_input is not None:
+            self.flow_data.update(user_input)
+            ip_address = self.flow_data[CONF_IP_ADDRESS]
+            
+            try:
+                resolved_mac = await self.hass.async_add_executor_job(
+                    lambda: get_mac_address(ip=ip_address)
+                )
+                if resolved_mac:
+                    _LOGGER.info("Using resolved MAC address for unique_id: %s", resolved_mac)
+                    await self.async_set_unique_id(resolved_mac.replace(":", ""))
+                else:
+                    _LOGGER.warning("Could not resolve MAC address for %s. Falling back to IP address for unique_id.", ip_address)
+                    await self.async_set_unique_id(ip_address)
+            except Exception:
+                _LOGGER.exception("Error resolving MAC, falling back to IP address for unique_id.")
+                await self.async_set_unique_id(ip_address)
+
+            self._abort_if_unique_id_configured()
+
+            if self.flow_data.get(CONF_TOKEN):
+                return await self._create_entry()
+
+            cert_path = self.flow_data.get(CONF_CERT)
+            if not cert_path:
+                cert_path = os.path.join(os.path.dirname(__file__), 'ac14k_m.pem')
+            elif not os.path.isabs(cert_path):
+                cert_path = os.path.join(os.path.dirname(__file__), cert_path)
+            
+            if not await self.hass.async_add_executor_job(os.path.exists, cert_path):
+                errors["base"] = "cert_not_found"
+            else:
+                self.flow_data[CONF_CERT] = cert_path
+                self.acquirer = SamsungTokenAcquirer8888(
+                    self.hass, self.flow_data[CONF_IP_ADDRESS], cert_path
+                )
+                return await self.async_step_initiate_pairing()
+
+        # Schema for the MIM-H03 form, without device_id
+        schema = vol.Schema({
+            vol.Required(CONF_IP_ADDRESS, default=self.flow_data.get(CONF_IP_ADDRESS, "")): str,
+            vol.Optional(CONF_NAME, default=self.flow_data.get(CONF_NAME, "")): str,
+            vol.Optional(CONF_TOKEN, default=""): str,
+            vol.Optional(CONF_CERT, default="ac14k_m.pem"): str,
+        })
+        return self.async_show_form(
+            step_id="mim_h03",
+            data_schema=schema,
+            errors=errors,
+        )
+
     def _get_rest_api_schema(self) -> vol.Schema:
         """Generate the schema for REST API based devices that require manual token."""
         device_type = self.flow_data.get(CONF_DEVICE_TYPE)
-        
         schema = {}
 
-        # IP Address / Host
         if device_type in [DEVICE_TYPE_SMARTTHINGS_HVAC, DEVICE_TYPE_SMARTTHINGS_DHW]:
             schema[vol.Required(CONF_IP_ADDRESS, default="api.smartthings.com")] = str
         else:
             schema[vol.Required(CONF_IP_ADDRESS)] = str
 
-        # Device ID (optional or not present)
-        if device_type in [DEVICE_TYPE_MIM_H03, DEVICE_TYPE_SMARTTHINGS_HVAC, DEVICE_TYPE_SMARTTHINGS_DHW]:
+        # MIM-H03 no longer uses this step, so it's removed from this condition.
+        if device_type in [DEVICE_TYPE_SMARTTHINGS_HVAC, DEVICE_TYPE_SMARTTHINGS_DHW]:
              schema[vol.Optional(CONF_DEVICE_ID)] = str
-        # Note: DEVICE_TYPE_SAMSUNG_8888 does not have a device_id field.
         
-        # Token and Name are common to all
         schema[vol.Required(CONF_TOKEN)] = str
         schema[vol.Optional(CONF_NAME)] = str
         
-        # Certificate is used by local REST API devices
-        if device_type in [DEVICE_TYPE_SAMSUNG_8888, DEVICE_TYPE_MIM_H03]:
-            schema[vol.Optional(CONF_CERT)] = str
-
         return vol.Schema(schema)
 
     async def async_step_rest_api(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
         """Handle configuration for REST API devices with manual token."""
         errors: Dict[str, str] = {}
         if user_input is not None:
-            # Combine data for the connection test
             test_data = {**self.flow_data, **user_input}
             device_type = test_data.get(CONF_DEVICE_TYPE)
             test_data[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE.get(device_type)
 
             try:
-                # Test the connection by creating a controller instance directly
                 _LOGGER.debug("Testing connection with data: %s", test_data)
                 controller = YamlController(test_data, _LOGGER)
                 if not await controller.initialize():
-                    # The controller's initialize method should return False on connection error
                     raise CannotConnect
 
-                # If connection is successful, proceed
                 self.flow_data.update(user_input)
                 unique_id = self.flow_data.get(CONF_DEVICE_ID) or self.flow_data.get(CONF_IP_ADDRESS)
                 await self.async_set_unique_id(unique_id)
@@ -292,20 +417,15 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.task = self.hass.async_create_task(self._initiate_pairing_safe())
 
         if self.task.done():
-            _LOGGER.debug("Task _initiate_pairing_safe is done.")
             result = self.task.result()
             self.task = None
-
             if result["ok"]:
                 _LOGGER.debug("Pairing initiation successful, advancing to await_button.")
                 return self.async_show_progress_done(next_step_id="await_button")
             
-            _LOGGER.warning("Pairing initiation failed with error: %s", result['error'])
             self.flow_data["error_key"] = result["error"]
             return self.async_show_progress_done(next_step_id="handle_error")
 
-
-        _LOGGER.debug("Showing progress for 'initiating_pairing'.")
         return self.async_show_progress(
             step_id="initiate_pairing",
             progress_action="initiating_pairing",
@@ -313,42 +433,253 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_await_button(self, user_input=None) -> FlowResult:
-        """Phase 2: Wait for the user to press the power button using a safe wrapper."""
+        """Phase 2: Wait for the user to press the required button."""
         _LOGGER.debug("Entering async_step_await_button.")
         if not self.task:
             _LOGGER.debug("Creating task for _wait_token_safe.")
             self.task = self.hass.async_create_task(self._wait_token_safe())
 
         if self.task.done():
-            _LOGGER.debug("Task _wait_token_safe is done.")
             result = self.task.result()
             self.task = None
-
             if result["ok"]:
-                _LOGGER.debug("Token acquisition successful, advancing to create_entry.")
                 self.flow_data[CONF_TOKEN] = result["token"]
-                return self.async_show_progress_done(next_step_id="create_entry")
+                
+                if self.flow_data.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_SAMSUNG_2878:
+                    _LOGGER.debug("Token for 2878 device acquired. Creating entry.")
+                    #return await self._create_entry()
+                    return self.async_show_progress_done(next_step_id="create_entry")
+                else:
+                    _LOGGER.debug("Token acquisition successful, advancing to discover_uuid.")
+                    return self.async_show_progress_done(next_step_id="discover_uuid")
 
-            _LOGGER.warning("Token acquisition failed with error: %s", result['error'])
             self.flow_data["error_key"] = result["error"]
             return self.async_show_progress_done(next_step_id="handle_error")
 
-        _LOGGER.debug("Showing progress for 'awaiting_button_press'.")
+        # CORRECCIÓN: Se muestran instrucciones diferentes para el MIM-H03.
+        # Se necesita una nueva clave de traducción 'awaiting_ap_button_press'.
+        if self.flow_data.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_MIM_H03:
+            progress_action = "awaiting_ap_button_press"
+        else:
+            progress_action = "awaiting_button_press"
+
         return self.async_show_progress(
             step_id="await_button",
-            progress_action="awaiting_button_press",
+            progress_action=progress_action,
             progress_task=self.task,
             description_placeholders={"ip_address": self.flow_data.get(CONF_IP_ADDRESS)},
         )
         
+    async def async_step_discover_uuid(self, user_input=None) -> FlowResult:
+        """Step to discover indoor units from the device after getting a token."""
+        _LOGGER.debug("Entering async_step_discover_uuid.")
+
+        config_data = self.flow_data.copy()
+        if self.unique_id:
+            config_data["unique_id"] = self.unique_id
+            
+        device_type = config_data.get(CONF_DEVICE_TYPE)
+        if not config_data.get(CONF_CONFIG_FILE):
+            config_data[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE.get(device_type)
+
+        try:
+            controller = YamlController(config=config_data, logger=_LOGGER)
+            if not await controller.initialize():
+                _LOGGER.error("Failed to initialize controller during discovery.")
+                return self.async_abort(reason="cannot_connect")
+
+            if not await controller.async_get_status():
+                _LOGGER.error("Failed to get device status during discovery.")
+                return self.async_abort(reason="cannot_connect")
+
+            discovered_devices = controller.discovered_devices
+            if not discovered_devices or not isinstance(discovered_devices, list):
+                _LOGGER.warning("Could not discover indoor units. Creating a single entry.")
+                if controller.unique_id:
+                    await self.async_set_unique_id(controller.unique_id, raise_on_progress=False)
+                    if controller.device_id:
+                        self.flow_data[CONF_DEVICE_ID] = controller.device_id
+                    self._abort_if_unique_id_configured(updates=self.flow_data)
+                return await self._create_entry()
+
+            if device_type == DEVICE_TYPE_MIM_H03:
+                internal_coordinator = None
+                ac_units_info = []
+                for device in discovered_devices:
+                    if isinstance(device, dict) and "Mode" not in device:
+                        internal_coordinator = device
+                    else:
+                        # This is an actual AC unit
+                        device_id = device.get("id")
+                        if device_id is None:
+                            device_id = str(device)
+                        name = device.get("name", f"Indoor Unit {device_id}")
+                        ac_units_info.append({
+                            "id": device_id,
+                            "uuid": device.get("uuid"),
+                            "name": name,
+                            "description": device.get("description", name)
+                        })
+                
+                if internal_coordinator:
+                    coordinator_uuid = internal_coordinator.get("uuid")
+                    if coordinator_uuid:
+                        await self.async_set_unique_id(coordinator_uuid, raise_on_progress=False)
+                        # Store the coordinator's UUID as the main unique_id for the config entry
+                        self.flow_data["unique_id"] = coordinator_uuid
+                        self.flow_data[CONF_DEVICE_ID] = internal_coordinator.get("id") # Store coordinator's ID
+                        self.flow_data[CONF_NAME] = f'{internal_coordinator.get("name", "MIM-H03 Coordinator")} {coordinator_uuid}' # Store coordinator's name
+                        
+                        # Abort if this specific coordinator is already configured
+                        self._abort_if_unique_id_configured(updates=self.flow_data)
+
+                        if ac_units_info:
+                            self.flow_data[CONF_DISCOVERED_DEVICES] = ac_units_info
+                            return await self.async_step_select_devices()
+                        else:
+                            _LOGGER.warning("No selectable indoor units found for MIM-H03. Creating a single entry for coordinator.")
+                            return await self._create_entry()
+                    else:
+                        _LOGGER.error("MIM-H03 coordinator found but no UUID. Cannot create entry.")
+                        return self.async_abort(reason="no_coordinator_uuid")
+                else:
+                    _LOGGER.error("No MIM-H03 coordinator found among discovered devices.")
+                    return self.async_abort(reason="no_coordinator_found")
+            
+            if device_type == DEVICE_TYPE_SAMSUNG_8888:
+                # 8888 devices are single-unit, no selection needed.
+                if len(discovered_devices) > 0:
+                    device = discovered_devices[0]
+                    # Use uuid if available, otherwise fall back to id
+                    uuid = device.get("uuid") or device.get("id")
+                    if uuid:
+                        self.flow_data[CONF_DEVICE_ID] = uuid
+                        self.flow_data["unique_id"] = uuid
+                        # Per user request, ignore discovered name and use a standard format.
+                        self.flow_data[CONF_NAME] = f"Samsung AC {uuid}"
+                        _LOGGER.info("Discovered 8888 device, creating entry with name: %s", self.flow_data[CONF_NAME])
+                        return await self._create_entry()
+
+                _LOGGER.error("Discovered 8888 device but could not find a valid unit or UUID.")
+                return self.async_abort(reason="discovery_failed")
+
+            # This part is for other device types that still use select_devices
+            devices_info = []
+            for device in discovered_devices:
+                if not isinstance(device, dict): continue
+                
+                device_id = device.get("id")
+                if device_id is None:
+                    device_id = str(device)
+
+                name = device.get("name", f"Indoor Unit {device_id}")
+                
+                devices_info.append({
+                    "id": device_id,
+                    "uuid": device.get("uuid"),
+                    "name": name,
+                    "description": device.get("description", name)
+                })
+
+            if not devices_info:
+                _LOGGER.warning("No selectable indoor units found for non-MIM-H03 device type.")
+                return await self._create_entry()
+
+            self.flow_data[CONF_DISCOVERED_DEVICES] = devices_info
+            return await self.async_step_select_devices()
+
+        except Exception as e:
+            _LOGGER.exception("Error during device discovery: %s", e)
+            return self.async_abort(reason="unknown")
+
+    async def async_step_select_devices(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Allow the user to select which indoor units to add."""
+        errors: Dict[str, str] = {}
+        
+        discovered_devices = self.flow_data.get(CONF_DISCOVERED_DEVICES, [])
+        
+        device_options = {
+            device['id']: f"{device.get('name', 'Unknown Device')} ({device.get('id')})"
+            for device in discovered_devices
+        }
+
+        if user_input is not None:
+            selected_devices_ids = user_input.get(CONF_SELECTED_DEVICES, [])
+            if not selected_devices_ids:
+                errors["base"] = "no_devices_selected"
+            else:
+                selected_devices_info = [
+                    device for device in discovered_devices 
+                    if device['id'] in selected_devices_ids
+                ]
+                
+                # Store the selected devices in the flow data
+                self.flow_data[CONF_DEVICES] = selected_devices_info
+                
+                # Set the unique_id for the main entry (e.g., based on IP/MAC)
+                # This unique_id should be the controller's unique_id, not a sub-device's.
+                # We can reuse the unique_id that was set during the initial discovery.
+                main_unique_id = self.flow_data.get("unique_id")
+                if not main_unique_id:
+                    main_unique_id = (
+                        self.flow_data.get(CONF_MAC) 
+                        or self.flow_data.get(CONF_IP_ADDRESS)
+                    )
+                
+                if main_unique_id:
+                    await self.async_set_unique_id(main_unique_id, raise_on_progress=False)
+                    self._abort_if_unique_id_configured(updates=self.flow_data)
+                else:
+                    _LOGGER.error("Could not determine a unique_id for the main controller.")
+                    return self.async_abort(reason="no_unique_id")
+
+                # Create a single config entry for the main controller,
+                # which now contains the list of selected devices.
+                return await self._create_entry()
+
+        schema = vol.Schema({
+            vol.Required(CONF_SELECTED_DEVICES, default=list(device_options.keys())): cv.multi_select(device_options)
+        })
+
+        return self.async_show_form(
+            step_id="select_devices",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={"device_count": len(discovered_devices)},
+        )
+
     async def async_step_handle_error(self, user_input=None) -> FlowResult:
         """Handles the display of errors after a progress step fails."""
         error_key = self.flow_data.pop("error_key", "unknown_error")
         errors = {"base": error_key}
         _LOGGER.debug("Displaying form with error: %s", error_key)
+        
+        device_type = self.flow_data.get(CONF_DEVICE_TYPE)
+        
+        # CORRECCIÓN: Se devuelve al paso correcto para el MIM-H03 en caso de error.
+        if device_type == DEVICE_TYPE_MIM_H03:
+            step_id = "mim_h03"
+            schema = vol.Schema({
+                vol.Required(CONF_IP_ADDRESS, default=self.flow_data.get(CONF_IP_ADDRESS, "")): str,
+                vol.Optional(CONF_NAME, default=self.flow_data.get(CONF_NAME, "")): str,
+                vol.Optional(CONF_TOKEN, default=""): str,
+                vol.Optional(CONF_CERT, default="ac14k_m.pem"): str,
+            })
+        elif device_type == DEVICE_TYPE_SAMSUNG_8888:
+            step_id = "samsung_8888"
+            schema = vol.Schema({
+                vol.Required(CONF_IP_ADDRESS, default=self.flow_data.get(CONF_IP_ADDRESS, "")): str,
+                vol.Optional(CONF_NAME, default=self.flow_data.get(CONF_NAME, "")): str,
+                vol.Optional(CONF_TOKEN, default=""): str,
+                vol.Optional(CONF_CERT, default="ac14k_m.pem"): str,
+            })
+        else: # Default to 2878
+            step_id = "samsung_2878"
+            schema = self._get_samsung_2878_schema(mac_required=False)
+
         return self.async_show_form(
-            step_id="samsung_2878",
-            data_schema=self._get_samsung_2878_schema(mac_required=False),
+            step_id=step_id,
+            data_schema=schema,
             errors=errors,
         )
 
@@ -360,24 +691,53 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def _create_entry(self) -> FlowResult:
         """Create the config entry and finish the flow."""
         _LOGGER.debug("Entering _create_entry to finalize configuration.")
-        if not self.unique_id:
-            # The unique ID should have been set in the specific device step, this is a fallback.
-            unique_id = (
-                self.flow_data.get(CONF_DEVICE_ID) 
-                or self.flow_data.get(CONF_MAC) 
-                or self.flow_data.get(CONF_IP_ADDRESS)
-            )
-            await self.async_set_unique_id(unique_id)
         
+        device_type = self.flow_data.get(CONF_DEVICE_TYPE)
+        
+        # 1. Determine the final unique_id for the entry
+        final_unique_id = self.flow_data.get("unique_id")
+        if not final_unique_id:
+            if device_type == DEVICE_TYPE_SAMSUNG_2878:
+                final_unique_id = self.flow_data.get(CONF_MAC)
+            else:
+                final_unique_id = self.flow_data.get(CONF_DEVICE_ID)
+        
+        # Fallback if still no unique_id
+        if not final_unique_id:
+            final_unique_id = self.flow_data.get(CONF_IP_ADDRESS)
+
+        await self.async_set_unique_id(final_unique_id)
         self._abort_if_unique_id_configured(updates=self.flow_data)
+        self.flow_data["unique_id"] = final_unique_id
+
+        # 2. Determine the title for the entry
+        title = self.flow_data.get(CONF_NAME)
         
-        title = self.flow_data.get(CONF_NAME) or f"Samsung AC {self.unique_id}"
-        _LOGGER.debug("Creating config entry with title: %s and unique_id: %s", title, self.unique_id)
+        if device_type == DEVICE_TYPE_SAMSUNG_2878:
+            # For 2878, the name is already set to "Samsung AC {mac}"
+            if not title:
+                title = f"Samsung AC {self.flow_data.get(CONF_MAC)}"
+        elif device_type in [DEVICE_TYPE_SAMSUNG_8888, DEVICE_TYPE_MIM_H03]:
+            # For modern devices, create a title like "Device Name (uuid)"
+            # The UUID is the final_unique_id for these types
+            device_name = self.flow_data.get(CONF_NAME, "Samsung AC")
+            # Check if uuid is already in the name from a previous step
+            if final_unique_id and final_unique_id not in device_name:
+                 title = f"{device_name} ({final_unique_id})"
+            else:
+                 title = device_name
         
+        # Generic fallback for title
+        if not title:
+            title = f"Climate IP ({final_unique_id})"
+
+        # 3. Ensure CONF_NAME is set for entities to use
+        if not self.flow_data.get(CONF_NAME):
+            # If user didn't provide a name, we set it to empty string.
+            # The entities will use their default naming logic.
+            self.flow_data[CONF_NAME] = ""
+        
+        _LOGGER.debug("Creating config entry with title: %s, name: %s, and unique_id: %s", title, self.flow_data.get(CONF_NAME), final_unique_id)
+        _LOGGER.debug("Final data for config entry: %s", self.flow_data)
+
         return self.async_create_entry(title=title, data=self.flow_data)
-
-class CannotConnect(HomeAssistantError):
-    """Error to indicate we cannot connect."""
-
-class InvalidAuth(HomeAssistantError):
-    """Error to indicate there is invalid auth."""

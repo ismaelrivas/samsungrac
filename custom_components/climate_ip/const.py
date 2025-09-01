@@ -3,6 +3,9 @@
 # Domain
 DOMAIN = "climate_ip"
 
+# Platforms
+PLATFORMS = ["climate", "sensor"]
+
 # Configuration keys
 CONF_DEVICE_TYPE   = "device_type"
 CONF_CONFIG_FILE   = "config_file"
@@ -12,6 +15,9 @@ CONF_NAME          = "name"
 CONF_TOKEN         = "token"
 CONF_CERT          = "cert"
 CONF_DEVICE_ID     = "device_id"
+CONF_DEVICES       = "devices"
+CONF_DISCOVERED_DEVICES = "discovered_devices"
+CONF_SELECTED_DEVICES = "selected_devices"
 
 # Device types
 DEVICE_TYPE_SAMSUNG_8888 = "samsung_8888"
