@@ -1,4 +1,4 @@
-import asyncio
+ import asyncio
 import json
 import logging
 import os
@@ -43,7 +43,7 @@ class ConnectionSamsung2878(Connection):
         self._connection_init_template = None
         self._cfg = connection_config(None, None, None, None, None)
         self._device_status = {}
-        self._socket_timeout = 8.0
+        self._socket_timeout = 20.0
 
         self._reader = None
         self._writer = None
@@ -127,15 +127,28 @@ class ConnectionSamsung2878(Connection):
         try:
             ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
             ssl_context.set_ciphers("HIGH:!DH:!aNULL:@SECLEVEL=0")
+            
+            # Key insight: The server's certificate is self-signed and will always fail
+            # strict validation. We must disable verification to connect.
+            ssl_context.verify_mode = ssl.CERT_NONE
+            
             if cfg.cert:
-                ssl_context.verify_mode = ssl.CERT_REQUIRED
-                ssl_context.load_verify_locations(cafile=cfg.cert)
+                # If a cert is provided, it's for CLIENT authentication, not server verification.
+                # The server expects us to present this cert.
+                self.logger.info(f"Loading client certificate from {cfg.cert} for authentication.")
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(
+                    None,
+                    lambda: ssl_context.load_cert_chain(certfile=cfg.cert)
+                )
             else:
-                ssl_context.verify_mode = ssl.CERT_NONE
+                self.logger.info("No certificate provided, skipping client authentication.")
 
             self.logger.info(f"Connecting to {cfg.host}:{cfg.port}...")
             self._reader, self._writer = await asyncio.wait_for(
-                asyncio.open_connection(cfg.host, cfg.port, ssl=ssl_context, server_hostname=cfg.host),
+                asyncio.open_connection(
+                    cfg.host, cfg.port, ssl=ssl_context, server_hostname=cfg.host
+                ),
                 timeout=self._socket_timeout,
             )
             
@@ -174,16 +187,12 @@ class ConnectionSamsung2878(Connection):
 
         full_response = ""
         try:
-            # Set a deadline for the entire read operation
             end_time = asyncio.get_event_loop().time() + timeout
-
             while asyncio.get_event_loop().time() < end_time:
-                # Calculate remaining timeout for this read chunk
                 remaining_time = end_time - asyncio.get_event_loop().time()
                 if remaining_time <= 0:
                     raise asyncio.TimeoutError
 
-                # Read a chunk of data
                 chunk = await asyncio.wait_for(self._reader.read(4096), timeout=remaining_time)
                 if not chunk:
                     self.logger.warning("Connection closed by peer while reading.")
@@ -192,26 +201,9 @@ class ConnectionSamsung2878(Connection):
 
                 full_response += chunk.decode("utf-8", errors='ignore')
                 
-                # --- Check for message completion ---
                 stripped_response = full_response.strip()
-
-                # 1. Check for special, short handshake messages
-                if "DPLUG-1.6" in stripped_response:
-                    self.logger.info(f"Response (DPLUG): {stripped_response}")
+                if "DPLUG-1.6" in stripped_response or stripped_response.endswith(('</Response>', '</Update>', '/>')):
                     return full_response
-
-                # 2. Check for any self-closing XML response, which are always complete.
-                # This handles AuthToken, DeviceControl, etc. that end with '/>'
-                if '<?xml' in stripped_response and stripped_response.endswith('/>'):
-                    self.logger.info(f"Response (Self-closing XML): {stripped_response}")
-                    return full_response
-
-                # 3. Check for standard XML container tags
-                if stripped_response.endswith(('</Response>', '</Update>')):
-                    self.logger.info(f"Response (Container XML): {stripped_response}")
-                    return full_response
-
-                # If no completion condition is met, loop to read more data.
 
         except asyncio.TimeoutError:
             self.logger.warning(f"Read timed out after {timeout} seconds. Data received: '{full_response.strip()}'")
@@ -240,7 +232,6 @@ class ConnectionSamsung2878(Connection):
         """Parses one or more XML documents from a single response string."""
         if not response_xml: return
         
-        # Split payload by the XML declaration to handle multiple documents
         for doc_part in response_xml.split('<?xml'):
             if not doc_part.strip(): continue
             
@@ -249,21 +240,11 @@ class ConnectionSamsung2878(Connection):
                 data = xmltodict.parse(full_doc)
                 device_data = None
                 
-                # Check for full device state response
                 if "Response" in data and data["Response"].get("@Type") == "DeviceState":
                     device_data = data['Response']['DeviceState'].get('Device')
-                    self.logger.debug("Parsing full device state.")
-                # Check for partial status update
                 elif "Update" in data and data["Update"].get("@Type") == "Status":
                     device_data = data['Update'].get('Status')
-                    self.logger.debug("Parsing partial status update.")
-                # Ignore command confirmations
-                elif "Response" in data and data["Response"].get("@Type") == "DeviceControl":
-                    self.logger.debug("Ignoring DeviceControl acknowledgement.")
-                    continue
-                # Ignore auth confirmations during normal operation
-                elif "Response" in data and data["Response"].get("@Type") == "AuthToken":
-                    self.logger.debug("Ignoring AuthToken acknowledgement.")
+                elif "Response" in data and data["Response"].get("@Type") in ("DeviceControl", "AuthToken"):
                     continue
                 else:
                     self.logger.warning(f"Received unhandled XML structure: {full_doc}")
@@ -280,7 +261,6 @@ class ConnectionSamsung2878(Connection):
 
             except Exception as e:
                 self.logger.error(f"Error parsing XML document: {e}", exc_info=True)
-                self.logger.debug(f"XML data that caused error: {full_doc}")
 
     async def _send_command_and_get_response(self, command):
         """Sends a single command and reads the response. Handles reconnection."""
@@ -293,7 +273,6 @@ class ConnectionSamsung2878(Connection):
         if await self._write_data(command):
             return await self._read_response()
         
-        # If write fails, the connection was likely closed by the peer. Try one more time.
         self.logger.warning("Write failed. Retrying command once.")
         if await self._establish_connection_and_handshake():
             if await self._write_data(command):
@@ -305,28 +284,25 @@ class ConnectionSamsung2878(Connection):
     async def execute(self, template, v, device_state):
         """Main entry point for sending commands or polling the device."""
         async with self._lock:
-            # Determine if this is a poll request or a command.
             is_polling_request = template and not v and not device_state
             
             if is_polling_request:
                 command = f'<Request Type="DeviceState" DUID="{self._cfg.duid}"></Request>\n'
                 response = await self._send_command_and_get_response(command)
                 self._parse_and_update_state(response)
-            else: # It's a command to change state
+            else:
                 params = self._params.copy()
                 params.update({"value": v, "device_state": device_state})
                 command_str = template.render(**params).strip()
                 
-                # Handle special case for power on, which may need to be sent first
                 if self._power_template:
                     power_command_str = self._power_template.render(**params).strip()
                     if power_command_str:
                         self.logger.info("Executing power command first.")
                         response = await self._send_command_and_get_response(power_command_str + "\n")
                         self._parse_and_update_state(response)
-                        await asyncio.sleep(0.5) # Let device process power-on
+                        await asyncio.sleep(0.5)
                 
-                # Send the main command
                 response = await self._send_command_and_get_response(command_str + "\n")
                 self._parse_and_update_state(response)
             
