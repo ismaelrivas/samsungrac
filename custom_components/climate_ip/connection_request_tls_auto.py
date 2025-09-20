@@ -1,3 +1,4 @@
+import asyncio
 import concurrent.futures
 import json
 import logging
@@ -113,7 +114,7 @@ class ConnectionRequestBase(Connection):
         import requests
         from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
-        params = self._params
+        params = self._params.copy()
         if template is not None:
             params.update(json.loads(template.render(value=value)))
 
@@ -125,11 +126,11 @@ class ConnectionRequestBase(Connection):
                 _LOGGER.debug(f"execute_internal - self: {self} - params: {self._params} - template: {template} - value: {value} - device_state: {device_state}")
 
                 session.mount("https://", SamsungHTTPAdapter())
-                    
+                        
                 self.logger.info(self._params)
 
                 try:
-                    future = self._thread_pool.submit(session.request, **self._params)
+                    future = self._thread_pool.submit(session.request, **params)
                 except:
                     # something goes wrong, print callstack and return None
                     self.logger.error("Request execution failed. Stack trace:")
@@ -172,23 +173,37 @@ class ConnectionRequestBase(Connection):
 
         return (None, False, 0)
 
-    def execute(self, template, value, device_state):
+    async def execute(self, template, value, device_state):
+        """
+        FIX for `TypeError`: This synchronous method has been converted to an
+        asynchronous one to be compatible with Home Assistant's async architecture.
+        The core blocking `requests` logic is run in a separate thread to avoid
+        blocking the main event loop.
+        """
+        loop = asyncio.get_running_loop()
+
         if self.embedded_command:
             self.logger.info("Embedded command found, executing...")
-            self.embedded_command.execute(template, value, device_state)
-
-        if not self.check_execute_condition(device_state):
+            await self.embedded_command.execute(template, value, device_state)
+        
+        do_execute = await loop.run_in_executor(None, self.check_execute_condition, device_state)
+        if not do_execute:
             self.logger.info("Execute condition not met, skipping command")
-            return ({}, True, 200)
+            return {}
 
         self.logger.info("Executing command...")
-        j, ok, code = self.execute_internal(template, value, device_state)
-        if not j and 500 <= code < 505:
-            # server error, try again
-            time.sleep(1.0)
-            j = self.execute_internal(template, value, device_state)[0]
+        j, ok, code = await loop.run_in_executor(
+            None, self.execute_internal, template, value, device_state
+        )
 
-        return j
+        if not ok and 500 <= code < 505:
+            # server error, try again
+            await asyncio.sleep(1.0)
+            j, _, _ = await loop.run_in_executor(
+                None, self.execute_internal, template, value, device_state
+            )
+        
+        return j if j is not None else {}
 
 
 @register_connection
@@ -204,3 +219,4 @@ class ConnectionRequestTlsAuto(ConnectionRequestBase):
         c = ConnectionRequestTlsAuto(None, self.logger)
         c.load_from_yaml(node, self)
         return c
+
