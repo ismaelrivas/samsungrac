@@ -15,6 +15,7 @@ from homeassistant.const import (
     ATTR_NAME,
     ATTR_TEMPERATURE,
     CONF_IP_ADDRESS,
+    CONF_MAC,
     CONF_TEMPERATURE_UNIT,
     CONF_TOKEN,
     STATE_ON,
@@ -86,8 +87,7 @@ class YamlController(ClimateController):
         self._retries_count = 0
         self._last_device_state = None
         self._poll = None
-        self._unique_id = self._device_id
-        self._uniqe_id_prop = None
+        self._unique_id = None # Initialize unique_id as None
 
     @property
     def poll(self):
@@ -135,6 +135,31 @@ class YamlController(ClimateController):
         ac = yaml_device.get(CONFIG_DEVICE, {})
         self._poll = ac.get(CONFIG_DEVICE_POLL, None)
         validate_props = ac.get(CONFIG_DEVICE_VALIDATE_PROPS, False)
+
+        # --- Start of Unique ID generation logic ---
+        # Prioritize MAC address for unique ID generation, ignoring unique_id from YAML config file.
+        mac_address = self._config.get(CONF_MAC)
+        if mac_address:
+            # Generate a unique ID from the MAC address
+            unique_id = f"climateip_{mac_address.lower().replace(':', '')}"
+            self._logger.info(f"Generated unique_id from MAC address: {unique_id}")
+        else:
+            # Fallback to using the name if no MAC is available
+            name = ac.get(ATTR_NAME, self._config.get(ATTR_NAME))
+            if name:
+                unique_id = name
+                self._logger.warning(
+                    "Using device name as unique_id. For better stability, please configure a 'mac'."
+                )
+            else:
+                # Last resort, use the IP, but this is not stable
+                unique_id = f"climateip_{self._ip_address}"
+                self._logger.error(
+                    "Could not determine a stable unique ID from 'mac' or 'name'. "
+                    f"Falling back to IP-based ID: {unique_id}. Please configure a mac for this device."
+                )
+        self._unique_id = unique_id
+        # --- End of Unique ID generation logic ---
         
         connection_node = ac.get(CONFIG_DEVICE_CONNECTION, {})
         connection = create_connection(connection_node, self._config, self._logger)
@@ -248,9 +273,6 @@ class YamlController(ClimateController):
         for prop in self._properties.values():
             self._attributes.update(prop.state_attributes)
 
-        if self._unique_id is None and self._uniqe_id_prop is not None:
-            self._unique_id = await self._uniqe_id_prop.async_update_state(device_state, debug)
-
     async def async_set_property(self, property_name, new_value):
         """
         Asynchronously sets a property on the device.
@@ -302,3 +324,4 @@ class YamlController(ClimateController):
     def attributes(self):
         """Return a list of available attributes"""
         return self._properties_list
+
