@@ -41,6 +41,7 @@ from homeassistant.const import (
     CONF_ACCESS_TOKEN,
     CONF_IP_ADDRESS,
     CONF_MAC,
+    CONF_PORT,
     CONF_TEMPERATURE_UNIT,
     CONF_TOKEN,
     STATE_OFF,
@@ -90,6 +91,7 @@ DEFAULT_CLIMATE_IP_TEMP_MIN = 8
 DEFAULT_CLIMATE_IP_TEMP_MAX = 30
 DEFAULT_UPDATE_DELAY = 1.5
 SERVICE_SET_CUSTOM_OPERATION = "climate_ip_set_property"
+CONF_TEMP_STEP = "temp_step"
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -109,6 +111,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
             CONFIG_DEVICE_UPDATE_DELAY, default=DEFAULT_UPDATE_DELAY
         ): cv.string,
         vol.Optional(CONF_DEVICE_ID, default="032000000"): cv.string,
+        vol.Optional(CONF_TEMP_STEP, default=1.0): vol.Coerce(float),
     }
 )
 
@@ -191,6 +194,9 @@ class ClimateIP(ClimateEntity):
         elif str_poll.lower() == "false":
             self._poll = False
             
+        # Set temperature step from configuration, defaulting to 1.0
+        self._temp_step = config.get(CONF_TEMP_STEP)
+
         features = 0
         for f, feature_flag in SUPPORTED_FEATURES_MAP.items():
             if f in self.rac.operations or f in self.rac.attributes:
@@ -208,6 +214,11 @@ class ClimateIP(ClimateEntity):
         # Attributes for robust optimistic mode
         self._last_optimistic_update_time = 0
         self._optimistic_debounce_seconds = 10 # Ignore polls for 10s after an optimistic update
+
+    @property
+    def controller(self) -> ClimateController:
+        """Return the controller of the climate device."""
+        return self.rac
 
     @property
     def should_poll(self):
@@ -249,9 +260,37 @@ class ClimateIP(ClimateEntity):
 
     async def async_set_temperature(self, **kwargs):
         """Asynchronously set new target temperature and verify."""
-        new_temp = kwargs.get(ATTR_TEMPERATURE)
-        if new_temp is not None:
-            await self._send_and_verify(ATTR_TEMPERATURE, new_temp)
+        tasks = []
+        if kwargs.get(ATTR_TEMPERATURE) is not None:
+            tasks.append(self._send_and_verify(
+                ATTR_TEMPERATURE,
+                TemperatureConverter.convert(
+                    float(kwargs.get(ATTR_TEMPERATURE)),
+                    self.temperature_unit,
+                    UnitOfTemperature.CELSIUS,
+                ),
+            ))
+        if kwargs.get(ATTR_TARGET_TEMP_HIGH) is not None:
+            tasks.append(self._send_and_verify(
+                ATTR_TARGET_TEMP_HIGH,
+                TemperatureConverter.convert(
+                    float(kwargs.get(ATTR_TARGET_TEMP_HIGH)),
+                    self.temperature_unit,
+                    UnitOfTemperature.CELSIUS,
+                ),
+            ))
+        if kwargs.get(ATTR_TARGET_TEMP_LOW) is not None:
+            tasks.append(self._send_and_verify(
+                ATTR_TARGET_TEMP_LOW,
+                TemperatureConverter.convert(
+                    float(kwargs.get(ATTR_TARGET_TEMP_LOW)),
+                    self.temperature_unit,
+                    UnitOfTemperature.CELSIUS,
+                ),
+            ))
+        
+        if tasks:
+            await asyncio.gather(*tasks)
 
     async def async_set_hvac_mode(self, hvac_mode: str):
         """Asynchronously set new target hvac mode and verify."""
@@ -298,7 +337,11 @@ class ClimateIP(ClimateEntity):
     @property
     def extra_state_attributes(self):
         """Return the state attributes."""
-        return self.rac.state_attributes
+        attrs = super().state_attributes
+        attrs.update(self.rac.state_attributes)
+        if self._name is not None:
+            attrs[ATTR_NAME] = self._name
+        return attrs
 
     @property
     def temperature_unit(self):
@@ -313,6 +356,37 @@ class ClimateIP(ClimateEntity):
         return self.rac.get_property(ATTR_TEMPERATURE)
         
     @property
+    def target_temperature_step(self):
+        """Return the supported step of target temperature."""
+        return self._temp_step
+        
+    @property
+    def target_temperature_high(self):
+        return self.rac.get_property(ATTR_TARGET_TEMP_HIGH)
+
+    @property
+    def target_temperature_low(self):
+        return self.rac.get_property(ATTR_TARGET_TEMP_LOW)
+        
+    @property
+    def min_temp(self):
+        t = self.rac.get_property(ATTR_MIN_TEMP)
+        if t is None:
+            t = DEFAULT_CLIMATE_IP_TEMP_MIN
+        return TemperatureConverter.convert(
+            t, UnitOfTemperature.CELSIUS, self.temperature_unit
+        )
+
+    @property
+    def max_temp(self):
+        t = self.rac.get_property(ATTR_MAX_TEMP)
+        if t is None:
+            t = DEFAULT_CLIMATE_IP_TEMP_MAX
+        return TemperatureConverter.convert(
+            t, UnitOfTemperature.CELSIUS, self.temperature_unit
+        )
+
+    @property
     def hvac_mode(self):
         mode = self.rac.get_property(ATTR_HVAC_MODE)
         return mode if mode not in [STATE_UNKNOWN, STATE_UNAVAILABLE, "", None] else HVACMode.OFF
@@ -325,6 +399,11 @@ class ClimateIP(ClimateEntity):
         if 'power' in self.rac.operations and HVACMode.OFF not in modes:
             return modes + [HVACMode.OFF]
         return modes
+        
+    @property
+    def hvac_action(self):
+        """Return the current running hvac operation if supported."""
+        return self.rac.get_property(ATTR_HVAC_ACTION)
         
     @property
     def fan_mode(self):
@@ -350,8 +429,6 @@ class ClimateIP(ClimateEntity):
     def preset_modes(self):
         return self.rac.get_property(ATTR_PRESET_MODES)
     
-    # ... other properties like min_temp, max_temp etc. remain the same ...
-    
     async def async_added_to_hass(self):
         """Run when entity about to be added."""
         await super().async_added_to_hass()
@@ -364,3 +441,4 @@ class ClimateIP(ClimateEntity):
         await super().async_will_remove_from_hass()
         if CLIMATE_IP_DATA in self.hass.data:
             self.hass.data[CLIMATE_IP_DATA][ENTITIES].remove(self)
+
