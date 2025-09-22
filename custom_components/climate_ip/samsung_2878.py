@@ -44,6 +44,7 @@ class ConnectionSamsung2878(Connection):
         self._cfg = connection_config(None, None, None, None, None)
         self._device_status = {}
         self._socket_timeout = 20.0
+        self._ssl_context = None
 
         self._reader = None
         self._writer = None
@@ -71,6 +72,8 @@ class ConnectionSamsung2878(Connection):
                 duid,
             )
             self._params.update({CONF_DUID: duid, CONF_TOKEN: self._cfg.token})
+            # Invalidate cached SSL context if configuration changes
+            self._ssl_context = None
 
     def load_from_yaml(self, node, connection_base):
         from jinja2 import Template
@@ -130,30 +133,34 @@ class ConnectionSamsung2878(Connection):
             self.logger.error("No host configured for connection; aborting handshake.")
             return False
 
-        # Prepare SSL context (kept as TLSv1 for device compatibility)
-        try:
-            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
-            ssl_context.set_ciphers("HIGH:!DH:!aNULL:@SECLEVEL=0")
-        except Exception:
-            # Fallback: create a generic SSLContext if the platform refuses TLSv1 constant
-            ssl_context = ssl.create_default_context()
+        # Prepare and cache the SSL context on the first run
+        if self._ssl_context is None:
+            self.logger.info("Preparing and caching SSL context for the first time...")
+            try:
+                ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+                ssl_context.set_ciphers("HIGH:!DH:!aNULL:@SECLEVEL=0")
+            except Exception:
+                # Fallback: create a generic SSLContext if the platform refuses TLSv1 constant
+                ssl_context = ssl.create_default_context()
+
+            # If a cert path was provided, try to load it as a client cert (cert+key in single file or chain)
+            if cfg.cert:
+                try:
+                    # load_cert_chain may block, run in executor for safety
+                    loop = asyncio.get_running_loop()
+                    await loop.run_in_executor(None, lambda: ssl_context.load_cert_chain(certfile=cfg.cert))
+                    self.logger.info("Loaded client certificate from %s", cfg.cert)
+                except Exception as e:
+                    self.logger.warning("Failed to load client cert %s: %s", cfg.cert, e)
+
+            # If no CA verification is possible, keep verify_mode NONE (device uses self-signed certs)
+            # This is an explicit choice for compatibility with old devices that only implement TLSv1.
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
+            self._ssl_context = ssl_context
+        else:
+            self.logger.debug("Reusing cached SSL context.")
 
-        # If a cert path was provided, try to load it as a client cert (cert+key in single file or chain)
-        if cfg.cert:
-            try:
-                # load_cert_chain may block, run in executor for safety
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(None, lambda: ssl_context.load_cert_chain(certfile=cfg.cert))
-                self.logger.info("Loaded client certificate from %s", cfg.cert)
-            except Exception as e:
-                self.logger.warning("Failed to load client cert %s: %s", cfg.cert, e)
-
-        # If no CA verification is possible, keep verify_mode NONE (device uses self-signed certs)
-        # This is an explicit choice for compatibility with old devices that only implement TLSv1.
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
 
         # TCP connect with limited retries + backoff to reduce log spam when device is offline
         max_retries = 3
@@ -162,7 +169,7 @@ class ConnectionSamsung2878(Connection):
             try:
                 self.logger.info("Connecting to %s:%s (attempt %d/%d)...", cfg.host, cfg.port, attempt, max_retries)
                 self._reader, self._writer = await asyncio.wait_for(
-                    asyncio.open_connection(cfg.host, cfg.port, ssl=ssl_context, server_hostname=cfg.host),
+                    asyncio.open_connection(cfg.host, cfg.port, ssl=self._ssl_context, server_hostname=cfg.host),
                     timeout=self._socket_timeout,
                 )
                 break
