@@ -44,6 +44,7 @@ class ConnectionSamsung2878(Connection):
         self._cfg = connection_config(None, None, None, None, None)
         self._device_status = {}
         self._socket_timeout = 20.0
+        self._ssl_context = None
 
         self._reader = None
         self._writer = None
@@ -71,6 +72,8 @@ class ConnectionSamsung2878(Connection):
                 duid,
             )
             self._params.update({CONF_DUID: duid, CONF_TOKEN: self._cfg.token})
+            # Invalidate cached SSL context if configuration changes
+            self._ssl_context = None
 
     def load_from_yaml(self, node, connection_base):
         from jinja2 import Template
@@ -124,54 +127,109 @@ class ConnectionSamsung2878(Connection):
         """Establishes a new connection and performs the full authentication handshake."""
         await self._close_connection()
         cfg = self._cfg
-        try:
-            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
-            ssl_context.set_ciphers("HIGH:!DH:!aNULL:@SECLEVEL=0")
-            
-            # Key insight: The server's certificate is self-signed and will always fail
-            # strict validation. We must disable verification to connect.
-            ssl_context.verify_mode = ssl.CERT_NONE
-            
-            if cfg.cert:
-                # If a cert is provided, it's for CLIENT authentication, not server verification.
-                # The server expects us to present this cert.
-                self.logger.info(f"Loading client certificate from {cfg.cert} for authentication.")
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(
-                    None,
-                    lambda: ssl_context.load_cert_chain(certfile=cfg.cert)
-                )
-            else:
-                self.logger.info("No certificate provided, skipping client authentication.")
 
-            self.logger.info(f"Connecting to {cfg.host}:{cfg.port}...")
-            self._reader, self._writer = await asyncio.wait_for(
-                asyncio.open_connection(
-                    cfg.host, cfg.port, ssl=ssl_context, server_hostname=cfg.host
-                ),
-                timeout=self._socket_timeout,
-            )
-            
-            # --- Handshake Logic ---
+        # Validate basic config early
+        if not cfg or not cfg.host:
+            self.logger.error("No host configured for connection; aborting handshake.")
+            return False
+
+        # Prepare and cache the SSL context on the first run
+        if self._ssl_context is None:
+            self.logger.info("Preparing and caching SSL context for the first time...")
+            try:
+                ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+                ssl_context.set_ciphers("HIGH:!DH:!aNULL:@SECLEVEL=0")
+            except Exception:
+                # Fallback: create a generic SSLContext if the platform refuses TLSv1 constant
+                ssl_context = ssl.create_default_context()
+
+            # If a cert path was provided, try to load it as a client cert (cert+key in single file or chain)
+            if cfg.cert:
+                try:
+                    # load_cert_chain may block, run in executor for safety
+                    loop = asyncio.get_running_loop()
+                    await loop.run_in_executor(None, lambda: ssl_context.load_cert_chain(certfile=cfg.cert))
+                    self.logger.info("Loaded client certificate from %s", cfg.cert)
+                except Exception as e:
+                    self.logger.warning("Failed to load client cert %s: %s", cfg.cert, e)
+
+            # If no CA verification is possible, keep verify_mode NONE (device uses self-signed certs)
+            # This is an explicit choice for compatibility with old devices that only implement TLSv1.
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            self._ssl_context = ssl_context
+        else:
+            self.logger.debug("Reusing cached SSL context.")
+
+
+        # TCP connect with limited retries + backoff to reduce log spam when device is offline
+        max_retries = 3
+        base_backoff = 1.0
+        for attempt in range(1, max_retries + 1):
+            try:
+                self.logger.info("Connecting to %s:%s (attempt %d/%d)...", cfg.host, cfg.port, attempt, max_retries)
+                self._reader, self._writer = await asyncio.wait_for(
+                    asyncio.open_connection(cfg.host, cfg.port, ssl=self._ssl_context, server_hostname=cfg.host),
+                    timeout=self._socket_timeout,
+                )
+                break
+            except OSError as e:
+                # errno 113 = No route to host on many Linux systems; expose helpful message
+                err_no = getattr(e, "errno", None)
+                if err_no == 113:
+                    self.logger.warning(
+                        "TCP connect failed to %s:%s errno=113 (No route to host). "
+                        "Please check device network, IP and routing. Attempt %d/%d",
+                        cfg.host, cfg.port, attempt, max_retries,
+                    )
+                else:
+                    self.logger.warning(
+                        "TCP connect failed to %s:%s (errno=%s). Attempt %d/%d: %s",
+                        cfg.host, cfg.port, err_no, attempt, max_retries, e,
+                    )
+                self.logger.debug("Connect OSError details:", exc_info=True)
+            except asyncio.TimeoutError:
+                self.logger.warning("TCP connect to %s:%s timed out on attempt %d/%d", cfg.host, cfg.port, attempt, max_retries)
+            except Exception:
+                self.logger.exception("Unexpected error while connecting to %s:%s on attempt %d/%d", cfg.host, cfg.port, attempt, max_retries)
+
+            # Backoff between attempts (don't sleep after the final attempt)
+            if attempt < max_retries:
+                await asyncio.sleep(base_backoff * attempt)
+        else:
+            # All attempts failed
+            self.logger.error("Could not open TCP connection to %s:%s after %d attempts", cfg.host, cfg.port, max_retries)
+            await self._close_connection()
+            return False
+
+        # --- Handshake Logic ---
+        try:
             initial_msg = await self._read_response()
             if not initial_msg or "DPLUG" not in initial_msg:
-                self.logger.error(f"Handshake failed: Did not receive DPLUG. Got: {initial_msg}")
+                self.logger.error("Handshake failed: Did not receive DPLUG. Got: %s", initial_msg)
                 await self._close_connection()
                 return False
-            
+
+            if not self._connection_init_template:
+                self.logger.error("No connection_init_template configured; aborting handshake")
+                await self._close_connection()
+                return False
+
             auth_command = self._connection_init_template.render(**self._params) + "\n"
+            # Do not log auth_command contents at INFO level (may contain tokens); use DEBUG only
+            self.logger.debug("Sending auth command (sanitized).")
             await self._write_data(auth_command)
 
             auth_response = await self._read_response()
             if not auth_response or 'Type="AuthToken" Status="Okay"' not in auth_response:
-                self.logger.error(f"Handshake failed: Authentication not Okay. Got: {auth_response}")
+                self.logger.error("Handshake failed: Authentication not Okay. Got: %s", auth_response)
                 await self._close_connection()
                 return False
 
             self.logger.info("Authentication successful. Connection is ready.")
             return True
         except Exception as e:
-            self.logger.error(f"Connection and handshake failed: {e}", exc_info=True)
+            self.logger.error("Connection and handshake failed: %s", e, exc_info=True)
             await self._close_connection()
             return False
 
@@ -307,3 +365,4 @@ class ConnectionSamsung2878(Connection):
                 self._parse_and_update_state(response)
             
             return self._device_status
+
