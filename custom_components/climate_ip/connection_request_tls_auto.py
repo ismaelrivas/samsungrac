@@ -9,6 +9,9 @@ import traceback
 
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_PORT, CONF_TOKEN
 from requests.adapters import HTTPAdapter
+# AÑADIDO: Importamos las excepciones específicas que queremos manejar
+from requests.exceptions import RequestException
+from urllib3.exceptions import HeaderParsingError
 
 from .connection import Connection, register_connection
 from .yaml_const import (
@@ -137,13 +140,22 @@ class ConnectionRequestBase(Connection):
                     traceback.print_exc()
                     return (None, False, 0)
 
+                # --- MODIFICADO: Bloque try/except para aislar el error ---
                 try:
                     resp = future.result()
-                except:
-                    self.logger.error(
-                        "Request result exception: {}".format(future.exception())
-                    )
-                    return (None, False, 0)
+                except RequestException as e:
+                    # Comprobamos si la causa del error es la que esperamos (HeaderParsingError)
+                    if e.__cause__ and isinstance(e.__cause__, HeaderParsingError):
+                        self.logger.warning(
+                            "Ignoring a known HeaderParsingError from the device. "
+                            "This is likely a cosmetic issue and the device should still work."
+                        )
+                    else:
+                        # Si es otro error de red, lo registramos como un error normal
+                        self.logger.error(
+                            "Request result exception: {}".format(e)
+                        )
+                    return (None, False, 0) # Devolvemos fallo controlado
 
                 self.logger.info(
                     "Command executed with code: {}, text: {}".format(
@@ -219,4 +231,3 @@ class ConnectionRequestTlsAuto(ConnectionRequestBase):
         c = ConnectionRequestTlsAuto(None, self.logger)
         c.load_from_yaml(node, self)
         return c
-
