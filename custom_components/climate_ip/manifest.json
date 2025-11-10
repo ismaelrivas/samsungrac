@@ -4,7 +4,7 @@
   "codeowners": [
     "@SebuZet"
   ],
-  "config_flow": false,
+  "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/atxbyea/samsungrac",
   "iot_class": "local_polling",
@@ -13,5 +13,5 @@
     "requests>=2.21.0",
     "xmltodict>=0.13.0"
   ],
-  "version": "3.5.2"
+  "version": "9.0.0"
 }
