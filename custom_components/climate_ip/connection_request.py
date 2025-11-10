@@ -212,7 +212,11 @@ class ConnectionRequestBase(Connection):
                             _LOGGER.debug("%s Response was empty, returning empty JSON object.", self.log_prefix)
                             return ({}, True, resp.status_code)
 
-                        return (resp.json(), True, resp.status_code)
+                        try:
+                            return (resp.json(), True, resp.status_code)
+                        except (requests.exceptions.JSONDecodeError, json.JSONDecodeError):
+                            _LOGGER.warning("%s JSON decode failed for response: %s", self.log_prefix, resp.text)
+                            return ({}, True, resp.status_code)
 
                 except (json.JSONDecodeError, requests.exceptions.JSONDecodeError) as e:
                     _LOGGER.warning("%s Parsing response json failed! Not retrying. Error: %s", self.log_prefix, e)
