@@ -208,9 +208,13 @@ class ConnectionRequestBase(Connection):
                             self.log_prefix, resp.status_code
                         )
                         
+                        if not resp.text or not resp.text.strip():
+                            _LOGGER.debug("%s Response was empty, returning empty JSON object.", self.log_prefix)
+                            return ({}, True, resp.status_code)
+
                         return (resp.json(), True, resp.status_code)
 
-                except json.JSONDecodeError as e:
+                except (json.JSONDecodeError, requests.exceptions.JSONDecodeError) as e:
                     _LOGGER.warning("%s Parsing response json failed! Not retrying. Error: %s", self.log_prefix, e)
                     raise ValueError("Failed to parse JSON response") from e
 
