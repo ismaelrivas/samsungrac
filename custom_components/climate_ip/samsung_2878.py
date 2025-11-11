@@ -27,7 +27,7 @@ CONF_DUID = "duid"
 INITIAL_RECONNECT_DELAY = 5
 MAX_RECONNECT_DELAY = 120
 RECONNECT_FACTOR = 2
-COMMAND_TIMEOUT = 10.0
+COMMAND_TIMEOUT = 20.0
 MAX_RECONNECT_RETRIES = 5
 
 class connection_config:
@@ -46,7 +46,7 @@ class ConnectionSamsung2878(Connection):
         self._connection_init_template = None
         self._cfg = connection_config(None, None, None, None, None)
         self._device_status = {}
-        self._socket_timeout = 15.0
+        self._socket_timeout = 30.0
         self._controller = None
 
         self._reader = None
@@ -204,9 +204,19 @@ class ConnectionSamsung2878(Connection):
             )
             
             initial_msg = await self._read_full_response(timeout=self._socket_timeout)
-            if not initial_msg or "DPLUG-1.6" not in initial_msg:
-                _LOGGER.warning("%s Handshake failed: Did not receive DPLUG. Got: %s", self.log_prefix, initial_msg)
-                raise CannotConnect("Handshake failed: Did not receive DPLUG")
+            
+            if initial_msg:
+                # Attempt to parse the initial message to see if it's an update or response
+                is_response, is_update, parsed_data = self._parse_and_update_state(initial_msg)
+                if parsed_data:
+                    self._device_status.update(parsed_data)
+                    if is_update and self._update_callback:
+                        _LOGGER.debug("%s Initial message was an update, calling update callback", self.log_prefix)
+                        asyncio.create_task(self._update_callback(parsed_data))
+
+            if not initial_msg or ("DPLUG-1.6" not in initial_msg and "DRC-1.00" not in initial_msg and "InvalidateAccount" not in initial_msg):
+                _LOGGER.warning("%s Handshake failed: Did not receive expected initial message (DPLUG-1.6 or DRC-1.00 or InvalidateAccount). Got: %s", self.log_prefix, initial_msg)
+                raise CannotConnect("Handshake failed: Did not receive expected initial message")
             
             auth_command = self._connection_init_template.render(**self._params) + "\n"
             await self._write_data(auth_command)
@@ -248,7 +258,7 @@ class ConnectionSamsung2878(Connection):
             await self._close_connection()
             raise CannotConnect(f"An unexpected error occurred during connection: {e}") from e
 
-    async def _read_full_response(self, timeout=8.0) -> Optional[str]:
+    async def _read_full_response(self, timeout=10.0) -> Optional[str]:
         if not self._reader or self._reader.at_eof():
             return None
         try:
@@ -297,10 +307,36 @@ class ConnectionSamsung2878(Connection):
         is_update = False
         is_response = False
         parsed_data = {}
-        # A single read can contain multiple XML documents.
-        for doc_part in response_xml.split('<?xml'):
-            if not doc_part.strip(): continue
-            full_doc = '<?xml' + doc_part
+
+        # Find the first occurrence of "<?xml" to start processing from there.
+        # This discards any non-XML prefix like "DPLUG-1.6\n" or "DRC-1.00\n"
+        xml_start_index = response_xml.find("<?xml")
+        if xml_start_index == -1:
+            # No XML declaration found, so it's not an XML document we can parse.
+            return False, False, None
+
+        # Process only the part of the string that potentially contains XML.
+        xml_candidate_content = response_xml[xml_start_index:]
+
+        # Split by '<?xml' to handle multiple XML documents within the string.
+        # The first element will be empty if xml_candidate_content starts with '<?xml'.
+        # Subsequent elements are parts of XML documents that need '<?xml' prepended.
+        doc_parts = xml_candidate_content.split('<?xml')
+
+        for doc_part in doc_parts:
+            if not doc_part.strip():
+                continue # Skip empty parts (e.g., the first empty string if xml_candidate_content started with '<?xml')
+
+            # Reconstruct the full XML document string.
+            # Only prepend '<?xml' if the doc_part is a valid XML fragment.
+            # A valid XML fragment after '<?xml' should start with 'version="1.0"' or a root element tag '<'.
+            if doc_part.strip().startswith('version="1.0"') or doc_part.strip().startswith('<'):
+                full_doc = '<?xml' + doc_part
+            else:
+                # This doc_part is not a valid XML fragment (e.g., "DPLUG-1.6" without "version="1.0"").
+                # Log it and skip, do not attempt to parse as XML.
+                _LOGGER.debug("%s Skipping non-XML fragment after '<?xml': %s", self.log_prefix, doc_part.strip())
+                continue
             try:
                 data = xmltodict.parse(full_doc)
 

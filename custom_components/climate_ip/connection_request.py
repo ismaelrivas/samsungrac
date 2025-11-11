@@ -98,7 +98,7 @@ def _mask_request_params(params: dict, log_prefix: str) -> dict:
 class ConnectionRequestBase(Connection):
     def __init__(self, hass_config, _logger):
         super(ConnectionRequestBase, self).__init__(hass_config, _logger)
-        self._params = {"timeout": 5}
+        self._params = {"timeout": 30}
         self._embedded_command = None # An optional nested command.
         self._controller = None  # Will be set by the property that creates this.
         logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
