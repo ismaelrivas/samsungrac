@@ -36,6 +36,7 @@
         "description": "Introduce la información de tu aire acondicionado. Si ya tienes el token, puedes introducirlo para saltar el emparejamiento. De lo contrario, déjalo en blanco.",
         "data": {
           "ip_address": "Dirección IP",
+          "mac": "Dirección MAC (Opcional)",
           "port": "Puerto",
           "name": "Nombre (Opcional)",
           "cert": "Certificado (Opcional)",
@@ -47,6 +48,7 @@
         "description": "Introduce la información de tu controlador MIM-H03. Si ya tienes el token, puedes introducirlo para saltar el emparejamiento. De lo contrario, déjalo en blanco.",
         "data": {
           "ip_address": "Dirección IP",
+          "mac": "Dirección MAC (Opcional)",
           "port": "Puerto",
           "name": "Nombre (Opcional)",
           "cert": "Certificado (Opcional)",

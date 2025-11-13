@@ -65,8 +65,8 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def __init__(self):
         """Initialize the config flow."""
         self.flow_data: Dict[str, Any] = {}
-        self.task: Optional[asyncio.Task] = None
-        self.acquirer: Optional[Any] = None # Puede ser SamsungTokenAcquirer o SamsungTokenAcquirer8888
+        self.task: Optional[asyncio.Task] = None 
+        self.acquirer: Optional[Any] = None # Can be SamsungTokenAcquirer or SamsungTokenAcquirer8888
         _LOGGER.debug("Initializing new Climate IP config flow.")
 
     async def async_step_import(self, user_input: dict[str, Any]) -> FlowResult:
@@ -265,27 +265,60 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="samsung_2878",
             data_schema=self._get_samsung_2878_schema(),
             errors=errors)
+
+    def _get_samsung_8888_schema(self, mac_required: bool = False) -> vol.Schema:
+        """Helper to dynamically generate the schema for the Samsung 8888/MIM-H03 step."""
+        raw_mac = self.flow_data.get(CONF_MAC, "")
+        formatted_mac = ":".join(raw_mac[i:i+2] for i in range(0, len(raw_mac), 2)) if raw_mac else ""
+
+        schema_dict = {
+            vol.Required(CONF_IP_ADDRESS, default=self.flow_data.get(CONF_IP_ADDRESS, "")): str,
+        }
+        
+        if mac_required:
+            schema_dict[vol.Required(CONF_MAC, default=formatted_mac)] = str
+        else:
+            schema_dict[vol.Optional(CONF_MAC, default=formatted_mac)] = str
+
+        schema_dict.update({
+            vol.Optional(CONF_NAME, default=self.flow_data.get(CONF_NAME, "")): str,
+            vol.Optional(CONF_TOKEN, default=""): str,
+            vol.Optional(CONF_CERT, default="ac14k_m.pem"): str,
+        })
+        return vol.Schema(schema_dict)
+
     async def async_step_samsung_8888(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
         """Handle IP input and token acquisition for modern Samsung devices."""
         errors: Dict[str, str] = {}
         if user_input is not None:
             self.flow_data.update(user_input)
             ip_address = self.flow_data[CONF_IP_ADDRESS]
-            
-            try:
-                resolved_mac = await self.hass.async_add_executor_job(
-                    lambda: get_mac_address(ip=ip_address)
-                )
-                if resolved_mac:
-                    _LOGGER.info("Using resolved MAC address for unique_id: %s", resolved_mac)
-                    # Sanitize MAC address by removing colons
-                    await self.async_set_unique_id(resolved_mac.replace(":", "").upper())
-                else:
-                    _LOGGER.warning("Could not resolve MAC address for %s. Falling back to IP address for unique_id.", ip_address)
-                    await self.async_set_unique_id(ip_address)
-            except Exception:
-                _LOGGER.exception("Error resolving MAC, falling back to IP address for unique_id.")
-                await self.async_set_unique_id(ip_address)
+            mac_address = self.flow_data.get(CONF_MAC)
+
+            if mac_address:
+                self.flow_data[CONF_MAC] = mac_address.replace(":", "").upper()
+            else:
+                _LOGGER.info("MAC address not provided for 8888 device, attempting to resolve from IP %s", ip_address)
+                try:
+                    resolved_mac = await self.hass.async_add_executor_job(
+                        lambda: get_mac_address(ip=ip_address)
+                    )
+                    if not resolved_mac:
+                        raise OSError("MAC address not found for the given IP.")
+                    
+                    _LOGGER.info("Successfully resolved MAC %s", resolved_mac)
+                    self.flow_data[CONF_MAC] = resolved_mac.replace(":", "").upper()
+                
+                except (OSError, HomeAssistantError):
+                    _LOGGER.warning("Could not resolve MAC address for 8888 device. Asking user to provide it.")
+                    errors["base"] = "mac_resolve_failed"
+                    return self.async_show_form(
+                        step_id="samsung_8888",
+                        data_schema=self._get_samsung_8888_schema(mac_required=True),
+                        errors=errors,
+                    )
+
+            await self.async_set_unique_id(self.flow_data[CONF_MAC])
 
             self._abort_if_unique_id_configured()
 
@@ -310,12 +343,7 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="samsung_8888",
-            data_schema=vol.Schema({
-                vol.Required(CONF_IP_ADDRESS, default=self.flow_data.get(CONF_IP_ADDRESS, "")): str,
-                vol.Optional(CONF_NAME, default=self.flow_data.get(CONF_NAME, "")): str,
-                vol.Optional(CONF_TOKEN, default=""): str,
-                vol.Optional(CONF_CERT, default="ac14k_m.pem"): str,
-            }),
+            data_schema=self._get_samsung_8888_schema(),
             errors=errors,
         )
 
@@ -325,21 +353,32 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             self.flow_data.update(user_input)
             ip_address = self.flow_data[CONF_IP_ADDRESS]
-            
-            try:
-                resolved_mac = await self.hass.async_add_executor_job(
-                    lambda: get_mac_address(ip=ip_address)
-                )
-                if resolved_mac:
-                    _LOGGER.info("Using resolved MAC address for unique_id: %s", resolved_mac)
-                    # Sanitize MAC address by removing colons
-                    await self.async_set_unique_id(resolved_mac.replace(":", "").upper())
-                else:
-                    _LOGGER.warning("Could not resolve MAC address for %s. Falling back to IP address for unique_id.", ip_address)
-                    await self.async_set_unique_id(ip_address)
-            except Exception:
-                _LOGGER.exception("Error resolving MAC, falling back to IP address for unique_id.")
-                await self.async_set_unique_id(ip_address)
+            mac_address = self.flow_data.get(CONF_MAC)
+
+            if mac_address:
+                self.flow_data[CONF_MAC] = mac_address.replace(":", "").upper()
+            else:
+                _LOGGER.info("MAC address not provided for MIM-H03, attempting to resolve from IP %s", ip_address)
+                try:
+                    resolved_mac = await self.hass.async_add_executor_job(
+                        lambda: get_mac_address(ip=ip_address)
+                    )
+                    if not resolved_mac:
+                        raise OSError("MAC address not found for the given IP.")
+                    
+                    _LOGGER.info("Successfully resolved MAC %s", resolved_mac)
+                    self.flow_data[CONF_MAC] = resolved_mac.replace(":", "").upper()
+                
+                except (OSError, HomeAssistantError):
+                    _LOGGER.warning("Could not resolve MAC address for MIM-H03. Asking user to provide it.")
+                    errors["base"] = "mac_resolve_failed"
+                    return self.async_show_form(
+                        step_id="mim_h03",
+                        data_schema=self._get_samsung_8888_schema(mac_required=True),
+                        errors=errors,
+                    )
+
+            await self.async_set_unique_id(self.flow_data[CONF_MAC])
 
             self._abort_if_unique_id_configured()
 
@@ -361,16 +400,9 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
                 return await self.async_step_initiate_pairing()
 
-        # Schema for the MIM-H03 form, without device_id
-        schema = vol.Schema({
-            vol.Required(CONF_IP_ADDRESS, default=self.flow_data.get(CONF_IP_ADDRESS, "")): str,
-            vol.Optional(CONF_NAME, default=self.flow_data.get(CONF_NAME, "")): str,
-            vol.Optional(CONF_TOKEN, default=""): str,
-            vol.Optional(CONF_CERT, default="ac14k_m.pem"): str,
-        })
         return self.async_show_form(
             step_id="mim_h03",
-            data_schema=schema,
+            data_schema=self._get_samsung_8888_schema(),
             errors=errors,
         )
 
@@ -521,7 +553,12 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 internal_coordinator = None
                 ac_units_info = []
                 for device in discovered_devices:
-                    if isinstance(device, dict) and "Mode" not in device:
+                    # FIX: If there's only one device, it MUST be the coordinator,
+                    # regardless of whether it has a "Mode" key or not.
+                    # This handles emulators or single-unit setups correctly.
+                    if len(discovered_devices) == 1:
+                        internal_coordinator = device
+                    elif isinstance(device, dict) and "Mode" not in device:
                         internal_coordinator = device
                     else:
                         # This is an actual AC unit
@@ -566,12 +603,12 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if len(discovered_devices) > 0:
                     device = discovered_devices[0]
                     # Use uuid if available, otherwise fall back to id
-                    uuid = device.get("uuid") or device.get("id")
-                    if uuid:
-                        self.flow_data[CONF_DEVICE_ID] = uuid
-                        # irp self.flow_data["unique_id"] = uuid
-                        # Per user request, ignore discovered name and use a standard format.
-                        self.flow_data[CONF_NAME] = f"Samsung AC {uuid}"
+                    device_uuid = device.get("uuid") or device.get("id")
+                    if device_uuid:
+                        self.flow_data[CONF_DEVICE_ID] = device_uuid
+                        # Do not overwrite the unique_id, which should already be the MAC
+                        # Per user request, use MAC for the name to be consistent. 
+                        self.flow_data[CONF_NAME] = f"Samsung AC {self.flow_data.get(CONF_MAC)}"
                         _LOGGER.info("Discovered 8888 device, creating entry with name: %s", self.flow_data[CONF_NAME])
                         return await self._create_entry()
 
@@ -673,20 +710,10 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if device_type == DEVICE_TYPE_MIM_H03:
             step_id = "mim_h03"
-            schema = vol.Schema({
-                vol.Required(CONF_IP_ADDRESS, default=self.flow_data.get(CONF_IP_ADDRESS, "")): str,
-                vol.Optional(CONF_NAME, default=self.flow_data.get(CONF_NAME, "")): str,
-                vol.Optional(CONF_TOKEN, default=""): str,
-                vol.Optional(CONF_CERT, default="ac14k_m.pem"): str,
-            })
+            schema = self._get_samsung_8888_schema(mac_required=False)
         elif device_type == DEVICE_TYPE_SAMSUNG_8888:
             step_id = "samsung_8888"
-            schema = vol.Schema({
-                vol.Required(CONF_IP_ADDRESS, default=self.flow_data.get(CONF_IP_ADDRESS, "")): str,
-                vol.Optional(CONF_NAME, default=self.flow_data.get(CONF_NAME, "")): str,
-                vol.Optional(CONF_TOKEN, default=""): str,
-                vol.Optional(CONF_CERT, default="ac14k_m.pem"): str,
-            })
+            schema = self._get_samsung_8888_schema(mac_required=False)
         else: # Default to 2878
             step_id = "samsung_2878"
             schema = self._get_samsung_2878_schema(mac_required=False)
@@ -710,11 +737,11 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         
         # 1. Determine the final unique_id for the entry
         final_unique_id = self.flow_data.get("unique_id")
-        if not final_unique_id:
-            if device_type == DEVICE_TYPE_SAMSUNG_2878:
-                final_unique_id = self.flow_data.get(CONF_MAC)
-            else:
-                final_unique_id = self.flow_data.get(CONF_DEVICE_ID)
+        # For 2878 devices, the unique_id is always the MAC.
+        # For 8888/MIM-H03, we set it to the MAC during the initial steps.
+        # This logic ensures we don't accidentally overwrite it with the device_id (uuid).
+        if not final_unique_id or device_type == DEVICE_TYPE_SAMSUNG_2878:
+            final_unique_id = self.flow_data.get(CONF_MAC)
         
         # Fallback if still no unique_id
         if not final_unique_id:
@@ -734,12 +761,15 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         elif device_type in [DEVICE_TYPE_SAMSUNG_8888, DEVICE_TYPE_MIM_H03]:
             # For modern devices, create a title like "Device Name (uuid)"
             # The UUID is the final_unique_id for these types
-            device_name = self.flow_data.get(CONF_NAME, "Samsung AC")
-            # Check if uuid is already in the name from a previous step
-            if final_unique_id and final_unique_id not in device_name:
-                 title = f"{device_name} ({final_unique_id})"
+            device_name = self.flow_data.get(CONF_NAME)
+            if not device_name:
+                title = f"Samsung AC {final_unique_id}"
             else:
-                 title = device_name
+                # If user provided a name, use it. Add the MAC for clarity only if it's not already in the name.
+                if final_unique_id not in device_name:
+                    title = f"{device_name} ({final_unique_id})"
+                else:
+                    title = device_name
         
         # Generic fallback for title
         if not title:

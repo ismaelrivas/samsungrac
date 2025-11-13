@@ -1,5 +1,26 @@
 # climate_ip/token_acquirer_8888.py
 """Helper to acquire a token from modern Samsung AC units (port 8888)."""
+
+# Monkey-patch urllib3 to be more tolerant of malformed headers from some AC units.
+# This is necessary because some devices may return headers with extra spaces,
+# which would otherwise cause a HeaderParsingError.
+import urllib3.util.response as response_util
+from urllib3.exceptions import HeaderParsingError
+import urllib3.connection as connection_mod
+import logging
+
+_LOGGER_PATCH = logging.getLogger(__package__)
+_original_assert = response_util.assert_header_parsing
+
+def _tolerant_assert_header_parsing(headers):
+    """A tolerant version of assert_header_parsing that logs instead of raising."""
+    try:
+        _original_assert(headers)
+    except HeaderParsingError as e:
+        _LOGGER_PATCH.debug("Ignored HeaderParsingError: %s", e)
+
+response_util.assert_header_parsing = _tolerant_assert_header_parsing
+connection_mod.assert_header_parsing = _tolerant_assert_header_parsing
 import asyncio
 import http.server
 import json
@@ -56,8 +77,20 @@ class SamsungTokenAcquirer8888:
 
             def do_POST(self):
                 try:
-                    content_length = int(self.headers['Content-Length'])
+                    # LOG: Log incoming request headers and body for debugging.
+                    _LOGGER.debug("Token listener received POST request. Headers: %s", self.headers)
+
+                    # FIX: Make the listener robust against requests without a Content-Length header.
+                    content_length_str = self.headers.get('Content-Length')
+                    if not content_length_str:
+                        _LOGGER.debug("Ignoring POST request without Content-Length header. Headers: %s", self.headers)
+                        self.send_response(400, "Content-Length header is missing")
+                        self.end_headers()
+                        return
+                        
+                    content_length = int(content_length_str)
                     post_data = self.rfile.read(content_length)
+                    _LOGGER.debug("Token listener received POST body: %s", post_data.decode('utf-8', errors='ignore'))
                     data = json.loads(post_data.decode('utf-8'))
                     token = data.get('DeviceToken')
 
@@ -134,6 +167,9 @@ class SamsungTokenAcquirer8888:
                 requests.packages.urllib3.exceptions.InsecureRequestWarning
             )
             
+            # LOG: Log the outgoing request details for debugging.
+            _LOGGER.debug("Sending pairing request to URL: %s, Headers: %s, Payload: %s", url, headers, payload)
+
             # FIX: Correctly wrap the blocking call for async_add_executor_job
             func = partial(
                 session.post,
@@ -142,9 +178,12 @@ class SamsungTokenAcquirer8888:
                 json=payload,
                 cert=self._cert_path,
                 verify=False,
-                timeout=15,
+                timeout=30,  # FIX: Increase timeout from 15 to 30 seconds for the handshake.
             )
             response = await self._hass.async_add_executor_job(func)
+
+            # LOG: Log the response from the AC.
+            _LOGGER.debug("AC responded to pairing request with status %s and body: %s", response.status_code, response.text)
 
             if response.status_code != 200:
                 raise TokenAcquisitionError(

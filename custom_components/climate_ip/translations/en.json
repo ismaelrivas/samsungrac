@@ -36,6 +36,7 @@
         "description": "Enter your air conditioner's information. If you already have the token, you can enter it to skip pairing. Otherwise, leave it blank.",
         "data": {
           "ip_address": "IP Address",
+          "mac": "MAC Address (Optional)",
           "port": "Port",
           "name": "Name (Optional)",
           "cert": "Certificate (Optional)",
@@ -47,6 +48,7 @@
         "description": "Enter your MIM-H03 controller's information. If you already have the token, you can enter it to skip pairing. Otherwise, leave it blank.",
         "data": {
           "ip_address": "IP Address",
+          "mac": "MAC Address (Optional)",
           "port": "Port",
           "name": "Name (Optional)",
           "cert": "Certificate (Optional)",
