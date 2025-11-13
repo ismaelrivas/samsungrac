@@ -165,7 +165,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
                     _LOGGER.debug("%s Skipping redundant command for corrected property '%s'", self.log_prefix, prop)
                     continue
 
-                # Ensure HVACMode enums are converted to string values.
+                # Ensure HVACMode enums are converted to string values for the command.
                 if isinstance(val, HVACMode):
                     val = val.value
 
@@ -174,6 +174,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
 
             if success:
                 if not self.is_push_device:
+                    _LOGGER.debug("%s Command successful, waiting 2.5s for device to update before refreshing state", self.log_prefix)
+                    await asyncio.sleep(2.5)
                     await self.async_refresh()
             else:
                 _LOGGER.warning("%s Not all properties were set successfully", self.log_prefix)

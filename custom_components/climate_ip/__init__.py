@@ -76,6 +76,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                 continue
 
             coordinator = SamsungClimateCoordinator(hass, controller, entry)
+            # Wait for the first refresh to complete before setting up platforms.
+            # This ensures that the initial state is available for sensor validation.
             await coordinator.async_config_entry_first_refresh()
             coordinators[device_id] = coordinator
         
@@ -95,6 +97,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             return False
 
         coordinator = SamsungClimateCoordinator(hass, controller, entry)
+        # Wait for the first refresh to complete before setting up platforms.
+        # This ensures that the initial state is available for sensor validation.
         await coordinator.async_config_entry_first_refresh()
         hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 

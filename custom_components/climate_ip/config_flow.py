@@ -51,7 +51,7 @@ from .token_acquirer import (
     SamsungTokenAcquirer,
     TokenAcquisitionError,
 )
-# Importar el nuevo adquisidor de tokens
+# Import the new token acquirer
 from .token_acquirer_8888 import SamsungTokenAcquirer8888
 from .exceptions import CannotConnect, CertNotFound
 

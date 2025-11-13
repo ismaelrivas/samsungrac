@@ -66,8 +66,8 @@ class SamsungHTTPAdapter(HTTPAdapter):
 def _mask_request_params(params: dict, log_prefix: str) -> dict:
     """Return a copy of request params with sensitive data masked for logging."""
     masked_params = copy.deepcopy(params)
-    
-    # Lista de claves sensibles a enmascarar
+
+    # List of sensitive keys to mask
     SENSITIVE_KEYS = ["token", "DeviceToken", "Authorization", "mac", "unique_id", "uuid", "DUID"]
 
     # 1. Enmascarar cabeceras
@@ -209,14 +209,14 @@ class ConnectionRequestBase(Connection):
                         )
                         
                         if not resp.text or not resp.text.strip():
-                            _LOGGER.debug("%s Response was empty, returning empty JSON object.", self.log_prefix)
-                            return ({}, True, resp.status_code)
+                            _LOGGER.debug("%s Response was empty, returning None to trigger a poll.", self.log_prefix)
+                            return (None, True, resp.status_code)
 
                         try:
                             return (resp.json(), True, resp.status_code)
                         except (requests.exceptions.JSONDecodeError, json.JSONDecodeError):
-                            _LOGGER.warning("%s JSON decode failed for response: %s", self.log_prefix, resp.text)
-                            return ({}, True, resp.status_code)
+                            _LOGGER.warning("%s JSON decode failed for response: %s. Returning None to trigger poll.", self.log_prefix, resp.text)
+                            return (None, True, resp.status_code)
 
                 except (json.JSONDecodeError, requests.exceptions.JSONDecodeError) as e:
                     _LOGGER.warning("%s Parsing response json failed! Not retrying. Error: %s", self.log_prefix, e)
@@ -286,6 +286,13 @@ class ConnectionRequestBase(Connection):
                 None, self.execute_internal, template, value, device_state, device_id
             )
             # The retry logic for server errors (5xx) is now inside execute_internal
+
+            # If the command was successful but returned no data, it means we need to
+            # poll to get the updated state.
+            if j is None and self._controller and hasattr(self._controller, 'async_request_refresh'):
+                _LOGGER.debug("%s Command returned no data, requesting an immediate refresh.", self.log_prefix)
+                await self._controller.async_request_refresh()
+                return {} # Return empty dict as the refresh will update the state.
             return j
         except Exception as e:
             raise e

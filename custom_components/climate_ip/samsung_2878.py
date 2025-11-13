@@ -429,11 +429,6 @@ class ConnectionSamsung2878(Connection):
             try:
                 data = xmltodict.parse(full_doc)
 
-                # If the response is just a 'DeviceControl Okay' confirmation without state data, ignore it.
-                if 'Response' in data and data['Response'].get('@Type') == 'DeviceControl' and data['Response'].get('@Status') == 'Okay' and 'DeviceState' not in data['Response']:
-                    _LOGGER.debug("%s Ignoring 'DeviceControl Okay' confirmation", self.log_prefix)
-                    continue
-                
                 if "Response" in data:
                     is_response = True
                     device_data = data['Response'].get('DeviceState', {}).get('Device')
@@ -555,12 +550,22 @@ class ConnectionSamsung2878(Connection):
                         if parsed_data:
                             self._device_status.update(parsed_data)
                         
-                        # A command is considered complete if we receive a direct response OR a state update (push)
-                        # that contains data. This prevents a deadlock if the device responds with an 'Update'
-                        # instead of a 'Response' to a command.
-                        if (is_response or is_update) and parsed_data and self._pending_future and not self._pending_future.done():
-                            _LOGGER.debug("%s Response/Update received, resolving pending command future", self.log_prefix)
+                        # --- Command Resolution Logic ---
+                        # A command is considered complete if we receive:
+                        # 1. A direct 'DeviceControl Okay' response.
+                        # 2. Any other response or update that contains actual state data.
+                        # This prevents a deadlock if the device only sends a simple 'Okay'.
+                        
+                        is_control_okay = is_response and not parsed_data and "DeviceControl" in xml_data and "Status=\"Okay\"" in xml_data
+
+                        if (is_control_okay or parsed_data) and self._pending_future and not self._pending_future.done():
+                            if is_control_okay:
+                                _LOGGER.debug("%s 'DeviceControl Okay' received, resolving pending command future", self.log_prefix)
+                            else:
+                                _LOGGER.debug("%s Response/Update with data received, resolving pending command future", self.log_prefix)
+                            
                             try:
+                                # Resolve the future to signal the command was acknowledged.
                                 self._pending_future.set_result(True)
                                 self._pending_future = None # Clear the future immediately after resolving
                             except asyncio.InvalidStateError:

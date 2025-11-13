@@ -360,9 +360,10 @@ class YamlController(ClimateController):
         if not self._is_fully_initialized:
             return
 
-        current_hass_state = self.coordinator.data
+        # FIX: Check if coordinator exists before accessing its data.
+        current_hass_state = self.coordinator.data if self.coordinator else None
         if not current_hass_state:
-                _LOGGER.debug("%s Coordinator data is not available (normal on first poll)", self.log_prefix)
+            _LOGGER.debug("%s Coordinator data is not available (normal during setup or first poll)", self.log_prefix)
 
         if full_device_state is None:
             _LOGGER.debug("%s [UpdateProps] No state provided, rebuilding from HASS for merge", self.log_prefix)
@@ -428,7 +429,7 @@ class YamlController(ClimateController):
             if hasattr(op, 'values') and op.value is not None and op.value != STATE_UNKNOWN:
                 if op.value not in op.values:
                     new_value = op.values[0] if op.values else STATE_UNKNOWN
-                    _LOGGER.warning(
+                    _LOGGER.info(
                         "%s State auto-correction for '%s'. Value '%s' is no longer valid in %s. Setting to '%s'. Triggering UI flicker",
                         self.log_prefix, op.name, op.value, op.values, new_value,
                     )
