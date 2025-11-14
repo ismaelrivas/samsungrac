@@ -179,9 +179,12 @@ class ConnectionSamsung2878(Connection):
             # Wait for the command to be processed
             await asyncio.wait_for(future, timeout=COMMAND_TIMEOUT)
             _LOGGER.debug("%s Post-reconnection status request processed", self.log_prefix)
-
+ 
         except asyncio.TimeoutError:
             _LOGGER.warning("%s Post-reconnection status request timed out", self.log_prefix)
+            # Add this check to unblock the queue
+            if self._pending_future and self._pending_future == future:
+                self._pending_future = None
         except Exception as e:
             _LOGGER.error("%s Failed to queue post-reconnection status request: %s", self.log_prefix, e)
 
@@ -346,6 +349,7 @@ class ConnectionSamsung2878(Connection):
         self._reconnect_delay = INITIAL_RECONNECT_DELAY
         self._reconnect_retries = 0
         self._is_ready.set()  # Signal that we are ready for commands
+        _LOGGER.debug("%s Connection is ready, _is_ready event set.", self.log_prefix)
         
         # Stateful logging: Log when connection is re-established
         if not self._is_available:
@@ -494,6 +498,7 @@ class ConnectionSamsung2878(Connection):
                         # If the handshake fails with a connection error, it returns False
                         # We must handle this case to prevent falling through and causing an AttributeError
                         if not await self._establish_connection_and_handshake():
+                            _LOGGER.debug("%s Handshake returned False. Proceeding to retry logic.", self.log_prefix)
                             # This mimics the logic in the exception handler below.
                             self._reconnect_retries += 1
                             _LOGGER.warning("%s Connection failed. Retrying in %s seconds...", self.log_prefix, self._reconnect_delay)
@@ -530,6 +535,9 @@ class ConnectionSamsung2878(Connection):
                 if queue_task and queue_task in done:
                     command, future = queue_task.result()
                     self._pending_future = future
+                    # Store the command string on the future for debugging/logic purposes
+                    self._pending_future._command_debug = command
+
                     try:
                         await self._write_data(command)
                         # Wait for the response to be processed before resolving the future
@@ -568,15 +576,27 @@ class ConnectionSamsung2878(Connection):
                         # 1. A direct 'DeviceControl Okay' response
                         # 2. Any other response or update that contains actual state data
                         # This prevents a deadlock if the device only sends a simple 'Okay'.
-                        
-                        is_control_okay = is_response and not parsed_data and "DeviceControl" in xml_data and "Status=\"Okay\"" in xml_data
 
-                        if (is_control_okay or parsed_data) and self._pending_future and not self._pending_future.done():
+                        is_control_okay = is_response and not parsed_data and "DeviceControl" in xml_data and "Status=\"Okay\"" in xml_data
+                        is_polling_response = is_response and "DeviceState" in xml_data
+
+                        # Initialize should_resolve to False to prevent UnboundLocalError
+                        should_resolve = False
+
+                        # A pending command exists. Let's see if this message resolves it.
+                        if self._pending_future and not self._pending_future.done():
+                            # If the pending command was a poll, only a DeviceState response can resolve it.
+                            # If it was a control command, any data update or a specific 'Okay' can resolve it.
+                            is_poll_command = "DeviceState" in self._pending_future._command_debug
+                            
+                            should_resolve = (is_poll_command and is_polling_response) or \
+                                             (not is_poll_command and (is_control_okay or parsed_data))
+
+                        if should_resolve:
                             if is_control_okay:
                                 _LOGGER.debug("%s 'DeviceControl Okay' received, resolving pending command future", self.log_prefix)
                             else:
                                 _LOGGER.debug("%s Response/Update with data received, resolving pending command future", self.log_prefix)
-                            
                             try:
                                 # Resolve the future to signal the command was acknowledged
                                 self._pending_future.set_result(True)
@@ -629,6 +649,18 @@ class ConnectionSamsung2878(Connection):
                 _LOGGER.debug("%s Command executed successfully", self.log_prefix)
             except asyncio.TimeoutError as e:
                 _LOGGER.warning("%s Command timed out: %s", self.log_prefix, command.strip().replace('\n', ''))
+
+                # CRITICAL: If the command times out, we MUST clear the pending_future
+                # so the manager can accept new commands.
+                if self._pending_future and self._pending_future == future:
+                    _LOGGER.debug("%s Command timed out. Clearing pending future to unblock manager.", self.log_prefix)
+                    self._pending_future = None
+
+                # The logic to close the connection only on polls is correct.
+                if is_polling_request:
+                    _LOGGER.debug("%s Polling command timed out. Forcing connection close.", self.log_prefix)
+                    asyncio.create_task(self._close_connection())
+                
                 raise CannotConnect("Command timed out") from e
             except Exception as e:
                 _LOGGER.error("%s Command failed with exception: %s", self.log_prefix, e)
