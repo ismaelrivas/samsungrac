@@ -141,19 +141,21 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         super().__init__(coordinator)
         self._config = config
         self._main_unique_id = main_unique_id or coordinator.unique_id
-        
+
         if device_info:
-            # For multi-device entries, use the name of the specific indoor unit.
+            # This is a sub-device (e.g., an indoor unit of a MIM-H03).
+            # Its unique_id is the UUID provided for it.
             self._name = device_info.get("name")
             self._attr_unique_id = device_info.get("uuid") or f"{self._main_unique_id}_{device_info.get('id')}"
         else:
-            # For single-device entries, create a default name if none is provided.
+            # This is a single-device entry (e.g., a standalone AC).
+            # The entity's unique_id is the same as the coordinator's unique_id (usually the MAC address).
             self._attr_unique_id = self.coordinator.unique_id
             user_defined_name = self._config.get(CONF_NAME)
             if user_defined_name:
                 self._name = user_defined_name
             else:
-                # Fallback to a generated name based on the device's unique ID.
+                # Fallback to a generated name based on the device's unique ID if no name was provided by the user.
                 self._name = f"Samsung AC {self.coordinator.unique_id}"
 
         # Check for settable properties (operations) to determine supported features.

@@ -27,10 +27,9 @@ from homeassistant.components.climate import ClimateEntityFeature
 from .exceptions import CannotConnect, AuthError
 from .state import ClimateIPDeviceState
 
+from .const import CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL
+
 _LOGGER = logging.getLogger(__name__)
-
-NORMAL_POLL_INTERVAL = timedelta(seconds=60)
-
 
 class SamsungClimateCoordinator(DataUpdateCoordinator):
     """Manages data fetching for Samsung Climate devices."""
@@ -44,13 +43,27 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
         # Give the controller a reference back to this coordinator.
         self.controller.coordinator = self
 
+        # Determine the update interval from the config entry's options,
+        # falling back to the entry's data, and finally to the default.
+        poll_interval_seconds = entry.options.get(
+            CONF_POLL_INTERVAL, entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
+        )
+        update_interval = timedelta(seconds=poll_interval_seconds) if controller.poll else None
+
+        _LOGGER.debug("%s Initializing coordinator with update interval: %s", self.log_prefix, update_interval)
+
         super().__init__(
             hass,
             _LOGGER,
             name=f"Samsung Climate {self.log_prefix}",
-            update_interval=NORMAL_POLL_INTERVAL if controller.poll else None,
+            update_interval=update_interval,
             always_update=True,
         )
+
+        # Start the connection listener if it's a push-based device
+        if self.is_push_device:
+            _LOGGER.debug("%s Device is push-based, starting connection listener.", self.log_prefix)
+            self.controller.connection.start_listening()
 
     def register_entity(self, entity):
         """Register the climate entity instance."""
@@ -178,7 +191,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
                     await asyncio.sleep(2.5)
                     await self.async_refresh()
             else:
-                _LOGGER.warning("%s Not all properties were set successfully", self.log_prefix)
+                _LOGGER.debug("%s Not all properties were set successfully", self.log_prefix)
         except Exception as err:
             _LOGGER.error(
                 "%s Error setting properties: %s", self.log_prefix, err, exc_info=True

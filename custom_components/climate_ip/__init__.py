@@ -39,6 +39,12 @@ def _mask_sensitive_data(data: dict) -> dict:
             
     return masked_data
 
+async def async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Handle options update."""
+    # This is called when the user changes options in the UI.
+    _LOGGER.debug("Configuration options updated, reloading climate_ip integration for entry %s", entry.entry_id)
+    await hass.config_entries.async_reload(entry.entry_id)
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Set up Samsung Climate IP from a config entry."""
 
@@ -103,6 +109,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Add listener for options changes.
+    entry.async_on_unload(entry.add_update_listener(async_update_listener))
 
     return True
 

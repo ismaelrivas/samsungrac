@@ -1,6 +1,7 @@
 import aiofiles
 import asyncio
 from homeassistant.components.climate import ClimateEntityFeature, HVACMode, ATTR_HVAC_MODE
+import copy
 import re
 import json
 import logging
@@ -57,6 +58,9 @@ _LOGGER = logging.getLogger(__name__)
 CONST_CONTROLLER_TYPE = "yaml"
 CONST_MAX_GET_STATUS_RETRIES = 4
 
+# Cache a nivel de clase para almacenar el contenido crudo de los archivos YAML.
+_YAML_FILE_CACHE: Dict[str, str] = {}
+
 def _get_value_by_path(data: dict, path: list) -> Any:
     """
     Navigate through a nested dictionary using a list of keys.
@@ -107,6 +111,9 @@ class YamlController(ClimateController):
         self._properties = {}
         self._properties_list = []
 
+        # Optimization: Cache for device keys extracted from templates.
+        self._prop_template_key_cache: Dict[str, Optional[str]] = {}
+
         # --- ADD SENSOR STORAGE ---
         self._sensors: Dict[str, "DeviceProperty"] = {}
         self._sensors_list: List[str] = []
@@ -120,6 +127,9 @@ class YamlController(ClimateController):
         self._last_device_state = None
         
         self._raw_yaml_config = None
+        # Context-aware cache for parsed YAML. Keyed by device_id.
+        self._parsed_yaml_cache: Dict[Optional[str], Dict] = {}
+
         self.coordinator = None # Reference to the coordinator
         self._is_fully_initialized = False
         # Flag to signal that the fan modes list has changed and a UI flicker is needed.
@@ -128,6 +138,9 @@ class YamlController(ClimateController):
         self._last_state_fetch_time = 0
         self._cached_device_state = None
         self.discovered_devices = None
+        # Pre-compile regex for performance. This is safe and state-independent.
+        self._device_state_key_regex = re.compile(r"device_state[\[\.](['\"]?)([A-Za-z0-9_]+)\1")
+
         self._poll = None
 
     @property
@@ -154,14 +167,22 @@ class YamlController(ClimateController):
         """
         if self._is_fully_initialized or not self._raw_yaml_config:
             return
-
+    
         _LOGGER.debug("%s Finishing initialization with discovered device_id: %s", self.log_prefix, self._device_id)
         
-        final_yaml_str = StreamWrapper(
-            self._raw_yaml_config, self._token, self._ip_address, self._device_id
-        )
-        yaml_device = yaml.safe_load(final_yaml_str)
-        ac = yaml_device.get(CONFIG_DEVICE, {})
+        # Use the context-aware cache
+        if self._device_id in self._parsed_yaml_cache:
+            _LOGGER.debug("%s Using cached YAML for device_id: %s", self.log_prefix, self._device_id)
+            yaml_device = self._parsed_yaml_cache[self._device_id]
+        else:
+            _LOGGER.debug("%s Parsing and caching YAML for device_id: %s", self.log_prefix, self._device_id)
+            final_yaml_str = StreamWrapper(
+                self._raw_yaml_config, self._token, self._ip_address, self._device_id
+            )
+            yaml_device = yaml.safe_load(final_yaml_str)
+            self._parsed_yaml_cache[self._device_id] = yaml_device
+
+        ac = yaml_device.get(CONFIG_DEVICE, {}) if yaml_device else {}
 
         nodes = ac.get(CONFIG_DEVICE_OPERATIONS, {})
         for op_key in nodes.keys():
@@ -211,24 +232,31 @@ class YamlController(ClimateController):
             _LOGGER.error("%s No configuration file specified. Aborting initialization.", self.log_prefix)
             return False
 
-        try:
-            async with aiofiles.open(file, "r", encoding="utf-8") as stream:
-                self._raw_yaml_config = await stream.read()
-                
-                partial_render_str = StreamWrapper(
-                    self._raw_yaml_config, self._token, self._ip_address, self._device_id
-                )
-                yaml_device = yaml.safe_load(partial_render_str)
+        # --- INICIO: Lógica de cacheo de YAML mejorada ---
+        if file in _YAML_FILE_CACHE:
+            _LOGGER.debug("%s Usando contenido de archivo YAML cacheado para: %s", self.log_prefix, file)
+            self._raw_yaml_config = _YAML_FILE_CACHE[file]
+        else:
+            try:
+                async with aiofiles.open(file, "r", encoding="utf-8") as stream:
+                    self._raw_yaml_config = await stream.read()
+                    _YAML_FILE_CACHE[file] = self._raw_yaml_config
+                    _LOGGER.debug("%s Archivo YAML cargado y cacheado: %s", self.log_prefix, file)
+            except Exception as exc:
+                _LOGGER.error("%s Error cargando configuración YAML %s: %s", self.log_prefix, file, exc)
+                return False
+        # --- FIN: Lógica de cacheo de YAML mejorada ---
 
-        except Exception as exc:
-            _LOGGER.error("%s Error loading YAML configuration %s: %s", self.log_prefix, file, exc)
-            return False
+        # El parseo inicial usa el device_id actual (que puede ser None) como clave de cache.
+        partial_render_str = StreamWrapper(self._raw_yaml_config, self._token, self._ip_address, self._device_id)
+        yaml_device = yaml.safe_load(partial_render_str)
+        self._parsed_yaml_cache[self._device_id] = yaml_device
 
         if CONFIG_DEVICE not in yaml_device:
             _LOGGER.error("%s Configuration file '%s' is missing the 'device' root key", self.log_prefix, file)
             return False
 
-        ac = yaml_device.get(CONFIG_DEVICE, {})
+        ac = yaml_device.get(CONFIG_DEVICE, {}) if yaml_device else {}
         
         connection_node = ac.get(CONFIG_DEVICE_CONNECTION, {})
         self._connection = await create_connection(connection_node, self._config, _LOGGER)
@@ -299,8 +327,8 @@ class YamlController(ClimateController):
         if not self._is_fully_initialized:
             try:
                 device_type = self._config.get(CONF_DEVICE_TYPE)
-                yaml_conf = yaml.safe_load(self._raw_yaml_config)
-                id_map = yaml_conf.get(CONFIG_DEVICE, {}).get("identifiers")
+                # Use the cached YAML for the current context (device_id is likely None here)
+                id_map = self._parsed_yaml_cache.get(self._device_id, {}).get(CONFIG_DEVICE, {}).get("identifiers")
 
                 if id_map:
                     _LOGGER.debug("%s 'identifiers' map found, running discovery", self.log_prefix)
@@ -382,8 +410,8 @@ class YamlController(ClimateController):
         
         # --- START: Sub-device selection logic ---
         try:
-            yaml_conf = yaml.safe_load(self._raw_yaml_config)
-            id_map = yaml_conf.get(CONFIG_DEVICE, {}).get("identifiers")
+            # Use the cached YAML for the current context
+            id_map = self._parsed_yaml_cache.get(self._device_id, {}).get(CONFIG_DEVICE, {}).get("identifiers")
             
             if id_map:
                 _LOGGER.debug("%s 'identifiers' map found. Searching in path: %s", self.log_prefix, id_map.get("path_to_devices", []))
@@ -467,8 +495,8 @@ class YamlController(ClimateController):
             _LOGGER.warning("%s [HASS->DEV] No previous real device state available to use as a template", self.log_prefix)
             return {}
 
-        reconstructed_state = json.loads(json.dumps(last_real_state))
-        _LOGGER.debug("%s [HASS->DEV] Rebuilding from real state template", self.log_prefix)
+        reconstructed_state = copy.deepcopy(last_real_state)
+        _LOGGER.debug("%s [HASS->DEV] Rebuilding from real state template (deepcopied)", self.log_prefix)
 
         all_props = list(self._operations.values()) + list(self._properties.values())
 
@@ -478,14 +506,10 @@ class YamlController(ClimateController):
                 op._value = hass_value
                 
                 device_value = op.convert_hass_to_dev(hass_value)
-                
-                template_str = ""
-                if op.status_template and hasattr(op.status_template, 'template'):
-                    template_str = op.status_template.template
-                
-                match = re.search(r"device_state[\[\.](['\"]?)([A-Z0-9_]+)\1", template_str)
-                if match:
-                    device_key = match.group(2)
+
+                # Optimization: Use cached device key from template
+                device_key = self._get_cached_device_key_from_prop(op)
+                if device_key:
                     if device_key in reconstructed_state:
                         reconstructed_state[device_key] = device_value
         
@@ -507,8 +531,8 @@ class YamlController(ClimateController):
             _LOGGER.warning("%s [PROP->DEV] No previous real device state available to use as a template", self.log_prefix)
             return {}
 
-        reconstructed_state = json.loads(json.dumps(last_real_state))
-        _LOGGER.debug("%s [PROP->DEV] Rebuilding from real state template", self.log_prefix)
+        reconstructed_state = copy.deepcopy(last_real_state)
+        _LOGGER.debug("%s [PROP->DEV] Rebuilding from real state template (deepcopied)", self.log_prefix)
 
         all_props = list(self._operations.values()) + list(self._properties.values())
 
@@ -550,6 +574,21 @@ class YamlController(ClimateController):
         self._state_getter._value = base_state
         await self.async_update_properties_from_state(base_state)
 
+    def _get_cached_device_key_from_prop(self, prop: Any) -> Optional[str]:
+        """
+        Gets the device state key from a property's template, using a cache
+        to avoid repeated regex searches on the same template string.
+        """
+        prop_id = prop.id
+        if prop_id in self._prop_template_key_cache:
+            return self._prop_template_key_cache[prop_id]
+
+        # Key not in cache, so we calculate and store it.
+        key = self._get_device_key_from_template(prop.status_template)
+        self._prop_template_key_cache[prop_id] = key
+        _LOGGER.debug("%s [Cache] Stored template key for '%s': %s", self.log_prefix, prop_id, key)
+        return key
+
     def _get_device_key_from_template(self, template_obj: Any) -> Optional[str]:
         """
         Extracts the *primary* device state key (e.g., 'AC_FUN_OPMODE') 
@@ -569,7 +608,7 @@ class YamlController(ClimateController):
             _LOGGER.debug("%s [Regex] Could not get template text from object: %s", self.log_prefix, template_obj)
             return None
 
-        match = re.search(r"device_state[\[\.](['\"]?)([A-Za-z0-9_]+)\1", template_string)
+        match = self._device_state_key_regex.search(template_string)
         if match:
             return match.group(2)
             
@@ -628,12 +667,9 @@ class YamlController(ClimateController):
         try:
             device_value = prop_to_change.convert_hass_to_dev(new_value)
             
-            device_key = None
-            template_str = ""
-            if prop_to_change.status_template and hasattr(prop_to_change.status_template, 'template'):
-                template_str = prop_to_change.status_template.template
-            
-            match = re.search(r"device_state[\[\.](['\"]?)([A-Z0-9_]+)\1", template_str)
+            # Optimization: Use cached device key from template
+            device_key = self._get_cached_device_key_from_prop(prop_to_change)
+            match = bool(device_key) # Simulate match for logic below
             
             if match:
                 device_key = match.group(2)
@@ -644,7 +680,7 @@ class YamlController(ClimateController):
                     _LOGGER.warning("%s [Predict] Auto-key '%s' found for '%s', but key not in state. Fallback", self.log_prefix, device_key, property_name)
                     device_key = None
             else:
-                 _LOGGER.debug("%s [Predict] Auto-key failed for '%s' (template complex?). Using manual logic", self.log_prefix, property_name)
+                _LOGGER.debug("%s [Predict] Auto-key failed for '%s' (template complex?). Using manual logic", self.log_prefix, property_name)
 
             if device_key is None:
                 if property_name == ATTR_TEMPERATURE:
