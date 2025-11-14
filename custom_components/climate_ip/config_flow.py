@@ -11,6 +11,9 @@ import voluptuous as vol
 from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
+    NumberSelector,
+    NumberSelectorMode,
+    NumberSelectorConfig,
     SelectSelectorMode,
 )
 import homeassistant.helpers.config_validation as cv
@@ -29,6 +32,10 @@ from homeassistant.exceptions import HomeAssistantError
 from .const import (
     CONF_NAME,
     CONF_CERT,
+    CONF_POLL_INTERVAL,
+    DEFAULT_POLL_INTERVAL,
+    MIN_POLL_INTERVAL,
+    MAX_POLL_INTERVAL,
     CONF_CONFIG_FILE,
     CONF_DEVICE_ID,
     CONF_DEVICES,
@@ -46,14 +53,10 @@ from .const import (
     DEVICE_TYPE_TO_CONFIG_FILE,
 )
 from .controller_yaml import YamlController
-from .token_acquirer import (
-    AuthTurnedOffError,
-    SamsungTokenAcquirer,
-    TokenAcquisitionError,
-)
+from .token_acquirer import SamsungTokenAcquirer
 # Import the new token acquirer
 from .token_acquirer_8888 import SamsungTokenAcquirer8888
-from .exceptions import CannotConnect, CertNotFound
+from .exceptions import CannotConnect, CertNotFound, TokenAcquisitionError, AuthTurnedOffError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -119,9 +122,14 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Safe wrapper for the initiate_pairing phase to prevent exceptions from escaping."""
         _LOGGER.debug("Executing safe wrapper: _initiate_pairing_safe")
         try:
-            await self.acquirer.async_initiate_pairing()
-            _LOGGER.debug("_initiate_pairing_safe successful.")
-            return {"ok": True}
+            # This now returns the path of the certificate that worked
+            successful_cert = await self.acquirer.async_initiate_pairing()
+            _LOGGER.debug("_initiate_pairing_safe successful with cert: %s", successful_cert)
+            # Return the successful certificate path to the config flow
+            return {"ok": True, "cert": successful_cert}
+        except CannotConnect:
+            _LOGGER.warning("Cannot connect to the device during pairing initiation.")
+            return {"ok": False, "error": "cannot_connect"}
         except Exception as e:
             _LOGGER.error("Error during pairing initiation: %s", e, exc_info=True)
             return {"ok": False, "error": "pairing_init_failed"}
@@ -203,6 +211,16 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(CONF_NAME, default=self.flow_data.get(CONF_NAME, "")): str,
             vol.Optional(CONF_TOKEN, default=self.flow_data.get(CONF_TOKEN, "")): str,
             vol.Optional(CONF_CERT, default=self.flow_data.get(CONF_CERT, "")): str,
+            vol.Optional(
+                CONF_POLL_INTERVAL, default=self.flow_data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=MIN_POLL_INTERVAL,
+                    max=MAX_POLL_INTERVAL,
+                    unit_of_measurement="seconds",
+                    mode=NumberSelectorMode.BOX,
+                )
+            ),
         })
         return vol.Schema(schema_dict)
 
@@ -256,10 +274,27 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if self.flow_data.get(CONF_TOKEN):
                 return await self._create_entry()
 
-            self.acquirer = SamsungTokenAcquirer(
-                self.hass, self.flow_data[CONF_IP_ADDRESS], self.flow_data.get(CONF_CERT)
-            )
-            return self.async_show_progress_done(next_step_id="initiate_pairing")
+            # Validate certificate existence without modifying the stored value.
+            user_cert_path = self.flow_data.get(CONF_CERT) or ""
+            if user_cert_path:
+                # Determine the path to check for existence.
+                path_to_check = user_cert_path
+                if not os.path.dirname(user_cert_path):
+                    _LOGGER.debug("Certificate path has no directory, checking inside integration folder.")
+                    path_to_check = os.path.join(os.path.dirname(__file__), user_cert_path)
+
+                if not await self.hass.async_add_executor_job(os.path.exists, path_to_check):
+                    _LOGGER.error("Certificate file not found at path: %s", path_to_check)
+                    errors["base"] = "cert_not_found"
+                    return self.async_show_form(
+                        step_id="samsung_2878",
+                        data_schema=self._get_samsung_2878_schema(),
+                        errors=errors,
+                    )
+
+            # Pass the original, unmodified path to the acquirer.
+            self.acquirer = SamsungTokenAcquirer(self.hass, self.flow_data[CONF_IP_ADDRESS], user_cert_path)
+            return await self.async_step_initiate_pairing()
 
         return self.async_show_form(
             step_id="samsung_2878",
@@ -284,6 +319,16 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(CONF_NAME, default=self.flow_data.get(CONF_NAME, "")): str,
             vol.Optional(CONF_TOKEN, default=""): str,
             vol.Optional(CONF_CERT, default="ac14k_m.pem"): str,
+            vol.Optional(
+                CONF_POLL_INTERVAL, default=self.flow_data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=MIN_POLL_INTERVAL,
+                    max=MAX_POLL_INTERVAL,
+                    unit_of_measurement="seconds",
+                    mode=NumberSelectorMode.BOX,
+                )
+            ),
         })
         return vol.Schema(schema_dict)
 
@@ -325,19 +370,24 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if self.flow_data.get(CONF_TOKEN):
                 return await self._create_entry()
 
-            cert_path = self.flow_data.get(CONF_CERT)
-            
-            if not cert_path:
-                cert_path = os.path.join(os.path.dirname(__file__), 'ac14k_m.pem')
-            elif not os.path.isabs(cert_path):
-                cert_path = os.path.join(os.path.dirname(__file__), cert_path)
-            
-            if not await self.hass.async_add_executor_job(os.path.exists, cert_path):
+            # Validate certificate existence without modifying the stored value.
+            user_cert_path = self.flow_data.get(CONF_CERT) or ""
+            if not user_cert_path:
+                # If user left it blank, default to ac14k_m.pem for validation.
+                user_cert_path = 'ac14k_m.pem'
+
+            path_to_check = user_cert_path
+            if not os.path.dirname(user_cert_path):
+                _LOGGER.debug("Certificate path has no directory, checking inside integration folder.")
+                path_to_check = os.path.join(os.path.dirname(__file__), user_cert_path)
+
+            if not await self.hass.async_add_executor_job(os.path.exists, path_to_check):
                 errors["base"] = "cert_not_found"
             else:
-                self.flow_data[CONF_CERT] = cert_path
+                # Pass the original, unmodified path to the acquirer.
+                # Note: self.flow_data[CONF_CERT] still holds the original user input.
                 self.acquirer = SamsungTokenAcquirer8888(
-                    self.hass, self.flow_data[CONF_IP_ADDRESS], cert_path
+                    self.hass, self.flow_data[CONF_IP_ADDRESS], self.flow_data.get(CONF_CERT) or 'ac14k_m.pem'
                 )
                 return await self.async_step_initiate_pairing()
 
@@ -385,18 +435,22 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if self.flow_data.get(CONF_TOKEN):
                 return await self._create_entry()
 
-            cert_path = self.flow_data.get(CONF_CERT)
-            if not cert_path:
-                cert_path = os.path.join(os.path.dirname(__file__), 'ac14k_m.pem')
-            elif not os.path.isabs(cert_path):
-                cert_path = os.path.join(os.path.dirname(__file__), cert_path)
-            
-            if not await self.hass.async_add_executor_job(os.path.exists, cert_path):
+            # Validate certificate existence without modifying the stored value.
+            user_cert_path = self.flow_data.get(CONF_CERT) or ""
+            if not user_cert_path:
+                user_cert_path = 'ac14k_m.pem'
+
+            path_to_check = user_cert_path
+            if not os.path.dirname(user_cert_path):
+                _LOGGER.debug("Certificate path has no directory, checking inside integration folder.")
+                path_to_check = os.path.join(os.path.dirname(__file__), user_cert_path)
+
+            if not await self.hass.async_add_executor_job(os.path.exists, path_to_check):
                 errors["base"] = "cert_not_found"
             else:
-                self.flow_data[CONF_CERT] = cert_path
+                # Pass the original, unmodified path to the acquirer.
                 self.acquirer = SamsungTokenAcquirer8888(
-                    self.hass, self.flow_data[CONF_IP_ADDRESS], cert_path
+                    self.hass, self.flow_data[CONF_IP_ADDRESS], self.flow_data.get(CONF_CERT) or 'ac14k_m.pem'
                 )
                 return await self.async_step_initiate_pairing()
 
@@ -422,6 +476,16 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         
         schema[vol.Required(CONF_TOKEN)] = str
         schema[vol.Optional(CONF_NAME)] = str
+        schema[vol.Optional(
+            CONF_POLL_INTERVAL, default=self.flow_data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
+        )] = NumberSelector(
+            NumberSelectorConfig(
+                min=MIN_POLL_INTERVAL,
+                max=MAX_POLL_INTERVAL,
+                unit_of_measurement="seconds",
+                mode=NumberSelectorMode.BOX,
+            )
+        )
         
         return vol.Schema(schema)
 
@@ -469,6 +533,11 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.task = None
             if result["ok"]:
                 _LOGGER.debug("Pairing initiation successful, advancing to await_button.")
+                # Save the successful certificate path to the flow data to be persisted later
+                successful_cert = result.get("cert")
+                if successful_cert:
+                    self.flow_data[CONF_CERT] = successful_cert
+                    _LOGGER.info("Successfully found working certificate, will save: %s", successful_cert)
                 return self.async_show_progress_done(next_step_id="await_button")
             
             self.flow_data["error_key"] = result["error"]
@@ -704,6 +773,10 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handles the display of errors after a progress step fails."""
         error_key = self.flow_data.pop("error_key", "unknown_error")
         errors = {"base": error_key}
+
+        # Reset the task so the user can try again.
+        self.task = None
+
         _LOGGER.debug("Displaying form with error: %s", error_key)
 
         device_type = self.flow_data.get(CONF_DEVICE_TYPE)
@@ -785,3 +858,40 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         _LOGGER.debug("Final data for config entry: %s", self.flow_data)
 
         return self.async_create_entry(title=title, data=self.flow_data)
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> config_entries.OptionsFlow:
+        """Get the options flow for this handler."""
+        return OptionsFlowHandler(config_entry)
+
+
+class OptionsFlowHandler(config_entries.OptionsFlow):
+    """Handle an options flow for climate_ip."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        """Initialize options flow."""
+        self.config_entry = config_entry
+
+    async def async_step_init(
+        self, user_input: Dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Manage the options."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        # Get the current value from options, falling back to data, then to default.
+        current_interval = self.config_entry.options.get(
+            CONF_POLL_INTERVAL, self.config_entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
+        )
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({
+                vol.Required(CONF_POLL_INTERVAL, default=current_interval): NumberSelector(
+                    NumberSelectorConfig(min=MIN_POLL_INTERVAL, max=MAX_POLL_INTERVAL, unit_of_measurement="seconds", mode=NumberSelectorMode.BOX)
+                )
+            }),
+        )

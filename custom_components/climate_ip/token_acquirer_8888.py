@@ -26,6 +26,7 @@ import http.server
 import json
 import logging
 import ssl
+import os
 import threading
 from typing import Optional
 from functools import partial
@@ -59,7 +60,17 @@ class SamsungTokenAcquirer8888:
     def __init__(self, hass, ac_ip: str, cert_path: str):
         self._hass = hass
         self._ac_ip = ac_ip
-        self._cert_path = cert_path
+
+        # Resolve the certificate path. If a path without a directory is provided,
+        # assume it is relative to the integration's directory.
+        if cert_path and not os.path.dirname(cert_path):
+            _LOGGER.debug("Certificate path '%s' appears to be a filename. Resolving relative to integration directory.", cert_path)
+            self._cert_path = os.path.join(os.path.dirname(__file__), cert_path)
+        else:
+            # The path is absolute or contains directory components, use it as is.
+            self._cert_path = cert_path
+        _LOGGER.debug("Final resolved certificate path for token acquirer: %s", self._cert_path)
+
         self._listener_ip = hass.config.api.local_ip
         self._listener_port = 8889  # Port for our temporary server
         self._ac_port = 8888

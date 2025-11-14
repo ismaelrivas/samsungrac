@@ -4,6 +4,12 @@ DOMAIN = "climate_ip"
 
 PLATFORMS = ["climate"]
 
+# --- Configurable Options ---
+CONF_POLL_INTERVAL = "poll_interval"
+DEFAULT_POLL_INTERVAL = 60
+MIN_POLL_INTERVAL = 5
+MAX_POLL_INTERVAL = 300
+
 # --- Configuration Flow and Entry Keys ---
 CONF_DEVICE_TYPE = "device_type"
 CONF_CONFIG_FILE = "config_file"
