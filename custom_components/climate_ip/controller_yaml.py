@@ -597,22 +597,26 @@ class YamlController(ClimateController):
         if not template_obj:
             return None
         
-        template_string = None
+        # Use .template attribute which holds the raw string.
         if hasattr(template_obj, 'template'):
-            template_string = str(template_obj.template)
-        elif hasattr(template_obj, 'source'):
-            template_string = str(template_obj.source)
+            template_string = template_obj.template
         else:
-            template_string = str(template_obj)
+            # Fallback for non-template objects, though less common.
+            template_string = str(template_obj) 
+
         if not template_string:
-            _LOGGER.debug("%s [Regex] Could not get template text from object: %s", self.log_prefix, template_obj)
             return None
 
         match = self._device_state_key_regex.search(template_string)
         if match:
             return match.group(2)
-            
-        _LOGGER.warning("%s [Regex] Could not extract 'device_state' key from template: %s", self.log_prefix, template_string)
+        
+        # If no match, it's likely a complex template. This is not an error,
+        # so we log at debug level instead of warning to keep logs clean.
+        if any(keyword in template_string for keyword in ['if', 'else', 'for']):
+            _LOGGER.debug("%s [Regex] Template for '%s' is complex, cannot auto-extract key. This is normal.", self.log_prefix, prop_id)
+        else:
+            _LOGGER.debug("%s [Regex] Could not extract 'device_state' key from template: %s", self.log_prefix, template_string if template_string else template_obj)
         return None
 
     async def async_predict_and_correct_state(self, current_hass_state: ClimateIPDeviceState, property_name: str, new_value: Any) -> (ClimateEntityFeature, Dict[str, Any]):
