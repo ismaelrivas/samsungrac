@@ -10,6 +10,14 @@
       }
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Ajustar Opciones",
+        "description": "Modifica las opciones de la integración."
+      }
+    }
+  },
   "config": {
     "step": {
       "user": {
@@ -21,38 +29,41 @@
       },
       "samsung_2878": {
         "title": "Detalles del Dispositivo (Puerto 2878)",
-        "description": "Introduce la información de tu aire acondicionado. La dirección MAC es opcional y se intentará obtener automáticamente. Si no tienes un token, déjalo en blanco para iniciar el proceso de adquisición.",
+        "description": "Introduce la información de tu aire acondicionado. Si no tienes el TOKEN, déjalo en blanco y asegúrate de que el AC esté APAGADO antes de continuar.",
         "data": {
           "ip_address": "Dirección IP",
           "port": "Puerto",
           "mac": "Dirección MAC (Opcional)",
           "name": "Nombre (Opcional)",
           "token": "Token (Opcional)",
-          "cert": "Certificado (Opcional)"
+          "cert": "Certificado (Opcional)",
+          "poll_interval": "Intervalo de sondeo (segundos)"
         }
       },
       "samsung_8888": {
         "title": "Detalles del Dispositivo (Puerto 8888)",
-        "description": "Introduce la información de tu aire acondicionado. Si ya tienes el token, puedes introducirlo para saltar el emparejamiento. De lo contrario, déjalo en blanco.",
+        "description": "Introduce la información de tu aire acondicionado. Si no tienes el TOKEN, déjalo en blanco para iniciar el emparejamiento.",
         "data": {
           "ip_address": "Dirección IP",
           "mac": "Dirección MAC (Opcional)",
           "port": "Puerto",
           "name": "Nombre (Opcional)",
           "cert": "Certificado (Opcional)",
-          "token": "Token (Opcional)"
+          "token": "Token (Opcional)",
+          "poll_interval": "Intervalo de sondeo (segundos)"
         }
       },
       "mim_h03": {
         "title": "Detalles del Dispositivo (MIM-H03)",
-        "description": "Introduce la información de tu controlador MIM-H03. Si ya tienes el token, puedes introducirlo para saltar el emparejamiento. De lo contrario, déjalo en blanco.",
+        "description": "Introduce la información de tu controlador MIM-H03. Si no tienes el TOKEN, déjalo en blanco para iniciar el emparejamiento.",
         "data": {
           "ip_address": "Dirección IP",
           "mac": "Dirección MAC (Opcional)",
           "port": "Puerto",
           "name": "Nombre (Opcional)",
           "cert": "Certificado (Opcional)",
-          "token": "Token (Opcional)"
+          "token": "Token (Opcional)",
+          "poll_interval": "Intervalo de sondeo (segundos)"
         }
       },
       "rest_api": {
@@ -63,7 +74,8 @@
           "device_id": "ID del Dispositivo",
           "token": "Token de la API",
           "name": "Nombre (Opcional)",
-          "cert": "Certificado (Opcional)"
+          "cert": "Certificado (Opcional)",
+          "poll_interval": "Intervalo de sondeo (segundos)"
         }
       }
     },
