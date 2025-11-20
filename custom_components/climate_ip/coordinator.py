@@ -188,7 +188,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
         return a
 
     async def async_set_property(self, property_name: str, new_value: Any, corrections: Optional[Dict[str, Any]] = None, device_id: Optional[str] = None):
-        """Set a property and force a refresh."""
+        """Set a property and use Smart Polling to confirm the change."""
+        import time  # Import time for tracking duration
+        
         try:
             # Combine the main command with any corrections.
             properties_to_set = {property_name: new_value}
@@ -200,11 +202,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
             # Send commands sequentially to maintain order.
             success = True
             for prop, val in properties_to_set.items():
-                # If this property was part of the corrections dictionary,
-                # it's assumed that the main property's command already handled it.
-                # We skip sending a separate command for it to avoid duplication.
+                # Skip redundant commands if handled by corrections
                 if corrections and prop in corrections and prop != property_name:
-                    _LOGGER.debug("%s Skipping redundant command for corrected property '%s'", self.log_prefix, prop)
                     continue
 
                 # Ensure HVACMode enums are converted to string values for the command.
@@ -216,9 +215,54 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
 
             if success:
                 if not self.is_push_device:
-                    _LOGGER.debug("%s Command successful, waiting 2.5s for device to update before refreshing state", self.log_prefix)
-                    await asyncio.sleep(2.5)
+                    # --- SMART POLLING IMPLEMENTATION ---
+                    start_time = time.time()
+                    max_retries = 3
+                    poll_interval = 1.0 # Wait 1 second between attempts
+                    
+                    _LOGGER.debug("%s Command sent. Starting Smart Polling (Max %s attempts)", self.log_prefix, max_retries)
+                    
+                    for attempt in range(max_retries):
+                        attempt_num = attempt + 1
+                        await asyncio.sleep(poll_interval)
+                        
+                        _LOGGER.debug(
+                            "%s [Smart Poll] Attempt %s/%s: Requesting updated state from device...", 
+                            self.log_prefix, attempt_num, max_retries
+                        )
+                        
+                        # Force a state update from the device (updates internal controller state only)
+                        await self.controller.async_update_state()
+                        
+                        # Get the current real value from the controller
+                        real_value = self.controller.get_property(property_name)
+                        
+                        # Normalize values for comparison (Handle Enums vs Strings)
+                        target_val_norm = new_value.value if isinstance(new_value, HVACMode) else new_value
+                        real_val_norm = real_value.value if isinstance(real_value, HVACMode) else real_value
+                        
+                        # Allow for loose comparison (e.g. "cool" vs "Cool") if they are strings
+                        if isinstance(target_val_norm, str) and isinstance(real_val_norm, str):
+                            match = target_val_norm.lower() == real_val_norm.lower()
+                        else:
+                            match = target_val_norm == real_val_norm
+
+                        if match:
+                            elapsed = time.time() - start_time
+                            _LOGGER.debug(
+                                "%s [Smart Poll] Success: Device confirmed state '%s=%s' in %.2f seconds (Attempt %s).", 
+                                self.log_prefix, property_name, real_val_norm, elapsed, attempt_num
+                            )
+                            break
+                        else:
+                            _LOGGER.debug(
+                                "%s [Smart Poll] Mismatch on attempt %s: Expected '%s', Got '%s'. Retrying...",
+                                self.log_prefix, attempt_num, target_val_norm, real_val_norm
+                            )
+                    
+                    # Finally, force the HA entity to refresh with whatever state we achieved
                     await self.async_refresh()
+                    # ------------------------------------
             else:
                 _LOGGER.debug("%s Not all properties were set successfully", self.log_prefix)
         except Exception as err:
