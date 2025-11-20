@@ -4,6 +4,12 @@ from homeassistant.exceptions import HomeAssistantError
 class CannotConnect(HomeAssistantError):
     """Error to indicate we cannot connect."""
 
+class ConnectionRefused(CannotConnect):
+    """Error to indicate the connection was refused."""
+
+class InvalidHeaderError(CannotConnect):
+    """Error to indicate the device sent malformed HTTP headers."""
+
 class AuthError(HomeAssistantError):
     """Error to indicate there is an authentication problem."""
 

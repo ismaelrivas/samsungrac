@@ -52,19 +52,22 @@ async def async_get_config_entry_diagnostics(
 
     if isinstance(entry_data, SamsungClimateCoordinator):
         # Handle single device entry
-        diagnostics_data["coordinator_data"] = asdict(entry_data.data) if entry_data.data else None
+        if entry_data.data:
+            diagnostics_data["coordinator_data"] = asdict(entry_data.data)
         diagnostics_data["controller_state"] = entry_data.controller.state_attributes
         diagnostics_data["last_poll_response"] = entry_data.controller._state_getter.value
     elif isinstance(entry_data, dict):
         # Handle multi-device entry
         diagnostics_data["coordinators"] = {}
         for device_id, coordinator in entry_data.items():
-            if isinstance(coordinator, SamsungClimateCoordinator):
-                diagnostics_data["coordinators"][device_id] = {
-                    "coordinator_data": asdict(coordinator.data) if coordinator.data else None,
+            if isinstance(coordinator, SamsungClimateCoordinator):                
+                coordinator_diag = {
                     "controller_state": coordinator.controller.state_attributes,
                     "last_poll_response": coordinator.controller._state_getter.value,
                 }
+                if coordinator.data:
+                    coordinator_diag["coordinator_data"] = asdict(coordinator.data)
+                diagnostics_data["coordinators"][device_id] = coordinator_diag
 
     # Local masking function that uses the locally defined sensitive_keys.
     def _local_mask_data(data: Any) -> Any:

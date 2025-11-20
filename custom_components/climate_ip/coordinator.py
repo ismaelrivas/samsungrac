@@ -2,7 +2,7 @@
 import asyncio
 import logging
 from datetime import timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.components.climate import (
     ATTR_CURRENT_TEMPERATURE,
@@ -16,18 +16,19 @@ from homeassistant.components.climate import (
     ATTR_SWING_MODES,
     HVACMode,
 )
-from homeassistant.const import ATTR_TEMPERATURE
+from homeassistant.const import ATTR_TEMPERATURE, Platform
 from homeassistant.core import callback
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
 )
 from homeassistant.components.climate import ClimateEntityFeature
-from .exceptions import CannotConnect, AuthError
-from .state import ClimateIPDeviceState
+from .exceptions import CannotConnect, AuthError, InvalidHeaderError, ConnectionRefused
+from .state import ClimateIPDeviceState, HVACMode
 
-from .const import CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL
+from .const import DOMAIN, CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL, CONF_NAME, CONF_CONN_METHOD, CONN_METHOD_REQUESTS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,6 +61,15 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
             always_update=True,
         )
 
+        # --- START OF FIX ---
+        # Centralize DeviceInfo creation in the coordinator.
+        self.device_info = DeviceInfo(
+            identifiers={(DOMAIN, self.unique_id)},
+            name=self.entry.data.get(CONF_NAME, f"Samsung AC {self.unique_id}"),
+            manufacturer="Samsung",
+        )
+        # --- END OF FIX ---
+
         # Start the connection listener if it's a push-based device
         if self.is_push_device:
             _LOGGER.debug("%s Device is push-based, starting connection listener.", self.log_prefix)
@@ -81,12 +91,31 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
                 self.controller.async_get_status(), timeout=30.0
             )
             return self._create_device_state()
+        
+        except InvalidHeaderError as err:
+            # --- START OF SOLUTION: Automatically switch to the 'requests' engine ---
+            _LOGGER.warning(
+                "%s Malformed header error detected! Automatically switching to the 'Legacy (requests)' connection engine.",
+                self.log_prefix
+            )
+            # Get the current options and create a mutable copy.
+            new_options = dict(self.entry.options) 
+            # Switch to the 'requests' engine.
+            new_options[CONF_CONN_METHOD] = CONN_METHOD_REQUESTS
+            
+            # Update the config entry with the new options.
+            # This will trigger the 'update_listener', which will reload the integration.
+            self.hass.config_entries.async_update_entry(self.entry, options=new_options)
+            
+            # Raise UpdateFailed to cleanly stop the current poll, allowing the integration reload
+            # to take over without logging a setup error.
+            raise UpdateFailed("Switching to 'Legacy' connection engine due to non-standard HTTP headers. Reload is in progress.")
 
         except (AuthError, ConfigEntryAuthFailed) as err:
             # This will stop further polling and prompt for re-authentication.
             raise ConfigEntryAuthFailed(f"Authentication failed: {err}") from err
 
-        except (CannotConnect, asyncio.TimeoutError) as err:
+        except (CannotConnect, ConnectionRefusedError, asyncio.TimeoutError) as err:
             # The coordinator will log this and schedule a retry.
             raise UpdateFailed(f"Failed to fetch device state: {err}") from err
 
@@ -158,7 +187,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
         _LOGGER.debug("%s Created device state: %s", self.log_prefix, a)
         return a
 
-    async def async_set_property(self, property_name: str, new_value: Any, corrections: Dict[str, Any] = None, device_id: str = None):
+    async def async_set_property(self, property_name: str, new_value: Any, corrections: Optional[Dict[str, Any]] = None, device_id: Optional[str] = None):
         """Set a property and force a refresh."""
         try:
             # Combine the main command with any corrections.
@@ -198,7 +227,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
             )
             raise UpdateFailed(f"Failed to set property {property_name}: {err}") from err
 
-    async def async_predict_and_correct(self, current_state: ClimateIPDeviceState, property_name: str, new_value: Any) -> (ClimateEntityFeature, Dict[str, Any]):
+    async def async_predict_and_correct(self, current_state: ClimateIPDeviceState, property_name: str, new_value: Any) -> Tuple[ClimateEntityFeature, Dict[str, Any]]:
         """Passthrough for the controller's prediction method."""
         if hasattr(self.controller, 'async_predict_and_correct_state'):
             # Ensure HVACMode enums are converted to string values.
