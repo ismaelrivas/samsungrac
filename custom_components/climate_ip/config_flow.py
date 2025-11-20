@@ -3,21 +3,20 @@
 import asyncio
 import logging
 import os
-from enum import Enum
-import re
 from typing import Any, Dict, Optional
 
 import voluptuous as vol
 from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
+    SelectSelectorMode,
     NumberSelector,
     NumberSelectorMode,
     NumberSelectorConfig,
-    SelectSelectorMode,
 )
 import homeassistant.helpers.config_validation as cv
 from getmac import get_mac_address
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant import config_entries
 from homeassistant.const import (
     CONF_IP_ADDRESS,
@@ -43,6 +42,9 @@ from .const import (
     CONF_SELECTED_DEVICES,
     CONF_DEVICE_TYPE,
     DEVICE_TYPE_MIM_H03,
+    # --- START OF MODIFICATION (Milestone 4) ---
+    DEVICE_TYPE_8888_GROUP,
+    # --- END OF MODIFICATION (Milestone 4) ---
     DEVICE_TYPE_SAMSUNG_2878,
     DEVICE_TYPE_SAMSUNG_8888,
     DEVICE_TYPE_SMARTTHINGS_DHW,
@@ -50,17 +52,23 @@ from .const import (
     CONFIG_DEVICE_NAME,
     DOMAIN,
     CONFIG_FILE_TO_DEVICE_TYPE,
+    # --- START OF MODIFICATION (Milestone 4) ---
+    CONF_CONN_METHOD,
+    CONN_METHOD_AIOHTTP,
+    CONN_METHOD_REQUESTS,
+    # --- END OF MODIFICATION (Milestone 4) ---
     DEVICE_TYPE_TO_CONFIG_FILE,
 )
 from .controller_yaml import YamlController
 from .token_acquirer import SamsungTokenAcquirer
 # Import the new token acquirer
 from .token_acquirer_8888 import SamsungTokenAcquirer8888
-from .exceptions import CannotConnect, CertNotFound, TokenAcquisitionError, AuthTurnedOffError
+from .exceptions import CannotConnect, TokenAcquisitionError, AuthTurnedOffError
 
 _LOGGER = logging.getLogger(__name__)
 
-class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+@config_entries.HANDLERS.register(DOMAIN)
+class ClimateIpConfigFlow(config_entries.ConfigFlow):
     """Config flow implementing a robust, multi-step pairing process with safe task wrappers."""
 
     VERSION = 2  # Updated to reflect significant changes
@@ -118,15 +126,56 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if self.acquirer:
             self.hass.async_create_task(self.acquirer.async_close())
 
+    async def _async_resolve_mac_and_set_unique_id(self, ip_address: str, mac_address: Optional[str]) -> Optional[str]:
+        """Resolve MAC address from IP if not provided and set the unique_id."""
+        if mac_address:
+            self.flow_data[CONF_MAC] = mac_address.replace(":", "").upper()
+        else:
+            _LOGGER.info("MAC address not provided, attempting to resolve from IP %s", ip_address)
+            try:
+                resolved_mac = await self.hass.async_add_executor_job(
+                    lambda: get_mac_address(ip=ip_address)
+                )
+                if not resolved_mac:
+                    return "mac_resolve_failed"
+                
+                _LOGGER.info("Successfully resolved MAC %s", resolved_mac)
+                self.flow_data[CONF_MAC] = resolved_mac.replace(":", "").upper()
+            except (OSError, HomeAssistantError):
+                _LOGGER.warning("Could not resolve MAC address. Asking user to provide it.")
+                return "mac_resolve_failed"
+            except Exception as e:
+                _LOGGER.exception("Unexpected error during MAC resolution: %s", e)
+                return "unknown"
+
+        await self.async_set_unique_id(self.flow_data[CONF_MAC])
+        self._abort_if_unique_id_configured()
+        return None
+
+    async def _async_validate_cert_path(self, user_cert_path: Optional[str]) -> bool:
+        """Validate that the certificate file exists."""
+        if not user_cert_path:
+            return True # No certificate provided is a valid scenario
+        
+        path_to_check = user_cert_path
+        if not os.path.dirname(user_cert_path):
+            path_to_check = os.path.join(os.path.dirname(__file__), user_cert_path)
+        return await self.hass.async_add_executor_job(os.path.exists, path_to_check)
+
     async def _initiate_pairing_safe(self) -> Dict[str, Any]:
         """Safe wrapper for the initiate_pairing phase to prevent exceptions from escaping."""
         _LOGGER.debug("Executing safe wrapper: _initiate_pairing_safe")
         try:
+            # Add a check to ensure acquirer is not None
+            if self.acquirer is None:
+                _LOGGER.error("Acquirer was not initialized before initiating pairing.")
+                return {"ok": False, "error": "unknown_error"}
+
             # This now returns the path of the certificate that worked
-            successful_cert = await self.acquirer.async_initiate_pairing()
-            _LOGGER.debug("_initiate_pairing_safe successful with cert: %s", successful_cert)
+            successful_config = await self.acquirer.async_initiate_pairing()
+            _LOGGER.debug("_initiate_pairing_safe successful with config: %s", successful_config)
             # Return the successful certificate path to the config flow
-            return {"ok": True, "cert": successful_cert}
+            return {"ok": True, "config": successful_config}
         except CannotConnect:
             _LOGGER.warning("Cannot connect to the device during pairing initiation.")
             return {"ok": False, "error": "cannot_connect"}
@@ -138,6 +187,10 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Safe wrapper for the wait_for_token phase to prevent exceptions from escaping."""
         _LOGGER.debug("Executing safe wrapper: _wait_token_safe")
         try:
+            if self.acquirer is None:
+                _LOGGER.error("Acquirer was not initialized before waiting for token.")
+                return {"ok": False, "error": "unknown_error"}
+
             token = await self.acquirer.async_wait_for_token()
             _LOGGER.debug("_wait_token_safe successful, token acquired.")
             return {"ok": True, "token": token}
@@ -160,13 +213,9 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if device_type == DEVICE_TYPE_SAMSUNG_2878:
                 return await self.async_step_samsung_2878()
             
-            if device_type == DEVICE_TYPE_SAMSUNG_8888:
+            # --- START OF MODIFICATION (Milestone 4) ---
+            if device_type in DEVICE_TYPE_8888_GROUP:
                 return await self.async_step_samsung_8888()
-            
-            if device_type == DEVICE_TYPE_MIM_H03:
-                # Route MIM-H03 to its own step.
-                return await self.async_step_mim_h03()
-
             if device_type in [
                 DEVICE_TYPE_SMARTTHINGS_HVAC,
                 DEVICE_TYPE_SMARTTHINGS_DHW,
@@ -174,6 +223,7 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return await self.async_step_rest_api()
 
             return self.async_abort(reason="not_implemented")
+            # --- END OF MODIFICATION (Milestone 4) ---
 
         schema = vol.Schema({
             vol.Required(CONF_DEVICE_TYPE): SelectSelector(
@@ -198,9 +248,7 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         raw_mac = self.flow_data.get(CONF_MAC, "")
         formatted_mac = ":".join(raw_mac[i:i+2] for i in range(0, len(raw_mac), 2)) if raw_mac else ""
 
-        schema_dict = {
-            vol.Required(CONF_IP_ADDRESS, default=self.flow_data.get(CONF_IP_ADDRESS, "")): str,
-        }
+        schema_dict = {vol.Required(CONF_IP_ADDRESS, default=self.flow_data.get(CONF_IP_ADDRESS, "")): str}
         
         if mac_required:
             schema_dict[vol.Required(CONF_MAC, default=formatted_mac)] = str
@@ -231,40 +279,15 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.flow_data.update(user_input)
             ip_address = self.flow_data[CONF_IP_ADDRESS]
             mac_address = self.flow_data.get(CONF_MAC)
-
-            if mac_address:
-                self.flow_data[CONF_MAC] = mac_address.replace(":", "")
-            else:
-                _LOGGER.info("MAC address not provided, attempting to resolve from IP %s", ip_address)
-                try:
-                    resolved_mac = await self.hass.async_add_executor_job(
-                        lambda: get_mac_address(ip=ip_address)
-                    )
-                    if not resolved_mac:
-                        raise OSError("MAC address not found for the given IP.")
-                    
-                    _LOGGER.info("Successfully resolved MAC %s", resolved_mac)
-                    self.flow_data[CONF_MAC] = resolved_mac.replace(":", "")
-                
-                except (OSError, HomeAssistantError):
-                    _LOGGER.warning("Could not resolve MAC address. Asking user to provide it.")
-                    errors["base"] = "mac_resolve_failed"
-                    return self.async_show_form(
-                        step_id="samsung_2878",
-                        data_schema=self._get_samsung_2878_schema(mac_required=True),
-                        errors=errors,
-                    )
-                except Exception as e:
-                    _LOGGER.exception("Unexpected error during MAC resolution: %s", e)
-                    errors["base"] = "unknown"
-                    return self.async_show_form(
-                        step_id="samsung_2878",
-                        data_schema=self._get_samsung_2878_schema(),
-                        errors=errors,
-                    )
-
-            await self.async_set_unique_id(self.flow_data[CONF_MAC])
-            self._abort_if_unique_id_configured()
+            
+            error_reason = await self._async_resolve_mac_and_set_unique_id(ip_address, mac_address)
+            if error_reason:
+                errors["base"] = error_reason
+                return self.async_show_form(
+                    step_id="samsung_2878",
+                    data_schema=self._get_samsung_2878_schema(mac_required=(error_reason == "mac_resolve_failed")),
+                    errors=errors,
+                )
 
             # Standardize the name to ensure consistency
             if not self.flow_data.get(CONF_NAME):
@@ -276,24 +299,16 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             # Validate certificate existence without modifying the stored value.
             user_cert_path = self.flow_data.get(CONF_CERT) or ""
-            if user_cert_path:
-                # Determine the path to check for existence.
-                path_to_check = user_cert_path
-                if not os.path.dirname(user_cert_path):
-                    _LOGGER.debug("Certificate path has no directory, checking inside integration folder.")
-                    path_to_check = os.path.join(os.path.dirname(__file__), user_cert_path)
+            if not await self._async_validate_cert_path(user_cert_path):
+                errors["base"] = "cert_not_found"
+                return self.async_show_form(
+                    step_id="samsung_2878",
+                    data_schema=self._get_samsung_2878_schema(),
+                    errors=errors,
+                )
 
-                if not await self.hass.async_add_executor_job(os.path.exists, path_to_check):
-                    _LOGGER.error("Certificate file not found at path: %s", path_to_check)
-                    errors["base"] = "cert_not_found"
-                    return self.async_show_form(
-                        step_id="samsung_2878",
-                        data_schema=self._get_samsung_2878_schema(),
-                        errors=errors,
-                    )
-
-            # Pass the original, unmodified path to the acquirer.
-            self.acquirer = SamsungTokenAcquirer(self.hass, self.flow_data[CONF_IP_ADDRESS], user_cert_path)
+            # If all validations pass, create the acquirer and proceed.
+            self.acquirer = SamsungTokenAcquirer(self.hass, self.flow_data[CONF_IP_ADDRESS], self.flow_data.get(CONF_CERT))
             return await self.async_step_initiate_pairing()
 
         return self.async_show_form(
@@ -339,123 +354,35 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.flow_data.update(user_input)
             ip_address = self.flow_data[CONF_IP_ADDRESS]
             mac_address = self.flow_data.get(CONF_MAC)
-
-            if mac_address:
-                self.flow_data[CONF_MAC] = mac_address.replace(":", "").upper()
-            else:
-                _LOGGER.info("MAC address not provided for 8888 device, attempting to resolve from IP %s", ip_address)
-                try:
-                    resolved_mac = await self.hass.async_add_executor_job(
-                        lambda: get_mac_address(ip=ip_address)
-                    )
-                    if not resolved_mac:
-                        raise OSError("MAC address not found for the given IP.")
-                    
-                    _LOGGER.info("Successfully resolved MAC %s", resolved_mac)
-                    self.flow_data[CONF_MAC] = resolved_mac.replace(":", "").upper()
-                
-                except (OSError, HomeAssistantError):
-                    _LOGGER.warning("Could not resolve MAC address for 8888 device. Asking user to provide it.")
-                    errors["base"] = "mac_resolve_failed"
-                    return self.async_show_form(
-                        step_id="samsung_8888",
-                        data_schema=self._get_samsung_8888_schema(mac_required=True),
-                        errors=errors,
-                    )
-
-            await self.async_set_unique_id(self.flow_data[CONF_MAC])
-
-            self._abort_if_unique_id_configured()
+            
+            error_reason = await self._async_resolve_mac_and_set_unique_id(ip_address, mac_address)
+            if error_reason:
+                errors["base"] = error_reason
+                return self.async_show_form(
+                    step_id="samsung_8888",
+                    data_schema=self._get_samsung_8888_schema(mac_required=(error_reason == "mac_resolve_failed")),
+                    errors=errors,
+                )
 
             if self.flow_data.get(CONF_TOKEN):
                 return await self._create_entry()
 
             # Validate certificate existence without modifying the stored value.
             user_cert_path = self.flow_data.get(CONF_CERT) or ""
-            if not user_cert_path:
-                # If user left it blank, default to ac14k_m.pem for validation.
-                user_cert_path = 'ac14k_m.pem'
-
-            path_to_check = user_cert_path
-            if not os.path.dirname(user_cert_path):
-                _LOGGER.debug("Certificate path has no directory, checking inside integration folder.")
-                path_to_check = os.path.join(os.path.dirname(__file__), user_cert_path)
-
-            if not await self.hass.async_add_executor_job(os.path.exists, path_to_check):
+            if not await self._async_validate_cert_path(user_cert_path):
                 errors["base"] = "cert_not_found"
-            else:
-                # Pass the original, unmodified path to the acquirer.
-                # Note: self.flow_data[CONF_CERT] still holds the original user input.
-                self.acquirer = SamsungTokenAcquirer8888(
-                    self.hass, self.flow_data[CONF_IP_ADDRESS], self.flow_data.get(CONF_CERT) or 'ac14k_m.pem'
+                # Return here to show the error, do not proceed to pairing.
+                return self.async_show_form(
+                    step_id="samsung_8888", data_schema=self._get_samsung_8888_schema(), errors=errors
                 )
-                return await self.async_step_initiate_pairing()
+
+            self.acquirer = SamsungTokenAcquirer8888(
+                self.hass, self.flow_data[CONF_IP_ADDRESS], self.flow_data.get(CONF_CERT) or 'ac14k_m.pem'
+            )
+            return await self.async_step_initiate_pairing()
 
         return self.async_show_form(
             step_id="samsung_8888",
-            data_schema=self._get_samsung_8888_schema(),
-            errors=errors,
-        )
-
-    async def async_step_mim_h03(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
-        """Handle IP input and token acquisition for MIM-H03 controllers."""
-        errors: Dict[str, str] = {}
-        if user_input is not None:
-            self.flow_data.update(user_input)
-            ip_address = self.flow_data[CONF_IP_ADDRESS]
-            mac_address = self.flow_data.get(CONF_MAC)
-
-            if mac_address:
-                self.flow_data[CONF_MAC] = mac_address.replace(":", "").upper()
-            else:
-                _LOGGER.info("MAC address not provided for MIM-H03, attempting to resolve from IP %s", ip_address)
-                try:
-                    resolved_mac = await self.hass.async_add_executor_job(
-                        lambda: get_mac_address(ip=ip_address)
-                    )
-                    if not resolved_mac:
-                        raise OSError("MAC address not found for the given IP.")
-                    
-                    _LOGGER.info("Successfully resolved MAC %s", resolved_mac)
-                    self.flow_data[CONF_MAC] = resolved_mac.replace(":", "").upper()
-                
-                except (OSError, HomeAssistantError):
-                    _LOGGER.warning("Could not resolve MAC address for MIM-H03. Asking user to provide it.")
-                    errors["base"] = "mac_resolve_failed"
-                    return self.async_show_form(
-                        step_id="mim_h03",
-                        data_schema=self._get_samsung_8888_schema(mac_required=True),
-                        errors=errors,
-                    )
-
-            await self.async_set_unique_id(self.flow_data[CONF_MAC])
-
-            self._abort_if_unique_id_configured()
-
-            if self.flow_data.get(CONF_TOKEN):
-                return await self._create_entry()
-
-            # Validate certificate existence without modifying the stored value.
-            user_cert_path = self.flow_data.get(CONF_CERT) or ""
-            if not user_cert_path:
-                user_cert_path = 'ac14k_m.pem'
-
-            path_to_check = user_cert_path
-            if not os.path.dirname(user_cert_path):
-                _LOGGER.debug("Certificate path has no directory, checking inside integration folder.")
-                path_to_check = os.path.join(os.path.dirname(__file__), user_cert_path)
-
-            if not await self.hass.async_add_executor_job(os.path.exists, path_to_check):
-                errors["base"] = "cert_not_found"
-            else:
-                # Pass the original, unmodified path to the acquirer.
-                self.acquirer = SamsungTokenAcquirer8888(
-                    self.hass, self.flow_data[CONF_IP_ADDRESS], self.flow_data.get(CONF_CERT) or 'ac14k_m.pem'
-                )
-                return await self.async_step_initiate_pairing()
-
-        return self.async_show_form(
-            step_id="mim_h03",
             data_schema=self._get_samsung_8888_schema(),
             errors=errors,
         )
@@ -495,11 +422,15 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             test_data = {**self.flow_data, **user_input}
             device_type = test_data.get(CONF_DEVICE_TYPE)
-            test_data[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE.get(device_type)
 
+            if device_type:
+                test_data[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE.get(device_type)
             try:
                 _LOGGER.debug("Testing connection with data: %s", test_data)
-                controller = YamlController(test_data, _LOGGER)
+                session = async_get_clientsession(self.hass)
+                test_data["hass"] = self.hass
+                test_data["session"] = session
+                controller = YamlController(config=test_data, logger=_LOGGER)
                 if not await controller.initialize():
                     raise CannotConnect
 
@@ -528,16 +459,18 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.debug("Creating task for _initiate_pairing_safe.")
             self.task = self.hass.async_create_task(self._initiate_pairing_safe())
 
-        if self.task.done():
+        if self.task and self.task.done():
             result = self.task.result()
             self.task = None
             if result["ok"]:
                 _LOGGER.debug("Pairing initiation successful, advancing to await_button.")
-                # Save the successful certificate path to the flow data to be persisted later
-                successful_cert = result.get("cert")
-                if successful_cert:
-                    self.flow_data[CONF_CERT] = successful_cert
-                    _LOGGER.info("Successfully found working certificate, will save: %s", successful_cert)
+                # Save the successful connection config to the flow data to be persisted later
+                successful_config = result.get("config")
+                if successful_config:
+                    # Store the entire dictionary (e.g., {'cert': 'ac14k_m.pem', 'verify_mode': 0})
+                    self.flow_data["preferred_connection"] = successful_config
+                    _LOGGER.info("Successfully found working connection config, will save: %s", successful_config)
+
                 return self.async_show_progress_done(next_step_id="await_button")
             
             self.flow_data["error_key"] = result["error"]
@@ -556,7 +489,7 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.debug("Creating task for _wait_token_safe.")
             self.task = self.hass.async_create_task(self._wait_token_safe())
 
-        if self.task.done():
+        if self.task and self.task.done():
             result = self.task.result()
             self.task = None
             if result["ok"]:
@@ -564,7 +497,6 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 
                 if self.flow_data.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_SAMSUNG_2878:
                     _LOGGER.debug("Token for 2878 device acquired. Creating entry.")
-                    #return await self._create_entry()
                     return self.async_show_progress_done(next_step_id="create_entry")
                 else:
                     _LOGGER.debug("Token acquisition successful, advancing to discover_uuid.")
@@ -595,11 +527,18 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             config_data["unique_id"] = self.unique_id
             
         device_type = config_data.get(CONF_DEVICE_TYPE)
-        if not config_data.get(CONF_CONFIG_FILE):
+        if not config_data.get(CONF_CONFIG_FILE) and device_type:
+            # Ensure device_type is not None before using it as a key
             config_data[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE.get(device_type)
 
         try:
+            # --- START OF FIX ---
+            # Pass hass and session to the temporary controller instance.
+            session = async_get_clientsession(self.hass)
+            config_data["hass"] = self.hass
+            config_data["session"] = session
             controller = YamlController(config=config_data, logger=_LOGGER)
+            # --- END OF FIX ---
             if not await controller.initialize():
                 _LOGGER.error("Failed to initialize controller during discovery.")
                 return self.async_abort(reason="cannot_connect")
@@ -873,25 +812,56 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
+        self._config_entry = config_entry
 
     async def async_step_init(
         self, user_input: Dict[str, Any] | None = None
     ) -> FlowResult:
         """Manage the options."""
         if user_input is not None:
+            # If using aiohttp, token must be present.
+            # We check against the merged data (current data + new user_input).
+            if user_input.get(CONF_CONN_METHOD) == CONN_METHOD_AIOHTTP and not self.config_entry.data.get(CONF_TOKEN):
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=self._get_options_schema(),
+                    errors={"base": "token_required_for_aiohttp"},
+                )
             return self.async_create_entry(title="", data=user_input)
-
-        # Get the current value from options, falling back to data, then to default.
-        current_interval = self.config_entry.options.get(
-            CONF_POLL_INTERVAL, self.config_entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
-        )
 
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema({
-                vol.Required(CONF_POLL_INTERVAL, default=current_interval): NumberSelector(
-                    NumberSelectorConfig(min=MIN_POLL_INTERVAL, max=MAX_POLL_INTERVAL, unit_of_measurement="seconds", mode=NumberSelectorMode.BOX)
-                )
-            }),
+            data_schema=self._get_options_schema(),
         )
+
+    def _get_options_schema(self) -> vol.Schema:
+        """Return the schema for the options flow."""
+        schema_dict = {}
+
+        # Only show the connection method selector for modern (port 8888) devices.
+        if self.config_entry.data.get(CONF_DEVICE_TYPE) in DEVICE_TYPE_8888_GROUP:
+            schema_dict[vol.Required(
+                CONF_CONN_METHOD, 
+                default=self.config_entry.options.get(CONF_CONN_METHOD, CONN_METHOD_REQUESTS)
+            )] = SelectSelector(
+                SelectSelectorConfig(
+                    options=[
+                        {"value": CONN_METHOD_REQUESTS, "label": "Legacy (requests)"},
+                        {"value": CONN_METHOD_AIOHTTP, "label": "Modern (aiohttp)"},
+                    ],
+                    mode=SelectSelectorMode.DROPDOWN,
+                    translation_key="connection_method",
+                )
+            )
+
+        # Get the current value for poll_interval from options, falling back to data, then to default.
+        current_interval = self.config_entry.options.get(
+            CONF_POLL_INTERVAL, self.config_entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
+        )
+        schema_dict[vol.Required(
+            CONF_POLL_INTERVAL, default=current_interval
+        )] = NumberSelector(
+            NumberSelectorConfig(min=MIN_POLL_INTERVAL, max=MAX_POLL_INTERVAL, unit_of_measurement="seconds", mode=NumberSelectorMode.BOX)
+        )
+
+        return vol.Schema(schema_dict)
