@@ -1,9 +1,7 @@
 import asyncio
 import logging
-from homeassistant.const import CONF_IP_ADDRESS, CONF_PORT
 from .yaml_const import CONFIG_DEVICE_CONNECTION_PARAMS, CONFIG_TYPE
-
-_LOGGER = logging.getLogger(__name__)
+from typing import Any, Dict, Optional, Tuple
 
 CLIMATE_IP_CONNECTIONS = []
 _CONNECTIONS_STORE = {}
@@ -33,48 +31,32 @@ class Connection:
         """Load configuration from yaml node dictionary. Use connection base as base but DO NOT modify it.
         Return True if successful False otherwise."""
         return False
-
-    def execute(self, template, value, device_state, device_id):
+    
+    # --- START OF MODIFICATION (Milestone 0) ---
+    
+    # Interface for synchronous engines (requests, 2878)
+    def execute(self, *args, **kwargs) -> Any:
+        """Executes a synchronous command."""
+        raise NotImplementedError
+    
+    # Interface for asynchronous engines (aiohttp)
+    async def async_execute(self, *args, **kwargs) -> Tuple[str, Optional[Dict[str, str]]]:
+        """Executes an asynchronous command."""
+        raise NotImplementedError
+    
+    # Helper property for Milestone 1
+    @property
+    def is_async_native(self) -> bool:
+        """Indicates if the connection is native asynchronous (aiohttp)."""
+        # Subclasses can override this if 'async_execute' is just a wrapper.
+        return False
+    
+    # --- END OF MODIFICATION (Milestone 0) ---
+    
+    def execute_legacy(self, template, value, device_state, device_id):
         """execute connection and return JSON object as result or None if unsuccesful."""
         return None
 
     def create_updated(self, yaml_node):
         """Create a copy of connection object and update this object from YAML configuration node"""
         return None
-
-
-async def create_connection(node, config, logger):
-    # Use the unique_id from the config entry as the singleton key
-    key = config.get("unique_id")
-    if not key:
-        logger.error("Cannot create a unique connection without a unique_id in the config")
-        return None
-
-    async with _CONNECTIONS_LOCK:
-        if key in _CONNECTIONS_STORE:
-            logger.debug("Returning existing connection object for %s", key)
-            return _CONNECTIONS_STORE[key]
-
-        logger.debug("Creating new connection object for %s", key)
-        for conn_class in CLIMATE_IP_CONNECTIONS:
-            if CONFIG_TYPE in node:
-                if conn_class.match_type(node[CONFIG_TYPE]):
-                    c = conn_class(config, logger) # Pass the full config to the constructor
-                    if c.load_from_yaml(node, None):
-                        _CONNECTIONS_STORE[key] = c
-                        return c
-    return None
-
-async def remove_connection(config):
-    """Remove a connection object from the store."""
-    key = config.get("unique_id")
-    if not key:
-        _LOGGER.warning("Cannot remove a connection without a unique_id in the config")
-        return
-
-    async with _CONNECTIONS_LOCK:
-        if key in _CONNECTIONS_STORE:
-            _LOGGER.debug("Removing connection object for %s", key)
-            connection = _CONNECTIONS_STORE.pop(key)
-            if hasattr(connection, 'stop_listening'):
-                await connection.stop_listening()

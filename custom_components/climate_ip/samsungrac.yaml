@@ -163,7 +163,7 @@ device:
     current_temperature:
       type: number
       status_template: '{{ device_state.Temperatures.0.current }}'
-      unit_template: '{{ device_state.Temperatures.0.unit }}'
+      unit_template: 'Fahrenheit'
     min_temp:
       type: number
       status_template: '8'
