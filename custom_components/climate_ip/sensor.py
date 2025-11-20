@@ -19,7 +19,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from .const import DOMAIN
 from .coordinator import SamsungClimateCoordinator
 # Import DeviceProperty to use as a type hint
-from .properties import DeviceProperty
+from .properties import DeviceProperty, UniqueIdProperty
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -103,10 +103,8 @@ class ClimateIpSensor(CoordinatorEntity[SamsungClimateCoordinator], SensorEntity
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information for the device registry."""
-        return DeviceInfo(
-            identifiers={(DOMAIN, self.coordinator.unique_id)},
-            # This makes the sensor part of the same device as the climate entity
-        )
+        # Use the centralized DeviceInfo from the coordinator.
+        return self.coordinator.device_info
 
     def _sync_data_from_coordinator(self) -> None:
         """Synchronize the entity's state with the latest data from the coordinator."""
@@ -139,16 +137,19 @@ class ClimateIpSensor(CoordinatorEntity[SamsungClimateCoordinator], SensorEntity
         value = self.coordinator.get_property(self._key)
         _LOGGER.debug("%s Sensor '%s' received value from coordinator: %s (type: %s)", self.log_prefix, self._key, value, type(value).__name__)
 
-        try:
-            if value is None or value == STATE_UNKNOWN:
-                self._attr_native_value = None
-                return
-
-            # The value from the template is a string, convert it to a float for HA.
-            self._attr_native_value = float(value)
-
-        except (ValueError, TypeError):
+        if value is None or value == STATE_UNKNOWN:
             self._attr_native_value = None
-            _LOGGER.warning(
-                "%s Could not parse sensor value for %s: %s", self.log_prefix, self._key, value
-            )
+            return
+
+        # If the property type is 'string', assign the value directly.
+        # Otherwise, try to convert it to a number (float).
+        if isinstance(self._property, UniqueIdProperty): # UniqueIdProperty is our 'string' type
+            self._attr_native_value = str(value)
+        else:
+            try:
+                self._attr_native_value = float(value)
+            except (ValueError, TypeError):
+                self._attr_native_value = None
+                _LOGGER.warning(
+                    "%s Could not parse sensor value for %s: %s", self.log_prefix, self._key, value
+                )

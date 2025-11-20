@@ -1,12 +1,12 @@
 """Base class for a climate device controller."""
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Type
 
 from homeassistant.const import UnitOfTemperature
 
 ATTR_POWER = "power"
 
-CLIMATE_CONTROLLERS: List["ClimateController"] = []
+CLIMATE_CONTROLLERS: List[Type["ClimateController"]] = []
 
 
 class ClimateController:
@@ -15,6 +15,13 @@ class ClimateController:
         """Initialize the controller."""
         self._logger = logger
         self._connection = None
+        self.discovered_devices: Optional[List[Dict[str, Any]]] = None
+
+    @staticmethod
+    def match_type(controller_type: str) -> bool:
+        """Check if this controller class matches the given type string."""
+        # This is a class method that subclasses must override.
+        return False
 
     async def initialize(self) -> bool:
         """
@@ -67,6 +74,12 @@ class ClimateController:
     @property
     def unique_id(self) -> Optional[str]:
         """Return the unique id of the controller."""
+        # Subclasses are expected to override this
+        return None
+
+    @property
+    def device_id(self) -> Optional[str]:
+        """Return the device id of the controller."""
         # Subclasses are expected to override this
         return None
 
@@ -130,7 +143,7 @@ class ClimateController:
         return []
 
 
-def register_controller(controller: "ClimateController"):
+def register_controller(controller: Type["ClimateController"]):
     """A decorator to register a controller class."""
     CLIMATE_CONTROLLERS.append(controller)
     return controller

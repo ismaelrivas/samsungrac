@@ -1,19 +1,13 @@
 import logging
-import asyncio
-import time
 from typing import Any, Dict, Optional
 import voluptuous as vol
 
 from homeassistant.components.climate import (
     ATTR_CURRENT_TEMPERATURE,
     ATTR_FAN_MODE,
-    ATTR_FAN_MODES,
     ATTR_HVAC_MODE,
-    ATTR_HVAC_MODES,
     ATTR_PRESET_MODE,
-    ATTR_PRESET_MODES,
     ATTR_SWING_MODE,
-    ATTR_SWING_MODES,
     ClimateEntity,
     PLATFORM_SCHEMA,
     ClimateEntityFeature,
@@ -136,27 +130,39 @@ async def async_setup_entry(
 class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
     """Representation of a climate_ip climate device using a coordinator."""
 
-    def __init__(self, coordinator: SamsungClimateCoordinator, config: Dict[str, Any], device_info: Optional[Dict[str, Any]] = None, main_unique_id: str = None):
+    def __init__(self, coordinator: SamsungClimateCoordinator, config: Dict[str, Any], device_info: Optional[Dict[str, Any]] = None, main_unique_id: Optional[str] = None):
         """Initialize the climate device."""
         super().__init__(coordinator)
         self._config = config
         self._main_unique_id = main_unique_id or coordinator.unique_id
 
+        user_defined_name = self._config.get(CONF_NAME)
+
         if device_info:
             # This is a sub-device (e.g., an indoor unit of a MIM-H03).
             # Its unique_id is the UUID provided for it.
-            self._name = device_info.get("name")
+            self._name = user_defined_name or device_info.get("name", f"Indoor Unit {device_info.get('id')}")
             self._attr_unique_id = device_info.get("uuid") or f"{self._main_unique_id}_{device_info.get('id')}"
+            
+            # This establishes the correct parent-child relationship in the device registry.
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, self._attr_unique_id)},
+                name=self._name,
+                via_device=(DOMAIN, self._main_unique_id),  # Link to the parent device
+            )
         else:
             # This is a single-device entry (e.g., a standalone AC).
-            # The entity's unique_id is the same as the coordinator's unique_id (usually the MAC address).
+            # The entity's unique_id is the same as the coordinator's unique_id.
             self._attr_unique_id = self.coordinator.unique_id
-            user_defined_name = self._config.get(CONF_NAME)
             if user_defined_name:
                 self._name = user_defined_name
             else:
                 # Fallback to a generated name based on the device's unique ID if no name was provided by the user.
                 self._name = f"Samsung AC {self.coordinator.unique_id}"
+
+            # For single devices, the entity's device_info is the same as the coordinator's.
+            self._attr_device_info = self.coordinator.device_info
+
 
         # Check for settable properties (operations) to determine supported features.
         features = ClimateEntityFeature(0)
@@ -273,12 +279,11 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Return device information for the device registry."""
-        return DeviceInfo(
-            identifiers={(DOMAIN, self._main_unique_id)}, # Link to the main device.
-            name=self._config.get(CONF_NAME, "Samsung AC"),
-            manufacturer="Samsung",
-        )
+        """
+        Return device information. This is now handled by self._attr_device_info,
+        which is set correctly for both single and multi-device setups in __init__.
+        """
+        return self._attr_device_info
 
     @property
     def name(self):
@@ -404,7 +409,16 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
     @property
     def temperature_unit(self):
         """Return the temperature unit."""
+        # --- INICIO DE LA MODIFICACIÓN ---
+        # Priorizar la unidad del sensor de temperatura actual si está definida.
+        # Esto permite que el YAML anule la unidad de toda la entidad.
+        current_temp_prop = self.coordinator.get_property_object(ATTR_CURRENT_TEMPERATURE)
+        if current_temp_prop and current_temp_prop.unit_of_measurement:
+            # La propiedad ya contiene la constante de HA (p. ej., UnitOfTemperature.FAHRENHEIT)
+            return current_temp_prop.unit_of_measurement
+        # Caer de nuevo al valor por defecto del controlador si no hay una unidad específica.
         return self.coordinator.temperature_unit
+        # --- FIN DE LA MODIFICACIÓN ---
 
     @property
     def current_temperature(self):

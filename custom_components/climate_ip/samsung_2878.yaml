@@ -110,21 +110,32 @@ device:
       connection_template: '<Request Type="DeviceControl"><Control CommandID="AC_FUN_DIRECTION" DUID="{{duid}}"><Attr ID="AC_FUN_DIRECTION" Value="{{value}}" /></Control></Request>'
       validation_template: '{% if "AC_FUN_DIRECTION" in device_state %}valid{% endif %}'
     temperature:
-      type: number
+      type: temperature
       min: 8
       max: 30
       status_template: '{{ device_state.AC_FUN_TEMPSET | int }}'
       connection_template: '<Request Type="DeviceControl"><Control CommandID="AC_FUN_TEMPSET" DUID="{{duid}}"><Attr ID="AC_FUN_TEMPSET" Value="{{value | int}}" /></Control></Request>'
   attributes:
     current_temperature:
-      type: number
+      type: temperature
       status_template: '{{ device_state.AC_FUN_TEMPNOW | int }}'
+      #unit_of_measurement: "°F"
     min_temp:
       type: number
       status_template: '8'
     max_temp:
       type: number
       status_template: '30'
+    used_power:
+      type: number
+      name: "Electrical Consumption"
+      status_template: '{{ (device_state.get("AC_ADD2_USEDPOWER", 0) | float(0)) / 10 }}'
+      # Home Assistant metadata
+      device_class: "energy"
+      unit_of_measurement: "kWh"
+      state_class: "total_increasing"
+      # Validation
+      validation_template: '{% if "AC_ADD2_USEDPOWER" in device_state %}valid{% endif %}'
   sensors:
     used_power:
       type: number
@@ -171,3 +182,36 @@ device:
       state_class: "measurement"
       # Validation
       validation_template: '{% if "AC_ADD2_FILTER_USE_TIME" in device_state %}valid{% endif %}'
+    wifi_connection_status:
+      type: string
+      name: "Wifi Connection Status"
+      status_template: >-
+        {% if device_state.get("AC_SG_WIFI") == "Connected" %}
+        1
+        {% else %}
+        0
+        {% endif %}
+      validation_template: '{% if "AC_SG_WIFI" in device_state %}valid{% endif %}'
+
+    internet_connection_status:
+      type: string
+      name: "Internet connection status"
+      status_template: >
+        {% if device_state.get("AC_SG_INTERNET") == "Connected" %}
+        1
+        {% else %}
+        0
+        {% endif %}
+      validation_template: '{% if "AC_SG_INTERNET" in device_state %}valid{% endif %}'
+
+    split_version:
+      type: string
+      name: "Split version"
+      status_template: "{{ device_state.AC_ADD2_PANEL_VERSION }}"
+      validation_template: '{% if "AC_ADD2_PANEL_VERSION" in device_state %}valid{% endif %}'
+
+    external_unit_version:
+      type: string
+      name: "External unit version"
+      status_template: "{{ device_state.AC_ADD2_OUT_VERSION }}"
+      validation_template: '{% if "AC_ADD2_OUT_VERSION" in device_state %}valid{% endif %}'

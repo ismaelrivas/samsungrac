@@ -56,10 +56,12 @@ STATUS_GETTER_JSON = "json_status"
 UNIT_MAP = {
     "C": UnitOfTemperature.CELSIUS,
     "c": UnitOfTemperature.CELSIUS,
+    "°C": UnitOfTemperature.CELSIUS,
     "Celsius": UnitOfTemperature.CELSIUS,
     "F": UnitOfTemperature.FAHRENHEIT,
     "f": UnitOfTemperature.FAHRENHEIT,
     "Fahrenheit": UnitOfTemperature.FAHRENHEIT,
+    "°F": UnitOfTemperature.FAHRENHEIT,
     UnitOfTemperature.CELSIUS: UnitOfTemperature.CELSIUS,
     UnitOfTemperature.FAHRENHEIT: UnitOfTemperature.FAHRENHEIT,
 }
@@ -167,6 +169,19 @@ class DeviceProperty:
     @property
     def state_class(self) -> Optional[str]:
         return self._state_class
+
+    def set_unit_of_measurement(self, unit: str):
+        """
+        Sets the static unit of measurement for the property, converting
+        common temperature units to Home Assistant constants if possible.
+        """
+        # Check if the provided unit is a known temperature unit and convert it.
+        # This allows using "°F", "F", "Fahrenheit", etc., in YAML.
+        _LOGGER.debug("%s [set_unit_of_measurement] for '%s' received raw unit: '%s'", self.log_prefix, self.id, unit)
+        converted_unit = UNIT_MAP.get(unit, unit)
+        _LOGGER.debug("%s [set_unit_of_measurement] for '%s' converted unit is: '%s' (type: %s)", self.log_prefix, self.id, converted_unit, type(converted_unit).__name__)
+        self._unit_of_measurement = converted_unit
+
     def get_connection(self, value):
         return self._connection
 
@@ -213,7 +228,10 @@ class DeviceProperty:
     async def async_update_state(self, device_state_override, debug):
         """Update property from device state and return current value."""
         from jinja2 import Template
-        device_state = device_state_override if device_state_override is not None else self._status_getter.value
+        if device_state_override is not None:
+            device_state = device_state_override
+        else:
+            device_state = self._status_getter.value if self._status_getter else None
         self._device_state = device_state
         v = STATE_UNKNOWN
         if self.status_template is not None and device_state is not None:
@@ -242,19 +260,88 @@ class GetJsonStatus(DeviceProperty):
     def match_type(type):
         return type == STATUS_GETTER_JSON
 
+    def load_from_yaml(self, node):
+        """Load the connection details from the 'status' node in YAML."""
+        from jinja2 import Template
+        super_result = super().load_from_yaml(node)
+
+        # --- START OF MODIFICATION: Default connection template for aiohttp ---
+        # If we are using the aiohttp engine and no connection_template was defined
+        # in the YAML's 'status' block, we create a default one.
+        if self._connection and self._connection.is_async_native and not self._connection_template:
+            _LOGGER.debug(
+                "%s [GetJsonStatus] No connection_template found for aiohttp. Creating a default one.",
+                self.log_prefix
+            )
+            default_template_str = '{ "method": "GET", "url": "/devices" }'
+            self._connection_template = Template(default_template_str)
+        # --- END OF MODIFICATION ---
+        return super_result
+
     async def async_update_state(self, device_state_override, debug):
         """Fetch the device state asynchronously."""
         if hasattr(self.get_connection(None), 'set_controller_ref'):
             self.get_connection(None).set_controller_ref(self._controller)
-        
-        # The status getter doesn't need a device_id; it always gets the full state.
-        device_state_result = await self.get_connection(None).execute(
-            self.connection_template, None, self.value
-        )
-        
+
+        device_state_result = None
+        connection = self.get_connection(None)
+
+        # --- START OF MODIFICATION: Add logging ---
+        if connection is None:
+            _LOGGER.error("%s [GetJsonStatus] Connection object is None! Cannot proceed with state update.", self.log_prefix)
+            return None # Abort if connection is missing
+        # --- END OF MODIFICATION ---
+
+        # --- START OF MODIFICATION (Milestone 1) ---
+        # Check if the connection is native async (aiohttp)
+        if connection.is_async_native:
+            _LOGGER.debug("[Dual Engine] Executing 'async_execute' (Async Engine)")
+            try:
+                # The connection_template contains the request parameters (method, url, etc.)
+                # We need to render it to get the JSON string of parameters.
+                if not self.connection_template:
+                    _LOGGER.error("%s [GetJsonStatus] Connection template is missing for async execution.", self.log_prefix)
+                    return None
+                
+                # --- START OF MODIFICATION: Add logging ---
+                _LOGGER.debug(
+                    "%s [GetJsonStatus] Using connection template for async execution: %s",
+                    self.log_prefix,
+                    self.connection_template.template if hasattr(self.connection_template, 'template') else self.connection_template
+                )
+                # --- END OF MODIFICATION ---
+
+                params_str = self.connection_template.render()
+                params = json.loads(params_str)
+
+                # The async_execute method handles the request.
+                response_text, _ = await connection.async_execute(params.get('method'), params.get('url'), None, params.get('headers'))
+                device_state_result = json.loads(response_text)
+            except json.JSONDecodeError as e:
+                _LOGGER.error("%s [GetJsonStatus] JSON parsing error during async execution: %s", self.log_prefix, e, exc_info=True)
+                return None
+            # --- START OF SOLUTION: Do not catch connection errors here ---
+            # By removing the 'except Exception', we allow InvalidHeaderError and CannotConnect
+            # to propagate up to the coordinator, which will handle them correctly.
+            # --- END OF SOLUTION ---
+        else:
+            # It's a synchronous connection (requests or 2878)
+            _LOGGER.debug("[Dual Engine] Executing 'execute' in executor (Sync Engine)")
+
+            # This is the logic that will run now, identical to the previous one.
+            # The synchronous 'execute' call is wrapped in async_add_executor_job
+            # to avoid blocking the Home Assistant event loop.
+            device_state_result = await self._controller.hass.async_add_executor_job(
+                connection.execute,
+                self.connection_template,
+                None,
+                self.value
+            )
+        # --- END OF MODIFICATION (Milestone 1) ---
+
         self._value = device_state_result
         self._json_status = device_state_result
-        
+
         if device_state_result is not None:
             self._attrs = {"device_state": json.dumps(device_state_result)}
             if self.status_template is not None:
@@ -267,7 +354,12 @@ class GetJsonStatus(DeviceProperty):
                     else:
                         self._value = v
                 except Exception as e:
-                    _LOGGER.debug("%s Could not parse status template result as JSON: %s", self.log_prefix, e, exc_info=True)
+                    _LOGGER.debug(
+                        "%s Could not parse status template result as JSON: %s",
+                        self.log_prefix,
+                        e,
+                        exc_info=True
+                    )
         else:
             self._attrs = {"device_state": None}
 
@@ -283,20 +375,73 @@ class DeviceOperation(DeviceProperty):
     def __init__(self, name, connection, controller, status_getter=None):
         super(DeviceOperation, self).__init__(name, connection, controller, status_getter)
 
-    async def async_set_value(self, v, device_id=None):
+    async def async_set_value(self, v, device_id: Optional[str] = None):
         """Set device property value asynchronously."""
         connection = self.get_connection(v)
         if hasattr(connection, 'set_controller_ref'):
             connection.set_controller_ref(self._controller)
-        
+
         current_full_state = self._device_state
         if current_full_state is None:
             _LOGGER.warning("%s _device_state is None during set_value, falling back to status_getter.value", self.log_prefix)
-            current_full_state = self._status_getter.value
+            # --- START OF FIX: Add null check for self._status_getter ---
+            if self._status_getter:
+                current_full_state = self._status_getter.value
+            # --- END OF FIX ---
 
-        # Pass the device_id to the connection's execute method.
-        resp = await connection.execute(self.connection_template, self.convert_hass_to_dev(v), current_full_state, device_id)
-        return resp is not None
+        # --- START: Logic to handle async nested commands ---
+        if connection.is_async_native:
+            _LOGGER.debug("[Dual Engine] Executing 'async_execute' (Async Engine)")
+            try:
+                # The `async_execute` method in ConnectionAiohttp8888 will handle its embedded command internally.
+                # We just need to call it once with the parameters for the *main* command.                
+                # --- START OF SOLUTION: Use the property's template, not the connection's ---
+                # The property's connection_template (self) is the one loaded from YAML
+                # for numeric/temperature operations. The connection's one might be empty.
+                template_to_use = self.connection_template or getattr(connection, '_connection_template', None)
+                # --- END OF SOLUTION ---
+                if not template_to_use: # Now we check after trying both sources
+                    _LOGGER.error("%s [async_set_value] Main command is missing a connection template.", self.log_prefix)
+                    return False
+
+                # --- START OF SOLUTION: Merge base and template parameters ---
+                # Render the operation-specific template (e.g., for temperature).
+                rendered_params_str = template_to_use.render(value=self.convert_hass_to_dev(v), device_id=device_id)
+                operation_params = json.loads(rendered_params_str)
+
+                # Get the base parameters from the connection (which contain method and url).
+                # The 'hack' in `create_updated` ensures that `_connection_template` exists.
+                base_template = getattr(connection, '_connection_template', None)
+                base_params_str = base_template.render() if base_template else "{}"
+                base_params = json.loads(base_params_str)
+
+                # Merge the parameters, giving priority to the operation-specific ones.
+                params = {**base_params, **operation_params}
+                # --- END OF SOLUTION ---
+                data_payload = json.dumps(params.get('json')) if 'json' in params else None
+
+                response, _ = await connection.async_execute(params.get('method'), params.get('url'), data_payload, params.get('headers'), device_state=current_full_state)
+                return response is not None
+            except Exception as e:
+                _LOGGER.error("%s Error during async_set_value for %s: %s", self.log_prefix, self.id, e, exc_info=True)
+                return False
+        # --- END: Logic to handle async nested commands ---
+        else: # Fallback to original synchronous logic
+            _LOGGER.debug("[Dual Engine] Executing 'execute' in executor (Sync Engine)")
+            response = await self._controller.hass.async_add_executor_job(
+                connection.execute,
+                self.connection_template,
+                self.convert_hass_to_dev(v),
+                current_full_state,
+                device_id
+            )
+            # --- START OF FIX ---
+            # The synchronous `execute` method in `connection_request.py` returns `None`
+            # on success with an empty body to trigger a poll. A `dict` or `list` is returned
+            # if there is a JSON body. An exception is raised on failure.
+            # Therefore, if no exception was raised, the command was successful.
+            return True
+            # --- END OF FIX ---
 
     def match_value(self, value):
         """Check if value matches the operation. True if the value is correct."""
@@ -318,8 +463,10 @@ class BasicDeviceOperation(DeviceOperation):
         self._last_valid_values = []
         # Cache for dynamic value lists to improve performance.
         self._values_cache: Dict[str, list[str]] = {}
-
+    
     def get_connection(self, value):
+        """
+        Gets the connection for a specific value, or the default connection if none is defined."""
         return self._value_connections_map.get(value, self._connection)
 
     def load_from_yaml(self, node):
@@ -337,9 +484,12 @@ class BasicDeviceOperation(DeviceOperation):
 
                 for ha_value in node_values.keys():
                     node_value = node_values[ha_value]
-                    r = self._connection.create_updated(
-                        node_value.get(CONFIG_DEVICE_CONNECTION, {})
-                    )
+                    # The connection node for a value can contain both general connection
+                    # parameters and the specific 'connection_template'.
+                    # We pass the entire value node to create_updated.
+                    connection_node = node_value.get(CONFIG_DEVICE_CONNECTION, node_value)
+                    r = self._connection.create_updated(connection_node)
+
                     self._value_connections_map[ha_value] = r
                     self._values.append(ha_value)
                     if CONFIG_DEVICE_OPERATION_VALUE in node_value:
@@ -602,23 +752,34 @@ class TemperatureOperation(BasicNumericOperation):
         return True
 
     async def async_update_state(self, device_state_override, debug):
-        device_state = device_state_override if device_state_override is not None else self._status_getter.value
+        if device_state_override is not None:
+            device_state = device_state_override
+        else:
+            device_state = self._status_getter.value if self._status_getter else None
+
         if self._unit_template is not None and device_state is not None:
             try:
                 unit = self._unit_template.render(device_state=device_state)
                 if unit in UNIT_MAP:
                     self._unit = UNIT_MAP[unit]
             except:
-                pass
+                _LOGGER.debug("%s Could not render unit template for '%s'. Using last known unit.", self.log_prefix, self.id)
+        # --- START OF MODIFICATION ---
+        # If there's no unit_template, but there is a static unit_of_measurement (from an attribute), use it.
+        elif self._unit_of_measurement:
+            self._unit = self._unit_of_measurement
+        # --- END OF MODIFICATION ---
         return await super().async_update_state(device_state_override, debug)
 
     def convert_dev_to_hass(self, dev_value):
         """Convert device state value to the HASS representation (Celsius)."""
         try:
-            # Ensure the value from the device is always treated as a float.
-            # This prevents type mismatches (int vs float) that cause UI "rebounds".
-            float_dev_value = float(dev_value)
-            return TemperatureConverter.convert(float_dev_value, self._unit, UnitOfTemperature.CELSIUS)
+            # --- START OF FIX: Ensure value is always a float for HASS ---
+            # The device might send an int (e.g., 22), but HA expects a float (22.0)
+            # for temperatures. This mismatch was causing the optimistic update to fail.
+            # By ensuring it's a float, we align with HA's state machine.
+            return float(TemperatureConverter.convert(float(dev_value), self._unit, UnitOfTemperature.CELSIUS))
+            # --- END OF FIX ---
         except (ValueError, TypeError):
             return None  # Return None if the value is invalid.
 
@@ -632,5 +793,9 @@ class TemperatureOperation(BasicNumericOperation):
         converted_temp = TemperatureConverter.convert(
             float(v), UnitOfTemperature.CELSIUS, self._unit
         )
-        # Most devices expect an integer for temperature, often multiplied by 10 (e.g., 24.5 -> 245).
-        return int(converted_temp * 10)
+        # --- START OF FIX: Remove hardcoded multiplication ---
+        # Any multiplication (e.g., by 10) should be handled by the connection_template in the YAML
+        # for devices that require it (like 8888). 2878 devices need a simple integer.
+        # This makes the TemperatureOperation class universally correct.
+        return int(converted_temp)
+        # --- END OF FIX ---
