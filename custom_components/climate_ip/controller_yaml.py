@@ -1,5 +1,6 @@
 import aiofiles
 import asyncio
+import time  # [ADDITION] Needed for short-term caching
 from homeassistant.components.climate import ClimateEntityFeature, HVACMode, ATTR_HVAC_MODE
 import copy
 import re
@@ -398,26 +399,22 @@ class YamlController(ClimateController):
         
         return True
 
-    # async def async_get_status(self) -> Optional[Dict[str, Any]]:
-    #     now = time.time()
-    #     if self._cached_device_state and (now - self._last_state_fetch_time < 1):
-    #         _LOGGER.debug("%s Returning cached device state to de-duplicate poll.", self.log_prefix)
-    #         return self._cached_device_state.copy()
-
-    #     _LOGGER.debug("%s No fresh cache, polling device for state.", self.log_prefix)
-    #     device_state = await self.async_update_state()
-        
-    #     if device_state:
-    #         self._cached_device_state = device_state
-    #         self._last_state_fetch_time = now
-
-    #     return device_state.copy() if device_state else None
-
     async def async_get_status(self) -> Optional[Dict[str, Any]]:
         """
-        Fetches the device state. The caching logic has been removed
-        to prevent conflicts with the post-command async_refresh().
+        Fetches the device state. Uses a Short-Term Cache (TTL 2s) to avoid
+        double polling when the Coordinator requests a refresh immediately after
+        a Smart Poll update.
         """
+        # --- SHORT-TERM CACHE LOGIC ---
+        now_ts = time.time()
+        if self._cached_device_state and (now_ts - self._last_state_fetch_time < 2.0):
+             _LOGGER.debug(
+                 "%s [Cache] Returning cached device state (TTL < 2s) to prevent double polling.", 
+                 self.log_prefix
+             )
+             return self._cached_device_state.copy()
+        # ------------------------------
+
         _LOGGER.debug("%s Polling device for state.", self.log_prefix)
 
         # Directly call async_update_state to ensure the most recent state is always fetched when requested.
@@ -441,6 +438,13 @@ class YamlController(ClimateController):
 
         if full_device_state is None:
             raise UpdateFailed("Failed to get device state: No data received")
+        
+        # --- CACHE UPDATE ---
+        # We successfully fetched data, so we update the cache and timestamp here.
+        # This allows async_get_status to utilize this data if called immediately after.
+        self._cached_device_state = full_device_state
+        self._last_state_fetch_time = time.time()
+        # --------------------
 
         # --- One-time device discovery and initialization logic ---
         if not self._is_fully_initialized:
