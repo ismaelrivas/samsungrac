@@ -225,6 +225,15 @@ class ConnectionRequestBase(Connection):
                         _LOGGER.debug("%s Request (attempt %s/%s): %s", self.log_prefix, attempt + 1, REQUEST_MAX_RETRIES, _mask_request_params(params, self.log_prefix))
                         
                         resp = session.request(**params)
+                        
+                        # --- DEBUGGING: Log Raw Response on Error ---
+                        if resp.status_code >= 400:
+                            _LOGGER.debug(
+                                "%s [Debug] HTTP %s Response Body: %s", 
+                                self.log_prefix, resp.status_code, resp.text
+                            )
+                        # --------------------------------------------
+
                         resp.raise_for_status()
                         
                         # Use DEBUG level for successful command execution to avoid log spam.
@@ -261,7 +270,8 @@ class ConnectionRequestBase(Connection):
                             time.sleep(LOCAL_RETRY_DELAY)
                             continue
                         else:
-                            _LOGGER.error("%s HTTP error: %s. Not retrying", self.log_prefix, e)
+                            # Enhanced error logging
+                            _LOGGER.error("%s HTTP error: %s. Body: %s. Not retrying", self.log_prefix, e, getattr(e.response, 'text', 'No Body'))
                             raise CannotConnect(f"HTTP error {e.response.status_code}") from e
                     
                     except requests.exceptions.Timeout as e:
@@ -329,15 +339,15 @@ class ConnectionRequestBase(Connection):
             j, ok, code = self.execute_internal(template, value, device_state, device_id)
             # The retry logic for server errors (5xx) is now inside execute_internal
 
-            # If the command was successful but returned no data, it means we need to
-            # poll to get the updated state.
-            if j is None and self._controller and hasattr(self._controller, 'async_request_refresh'):
-                _LOGGER.debug("%s Command returned no data (or was a simple 'OK'), requesting an immediate refresh.", self.log_prefix)
-                # We are in a sync method, so we need to schedule the async task
-                asyncio.run_coroutine_threadsafe(
-                    self._controller.async_request_refresh(), self._controller.hass.loop
-                )
-                return {} # Return empty dict as the refresh will update the state.
+            # --- FIX: PREVENT DOUBLE POLLING ---
+            # If the command was successful but returned no data, strictly return empty dict.
+            # We DO NOT trigger a refresh here anymore. The Coordinator handles the 
+            # post-command refresh logic (Smart Polling or Delay).
+            if j is None:
+                _LOGGER.debug("%s Command returned no data (or was a simple 'OK'). Returning empty dict.", self.log_prefix)
+                return {} 
+            # -----------------------------------
+
             return j
         except Exception as e:
             raise e
