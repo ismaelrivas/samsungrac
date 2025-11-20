@@ -5,7 +5,7 @@ import logging
 import os
 import re
 import ssl
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional
 
 from .exceptions import CannotConnect, TokenAcquisitionError, AuthTurnedOffError, CertNotFound
 
@@ -36,18 +36,19 @@ class SamsungTokenAcquirer:
         self._reader: Optional[asyncio.StreamReader] = None
         self._writer: Optional[asyncio.StreamWriter] = None
 
-    async def _connect(self) -> Optional[str]:
+    async def _connect(self) -> Optional[Dict[str, Any]]:
         """
         Establish a connection to the device by trying different certificate and cipher strategies.
-        Returns the path of the certificate that resulted in a successful connection, or None.
+        Returns a dictionary with the successful certificate path and verify mode.
         """
         cfg = self
         last_error = None
 
         # Define cipher suites to try
-        cipher_configs = [
+        cipher_configs = [ # Add new Cipher Suite C for broader compatibility
             ("HIGH:!DH:!aNULL:@SECLEVEL=0", "Cipher Suite A"),
-            ("HIGH:!aNULL:!MD5:@SECLEVEL=0", "Cipher Suite B")
+            ("HIGH:!aNULL:!MD5:@SECLEVEL=0", "Cipher Suite B"),
+            ("ALL:@SECLEVEL=0", "Cipher Suite C")
         ]
 
         # Define certificate strategies based on user input
@@ -56,15 +57,26 @@ class SamsungTokenAcquirer:
 
         strategies = []
         if resolved_user_cert:
-            strategies.append({'cert': resolved_user_cert, 'name': 'User-provided Certificate'})
+            # If a user certificate is provided, try strict verification first, then no verification.
+            strategies.append({'cert': resolved_user_cert, 'name': 'User Cert (Strict Verify)', 'verify_mode': ssl.CERT_REQUIRED})
+            strategies.append({'cert': resolved_user_cert, 'name': 'User Cert (No Verify)', 'verify_mode': ssl.CERT_NONE})
+            # As a fallback, try with no certificate at all.
             strategies.append({'cert': None, 'name': 'No Certificate (Fallback)'})
         else:
+            # If no user certificate, the only possible verification mode is CERT_NONE.
             strategies.append({'cert': None, 'name': 'No Certificate (Default)'})
+            # As a fallback, try with the integration's default certificate.
             strategies.append({'cert': default_cert_path, 'name': 'Default Certificate (Fallback)'})
 
         # Build a list of all possible connection attempts
         all_attempts = [
-            {'cert': strategy['cert'], 'cipher_config': cipher_config, 'strategy_name': strategy['name']}
+            {
+                'cert': strategy['cert'],
+                # Default to CERT_NONE if verify_mode is not specified.
+                'verify_mode': strategy.get('verify_mode', ssl.CERT_NONE),
+                'cipher_config': cipher_config,
+                'strategy_name': strategy['name']
+            }
             for strategy in strategies
             for cipher_config in cipher_configs
         ]
@@ -73,18 +85,20 @@ class SamsungTokenAcquirer:
             cert_path = attempt['cert']
             ciphers, cipher_name = attempt['cipher_config']
             strategy_name = attempt['strategy_name']
+            verify_mode = attempt['verify_mode']
 
             try:
-                _LOGGER.debug("Attempting connection with Strategy: '%s', Cipher: '%s'", strategy_name, cipher_name)
+                _LOGGER.debug("Attempting connection with Strategy: '%s', Cipher: '%s', Verify: %s", strategy_name, cipher_name, verify_mode)
                 ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
                 ssl_context.set_ciphers(ciphers)
-                ssl_context.verify_mode = ssl.CERT_NONE
+                ssl_context.verify_mode = verify_mode
                 ssl_context.check_hostname = False
 
                 if cert_path:
                     _LOGGER.debug("Loading certificate: %s", os.path.basename(cert_path))
                     try:
                         # Use to_thread for the blocking file I/O
+                        await asyncio.to_thread(ssl_context.load_verify_locations, cafile=cert_path)
                         await asyncio.to_thread(ssl_context.load_cert_chain, cert_path)
                     except (ssl.SSLError, FileNotFoundError) as e:
                         _LOGGER.error("Failed to load certificate '%s': %s", cert_path, e)
@@ -104,38 +118,50 @@ class SamsungTokenAcquirer:
                 
                 # --- Return Logic ---
                 # If the successful certificate was the user-provided one, return the original user input.
+                successful_config = {'cert': None, 'verify_mode': verify_mode}
                 if cert_path == resolved_user_cert:
-                    return self._user_cert_path
+                    successful_config['cert'] = self._user_cert_path
                 # If the successful certificate was the default one, return its filename.
-                if cert_path == default_cert_path:
-                    return os.path.basename(default_cert_path)
-                # If connection was successful without a certificate, return None.
-                return None
+                elif cert_path == default_cert_path:
+                    successful_config['cert'] = os.path.basename(default_cert_path)
+                
+                _LOGGER.info(
+                    "Successful connection config found: cert='%s', verify_mode=%s",
+                    successful_config.get('cert'), successful_config.get('verify_mode')
+                )
+                return successful_config
 
-            except (ConnectionRefusedError, asyncio.TimeoutError, OSError) as e:
+            # --- START OF FIX: Explicitly catch TimeoutError and add a small delay ---
+            except asyncio.TimeoutError as e:
+                _LOGGER.debug("Connection attempt with '%s' / '%s' timed out after 15s. Trying next.", strategy_name, cipher_name)
+                last_error = e
+            except (ConnectionRefusedError, OSError) as e:
+            # --- END OF FIX ---
                 _LOGGER.debug("Connection attempt with '%s' / '%s' failed: %s. Trying next.", strategy_name, cipher_name, e)
                 last_error = e
-                await self.async_close()
-                continue
             except CertNotFound as e:
                 _LOGGER.warning("Certificate error with strategy '%s': %s. Trying next.", strategy_name, e)
+                # No need to sleep here, as this is a client-side configuration error.
                 continue
             except Exception as e:
                 _LOGGER.warning("Connection with '%s' / '%s' failed unexpectedly: %s. Trying next.", strategy_name, cipher_name, e)
                 last_error = e
-                await self.async_close()
-                continue
+
+            # If an attempt fails with a connection error, close the connection and wait before the next try.
+            await self.async_close()
+            _LOGGER.debug("Waiting 1.5s before next connection attempt.")
+            await asyncio.sleep(1.5)
 
         # If all attempts failed
         _LOGGER.error("All connection attempts failed. Last error: %s", last_error)
         raise CannotConnect(f"All connection attempts failed. Last error: {last_error}") from last_error
 
-    async def async_initiate_pairing(self) -> Optional[str]:
+    async def async_initiate_pairing(self) -> Optional[Dict[str, Any]]:
         """
-        Phase 1: Connects, puts the device in pairing mode, and returns the successful certificate path.
+        Phase 1: Connects, puts the device in pairing mode, and returns the successful connection config.
         """
         _LOGGER.info("Initiating pairing for %s", self._ip_address)
-        successful_cert = await self._connect()
+        successful_config = await self._connect()
         
         if not self._writer:
             raise TokenAcquisitionError("Connection failed, writer not available.")
@@ -146,13 +172,21 @@ class SamsungTokenAcquirer:
         await self._writer.drain()
 
         try:
+            # --- START OF FIX: Add null check for self._reader ---
+            if not self._reader:
+                raise TokenAcquisitionError("Connection failed, reader not available.")
+            # --- END OF FIX ---
             data = await asyncio.wait_for(self._reader.read(4096), timeout=15.0)
             decoded_data = data.decode('utf-8', 'ignore')
             _LOGGER.debug("Received response for GetToken: %s", decoded_data.strip())
-            if '<Response Type="GetToken" Status="Ready"/>' not in decoded_data:
+            # --- START OF FIX ---
+            # Some devices respond with 'InvalidateAccount' instead of 'Ready' during the
+            # initial pairing. We should treat this as a successful initiation.
+            if '<Response Type="GetToken" Status="Ready"/>' not in decoded_data and 'InvalidateAccount' not in decoded_data:
+            # --- END OF FIX ---
                 raise TokenAcquisitionError("Did not receive 'Ready' status from AC unit")
             _LOGGER.info("AC unit is 'Ready'. Pairing initiated successfully.")
-            return successful_cert # Return the cert path on success
+            return successful_config # Return the successful config dict
         except asyncio.TimeoutError:
             raise TokenAcquisitionError("Timeout waiting for 'Ready' response")
 

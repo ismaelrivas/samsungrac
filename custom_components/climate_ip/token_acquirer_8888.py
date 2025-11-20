@@ -1,13 +1,34 @@
 # climate_ip/token_acquirer_8888.py
 """Helper to acquire a token from modern Samsung AC units (port 8888)."""
 
-# Monkey-patch urllib3 to be more tolerant of malformed headers from some AC units.
-# This is necessary because some devices may return headers with extra spaces,
-# which would otherwise cause a HeaderParsingError.
-import urllib3.util.response as response_util
-from urllib3.exceptions import HeaderParsingError
-import urllib3.connection as connection_mod
+import asyncio
+import http.server
+import json
 import logging
+import os
+import ssl
+import threading
+from functools import partial
+from typing import Optional
+
+# Third-party imports
+import requests
+import urllib3
+import urllib3.connection as connection_mod
+import urllib3.util.response as response_util
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+from urllib3.exceptions import HeaderParsingError
+from urllib3.poolmanager import PoolManager
+
+# Local imports
+from .exceptions import TokenAcquisitionError
+
+_LOGGER = logging.getLogger(__name__)
+
+# --- MONKEY PATCH START ---
+# Monkey-patch urllib3 to be more tolerant of malformed headers from some AC units.
+# This is necessary because some devices may return headers with extra spaces.
 
 _LOGGER_PATCH = logging.getLogger(__package__)
 _original_assert = response_util.assert_header_parsing
@@ -19,25 +40,10 @@ def _tolerant_assert_header_parsing(headers):
     except HeaderParsingError as e:
         _LOGGER_PATCH.debug("Ignored HeaderParsingError: %s", e)
 
+# Apply the patch
 response_util.assert_header_parsing = _tolerant_assert_header_parsing
 connection_mod.assert_header_parsing = _tolerant_assert_header_parsing
-import asyncio
-import http.server
-import json
-import logging
-import ssl
-import os
-import threading
-from typing import Optional
-from functools import partial
-
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.poolmanager import PoolManager
-
-from .token_acquirer import TokenAcquisitionError
-
-_LOGGER = logging.getLogger(__name__)
+# --- MONKEY PATCH END ---
 
 
 class TLSv1Adapter(HTTPAdapter):
@@ -50,7 +56,7 @@ class TLSv1Adapter(HTTPAdapter):
             num_pools=connections,
             maxsize=maxsize,
             block=block,
-            ssl_context=context
+            ssl_context=context,
         )
 
 
@@ -64,7 +70,10 @@ class SamsungTokenAcquirer8888:
         # Resolve the certificate path. If a path without a directory is provided,
         # assume it is relative to the integration's directory.
         if cert_path and not os.path.dirname(cert_path):
-            _LOGGER.debug("Certificate path '%s' appears to be a filename. Resolving relative to integration directory.", cert_path)
+            _LOGGER.debug(
+                "Certificate path '%s' appears to be a filename. Resolving relative to integration directory.",
+                cert_path,
+            )
             self._cert_path = os.path.join(os.path.dirname(__file__), cert_path)
         else:
             # The path is absolute or contains directory components, use it as is.
@@ -94,14 +103,20 @@ class SamsungTokenAcquirer8888:
                     # FIX: Make the listener robust against requests without a Content-Length header.
                     content_length_str = self.headers.get('Content-Length')
                     if not content_length_str:
-                        _LOGGER.debug("Ignoring POST request without Content-Length header. Headers: %s", self.headers)
+                        _LOGGER.debug(
+                            "Ignoring POST request without Content-Length header. Headers: %s",
+                            self.headers,
+                        )
                         self.send_response(400, "Content-Length header is missing")
                         self.end_headers()
                         return
-                        
+
                     content_length = int(content_length_str)
                     post_data = self.rfile.read(content_length)
-                    _LOGGER.debug("Token listener received POST body: %s", post_data.decode('utf-8', errors='ignore'))
+                    _LOGGER.debug(
+                        "Token listener received POST body: %s",
+                        post_data.decode('utf-8', errors='ignore'),
+                    )
                     data = json.loads(post_data.decode('utf-8'))
                     token = data.get('DeviceToken')
 
@@ -134,17 +149,17 @@ class SamsungTokenAcquirer8888:
         """Starts the HTTPS listener server in a separate thread."""
         try:
             handler_class = self._token_handler_factory()
-            
+
             # FIX: Allow reusing the address to prevent "Address in use" errors on restart
             class ReusableTCPServer(http.server.HTTPServer):
                 allow_reuse_address = True
 
             self._httpd = ReusableTCPServer(('0.0.0.0', self._listener_port), handler_class)
-            
+
             context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
             context.set_ciphers('HIGH:!aNULL:!MD5:@SECLEVEL=0')
             context.load_cert_chain(certfile=self._cert_path)
-            
+
             self._httpd.socket = context.wrap_socket(self._httpd.socket, server_side=True)
 
             self._server_thread = threading.Thread(target=self._httpd.serve_forever)
@@ -163,7 +178,7 @@ class SamsungTokenAcquirer8888:
         if not await self._hass.async_add_executor_job(self._start_listener_server):
             raise TokenAcquisitionError("Failed to start the local listener server")
 
-        await asyncio.sleep(1) # Give the server a moment to start
+        await asyncio.sleep(1)  # Give the server a moment to start
 
         url = f"https://{self._ac_ip}:{self._ac_port}/devicetoken/request"
         headers = {'Host': f"{self._listener_ip}:{self._listener_port}"}
@@ -174,12 +189,15 @@ class SamsungTokenAcquirer8888:
         session.mount('https://', TLSv1Adapter())
 
         try:
-            requests.packages.urllib3.disable_warnings(
-                requests.packages.urllib3.exceptions.InsecureRequestWarning
-            )
-            
+            urllib3.disable_warnings(InsecureRequestWarning)
+
             # LOG: Log the outgoing request details for debugging.
-            _LOGGER.debug("Sending pairing request to URL: %s, Headers: %s, Payload: %s", url, headers, payload)
+            _LOGGER.debug(
+                "Sending pairing request to URL: %s, Headers: %s, Payload: %s",
+                url,
+                headers,
+                payload,
+            )
 
             # FIX: Correctly wrap the blocking call for async_add_executor_job
             func = partial(
@@ -194,7 +212,11 @@ class SamsungTokenAcquirer8888:
             response = await self._hass.async_add_executor_job(func)
 
             # LOG: Log the response from the AC.
-            _LOGGER.debug("AC responded to pairing request with status %s and body: %s", response.status_code, response.text)
+            _LOGGER.debug(
+                "AC responded to pairing request with status %s and body: %s",
+                response.status_code,
+                response.text,
+            )
 
             if response.status_code != 200:
                 raise TokenAcquisitionError(

@@ -29,14 +29,12 @@ import re
 import os
 import ssl
 import time
-import traceback
-from typing import Any, Dict, Optional
-
+from typing import Any, Dict, Optional, Tuple
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_PORT, CONF_TOKEN
 from requests.adapters import HTTPAdapter
 
 from .connection import Connection, register_connection
-from .exceptions import AuthError, CannotConnect
+from .exceptions import AuthError, CannotConnect, ConnectionRefused
 from .yaml_const import (
     CONF_CERT,
     CONFIG_DEVICE_CONDITION_TEMPLATE,
@@ -70,26 +68,26 @@ def _mask_request_params(params: dict, log_prefix: str) -> dict:
     # List of sensitive keys to mask
     SENSITIVE_KEYS = ["token", "DeviceToken", "Authorization", "mac", "unique_id", "uuid", "DUID"]
 
-    # 1. Enmascarar cabeceras
+    # 1. Mask headers
     headers = masked_params.get("headers")
     if isinstance(headers, dict):
         for key, value in headers.items():
             if key in SENSITIVE_KEYS and isinstance(value, str) and len(value) > 8:
                 headers[key] = f"***{value[-6:]}"
             
-    # 2. Enmascarar cuerpo JSON
+    # 2. Mask JSON body
     json_payload = masked_params.get("json")
     if isinstance(json_payload, dict):
         for key, value in json_payload.items():
             if key in SENSITIVE_KEYS and isinstance(value, str) and len(value) > 8:
                 json_payload[key] = f"***{value[-6:]}"
 
-    # 3. Enmascarar URL
-    # Esto es importante para URLs que contienen tokens o IDs como parte de la ruta.
+    # 3. Mask URL
+    # This is important for URLs that contain tokens or IDs as part of the path.
     url = masked_params.get("url")
     if isinstance(url, str):
-        # Expresión regular para encontrar UUIDs o cadenas alfanuméricas largas
-        # que probablemente sean tokens o IDs.
+        # Regular expression to find UUIDs or long alphanumeric strings
+        # that are likely tokens or IDs.
         url = re.sub(r'([a-fA-F0-9]{8,})', lambda m: f"***{m.group(1)[-6:]}", url)
         masked_params["url"] = url
 
@@ -98,7 +96,7 @@ def _mask_request_params(params: dict, log_prefix: str) -> dict:
 class ConnectionRequestBase(Connection):
     def __init__(self, hass_config, _logger):
         super(ConnectionRequestBase, self).__init__(hass_config, _logger)
-        self._params = {"timeout": 30}
+        self._params: Dict[str, Any] = {"timeout": 30}
         self._embedded_command = None # An optional nested command.
         self._controller = None  # Will be set by the property that creates this.
         logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
@@ -135,7 +133,7 @@ class ConnectionRequestBase(Connection):
                 if cert_file.find("\\") == -1 and cert_file.find("/") == -1:
                     cert_file = os.path.join(os.path.dirname(__file__), cert_file)
 
-            self._params[CONF_CERT] = cert_file
+            self._params[CONF_CERT] = cert_file # type: ignore
 
     def load_from_yaml(self, node, connection_base):
         from jinja2 import Template
@@ -179,26 +177,53 @@ class ConnectionRequestBase(Connection):
         """Internal synchronous method to execute the HTTP request with retries."""
         import warnings
         import requests
+        import urllib3
         from requests.packages.urllib3.exceptions import InsecureRequestWarning
+        from typing import Tuple, Any, Optional
+
+        # --- START OF FIX: StreamWrapper logic ---
+        # The StreamWrapper logic from controller_yaml.py needs to be applied here
+        # to ensure placeholders are replaced just before execution.
+        def _stream_wrapper(data: str, token: Optional[str], ip_address: Optional[str], device_id: Optional[str]) -> str:
+            """Replaces placeholders in the rendered template string."""
+            if token is not None:
+                data = data.replace("__CLIMATE_IP_TOKEN__", str(token))
+            if ip_address is not None:
+                data = data.replace("__CLIMATE_IP_HOST__", str(ip_address))
+            if device_id is not None:
+                data = data.replace("__DEVICE_ID__", str(device_id))
+            return data
 
         params = self._params.copy()
         if template is not None:
             try:
                 # Pass device_id to the template for use in URLs, etc.
-                params.update(json.loads(template.render(value=value, device_id=device_id)))
+                rendered_template = template.render(value=value, device_id=device_id)
+                # --- START OF FIX: Add null check for self._controller ---
+                token = self._controller.token if self._controller else None
+                ip_address = self._controller.ip_address if self._controller else None
+                final_template = _stream_wrapper(rendered_template, token, ip_address, device_id)
+                # --- END OF FIX ---
+                params.update(json.loads(final_template))
             except Exception as exc:
                 _LOGGER.error("%s Error rendering template or parsing JSON: %s", self.log_prefix, exc)
                 raise ValueError(f"Template rendering failed: {exc}") from exc
 
+        # INCREASE DELAY: Give the device more time to recover between failures (e.g., 5 seconds)
+        LOCAL_RETRY_DELAY = 5.0 
+
         with warnings.catch_warnings():
-            for attempt in range(REQUEST_MAX_RETRIES):
-                try:
-                    warnings.filterwarnings("ignore", category=InsecureRequestWarning) # type: ignore
-                    with requests.sessions.Session() as session: # type: ignore
+            warnings.filterwarnings("ignore", category=InsecureRequestWarning) # type: ignore
+            
+            # CRITICAL FIX: Create the session OUTSIDE the loop to reuse the TCP/SSL connection (Keep-Alive)
+            # This prevents saturating the device with new SSL handshakes on every retry.
+            with requests.sessions.Session() as session: # type: ignore
+                session.mount("https://", SamsungHTTPAdapter())
+
+                for attempt in range(REQUEST_MAX_RETRIES):
+                    try:
                         _LOGGER.debug("%s Request (attempt %s/%s): %s", self.log_prefix, attempt + 1, REQUEST_MAX_RETRIES, _mask_request_params(params, self.log_prefix))
                         
-                        session.mount("https://", SamsungHTTPAdapter())
-
                         resp = session.request(**params)
                         resp.raise_for_status()
                         
@@ -215,83 +240,103 @@ class ConnectionRequestBase(Connection):
                         try:
                             return (resp.json(), True, resp.status_code)
                         except (requests.exceptions.JSONDecodeError, json.JSONDecodeError):
-                            _LOGGER.warning("%s JSON decode failed for response: %s. Returning None to trigger poll.", self.log_prefix, resp.text)
+                            # --- START OF FIX: Treat non-JSON success response as a trigger to poll ---
+                            # If the response is successful (2xx) but not valid JSON (e.g., just "OK"),
+                            # it's a successful command acknowledgment. We return None to trigger a refresh.
+                            _LOGGER.debug("%s Response was not valid JSON (e.g., 'OK'). Returning None to trigger poll. Response: %s", self.log_prefix, resp.text.strip())
                             return (None, True, resp.status_code)
+                            # --- END OF FIX ---
 
-                except (json.JSONDecodeError, requests.exceptions.JSONDecodeError) as e:
-                    _LOGGER.warning("%s Parsing response json failed! Not retrying. Error: %s", self.log_prefix, e)
-                    raise ValueError("Failed to parse JSON response") from e
+                    except (json.JSONDecodeError, requests.exceptions.JSONDecodeError) as e:
+                        _LOGGER.warning("%s Parsing response json failed! Not retrying. Error: %s", self.log_prefix, e)
+                        raise ValueError("Failed to parse JSON response") from e
 
-                except requests.exceptions.HTTPError as e:
-                    if e.response.status_code in (401, 403):
-                        _LOGGER.error("%s Authentication error: %s. Not retrying", self.log_prefix, e)
-                        raise AuthError(f"Authentication failed with status {e.response.status_code}") from e
-                    elif 500 <= e.response.status_code < 600 and attempt < REQUEST_MAX_RETRIES - 1:
-                        _LOGGER.warning("%s Server error (%s). Retrying in %s seconds", self.log_prefix, e.response.status_code, REQUEST_RETRY_DELAY)
-                        time.sleep(REQUEST_RETRY_DELAY)
-                        continue
-                    else:
-                        _LOGGER.error("%s HTTP error: %s. Not retrying", self.log_prefix, e)
-                        raise CannotConnect(f"HTTP error {e.response.status_code}") from e
-                
-                except requests.exceptions.Timeout as e:
-                    if attempt < REQUEST_MAX_RETRIES - 1:
-                        _LOGGER.warning("%s Request timed out. Retrying in %s seconds", self.log_prefix, REQUEST_RETRY_DELAY)
-                        time.sleep(REQUEST_RETRY_DELAY)
-                        continue
-                    else:
-                        _LOGGER.error("%s Request timed out after %s attempts: %s", self.log_prefix, REQUEST_MAX_RETRIES, e)
-                        raise CannotConnect("Request timed out") from e
+                    except requests.exceptions.HTTPError as e:
+                        if e.response.status_code in (401, 403):
+                            _LOGGER.error("%s Authentication error: %s. Not retrying", self.log_prefix, e)
+                            raise AuthError(f"Authentication failed with status {e.response.status_code}") from e
+                        # Retrying 500 errors with longer delay
+                        elif 500 <= e.response.status_code < 600 and attempt < REQUEST_MAX_RETRIES - 1:
+                            _LOGGER.warning("%s Server error (%s). Retrying in %s seconds", self.log_prefix, e.response.status_code, LOCAL_RETRY_DELAY)
+                            time.sleep(LOCAL_RETRY_DELAY)
+                            continue
+                        else:
+                            _LOGGER.error("%s HTTP error: %s. Not retrying", self.log_prefix, e)
+                            raise CannotConnect(f"HTTP error {e.response.status_code}") from e
+                    
+                    except requests.exceptions.Timeout as e:
+                        if attempt < REQUEST_MAX_RETRIES - 1:
+                            _LOGGER.warning("%s Request timed out. Retrying in %s seconds", self.log_prefix, LOCAL_RETRY_DELAY)
+                            time.sleep(LOCAL_RETRY_DELAY)
+                            continue
+                        else:
+                            _LOGGER.error("%s Request timed out after %s attempts: %s", self.log_prefix, REQUEST_MAX_RETRIES, e)
+                            raise CannotConnect("Request timed out") from e
 
-                except requests.exceptions.ConnectionError as e:
-                    if attempt < REQUEST_MAX_RETRIES - 1:
-                        _LOGGER.warning("%s Connection error. Retrying in %s seconds", self.log_prefix, REQUEST_RETRY_DELAY)
-                        time.sleep(REQUEST_RETRY_DELAY)
-                        continue
-                    else:
-                        _LOGGER.error("%s Connection error after %s attempts: %s", self.log_prefix, REQUEST_MAX_RETRIES, e, exc_info=True)
-                        raise CannotConnect("Failed to establish a connection") from e
+                    except requests.exceptions.ConnectionError as e:
+                        if attempt < REQUEST_MAX_RETRIES - 1:
+                            _LOGGER.warning("%s Connection error. Retrying in %s seconds", self.log_prefix, LOCAL_RETRY_DELAY)
+                            time.sleep(LOCAL_RETRY_DELAY)
+                            continue
+                        else:
+                            # Recursively check the exception chain for the root cause.
+                            def has_connection_refused(exc):
+                                if isinstance(exc, ConnectionRefusedError):
+                                    return True
+                                if exc.__cause__:
+                                    return has_connection_refused(exc.__cause__)
+                                if exc.__context__:
+                                    return has_connection_refused(exc.__context__)
+                                return False
 
-                except requests.exceptions.RequestException as e:
-                    _LOGGER.error("%s Unhandled request exception: %s. Not retrying", self.log_prefix, e, exc_info=True)
-                    raise CannotConnect(f"An unexpected network error occurred: {e}") from e
+                            if has_connection_refused(e):
+                                _LOGGER.debug("%s Connection refused after %s attempts. Device is likely offline or IP is incorrect.", self.log_prefix, REQUEST_MAX_RETRIES)
+                                raise ConnectionRefusedError("Connection was refused by the device") from e
+                            else:
+                                _LOGGER.error("%s Connection error after %s attempts: %s", self.log_prefix, REQUEST_MAX_RETRIES, e, exc_info=True)
+                                raise CannotConnect("Failed to establish a connection") from e
 
-    async def execute(self, template, value, device_state, device_id=None):
-        """Asynchronously executes the command."""
-        # Determinar si es una petición de sondeo (sin valor y sin estado) o un comando.
+                    except requests.exceptions.RequestException as e:
+                        _LOGGER.error("%s Unhandled request exception: %s. Not retrying", self.log_prefix, e, exc_info=True)
+                        raise CannotConnect(f"An unexpected network error occurred: {e}") from e
+        
+        # Fallback return to satisfy static analysis
+        return (None, False, 0)
+
+    def execute(self, template, value, device_state, device_id=None):
+        """Synchronously executes the command. To be run in an executor."""
+        # Determine if it's a polling request (no value and no state) or a command.
         is_poll_request = template and not value and not device_state
         if is_poll_request:
             _LOGGER.debug("%s Received poll request.", self.log_prefix)
         else:
             _LOGGER.debug("%s Received command request with value: %s", self.log_prefix, value)
-
+        
         if self.embedded_command:
             _LOGGER.debug("%s Executing embedded command...", self.log_prefix)
-
+        
             if hasattr(self.embedded_command, 'set_controller_ref'):
                 self.embedded_command.set_controller_ref(self._controller)
             # Pass device_id to the nested command.
-            await self.embedded_command.execute(template, value, device_state, device_id)
+            self.embedded_command.execute(template, value, device_state, device_id)
 
         if not self.check_execute_condition(device_state):
             _LOGGER.debug("%s Execute condition not met, skipping command", self.log_prefix)
             return {}
 
-        _LOGGER.debug("%s Executing command...", self.log_prefix)
-        loop = asyncio.get_running_loop()
-        
         try:
             # Pass device_id to the internal execution method.
-            j, ok, code = await loop.run_in_executor(
-                None, self.execute_internal, template, value, device_state, device_id
-            )
+            j, ok, code = self.execute_internal(template, value, device_state, device_id)
             # The retry logic for server errors (5xx) is now inside execute_internal
 
             # If the command was successful but returned no data, it means we need to
             # poll to get the updated state.
             if j is None and self._controller and hasattr(self._controller, 'async_request_refresh'):
-                _LOGGER.debug("%s Command returned no data, requesting an immediate refresh.", self.log_prefix)
-                await self._controller.async_request_refresh()
+                _LOGGER.debug("%s Command returned no data (or was a simple 'OK'), requesting an immediate refresh.", self.log_prefix)
+                # We are in a sync method, so we need to schedule the async task
+                asyncio.run_coroutine_threadsafe(
+                    self._controller.async_request_refresh(), self._controller.hass.loop
+                )
                 return {} # Return empty dict as the refresh will update the state.
             return j
         except Exception as e:
