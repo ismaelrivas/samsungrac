@@ -19,12 +19,24 @@ CONF_SELECTED_DEVICES = "selected_devices"
 CONF_DEVICES = "devices"
 CONF_DEVICE_ID = "device_id"
 
+# --- Connection Method Constants (for Dual Engine) ---
+CONF_CONN_METHOD = "connection_method"
+CONN_METHOD_AIOHTTP = "aiohttp"
+CONN_METHOD_REQUESTS = "requests"
+
+# Connection types for config_flow logic
+CONN_METHOD_HTTPS_VERIFY = "https_verify"
+CONN_METHOD_HTTPS_TLS_AUTO = "tls_auto"
+
 # --- Device Types ---
 DEVICE_TYPE_SAMSUNG_8888 = "samsung_8888"
 DEVICE_TYPE_SAMSUNG_2878 = "samsung_2878"
 DEVICE_TYPE_MIM_H03 = "mim_h03"
 DEVICE_TYPE_SMARTTHINGS_HVAC = "smartthings_hvac"
 DEVICE_TYPE_SMARTTHINGS_DHW = "smartthings_dhw"
+
+# Group for modern devices that will get the new engine option
+DEVICE_TYPE_8888_GROUP = [DEVICE_TYPE_SAMSUNG_8888, DEVICE_TYPE_MIM_H03]
 
 # Maps device types to their corresponding YAML configuration files.
 DEVICE_TYPE_TO_CONFIG_FILE = {
