@@ -8,6 +8,8 @@ import logging
 import os
 import ssl
 import threading
+import re  # Added for robust token extraction
+import socket # Added to handle timeouts
 from functools import partial
 from typing import Optional
 
@@ -96,29 +98,66 @@ class SamsungTokenAcquirer8888:
             """Handles the POST request from the AC to deliver the token."""
 
             def do_POST(self):
+                token = None
                 try:
                     # LOG: Log incoming request headers and body for debugging.
                     _LOGGER.debug("Token listener received POST request. Headers: %s", self.headers)
 
-                    # FIX: Make the listener robust against requests without a Content-Length header.
                     content_length_str = self.headers.get('Content-Length')
-                    if not content_length_str:
-                        _LOGGER.debug(
-                            "Ignoring POST request without Content-Length header. Headers: %s",
-                            self.headers,
-                        )
-                        self.send_response(400, "Content-Length header is missing")
-                        self.end_headers()
-                        return
+                    raw_data = b""
 
-                    content_length = int(content_length_str)
-                    post_data = self.rfile.read(content_length)
-                    _LOGGER.debug(
-                        "Token listener received POST body: %s",
-                        post_data.decode('utf-8', errors='ignore'),
-                    )
-                    data = json.loads(post_data.decode('utf-8'))
-                    token = data.get('DeviceToken')
+                    if content_length_str:
+                        # Happy path: Headers are correct
+                        try:
+                            content_length = int(content_length_str)
+                            raw_data = self.rfile.read(content_length)
+                        except ValueError:
+                             _LOGGER.warning("Invalid Content-Length received: %s", content_length_str)
+                    else:
+                        # Malformed path: The AC sent bad headers (e.g. empty lines in header section)
+                        # causing Python to stop parsing early. Content-Length is likely in the 'body'
+                        # waiting to be read from the socket.
+                        _LOGGER.debug(
+                            "Content-Length missing (likely malformed AC headers). Attempting blind read."
+                        )
+                        
+                        # We set a timeout to avoid hanging if the socket is empty, 
+                        # though usually the data is already buffered.
+                        try:
+                            self.connection.settimeout(2.0)
+                            # Read a chunk large enough to contain the malformed headers + JSON body
+                            # 2048 bytes is plenty for a token request.
+                            raw_data = self.rfile.read(2048)
+                        except socket.timeout:
+                            _LOGGER.debug("Socket timed out during blind read (this might be expected if data was short)")
+                        except Exception as e:
+                            _LOGGER.error("Error during blind read: %s", e)
+
+                    # Decode data
+                    decoded_data = raw_data.decode('utf-8', errors='ignore')
+                    _LOGGER.debug("Token listener processed data: %s", decoded_data)
+
+                    # STRATEGY 1: Try parsing valid JSON
+                    try:
+                        if decoded_data.strip():
+                            # If the data contains malformed headers at the start, JSON load will fail.
+                            # We try finding the start of the JSON object first.
+                            json_start = decoded_data.find('{')
+                            if json_start != -1:
+                                json_candidate = decoded_data[json_start:]
+                                data = json.loads(json_candidate)
+                                token = data.get('DeviceToken')
+                    except Exception as json_err:
+                        _LOGGER.debug("Standard JSON parsing failed: %s", json_err)
+
+                    # STRATEGY 2: Regex fallback (Robust)
+                    # If JSON parsing failed (due to garbage data), use regex to grab the token directly.
+                    if not token:
+                        _LOGGER.debug("Attempting Regex token extraction.")
+                        # Looks for "DeviceToken" : "xxxxxxxx" ignoring whitespace/quotes style
+                        match = re.search(r'DeviceToken["\s:]+([^"\s}]+)', decoded_data)
+                        if match:
+                            token = match.group(1).strip('"')
 
                     if token:
                         _LOGGER.info("Token successfully received from AC unit.")
@@ -131,13 +170,17 @@ class SamsungTokenAcquirer8888:
                             acquirer_instance._token_received_event.set
                         )
                     else:
-                        _LOGGER.warning("POST request received but no token was found")
+                        _LOGGER.warning("POST request processed but no token could be extracted.")
                         self.send_response(400, "Token not found")
                         self.end_headers()
+
                 except Exception as e:
                     _LOGGER.error("Error handling POST request from AC: %s", e, exc_info=True)
-                    self.send_response(500, "Internal Server Error")
-                    self.end_headers()
+                    try:
+                        self.send_response(500, "Internal Server Error")
+                        self.end_headers()
+                    except:
+                        pass
 
             def log_message(self, format, *args):
                 # Suppress logging to keep the console clean
