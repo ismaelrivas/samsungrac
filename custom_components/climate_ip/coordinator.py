@@ -70,6 +70,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
         )
         # --- END OF FIX ---
 
+        # Initialize debounce task
+        self._debounce_task: Optional[asyncio.Task] = None
+
         # Start the connection listener if it's a push-based device
         if self.is_push_device:
             _LOGGER.debug("%s Device is push-based, starting connection listener.", self.log_prefix)
@@ -187,9 +190,58 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
         _LOGGER.debug("%s Created device state: %s", self.log_prefix, a)
         return a
 
+    async def _run_smart_poll(self, property_name: str, new_value: Any):
+        """Execute the smart polling logic after a debounce delay."""
+        import time
+        start_time = time.time()
+        max_retries = 3
+        poll_interval = 1.0 # Wait 1 second between attempts
+        
+        _LOGGER.debug("%s [Smart Poll] Starting verification for %s=%s (Max %s attempts)", self.log_prefix, property_name, new_value, max_retries)
+        
+        for attempt in range(max_retries):
+            attempt_num = attempt + 1
+            await asyncio.sleep(poll_interval)
+            
+            _LOGGER.debug(
+                "%s [Smart Poll] Attempt %s/%s: Requesting updated state from device...", 
+                self.log_prefix, attempt_num, max_retries
+            )
+            
+            # Force a state update from the device (updates internal controller state only)
+            await self.controller.async_update_state()
+            
+            # Get the current real value from the controller
+            real_value = self.controller.get_property(property_name)
+            
+            # Normalize values for comparison (Handle Enums vs Strings)
+            target_val_norm = new_value.value if isinstance(new_value, HVACMode) else new_value
+            real_val_norm = real_value.value if isinstance(real_value, HVACMode) else real_value
+            
+            # Allow for loose comparison (e.g. "cool" vs "Cool") if they are strings
+            if isinstance(target_val_norm, str) and isinstance(real_val_norm, str):
+                match = target_val_norm.lower() == real_val_norm.lower()
+            else:
+                match = target_val_norm == real_val_norm
+
+            if match:
+                elapsed = time.time() - start_time
+                _LOGGER.debug(
+                    "%s [Smart Poll] Success: Device confirmed state '%s=%s' in %.2f seconds (Attempt %s).", 
+                    self.log_prefix, property_name, real_val_norm, elapsed, attempt_num
+                )
+                break
+            else:
+                _LOGGER.debug(
+                    "%s [Smart Poll] Mismatch on attempt %s: Expected '%s', Got '%s'. Retrying...",
+                    self.log_prefix, attempt_num, target_val_norm, real_val_norm
+                )
+        
+        # Finally, force the HA entity to refresh with whatever state we achieved
+        await self.async_refresh()
+
     async def async_set_property(self, property_name: str, new_value: Any, corrections: Optional[Dict[str, Any]] = None, device_id: Optional[str] = None):
         """Set a property and use Smart Polling to confirm the change."""
-        import time  # Import time for tracking duration
         
         try:
             # Combine the main command with any corrections.
@@ -215,53 +267,17 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
 
             if success:
                 if not self.is_push_device:
-                    # --- SMART POLLING IMPLEMENTATION ---
-                    start_time = time.time()
-                    max_retries = 3
-                    poll_interval = 1.0 # Wait 1 second between attempts
+                    # --- DEBOUNCED SMART POLLING ---
+                    # Cancel any existing debounce task
+                    if self._debounce_task and not self._debounce_task.done():
+                        _LOGGER.debug("%s Cancelling pending smart poll task due to new command", self.log_prefix)
+                        self._debounce_task.cancel()
                     
-                    _LOGGER.debug("%s Command sent. Starting Smart Polling (Max %s attempts)", self.log_prefix, max_retries)
-                    
-                    for attempt in range(max_retries):
-                        attempt_num = attempt + 1
-                        await asyncio.sleep(poll_interval)
-                        
-                        _LOGGER.debug(
-                            "%s [Smart Poll] Attempt %s/%s: Requesting updated state from device...", 
-                            self.log_prefix, attempt_num, max_retries
-                        )
-                        
-                        # Force a state update from the device (updates internal controller state only)
-                        await self.controller.async_update_state()
-                        
-                        # Get the current real value from the controller
-                        real_value = self.controller.get_property(property_name)
-                        
-                        # Normalize values for comparison (Handle Enums vs Strings)
-                        target_val_norm = new_value.value if isinstance(new_value, HVACMode) else new_value
-                        real_val_norm = real_value.value if isinstance(real_value, HVACMode) else real_value
-                        
-                        # Allow for loose comparison (e.g. "cool" vs "Cool") if they are strings
-                        if isinstance(target_val_norm, str) and isinstance(real_val_norm, str):
-                            match = target_val_norm.lower() == real_val_norm.lower()
-                        else:
-                            match = target_val_norm == real_val_norm
+                    async def _debounced_poll():
+                        await asyncio.sleep(2.0) # Debounce delay
+                        await self._run_smart_poll(property_name, new_value)
 
-                        if match:
-                            elapsed = time.time() - start_time
-                            _LOGGER.debug(
-                                "%s [Smart Poll] Success: Device confirmed state '%s=%s' in %.2f seconds (Attempt %s).", 
-                                self.log_prefix, property_name, real_val_norm, elapsed, attempt_num
-                            )
-                            break
-                        else:
-                            _LOGGER.debug(
-                                "%s [Smart Poll] Mismatch on attempt %s: Expected '%s', Got '%s'. Retrying...",
-                                self.log_prefix, attempt_num, target_val_norm, real_val_norm
-                            )
-                    
-                    # Finally, force the HA entity to refresh with whatever state we achieved
-                    await self.async_refresh()
+                    self._debounce_task = asyncio.create_task(_debounced_poll())
                     # ------------------------------------
             else:
                 _LOGGER.debug("%s Not all properties were set successfully", self.log_prefix)

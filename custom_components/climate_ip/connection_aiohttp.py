@@ -1,4 +1,4 @@
-# custom_components/climate_ip/connection_8888.py
+# custom_components/climate_ip/connection_aiohttp.py
 """
 Asynchronous connection engine for modern Samsung devices (port 8888) using aiohttp.
 This engine implements HTTP Keep-Alive for low latency and correct mTLS.
@@ -6,6 +6,7 @@ This engine implements HTTP Keep-Alive for low latency and correct mTLS.
 import asyncio
 import copy
 import json
+import time
 import ssl
 from urllib.parse import urlparse
 import logging
@@ -346,6 +347,8 @@ class ConnectionAiohttp8888(Connection):
                 "%s [aiohttp] Sending request -> Method: %s, URL: %s, Payload: %s",
                 self.log_prefix, method, full_url, data
             )
+            # --- START: Timing measurement for aiohttp execute ---
+            start_time = time.perf_counter()
             # --- END: Add log for sent command ---
             async with self._session.request(
                 method,
@@ -369,7 +372,9 @@ class ConnectionAiohttp8888(Connection):
                 # If header parsing fails, aiohttp raises an exception here
                 response.raise_for_status()
 
-                _LOGGER.debug("%s [aiohttp] Request to %s successful. Status: %d", self.log_prefix, full_url, response.status)
+                elapsed = time.perf_counter() - start_time
+                _LOGGER.info("%s [AIOHTTP] Request completed in %.3f seconds (status %d)", self.log_prefix, elapsed, response.status)
+                # --- END: Timing measurement ---
 
                 return response_text, dict(response.headers)
 
@@ -377,6 +382,7 @@ class ConnectionAiohttp8888(Connection):
             if e.status == 400 and "Invalid header token" in str(e.message):
                 _LOGGER.error("%s [aiohttp] Header parsing error detected! (BadHttpMessage)", self.log_prefix)
                 _LOGGER.error("%s [aiohttp] This indicates the server responds with malformed headers even with mTLS.", self.log_prefix)
+                raise InvalidHeaderError("Malformed HTTP headers from device") from e
 
             _LOGGER.warning("%s [aiohttp] Client response error: %s", self.log_prefix, e)
             raise CannotConnect(f"Client response error: {e}") from e

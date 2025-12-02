@@ -23,6 +23,7 @@ CONF_DEVICE_ID = "device_id"
 CONF_CONN_METHOD = "connection_method"
 CONN_METHOD_AIOHTTP = "aiohttp"
 CONN_METHOD_REQUESTS = "requests"
+CONN_METHOD_RAW = "raw"
 
 # Connection types for config_flow logic
 CONN_METHOD_HTTPS_VERIFY = "https_verify"

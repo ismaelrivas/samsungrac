@@ -335,8 +335,15 @@ class ConnectionRequestBase(Connection):
             return {}
 
         try:
+            # --- START: Timing measurement for sync execute ---
+            import time
+            start_time = time.perf_counter()
+            # --- END: Timing measurement ---
             # Pass device_id to the internal execution method.
             j, ok, code = self.execute_internal(template, value, device_state, device_id)
+            elapsed = time.perf_counter() - start_time
+            _LOGGER.info("%s [REQUESTS] Execute completed in %.3f seconds (status code %s)", self.log_prefix, elapsed, code)
+            # --- END: Timing measurement ---
             # The retry logic for server errors (5xx) is now inside execute_internal
 
             # --- FIX: PREVENT DOUBLE POLLING ---
@@ -345,7 +352,7 @@ class ConnectionRequestBase(Connection):
             # post-command refresh logic (Smart Polling or Delay).
             if j is None:
                 _LOGGER.debug("%s Command returned no data (or was a simple 'OK'). Returning empty dict.", self.log_prefix)
-                return {} 
+                return {}
             # -----------------------------------
 
             return j

@@ -12,7 +12,7 @@ from .connection import _CONNECTIONS_STORE, _CONNECTIONS_LOCK
 from .connection_request import ConnectionRequest, ConnectionRequestPrint
 from .connection_request_tls_auto import ConnectionRequestTlsAuto
 from .samsung_2878 import ConnectionSamsung2878
-from .connection_8888 import ConnectionAiohttp8888
+from .connection_aiohttp import ConnectionAiohttp8888
 # --- END OF MODIFICATION ---
 from .properties import (
     GetJsonStatus,
@@ -182,5 +182,23 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if entry.entry_id in hass.data[DOMAIN]:
             hass.data[DOMAIN].pop(entry.entry_id)
             _LOGGER.debug("Coordinator removed from hass.data for entry %s", entry.entry_id)
+
+    # --- START OF FIX: Stop connection listener on unload ---
+    # We must explicitly stop the connection listener (if it exists) to prevent
+    # "zombie" tasks from running in the background after reload/unload.
+    key_to_remove = entry.unique_id
+    async with _CONNECTIONS_LOCK:
+        if key_to_remove in _CONNECTIONS_STORE:
+            connection = _CONNECTIONS_STORE[key_to_remove]
+            if hasattr(connection, "stop_listening"):
+                _LOGGER.debug("Stopping connection listener for '%s'", key_to_remove)
+                try:
+                    await connection.stop_listening()
+                except Exception as e:
+                    _LOGGER.error("Error stopping connection listener for '%s': %s", key_to_remove, e)
+            
+            _LOGGER.debug("Removing connection object for '%s' from store.", key_to_remove)
+            _CONNECTIONS_STORE.pop(key_to_remove)
+    # --- END OF FIX ---
 
     return unload_ok

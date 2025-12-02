@@ -318,7 +318,7 @@ class GetJsonStatus(DeviceProperty):
                 response_text, _ = await connection.async_execute(params.get('method'), params.get('url'), None, params.get('headers'))
                 device_state_result = json.loads(response_text)
             except json.JSONDecodeError as e:
-                _LOGGER.error("%s [GetJsonStatus] JSON parsing error during async execution: %s", self.log_prefix, e, exc_info=True)
+                _LOGGER.error("%s [GetJsonStatus] JSON parsing error. Response text was: '%s'. Error: %s", self.log_prefix, response_text, e)
                 return None
             # --- START OF SOLUTION: Do not catch connection errors here ---
             # By removing the 'except Exception', we allow InvalidHeaderError and CannotConnect
@@ -797,5 +797,7 @@ class TemperatureOperation(BasicNumericOperation):
         # Any multiplication (e.g., by 10) should be handled by the connection_template in the YAML
         # for devices that require it (like 8888). 2878 devices need a simple integer.
         # This makes the TemperatureOperation class universally correct.
-        return int(converted_temp)
+        # We return the float value here to maintain precision in the controller.
+        # The YAML template (e.g., {{ value | int }}) will handle the conversion for devices that need it.
+        return converted_temp
         # --- END OF FIX ---
