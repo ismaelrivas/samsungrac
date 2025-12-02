@@ -43,6 +43,7 @@ from .const import (
     CONF_CONN_METHOD,
     CONN_METHOD_AIOHTTP,
     CONN_METHOD_REQUESTS,
+    CONN_METHOD_RAW,
     # --- END OF MODIFICATION (Milestone 4) ---
 )
 from .exceptions import CannotConnect
@@ -157,6 +158,7 @@ class YamlController(ClimateController):
         self._device_state_key_regex = re.compile(r"device_state[\[\.](['\"]?)([A-Za-z0-9_]+)\1")
 
         self._poll = None
+        self._pending_updates: Dict[str, Tuple[Any, float]] = {}
 
     @property
     def is_fully_initialized(self) -> bool:
@@ -324,6 +326,9 @@ class YamlController(ClimateController):
             if conn_method == CONN_METHOD_AIOHTTP:
                 _LOGGER.info("%s Using 'Modern (aiohttp)' connection engine (from options)", self.log_prefix)
                 connection_node[CONFIG_DEVICE_CONNECTION_TYPE] = "samsung_8888_aiohttp"
+            elif conn_method == CONN_METHOD_RAW:
+                _LOGGER.info("%s Using 'Robust (raw socket)' connection engine (from options)", self.log_prefix)
+                connection_node[CONFIG_DEVICE_CONNECTION_TYPE] = "samsung_8888_raw"
             else:
                 _LOGGER.info("%s Using 'Legacy (requests)' connection engine (from options)", self.log_prefix)
                 # For 'requests', we use the connection type defined in the base YAML (e.g., 'request' or 'tls_auto')
@@ -356,12 +361,16 @@ class YamlController(ClimateController):
                 conn_type_str = connection_node.get(CONFIG_DEVICE_CONNECTION_TYPE)
                 # Move import here to avoid blocking calls at startup
                 if conn_type_str == "samsung_8888_aiohttp":
-                    from .connection_8888 import ConnectionAiohttp8888
+                    from .connection_aiohttp import ConnectionAiohttp8888
+                elif conn_type_str == "samsung_8888_raw":
+                    from .connection_raw import ConnectionRaw8888
                 for conn_class in CLIMATE_IP_CONNECTIONS:
                     if conn_class.match_type(conn_type_str):
                         _LOGGER.debug("%s Found matching connection class '%s' for type '%s'", self.log_prefix, conn_class.__name__, conn_type_str)
                         if conn_class.__name__ == "ConnectionAiohttp8888":
                             self._connection = conn_class(self._config, _LOGGER, self.hass, self._session, self._ip_address)
+                        elif conn_class.__name__ == "ConnectionRaw8888":
+                             self._connection = conn_class(self._config, _LOGGER, self.hass, self._session, self._ip_address)
                         else:
                             self._connection = conn_class(self._config, _LOGGER)
                         
@@ -569,6 +578,28 @@ class YamlController(ClimateController):
         
         for prop in all_properties:
             try:
+                # --- START OF FIX: Pending Updates Logic ---
+                # Check if we have a pending optimistic update for this property.
+                # If so, and it's recent (< 5 seconds), we skip the update from the (potentially stale) device state
+                # and enforce the optimistic value. This prevents the "revert" effect in the UI.
+                if prop.id in self._pending_updates:
+                    pending_val, timestamp = self._pending_updates[prop.id]
+                    if time.time() - timestamp < 5.0:
+                        _LOGGER.debug(
+                            "%s [UpdateProps] Skipping update for '%s' due to pending optimistic value: %s", 
+                            self.log_prefix, prop.name, pending_val
+                        )
+                        # We must convert the pending value (which might be a float) to the internal format if needed,
+                        # but usually op._value stores the HA representation.
+                        # However, pending_val comes from async_set_property -> new_value.
+                        # If new_value is what we sent, it should be compatible with op._value.
+                        prop._value = pending_val 
+                        continue
+                    else:
+                        # Expired, remove it
+                        del self._pending_updates[prop.id]
+                # --- END OF FIX ---
+
                 await prop.async_update_state(device_to_process, self._debug)
             except Exception as e:
                 _LOGGER.error("%s FAILED to update property '%s'. Error: %s", self.log_prefix, prop.name, e, exc_info=True)
@@ -906,6 +937,12 @@ class YamlController(ClimateController):
         op = self._operations.get(property_name)
         if op:
             try:
+                # --- START OF FIX: Register Pending Update ---
+                # Store the value and current time to prevent immediate overwrite by stale polls.
+                self._pending_updates[property_name] = (new_value, time.time())
+                _LOGGER.debug("%s Registered pending update for '%s': %s", self.log_prefix, property_name, new_value)
+                # --- END OF FIX ---
+
                 return await op.async_set_value(new_value, self._device_id)
             except (RequestException, CannotConnect) as e:
                 raise UpdateFailed(f"Failed to set property '{property_name}': {e}") from e

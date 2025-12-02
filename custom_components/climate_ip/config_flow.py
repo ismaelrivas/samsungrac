@@ -56,6 +56,7 @@ from .const import (
     CONF_CONN_METHOD,
     CONN_METHOD_AIOHTTP,
     CONN_METHOD_REQUESTS,
+    CONN_METHOD_RAW,
     # --- END OF MODIFICATION (Milestone 4) ---
     DEVICE_TYPE_TO_CONFIG_FILE,
 )
@@ -848,6 +849,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     options=[
                         {"value": CONN_METHOD_REQUESTS, "label": "Legacy (requests)"},
                         {"value": CONN_METHOD_AIOHTTP, "label": "Modern (aiohttp)"},
+                        {"value": CONN_METHOD_RAW, "label": "Robust (raw socket)"},
                     ],
                     mode=SelectSelectorMode.DROPDOWN,
                     translation_key="connection_method",
