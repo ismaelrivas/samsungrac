@@ -5,6 +5,22 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNKNOWN, UnitOfTemperature
 from homeassistant.util.unit_conversion import TemperatureConverter
 
+from .const import (
+    CONFIG_TYPE,
+    CONFIG_DEVICE_CONNECTION,
+    CONFIG_DEVICE_STATUS_TEMPLATE,
+    CONFIG_DEVICE_CONNECTION_TEMPLATE,
+    CONFIG_DEVICE_VALIDATION_TEMPLATE,
+    CONFIG_DEVICE_OPERATION_VALUES,
+    CONFIG_DEVICE_OPERATION_VALUE,
+    CONFIG_DEVICE_OPERATION_NUMBER_MIN,
+    CONFIG_DEVICE_OPERATION_NUMBER_MAX,
+    CONFIG_DEVICE_OPERATION_TEMP_UNIT_TEMPLATE,
+)
+from .exceptions import CannotConnect, AuthError
+
+_LOGGER = logging.getLogger(__name__)
+
 # Map YAML operation names to Home Assistant features.
 from homeassistant.components.climate import ClimateEntityFeature
 from homeassistant.components.climate.const import (
@@ -25,32 +41,11 @@ YAML_NAME_TO_HA_FEATURE = {
     "special": ClimateEntityFeature.PRESET_MODE,
     "hvac": ClimateEntityFeature.TARGET_TEMPERATURE, # No specific flag, but it's a primary operation
 }
-
-from .connection import Connection
-from .connection_request import ConnectionRequest
-from .yaml_const import (
-    CONFIG_DEVICE_CONNECTION,
-    CONFIG_DEVICE_CONNECTION_TEMPLATE,
-    CONFIG_DEVICE_OPERATION_NUMBER_MAX,
-    CONFIG_DEVICE_OPERATION_NUMBER_MIN,
-    CONFIG_DEVICE_OPERATION_TEMP_UNIT_TEMPLATE,
-    CONFIG_DEVICE_OPERATION_VALUE,
-    CONFIG_DEVICE_OPERATION_VALUES,
-    CONFIG_DEVICE_STATUS_TEMPLATE,
-    CONFIG_DEVICE_VALIDATION_TEMPLATE,
-    CONFIG_TYPE,
-)
-
-_LOGGER = logging.getLogger(__name__)
-
-CLIMATE_IP_PROPERTIES = []
-CLIMATE_IP_STATUS_GETTER = []
-
-PROPERTY_TYPE_STRING = "string"
 PROPERTY_TYPE_MODE = "modes"
 PROPERTY_TYPE_SWITCH = "switch"
 PROPERTY_TYPE_NUMBER = "number"
 PROPERTY_TYPE_TEMP = "temperature"
+PROPERTY_TYPE_STRING = "string"
 STATUS_GETTER_JSON = "json_status"
 
 UNIT_MAP = {
@@ -65,6 +60,9 @@ UNIT_MAP = {
     UnitOfTemperature.CELSIUS: UnitOfTemperature.CELSIUS,
     UnitOfTemperature.FAHRENHEIT: UnitOfTemperature.FAHRENHEIT,
 }
+
+CLIMATE_IP_PROPERTIES = []
+CLIMATE_IP_STATUS_GETTER = []
 
 
 def register_property(dev_prop):
@@ -90,6 +88,7 @@ def create_property(name, node, connection_base, controller, status_getter=None)
 
 
 def create_status_getter(name, node, connection_base, controller):
+
     for getter in CLIMATE_IP_STATUS_GETTER:
         if CONFIG_TYPE in node:
             if getter.match_type(node[CONFIG_TYPE]):
@@ -101,6 +100,7 @@ def create_status_getter(name, node, connection_base, controller):
 
 class DeviceProperty:
     def __init__(self, name, connection, controller, status_getter=None):
+
         self._name = name
         self._value = STATE_UNKNOWN
         self._connection = connection
@@ -263,6 +263,20 @@ class GetJsonStatus(DeviceProperty):
     def load_from_yaml(self, node):
         """Load the connection details from the 'status' node in YAML."""
         from jinja2 import Template
+        
+        # --- START OF MODIFICATION: Topology Debugging ---
+        if self._connection:
+             _LOGGER.debug(
+                 "%s [Topology] GetJsonStatus.load_from_yaml: base connection ID=%s, type=%s, parent=%s",
+                 self.log_prefix, 
+                 id(self._connection), 
+                 type(self._connection).__name__,
+                 getattr(self._connection, "_parent", "N/A")
+             )
+        else:
+             _LOGGER.debug("%s [Topology] GetJsonStatus.load_from_yaml: base connection is None!", self.log_prefix)
+        # --- END OF MODIFICATION ---
+        
         super_result = super().load_from_yaml(node)
 
         # --- START OF MODIFICATION: Default connection template for aiohttp ---
@@ -315,7 +329,7 @@ class GetJsonStatus(DeviceProperty):
                 params = json.loads(params_str)
 
                 # The async_execute method handles the request.
-                response_text, _ = await connection.async_execute(params.get('method'), params.get('url'), None, params.get('headers'))
+                response_text, _ = await connection.async_execute(params.get('method'), params.get('url'), None, params.get('headers'), _is_poll=True)
                 device_state_result = json.loads(response_text)
             except json.JSONDecodeError as e:
                 _LOGGER.error("%s [GetJsonStatus] JSON parsing error. Response text was: '%s'. Error: %s", self.log_prefix, response_text, e)
@@ -422,26 +436,34 @@ class DeviceOperation(DeviceProperty):
 
                 response, _ = await connection.async_execute(params.get('method'), params.get('url'), data_payload, params.get('headers'), device_state=current_full_state)
                 return response is not None
+            except (CannotConnect, AuthError) as e:
+                 _LOGGER.warning("%s Failed to set value for %s: connection error: %s", self.log_prefix, self.id, e)
+                 return False
             except Exception as e:
                 _LOGGER.error("%s Error during async_set_value for %s: %s", self.log_prefix, self.id, e, exc_info=True)
                 return False
         # --- END: Logic to handle async nested commands ---
         else: # Fallback to original synchronous logic
             _LOGGER.debug("[Dual Engine] Executing 'execute' in executor (Sync Engine)")
-            response = await self._controller.hass.async_add_executor_job(
-                connection.execute,
-                self.connection_template,
-                self.convert_hass_to_dev(v),
-                current_full_state,
-                device_id
-            )
-            # --- START OF FIX ---
-            # The synchronous `execute` method in `connection_request.py` returns `None`
-            # on success with an empty body to trigger a poll. A `dict` or `list` is returned
-            # if there is a JSON body. An exception is raised on failure.
-            # Therefore, if no exception was raised, the command was successful.
-            return True
-            # --- END OF FIX ---
+            try:
+                response = await self._controller.hass.async_add_executor_job(
+                    connection.execute,
+                    self.connection_template,
+                    self.convert_hass_to_dev(v),
+                    current_full_state,
+                    device_id
+                )
+                # The synchronous `execute` method in `connection_request.py` returns `None`
+                # on success with an empty body to trigger a poll. A `dict` or `list` is returned
+                # if there is a JSON body. An exception is raised on failure.
+                # Therefore, if no exception was raised, the command was successful.
+                return True
+            except (CannotConnect, AuthError) as e:
+                 _LOGGER.warning("%s Failed to set value for %s: connection error: %s", self.log_prefix, self.id, e)
+                 return False
+            except Exception as e:
+                _LOGGER.error("%s Error during async_set_value for %s: %s", self.log_prefix, self.id, e, exc_info=True)
+                return False
 
     def match_value(self, value):
         """Check if value matches the operation. True if the value is correct."""

@@ -26,12 +26,12 @@ from homeassistant.const import (
     STATE_OFF,
     STATE_ON,
 )
-from homeassistant.core import HomeAssistant
 from homeassistant.core import HomeAssistant, callback
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 from .const import (
     CONF_DEVICE_ID,
@@ -39,12 +39,10 @@ from .const import (
     CONF_CONFIG_FILE,
     CONF_CONTROLLER,
     CONF_DEVICES,
-    CONF_DEVICE_ID,
     CONF_TEMP_STEP,
     CONFIG_DEVICE_NAME,
     CONFIG_DEVICE_POLL,
     CONFIG_DEVICE_UPDATE_DELAY,
-    CONF_TEMP_STEP,
     DEFAULT_CONF_CERT_FILE,
     DEFAULT_CONF_CONFIG_FILE,
     DEFAULT_CONF_CONTROLLER,
@@ -86,7 +84,12 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     }
 )
 
-async def async_setup_platform(hass, config, add_entities, discovery_info=None):
+async def async_setup_platform(
+    hass: HomeAssistant,
+    config: ConfigType,
+    add_entities: AddEntitiesCallback,
+    discovery_info: DiscoveryInfoType | None = None,
+) -> None:
     """Import YAML platform configuration to a Config Flow."""
     _LOGGER.warning(
         "Configuration of 'climate_ip' via YAML is deprecated "

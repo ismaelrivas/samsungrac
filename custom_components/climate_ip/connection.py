@@ -1,11 +1,13 @@
+
 import asyncio
 import logging
-from .yaml_const import CONFIG_DEVICE_CONNECTION_PARAMS, CONFIG_TYPE
+from .const import (
+    CONFIG_DEVICE_CONNECTION_PARAMS,
+    CONFIG_DEVICE_CONNECTION_TEMPLATE,
+)
 from typing import Any, Dict, Optional, Tuple
 
 CLIMATE_IP_CONNECTIONS = []
-_CONNECTIONS_STORE = {}
-_CONNECTIONS_LOCK = asyncio.Lock()
 
 def register_connection(conn):
     """Decorate a function to register a propery."""

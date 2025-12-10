@@ -7,16 +7,8 @@ from typing import Any, Mapping
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-def _mask_sensitive_data(data: Any) -> Any:
-    """Recursively mask sensitive data in a dictionary or list."""
-    if isinstance(data, dict):
-        return {
-            key: f"***{value[-4:]}" if key in SENSITIVE_KEYS and isinstance(value, str) and len(value) > 4 else _mask_sensitive_data(value)
-            for key, value in data.items()
-        }
-    if isinstance(data, list):
-        return [_mask_sensitive_data(item) for item in data]
-    return data
+from .helpers import mask_sensitive_data
+from .const import DOMAIN
 
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
@@ -24,20 +16,7 @@ async def async_get_config_entry_diagnostics(
     """Return diagnostics for a config entry."""
     # Move imports inside the function to prevent blocking calls during startup.
     from .coordinator import SamsungClimateCoordinator
-    from homeassistant.const import CONF_MAC, CONF_TOKEN
 
-    from .const import DOMAIN
-
-    # Define sensitive keys here, now that constants are imported.
-    sensitive_keys = [
-        CONF_TOKEN,
-        CONF_MAC,
-        "unique_id",
-        "uuid",
-        "DeviceToken",
-        "Authorization",
-        "DUID",
-    ]
 
     # The data stored could be a single coordinator or a dict of coordinators
     entry_data = hass.data[DOMAIN][entry.entry_id]
@@ -69,21 +48,4 @@ async def async_get_config_entry_diagnostics(
                     coordinator_diag["coordinator_data"] = asdict(coordinator.data)
                 diagnostics_data["coordinators"][device_id] = coordinator_diag
 
-    # Local masking function that uses the locally defined sensitive_keys.
-    def _local_mask_data(data: Any) -> Any:
-        """Recursively mask sensitive data."""
-        if isinstance(data, dict):
-            masked_dict = {}
-            for key, value in data.items():                
-                if key in sensitive_keys and isinstance(value, str) and len(value) > 6:
-                    masked_dict[key] = f"***{value[-6:]}"
-                elif isinstance(value, Mapping):
-                    masked_dict[key] = _local_mask_data(dict(value))
-                else:
-                    masked_dict[key] = _local_mask_data(value)
-            return masked_dict
-        if isinstance(data, list):
-            return [_local_mask_data(item) for item in data]
-        return data
-
-    return _local_mask_data(diagnostics_data)
+    return mask_sensitive_data(diagnostics_data)

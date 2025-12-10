@@ -34,11 +34,13 @@ from requests.adapters import HTTPAdapter
 
 from .connection import Connection, register_connection
 from .exceptions import AuthError, CannotConnect
-from .yaml_const import (
+from .helpers import mask_sensitive_data
+from .const import (
     CONF_CERT,
-    CONFIG_DEVICE_CONDITION_TEMPLATE,
-    CONFIG_DEVICE_CONNECTION,
+    CONFIG_DEVICE_CONNECTION_TEMPLATE,
     CONFIG_DEVICE_CONNECTION_PARAMS,
+    CONFIG_DEVICE_CONNECTION,
+    CONFIG_DEVICE_CONDITION_TEMPLATE,
 )
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -112,6 +114,10 @@ class ConnectionRequestBase(Connection):
         if self._controller:
             return self._controller.log_prefix
         return "[NO_ID]"
+
+    async def close(self):
+        """Async wrapper for closing resources. No persistent session in tls_auto."""
+        self._thread_pool.shutdown(wait=False)
 
     def __del__(self):
         self._thread_pool.shutdown(wait=False)
@@ -200,7 +206,7 @@ class ConnectionRequestBase(Connection):
                             session.mount("https://", SamsungHTTPAdapter())
                         
                         if self._debug:
-                            _LOGGER.debug("%s Executing request (attempt %d/%d) with params: %s", self.log_prefix, attempt + 1, self._max_retries, _mask_request_params(params, self.log_prefix)) # lgtm [py/clear-text-logging-sensitive-data]
+                            _LOGGER.debug("%s Executing request (attempt %d/%d) with params: %s", self.log_prefix, attempt + 1, self._max_retries, mask_sensitive_data(params)) # lgtm [py/clear-text-logging-sensitive-data]
 
                         resp = session.request(**params)
                         resp.raise_for_status()

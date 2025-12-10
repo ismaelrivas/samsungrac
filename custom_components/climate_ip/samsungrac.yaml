@@ -10,6 +10,7 @@ device:
   poll: True
   connection:
     type: request
+    keep_alive: True
     params:
       verify: False
       headers: { "Authorization": "Bearer __CLIMATE_IP_TOKEN__", "Content-Type": "application/json" }
