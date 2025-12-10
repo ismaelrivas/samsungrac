@@ -452,7 +452,11 @@ class YamlController(ClimateController):
             raise UpdateFailed(f"Error communicating with device: {e}") from e
 
         if full_device_state is None:
-            raise UpdateFailed("Failed to get device state: No data received")
+            if self._cached_device_state:
+                 _LOGGER.warning("%s Failed to get latest state (API Error), using cached state to prevent unavailability.", self.log_prefix)
+                 return self._cached_device_state
+            
+            raise UpdateFailed("Failed to get device state: No data received and no cache available")
         
         # --- CACHE UPDATE ---
         # We successfully fetched data, so we update the cache and timestamp here.
