@@ -35,7 +35,7 @@ _LOGGER = logging.getLogger(__name__)
 class SamsungClimateCoordinator(DataUpdateCoordinator):
     """Manages data fetching for Samsung Climate devices."""
 
-    def __init__(self, hass, controller, entry: ConfigEntry):
+    def __init__(self, hass: Any, controller: Any, entry: ConfigEntry) -> None:
         """Initialize the data coordinator."""
         self.controller = controller
         self.entry = entry
@@ -78,11 +78,11 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("%s Device is push-based, starting connection listener.", self.log_prefix)
             self.controller.connection.start_listening()
 
-    def register_entity(self, entity):
+    def register_entity(self, entity: Any) -> None:
         """Register the climate entity instance."""
         self._entity = entity
 
-    def unregister_entity(self, entity):
+    def unregister_entity(self, entity: Any) -> None:
         """Unregister the climate entity instance."""
         self._entity = None
 
@@ -190,7 +190,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
         _LOGGER.debug("%s Created device state: %s", self.log_prefix, a)
         return a
 
-    async def _run_smart_poll(self, property_name: str, new_value: Any):
+    async def _run_smart_poll(self, property_name: str, new_value: Any) -> None:
         """Execute the smart polling logic after a debounce delay."""
         import time
         start_time = time.time()
@@ -240,7 +240,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
         # Finally, force the HA entity to refresh with whatever state we achieved
         await self.async_refresh()
 
-    async def async_set_property(self, property_name: str, new_value: Any, corrections: Optional[Dict[str, Any]] = None, device_id: Optional[str] = None):
+    async def async_set_property(self, property_name: str, new_value: Any, corrections: Optional[Dict[str, Any]] = None, device_id: Optional[str] = None) -> None:
         """Set a property and use Smart Polling to confirm the change."""
         
         try:
@@ -310,11 +310,11 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
         return self.controller.unique_id
 
     @property
-    def operations(self) -> list:
+    def operations(self) -> list[Any]:
         return self.controller.operations
 
     @property
-    def attributes(self) -> list:
+    def attributes(self) -> list[Any]:
         return self.controller.attributes
 
     @property

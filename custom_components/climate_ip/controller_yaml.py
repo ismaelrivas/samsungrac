@@ -1,6 +1,7 @@
 import aiofiles
 import asyncio
-import time  # [ADDITION] Needed for short-term caching
+import time
+
 from homeassistant.components.climate import ClimateEntityFeature, HVACMode, ATTR_HVAC_MODE
 import copy
 import re
@@ -29,7 +30,7 @@ from homeassistant.helpers.config_validation import PLATFORM_SCHEMA
 from requests.exceptions import RequestException
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from .connection import CLIMATE_IP_CONNECTIONS, _CONNECTIONS_STORE, _CONNECTIONS_LOCK
+from .connection import CLIMATE_IP_CONNECTIONS
 from .controller import ATTR_POWER, ClimateController, register_controller
 from .properties import DeviceProperty, create_property, create_status_getter
 from .state import ClimateIPDeviceState
@@ -45,10 +46,12 @@ from .const import (
     CONN_METHOD_REQUESTS,
     CONN_METHOD_RAW,
     # --- END OF MODIFICATION (Milestone 4) ---
+    # --- END OF MODIFICATION (Milestone 4) ---
+    DOMAIN, # Import DOMAIN
 )
 from .exceptions import CannotConnect
-from .helpers import find_key_in_data
-from .yaml_const import (
+from .helpers import stream_wrapper, get_value_by_path, mask_sensitive_data
+from .const import (
     CONF_CONFIG_FILE,
     CONF_DEVICE_ID,
     CONFIG_DEVICE,
@@ -75,33 +78,6 @@ def clear_yaml_cache():
         _LOGGER.info("Clearing YAML file cache to force re-read on reload.")
         _YAML_FILE_CACHE.clear()
 
-def _get_value_by_path(data: dict, path: list) -> Any:
-    """
-    Navigate through a nested dictionary using a list of keys.
-    Returns the found value or None if the path does not exist.
-    """
-    if not data or not path:
-        return None
-    current = data
-    for key in path:
-        if not isinstance(current, dict) or key not in current:
-            return None
-        current = current[key]
-    return current
-
-
-def StreamWrapper(data: str, token: Optional[str], ip_address: Optional[str], device_id: Optional[str]) -> str:
-    """
-    Replaces placeholder values in a string.
-    """
-    if token is not None:
-        data = data.replace("__CLIMATE_IP_TOKEN__", token)
-    if ip_address is not None:
-        data = data.replace("__CLIMATE_IP_HOST__", ip_address)
-    if device_id is not None:
-        data = data.replace("__DEVICE_ID__", str(device_id))
-    return data
-
 
 @register_controller
 class YamlController(ClimateController):
@@ -109,7 +85,7 @@ class YamlController(ClimateController):
     YAML-based controller, refactored to support asynchronous operations.
     """
 
-    def __init__(self, config, logger):
+    def __init__(self, config: Dict[str, Any], logger: logging.Logger) -> None:
         super().__init__(config, logger)
         self.hass = config.get("hass")
         self._session = config.get("session")
@@ -160,6 +136,22 @@ class YamlController(ClimateController):
         self._poll = None
         self._pending_updates: Dict[str, Tuple[Any, float]] = {}
 
+    def _mask_sensitive_data(self, data: Any) -> Any:
+        """Mask sensitive data in the device state for logging."""
+        if isinstance(data, dict):
+            masked = data.copy()
+            if "uuid" in masked and isinstance(masked["uuid"], str) and len(masked["uuid"]) > 6:
+                masked["uuid"] = "***" + masked["uuid"][-6:]
+            
+            # Recursively mask children
+            for key, value in masked.items():
+                if isinstance(value, (dict, list)):
+                    masked[key] = self._mask_sensitive_data(value)
+            return masked
+        elif isinstance(data, list):
+            return [self._mask_sensitive_data(item) for item in data]
+        return data
+
     @property
     def is_fully_initialized(self) -> bool:
         """Return True if the controller has completed its initialization."""
@@ -203,7 +195,7 @@ class YamlController(ClimateController):
             yaml_device = self._parsed_yaml_cache[self._device_id]
         else:
             _LOGGER.debug("%s [Cache] Parsing and caching YAML for device_id: %s", self.log_prefix, self._device_id)
-            final_yaml_str = StreamWrapper(
+            final_yaml_str = stream_wrapper(
                 self._raw_yaml_config, self._token, self._ip_address, self._device_id
             )
             yaml_device = yaml.safe_load(final_yaml_str)
@@ -213,6 +205,7 @@ class YamlController(ClimateController):
 
         nodes = ac.get(CONFIG_DEVICE_OPERATIONS, {})
         for op_key in nodes.keys():
+            _LOGGER.debug("%s [ObjTrace] Creating property '%s'. Connection ID: %s, Prefix: %s", self.log_prefix, op_key, id(self._connection), self._connection.log_prefix)
             op = create_property(op_key, nodes[op_key], self._connection, self, self._state_getter)
             if op is not None:
                 self._operations[op.id] = op
@@ -262,7 +255,7 @@ class YamlController(ClimateController):
         _LOGGER.debug("%s Controller is now fully initialized.", self.log_prefix)
 
 
-    async def initialize(self):
+    async def initialize(self) -> bool:
         """
         Performs the initial loading of the YAML configuration file and sets up the base connection.
         """
@@ -296,7 +289,7 @@ class YamlController(ClimateController):
             return False
         # --- END OF FIX ---
         # El parseo inicial usa el device_id actual (que puede ser None) como clave de cache.
-        partial_render_str = StreamWrapper(self._raw_yaml_config, self._token, self._ip_address, self._device_id)
+        partial_render_str = stream_wrapper(self._raw_yaml_config, self._token, self._ip_address, self._device_id)
         yaml_device = yaml.safe_load(partial_render_str)
         self._parsed_yaml_cache[self._device_id] = yaml_device
 
@@ -343,19 +336,32 @@ class YamlController(ClimateController):
         )
         _LOGGER.debug(
             "%s Connection node being passed to create_connection: %s",
-            self.log_prefix, connection_node
+            self.log_prefix, mask_sensitive_data(connection_node)
         )
 
         # --- START: Logic moved from connection.py ---
-        key = self._config.get("unique_id")
+        key = self.unique_id
         if not key:
             _LOGGER.error("%s Cannot create a unique connection without a unique_id", self.log_prefix)
             return False
 
-        async with _CONNECTIONS_LOCK:
-            if key in _CONNECTIONS_STORE:
+        # Access global state from hass.data
+        if not self.hass:
+             _LOGGER.error("%s Cannot access hass.data: hass object is missing", self.log_prefix)
+             return False
+             
+        domain_data = self.hass.data.get(DOMAIN, {})
+        connections_store = domain_data.get("connections")
+        connections_lock = domain_data.get("lock")
+
+        if connections_store is None or connections_lock is None:
+             _LOGGER.error("%s Connection store or lock not initialized in hass.data", self.log_prefix)
+             return False
+
+        async with connections_lock:
+            if key in connections_store:
                 _LOGGER.debug("%s [Cache] Returning existing connection object for %s", self.log_prefix, key)
-                self._connection = _CONNECTIONS_STORE[key]
+                self._connection = connections_store[key]
             else:
                 _LOGGER.debug("%s Creating new connection object for %s", self.log_prefix, key)
                 conn_type_str = connection_node.get(CONFIG_DEVICE_CONNECTION_TYPE)
@@ -375,7 +381,7 @@ class YamlController(ClimateController):
                             self._connection = conn_class(self._config, _LOGGER)
                         
                         if self._connection.load_from_yaml(connection_node, None):
-                            _CONNECTIONS_STORE[key] = self._connection
+                            connections_store[key] = self._connection
                             break
                 if not self._connection:
                      _LOGGER.error("%s No matching connection class found for type '%s'", self.log_prefix, conn_type_str)
@@ -424,7 +430,7 @@ class YamlController(ClimateController):
              return self._cached_device_state.copy()
         # ------------------------------
 
-        _LOGGER.debug("%s Polling device for state.", self.log_prefix)
+        _LOGGER.debug("%s Polling device for state. Connection ID: %s, Prefix: %s", self.log_prefix, id(self._connection), self._connection.log_prefix)
 
         # Directly call async_update_state to ensure the most recent state is always fetched when requested.
         device_state = await self.async_update_state()
@@ -446,7 +452,11 @@ class YamlController(ClimateController):
             raise UpdateFailed(f"Error communicating with device: {e}") from e
 
         if full_device_state is None:
-            raise UpdateFailed("Failed to get device state: No data received")
+            if self._cached_device_state:
+                 _LOGGER.warning("%s Failed to get latest state (API Error), using cached state to prevent unavailability.", self.log_prefix)
+                 return self._cached_device_state
+            
+            raise UpdateFailed("Failed to get device state: No data received and no cache available")
         
         # --- CACHE UPDATE ---
         # We successfully fetched data, so we update the cache and timestamp here.
@@ -464,7 +474,7 @@ class YamlController(ClimateController):
                 
                 if id_map:
                     _LOGGER.debug("%s 'identifiers' map found, running discovery", self.log_prefix)
-                    self.discovered_devices = _get_value_by_path(full_device_state, id_map.get("path_to_devices", []))
+                    self.discovered_devices = get_value_by_path(full_device_state, id_map.get("path_to_devices", []))
                     
                     if self.discovered_devices:
                         device_to_discover = None
@@ -479,7 +489,7 @@ class YamlController(ClimateController):
                             device_to_discover = self.discovered_devices[0] if self.discovered_devices else None
                         
                         if device_to_discover:
-                            discovered_id = _get_value_by_path(device_to_discover, id_map.get("id", []))
+                            discovered_id = get_value_by_path(device_to_discover, id_map.get("id", []))
                             if discovered_id is not None:
                                 self._device_id = str(discovered_id)
                             _LOGGER.info("%s Discovered device with id=%s", self.log_prefix, self._device_id)
@@ -495,15 +505,15 @@ class YamlController(ClimateController):
         return self._state_getter.value
 
     @staticmethod
-    def match_type(type):
+    def match_type(type: str) -> bool:
         return str(type).lower() == CONST_CONTROLLER_TYPE
 
     @property
-    def name(self):
+    def name(self) -> str:
         return self._name
 
     @property
-    def debug(self):
+    def debug(self) -> bool:
         return self._debug
     
     @property
@@ -549,7 +559,7 @@ class YamlController(ClimateController):
             
             if id_map:
                 _LOGGER.debug("%s 'identifiers' map found. Searching in path: %s", self.log_prefix, id_map.get("path_to_devices", []))
-                devices_list = _get_value_by_path(full_device_state, id_map.get("path_to_devices", []))
+                devices_list = get_value_by_path(full_device_state, id_map.get("path_to_devices", []))
                 
                 if devices_list:
                     _LOGGER.debug("%s Found %d devices in state. Selecting correct one.", self.log_prefix, len(devices_list))
@@ -574,7 +584,7 @@ class YamlController(ClimateController):
 
         corrections = {}
         all_properties = list(self._operations.values()) + list(self._properties.values()) + list(self._sensors.values())
-        _LOGGER.debug("%s Updating %d properties using device_state: %s", self.log_prefix, len(all_properties), str(device_to_process))
+        _LOGGER.debug("%s Updating %d properties using device_state: %s", self.log_prefix, len(all_properties), str(mask_sensitive_data(device_to_process)))
         
         for prop in all_properties:
             try:
@@ -627,7 +637,7 @@ class YamlController(ClimateController):
 
         self._rebuild_attributes()
         return corrections
-    def _rebuild_attributes(self):
+    def _rebuild_attributes(self) -> None:
         """Rebuilds the _attributes dictionary from all properties."""
         self._attributes = {ATTR_NAME: self.name}
         all_properties = list(self._operations.values()) + list(self._properties.values())

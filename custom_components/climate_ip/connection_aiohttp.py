@@ -20,7 +20,8 @@ from homeassistant.const import CONF_TOKEN
 
 from .connection import Connection, register_connection
 from .exceptions import AuthError, CannotConnect, InvalidHeaderError
-from .yaml_const import CONF_CERT
+from .const import CONF_CERT
+from .helpers import mask_sensitive_data
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,7 +48,13 @@ class ConnectionAiohttp8888(Connection):
         # --- START OF FIX: Reintroduce shared state with a Lock ---
         # Object to share initialization state across all copies.
         # The Lock prevents race conditions during the first initialization.
-        self._shared_state = {"initialized": False, "lock": asyncio.Lock(), "ssl_context": None}
+        # We also store 'local_session' here so it is shared across copies (commands).
+        self._shared_state = {
+            "initialized": False, 
+            "lock": asyncio.Lock(), 
+            "ssl_context": None,
+            "local_session": None
+        }
         # --- END OF FIX ---
         # --- Simplified Connection Logic ---
         # This will hold the Jinja2 template for this specific connection instance.
@@ -56,6 +63,16 @@ class ConnectionAiohttp8888(Connection):
         self.condition_template: Optional[Template] = None
         self._embedded_command: Optional[ConnectionAiohttp8888] = None
         self._ssl_context: Optional[ssl.SSLContext] = None
+        
+        # --- START OF FIX: Local Session for Periodic Reset ---
+        self._keep_alive = config.get("keep_alive", True)
+        # self._local_session removed in favor of shared_state["local_session"]
+        # --- END OF FIX ---
+        
+        # --- START OF FIX: Strict Serialization Lock ---
+        # Initialize a lock to strictly serialize requests and force connection reuse.
+        self._request_lock = asyncio.Lock()
+        # --- END OF FIX ---
 
         if not self._token:
              _LOGGER.error("[aiohttp_init] aiohttp engine started without a token. This will fail.")
@@ -126,6 +143,8 @@ class ConnectionAiohttp8888(Connection):
         return type_str == CONNECTION_TYPE_AIOHTTP_8888
 
     def load_from_yaml(self, node, connection_base) -> bool:
+        if node and "keep_alive" in node:
+            self._keep_alive = node["keep_alive"]
         return True
 
     def create_updated(self, yaml_node):
@@ -138,7 +157,7 @@ class ConnectionAiohttp8888(Connection):
         'connection_template' because the async_set_value in properties.py
         fails to check _params.
         """
-        from .yaml_const import (
+        from .const import (
             CONFIG_DEVICE_CONNECTION_TEMPLATE,
             CONFIG_DEVICE_CONNECTION_PARAMS,
             CONFIG_DEVICE_CONNECTION,
@@ -166,6 +185,11 @@ class ConnectionAiohttp8888(Connection):
 
         # --- START OF FIX: Move import to the top of the function ---
         from jinja2 import Template
+        # --- END OF FIX ---
+
+        # --- START OF FIX: Propagate keep_alive logic ---
+        if yaml_node and "keep_alive" in yaml_node:
+             new_connection._keep_alive = yaml_node["keep_alive"]
         # --- END OF FIX ---
 
         # If a connection_template is defined in the value-specific node,
@@ -232,10 +256,11 @@ class ConnectionAiohttp8888(Connection):
     def is_async_native(self) -> bool:
         return True
     
-    async def _try_connection(self) -> None:
+    async def _try_connection(self) -> Optional[str]:
         """
         Probes the connection (HTTPS mTLS ONLY)
         and memorizes it for future use.
+        Returns response text if successful, None otherwise.
         """
         # --- START OF FIX: Use Lock for safe, one-time initialization ---
         if self._shared_state["initialized"]:
@@ -263,7 +288,12 @@ class ConnectionAiohttp8888(Connection):
                         if response.status in (200, 401, 403):
                             _LOGGER.info("%s [aiohttp] HTTPS (mTLS) connection successful and memorized.", self.log_prefix)
                             self._shared_state["initialized"] = True
+                            
+                            # --- START OF FIX: Optimization - Return text for reuse ---
+                            if response.status == 200:
+                                return await response.text()
                             return None
+                            # --- END OF FIX ---
                         else:
                             raise Exception(f"Unexpected HTTPS probe response: {response.status}")
                 
@@ -292,7 +322,38 @@ class ConnectionAiohttp8888(Connection):
 
             _LOGGER.error("%s [aiohttp_probe] HTTPS (mTLS) connection probe failed. The device is unreachable or the certificate/token is incorrect.", self.log_prefix)
             raise CannotConnect("Connection initialization failed (HTTPS)")
+            raise CannotConnect("Connection initialization failed (HTTPS)")
         # --- END OF FIX ---
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """
+        Returns the appropriate aiohttp session.
+        If keep_alive is True, returns the shared session.
+        If keep_alive is False, returns a dedicated local session.
+        """
+        if self._keep_alive:
+            return self._session
+        
+        local_session = self._shared_state.get("local_session")
+        if local_session is None or local_session.closed:
+             # Retrieve the shared SSL context (should be initialized by _try_connection)
+             ssl_context = self._shared_state.get("ssl_context")
+             
+             # Create a dedicated session with the same timeout config as the global one
+             # We use a custom connector with a long keepalive timeout to mimic the shared one
+             # during the "active" phase (before we explicitly close it).
+             # --- START OF FIX: Inject SSL Context into Connector to force reuse ---
+             # Passing ssl=ssl_context ensures the connector treats connections as reusable
+             # for this specific SSL configuration.
+             # We also set limit=1 to enforce serial execution and prevent concurrent connections.
+             connector = aiohttp.TCPConnector(keepalive_timeout=75, ssl=ssl_context, limit=1)
+             # --- END OF FIX ---
+             timeout = aiohttp.ClientTimeout(total=30, connect=10)
+             local_session = aiohttp.ClientSession(connector=connector, timeout=timeout)
+             self._shared_state["local_session"] = local_session
+             _LOGGER.debug("%s [aiohttp] Created new local session (ID: %s) with connector (ID: %s) and fixed SSL Context.", self.log_prefix, id(local_session), id(connector))
+        
+        return self._shared_state["local_session"]
 
     async def _async_execute_request(
         self,
@@ -300,7 +361,8 @@ class ConnectionAiohttp8888(Connection):
         url_path: Optional[str],
         data: Optional[str],
         headers: Optional[Dict[str, str]],
-        _is_probe: bool = False # Flag interno (ignorado en esta versión, pero mantenido por si acaso)
+        _is_probe: bool = False, # Flag interno (ignorado en esta versión, pero mantenido por si acaso)
+        _is_poll: bool = False,
     ) -> Tuple[str, Optional[Dict[str, str]]]:
         """
         Executes a command asynchronously using aiohttp.
@@ -318,6 +380,12 @@ class ConnectionAiohttp8888(Connection):
 
         req_headers.setdefault("Authorization", f'Bearer {current_token}')
         req_headers.setdefault("Content-Type", "application/json")
+        
+        # --- ADAPTIVE KEEP-ALIVE LOGIC ---
+        # If we previously detected stability issues (timeouts likely due to missing Content-Length),
+        # we strictly force 'Connection: close'.
+        if getattr(self, "_force_close_connection", False):
+             req_headers["Connection"] = "close"
 
         # --- FIX: REMOVE FALLBACK LOGIC ---
         # We only use HTTPS (mTLS)
@@ -342,57 +410,104 @@ class ConnectionAiohttp8888(Connection):
         full_url = f"{base_url}{url_path}"
 
         try:
-            # --- START: Add log for sent command ---
-            _LOGGER.debug(
-                "%s [aiohttp] Sending request -> Method: %s, URL: %s, Payload: %s",
-                self.log_prefix, method, full_url, data
-            )
-            # --- START: Timing measurement for aiohttp execute ---
-            start_time = time.perf_counter()
-            # --- END: Add log for sent command ---
-            async with self._session.request(
-                method,
-                url=full_url,
-                headers=req_headers,
-                data=data,
-                ssl=ssl_context,
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as response:
+            # --- START OF FIX: Strict Serialization with Lock ---
+            # We acquire a lock to ensure that requests are executed one by one.
+            # This prevents aiohttp from opening multiple concurrent connections during bursts,
+            # ensuring that the single persistent connection is reused.
+            async with self._request_lock:
+                # --- START: Add log for sent command ---
+                _LOGGER.debug(
+                    "%s [aiohttp] Sending request -> Method: %s, URL: %s, Payload: %s, Close Mode: %s",
+                    self.log_prefix, method, full_url, mask_sensitive_data(data), getattr(self, "_force_close_connection", "False")
+                )
+                # --- START: Timing measurement for aiohttp execute ---
+                start_time = time.perf_counter()
+                # --- END: Add log for sent command ---
+                # --- END: Add log for sent command ---
+                
+                # --- START OF FIX: Use _get_session() ---
+                session = await self._get_session()
+                # Debug logging to confirm session reuse
+                _LOGGER.debug("%s [aiohttp] Using session ID: %s | SSL Context ID: %s", self.log_prefix, id(session), id(ssl_context))
+                # --- END OF FIX ---
 
-                response_text = await response.text()
-
-                if _is_probe and response.status in (401, 403):
-                     _LOGGER.debug("%s [aiohttp] Probe connected but got 401/403 (expected if token is bad, but connection is OK)", self.log_prefix)
-                     return response_text, dict(response.headers)
-
-                if response.status in (401, 403):
-                    _LOGGER.error("%s [aiohttp] Authentication error (status %d). Token: %s...%s", self.log_prefix, response.status, current_token[:4], current_token[-4:])
-                    raise AuthError(f"Authentication failed with status {response.status}. Check your token.")
-
-                # If header parsing fails, aiohttp raises an exception here
-                response.raise_for_status()
-
-                elapsed = time.perf_counter() - start_time
-                _LOGGER.info("%s [AIOHTTP] Request completed in %.3f seconds (status %d)", self.log_prefix, elapsed, response.status)
-                # --- END: Timing measurement ---
+                async with session.request(
+                    method,
+                    url=full_url,
+                    headers=req_headers,
+                    data=data,
+                    ssl=ssl_context,
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as response:
+                
+                    response_text = await response.text()
+                
+                # --- START OF FIX: HTTP Version Detection ---
+                # Check protocol version to decide on Keep-Alive
+                if response.version.major == 1 and response.version.minor >= 1:
+                     if getattr(self, "_force_close_connection", False):
+                         _LOGGER.debug("%s [aiohttp] Server speaks HTTP/%s.%s. Re-enabling Keep-Alive.", self.log_prefix, response.version.major, response.version.minor)
+                     self._force_close_connection = False
+                else:
+                     if not getattr(self, "_force_close_connection", False):
+                         _LOGGER.debug("%s [aiohttp] Server speaks HTTP/%s.%s. Enforcing 'Connection: close'.", self.log_prefix, response.version.major, response.version.minor)
+                     self._force_close_connection = True
+                # --- END OF FIX ---
+                
+                if response.status != 200:
+                     if response.status in (401, 403):
+                        _LOGGER.error("%s [aiohttp] Authentication error (status %d). Token: %s...%s", self.log_prefix, response.status, current_token[:4], current_token[-4:])
+                        raise AuthError(f"Authentication failed with status {response.status}. Check your token.")
+                     
+                     _LOGGER.error(
+                         "%s [aiohttp] HTTP Error %s: %s", 
+                         self.log_prefix, response.status, response_text
+                    )
+                     # In case of other errors, we might want to return the text and None or raise.
+                     # The original logic raised exceptions for non-200.
+                     # Let's align with the expectation that we return valid data or raise status.
+                     response.raise_for_status()
 
                 return response_text, dict(response.headers)
 
-        except aiohttp.client_exceptions.ClientResponseError as e:
-            if e.status == 400 and "Invalid header token" in str(e.message):
-                _LOGGER.error("%s [aiohttp] Header parsing error detected! (BadHttpMessage)", self.log_prefix)
-                _LOGGER.error("%s [aiohttp] This indicates the server responds with malformed headers even with mTLS.", self.log_prefix)
-                raise InvalidHeaderError("Malformed HTTP headers from device") from e
-
-            _LOGGER.warning("%s [aiohttp] Client response error: %s", self.log_prefix, e)
-            raise CannotConnect(f"Client response error: {e}") from e
-
-        except (aiohttp.ClientSSLError, aiohttp.ClientConnectorError, asyncio.TimeoutError) as e:
-            _LOGGER.warning("%s [aiohttp] Connection or timeout error: %s", self.log_prefix, e)
+        except (asyncio.TimeoutError, aiohttp.ClientConnectorError, aiohttp.ClientError) as e:
+            # --- ADAPTIVE RECOVERY ---
+            # If we timed out and haven't forced close yet, it's highly likely the "missing Content-Length" issue.
+            if not getattr(self, "_force_close_connection", False):
+                _LOGGER.warning(
+                    "%s [aiohttp] Timeout/Error detected (%s). "
+                    "The device likely violates HTTP protocol (missing Content-Length). "
+                    "Switching to 'Connection: close' mode for resilience.", 
+                    self.log_prefix, str(e)
+                )
+                self._force_close_connection = True
+                req_headers["Connection"] = "close"
+                
+                # RETRY IMMEDIATELY with the new header
+                _LOGGER.debug("%s [aiohttp] Retrying request with 'Connection: close'...", self.log_prefix)
+                try:
+                    # --- START OF FIX: Use _get_session() ---
+                    session = await self._get_session()
+                    async with session.request(
+                        method, 
+                        full_url, 
+                        data=data, 
+                        headers=req_headers, 
+                        ssl=ssl_context,
+                        timeout=aiohttp.ClientTimeout(total=10)
+                    ) as response:
+                        response_text = await response.text()
+                        return response_text, None
+                except Exception as retry_exc:
+                     _LOGGER.error("%s [aiohttp] Retry failed even with 'Connection: close': %s", self.log_prefix, retry_exc)
+                     raise CannotConnect(f"Connection failed after retry: {retry_exc}") from retry_exc
+            
+            # If we were already forcing close, then it's a real network issue.
+            _LOGGER.error("%s [aiohttp] Connection failed: %s", self.log_prefix, e)
             raise CannotConnect(f"Connection error: {e}") from e
         except Exception as e:
-            _LOGGER.error("%s [aiohttp] Unexpected error in async_execute: %s", self.log_prefix, e, exc_info=True)
-            raise CannotConnect(f"Unexpected error: {e}") from e
+             _LOGGER.error("%s [aiohttp] Unexpected error: %s", self.log_prefix, e, exc_info=True)
+             raise
 
     async def async_execute(
         self,
@@ -401,14 +516,16 @@ class ConnectionAiohttp8888(Connection):
         data: Optional[str],
         headers: Optional[Dict[str, str]], # Main command's headers
         device_state: Optional[Dict[str, Any]] = None, # Pass device state for conditions
-        _is_probe: bool = False
+        _is_probe: bool = False,
+        _is_poll: bool = False
     ) -> Tuple[str, Optional[Dict[str, str]]]:
         """
         Orchestrates the execution of commands, including embedded ones.
         """
         # --- START: Replicate and FIX embedded command logic ---
         # --- START OF FIX: Ensure initialization before any execution ---
-        await self._try_connection()
+        # Capture probe result to avoid double polling
+        probe_response_text = await self._try_connection()
         # --- END OF FIX ---
         if self._embedded_command:
             _LOGGER.debug("%s [async_execute] Found embedded command.", self.log_prefix)
@@ -427,7 +544,7 @@ class ConnectionAiohttp8888(Connection):
                             embedded_params = json.loads(embedded_params_str)
                             embedded_data = json.dumps(embedded_params.get('json')) if 'json' in embedded_params else None
 
-                            _LOGGER.debug("%s [async_execute] Executing embedded command with its own params: %s", self.log_prefix, embedded_params)
+                            _LOGGER.debug("%s [async_execute] Executing embedded command with its own params: %s", self.log_prefix, mask_sensitive_data(embedded_params))
                             # Execute the embedded command by calling its own async_execute method.
                             # This ensures it is fully initialized and uses its own specific parameters.
                             await self._embedded_command.async_execute(
@@ -440,6 +557,11 @@ class ConnectionAiohttp8888(Connection):
                 else:
                     _LOGGER.warning("%s [async_execute] Embedded command found, but cannot check its condition (device_state is missing). Skipping.", self.log_prefix)
 
+            except (CannotConnect, AuthError) as e:
+                _LOGGER.warning(
+                    "%s [async_execute] Embedded command failed due to connection error: %s", self.log_prefix, e
+                )
+                raise
             except Exception as e:
                 _LOGGER.error("%s [async_execute] Embedded command failed: %s", self.log_prefix, e, exc_info=True)
                 # Re-raise the exception to prevent the main command from executing, as the failure is critical.
@@ -447,8 +569,43 @@ class ConnectionAiohttp8888(Connection):
         # --- END: Replicate and FIX embedded command logic ---
 
         # Now, execute the main command.
-        _LOGGER.debug("%s [async_execute] Executing main command with data: %s", self.log_prefix, data)
-        return await self._async_execute_request(method, url_path, data, headers, _is_probe=_is_probe)
+        if self.check_execute_condition(device_state):
+             do_execute = True
+        else:
+             do_execute = False
+        if not do_execute:
+             _LOGGER.debug("%s [async_execute] Condition not met (template result false). Skipping execution.", self.log_prefix)
+             return "{}", {}
+
+        # --- START OF FIX: Periodic Reset Logic ---
+        # If this is a poll and we are in "Periodic Reset" mode (keep_alive=False),
+        # we explicitly close the LOCAL session before starting the new poll.
+        if _is_poll and not self._keep_alive:
+            # 1. Capture and clear shared state immediately to prevent race conditions
+            # This ensures that if a command arrives during the close/sleep, it creates
+            # a NEW session that stays valid (we don't overwrite it later).
+            local_session = self._shared_state.get("local_session")
+            if local_session:
+                 self._shared_state["local_session"] = None
+
+            # 2. Close the old session
+            if local_session and not local_session.closed:
+                _LOGGER.debug("%s [Periodic Reset] Closing local session (ID: %s) before poll.", self.log_prefix, id(local_session))
+                await local_session.close()
+                
+                # 3. Wait for TCP cleanup
+                # Aiohttp's close() is graceful but returns quickly. A small yield ensures
+                # the FIN packet is processed by the OS/Server before we open a new one.
+                await asyncio.sleep(0.2)
+        # --- END OF FIX ---
+
+        # --- START OF FIX: Optimization - Reuse probe response ---
+        if probe_response_text and method == "GET" and url_path == "/devices":
+             _LOGGER.debug("%s [async_execute] OPTIMIZATION: Reusing probe response for initial poll.", self.log_prefix)
+             return probe_response_text, None
+        # --- END OF FIX ---
+
+        return await self._async_execute_request(method, url_path, data, headers, _is_probe=_is_probe, _is_poll=_is_poll)
 
     def check_execute_condition(self, device_state):
         """Replicates the condition check from connection_request.py for async."""
@@ -464,3 +621,36 @@ class ConnectionAiohttp8888(Connection):
                 _LOGGER.error("%s Error evaluating execute condition, executing command anyway. Error: %s", self.log_prefix, e, exc_info=True)
                 do_execute = True
         return do_execute
+
+    async def close(self):
+        """
+        Close the connection and release resources.
+        This is called when the integration is unloaded or the connection method changes.
+        """
+        _LOGGER.debug("%s [aiohttp] Closing connection resources...", self.log_prefix)
+        
+        # 1. Close internal embedded command (if any)
+        if self._embedded_command and hasattr(self._embedded_command, "close"):
+             try:
+                 await self._embedded_command.close()
+             except Exception as e:
+                 _LOGGER.warning("%s [aiohttp] Error closing embedded command: %s", self.log_prefix, e)
+
+        # 2. Close the local session if it exists (for keep_alive=False)
+        local_session = self._shared_state.get("local_session")
+        if local_session and not local_session.closed:
+            _LOGGER.debug("%s [aiohttp] Closing local session (ID: %s)...", self.log_prefix, id(local_session))
+            try:
+                await local_session.close()
+            except Exception as e:
+                _LOGGER.error("%s [aiohttp] Error closing local session: %s", self.log_prefix, e)
+            finally:
+                self._shared_state["local_session"] = None
+        
+        # 3. Reset shared state to allow clean re-initialization
+        self._shared_state["initialized"] = False
+        self._shared_state["ssl_context"] = None
+        
+        # Note: We do NOT close self._session here because it is a shared session 
+        # managed by Home Assistant (or the dedicated one managed in __init__.py).
+        # The dedicated session in __init__.py is closed explicitly in async_unload_entry.

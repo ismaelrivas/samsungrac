@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import copy
+import aiohttp
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from homeassistant.config_entries import ConfigEntry
@@ -8,11 +9,15 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.const import CONF_NAME, Platform, CONF_TOKEN, CONF_MAC
 # --- START OF MODIFICATION: Centralize connection imports to break circular dependency ---
 # Import all connection classes here to ensure they are registered at startup.
-from .connection import _CONNECTIONS_STORE, _CONNECTIONS_LOCK
+# Import all connection classes here to ensure they are registered at startup.
+from .connection import CLIMATE_IP_CONNECTIONS
 from .connection_request import ConnectionRequest, ConnectionRequestPrint
 from .connection_request_tls_auto import ConnectionRequestTlsAuto
 from .samsung_2878 import ConnectionSamsung2878
 from .connection_aiohttp import ConnectionAiohttp8888
+from .samsung_2878 import ConnectionSamsung2878
+from .connection_aiohttp import ConnectionAiohttp8888
+from .helpers import mask_sensitive_data
 # --- END OF MODIFICATION ---
 from .properties import (
     GetJsonStatus,
@@ -23,7 +28,16 @@ from .properties import (
     UniqueIdProperty,
 )
 
-from .const import DOMAIN, DEVICE_TYPE_TO_CONFIG_FILE, CONF_DEVICE_TYPE, CONF_CONFIG_FILE, CONF_DEVICES, CONF_DEVICE_ID
+from .const import (
+    DOMAIN, 
+    DEVICE_TYPE_TO_CONFIG_FILE, 
+    CONF_DEVICE_TYPE, 
+    CONF_CONFIG_FILE, 
+    CONF_DEVICES, 
+    CONF_DEVICE_ID,
+    CONF_CONN_METHOD,
+    CONN_METHOD_AIOHTTP,
+)
 from .coordinator import SamsungClimateCoordinator
 from .controller_yaml import YamlController, clear_yaml_cache
 
@@ -31,20 +45,7 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.CLIMATE, Platform.SENSOR]
 
-def _mask_sensitive_data(data: dict) -> dict:
-    """Return a copy of a dictionary with sensitive values masked."""
-    if not isinstance(data, dict):
-        return data
-        
-    masked_data = copy.deepcopy(data)
-    
-    sensitive_keys = [CONF_TOKEN, CONF_MAC, "unique_id", "uuid"]
-    
-    for key, value in masked_data.items():
-        if key in sensitive_keys and isinstance(value, str) and len(value) > 4:
-            masked_data[key] = f"***{value[-4:]}"
-            
-    return masked_data
+
 
 async def async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle options update."""
@@ -56,10 +57,10 @@ async def async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None
     # When switching between aiohttp and requests, the old connection object
     # must be discarded to force the creation of a new one with the correct engine.
     key_to_remove = entry.unique_id
-    async with _CONNECTIONS_LOCK:
-        if key_to_remove in _CONNECTIONS_STORE:
-            _LOGGER.debug("Options update: Removing connection object for '%s' to allow engine switch.", key_to_remove)
-            _CONNECTIONS_STORE.pop(key_to_remove)
+    
+    # Redundant cleanup removed. The reload below triggers async_unload_entry,
+    # which performs the definitive cleanup.
+    _LOGGER.debug("Configuration options updated (key: %s), reloading entry.", key_to_remove)
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Set up Samsung Climate IP from a config entry."""
@@ -70,11 +71,42 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     # old connection object (aiohttp) would remain in the cache. By clearing the cache
     # here, we ensure that a new connection object (requests) is created
     # that respects the updated configuration.
+    
+    # Initialize hass.data[DOMAIN] if it doesn't exist
+    hass.data.setdefault(DOMAIN, {})
+    
+    # Initialize connection store and lock if they don't exist
+    if "connections" not in hass.data[DOMAIN]:
+        hass.data[DOMAIN]["connections"] = {}
+    if "lock" not in hass.data[DOMAIN]:
+        hass.data[DOMAIN]["lock"] = asyncio.Lock()
+        
+    connections_store = hass.data[DOMAIN]["connections"]
+    connections_lock = hass.data[DOMAIN]["lock"]
+
     key_to_remove = entry.unique_id
-    async with _CONNECTIONS_LOCK:
-        if key_to_remove in _CONNECTIONS_STORE:
-            _LOGGER.debug("Pre-setup cache clean: Removing connection object for '%s' to ensure clean start.", key_to_remove)
-            _CONNECTIONS_STORE.pop(key_to_remove)
+    async with connections_lock:
+        _LOGGER.debug("Checking cache. Keys present: %s. Seeking: %s", list(connections_store.keys()), key_to_remove)
+        if key_to_remove in connections_store:
+            _LOGGER.debug("Pre-setup cleanup: Found existing connection for '%s'. Closing before removal.", key_to_remove)
+            connection = connections_store[key_to_remove]
+            
+            # Stop listener if present
+            if hasattr(connection, "stop_listening"):
+                 try:
+                     await connection.stop_listening()
+                 except Exception as e:
+                     _LOGGER.warning("Error stopping listener during pre-setup cleanup: %s", e)
+            
+            # Close connection if present
+            if hasattr(connection, "close"):
+                try:
+                    await connection.close()
+                    _LOGGER.debug("Closed existing connection for '%s'", key_to_remove)
+                except Exception as e:
+                    _LOGGER.warning("Error closing connection during pre-setup cleanup: %s", e)
+
+            connections_store.pop(key_to_remove)
     # --- END OF FIX ---
 
     # --- START OF FIX: Merge options into runtime_config at startup ---
@@ -90,11 +122,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     if device_type:
         runtime_config[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE.get(device_type)
 
-    # --- START OF MODIFICATION (Milestone 3) ---
-    session = async_get_clientsession(hass)
-    # --- END OF MODIFICATION (Milestone 3) ---
+    # --- START OF FIX (Milestone 4): Dedicated session for aiohttp ---
+    # The default HA session has a 30s keepalive. Accessing devices with a 60s poll interval
+    # causes the connection to drop every time. We create a dedicated session with a 75s timeout.
+    
+    # Initialize sessions store if needed
+    hass.data.setdefault(DOMAIN, {}).setdefault("sessions", {})
+    
+    conn_method = runtime_config.get(CONF_CONN_METHOD)
+    if conn_method == CONN_METHOD_AIOHTTP:
+        _LOGGER.debug("Creating dedicated aiohttp session with keepalive_timeout=75s for valid persistent connection.")
+        connector = aiohttp.TCPConnector(keepalive_timeout=75)
+        # We don't need to close this session explicitly? Actually we DO, because we created it.
+        # We will store it in hass.data to close it on unload.
+        session = aiohttp.ClientSession(connector=connector)
+        hass.data[DOMAIN]["sessions"][entry.entry_id] = session
+    else:
+        # Legacy/Raw methods use requests (sync) or don't care about async keepalive the same way,
+        # or can use the shared session for other things if needed.
+        session = async_get_clientsession(hass)
+    # --- END OF FIX ---
 
-    _LOGGER.debug("Starting setup for entry %s with runtime config: %s", entry.entry_id, _mask_sensitive_data(runtime_config))
+    _LOGGER.debug("Starting setup for entry %s with runtime config: %s", entry.entry_id, mask_sensitive_data(runtime_config))
 
     if devices_config := runtime_config.get(CONF_DEVICES):
         coordinators = {}
@@ -162,10 +211,8 @@ async def remove_connection(config):
         _LOGGER.warning("Cannot remove a connection without a unique_id in the config")
         return
 
-    async with _CONNECTIONS_LOCK:
-        if key in _CONNECTIONS_STORE:
-            _LOGGER.debug("Removing connection object for %s", key)
-            _CONNECTIONS_STORE.pop(key)
+    _LOGGER.warning("remove_connection is deprecated and no longer functional due to removal of global state.")
+    return
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
@@ -187,18 +234,45 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # We must explicitly stop the connection listener (if it exists) to prevent
     # "zombie" tasks from running in the background after reload/unload.
     key_to_remove = entry.unique_id
-    async with _CONNECTIONS_LOCK:
-        if key_to_remove in _CONNECTIONS_STORE:
-            connection = _CONNECTIONS_STORE[key_to_remove]
-            if hasattr(connection, "stop_listening"):
-                _LOGGER.debug("Stopping connection listener for '%s'", key_to_remove)
-                try:
-                    await connection.stop_listening()
-                except Exception as e:
-                    _LOGGER.error("Error stopping connection listener for '%s': %s", key_to_remove, e)
-            
-            _LOGGER.debug("Removing connection object for '%s' from store.", key_to_remove)
-            _CONNECTIONS_STORE.pop(key_to_remove)
+    
+    domain_data = hass.data.get(DOMAIN)
+    if domain_data:
+        connections_store = domain_data.get("connections")
+        connections_lock = domain_data.get("lock")
+        
+        if connections_store is not None and connections_lock is not None:
+            async with connections_lock:
+                _LOGGER.debug("Unload: Keys present: %s. Removing: %s", list(connections_store.keys()), key_to_remove)
+                if key_to_remove in connections_store:
+                    connection = connections_store[key_to_remove]
+                    
+                    # 1. Stop listening (task cleanup)
+                    if hasattr(connection, "stop_listening"):
+                        _LOGGER.debug("Stopping connection listener for '%s'", key_to_remove)
+                        try:
+                            await connection.stop_listening()
+                        except Exception as e:
+                            _LOGGER.error("Error stopping connection listener for '%s': %s", key_to_remove, e)
+
+                    # 2. Close connection resources (session cleanup)
+                    if hasattr(connection, "close"):
+                         _LOGGER.debug("Closing connection resources for '%s'", key_to_remove)
+                         try:
+                             # This is an async method
+                             await connection.close()
+                         except Exception as e:
+                             _LOGGER.error("Error closing connection for '%s': %s", key_to_remove, e)
+                    
+                    _LOGGER.debug("Removing connection object for '%s' from store.", key_to_remove)
+                    connections_store.pop(key_to_remove)
+    # --- END OF FIX ---
+
+    # --- START OF FIX: Close dedicated session ---
+    if "sessions" in hass.data[DOMAIN] and entry.entry_id in hass.data[DOMAIN]["sessions"]:
+        session = hass.data[DOMAIN]["sessions"].pop(entry.entry_id)
+        if not session.closed:
+            await session.close()
+        _LOGGER.debug("Closed dedicated aiohttp session for entry %s", entry.entry_id)
     # --- END OF FIX ---
 
     return unload_ok

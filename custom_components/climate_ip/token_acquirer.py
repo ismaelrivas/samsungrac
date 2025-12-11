@@ -8,6 +8,7 @@ import ssl
 from typing import Any, Dict, Optional
 
 from .exceptions import CannotConnect, TokenAcquisitionError, AuthTurnedOffError, CertNotFound
+from .helpers import mask_sensitive_data
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -205,7 +206,7 @@ class SamsungTokenAcquirer:
                 raise TokenAcquisitionError("Connection closed by device.")
 
             decoded_buffer = data.decode('utf-8', 'ignore')
-            _LOGGER.debug("Received data after button press: %s", decoded_buffer)
+            _LOGGER.debug("Received data after button press: %s", mask_sensitive_data(decoded_buffer))
             
             if 'Status="Fail"' in decoded_buffer and 'Type="Authenticate"' in decoded_buffer:
                 error_code_match = re.search(r'ErrorCode="(\d+)"', decoded_buffer)

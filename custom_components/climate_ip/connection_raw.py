@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 from homeassistant.const import CONF_IP_ADDRESS
 from .connection import Connection, register_connection
 from .exceptions import CannotConnect, AuthError
-from .yaml_const import CONF_CERT
+from .const import CONF_CERT
 from .protocol_8888 import (
     Samsung8888Client,
     ProtocolError,
@@ -30,12 +30,29 @@ class ConnectionRaw8888(Connection):
     def match_type(type_str):
         return type_str == CONNECTION_TYPE_RAW_8888
 
+    def load_from_yaml(self, node, connection_base):
+        """Load configuration from yaml node dictionary.
+        This provides the specific configuration (like keep_alive)
+        from the 'connection' section of the YAML file.
+        """
+        if node:
+            # Update keep_alive if present in the specific connection YAML
+            if "keep_alive" in node:
+                self._keep_alive = node["keep_alive"]
+                
+            # Also load params if present, to be consistent
+            if "params" in node:
+                self._params.update(node["params"])
+
+            return True
+        return False
+
     def create_updated(self, yaml_node):
         """Create a new connection instance with updated parameters from YAML.
         Replicates the logic from ConnectionAiohttp8888 to handle
         connection_template and params conversion.
         """
-        from .yaml_const import (
+        from .const import (
             CONFIG_DEVICE_CONNECTION_TEMPLATE,
             CONFIG_DEVICE_CONNECTION_PARAMS,
             CONFIG_DEVICE_CONNECTION,
@@ -45,6 +62,11 @@ class ConnectionRaw8888(Connection):
         # Shallow copy for value‑specific operations
         new_connection = copy.copy(self)
         new_connection._params = getattr(self, "_params", {}).copy()
+        # Propagate controller reference to the new instance (crucial for shared client logic)
+        new_connection._controller = getattr(self, "_controller", None)
+
+        if yaml_node and "keep_alive" in yaml_node:
+            new_connection._keep_alive = yaml_node["keep_alive"]
 
         # Compile connection_template if present
         if yaml_node and CONFIG_DEVICE_CONNECTION_TEMPLATE in yaml_node:
@@ -95,35 +117,54 @@ class ConnectionRaw8888(Connection):
         self._cert = cert_file
         self._controller = None # Initialize controller reference
         self._client: Optional[Samsung8888Client] = None
-        self._ssl_modes = ["legacy", "modern"]
-        self._current_mode_idx = 0
+        self._client: Optional[Samsung8888Client] = None
         self._params = {}
         self._connection_template = None
         # Public attribute used to store Jinja2 templates for execution conditions.
         # Initialize here so static analyzers and type checkers recognize it.
         self.condition_template: Optional[Any] = None
         self._embedded_command = None
+        self._keep_alive = config.get("keep_alive", True)
 
     def set_controller_ref(self, controller):
         """Allows the property to set a reference to the main controller."""
         self._controller = controller
+        # Propagate to embedded command if it exists
+        if self._embedded_command and hasattr(self._embedded_command, "set_controller_ref"):
+            self._embedded_command.set_controller_ref(controller)
 
     async def async_get_client(self) -> Samsung8888Client:
+        # --- Shared Client Logic ---
+        # If we have a controller reference, try to use a shared client stored on it.
+        # This prevents multiple connections (sockets) for the same device.
+        if self._controller:
+            if not hasattr(self._controller, "_shared_raw_client"):
+                self._controller._shared_raw_client = None
+            
+            if self._controller._shared_raw_client is None:
+                if not self._host:
+                    raise CannotConnect("Host/IP address not provided for RAW connection")
+                _LOGGER.debug("%s [Shared] Initializing NEW shared client. Controller ID: %s", self.log_prefix, id(self._controller))
+                self._controller._shared_raw_client = Samsung8888Client(
+                    self._host, 8888, self._cert, log_prefix=self.log_prefix
+                )
+            else:
+                _LOGGER.debug("%s [Shared] Reusing EXISTING shared client. Controller ID: %s", self.log_prefix, id(self._controller))
+            
+            return self._controller._shared_raw_client
+        
+        # Fallback for standalone usage (no controller)
         if self._client is None:
+            _LOGGER.debug("%s [Standalone] Controller is None! Initializing local client.", self.log_prefix)
             # Ensure host is present and narrow its type from Optional[str] to str for the client constructor.
             if not self._host:
                 raise CannotConnect("Host/IP address not provided for RAW connection")
-            mode = self._ssl_modes[self._current_mode_idx]
-            _LOGGER.debug("%s Initializing RAW client in mode: %s", self.log_prefix, mode)
             self._client = Samsung8888Client(
-                self._host, 8888, self._cert, ssl_mode=mode, log_prefix=self.log_prefix
+                self._host, 8888, self._cert, log_prefix=self.log_prefix
             )
         return self._client
 
-    def _rotate_mode(self):
-        self._current_mode_idx = (self._current_mode_idx + 1) % len(self._ssl_modes)
-        _LOGGER.info("%s Rotating SSL to: %s", self.log_prefix, self._ssl_modes[self._current_mode_idx])
-        self._client = None
+
 
     @property
     def log_prefix(self) -> str:
@@ -145,6 +186,7 @@ class ConnectionRaw8888(Connection):
         headers,
         device_state=None,
         _is_probe=False,
+        _is_poll=False,
     ) -> Tuple[Optional[str], Optional[Dict]]:
         """Execute a command (including embedded commands) over raw sockets."""
         # --- Embedded command handling ---
@@ -185,6 +227,11 @@ class ConnectionRaw8888(Connection):
                             _LOGGER.warning("%s [async_execute] Embedded command found but it has no connection_template.", self.log_prefix)
                 else:
                     _LOGGER.warning("%s [async_execute] Embedded command found, but cannot check its condition (device_state missing).", self.log_prefix)
+            except (CannotConnect, AuthError) as e:
+                _LOGGER.warning(
+                    "%s [async_execute] Embedded command failed due to connection error: %s", self.log_prefix, e
+                )
+                raise
             except Exception as e:
                 _LOGGER.error(
                     "%s [async_execute] Embedded command failed: %s", self.log_prefix, e
@@ -192,31 +239,67 @@ class ConnectionRaw8888(Connection):
                 raise
         # --- Timing measurement for main request ---
         start_time = time.perf_counter()
-        _LOGGER.debug("%s [async_execute] Executing main command with data: %s", self.log_prefix, data)
+
+        # --- Periodic Connection Reset Logic ---
+        # If this is a poll and we are in "Periodic Reset" mode (keep_alive=False in config),
+        # we explicitly close the connection before starting the new poll.
+        # If this is a poll and we are in "Periodic Reset" mode (keep_alive=False in config),
+        # we explicitly close the connection before starting the new poll.
+        if _is_poll and not self._keep_alive:
+             client_to_close = None
+             if self._controller and hasattr(self._controller, "_shared_raw_client"):
+                 client_to_close = self._controller._shared_raw_client
+                 self._controller._shared_raw_client = None # Clear shared ref
+             elif self._client:
+                 client_to_close = self._client
+                 self._client = None
+            
+             if client_to_close:
+                 _LOGGER.debug("%s [Periodic Reset] Closing connection before poll.", self.log_prefix)
+                 await client_to_close.close()
+        # ---------------------------------------
+
+        _LOGGER.debug("%s [async_execute] Executing main command with data: %s (is_poll=%s, keep_alive=%s)", self.log_prefix, data, _is_poll, self._keep_alive)
         path = urlparse(url).path
         body = json.loads(data) if data else None
-        for i in range(len(self._ssl_modes)):
-            client = await self.async_get_client()
-            try:
-                resp, err = await client.request(method, path, body, headers)
-                if err:
-                    _LOGGER.warning("%s API Error: %s", self.log_prefix, err)
-                    return None, None
-                elapsed = time.perf_counter() - start_time
-                _LOGGER.info("%s [RAW] Request completed in %.3f seconds", self.log_prefix, elapsed)
-                return resp, None
-            except LibAuthError:
-                raise AuthError("Invalid token")
-            except LibConnError as e:
-                _LOGGER.warning("%s Connection error (%s)", self.log_prefix, e)
-                await client.close()
-                if i == len(self._ssl_modes) - 1:
-                    if _is_probe:
-                        return None, None
-                    raise CannotConnect(f"Total connection failure: {e}")
-                self._rotate_mode()
-            except Exception as e:
-                raise CannotConnect(f"Unexpected error: {e}")
+
+        # --- START OF FIX: Inject Authorization Token ---
+        from homeassistant.const import CONF_TOKEN
+        
+        req_headers = headers.copy() if headers else {}
+        
+        # Get token from config or controller (mimics aiohttp logic)
+        current_token = self._config.get(CONF_TOKEN)
+        if self._controller:
+            current_token = self._controller._config.get(CONF_TOKEN, current_token)
+
+        if not current_token:
+            _LOGGER.error("%s [RAW] No token available! The request will fail.", self.log_prefix)
+            raise AuthError("Token not configured for the raw engine")
+
+        req_headers.setdefault("Authorization", f"Bearer {current_token}")
+        req_headers.setdefault("Content-Type", "application/json")
+        # --- END OF FIX ---
+
+        client = await self.async_get_client()
+        try:
+            resp, err = await client.request(method, path, body, req_headers)
+            if err:
+                _LOGGER.warning("%s API Error: %s", self.log_prefix, err)
+                return None, None
+            elapsed = time.perf_counter() - start_time
+            _LOGGER.info("%s [RAW] Request completed in %.3f seconds", self.log_prefix, elapsed)
+            return resp, None
+        except LibAuthError:
+            raise AuthError("Invalid token")
+        except LibConnError as e:
+            _LOGGER.warning("%s Connection error (%s)", self.log_prefix, e)
+            await client.close()
+            if _is_probe:
+                return None, None
+            raise CannotConnect(f"Connection failure: {e}")
+        except Exception as e:
+            raise CannotConnect(f"Unexpected error: {e}")
 
         # Fallback return to satisfy type checkers and handle unexpected flows;
         # return a tuple of (resp, error) both set to None to indicate no response.
@@ -240,3 +323,39 @@ class ConnectionRaw8888(Connection):
                 )
                 do_execute = True
         return do_execute
+
+    async def close(self):
+        """
+        Close the connection and release resources.
+        This is called when the integration is unloaded or the connection method changes.
+        """
+        _LOGGER.debug("%s [RAW] Closing connection resources...", self.log_prefix)
+        
+        # 1. Close internal embedded command (if any)
+        if self._embedded_command and hasattr(self._embedded_command, "close"):
+             try:
+                 await self._embedded_command.close()
+             except Exception as e:
+                 _LOGGER.warning("%s [RAW] Error closing embedded command: %s", self.log_prefix, e)
+
+        # 2. Close the local client if it exists
+        if self._client:
+             _LOGGER.debug("%s [RAW] Closing local client...", self.log_prefix)
+             try:
+                 await self._client.close()
+             except Exception as e:
+                 _LOGGER.error("%s [RAW] Error closing local client: %s", self.log_prefix, e)
+             finally:
+                 self._client = None
+             
+        # 3. Close the shared client if it exists and we have a controller ref
+        if self._controller and hasattr(self._controller, "_shared_raw_client"):
+            shared_client = self._controller._shared_raw_client
+            if shared_client:
+                _LOGGER.debug("%s [RAW] Closing shared client...", self.log_prefix)
+                try:
+                    await shared_client.close()
+                except Exception as e:
+                    _LOGGER.error("%s [RAW] Error closing shared client: %s", self.log_prefix, e)
+                finally:
+                    self._controller._shared_raw_client = None

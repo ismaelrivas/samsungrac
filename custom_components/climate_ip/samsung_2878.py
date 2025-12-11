@@ -11,13 +11,29 @@ from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_PORT, CONF_TOKEN
 from .connection import Connection, register_connection
 from .exceptions import AuthError, CannotConnect
 from .properties import DeviceProperty, register_status_getter
-from .const import DEFAULT_CONF_CERT_FILE
-from .yaml_const import (
+from .const import (
     CONF_CERT,
-    CONFIG_DEVICE_CONNECTION,
+    CONFIG_DEVICE_POWER_TEMPLATE,
     CONFIG_DEVICE_CONNECTION_PARAMS,
     CONFIG_DEVICE_CONNECTION_TEMPLATE,
-    CONFIG_DEVICE_POWER_TEMPLATE,
+)
+from .helpers import mask_sensitive_data
+from .const import (
+    DEFAULT_CONF_CERT_FILE,
+    PROTOCOL_2878_DPLUG,
+    PROTOCOL_2878_DRC,
+    PROTOCOL_2878_INVALIDATE,
+    PROTOCOL_2878_DEVICE_STATE,
+    PROTOCOL_2878_DEVICE_CONTROL,
+    PROTOCOL_2878_STATUS_OK,
+    PROTOCOL_2878_STATUS,
+    PROTOCOL_2878_UPDATE,
+    PROTOCOL_2878_RESPONSE,
+    PROTOCOL_2878_ATTR,
+    PROTOCOL_2878_ATTR_ID,
+    PROTOCOL_2878_ATTR_VALUE,
+    PROTOCOL_2878_POWER_ID,
+    PROTOCOL_2878_VALUE_ON,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -185,7 +201,7 @@ class ConnectionSamsung2878(Connection):
         try:
             await asyncio.sleep(1)
             
-            command = f'<Request Type="DeviceState" DUID="{self._cfg.duid}"></Request>\n'
+            command = f'<Request Type="{PROTOCOL_2878_DEVICE_STATE}" DUID="{self._cfg.duid}"></Request>\n'
             _LOGGER.debug("%s Queuing post-reconnection status request", self.log_prefix)
             
             future = asyncio.get_event_loop().create_future()
@@ -391,7 +407,7 @@ class ConnectionSamsung2878(Connection):
                     _LOGGER.debug("%s Initial message was an update, calling update callback", self.log_prefix)
                     asyncio.create_task(self._update_callback(parsed_data))
 
-        if not initial_msg or ("DPLUG-1.6" not in initial_msg and "DRC-1.00" not in initial_msg and "InvalidateAccount" not in initial_msg):
+        if not initial_msg or (PROTOCOL_2878_DPLUG not in initial_msg and PROTOCOL_2878_DRC not in initial_msg and PROTOCOL_2878_INVALIDATE not in initial_msg):
             _LOGGER.warning("%s Handshake failed: Did not receive expected initial message (DPLUG-1.6 or DRC-1.00 or InvalidateAccount). Got: %s", self.log_prefix, initial_msg)
             raise CannotConnect("Handshake failed: Did not receive expected initial message")
         
@@ -403,7 +419,7 @@ class ConnectionSamsung2878(Connection):
         await self._write_data(auth_command)
 
         auth_response = await self._read_full_response(timeout=self._socket_timeout)
-        if not auth_response or 'Status="Okay"' not in auth_response:
+        if not auth_response or PROTOCOL_2878_STATUS_OK not in auth_response:
             # Only process the error response if it's not None
             if auth_response:
                 if 'ErrorCode="301"' in auth_response:
@@ -458,7 +474,7 @@ class ConnectionSamsung2878(Connection):
 
                 buffer += chunk
                 decoded_buffer = buffer.decode("utf-8", errors='ignore').strip()
-                if "</Response>" in decoded_buffer or "</Update>" in decoded_buffer or "DPLUG-1.6" in decoded_buffer or decoded_buffer.endswith("/>"):
+                if "</Response>" in decoded_buffer or "</Update>" in decoded_buffer or PROTOCOL_2878_DPLUG in decoded_buffer or decoded_buffer.endswith("/>"):
                     return decoded_buffer
 
         except (asyncio.TimeoutError, asyncio.IncompleteReadError) as e:
@@ -516,35 +532,170 @@ class ConnectionSamsung2878(Connection):
             try:
                 data = xmltodict.parse(full_doc)
 
-                if "Response" in data:
+                if PROTOCOL_2878_RESPONSE in data:
                     is_response = True
-                    device_data = data['Response'].get('DeviceState', {}).get('Device')
-                elif "Update" in data:
+                    device_data = data[PROTOCOL_2878_RESPONSE].get(PROTOCOL_2878_DEVICE_STATE, {}).get('Device')
+                elif PROTOCOL_2878_UPDATE in data:
                     is_update = True
-                    device_data = data['Update'].get('Status')
+                    device_data = data[PROTOCOL_2878_UPDATE].get(PROTOCOL_2878_STATUS)
                 else:
                     continue
 
                 if not device_data:
                     continue
-                attrs = device_data.get('Attr', [])
+                attrs = device_data.get(PROTOCOL_2878_ATTR, [])
                 if not isinstance(attrs, list):
                     attrs = [attrs]
                 
                 # Ignore redundant 'Power On' push updates if the device was already known to be on.
                 # This reduces unnecessary state updates in Home Assistant.
-                if is_update and len(attrs) == 1 and attrs[0].get('@ID') == 'AC_FUN_POWER' and attrs[0].get('@Value') == 'On':
-                    if self._device_status.get('AC_FUN_POWER') == 'On':
+                if is_update and len(attrs) == 1 and attrs[0].get(PROTOCOL_2878_ATTR_ID) == PROTOCOL_2878_POWER_ID and attrs[0].get(PROTOCOL_2878_ATTR_VALUE) == PROTOCOL_2878_VALUE_ON:
+                    if self._device_status.get(PROTOCOL_2878_POWER_ID) == PROTOCOL_2878_VALUE_ON:
                         _LOGGER.debug("%s Ignoring redundant 'Power On' push update", self.log_prefix)
                         return False, False, None
 
                 for attr in attrs:
-                    if '@ID' in attr and '@Value' in attr:
-                        parsed_data[attr['@ID']] = attr['@Value']
+                    if PROTOCOL_2878_ATTR_ID in attr and PROTOCOL_2878_ATTR_VALUE in attr:
+                        parsed_data[attr[PROTOCOL_2878_ATTR_ID]] = attr[PROTOCOL_2878_ATTR_VALUE]
 
             except Exception as e:
                 _LOGGER.warning("%s Error parsing XML part: %s. Document: %s", self.log_prefix, e, full_doc)
         return is_response, is_update, parsed_data
+
+    async def _process_command_queue(self, queue_task: asyncio.Task) -> None:
+        """Process a command from the queue."""
+        command, future = queue_task.result()
+        self._pending_future = future
+        # Store the command string on the future for debugging purposes using setattr.
+        setattr(self._pending_future, '_command_debug', command)
+
+        try:
+            await self._write_data(command)
+            # The future will be resolved when a corresponding response or update is received.
+            _LOGGER.debug("%s Command written, now waiting for response to resolve future", self.log_prefix)
+        except CannotConnect as e:
+            if self._pending_future and not self._pending_future.done():
+                self._pending_future.set_exception(e)
+            self._pending_future = None
+
+    async def _process_read_queue(self, buffer: bytes, done: set[asyncio.Task]) -> Optional[bytes]:
+        """Process data received from the read task."""
+        data = None
+        is_cancelled = False
+        try:
+            data = self._read_task.result()
+        except asyncio.CancelledError:
+            # Task was cancelled (likely by _close_connection), treat as connection closed
+            data = None
+            is_cancelled = True
+        except Exception as e:
+             _LOGGER.warning("%s Read task failed: %s", self.log_prefix, e)
+             data = None
+             
+        if not data: 
+            if not is_cancelled:
+                _LOGGER.debug("%s Connection closed by device (EOF)", self.log_prefix)
+            else:
+                _LOGGER.debug("%s Read task was cancelled", self.log_prefix)
+                
+            await self._close_connection()
+            return None
+        
+        buffer += data
+        # Process buffer to find full XML messages.
+        while b"</Response>" in buffer or b"</Update>" in buffer or b"/>" in buffer:
+            end_tag = b"</Response>" if b"</Response>" in buffer else (b"</Update>" if b"</Update>" in buffer else b"/>")
+            end_index = buffer.find(end_tag) + len(end_tag)
+            message = buffer[:end_index]
+            buffer = buffer[end_index:]
+            
+            xml_data = message.decode("utf-8", errors='ignore')
+            _LOGGER.debug("%s Received message: %s", self.log_prefix, xml_data.strip())
+            is_response, is_update, parsed_data = self._parse_and_update_state(xml_data)
+
+            # Update internal state for redundant 'Power On' logic.
+            if parsed_data:
+                self._device_status.update(parsed_data)
+            
+            # --- Command Resolution Logic ---
+            # A command is considered complete if we receive:
+            # 1. A direct 'DeviceControl Okay' response.
+            # 2. Any other response or update that contains actual state data.
+
+            is_control_okay = is_response and not parsed_data and PROTOCOL_2878_DEVICE_CONTROL in xml_data and PROTOCOL_2878_STATUS_OK in xml_data
+            is_polling_response = is_response and PROTOCOL_2878_DEVICE_STATE in xml_data
+
+            # Initialize should_resolve to False to prevent UnboundLocalError
+            should_resolve = False
+
+            # If a pending command exists, check if this message resolves it.
+            if self._pending_future and not self._pending_future.done():
+                # If the pending command was a poll, only a DeviceState response can resolve it.
+                # If it was a control command, any data update or a specific 'Okay' can resolve it.
+                command_debug = getattr(self._pending_future, '_command_debug', '')
+                is_poll_command = PROTOCOL_2878_DEVICE_STATE in command_debug
+                
+                should_resolve = (is_poll_command and is_polling_response) or \
+                                 (not is_poll_command and (is_control_okay or parsed_data))
+
+            if should_resolve and self._pending_future:
+                if is_control_okay:
+                    _LOGGER.debug("%s 'DeviceControl Okay' received, resolving pending command future", self.log_prefix)
+                else:
+                    _LOGGER.debug("%s Response/Update with data received, resolving pending command future", self.log_prefix)
+                try:
+                    if not self._pending_future.done():
+                        self._pending_future.set_result(True)
+                    self._pending_future = None
+                except asyncio.InvalidStateError:
+                    pass  # Future was already resolved.
+            if parsed_data and (is_response or is_update) and self._update_callback:
+                _LOGGER.debug("%s Calling update callback with data: %s", self.log_prefix, parsed_data)
+                asyncio.create_task(self._update_callback(parsed_data))
+            elif is_control_okay:
+                # This is just an acknowledgment. The device will send a separate <Update> push.
+                # We don't need to do anything here except acknowledge
+                # that the command was successful so the UI doesn't hang. The future is already resolved.
+                _LOGGER.debug("%s 'DeviceControl Okay' ack received. Waiting for subsequent push update.", self.log_prefix)
+        
+        return buffer
+
+
+    async def _handle_reconnection(self) -> bool:
+        """Handle the reconnection process."""
+        # Stateful logging: Log INFO only when the state changes from available to unavailable.
+        if self._is_available:
+            _LOGGER.info("%s Connection lost. Attempting to reconnect...", self.log_prefix)
+            self._is_available = False
+        else:
+            _LOGGER.debug("%s Connection is down. Attempting to reconnect...", self.log_prefix)
+
+        try:
+            # If the handshake fails with a connection error, it returns False.
+            # We must handle this case to prevent falling through and causing an AttributeError.
+            if not await self._establish_connection_and_handshake():
+                _LOGGER.debug("%s Handshake returned False. Proceeding to retry logic.", self.log_prefix)
+                self._reconnect_retries += 1
+                _LOGGER.warning("%s Connection failed. Retrying in %s seconds...", self.log_prefix, self._reconnect_delay)
+                self._ssl_context_cache.clear() # Force fresh SSL context on retry
+                await self._close_connection()
+                await asyncio.sleep(self._reconnect_delay)
+                self._reconnect_delay = min(self._reconnect_delay * RECONNECT_FACTOR, MAX_RECONNECT_DELAY)
+                return False
+        except (CannotConnect, AuthError) as e:
+            self._reconnect_retries += 1
+            # If reconnection fails, fail any pending command
+            if self._pending_future and not self._pending_future.done():
+                self._pending_future.set_exception(CannotConnect(f"Connection lost and reconnect failed: {e}"))
+                self._pending_future = None
+            _LOGGER.warning("%s Connection failed. Retrying in %s seconds...", self.log_prefix, self._reconnect_delay)
+            self._ssl_context_cache.clear() # Force fresh SSL context on retry
+            await self._close_connection()
+            await asyncio.sleep(self._reconnect_delay)
+            self._reconnect_delay = min(self._reconnect_delay * RECONNECT_FACTOR, MAX_RECONNECT_DELAY)
+            return False
+        
+        return True
 
     async def _connection_manager(self):
         buffer = b""
@@ -558,36 +709,7 @@ class ConnectionSamsung2878(Connection):
             while True:
                 try:
                     if not self._writer or self._writer.is_closing():
-                        # Stateful logging: Log INFO only when the state changes from available to unavailable.
-                        if self._is_available:
-                            _LOGGER.info("%s Connection lost. Attempting to reconnect...", self.log_prefix)
-                            self._is_available = False
-                        else:
-                            _LOGGER.debug("%s Connection is down. Attempting to reconnect...", self.log_prefix)
-
-                        try:
-                            # If the handshake fails with a connection error, it returns False.
-                            # We must handle this case to prevent falling through and causing an AttributeError.
-                            if not await self._establish_connection_and_handshake():
-                                _LOGGER.debug("%s Handshake returned False. Proceeding to retry logic.", self.log_prefix)
-                                self._reconnect_retries += 1
-                                _LOGGER.warning("%s Connection failed. Retrying in %s seconds...", self.log_prefix, self._reconnect_delay)
-                                self._ssl_context_cache.clear() # Force fresh SSL context on retry
-                                await self._close_connection()
-                                await asyncio.sleep(self._reconnect_delay)
-                                self._reconnect_delay = min(self._reconnect_delay * RECONNECT_FACTOR, MAX_RECONNECT_DELAY)
-                                continue # Restart the loop to try again.
-                        except (CannotConnect, AuthError) as e:
-                            self._reconnect_retries += 1
-                            # If reconnection fails, fail any pending command
-                            if self._pending_future and not self._pending_future.done():
-                                self._pending_future.set_exception(CannotConnect(f"Connection lost and reconnect failed: {e}"))
-                                self._pending_future = None
-                            _LOGGER.warning("%s Connection failed. Retrying in %s seconds...", self.log_prefix, self._reconnect_delay)
-                            self._ssl_context_cache.clear() # Force fresh SSL context on retry
-                            await self._close_connection()
-                            await asyncio.sleep(self._reconnect_delay)
-                            self._reconnect_delay = min(self._reconnect_delay * RECONNECT_FACTOR, MAX_RECONNECT_DELAY)
+                        if not await self._handle_reconnection():
                             continue
 
                     # --- START OF FIX: Add null check for self._reader ---
@@ -614,98 +736,12 @@ class ConnectionSamsung2878(Connection):
 
                     # --- Process completed tasks ---
                     if queue_task and queue_task in done:
-                        command, future = queue_task.result()
-                        self._pending_future = future
-                        # Store the command string on the future for debugging purposes using setattr.
-                        setattr(self._pending_future, '_command_debug', command)
-
-                        try:
-                            await self._write_data(command)
-                            # The future will be resolved when a corresponding response or update is received.
-                            _LOGGER.debug("%s Command written, now waiting for response to resolve future", self.log_prefix)
-                        except CannotConnect as e:
-                            if self._pending_future and not self._pending_future.done():
-                                self._pending_future.set_exception(e)
-                            self._pending_future = None
+                        await self._process_command_queue(queue_task)
 
                     if self._read_task in done:
-                        data = None
-                        is_cancelled = False
-                        try:
-                            data = self._read_task.result()
-                        except asyncio.CancelledError:
-                            # Task was cancelled (likely by _close_connection), treat as connection closed
-                            data = None
-                            is_cancelled = True
-                        except Exception as e:
-                             _LOGGER.warning("%s Read task failed: %s", self.log_prefix, e)
-                             data = None
-                             
-                        if not data: 
-                            if not is_cancelled:
-                                _LOGGER.debug("%s Connection closed by device (EOF)", self.log_prefix)
-                            else:
-                                _LOGGER.debug("%s Read task was cancelled", self.log_prefix)
-                                
-                            await self._close_connection()
-                            continue
-                        
-                        buffer += data
-                        # Process buffer to find full XML messages.
-                        while b"</Response>" in buffer or b"</Update>" in buffer or b"/>" in buffer:
-                            end_tag = b"</Response>" if b"</Response>" in buffer else (b"</Update>" if b"</Update>" in buffer else b"/>")
-                            end_index = buffer.find(end_tag) + len(end_tag)
-                            message = buffer[:end_index]
-                            buffer = buffer[end_index:]
-                            
-                            xml_data = message.decode("utf-8", errors='ignore')
-                            _LOGGER.debug("%s Received message: %s", self.log_prefix, xml_data.strip())
-                            is_response, is_update, parsed_data = self._parse_and_update_state(xml_data)
-
-                            # Update internal state for redundant 'Power On' logic.
-                            if parsed_data:
-                                self._device_status.update(parsed_data)
-                            
-                            # --- Command Resolution Logic ---
-                            # A command is considered complete if we receive:
-                            # 1. A direct 'DeviceControl Okay' response.
-                            # 2. Any other response or update that contains actual state data.
-
-                            is_control_okay = is_response and not parsed_data and "DeviceControl" in xml_data and "Status=\"Okay\"" in xml_data
-                            is_polling_response = is_response and "DeviceState" in xml_data
-
-                            # Initialize should_resolve to False to prevent UnboundLocalError
-                            should_resolve = False
-
-                            # If a pending command exists, check if this message resolves it.
-                            if self._pending_future and not self._pending_future.done():
-                                # If the pending command was a poll, only a DeviceState response can resolve it.
-                                # If it was a control command, any data update or a specific 'Okay' can resolve it.
-                                command_debug = getattr(self._pending_future, '_command_debug', '')
-                                is_poll_command = "DeviceState" in command_debug
-                                
-                                should_resolve = (is_poll_command and is_polling_response) or \
-                                                 (not is_poll_command and (is_control_okay or parsed_data))
-
-                            if should_resolve and self._pending_future:
-                                if is_control_okay:
-                                    _LOGGER.debug("%s 'DeviceControl Okay' received, resolving pending command future", self.log_prefix)
-                                else:
-                                    _LOGGER.debug("%s Response/Update with data received, resolving pending command future", self.log_prefix)
-                                try:
-                                    if not self._pending_future.done():
-                                        self._pending_future.set_result(True)
-                                    self._pending_future = None
-                                except asyncio.InvalidStateError:
-                                    pass  # Future was already resolved.
-                            if parsed_data and (is_response or is_update) and self._update_callback:
-                                _LOGGER.debug("%s Calling update callback with data: %s", self.log_prefix, parsed_data)
-                                asyncio.create_task(self._update_callback(parsed_data))
-                            elif is_control_okay:
-                                # This is just an acknowledgment. The device will send a separate <Update> push.
-                                # We don't need to do anything here except acknowledge
-                                # that the command was successful so the UI doesn't hang. The future is already resolved.
-                                _LOGGER.debug("%s 'DeviceControl Okay' ack received. Waiting for subsequent push update.", self.log_prefix)
+                        buffer = await self._process_read_queue(buffer, done)
+                        if buffer is None: # Connection closed
+                             continue
                     
                     # After processing all messages in the buffer, cancel any pending tasks
                     # to allow the next command to be processed.
@@ -728,7 +764,7 @@ class ConnectionSamsung2878(Connection):
                 self._read_task.cancel()
             await self._close_connection()
 
-    def execute(self, template, v, device_state, device_id=None):
+    def execute(self, template: Any, v: Any, device_state: Dict[str, Any], device_id: Optional[str] = None) -> Dict[str, Any]:
         """Synchronous wrapper to execute a command. To be called from an executor."""
         # --- START OF FIX: Add null check for self._controller and self._controller.hass ---
         if not self._controller or not hasattr(self._controller, 'hass') or not self._controller.hass:
@@ -740,7 +776,7 @@ class ConnectionSamsung2878(Connection):
             self._controller.hass.loop
         ).result()
 
-    async def _async_execute_internal(self, template, v, device_state, device_id=None):
+    async def _async_execute_internal(self, template: Any, v: Any, device_state: Dict[str, Any], device_id: Optional[str] = None) -> Dict[str, Any]:
         """The actual async implementation of the execute logic."""
         # Wait for the connection to be ready before proceeding.
         try:
@@ -755,13 +791,13 @@ class ConnectionSamsung2878(Connection):
             duid_to_use = device_id or self._cfg.duid
 
             if is_polling_request:
-                command = f'<Request Type="DeviceState" DUID="{duid_to_use}"></Request>\n'
+                command = f'<Request Type="{PROTOCOL_2878_DEVICE_STATE}" DUID="{duid_to_use}"></Request>\n'
             else:
                 params = self._params.copy()
                 params.update({"value": v, "device_state": device_state, "duid": duid_to_use})
                 command = template.render(**params).strip() + "\n"
 
-            _LOGGER.debug("%s Queuing command: %s", self.log_prefix, command.strip().replace('\n', ''))
+            _LOGGER.debug("%s Queuing command: %s", self.log_prefix, mask_sensitive_data(command.strip().replace('\n', '')))
             future = asyncio.get_event_loop().create_future()
             await self._cmd_queue.put((command, future))
 
@@ -769,7 +805,7 @@ class ConnectionSamsung2878(Connection):
                 await asyncio.wait_for(future, timeout=COMMAND_TIMEOUT)
                 _LOGGER.debug("%s Command executed successfully", self.log_prefix)
             except asyncio.TimeoutError as e:
-                _LOGGER.warning("%s Command timed out: %s", self.log_prefix, command.strip().replace('\n', ''))
+                _LOGGER.warning("%s Command timed out: %s", self.log_prefix, mask_sensitive_data(command.strip().replace('\n', '')))
                 
                 # CRITICAL: If the command times out, we MUST clear the pending_future
                 # so the manager can accept new commands and not get stuck.
