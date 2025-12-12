@@ -55,6 +55,8 @@ class SamsungHTTPAdapter(HTTPAdapter):
     def init_poolmanager(self, *args, **kwargs):
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        ssl_context.minimum_version = ssl.TLSVersion.TLSv1
         ssl_context.set_ciphers("ALL:@SECLEVEL=0")
         kwargs["ssl_context"] = ssl_context
         return super().init_poolmanager(*args, **kwargs)
@@ -239,6 +241,14 @@ class ConnectionRequestBase(Connection):
                         _LOGGER.error("%s Request timed out after %d attempts: %s", self.log_prefix, self._max_retries, e, exc_info=True)
                         raise CannotConnect("Request timed out") from e
 
+                except requests.exceptions.SSLError as e:
+                    if "CERTIFICATE_VERIFY_FAILED" in str(e):
+                        _LOGGER.error("%s SSL Certificate verification failed. Please check your configuration (is 'verify: True' set for a self-signed cert?). Error: %s", self.log_prefix, e)
+                        raise CannotConnect("SSL verification failed. Set 'verify: False' or provide a valid CA.") from e
+                    else:
+                        _LOGGER.error("%s SSL error: %s", self.log_prefix, e, exc_info=False)
+                        raise CannotConnect(f"SSL error: {e}") from e
+
                 except requests.exceptions.ConnectionError as e:
                     _LOGGER.error("%s Connection error: %s", self.log_prefix, e, exc_info=True)
                     raise CannotConnect("Failed to establish a connection") from e
@@ -286,7 +296,7 @@ class ConnectionRequestTlsAuto(ConnectionRequestBase):
 
     @staticmethod
     def match_type(type):
-        return type == CONNECTION_TYPE_REQUEST
+        return type == CONNECTION_TYPE_REQUEST or type == "request_tls_auto"
 
     def create_updated(self, node):
         c = ConnectionRequestTlsAuto(None, _LOGGER, self._insecure_ssl, self._params["timeout"], self._retry_delay, self._debug)
