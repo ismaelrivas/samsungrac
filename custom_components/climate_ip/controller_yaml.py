@@ -355,8 +355,22 @@ class YamlController(ClimateController):
         connections_lock = domain_data.get("lock")
 
         if connections_store is None or connections_lock is None:
-             _LOGGER.error("%s Connection store or lock not initialized in hass.data", self.log_prefix)
-             return False
+             _LOGGER.warning("%s Connection store or lock not initialized in hass.data. Attempting to recover...", self.log_prefix)
+             
+             # Fallback initialization
+             if DOMAIN not in self.hass.data:
+                 self.hass.data[DOMAIN] = {}
+                 domain_data = self.hass.data[DOMAIN]
+             
+             if "connections" not in domain_data:
+                 domain_data["connections"] = {}
+             if "lock" not in domain_data:
+                 domain_data["lock"] = asyncio.Lock()
+                 
+             connections_store = domain_data["connections"]
+             connections_lock = domain_data["lock"]
+             
+             _LOGGER.info("%s Successfully initialized missing connection store/lock structure.", self.log_prefix)
 
         async with connections_lock:
             if key in connections_store:
