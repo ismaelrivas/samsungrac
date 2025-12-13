@@ -118,6 +118,10 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
             # This will stop further polling and prompt for re-authentication.
             raise ConfigEntryAuthFailed(f"Authentication failed: {err}") from err
 
+        except UpdateFailed:
+             # Allow UpdateFailed from controller to bubble up without extra logging
+             raise
+
         except (CannotConnect, ConnectionRefusedError, asyncio.TimeoutError) as err:
             # The coordinator will log this and schedule a retry.
             raise UpdateFailed(f"Failed to fetch device state: {err}") from err

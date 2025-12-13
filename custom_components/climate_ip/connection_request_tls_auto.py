@@ -117,6 +117,13 @@ class ConnectionRequestBase(Connection):
             return self._controller.log_prefix
         return "[NO_ID]"
 
+    def update_auth_token(self, token: str):
+        """Updates the Authorization header with a new token."""
+        if self._params and "headers" in self._params:
+            self._params["headers"]["authorization"] = f"Bearer {token}"
+            _LOGGER.info("%s [Auth] Updated Authorization header with new token.", self.log_prefix)
+
+
     async def close(self):
         """Async wrapper for closing resources. No persistent session in tls_auto."""
         self._thread_pool.shutdown(wait=False)
@@ -226,7 +233,7 @@ class ConnectionRequestBase(Connection):
 
                 except requests.exceptions.HTTPError as e:
                     if e.response.status_code in (401, 403):
-                        _LOGGER.error("%s Authentication error: %s", self.log_prefix, e, exc_info=True)
+                        _LOGGER.debug("%s Authentication error: %s", self.log_prefix, e, exc_info=True)
                         raise AuthError(f"Authentication failed with status {e.response.status_code}") from e
                     else:
                         _LOGGER.error("%s HTTP error: %s", self.log_prefix, e, exc_info=True)
@@ -250,7 +257,8 @@ class ConnectionRequestBase(Connection):
                         raise CannotConnect(f"SSL error: {e}") from e
 
                 except requests.exceptions.ConnectionError as e:
-                    _LOGGER.error("%s Connection error: %s", self.log_prefix, e, exc_info=True)
+                    # Downgrade to WARNING and remove traceback for expected connection refusals (e.g. device offline)
+                    _LOGGER.warning("%s Connection error: %s", self.log_prefix, e) # removed exc_info=True
                     raise CannotConnect("Failed to establish a connection") from e
 
                 except requests.exceptions.RequestException as e:
