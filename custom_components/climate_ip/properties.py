@@ -332,7 +332,7 @@ class GetJsonStatus(DeviceProperty):
                 response_text, _ = await connection.async_execute(params.get('method'), params.get('url'), None, params.get('headers'), _is_poll=True)
                 
                 if response_text is None:
-                    _LOGGER.warning("%s [GetJsonStatus] No response text received (None).", self.log_prefix)
+                    _LOGGER.debug("%s [GetJsonStatus] No response text received (None).", self.log_prefix)
                     return None
 
                 device_state_result = json.loads(response_text)

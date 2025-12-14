@@ -285,15 +285,15 @@ class ConnectionRaw8888(Connection):
         try:
             resp, err = await client.request(method, path, body, req_headers)
             if err:
-                _LOGGER.warning("%s API Error: %s", self.log_prefix, err)
+                _LOGGER.debug("%s API Error: %s", self.log_prefix, err)
                 return None, None
             elapsed = time.perf_counter() - start_time
-            _LOGGER.info("%s [RAW] Request completed in %.3f seconds", self.log_prefix, elapsed)
+            _LOGGER.debug("%s [RAW] Request completed in %.3f seconds", self.log_prefix, elapsed)
             return resp, None
         except LibAuthError:
             raise AuthError("Invalid token")
         except LibConnError as e:
-            _LOGGER.warning("%s Connection error (%s)", self.log_prefix, e)
+            _LOGGER.debug("%s Connection error (%s)", self.log_prefix, e)
             await client.close()
             if _is_probe:
                 return None, None
