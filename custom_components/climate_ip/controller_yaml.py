@@ -25,6 +25,7 @@ from homeassistant.const import (
     STATE_UNKNOWN,
     UnitOfTemperature,
 )
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.util.dt import now
 from homeassistant.helpers.config_validation import PLATFORM_SCHEMA
 from requests.exceptions import RequestException
@@ -49,7 +50,7 @@ from .const import (
     # --- END OF MODIFICATION (Milestone 4) ---
     DOMAIN, # Import DOMAIN
 )
-from .exceptions import CannotConnect
+from .exceptions import CannotConnect, AuthError
 from .helpers import stream_wrapper, get_value_by_path, mask_sensitive_data
 from .const import (
     CONF_CONFIG_FILE,
@@ -134,7 +135,71 @@ class YamlController(ClimateController):
         self._device_state_key_regex = re.compile(r"device_state[\[\.](['\"]?)([A-Za-z0-9_]+)\1")
 
         self._poll = None
+        self._consecutive_connection_errors = 0
         self._pending_updates: Dict[str, Tuple[Any, float]] = {}
+
+    def _try_get_smartthings_token(self) -> Optional[str]:
+        """
+        Attempts to retrieve the SmartThings access token from the Home Assistant
+        Config Entries registry (official 'smartthings' integration).
+        """
+        try:
+            # We access hass.config_entries directly.
+            # This is 'reactive' logic: only called when needed.
+            entries = self.hass.config_entries.async_entries("smartthings")
+            if not entries:
+                _LOGGER.debug("%s [Auth] No Official SmartThings config entries found.", self.log_prefix)
+                return None
+            
+            # Usually there is only one, or we take the first valid one
+            # Usually there is only one, or we take the first valid one
+            for entry in entries:
+                data = entry.data
+                token_data = data.get('token')
+                
+                # Case 1: 'token' is a dict containing 'access_token' (Standard SmartThings integration)
+                if isinstance(token_data, dict) and 'access_token' in token_data:
+                    token = token_data['access_token']
+                    _LOGGER.debug("%s [Auth] Found SmartThings access_token in config entry id: %s", self.log_prefix, entry.entry_id)
+                    return token
+                
+                # Case 2: 'token' is the string itself (Fallback/Legacy)
+                if isinstance(token_data, str):
+                    _LOGGER.debug("%s [Auth] Found SmartThings token string in config entry id: %s", self.log_prefix, entry.entry_id)
+                    return token_data
+
+                # Case 3: 'access_token' is directly in data (Alternative structure)
+                if 'access_token' in data:
+                    token = data['access_token']
+                    _LOGGER.debug("%s [Auth] Found SmartThings direct access_token in config entry id: %s", self.log_prefix, entry.entry_id)
+                    return token
+                    
+            _LOGGER.debug("%s [Auth] Found SmartThings entries but none had a valid token structure.", self.log_prefix)
+            return None
+
+        except Exception as e:
+            _LOGGER.error("%s [Auth] Error attempting to retrieve SmartThings token: %s", self.log_prefix, e)
+            return None
+
+    def _update_all_connections_token(self, new_token: str):
+        """Iterates through all properties and updates their connection token."""
+        _LOGGER.debug("%s [Auth] Propagating new token to all connections.", self.log_prefix)
+        # Collect all properties
+        all_props = [self._state_getter] if self._state_getter else []
+        all_props.extend(self._operations.values())
+        all_props.extend(self._sensors.values())
+
+        # Use a set to update unique connection objects (avoid duplicate updates)
+        updated_connections = set()
+
+        for prop in all_props:
+            if prop:
+                conn = prop.get_connection(None)
+                if conn and conn not in updated_connections:
+                    if hasattr(conn, "update_auth_token"):
+                        conn.update_auth_token(new_token)
+                        updated_connections.add(conn)
+        _LOGGER.debug("%s [Auth] Updated token for %d unique connection objects.", self.log_prefix, len(updated_connections))
 
     def _mask_sensitive_data(self, data: Any) -> Any:
         """Mask sensitive data in the device state for logging."""
@@ -462,8 +527,67 @@ class YamlController(ClimateController):
 
         try:
             full_device_state = await self._state_getter.async_update_state(None, self._debug)
-        except RequestException as e:
-            raise UpdateFailed(f"Error communicating with device: {e}") from e
+            
+            # --- CONNECTION ERROR COUNTER RESET ---
+            if self._consecutive_connection_errors > 0:
+                _LOGGER.info(
+                    "%s Connection recovered after %d failure(s). Counter reset.", 
+                    self.log_prefix, 
+                    self._consecutive_connection_errors
+                )
+            self._consecutive_connection_errors = 0
+            # --------------------------------------
+
+        except AuthError:
+            _LOGGER.info("%s [Auth] Authentication failed (401). Attempting to refresh SmartThings token...", self.log_prefix)
+            new_token = self._try_get_smartthings_token()
+            
+            if new_token and new_token != self._token:
+                _LOGGER.info("%s [Auth] Automatically retrieved new Access Token from SmartThings integration.", self.log_prefix)
+                self._token = new_token
+                self._update_all_connections_token(new_token)
+                
+                # --- START OF MODIFICATION: Persist token to Config Entry ---
+                if self.coordinator and self.coordinator.entry:
+                    entry = self.coordinator.entry
+                    # Update config entry data with new token
+                    new_data = dict(entry.data)
+                    new_data[CONF_TOKEN] = new_token
+                    self.hass.config_entries.async_update_entry(entry, data=new_data)
+                    _LOGGER.info("%s [Auth] Persisted new SmartThings token to Config Entry.", self.log_prefix)
+                # --- END OF MODIFICATION ---
+
+                # Retry the update with the new token
+                try:
+                    full_device_state = await self._state_getter.async_update_state(None, self._debug)
+                    # Reset counter on successful retry
+                    self._consecutive_connection_errors = 0
+                except Exception as retry_exc:
+                     raise UpdateFailed(f"Retry after token refresh failed: {retry_exc}") from retry_exc
+            else:
+                _LOGGER.info("%s [Auth] Token refresh failed. SmartThings integration may not be installed or configured.", self.log_prefix)
+                # Raise ConfigEntryAuthFailed to trigger the Reconfiguration flow in Home Assistant
+                raise ConfigEntryAuthFailed(
+                    "Authentication failed. Please install and configure the official SmartThings integration to provide a valid token."
+                )
+
+        except (RequestException, CannotConnect) as e:
+            # --- TRANSIENT ERROR SUPPRESSION ---
+            self._consecutive_connection_errors += 1
+            
+            if self._consecutive_connection_errors < 2 and self._cached_device_state:
+                _LOGGER.warning(
+                    "%s Connection failed (%d/2). Using cached state to prevent unavailability. Error: %s", 
+                    self.log_prefix, 
+                    self._consecutive_connection_errors,
+                    e
+                )
+                return self._cached_device_state
+            
+            # If we reached here, it's either the 2nd failure OR we have no cache.
+            # We raise the exception to mark the entity as unavailable.
+            raise UpdateFailed(f"Unrecoverable error communicating with device: {e}") from e
+            # -----------------------------------
 
         if full_device_state is None:
             if self._cached_device_state:

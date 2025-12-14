@@ -799,6 +799,32 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow):
 
         return self.async_create_entry(title=title, data=self.flow_data)
 
+    async def async_step_reauth(self, entry_data: Dict[str, Any]) -> FlowResult:
+        """Handle re-authentication failure from the integration."""
+        _LOGGER.debug(f"Entering async_step_reauth with data: {entry_data}")
+        self.reauth_entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Confirm re-authentication."""
+        errors = {}
+
+        if user_input is not None:
+            # When the user confirms, we assume they have fixed the SmartThings integration.
+            # We simply reload the config entry, which will trigger the controller initialization
+            # and the automatic token retrieval logic again.
+            _LOGGER.debug("Reauth confirmed, reloading entry to retry token acquisition.")
+            self.hass.async_create_task(self.hass.config_entries.async_reload(self.reauth_entry.entry_id))
+            return self.async_abort(reason="reauth_successful")
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            description_placeholders={
+                "device_name": self.reauth_entry.title
+            },
+            errors=errors,
+        )
+
     @staticmethod
     @callback
     def async_get_options_flow(
