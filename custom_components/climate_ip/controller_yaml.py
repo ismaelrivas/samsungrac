@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import homeassistant.helpers.config_validation as cv
 import homeassistant.helpers.entity_component
+from homeassistant.helpers import config_entry_oauth2_flow
 import voluptuous as vol
 import yaml
 from homeassistant.const import (
@@ -138,47 +139,42 @@ class YamlController(ClimateController):
         self._consecutive_connection_errors = 0
         self._pending_updates: Dict[str, Tuple[Any, float]] = {}
 
-    def _try_get_smartthings_token(self) -> Optional[str]:
+    async def _refresh_smartthings_token(self) -> Optional[str]:
         """
-        Attempts to retrieve the SmartThings access token from the Home Assistant
-        Config Entries registry (official 'smartthings' integration).
+        Refreshes the SmartThings access token using the official integration's
+        OAuth2 session helper. This handles expiration checks, clock skew (20s),
+        and token refreshing automatically.
         """
         try:
-            # We access hass.config_entries directly.
-            # This is 'reactive' logic: only called when needed.
+            # 1. Find the SmartThings config entry
             entries = self.hass.config_entries.async_entries("smartthings")
             if not entries:
                 _LOGGER.debug("%s [Auth] No Official SmartThings config entries found.", self.log_prefix)
                 return None
             
-            # Usually there is only one, or we take the first valid one
-            # Usually there is only one, or we take the first valid one
-            for entry in entries:
-                data = entry.data
-                token_data = data.get('token')
-                
-                # Case 1: 'token' is a dict containing 'access_token' (Standard SmartThings integration)
-                if isinstance(token_data, dict) and 'access_token' in token_data:
-                    token = token_data['access_token']
-                    _LOGGER.debug("%s [Auth] Found SmartThings access_token in config entry id: %s", self.log_prefix, entry.entry_id)
-                    return token
-                
-                # Case 2: 'token' is the string itself (Fallback/Legacy)
-                if isinstance(token_data, str):
-                    _LOGGER.debug("%s [Auth] Found SmartThings token string in config entry id: %s", self.log_prefix, entry.entry_id)
-                    return token_data
+            # Use the first entry found
+            entry = entries[0]
+            
+            # 2. Get the OAuth2 implementation and create a session
+            implementation = await config_entry_oauth2_flow.async_get_config_entry_implementation(
+                self.hass, entry
+            )
+            session = config_entry_oauth2_flow.OAuth2Session(self.hass, entry, implementation)
 
-                # Case 3: 'access_token' is directly in data (Alternative structure)
-                if 'access_token' in data:
-                    token = data['access_token']
-                    _LOGGER.debug("%s [Auth] Found SmartThings direct access_token in config entry id: %s", self.log_prefix, entry.entry_id)
-                    return token
-                    
-            _LOGGER.debug("%s [Auth] Found SmartThings entries but none had a valid token structure.", self.log_prefix)
-            return None
+            # 3. Force validation (refresh if needed)
+            # async_ensure_token_valid() checks expiration + clock skew
+            await session.async_ensure_token_valid()
+            
+            # 4. Return the (potentially new) access token
+            token = session.token.get("access_token")
+            # Log masked token for debugging
+            masked = f"***{token[-6:]}" if token and len(token) > 6 else "None"
+            _LOGGER.debug("%s [Auth] OAuth2 session token validated. Token: %s", self.log_prefix, masked)
+            
+            return token
 
         except Exception as e:
-            _LOGGER.error("%s [Auth] Error attempting to retrieve SmartThings token: %s", self.log_prefix, e)
+            _LOGGER.error("%s [Auth] Error refreshing SmartThings token via OAuth2: %s", self.log_prefix, e)
             return None
 
     def _update_all_connections_token(self, new_token: str):
@@ -539,8 +535,8 @@ class YamlController(ClimateController):
             # --------------------------------------
 
         except AuthError:
-            _LOGGER.info("%s [Auth] Authentication failed (401). Attempting to refresh SmartThings token...", self.log_prefix)
-            new_token = self._try_get_smartthings_token()
+            _LOGGER.info("%s [Auth] Authentication failed (401). Refreshing token via OAuth2Session...", self.log_prefix)
+            new_token = await self._refresh_smartthings_token()
             
             if new_token and new_token != self._token:
                 _LOGGER.info("%s [Auth] Automatically retrieved new Access Token from SmartThings integration.", self.log_prefix)
@@ -576,7 +572,7 @@ class YamlController(ClimateController):
             self._consecutive_connection_errors += 1
             
             if self._consecutive_connection_errors < 2 and self._cached_device_state:
-                _LOGGER.warning(
+                _LOGGER.debug(
                     "%s Connection failed (%d/2). Using cached state to prevent unavailability. Error: %s", 
                     self.log_prefix, 
                     self._consecutive_connection_errors,
@@ -591,7 +587,7 @@ class YamlController(ClimateController):
 
         if full_device_state is None:
             if self._cached_device_state:
-                 _LOGGER.warning("%s Failed to get latest state (API Error), using cached state to prevent unavailability.", self.log_prefix)
+                 _LOGGER.debug("%s Failed to get latest state (API Error), using cached state to prevent unavailability.", self.log_prefix)
                  return self._cached_device_state
             
             raise UpdateFailed("Failed to get device state: No data received and no cache available")
