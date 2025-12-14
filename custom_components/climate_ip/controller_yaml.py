@@ -135,6 +135,7 @@ class YamlController(ClimateController):
         self._device_state_key_regex = re.compile(r"device_state[\[\.](['\"]?)([A-Za-z0-9_]+)\1")
 
         self._poll = None
+        self._consecutive_connection_errors = 0
         self._pending_updates: Dict[str, Tuple[Any, float]] = {}
 
     def _try_get_smartthings_token(self) -> Optional[str]:
@@ -526,6 +527,17 @@ class YamlController(ClimateController):
 
         try:
             full_device_state = await self._state_getter.async_update_state(None, self._debug)
+            
+            # --- CONNECTION ERROR COUNTER RESET ---
+            if self._consecutive_connection_errors > 0:
+                _LOGGER.info(
+                    "%s Connection recovered after %d failure(s). Counter reset.", 
+                    self.log_prefix, 
+                    self._consecutive_connection_errors
+                )
+            self._consecutive_connection_errors = 0
+            # --------------------------------------
+
         except AuthError:
             _LOGGER.info("%s [Auth] Authentication failed (401). Attempting to refresh SmartThings token...", self.log_prefix)
             new_token = self._try_get_smartthings_token()
@@ -548,6 +560,8 @@ class YamlController(ClimateController):
                 # Retry the update with the new token
                 try:
                     full_device_state = await self._state_getter.async_update_state(None, self._debug)
+                    # Reset counter on successful retry
+                    self._consecutive_connection_errors = 0
                 except Exception as retry_exc:
                      raise UpdateFailed(f"Retry after token refresh failed: {retry_exc}") from retry_exc
             else:
@@ -558,7 +572,22 @@ class YamlController(ClimateController):
                 )
 
         except (RequestException, CannotConnect) as e:
+            # --- TRANSIENT ERROR SUPPRESSION ---
+            self._consecutive_connection_errors += 1
+            
+            if self._consecutive_connection_errors < 2 and self._cached_device_state:
+                _LOGGER.warning(
+                    "%s Connection failed (%d/2). Using cached state to prevent unavailability. Error: %s", 
+                    self.log_prefix, 
+                    self._consecutive_connection_errors,
+                    e
+                )
+                return self._cached_device_state
+            
+            # If we reached here, it's either the 2nd failure OR we have no cache.
+            # We raise the exception to mark the entity as unavailable.
             raise UpdateFailed(f"Unrecoverable error communicating with device: {e}") from e
+            # -----------------------------------
 
         if full_device_state is None:
             if self._cached_device_state:
