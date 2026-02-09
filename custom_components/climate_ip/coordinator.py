@@ -72,6 +72,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
 
         # Initialize debounce task
         self._debounce_task: Optional[asyncio.Task] = None
+        self._consecutive_failures: int = 0
 
         # Start the connection listener if it's a push-based device
         if self.is_push_device:
@@ -93,6 +94,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
             await asyncio.wait_for(
                 self.controller.async_get_status(), timeout=30.0
             )
+            self._consecutive_failures = 0 # success -> reset
             return self._create_device_state()
         
         except InvalidHeaderError as err:
@@ -122,9 +124,22 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
              # Allow UpdateFailed from controller to bubble up without extra logging
              raise
 
-        except (CannotConnect, ConnectionRefusedError, asyncio.TimeoutError) as err:
-            # The coordinator will log this and schedule a retry.
-            raise UpdateFailed(f"Failed to fetch device state: {err}") from err
+        except (CannotConnect, ConnectionRefusedError, asyncio.TimeoutError, OSError) as err:
+            # --- START OF FIX: Strike System for Transient Failures ---
+            self._consecutive_failures += 1
+            max_strikes = 3
+            
+            if self._consecutive_failures < max_strikes:
+                _LOGGER.warning(
+                    "%s Transient connection failure (%s/%s). Preserving last known state. Error: %s",
+                    self.log_prefix, self._consecutive_failures, max_strikes, err
+                )
+                # Return the last known data to prevent 'Unavailable' state
+                return self.data if self.data else self._create_device_state()
+            else:
+                _LOGGER.error("%s Persistent connection failure after %s attempts. Marking entity as unavailable.", self.log_prefix, max_strikes)
+                raise UpdateFailed(f"Failed to fetch device state after {max_strikes} attempts: {err}") from err
+            # --- END OF FIX ---
 
         except Exception as err:
             _LOGGER.error("%s Unexpected error during update", self.log_prefix, exc_info=True)

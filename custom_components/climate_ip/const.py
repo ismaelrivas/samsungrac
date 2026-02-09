@@ -39,6 +39,9 @@ DEVICE_TYPE_SMARTTHINGS_DHW = "smartthings_dhw"
 # Group for modern devices that will get the new engine option
 DEVICE_TYPE_8888_GROUP = [DEVICE_TYPE_SAMSUNG_8888, DEVICE_TYPE_MIM_H03]
 
+# Group for all devices that support the aiohttp engine (Modern + SmartThings)
+DEVICE_TYPE_AIOHTTP_SUPPORTED = DEVICE_TYPE_8888_GROUP + [DEVICE_TYPE_SMARTTHINGS_HVAC, DEVICE_TYPE_SMARTTHINGS_DHW]
+
 # Maps device types to their corresponding YAML configuration files.
 DEVICE_TYPE_TO_CONFIG_FILE = {
     DEVICE_TYPE_SAMSUNG_8888: "samsungrac.yaml",

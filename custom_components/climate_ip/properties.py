@@ -281,14 +281,25 @@ class GetJsonStatus(DeviceProperty):
 
         # --- START OF MODIFICATION: Default connection template for aiohttp ---
         # If we are using the aiohttp engine and no connection_template was defined
-        # in the YAML's 'status' block, we create a default one.
+        # in the YAML's 'status' block, we try to use the one from the connection object
+        # (which might have been created from 'params' in create_updated).
         if self._connection and self._connection.is_async_native and not self._connection_template:
-            _LOGGER.debug(
-                "%s [GetJsonStatus] No connection_template found for aiohttp. Creating a default one.",
-                self.log_prefix
-            )
-            default_template_str = '{ "method": "GET", "url": "/devices" }'
-            self._connection_template = Template(default_template_str)
+            # Try to inherit from connection object
+            if hasattr(self._connection, "_connection_template") and self._connection._connection_template:
+                 _LOGGER.debug("%s [GetJsonStatus] Inheriting connection_template from connection object.", self.log_prefix)
+                 # It might be a Template object or a string.
+                 # Since it's usually a Template object created in create_updated, we can use it directly.
+                 # However, to be safe, we re-wrap connection_template if needed.
+                 # Note: Jinja2 Templates are not easily copyable or strictly typed here, 
+                 # but we can just reference it.
+                 self._connection_template = self._connection._connection_template
+            else:
+                _LOGGER.debug(
+                    "%s [GetJsonStatus] No connection_template found for aiohttp. Creating a default one.",
+                    self.log_prefix
+                )
+                default_template_str = '{ "method": "GET", "url": "/devices" }'
+                self._connection_template = Template(default_template_str)
         # --- END OF MODIFICATION ---
         return super_result
 

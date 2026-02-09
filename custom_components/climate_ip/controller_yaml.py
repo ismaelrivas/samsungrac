@@ -40,6 +40,7 @@ from .state import ClimateIPDeviceState
 from .const import (
     CONF_DEVICE_TYPE,
     DEVICE_TYPE_8888_GROUP,
+    DEVICE_TYPE_AIOHTTP_SUPPORTED,
     DEVICE_TYPE_MIM_H03,
     DEVICE_TYPE_SAMSUNG_2878,
     # --- START OF MODIFICATION (Milestone 4) ---
@@ -369,7 +370,7 @@ class YamlController(ClimateController):
         if device_type == DEVICE_TYPE_SAMSUNG_2878:
             _LOGGER.info("%s Using 'samsung_2878' connection engine", self.log_prefix)
             connection_node[CONFIG_DEVICE_CONNECTION_TYPE] = "samsung_2878" # Hard-coded for this device type
-        elif device_type in DEVICE_TYPE_8888_GROUP:
+        elif device_type in DEVICE_TYPE_AIOHTTP_SUPPORTED:
             # Read the selected connection method from the config entry's options.
             conn_method = self._config.get(CONF_CONN_METHOD, CONN_METHOD_REQUESTS) # Default
             if self.hass and self.unique_id:
@@ -449,7 +450,9 @@ class YamlController(ClimateController):
                     if conn_class.match_type(conn_type_str):
                         _LOGGER.debug("%s Found matching connection class '%s' for type '%s'", self.log_prefix, conn_class.__name__, conn_type_str)
                         if conn_class.__name__ == "ConnectionAiohttp8888":
-                            self._connection = conn_class(self._config, _LOGGER, self.hass, self._session, self._ip_address)
+                            # Merge global config with YAML connection node to ensure insecure_ssl and others are passed
+                            merged_config = {**self._config, **connection_node}
+                            self._connection = conn_class(merged_config, _LOGGER, self.hass, self._session, self._ip_address)
                         elif conn_class.__name__ == "ConnectionRaw8888":
                              self._connection = conn_class(self._config, _LOGGER, self.hass, self._session, self._ip_address)
                         else:

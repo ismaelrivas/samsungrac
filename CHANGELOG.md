@@ -1,20 +1,25 @@
-## v9.0.0
+# Changelog
 
-This is a major release that includes a complete asynchronous refactor and addresses several critical stability issues reported by the community. Thank you for your patience and collaboration.
+## [9.0.6] - 2026-01-07
 
-### ✨ Added
-- **Config Flow**: The integration can now be configured entirely through the Home Assistant user interface.
-- **Token and MAC Auto-Discovery**: When using the UI configuration, the integration can now automatically discover the device's token and MAC address.
-- **Push Notifications (Port 2878):** The integration now supports push notifications for devices on port 2878, allowing for instant status updates (e.g., when using the physical remote) without polling.
+### Added
+- **Connection Engines**:
+    - Implemented `asyncio.Lock` in `connection_aiohttp.py` and `connection_raw.py` to serialize requests and properly share SSL contexts.
+    - Added SSL optimizations (`OP_NO_TICKET`, `OP_NO_COMPRESSION`) in `protocol_8888.py` for low-resource devices.
+    - Added tolerant header parsing in `connection_request_tls_auto.py`.
+- **Config Flow**:
+    - Added connection method selector (`aiohttp`, `requests`, `raw`) in `config_flow.py`.
+    - Defined explicit device types for SmartThings HVAC and DHW in `const.py`.
+- **Sensors**: Added `sensors` property support in `controller_yaml.py`.
+- **Logging**: Added verification logs for SSL optimizations.
 
-### 🛠️ Fixed
-- **Connection Stability (Port 2878):**
-    - Resolved race conditions between commands and status updates by implementing a concurrency lock. This should prevent unexpected shutdowns.
-    - Improved automatic reconnection logic. The integration should now correctly detect and re-establish a connection if the AC unit loses power and comes back online.
-- **Regression on Port 8888:**
-    - Fixed the `HeaderParsingError` that was affecting devices on port 8888.
+### Changed
+- **Stability**:
+    - Introduced a "strike system" in `coordinator.py` and `samsung_2878.py` (max 3 strikes) to handle transient network failures without marking entities unavailable immediately.
+    - Added automatic fallback to the Legacy (requests) engine if `InvalidHeaderError` is detected.
+- **Properties**:
+    - Fixed temperature conversions (~line 173 `properties.py`) by enforcing float parsing and handling units dynamically.
+    - Updated `insecure_ssl` handling in SmartThings YAML templates.
 
-### �� Changed
-- **Asynchronous Refactor:** The entire integration has been rewritten to be fully asynchronous, improving performance and aligning with modern Home Assistant standards.
-- **Fan Mode Handling:** The device map (`samsung_2878.yaml`) has been updated to better handle fan speed limitations in specific modes. The integration will now only offer compatible fan speeds for each mode.
-- The integration now supports a dual configuration mode: both via the user interface (Config Flow) and YAML.
+### Fixed
+- **Outdoor Temperature**: Corrected calculation in `samsung_2878.yaml` (subtracting 55 from raw value) and set unit to Celsius.

@@ -44,6 +44,9 @@ from .const import (
     DEVICE_TYPE_MIM_H03,
     # --- START OF MODIFICATION (Milestone 4) ---
     DEVICE_TYPE_8888_GROUP,
+    # --- START OF MODIFICATION (Milestone 4) ---
+    DEVICE_TYPE_AIOHTTP_SUPPORTED,
+    # --- END OF MODIFICATION (Milestone 4) ---
     # --- END OF MODIFICATION (Milestone 4) ---
     DEVICE_TYPE_SAMSUNG_2878,
     DEVICE_TYPE_SAMSUNG_8888,
@@ -865,8 +868,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         """Return the schema for the options flow."""
         schema_dict = {}
 
-        # Only show the connection method selector for modern (port 8888) devices.
-        if self.config_entry.data.get(CONF_DEVICE_TYPE) in DEVICE_TYPE_8888_GROUP:
+        # Only show the connection method selector for supported devices (Modern 8888 + SmartThings).
+        if self.config_entry.data.get(CONF_DEVICE_TYPE) in DEVICE_TYPE_AIOHTTP_SUPPORTED:
             schema_dict[vol.Required(
                 CONF_CONN_METHOD, 
                 default=self.config_entry.options.get(CONF_CONN_METHOD, CONN_METHOD_REQUESTS)
