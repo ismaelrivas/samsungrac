@@ -144,9 +144,24 @@ class ConnectionRaw8888(Connection):
             if self._controller._shared_raw_client is None:
                 if not self._host:
                     raise CannotConnect("Host/IP address not provided for RAW connection")
-                _LOGGER.debug("%s [Shared] Initializing NEW shared client. Controller ID: %s", self.log_prefix, id(self._controller))
+                
+                # --- START OF FIX: Dynamic Port Detection ---
+                port = 8888 # Default for legacy devices
+                
+                # Try to extract from current params URL (if absolute)
+                url = self._params.get("url")
+                if url:
+                    parsed = urlparse(url)
+                    if parsed.port:
+                        port = parsed.port
+                    elif parsed.scheme == "https":
+                        port = 443
+                    elif parsed.scheme == "http":
+                        port = 80
+                
+                _LOGGER.debug("%s [Shared] Initializing NEW shared client. Controller ID: %s, Port: %s", self.log_prefix, id(self._controller), port)
                 self._controller._shared_raw_client = Samsung8888Client(
-                    self._host, 8888, self._cert, log_prefix=self.log_prefix
+                    self._host, port, self._cert, log_prefix=self.log_prefix
                 )
             else:
                 _LOGGER.debug("%s [Shared] Reusing EXISTING shared client. Controller ID: %s", self.log_prefix, id(self._controller))
@@ -156,11 +171,23 @@ class ConnectionRaw8888(Connection):
         # Fallback for standalone usage (no controller)
         if self._client is None:
             _LOGGER.debug("%s [Standalone] Controller is None! Initializing local client.", self.log_prefix)
-            # Ensure host is present and narrow its type from Optional[str] to str for the client constructor.
             if not self._host:
                 raise CannotConnect("Host/IP address not provided for RAW connection")
+            
+            # --- START OF FIX: Dynamic Port Detection (Standalone) ---
+            port = 8888
+            url = self._params.get("url")
+            if url:
+                parsed = urlparse(url)
+                if parsed.port:
+                    port = parsed.port
+                elif parsed.scheme == "https":
+                    port = 443
+                elif parsed.scheme == "http":
+                     port = 80
+
             self._client = Samsung8888Client(
-                self._host, 8888, self._cert, log_prefix=self.log_prefix
+                self._host, port, self._cert, log_prefix=self.log_prefix
             )
         return self._client
 

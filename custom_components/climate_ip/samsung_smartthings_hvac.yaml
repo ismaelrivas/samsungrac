@@ -9,6 +9,7 @@ device:
     status_template: __DEVICE_ID__/hvac
   connection:
     type: request_tls_auto
+    keep_alive: True
     insecure_ssl: true
     timeout: 10
     retry_delay: 2.0
@@ -16,7 +17,7 @@ device:
     params:
       url: 'https://__CLIMATE_IP_HOST__/v1/devices/__DEVICE_ID__/commands'
       method: POST
-      verify: True
+      verify: False
       headers:
         authorization: 'Bearer __CLIMATE_IP_TOKEN__'
         content_type: 'application/json; charset=utf-8'

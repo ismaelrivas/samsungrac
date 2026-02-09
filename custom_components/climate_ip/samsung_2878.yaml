@@ -150,12 +150,10 @@ device:
     outdoor_temperature:
       type: number
       name: "Outdoor Temperature"
-      # The device provides this value in Fahrenheit. We pass it directly to HA
-      # and let Home Assistant handle the unit conversion.
-      status_template: '{{ device_state.AC_OUTDOOR_TEMP }}'
+      status_template: '{{ (device_state.AC_OUTDOOR_TEMP | int) - 55 }}'
       # Home Assistant metadata
       device_class: "temperature"
-      unit_of_measurement: "°F"
+      unit_of_measurement: "°C"
       state_class: "measurement"
       # Validation
       validation_template: '{% if "AC_OUTDOOR_TEMP" in device_state %}valid{% endif %}'

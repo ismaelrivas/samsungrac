@@ -76,8 +76,14 @@ class ConnectionAiohttp8888(Connection):
 
         if not self._token:
              _LOGGER.error("[aiohttp_init] aiohttp engine started without a token. This will fail.")
+        
+        # Check if cert is missing
         if not self._cert_path or not os.path.exists(self._cert_path):
-            _LOGGER.error(f"[aiohttp_init] Certificate file not found at {self._cert_path}")
+            # Only error if we are NOT in insecure mode (SmartThings/Emulator uses insecure_ssl=True)
+            if not config.get("insecure_ssl", False):
+                _LOGGER.error(f"[aiohttp_init] Certificate file not found or invalid at {self._cert_path}")
+            else:
+                 _LOGGER.debug(f"[aiohttp_init] Certificate file not found at {self._cert_path}. This is expected for SmartThings/Emulator (insecure_ssl=True).")
 
     @property
     def log_prefix(self) -> str:
@@ -101,41 +107,45 @@ class ConnectionAiohttp8888(Connection):
 
     async def _create_ssl_context(self) -> Optional[ssl.SSLContext]:
         """
-        Creates the correct SSL context for mTLS (Mutual TLS Authentication).
-        This replicates the logic of 'requests' (cert=... and verify=...).
+        Creates the correct SSL context.
+        - If cert is present, sets up mTLS (Strict/Verify=None but loads cert).
+        - If cert is missing:
+             - If insecure_ssl=True (Emulator/SmartThings), sets up lenient context (Weak Ciphers, Verify=None).
+             - If insecure_ssl=False (Cloud default), returns None (aiohttp default strict).
         """
-        if not self._cert_path or not os.path.exists(self._cert_path):
-            _LOGGER.error("%s [aiohttp] Cannot create SSL context: certificate path is invalid: %s", self.log_prefix, self._cert_path)
-            return None
-            
+        # Read insecure_ssl. It comes from 'config' passed to __init__.
+        # Note: ConnectionRequestBase reads it as self._insecure_ssl
+        insecure_ssl = self._config.get("insecure_ssl", False)
+
+        has_cert = self._cert_path and os.path.exists(self._cert_path)
+
+        if not has_cert and not insecure_ssl:
+             # Standard Secure Cloud Connection
+             _LOGGER.debug("%s [aiohttp] No cert and insecure_ssl=False. Using default aiohttp SSL context (Strict).", self.log_prefix)
+             return None
+
         try:
-            _LOGGER.debug("%s [aiohttp] Creating SSL context for mTLS (does not verify server, presents client cert)", self.log_prefix)
+            _LOGGER.debug("%s [aiohttp] Creating custom SSL context. Cert: %s, Insecure: %s", self.log_prefix, has_cert, insecure_ssl)
             
-            # --- SSL FIX ---
             # Use PROTOCOL_TLSv1 for maximum compatibility (as in requests)
             context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
             
-            # 1. We DO NOT verify the server's certificate (it's self-signed)
+            # If insecure_ssl or mTLS (self-signed), we don't verify hostname/chain
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
 
-            # 2. Fix [SSL: UNSUPPORTED_PROTOCOL] and [SSL: CA_MD_TOO_WEAK]
-            # We replicate the 'requests' logic to allow ALL ciphers
+            # Replicate the 'requests' logic to allow ALL ciphers (fixes Handshake Failure)
             context.set_ciphers("ALL:@SECLEVEL=0")
             
-            # 3. BUT we DO load our client certificate to present ourselves
-            # --- START OF FIX: Use the _cert_path of the current object ---
-            # Do not use self._cert_path directly in the partial function
-            _LOGGER.debug("%s [aiohttp] ...loading 'load_cert_chain' with: %s", self.log_prefix, self._cert_path)
-            # --- END OF FIX ---
-            loop = asyncio.get_running_loop()
-            
-            load_chain_func = partial(context.load_cert_chain, self._cert_path)
-            await loop.run_in_executor(None, load_chain_func)
+            if has_cert:
+                 _LOGGER.debug("%s [aiohttp] Loading mTLS cert from: %s", self.log_prefix, self._cert_path)
+                 loop = asyncio.get_running_loop()
+                 load_chain_func = partial(context.load_cert_chain, self._cert_path)
+                 await loop.run_in_executor(None, load_chain_func)
             
             return context
         except Exception as e:
-            _LOGGER.error("%s [aiohttp] Failed to load 'load_cert_chain': %s. The .pem file may be invalid or corrupt.", self.log_prefix, e)
+            _LOGGER.error("%s [aiohttp] Failed to create SSL context: %s.", self.log_prefix, e)
             return None
 
     @staticmethod
@@ -214,11 +224,17 @@ class ConnectionAiohttp8888(Connection):
             
             # Use the value-specific method/url if present, otherwise use the base one.
             # --- START OF FIX ---
-            # Ensure the URL is just the path, not the full URL, to prevent duplication.
+            # Ensure the URL is just the path, not the full URL, to prevent duplication,
+            # UNLESS it is an absolute URL (SmartThings), in which case we keep it.
             url_from_params = params.get('url', self._params.get('url'))
             if url_from_params:
-                # Use urlparse for robust path extraction.
-                template_dict['url'] = urlparse(url_from_params).path
+                parsed = urlparse(url_from_params)
+                if parsed.scheme and parsed.netloc:
+                     # Absolute URL - Keep it entirely
+                     template_dict['url'] = url_from_params
+                else:
+                     # Relative URL - Extract path only (for legacy 8888 behavior)
+                     template_dict['url'] = parsed.path
             
             # --- START OF FIX ---
             # If the method is not in the current params (common for embedded commands),
@@ -280,22 +296,42 @@ class ConnectionAiohttp8888(Connection):
             if not self._shared_state["ssl_context"]:
                 self._shared_state["ssl_context"] = await self._create_ssl_context()
 
-            if self._shared_state["ssl_context"]:
+            # If create_ssl_context returned None (no cert), we might still want to proceed if this is a
+            # SmartThings device which doesn't need mTLS.
+            # However, for 8888 devices, no cert = failure.
+            # We can detect this by checking if we have a token (SmartThings usually relies on token).
+            
+            ssl_ctx = self._shared_state["ssl_context"]
+            if ssl_ctx is None:
+                 # Logic for "insecure" / no-cert connection
+                 ssl_ctx = False 
+
+            if True: #Indent block 
             # --- END OF FIX ---
                 try:
-                    _LOGGER.debug("%s [aiohttp_probe] Probing HTTPS (mTLS) connection for the first time...", self.log_prefix)
-                    async with self._session.request("GET", f"https://{self._ip_address}:8888/devices", headers=probe_headers, ssl=self._shared_state["ssl_context"], timeout=aiohttp.ClientTimeout(total=10)) as response:
-                        if response.status in (200, 401, 403):
-                            _LOGGER.info("%s [aiohttp] HTTPS (mTLS) connection successful and memorized.", self.log_prefix)
+                    _LOGGER.debug("%s [aiohttp_probe] Probing connection...", self.log_prefix)
+                    
+                    # --- START OF FIX: Generalize Probe URL ---
+                    probe_url = f"https://{self._ip_address}:8888/devices"
+                    if self._params and self._params.get("url") and str(self._params.get("url")).startswith("http"):
+                        probe_url = self._params.get("url")
+                        _LOGGER.debug("%s [aiohttp_probe] Detected absolute URL, probing: %s", self.log_prefix, probe_url)
+                    # --- END OF FIX ---
+
+                    # Update timeout to be more granular
+                    async with self._session.request("GET", probe_url, headers=probe_headers, ssl=self._shared_state["ssl_context"], timeout=aiohttp.ClientTimeout(total=10, sock_read=5)) as response:
+                        if response.status in (200, 401, 403, 405): # Added 405 for Method Not Allowed (probing POST with GET)
+                            _LOGGER.info("%s [aiohttp] Connection successful and memorized. Status: %s", self.log_prefix, response.status)
                             self._shared_state["initialized"] = True
                             
                             # --- START OF FIX: Optimization - Return text for reuse ---
                             if response.status == 200:
+                                _LOGGER.debug("%s [aiohttp_probe] Reading response body...", self.log_prefix)
                                 return await response.text()
                             return None
                             # --- END OF FIX ---
                         else:
-                            raise Exception(f"Unexpected HTTPS probe response: {response.status}")
+                            raise Exception(f"Unexpected probe response: {response.status}")
                 
                 # --- START OF FIX: Handle offline device gracefully ---
                 except aiohttp.ClientConnectorError as e:
@@ -385,27 +421,23 @@ class ConnectionAiohttp8888(Connection):
         # If we previously detected stability issues (timeouts likely due to missing Content-Length),
         # we strictly force 'Connection: close'.
         if getattr(self, "_force_close_connection", False):
-             req_headers["Connection"] = "close"
+            req_headers["Connection"] = "close"
 
         # --- FIX: REMOVE FALLBACK LOGIC ---
         # We only use HTTPS (mTLS)
         # --- START OF FIX: Always use the shared SSL context ---
         ssl_context = self._shared_state.get("ssl_context")
-        base_url = f"https://{self._ip_address}:8888"
+        # --- START OF FIX: URL Handling Generalization ---
+        # Detect if the path is actually an absolute URL (for SmartThings).
+        if url_path and url_path.startswith("http"):
+            base_url = "" # No base URL needed
+            # Provide a default ssl_context (unverified) if one wasn't created via mTLS probe
+            if not ssl_context:
+                # Use _create_ssl_context to get the correct lenient context for insecure_ssl=True
+                ssl_context = await self._create_ssl_context()
+        else:
+            base_url = f"https://{self._ip_address}:8888"
         # --- END OF FIX ---
-
-        if not ssl_context:
-             # Attempt to initialize if context is missing (e.g., after a failed probe retry)
-             try:
-                 await self._try_connection()
-                 ssl_context = self._shared_state.get("ssl_context")
-             except CannotConnect:
-                 # _try_connection already logged the warning/error
-                 pass
-
-             if not ssl_context:
-                 _LOGGER.warning("%s [aiohttp] SSL context unavailable. Request aborted.", self.log_prefix)
-                 raise CannotConnect("SSL context not available")
 
         full_url = f"{base_url}{url_path}"
 

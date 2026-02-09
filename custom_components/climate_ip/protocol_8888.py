@@ -52,6 +52,28 @@ class Samsung8888Client:
         ctx.verify_mode = ssl.CERT_NONE
         # Use ALL:@SECLEVEL=0 as in the original code for maximum compatibility
         ctx.set_ciphers("ALL:@SECLEVEL=0")
+        
+        # --- START OF FIX: Optimize SSL for low-memory devices ---
+        # Disable session tickets and compression to reduce handshake overhead
+        try:
+            applied_opts = []
+            op_no_ticket = getattr(ssl, "OP_NO_TICKET", 0)
+            if op_no_ticket:
+                ctx.options |= op_no_ticket
+                if ctx.options & op_no_ticket:
+                    applied_opts.append("OP_NO_TICKET")
+
+            op_no_compression = getattr(ssl, "OP_NO_COMPRESSION", 0)
+            if op_no_compression:
+                ctx.options |= op_no_compression
+                if ctx.options & op_no_compression:
+                    applied_opts.append("OP_NO_COMPRESSION")
+
+            if applied_opts:
+                _LOGGER.debug("%s SSL Optimizations enabled: %s", self.log_prefix, ", ".join(applied_opts))
+        except Exception:
+            pass # Ignore if options not supported
+        # --- END OF FIX ---
 
         if self.cert_path:
             try:

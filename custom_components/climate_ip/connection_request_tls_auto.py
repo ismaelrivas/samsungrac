@@ -1,3 +1,19 @@
+# custom_components/climate_ip/connection_request_tls_auto.py
+"""
+Synchronous connection engine using requests with tolerance for mTLS renegotiation.
+
+TARGET DEVICES:
+- Samsung SmartThings HVAC (connection type: 'request_tls_auto')
+- Samsung SmartThings DHW (connection type: 'request_tls_auto')
+
+This engine creates a FRESH session for every request, which is inefficient but
+necessary for some devices that do not support Keep-Alive correctly or require
+frequent TLS renegotiation.
+
+NOTE: Unlike the 'Legacy (requests)' engine, these SmartThings devices typically 
+do NOT require the 'urllib3' monkey-patch for malformed headers, but this file 
+inherits from ConnectionRequestBase which might apply it globally.
+"""
 # Monkey-patch urllib3 to be more tolerant of malformed headers from some AC units.
 import urllib3.util.response as response_util
 from urllib3.exceptions import HeaderParsingError
