@@ -1,20 +1,11 @@
-## v9.0.0
+# Changelog
 
-This is a major release that includes a complete asynchronous refactor and addresses several critical stability issues reported by the community. Thank you for your patience and collaboration.
+## [9.0.6] - 2026-01-07
 
-### ✨ Added
-- **Config Flow**: The integration can now be configured entirely through the Home Assistant user interface.
-- **Token and MAC Auto-Discovery**: When using the UI configuration, the integration can now automatically discover the device's token and MAC address.
-- **Push Notifications (Port 2878):** The integration now supports push notifications for devices on port 2878, allowing for instant status updates (e.g., when using the physical remote) without polling.
+### Added
+- **SSL Optimization**: Disabled `OP_NO_TICKET` and `OP_NO_COMPRESSION` in `protocol_8888.py` to reduce memory usage on low-resource devices (e.g., older Samsung ACs).
+- **Transient Error Handling**:Implemented a "strike system" in `samsung_2878.py`. Connection errors are now tracked, and a full reset is only triggered after 3 consecutive failures ("strikes"), preventing unnecessary restarts due to temporary network glitches.
+- **Logging**: Added verification logs to confirm which SSL optimizations are successfully applied.
 
-### 🛠️ Fixed
-- **Connection Stability (Port 2878):**
-    - Resolved race conditions between commands and status updates by implementing a concurrency lock. This should prevent unexpected shutdowns.
-    - Improved automatic reconnection logic. The integration should now correctly detect and re-establish a connection if the AC unit loses power and comes back online.
-- **Regression on Port 8888:**
-    - Fixed the `HeaderParsingError` that was affecting devices on port 8888.
-
-### �� Changed
-- **Asynchronous Refactor:** The entire integration has been rewritten to be fully asynchronous, improving performance and aligning with modern Home Assistant standards.
-- **Fan Mode Handling:** The device map (`samsung_2878.yaml`) has been updated to better handle fan speed limitations in specific modes. The integration will now only offer compatible fan speeds for each mode.
-- The integration now supports a dual configuration mode: both via the user interface (Config Flow) and YAML.
+### Fixed
+- **Outdoor Temperature**: Corrected the outdoor temperature calculation in `samsung_2878.yaml` by subtracting 55 from the raw device value to get the correct Celsius reading.
