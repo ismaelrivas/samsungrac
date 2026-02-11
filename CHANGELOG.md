@@ -1,5 +1,10 @@
 # Changelog
 
+## [9.0.8] - 2026-02-11
+
+### Fixed
+- **Outdoor Temperature**: Changed logic for 8888-port devices to subtract 55 from the raw value and use Celsius units, matching the behavior of 2878-port devices.
+
 ## [9.0.7] - 2026-02-11
 
 ### Added

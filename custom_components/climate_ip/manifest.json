@@ -13,5 +13,5 @@
     "requests>=2.21.0",
     "xmltodict>=0.13.0"
   ],
-  "version": "9.0.7"
+  "version": "9.0.8"
 }

@@ -181,12 +181,12 @@ device:
         {% if 'Mode' in device_state and 'options' in device_state['Mode'] -%}
           {% for option in device_state['Mode']['options'] -%}
             {% if 'OutdoorTemp_' in option -%}
-              {{ option.split('_')[1] }}
+              {{ (option.split('_')[1] | int) - 55 }}
             {%- endif %}
           {%- endfor %}
         {%- endif %}
       device_class: "temperature"
-      unit_of_measurement: "°F"
+      unit_of_measurement: "°C"
       validation_template: "{% if 'Mode' in device_state and 'options' in device_state['Mode'] %}valid{% endif %}"
 
     filter_clean_alarm:
