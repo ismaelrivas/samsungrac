@@ -10,14 +10,14 @@ device:
   connection:
     type: request_tls_auto
     keep_alive: True
-    insecure_ssl: true
+    insecure_ssl: false
     timeout: 10
     retry_delay: 2.0
     debug: false
     params:
       url: 'https://__CLIMATE_IP_HOST__/v1/devices/__DEVICE_ID__/commands'
       method: POST
-      verify: False
+      verify: True
       headers:
         authorization: 'Bearer __CLIMATE_IP_TOKEN__'
         content_type: 'application/json; charset=utf-8'

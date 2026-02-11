@@ -53,7 +53,9 @@ async def async_setup_entry(
     else:
         # Single coordinator setup
         coordinator = coordinators
-        raw_device_state = coordinator.controller._state_getter.value
+        # Use the unwrapped device state exposed by the controller
+        raw_device_state = coordinator.controller.device_state
+        
         for sensor_prop in coordinator.controller.sensors:
             if sensor_prop.is_valid(raw_device_state):
                 entities_to_add.append(ClimateIpSensor(coordinator, sensor_prop))
@@ -116,11 +118,12 @@ class ClimateIpSensor(CoordinatorEntity[SamsungClimateCoordinator], SensorEntity
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         # Check if the sensor is still valid (e.g. available in the new state)
-        raw_device_state = self.coordinator.controller._state_getter.value
+        # Use the unwrapped device state exposed by the controller
+        raw_device_state = self.coordinator.controller.device_state
         is_valid = self._property.is_valid(raw_device_state)
-        _LOGGER.debug("%s Sensor '%s' validation check returned: %s", self.log_prefix, self._key, is_valid)
+        # _LOGGER.debug("%s Sensor '%s' validation check returned: %s", self.log_prefix, self._key, is_valid)
 
-        if self._property.is_valid(raw_device_state):
+        if is_valid:
             self._update_state()
             self.async_write_ha_state()
         else:

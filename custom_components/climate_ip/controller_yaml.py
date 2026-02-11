@@ -719,6 +719,10 @@ class YamlController(ClimateController):
             device_to_process = full_device_state
         # --- END: Sub-device selection logic ---
 
+        # --- START OF FIX: Store unwrapped state ---
+        self._last_device_state = device_to_process
+        # --- END OF FIX ---
+
         corrections = {}
         all_properties = list(self._operations.values()) + list(self._properties.values()) + list(self._sensors.values())
         _LOGGER.debug("%s Updating %d properties using device_state: %s", self.log_prefix, len(all_properties), str(mask_sensitive_data(device_to_process)))
@@ -1158,6 +1162,23 @@ class YamlController(ClimateController):
         """Return a list of all defined sensor property objects."""
         # Return the actual property objects, not just the names
         return [self._sensors[name] for name in self._sensors_list if name in self._sensors]
+    
+    @property
+    def device_state(self) -> Dict[str, Any]:
+        """
+        Return the current *unwrapped* device state.
+        This provides access to the sub-device state (e.g. {'Mode': ...}) 
+        which is used by properties and sensors, rather than the raw connection state
+        (e.g. {'Devices': ...}).
+        """
+        if self._last_device_state:
+             return self._last_device_state
+        
+        # Fallback to raw state if no unwrapped state is available yet
+        if self._state_getter:
+             return self._state_getter.value
+        
+        return {}
     # --- END OF ADDITION ---
 
 

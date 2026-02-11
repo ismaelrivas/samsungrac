@@ -1,5 +1,19 @@
 # Changelog
 
+## [9.0.7] - 2026-02-11
+
+### Added
+- **Sensors (8888 Protocol)**:
+    - Added native support for `outdoor_temperature` sensor in `samsungrac.yaml` (8888 models).
+    - Added `filter_clean_alarm`, `filter_time`, and `filter_alarm_time` sensors.
+    - Implemented logic to expose unwrapped device state in `controller_yaml.py` to allow sensor templates to access nested data easily.
+
+### Changed
+- **SSL Security**:
+    - Updated `samsung_smartthings_hvac.yaml` and `samsung_smartthings_dhw.yaml` to enforce `insecure_ssl: false` and `verify: True` for secure connections to SmartThings Cloud.
+- **Internal**:
+    - Updated `sensor.py` to use the new exposed device state for validation, fixing the "missing sensor" issue on 8888 devices.
+
 ## [9.0.6] - 2026-01-07
 
 ### Added
