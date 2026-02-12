@@ -213,3 +213,19 @@ device:
       name: "External unit version"
       status_template: "{{ device_state.AC_ADD2_OUT_VERSION }}"
       validation_template: '{% if "AC_ADD2_OUT_VERSION" in device_state %}valid{% endif %}'
+
+    auto_clean:
+      type: string
+      name: "Auto Clean"
+      status_template: '{{ device_state.AC_ADD_AUTOCLEAN }}'
+      device_class: "enum"
+      options: ["On", "Off"]
+      validation_template: '{% if "AC_ADD_AUTOCLEAN" in device_state %}valid{% endif %}'
+
+    purify:
+      type: string
+      name: "Purify"
+      status_template: '{{ device_state.AC_ADD_SPI }}'
+      device_class: "enum"
+      options: ["On", "Off"]
+      validation_template: '{% if "AC_ADD_SPI" in device_state %}valid{% endif %}'
