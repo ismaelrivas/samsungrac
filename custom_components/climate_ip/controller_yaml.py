@@ -52,7 +52,7 @@ from .const import (
     # --- END OF MODIFICATION (Milestone 4) ---
     DOMAIN, # Import DOMAIN
 )
-from .exceptions import CannotConnect, AuthError
+from .exceptions import CannotConnect, AuthError, InvalidHeaderError
 from .helpers import stream_wrapper, get_value_by_path, mask_sensitive_data
 from .const import (
     CONF_CONFIG_FILE,
@@ -120,6 +120,7 @@ class YamlController(ClimateController):
         self._temp_unit = UnitOfTemperature.CELSIUS
         self._service_schema_map = {vol.Optional(ATTR_ENTITY_ID): cv.comp_entity_ids}
         self._last_device_state = None
+        self._shared_raw_client = None # For shared connection pooling
         
         self._raw_yaml_config = None
         # Context-aware cache for parsed YAML. Keyed by device_id.
@@ -373,10 +374,17 @@ class YamlController(ClimateController):
         elif device_type in DEVICE_TYPE_AIOHTTP_SUPPORTED:
             # Read the selected connection method from the config entry's options.
             conn_method = self._config.get(CONF_CONN_METHOD, CONN_METHOD_REQUESTS) # Default
-            if self.hass and self.unique_id:
-                entry = self.hass.config_entries.async_get_entry(self.unique_id)
-                if entry and entry.options:
-                    conn_method = entry.options.get(CONF_CONN_METHOD, conn_method)
+            
+            # --- START OF FIX: Retrieve entry using entry_id ---
+            entry_id = self._config.get("entry_id")
+            if self.hass and entry_id:
+                entry = self.hass.config_entries.async_get_entry(entry_id)
+                if entry:
+                     _LOGGER.debug("%s [Init] Retrieved ConfigEntry. Options: %s", self.log_prefix, entry.options)
+                     if entry.options:
+                        conn_method = entry.options.get(CONF_CONN_METHOD, conn_method)
+                        _LOGGER.debug("%s [Init] Connection method resolved to: %s", self.log_prefix, conn_method)
+            # --- END OF FIX ---
 
             if conn_method == CONN_METHOD_AIOHTTP:
                 _LOGGER.info("%s Using 'Modern (aiohttp)' connection engine (from options)", self.log_prefix)
@@ -407,62 +415,41 @@ class YamlController(ClimateController):
             _LOGGER.error("%s Cannot create a unique connection without a unique_id", self.log_prefix)
             return False
 
-        # Access global state from hass.data
-        if not self.hass:
-             _LOGGER.error("%s Cannot access hass.data: hass object is missing", self.log_prefix)
-             return False
-             
-        domain_data = self.hass.data.get(DOMAIN, {})
-        connections_store = domain_data.get("connections")
-        connections_lock = domain_data.get("lock")
+        # --- START: Logic moved from connection.py ---
+        key = self.unique_id
+        if not key:
+            _LOGGER.error("%s Cannot create a unique connection without a unique_id", self.log_prefix)
+            return False
 
-        if connections_store is None or connections_lock is None:
-             _LOGGER.warning("%s Connection store or lock not initialized in hass.data. Attempting to recover...", self.log_prefix)
-             
-             # Fallback initialization
-             if DOMAIN not in self.hass.data:
-                 self.hass.data[DOMAIN] = {}
-                 domain_data = self.hass.data[DOMAIN]
-             
-             if "connections" not in domain_data:
-                 domain_data["connections"] = {}
-             if "lock" not in domain_data:
-                 domain_data["lock"] = asyncio.Lock()
-                 
-             connections_store = domain_data["connections"]
-             connections_lock = domain_data["lock"]
-             
-             _LOGGER.info("%s Successfully initialized missing connection store/lock structure.", self.log_prefix)
+        _LOGGER.debug("%s Creating new connection object for %s", self.log_prefix, key)
+        conn_type_str = connection_node.get(CONFIG_DEVICE_CONNECTION_TYPE)
+        
+        # Instantiate connection directly
+        if conn_type_str == "samsung_8888_aiohttp":
+            from .connection_aiohttp import ConnectionAiohttp8888
+        elif conn_type_str == "samsung_8888_raw":
+            from .connection_raw import ConnectionRaw8888
 
-        async with connections_lock:
-            if key in connections_store:
-                _LOGGER.debug("%s [Cache] Returning existing connection object for %s", self.log_prefix, key)
-                self._connection = connections_store[key]
-            else:
-                _LOGGER.debug("%s Creating new connection object for %s", self.log_prefix, key)
-                conn_type_str = connection_node.get(CONFIG_DEVICE_CONNECTION_TYPE)
-                # Move import here to avoid blocking calls at startup
-                if conn_type_str == "samsung_8888_aiohttp":
-                    from .connection_aiohttp import ConnectionAiohttp8888
-                elif conn_type_str == "samsung_8888_raw":
-                    from .connection_raw import ConnectionRaw8888
-                for conn_class in CLIMATE_IP_CONNECTIONS:
-                    if conn_class.match_type(conn_type_str):
-                        _LOGGER.debug("%s Found matching connection class '%s' for type '%s'", self.log_prefix, conn_class.__name__, conn_type_str)
-                        if conn_class.__name__ == "ConnectionAiohttp8888":
-                            # Merge global config with YAML connection node to ensure insecure_ssl and others are passed
-                            merged_config = {**self._config, **connection_node}
-                            self._connection = conn_class(merged_config, _LOGGER, self.hass, self._session, self._ip_address)
-                        elif conn_class.__name__ == "ConnectionRaw8888":
-                             self._connection = conn_class(self._config, _LOGGER, self.hass, self._session, self._ip_address)
-                        else:
-                            self._connection = conn_class(self._config, _LOGGER)
-                        
-                        if self._connection.load_from_yaml(connection_node, None):
-                            connections_store[key] = self._connection
-                            break
-                if not self._connection:
-                     _LOGGER.error("%s No matching connection class found for type '%s'", self.log_prefix, conn_type_str)
+        self._connection = None
+
+        for conn_class in CLIMATE_IP_CONNECTIONS:
+            if conn_class.match_type(conn_type_str):
+                _LOGGER.debug("%s Found matching connection class '%s' for type '%s'", self.log_prefix, conn_class.__name__, conn_type_str)
+                if conn_class.__name__ == "ConnectionAiohttp8888":
+                    # Merge global config with YAML connection node to ensure insecure_ssl and others are passed
+                    merged_config = {**self._config, **connection_node}
+                    self._connection = conn_class(merged_config, _LOGGER, self.hass, self._session, self._ip_address)
+                elif conn_class.__name__ == "ConnectionRaw8888":
+                        self._connection = conn_class(self._config, _LOGGER, self.hass, self._session, self._ip_address)
+                else:
+                    self._connection = conn_class(self._config, _LOGGER)
+                
+                if self._connection.load_from_yaml(connection_node, None):
+                    # Connection created and loaded successfully
+                    break
+        
+        if not self._connection:
+                _LOGGER.error("%s No matching connection class found for type '%s'", self.log_prefix, conn_type_str)
         # --- END: Logic moved from connection.py ---
 
         if self._connection is None:
@@ -569,6 +556,14 @@ class YamlController(ClimateController):
                 raise ConfigEntryAuthFailed(
                     "Authentication failed. Please install and configure the official SmartThings integration to provide a valid token."
                 )
+
+        # --- EXPLICIT BUBBLE-UP FOR FALLBACK LOGIC ---
+        except InvalidHeaderError:
+             # This specific error (protocol violation) must bubble up to the coordinator
+             # so it can trigger the auto-switch fallback to RAW engine.
+             # We do NOT want it caught by the generic 'CannotConnect' handler below.
+             raise
+        # ---------------------------------------------
 
         except (RequestException, CannotConnect) as e:
             # --- TRANSIENT ERROR SUPPRESSION ---
@@ -1180,6 +1175,46 @@ class YamlController(ClimateController):
         
         return {}
     # --- END OF ADDITION ---
+
+    async def async_shutdown(self):
+        """
+        Shutdown the controller and its underlying connection.
+        This is called when the coordination/integration is being unloaded.
+        """
+        if self._connection:
+            _LOGGER.debug("%s Shutting down controller and connection...", self.log_prefix)
+            
+            # Stop listening if applicable (for 2878/socket connections)
+            if hasattr(self._connection, "stop_listening"):
+                try:
+                    await self._connection.stop_listening()
+                except Exception as e:
+                     _LOGGER.warning("%s Error stopping listener during shutdown: %s", self.log_prefix, e)
+
+            # FORCE CLOSE SHARED CLIENT (if exists) before connection wrapper
+            if hasattr(self, "_shared_raw_client") and self._shared_raw_client:
+                _LOGGER.debug("%s [SHUTDOWN] Force closing shared raw client...", self.log_prefix)
+                try:
+                    await self._shared_raw_client.close()
+                except Exception as e:
+                    _LOGGER.error("%s [SHUTDOWN] Error closing shared raw client: %s", self.log_prefix, e)
+                finally:
+                    self._shared_raw_client = None
+
+            # Close the connection
+            if hasattr(self._connection, "close"):
+                try:
+                    await self._connection.close()
+                except Exception as e:
+                    _LOGGER.error("%s Error closing connection during shutdown: %s", self.log_prefix, e)
+            
+            self._connection = None
+        
+        # Add a short delay to allow the network stack to fully release the socket/port
+        # before a potential immediate reload tries to bind/connect again.
+        await asyncio.sleep(1.0)
+        
+        _LOGGER.debug("%s Controller shutdown complete.", self.log_prefix)
 
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(

@@ -876,7 +876,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             )] = SelectSelector(
                 SelectSelectorConfig(
                     options=[
-                        {"value": CONN_METHOD_REQUESTS, "label": "Legacy (requests)"},
+                        {"value": CONN_METHOD_REQUESTS, "label": "Legacy (Obsolete)"},
                         {"value": CONN_METHOD_AIOHTTP, "label": "Modern (aiohttp)"},
                         {"value": CONN_METHOD_RAW, "label": "Robust (raw socket)"},
                     ],

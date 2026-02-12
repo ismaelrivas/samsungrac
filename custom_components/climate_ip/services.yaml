@@ -1,1 +1,21 @@
-
+set_property:
+  name: Set Property
+  description: >
+    Sets a specific property on the Samsung AC. You can pass the property name and value as arguments (e.g., auto_clean: 'on'). This service mimics the behavior of the old `climate_ip_set_property`.
+  target:
+    entity:
+      domain: climate
+      integration: climate_ip
+  fields:
+    key:
+      name: Property Key (Legacy)
+      description: The property key to set (optional if passing key=value directly).
+      example: "auto_clean"
+      selector:
+        text:
+    value:
+      name: Value (Legacy)
+      description: The value to set (optional if passing key=value directly).
+      example: "on"
+      selector:
+        text:

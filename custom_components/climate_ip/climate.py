@@ -28,6 +28,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant, callback
 import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.entity import DeviceInfo
@@ -128,6 +129,17 @@ async def async_setup_entry(
         # Fallback for single-device setups.
         coordinator = coordinators
         async_add_entities([ClimateIP(coordinator, entry.data, None, entry.unique_id)])
+
+    platform = entity_platform.async_get_current_platform()
+    
+    # Register the custom service 'set_property'
+    platform.async_register_entity_service(
+        "set_property",
+        cv.make_entity_service_schema({}, extra=vol.ALLOW_EXTRA),
+        "async_service_set_property",
+    )
+
+
 
 
 class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
@@ -403,6 +415,31 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         self.async_write_ha_state()
 
         await self.coordinator.async_set_property(ATTR_POWER, STATE_OFF, corrections)
+
+    async def async_service_set_property(self, **kwargs):
+        """Set a property on the device via service call."""
+        key = kwargs.get("key")
+        value = kwargs.get("value")
+        
+        # Support legacy style or direct kwargs where key is the argument name
+        # e.g. service data: { "auto_clean": "on" }
+        if not key:
+            for k, v in kwargs.items():
+                if k not in ("entity_id", "device_id", "area_id"):
+                    key = k
+                    value = v
+                    break
+        
+        if not key:
+            _LOGGER.warning("%s set_property service called without a valid key/value pair.", self.log_prefix)
+            return
+
+        _LOGGER.debug("%s Service set_property called: %s = %s", self.log_prefix, key, value)
+        
+        # We don't have predictions for generic properties, so we pass empty corrections
+        await self.coordinator.async_set_property(key, value, {})
+        # Schedule an update to reflect changes immediately if possible
+        self.async_schedule_update_ha_state(force_refresh=True)
 
     @property
     def extra_state_attributes(self):

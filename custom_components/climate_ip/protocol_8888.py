@@ -108,11 +108,29 @@ class Samsung8888Client:
             try:
                 _LOGGER.debug("%s [Samsung8888Client] Closing socket writer...", self.log_prefix)
                 self._writer.close()
-                await self._writer.wait_closed()
+                
+                # Wait for the close to complete, but with a timeout
+                try:
+                    await asyncio.wait_for(self._writer.wait_closed(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    _LOGGER.warning("%s [Samsung8888Client] Timeout waiting for socket close, forcing abort (RST)", self.log_prefix)
+                    # Forcefully abort the transport to ensure the socket is closed at the OS level
+                    if self._writer.transport:
+                        self._writer.transport.abort()
+                except Exception as e:
+                    _LOGGER.warning("%s [Samsung8888Client] Error during wait_closed, forcing abort: %s", self.log_prefix, e)
+                    if self._writer.transport:
+                        self._writer.transport.abort()
+
             except Exception as e:
                 _LOGGER.debug("%s [Samsung8888Client] Error closing writer: %s", self.log_prefix, e)
-        self._writer = None
-        self._reader = None
+            finally:
+                # Ensure references are cleared to prevent reuse of dead objects
+                self._writer = None
+                self._reader = None
+        else:
+            # Clear reader just in case writer was None but reader wasn't
+            self._reader = None
 
     async def request(self, method: str, path: str, body: Optional[Dict] = None, headers: Optional[Dict] = None) -> Tuple[Optional[str], Optional[str]]:
         # Debug Logging for Lock Contention

@@ -207,7 +207,7 @@ device:
       status_template: >-
         {% for option in device_state.Mode.options -%}
           {% if 'FilterTime_' in option -%}
-            {{ option.split('_')[1] }}
+            {{ (option.split('_')[1] | int) / 10 }}
           {%- endif %}
         {%- endfor %}
       device_class: "duration"
@@ -225,4 +225,22 @@ device:
         {%- endfor %}
       device_class: "duration"
       unit_of_measurement: "h"
+      validation_template: "{% if 'Mode' in device_state and 'options' in device_state['Mode'] %}valid{% endif %}"
+
+    auto_clean:
+      type: string
+      name: "Auto Clean"
+      status_template: >-
+         {{ "on" if "Autoclean_On" in device_state.Mode.options else "off" }}
+      device_class: "enum"
+      options: ["on", "off"]
+      validation_template: "{% if 'Mode' in device_state and 'options' in device_state['Mode'] %}valid{% endif %}"
+
+    purify:
+      type: string
+      name: "Purify"
+      status_template: >-
+         {{ "on" if "Spi_On" in device_state.Mode.options else "off" }}
+      device_class: "enum"
+      options: ["on", "off"]
       validation_template: "{% if 'Mode' in device_state and 'options' in device_state['Mode'] %}valid{% endif %}"
