@@ -340,6 +340,21 @@ class ConnectionAiohttp8888(Connection):
                     self._shared_state["ssl_context"] = None # Reset to try again later
                     # Raise CannotConnect to let the coordinator know and retry later, but prevent the noisy traceback below.
                     raise CannotConnect(f"Device unreachable: {e}") from e
+                
+                # --- START OF FIX: Catch incomplete responses (missing Content-Length) ---
+                except (asyncio.TimeoutError, aiohttp.ServerTimeoutError, aiohttp.SocketTimeoutError, aiohttp.ClientPayloadError) as e:
+                     # This specifically handles the case where we got a 200 OK but the read timed out
+                     # because the device didn't send a Content-Length header or close the connection.
+                     # This is a protocol violation common in older Samsung devices.
+                     _LOGGER.error(
+                         "%s [aiohttp_probe] Device protocol violation detected! "
+                         "The device accepted the connection (200 OK) but failed to send a complete response (Timeout/PayloadError: %s). "
+                         "This indicates it does not support standard HTTP/1.1 (missing Content-Length). "
+                         "Switching to 'Robust (raw socket)' engine.",
+                         self.log_prefix,
+                         e
+                     )
+                     raise InvalidHeaderError("Device failed to provide response body (missing Content-Length/Close)") from None
                 # --- END OF FIX ---
 
                 except Exception as e:
@@ -348,7 +363,7 @@ class ConnectionAiohttp8888(Connection):
                         _LOGGER.error(
                             "%s [aiohttp_probe] Malformed header error detected! "
                             "The device does not comply with the HTTP standard. "
-                            "Please switch to the 'Legacy (requests)' connection engine in the integration options.",
+                            "The integration will automatically switch to the 'Robust (raw socket)' connection engine.",
                             self.log_prefix
                         )
                         raise InvalidHeaderError("Malformed HTTP headers from device") from None
@@ -357,7 +372,6 @@ class ConnectionAiohttp8888(Connection):
                     self._shared_state["ssl_context"] = None # Clear on failure to allow retries
 
             _LOGGER.error("%s [aiohttp_probe] HTTPS (mTLS) connection probe failed. The device is unreachable or the certificate/token is incorrect.", self.log_prefix)
-            raise CannotConnect("Connection initialization failed (HTTPS)")
             raise CannotConnect("Connection initialization failed (HTTPS)")
         # --- END OF FIX ---
 

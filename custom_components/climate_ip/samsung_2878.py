@@ -359,8 +359,38 @@ class ConnectionSamsung2878(Connection):
                         await asyncio.to_thread(ssl_context.load_cert_chain, cert_path)
                     self._ssl_context_cache[cache_key] = ssl_context
 
-                conn_future = asyncio.open_connection(cfg.host, cfg.port, ssl=ssl_context)
+                # --- START OF FIX: Use raw socket with TCP KEEPALIVE ---
+                import socket
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.setblocking(False)
+                
+                # Enable TCP Keep-Alive
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                
+                # Set Keep-Alive parameters (platforms may vary, these are for Linux/Windows common)
+                if hasattr(socket, 'TCP_KEEPIDLE'):
+                    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 60) # Send probe after 60s idle
+                if hasattr(socket, 'TCP_KEEPINTVL'):
+                    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10) # 10s between probes
+                if hasattr(socket, 'TCP_KEEPCNT'):
+                    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3) # 3 failures = dead
+                
+                # Check for Windows specific constant (SIO_KEEPALIVE_VALS) if needed, 
+                # but standard setsockopt often works or is sufficient.
+                
+                try:
+                    await asyncio.wait_for(
+                        asyncio.get_running_loop().sock_connect(sock, (cfg.host, cfg.port)), 
+                        timeout=self._socket_timeout
+                    )
+                except Exception as connect_exc:
+                     sock.close()
+                     raise connect_exc
+
+                # Wrap the socket with SSL
+                conn_future = asyncio.open_connection(sock=sock, ssl=ssl_context, server_hostname=cfg.host if verify_mode != ssl.CERT_NONE else None)
                 self._reader, self._writer = await asyncio.wait_for(conn_future, timeout=self._socket_timeout)
+                # --- END OF FIX ---
 
                 # Log connection details on success
                 ssl_object = self._writer.get_extra_info('ssl_object')

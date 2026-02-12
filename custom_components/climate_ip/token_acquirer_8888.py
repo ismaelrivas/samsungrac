@@ -10,7 +10,6 @@ import re
 from typing import Optional
 
 import aiohttp
-from aiohttp import web
 
 from .exceptions import TokenAcquisitionError
 from .helpers import mask_sensitive_data
@@ -18,7 +17,9 @@ from .helpers import mask_sensitive_data
 _LOGGER = logging.getLogger(__name__)
 
 class SamsungTokenAcquirer8888:
-    """Manages the token acquisition process for modern Samsung ACs using asyncio."""
+    """Manages the token acquisition process for modern Samsung ACs using asyncio.
+    Uses a raw TCP server to handle malformed HTTP headers from some AC units.
+    """
 
     def __init__(self, hass, ac_ip: str, cert_path: str):
         self._hass = hass
@@ -41,93 +42,133 @@ class SamsungTokenAcquirer8888:
         self._token_received_event = asyncio.Event()
         self._received_token: Optional[str] = None
         
-        # Asyncio web server components
-        self._runner: Optional[web.AppRunner] = None
-        self._site: Optional[web.TCPSite] = None
+        # Asyncio server components
+        self._server: Optional[asyncio.AbstractServer] = None
 
-    async def _handle_token_post(self, request: web.Request) -> web.Response:
-        """Handle the POST request from the AC to deliver the token."""
+    async def _handle_client(self, reader, writer):
+        """Handle incoming connection from the AC."""
+        addr = writer.get_extra_info('peername')
+        _LOGGER.debug("Token listener accepted connection from %s", addr)
+
         try:
-            _LOGGER.debug("Token listener received POST request. Headers: %s", request.headers)
+            # Read data with a timeout
+            # The AC sends a small JSON payload.
+            # However, data might arrive in multiple chunks (headers first, then body).
+            # We need to read until we catch the token or time out.
+            data = b""
+            end_time = asyncio.get_event_loop().time() + 10.0
             
-            # Read body
-            # We use read() instead of json() initially to handle potential malformed data
-            # or to log the raw data for debugging.
-            raw_data = await request.read()
-            decoded_data = raw_data.decode('utf-8', errors='ignore')
-            
-            # Try to mask sensitive data for logging
-            try:
-                json_data = json.loads(decoded_data)
-                _LOGGER.debug("Token listener processed data: %s", mask_sensitive_data(json_data))
-            except Exception:
-                _LOGGER.debug("Token listener processed data: %s", mask_sensitive_data(decoded_data))
+            while True:
+                remaining = end_time - asyncio.get_event_loop().time()
+                if remaining <= 0:
+                     break
+                
+                try:
+                    chunk = await asyncio.wait_for(reader.read(4096), timeout=remaining)
+                    if not chunk:
+                        break
+                    data += chunk
+                    
+                    # Check if we have enough data to stop reading
+                    # We stop if we see the closing brace of the JSON or the specific token key
+                    decoded_check = data.decode('utf-8', errors='ignore')
+                    if 'DeviceToken' in decoded_check and '}' in decoded_check:
+                        break
+                except asyncio.TimeoutError:
+                    break
+
+            if not data:
+                _LOGGER.debug("Token listener received empty data.")
+                return
+
+            decoded_data = data.decode('utf-8', errors='ignore')
+            _LOGGER.debug("Token listener received raw data:\n%s", mask_sensitive_data(decoded_data))
 
             token = None
             
-            # STRATEGY 1: Try parsing valid JSON
-            try:
-                if decoded_data.strip():
-                    # Find start of JSON if there's garbage prefix
-                    json_start = decoded_data.find('{')
-                    if json_start != -1:
-                        json_candidate = decoded_data[json_start:]
-                        data = json.loads(json_candidate)
-                        token = data.get('DeviceToken')
-            except Exception as json_err:
-                _LOGGER.debug("Standard JSON parsing failed: %s", json_err)
-
-            # STRATEGY 2: Regex fallback
-            if not token:
-                _LOGGER.debug("Attempting Regex token extraction.")
-                match = re.search(r'DeviceToken["\s:]+([^"\s}]+)', decoded_data)
-                if match:
-                    token = match.group(1).strip('"')
+            # STRATEGY 1: Regex extraction (Most robust for malformed headers)
+            # We look for DeviceToken key in JSON-like structure or just raw string
+            match = re.search(r'DeviceToken["\s:]+([^"\s}]+)', decoded_data)
+            if match:
+                token = match.group(1).strip('"')
+                _LOGGER.info("Token successfully extracted via Regex.")
+            else:
+                 # STRATEGY 2: Try finding JSON body if regex fails
+                 json_start = decoded_data.find('{')
+                 if json_start != -1:
+                     try:
+                         json_candidate = decoded_data[json_start:]
+                         json_data = json.loads(json_candidate)
+                         token = json_data.get('DeviceToken')
+                         if token:
+                             _LOGGER.info("Token successfully extracted via JSON parsing.")
+                     except Exception:
+                         pass
 
             if token:
                 _LOGGER.info("Token successfully received from AC unit.")
                 self._received_token = token
                 self._token_received_event.set()
-                return web.Response(text='OK', status=200)
+                
+                # Send a polite 200 OK response, even if the request was malformed
+                response = (
+                    "HTTP/1.1 200 OK\r\n"
+                    "Content-Type: text/plain\r\n"
+                    "Content-Length: 2\r\n"
+                    "Connection: close\r\n"
+                    "\r\n"
+                    "OK"
+                )
+                writer.write(response.encode('utf-8'))
+                await writer.drain()
             else:
-                _LOGGER.warning("POST request processed but no token could be extracted.")
-                return web.Response(text='Token not found', status=400)
+                _LOGGER.warning("Connection received but no token could be extracted.")
+                # Send 400 Bad Request
+                response = (
+                    "HTTP/1.1 400 Bad Request\r\n"
+                    "Content-Type: text/plain\r\n"
+                    "Content-Length: 15\r\n"
+                    "Connection: close\r\n"
+                    "\r\n"
+                    "Token not found"
+                )
+                writer.write(response.encode('utf-8'))
+                await writer.drain()
 
+        except asyncio.TimeoutError:
+            _LOGGER.warning("Timeout reading from AC connection.")
         except Exception as e:
-            _LOGGER.error("Error handling POST request from AC: %s", e, exc_info=True)
-            return web.Response(text='Internal Server Error', status=500)
+            _LOGGER.error("Error handling AC connection: %s", e, exc_info=True)
+        finally:
+            _LOGGER.debug("Closing connection from %s", addr)
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+
 
     async def _start_listener_server(self) -> bool:
-        """Starts the aiohttp listener server."""
+        """Starts the custom TCP listener server."""
         try:
-            app = web.Application()
-            app.router.add_post('/', self._handle_token_post)
-            # Accept any path, as some ACs might post to /devicetoken/response or similar
-            app.router.add_post('/{tail:.*}', self._handle_token_post)
-
-            self._runner = web.AppRunner(app)
-            await self._runner.setup()
-
             # Setup SSL for the server
             ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS)
-            # Explicitly allow TLSv1 to support legacy devices (and emulator)
             ssl_context.minimum_version = ssl.TLSVersion.TLSv1
-            # Lower security level to allow legacy certificates (MD5/SHA1 signatures)
             try:
                 ssl_context.set_ciphers('HIGH:!aNULL:!MD5:@SECLEVEL=0')
             except Exception as e:
                 _LOGGER.warning("Failed to set ciphers with SECLEVEL=0: %s", e)
 
-            # Run blocking I/O in executor to avoid blocking the event loop
             await self._hass.async_add_executor_job(
                 ssl_context.load_cert_chain, self._cert_path
             )
             
-            # Create the site
-            self._site = web.TCPSite(self._runner, '0.0.0.0', self._listener_port, ssl_context=ssl_context)
-            await self._site.start()
+            # Start the server
+            self._server = await asyncio.start_server(
+                self._handle_client, '0.0.0.0', self._listener_port, ssl=ssl_context
+            )
             
-            _LOGGER.info("Async token listener server started on port %s", self._listener_port)
+            _LOGGER.info("Async token listener (custom TCP) server started on port %s", self._listener_port)
             return True
         except Exception as e:
             _LOGGER.error("Failed to start listener server: %s", e, exc_info=True)
@@ -139,8 +180,6 @@ class SamsungTokenAcquirer8888:
         """
         if not await self._start_listener_server():
             raise TokenAcquisitionError("Failed to start the local listener server")
-
-        # Give server a moment? With asyncio awaiting start(), it should be ready immediately.
         
         url = f"https://{self._ac_ip}:{self._ac_port}/devicetoken/request"
         headers = {'Host': f"{self._listener_ip}:{self._listener_port}"}
@@ -149,16 +188,12 @@ class SamsungTokenAcquirer8888:
         _LOGGER.info("Requesting token from AC at %s:%s", self._ac_ip, self._ac_port)
 
         # Setup Client SSL Context
-        # We need to be permissive with the AC's SSL implementation
-        # Explicitly allow TLSv1 to fix [SSL: UNSUPPORTED_PROTOCOL]
         ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS)
         ssl_context.minimum_version = ssl.TLSVersion.TLSv1
         ssl_context.set_ciphers('HIGH:!aNULL:!MD5:@SECLEVEL=0')
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
         
-        # The AC expects us to present a certificate
-        # Run blocking I/O in executor to avoid blocking the event loop
         await self._hass.async_add_executor_job(
             ssl_context.load_cert_chain, self._cert_path
         )
@@ -178,18 +213,28 @@ class SamsungTokenAcquirer8888:
                     timeout=30
                 ) as response:
                     
-                    resp_text = await response.text()
                     _LOGGER.debug(
-                        "AC responded to pairing request with status %s and body: %s",
-                        response.status, resp_text
+                        "AC responded to pairing request with status %s",
+                        response.status
                     )
 
-                    if response.status != 200:
+                    if response.status == 200:
+                        _LOGGER.info("Token request accepted by AC (200 OK)")
+                        # Try to read body for debugging, but don't fail if it times out (missing Content-Length)
+                        try:
+                            resp_text = await asyncio.wait_for(response.text(), timeout=2.0)
+                            _LOGGER.debug("AC response body: %s", resp_text)
+                        except (asyncio.TimeoutError, aiohttp.ClientError):
+                            _LOGGER.debug("AC response body could not be read (timeout/error), assuming empty.")
+                    else:
+                         # For non-200, we really want to see the error message if possible
+                        try:
+                            resp_text = await asyncio.wait_for(response.text(), timeout=2.0)
+                        except Exception:
+                            resp_text = "<unknown>"
                         raise TokenAcquisitionError(
                             f"AC responded with non-200 status: {response.status} - {resp_text}"
                         )
-                    
-                    _LOGGER.info("Token request sent successfully to the AC unit")
 
         except aiohttp.ClientError as e:
             await self.async_close()
@@ -214,8 +259,8 @@ class SamsungTokenAcquirer8888:
 
     async def async_close(self) -> None:
         """Shuts down the listener server."""
-        if self._runner:
+        if self._server:
             _LOGGER.info("Shutting down async token listener server")
-            await self._runner.cleanup()
-            self._runner = None
-            self._site = None
+            self._server.close()
+            await self._server.wait_closed()
+            self._server = None

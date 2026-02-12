@@ -75,38 +75,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     # Initialize hass.data[DOMAIN] if it doesn't exist
     hass.data.setdefault(DOMAIN, {})
     
-    # Initialize connection store and lock if they don't exist
-    if "connections" not in hass.data[DOMAIN]:
-        hass.data[DOMAIN]["connections"] = {}
-    if "lock" not in hass.data[DOMAIN]:
-        hass.data[DOMAIN]["lock"] = asyncio.Lock()
-        
-    connections_store = hass.data[DOMAIN]["connections"]
-    connections_lock = hass.data[DOMAIN]["lock"]
-
-    key_to_remove = entry.unique_id
-    async with connections_lock:
-        _LOGGER.debug("Checking cache. Keys present: %s. Seeking: %s", list(connections_store.keys()), key_to_remove)
-        if key_to_remove in connections_store:
-            _LOGGER.debug("Pre-setup cleanup: Found existing connection for '%s'. Closing before removal.", key_to_remove)
-            connection = connections_store[key_to_remove]
-            
-            # Stop listener if present
-            if hasattr(connection, "stop_listening"):
-                 try:
-                     await connection.stop_listening()
-                 except Exception as e:
-                     _LOGGER.warning("Error stopping listener during pre-setup cleanup: %s", e)
-            
-            # Close connection if present
-            if hasattr(connection, "close"):
-                try:
-                    await connection.close()
-                    _LOGGER.debug("Closed existing connection for '%s'", key_to_remove)
-                except Exception as e:
-                    _LOGGER.warning("Error closing connection during pre-setup cleanup: %s", e)
-
-            connections_store.pop(key_to_remove)
+    # --- START OF FIX: Clear connection cache on setup ---
+    # With centralized connection management, we no longer need to manage a global
+    # connection cache or lock. Each config entry manages its own connections
+    # via the coordinator/controller lifecycle.
     # --- END OF FIX ---
 
     # --- START OF FIX: Merge options into runtime_config at startup ---
@@ -227,44 +199,21 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     if unload_ok:
         if entry.entry_id in hass.data[DOMAIN]:
-            hass.data[DOMAIN].pop(entry.entry_id)
-            _LOGGER.debug("Coordinator removed from hass.data for entry %s", entry.entry_id)
+            entry_data = hass.data[DOMAIN].pop(entry.entry_id)
+            _LOGGER.debug("Coordinator(s) removed from hass.data for entry %s", entry.entry_id)
+
+            # Shutdown coordinators to close connections
+            if isinstance(entry_data, dict): # Multiple devices
+                for coordinator in entry_data.values():
+                    await coordinator.async_shutdown()
+            elif hasattr(entry_data, "async_shutdown"): # Single coordinator
+                await entry_data.async_shutdown()
+            else:
+                 _LOGGER.warning("Could not find async_shutdown method on removed data for entry %s", entry.entry_id)
 
     # --- START OF FIX: Stop connection listener on unload ---
-    # We must explicitly stop the connection listener (if it exists) to prevent
-    # "zombie" tasks from running in the background after reload/unload.
-    key_to_remove = entry.unique_id
-    
-    domain_data = hass.data.get(DOMAIN)
-    if domain_data:
-        connections_store = domain_data.get("connections")
-        connections_lock = domain_data.get("lock")
-        
-        if connections_store is not None and connections_lock is not None:
-            async with connections_lock:
-                _LOGGER.debug("Unload: Keys present: %s. Removing: %s", list(connections_store.keys()), key_to_remove)
-                if key_to_remove in connections_store:
-                    connection = connections_store[key_to_remove]
-                    
-                    # 1. Stop listening (task cleanup)
-                    if hasattr(connection, "stop_listening"):
-                        _LOGGER.debug("Stopping connection listener for '%s'", key_to_remove)
-                        try:
-                            await connection.stop_listening()
-                        except Exception as e:
-                            _LOGGER.error("Error stopping connection listener for '%s': %s", key_to_remove, e)
-
-                    # 2. Close connection resources (session cleanup)
-                    if hasattr(connection, "close"):
-                         _LOGGER.debug("Closing connection resources for '%s'", key_to_remove)
-                         try:
-                             # This is an async method
-                             await connection.close()
-                         except Exception as e:
-                             _LOGGER.error("Error closing connection for '%s': %s", key_to_remove, e)
-                    
-                    _LOGGER.debug("Removing connection object for '%s' from store.", key_to_remove)
-                    connections_store.pop(key_to_remove)
+    # Connection listeners are now stopped via coordinator.async_shutdown() above.
+    # No need for global lookup.
     # --- END OF FIX ---
 
     # --- START OF FIX: Close dedicated session ---

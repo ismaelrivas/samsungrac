@@ -28,7 +28,7 @@ from homeassistant.components.climate import ClimateEntityFeature
 from .exceptions import CannotConnect, AuthError, InvalidHeaderError, ConnectionRefused
 from .state import ClimateIPDeviceState, HVACMode
 
-from .const import DOMAIN, CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL, CONF_NAME, CONF_CONN_METHOD, CONN_METHOD_REQUESTS
+from .const import DOMAIN, CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL, CONF_NAME, CONF_CONN_METHOD, CONN_METHOD_REQUESTS, CONN_METHOD_RAW
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -98,15 +98,15 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
             return self._create_device_state()
         
         except InvalidHeaderError as err:
-            # --- START OF SOLUTION: Automatically switch to the 'requests' engine ---
+            # --- START OF SOLUTION: Automatically switch to the 'Raw (Async)' engine ---
             _LOGGER.warning(
-                "%s Malformed header error detected! Automatically switching to the 'Legacy (requests)' connection engine.",
-                self.log_prefix
+                "%s Malformed header error detected! Automatically switching to the 'Robust (raw socket)' connection engine. Error: %s",
+                self.log_prefix, err
             )
             # Get the current options and create a mutable copy.
             new_options = dict(self.entry.options) 
-            # Switch to the 'requests' engine.
-            new_options[CONF_CONN_METHOD] = CONN_METHOD_REQUESTS
+            # Switch to the 'raw' engine.
+            new_options[CONF_CONN_METHOD] = CONN_METHOD_RAW
             
             # Update the config entry with the new options.
             # This will trigger the 'update_listener', which will reload the integration.
@@ -114,7 +114,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
             
             # Raise UpdateFailed to cleanly stop the current poll, allowing the integration reload
             # to take over without logging a setup error.
-            raise UpdateFailed("Switching to 'Legacy' connection engine due to non-standard HTTP headers. Reload is in progress.")
+            raise UpdateFailed("Switching to 'Robust (Raw)' connection engine due to non-standard HTTP headers. Reload is in progress.")
 
         except (AuthError, ConfigEntryAuthFailed) as err:
             # This will stop further polling and prompt for re-authentication.
@@ -355,6 +355,21 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
     def get_property(self, property_name: str) -> Any:
         return self.controller.get_property(property_name)
 
-    def get_property_object(self, property_name: str) -> Optional[Any]:
-        """Passthrough to get the actual property object from the controller."""
+    def get_property_object(self, property_name: str) -> Any:
+        """Return the property object from the controller."""
         return self.controller.get_property_object(property_name)
+
+
+    async def async_shutdown(self) -> None:
+        """
+        Shutdown the coordinator and its controller.
+        This is called when the config entry is unloaded.
+        """
+        _LOGGER.debug("%s Shutting down coordinator", self.log_prefix)
+        if self._debounce_task and not self._debounce_task.done():
+            self._debounce_task.cancel()
+        
+        if self.controller:
+            await self.controller.async_shutdown()
+        
+        _LOGGER.debug("%s Coordinator shutdown complete", self.log_prefix)
