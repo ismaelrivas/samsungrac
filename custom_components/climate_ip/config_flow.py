@@ -35,6 +35,8 @@ from .const import (
     DEFAULT_POLL_INTERVAL,
     MIN_POLL_INTERVAL,
     MAX_POLL_INTERVAL,
+    CONF_ENABLE_POLLING,
+    DEFAULT_ENABLE_POLLING,
     CONF_CONFIG_FILE,
     CONF_DEVICE_ID,
     CONF_DEVICES,
@@ -95,7 +97,9 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow):
         # Sanitize the MAC address by removing colons as soon as it's read.
         mac_address = user_input.get(CONF_MAC)
         if mac_address:
-            user_input[CONF_MAC] = mac_address.replace(":", "")
+            # --- START OF FIX: Ensure uppercase ---
+            user_input[CONF_MAC] = mac_address.replace(":", "").upper()
+            # --- END OF FIX ---
 
         # Use the sanitized MAC or IP as unique_id. MAC is preferred.
         unique_id = user_input.get(CONF_MAC) or user_input.get(CONF_IP_ADDRESS)
@@ -273,6 +277,9 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow):
                     mode=NumberSelectorMode.BOX,
                 )
             ),
+            vol.Optional(
+                CONF_ENABLE_POLLING, default=self.flow_data.get(CONF_ENABLE_POLLING, DEFAULT_ENABLE_POLLING)
+            ): bool,
         })
         return vol.Schema(schema_dict)
 
@@ -429,6 +436,9 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow):
 
             if device_type:
                 test_data[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE.get(device_type)
+            
+            # --- START OF FIX: Cleanup controller ---
+            controller = None
             try:
                 _LOGGER.debug("Testing connection with data: %s", test_data)
                 session = async_get_clientsession(self.hass)
@@ -449,6 +459,11 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow):
             except Exception:
                 _LOGGER.exception("Unexpected error during connection test")
                 errors["base"] = "unknown"
+            finally:
+                if controller:
+                    _LOGGER.debug("Cleaning up temporary controller in async_step_rest_api")
+                    await controller.async_shutdown()
+            # --- END OF FIX: Cleanup controller ---
 
         return self.async_show_form(
             step_id="rest_api",
@@ -535,6 +550,8 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow):
             # Ensure device_type is not None before using it as a key
             config_data[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE.get(device_type)
 
+        # --- START OF FIX: Cleanup controller ---
+        controller = None
         try:
             # --- START OF FIX ---
             # Pass hass and session to the temporary controller instance.
@@ -655,6 +672,11 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow):
         except Exception as e:
             _LOGGER.exception("Error during device discovery: %s", e)
             return self.async_abort(reason="unknown")
+        finally:
+            if controller:
+                _LOGGER.debug("Cleaning up temporary controller in async_step_discover_uuid")
+                await controller.async_shutdown()
+        # --- END OF FIX: Cleanup controller ---
 
     async def async_step_select_devices(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
         """Allow the user to select which indoor units to add."""
@@ -894,5 +916,12 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )] = NumberSelector(
             NumberSelectorConfig(min=MIN_POLL_INTERVAL, max=MAX_POLL_INTERVAL, unit_of_measurement="seconds", mode=NumberSelectorMode.BOX)
         )
+
+        current_enable_polling = self.config_entry.options.get(
+            CONF_ENABLE_POLLING, self.config_entry.data.get(CONF_ENABLE_POLLING, DEFAULT_ENABLE_POLLING)
+        )
+        schema_dict[vol.Optional(
+            CONF_ENABLE_POLLING, default=current_enable_polling
+        )] = bool
 
         return vol.Schema(schema_dict)

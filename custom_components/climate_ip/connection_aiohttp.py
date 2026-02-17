@@ -35,6 +35,7 @@ class ConnectionAiohttp8888(Connection):
     and implements the correct mTLS (mutual-TLS) authentication.
     """
 
+    # pylint: disable=too-many-arguments
     def __init__(self, config: Dict[str, Any], logger: logging.Logger, hass: Any, session: aiohttp.ClientSession, ip_address: str):
         logger.debug("[aiohttp_init] Initializing ConnectionAiohttp8888. IP: %s", ip_address)
         super().__init__(config, logger)
@@ -555,10 +556,14 @@ class ConnectionAiohttp8888(Connection):
              _LOGGER.error("%s [aiohttp] Unexpected error: %s", self.log_prefix, e, exc_info=True)
              raise
 
+    def execute(self, template, value, device_state, device_id=None):
+        """Not implemented for async connections."""
+        raise NotImplementedError("This connection is async-native. Use async_execute.")
+
     async def async_execute(
         self,
         method: str,
-        url_path: Optional[str],
+        url: Optional[str],
         data: Optional[str],
         headers: Optional[Dict[str, str]], # Main command's headers
         device_state: Optional[Dict[str, Any]] = None, # Pass device state for conditions
@@ -646,12 +651,13 @@ class ConnectionAiohttp8888(Connection):
         # --- END OF FIX ---
 
         # --- START OF FIX: Optimization - Reuse probe response ---
-        if probe_response_text and method == "GET" and url_path == "/devices":
+        # --- START OF FIX: Optimization - Reuse probe response ---
+        if probe_response_text and method == "GET" and url == "/devices":
              _LOGGER.debug("%s [async_execute] OPTIMIZATION: Reusing probe response for initial poll.", self.log_prefix)
              return probe_response_text, None
         # --- END OF FIX ---
 
-        return await self._async_execute_request(method, url_path, data, headers, _is_probe=_is_probe, _is_poll=_is_poll)
+        return await self._async_execute_request(method, url, data, headers, _is_probe=_is_probe, _is_poll=_is_poll)
 
     def check_execute_condition(self, device_state):
         """Replicates the condition check from connection_request.py for async."""

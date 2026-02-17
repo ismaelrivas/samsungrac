@@ -28,7 +28,7 @@ from homeassistant.components.climate import ClimateEntityFeature
 from .exceptions import CannotConnect, AuthError, InvalidHeaderError, ConnectionRefused
 from .state import ClimateIPDeviceState, HVACMode
 
-from .const import DOMAIN, CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL, CONF_NAME, CONF_CONN_METHOD, CONN_METHOD_REQUESTS, CONN_METHOD_RAW
+from .const import DOMAIN, CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL, CONF_ENABLE_POLLING, DEFAULT_ENABLE_POLLING, CONF_NAME, CONF_CONN_METHOD, CONN_METHOD_REQUESTS, CONN_METHOD_RAW
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,10 +46,16 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
 
         # Determine the update interval from the config entry's options,
         # falling back to the entry's data, and finally to the default.
+        # Check if polling is enabled (default is True)
+        enable_polling = entry.options.get(
+            CONF_ENABLE_POLLING, entry.data.get(CONF_ENABLE_POLLING, DEFAULT_ENABLE_POLLING)
+        )
+
         poll_interval_seconds = entry.options.get(
             CONF_POLL_INTERVAL, entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
         )
-        update_interval = timedelta(seconds=poll_interval_seconds) if controller.poll else None
+        # Set update_interval only if the controller supports polling AND polling is enabled.
+        update_interval = timedelta(seconds=poll_interval_seconds) if (controller.poll and enable_polling) else None
 
         _LOGGER.debug("%s Initializing coordinator with update interval: %s", self.log_prefix, update_interval)
 

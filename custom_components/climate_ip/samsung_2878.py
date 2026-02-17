@@ -97,6 +97,11 @@ class ConnectionSamsung2878(Connection):
             return f"[{self._cfg.duid[-6:]}]"
         return "[NO_ID]"
 
+    @property
+    def is_async_native(self) -> bool:
+        """Indicates if the connection is native asynchronous (aiohttp/2878)."""
+        return True
+
     def set_update_callback(self, callback: Callable[[Dict[str, Any]], Coroutine[Any, Any, None]]) -> None:
         self._update_callback = callback
 
@@ -133,7 +138,7 @@ class ConnectionSamsung2878(Connection):
             if cert_file and not os.path.dirname(cert_file):
                 log_prefix = self.log_prefix
                 if log_prefix == "[NO_ID]" and duid:
-                     log_prefix = f"[{duid[-6:]}]"
+                    log_prefix = f"[{duid[-6:]}]"
                 _LOGGER.debug("%s Resolving relative certificate path for 2878 connection: %s", log_prefix, cert_file)
                 cert_file = os.path.join(os.path.dirname(__file__), cert_file)
 
@@ -158,7 +163,7 @@ class ConnectionSamsung2878(Connection):
             # Resolve relative path in preferred config if needed, to match the runtime behavior
             pref_cert = self._last_successful_config.get('cert')
             if pref_cert and not os.path.dirname(pref_cert):
-                 self._last_successful_config['cert'] = os.path.join(os.path.dirname(__file__), pref_cert)
+                self._last_successful_config['cert'] = os.path.join(os.path.dirname(__file__), pref_cert)
 
 
     def load_from_yaml(self, node, connection_base):
@@ -222,13 +227,13 @@ class ConnectionSamsung2878(Connection):
     async def _close_connection(self):
         # Use a lock to ensure we don't close the connection multiple times concurrently
         if self._close_lock.locked():
-             _LOGGER.debug("%s Connection close already in progress, waiting...", self.log_prefix)
+            _LOGGER.debug("%s Connection close already in progress, waiting...", self.log_prefix)
 
         async with self._close_lock:
             # Check if already closed to avoid redundant work and logs
             if self._writer is None and self._read_task is None:
-                 _LOGGER.debug("%s Connection already closed, skipping.", self.log_prefix)
-                 return
+                _LOGGER.debug("%s Connection already closed, skipping.", self.log_prefix)
+                return
 
             self._is_ready.clear()
             
@@ -262,12 +267,16 @@ class ConnectionSamsung2878(Connection):
         cfg = self._cfg
         initial_msg = None
 
-        # Define the cipher suites to try, in order.
-        cipher_configs = [
-            ("HIGH:!DH:!aNULL:@SECLEVEL=0", "Cipher Suite A"),
-            ("HIGH:!aNULL:!MD5:@SECLEVEL=0", "Cipher Suite B"),
-            ("ALL:@SECLEVEL=0", "Cipher Suite C")
-        ]
+        # Define the cipher suites.
+        # Note: We will reorder these dynamically based on the strategy.
+        suite_A = ("HIGH:!DH:!aNULL:@SECLEVEL=0", "Cipher Suite A (High Security No-DH)")
+        suite_B = ("ALL:!DH:!aNULL:@SECLEVEL=0", "Cipher Suite B (Legacy RSA - No DH)")
+        suite_C = ("ALL:!aNULL:@SECLEVEL=0", "Cipher Suite C (Legacy Allow Weak DH)")
+        suite_D = ("ALL:@SECLEVEL=0", "Cipher Suite D (Anonymous / All Supported)")
+        
+        default_ciphers = [suite_A, suite_B, suite_C, suite_D]
+        # For No-Cert strategies, we prioritize Suite D (allows Anonymous) because !aNULL (A/B/C) forces server auth.
+        no_cert_ciphers = [suite_D, suite_A, suite_B, suite_C]
 
         # Define connection strategies based on user input.
         user_cert = cfg.cert
@@ -289,7 +298,13 @@ class ConnectionSamsung2878(Connection):
         # Build a list of all possible connection attempts.
         all_attempts = [] # List of connection attempts
         for strategy in strategies:
-            for cipher_config in cipher_configs:
+            # Determine which cipher list to use
+            if strategy['cert'] is None:
+                ciphers_to_try = no_cert_ciphers
+            else:
+                ciphers_to_try = default_ciphers
+
+            for cipher_config in ciphers_to_try:
                 all_attempts.append({
                     'cert': strategy['cert'],
                     # Default to CERT_NONE if verify_mode is not specified.
@@ -384,11 +399,11 @@ class ConnectionSamsung2878(Connection):
                         timeout=self._socket_timeout
                     )
                 except Exception as connect_exc:
-                     sock.close()
-                     raise connect_exc
+                    sock.close()
+                    raise connect_exc
 
                 # Wrap the socket with SSL
-                conn_future = asyncio.open_connection(sock=sock, ssl=ssl_context, server_hostname=cfg.host if verify_mode != ssl.CERT_NONE else None)
+                conn_future = asyncio.open_connection(sock=sock, ssl=ssl_context, server_hostname=cfg.host)
                 self._reader, self._writer = await asyncio.wait_for(conn_future, timeout=self._socket_timeout)
                 # --- END OF FIX ---
 
@@ -507,7 +522,7 @@ class ConnectionSamsung2878(Connection):
                 if "</Response>" in decoded_buffer or "</Update>" in decoded_buffer or PROTOCOL_2878_DPLUG in decoded_buffer or decoded_buffer.endswith("/>"):
                     return decoded_buffer
 
-        except (asyncio.TimeoutError, asyncio.IncompleteReadError) as e:
+        except (asyncio.TimeoutError, asyncio.IncompleteReadError):
             _LOGGER.debug("%s No full response received in %s seconds", self.log_prefix, timeout, exc_info=True)
             return buffer.decode("utf-8", errors='ignore') if buffer else None
         except Exception as e:
@@ -619,8 +634,8 @@ class ConnectionSamsung2878(Connection):
             data = None
             is_cancelled = True
         except Exception as e:
-             _LOGGER.warning("%s Read task failed: %s", self.log_prefix, e)
-             data = None
+            _LOGGER.warning("%s Read task failed: %s", self.log_prefix, e)
+            data = None
              
         if not data: 
             if not is_cancelled:
@@ -729,7 +744,7 @@ class ConnectionSamsung2878(Connection):
 
     async def _connection_manager(self):
         buffer = b""
-        # read_task is now self._read_task
+        self._read_task = None
         queue_task = None
 
         # Add a small delay at startup to allow the initial poll to establish the first connection
@@ -742,43 +757,42 @@ class ConnectionSamsung2878(Connection):
                         if not await self._handle_reconnection():
                             continue
 
-                    # --- START OF FIX: Add null check for self._reader ---
                     if not self._reader:
                         _LOGGER.warning("%s Reader object is missing, forcing reconnection.", self.log_prefix)
                         await self._close_connection()
                         continue
 
-                    # Define tasks to wait for.
-                    # --- START OF FIX: Use self._read_task ---
+                    # Ensure read task is running
                     if not self._read_task or self._read_task.done():
-                         self._read_task = asyncio.create_task(self._reader.read(8192))
+                        self._read_task = asyncio.create_task(self._reader.read(8192))
                     
                     tasks = [self._read_task]
-                    # --- END OF FIX ---
 
-                    if not self._pending_future:
+                    # Ensure queue listener is running if we are ready for commands
+                    if not queue_task and not self._pending_future:
                         queue_task = asyncio.create_task(self._cmd_queue.get())
+                    
+                    if queue_task:
                         tasks.append(queue_task)
-                    else:
-                        queue_task = None
                     
                     done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
 
                     # --- Process completed tasks ---
                     if queue_task and queue_task in done:
                         await self._process_command_queue(queue_task)
+                        queue_task = None # Reset to pick up next command
 
                     if self._read_task in done:
                         buffer = await self._process_read_queue(buffer, done)
                         if buffer is None: # Connection closed
-                             continue
-                    
-                    # After processing all messages in the buffer, cancel any pending tasks
-                    # to allow the next command to be processed.
-                    # CRITICAL FIX: Do NOT cancel the read_task, as it needs to keep running!
-                    for task in pending:
-                        if task == self._read_task:
                             continue
+                    
+                    # Cleanup: Only cancel tasks that are NOT persistent
+                    # We usually don't have other tasks here, but good practice.
+                    # CRITICAL: Do NOT cancel queue_task if it's pending!
+                    for task in pending:
+                        if task == self._read_task: continue
+                        if task == queue_task: continue
                         task.cancel()
 
                 except Exception as e:
@@ -792,21 +806,86 @@ class ConnectionSamsung2878(Connection):
             _LOGGER.debug("%s Connection manager exiting, cleaning up", self.log_prefix)
             if self._read_task and not self._read_task.done():
                 self._read_task.cancel()
+            if queue_task and not queue_task.done():
+                queue_task.cancel()
             await self._close_connection()
 
-    def execute(self, template: Any, v: Any, device_state: Dict[str, Any], device_id: Optional[str] = None) -> Dict[str, Any]:
+    async def async_execute(self, method, url, data, headers, device_state=None, _is_probe=False, _is_poll=False) -> Tuple[Optional[str], Optional[Dict[str, str]]]:
+        """Executes an asynchronous command (raw XML for 2878)."""
+        # Wait for the connection to be ready before proceeding.
+        try:
+            await asyncio.wait_for(self._is_ready.wait(), timeout=COMMAND_TIMEOUT)
+        except asyncio.TimeoutError as e:
+            _LOGGER.warning("%s Timed out waiting for connection to be ready (device is likely offline).", self.log_prefix)
+            raise CannotConnect("Connection not ready") from e
+
+        command = None
+        if data:
+            command = data.strip() + "\n"
+        elif _is_poll:
+            command = f'<Request Type="{PROTOCOL_2878_DEVICE_STATE}" DUID="{self._cfg.duid}"></Request>\n'
+        
+        if not command:
+             return None, None
+
+        async with self._lock:
+            _LOGGER.debug("%s Queuing async command: %s", self.log_prefix, mask_sensitive_data(command.strip().replace('\n', '')))
+            future = asyncio.get_event_loop().create_future()
+            await self._cmd_queue.put((command, future))
+
+            try:
+                await asyncio.wait_for(future, timeout=COMMAND_TIMEOUT)
+                _LOGGER.debug("%s Async command executed successfully", self.log_prefix)
+                # The result set on the future is True (boolean).
+                # We need to return the response body if available.
+                # However, 2878 protocol is push-based. The response comes via _process_read_queue.
+                # The future simply indicates "command processed/resolved".
+                # But async_execute contract expects (response_body, headers).
+                # For 2878, we don't really have a direct "response body" associated with the command future 
+                # other than what was updated in state.
+                # Properties.py expects JSON response body for GetJsonStatus.
+                # If we return None, Properties.py might be unhappy if it expects state.
+                # But we updated self._device_status!
+                # Maybe we should return the current device state as JSON/XML?
+                # Connection.async_execute docstring says: "return JSON object as result or None".
+                # Actually returns Tuple[Optional[str], Optional[Dict[str, str]]].
+                
+                # If it was a poll (GetJsonStatus), we should return the full device state.
+                import json
+                return json.dumps(self._device_status), {}
+            except asyncio.TimeoutError as e:
+                _LOGGER.warning("%s Async command timed out", self.log_prefix)
+                if self._pending_future and self._pending_future == future:
+                    self._pending_future = None
+                
+                _LOGGER.debug("%s Command timed out. Forcing connection close to trigger reconnect.", self.log_prefix)
+                asyncio.create_task(self._close_connection())
+                raise CannotConnect("Command timed out") from e
+            except Exception as e:
+                _LOGGER.error("%s Error executing async command: %s", self.log_prefix, e)
+                raise e
+
+    def execute(self, template: Any, value: Any, device_state: Dict[str, Any], device_id: Optional[str] = None) -> Dict[str, Any]:
         """Synchronous wrapper to execute a command. To be called from an executor."""
-        # --- START OF FIX: Add null check for self._controller and self._controller.hass ---
         if not self._controller or not hasattr(self._controller, 'hass') or not self._controller.hass:
             _LOGGER.error("%s Cannot execute command synchronously: controller or HASS instance is not available.", self.log_prefix)
             raise RuntimeError("Controller or HASS instance not available for thread-safe execution.")
-        # --- END OF FIX ---
+        
+        # PREVENT DEADLOCK: Check if we are running in the event loop
+        try:
+            running_loop = asyncio.get_running_loop()
+            if running_loop == self._controller.hass.loop:
+                _LOGGER.error("%s BLOCKING CALL DETECTED: execute() called from the event loop! This will deadlock.", self.log_prefix)
+                raise RuntimeError("Cannot call synchronous execute() from the event loop. Use await async_execute() instead.")
+        except RuntimeError:
+            pass # No running loop, safe to proceed
+
         return asyncio.run_coroutine_threadsafe(
-            self._async_execute_internal(template, v, device_state, device_id),
+            self._async_execute_internal(template, value, device_state, device_id),
             self._controller.hass.loop
         ).result()
 
-    async def _async_execute_internal(self, template: Any, v: Any, device_state: Dict[str, Any], device_id: Optional[str] = None) -> Dict[str, Any]:
+    async def _async_execute_internal(self, template: Any, value: Any, device_state: Dict[str, Any], device_id: Optional[str] = None) -> Dict[str, Any]:
         """The actual async implementation of the execute logic."""
         # Wait for the connection to be ready before proceeding.
         try:
@@ -816,7 +895,7 @@ class ConnectionSamsung2878(Connection):
             raise CannotConnect("Connection not ready") from e
 
         async with self._lock:
-            is_polling_request = template and not v and not device_state
+            is_polling_request = (not template) and (not value) and (not device_state)
             # Use the provided device_id if available, otherwise fall back to the main DUID
             duid_to_use = device_id or self._cfg.duid
 
@@ -824,7 +903,7 @@ class ConnectionSamsung2878(Connection):
                 command = f'<Request Type="{PROTOCOL_2878_DEVICE_STATE}" DUID="{duid_to_use}"></Request>\n'
             else:
                 params = self._params.copy()
-                params.update({"value": v, "device_state": device_state, "duid": duid_to_use})
+                params.update({"value": value, "device_state": device_state, "duid": duid_to_use})
                 command = template.render(**params).strip() + "\n"
 
             _LOGGER.debug("%s Queuing command: %s", self.log_prefix, mask_sensitive_data(command.strip().replace('\n', '')))

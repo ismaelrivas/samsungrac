@@ -1,5 +1,19 @@
 # Changelog
 
+## [9.0.10] - 2026-02-17
+
+### Added
+- **Polling Control**: Added `Enable Polling` option in configuration flow (default: True). Users can now disable periodic status updates to prevent IP bans on sensitive 2878 devices.
+- **Connection**: Added support for **Anonymous TLS** connections (Cipher Suite D: `ALL:@SECLEVEL=0`) for devices that do not require a certificate.
+- **Emulator**: Added `--no-cert` flag to `emulator_2878.py` to simulate devices requiring Anonymous TLS.
+
+### Fixed
+- **SSL Compatibility**:
+    - Prioritized Anonymous Cipher Suite (Suite D) when no certificate is provided, speeding up connection.
+    - Fixed `ValueError` when using `ssl.CERT_NONE` by ensuring `server_hostname` is always passed to `asyncio.open_connection`.
+- **Config Flow**: Added `Enable Polling` checkbox to Options Flow for existing installations.
+- **Coordinator**: Updated coordinator to respect the polling setting, disabling automatic updates if unchecked.
+
 ## [9.0.9] - 2026-02-12
 
 ### Added

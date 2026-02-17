@@ -15,8 +15,7 @@ from .connection_request import ConnectionRequest, ConnectionRequestPrint
 from .connection_request_tls_auto import ConnectionRequestTlsAuto
 from .samsung_2878 import ConnectionSamsung2878
 from .connection_aiohttp import ConnectionAiohttp8888
-from .samsung_2878 import ConnectionSamsung2878
-from .connection_aiohttp import ConnectionAiohttp8888
+from .connection_raw import ConnectionRaw8888
 from .helpers import mask_sensitive_data
 # --- END OF MODIFICATION ---
 from .properties import (
