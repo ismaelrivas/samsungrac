@@ -10,6 +10,7 @@ from .const import (
     CONFIG_DEVICE_CONNECTION,
     CONFIG_DEVICE_STATUS_TEMPLATE,
     CONFIG_DEVICE_CONNECTION_TEMPLATE,
+    CONFIG_DEVICE_CONNECTION_TEMPLATE,
     CONFIG_DEVICE_VALIDATION_TEMPLATE,
     CONFIG_DEVICE_OPERATION_VALUES,
     CONFIG_DEVICE_OPERATION_VALUE,
@@ -486,7 +487,17 @@ class DeviceOperation(DeviceProperty):
 
                 # --- START OF SOLUTION: Merge base and template parameters ---
                 # Render the operation-specific template (e.g., for temperature).
-                rendered_params_str = template_to_use.render(value=self.convert_hass_to_dev(v), device_id=device_id)
+                
+                # Retrieve DUID for 2878 devices
+                duid_for_render = device_id
+                if not duid_for_render and hasattr(self._controller, 'device_id') and self._controller.device_id:
+                     duid_for_render = self._controller.device_id
+                
+                # Fallback to connection config if not found in controller (unlikely after fix)
+                if not duid_for_render and hasattr(connection, '_cfg') and hasattr(connection._cfg, 'duid') and connection._cfg.duid:
+                     duid_for_render = connection._cfg.duid
+                
+                rendered_params_str = template_to_use.render(value=self.convert_hass_to_dev(v), device_id=duid_for_render, duid=duid_for_render)
                 try:
                     operation_params = json.loads(rendered_params_str)
 

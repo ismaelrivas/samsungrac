@@ -42,7 +42,7 @@ from .controller_yaml import YamlController, clear_yaml_cache
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.CLIMATE, Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.CLIMATE, Platform.SENSOR, Platform.SWITCH]
 
 
 
@@ -175,15 +175,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     return True
 
-async def remove_connection(config):
-    """Remove a connection object from the store."""
-    key = config.get("unique_id")
-    if not key:
-        _LOGGER.warning("Cannot remove a connection without a unique_id in the config")
-        return
 
-    _LOGGER.warning("remove_connection is deprecated and no longer functional due to removal of global state.")
-    return
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""

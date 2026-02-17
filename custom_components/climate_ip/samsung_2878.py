@@ -467,6 +467,11 @@ class ConnectionSamsung2878(Connection):
         if not auth_response or PROTOCOL_2878_STATUS_OK not in auth_response:
             # Only process the error response if it's not None
             if auth_response:
+                # Handle InvalidateAccount (Session Collision) gracefully
+                if PROTOCOL_2878_INVALIDATE in auth_response:
+                    _LOGGER.info("%s Device reported session collision (InvalidateAccount). Waiting for old session to timeout...", self.log_prefix)
+                    return False # Trigger retry logic
+
                 if 'ErrorCode="301"' in auth_response:
                     _LOGGER.error("%s Authentication failed (ErrorCode 301). The device was likely turned off. Please ensure the device is ON before pairing", self.log_prefix)
                     raise AuthError("Authentication failed: Device was turned off (301)")
@@ -785,6 +790,7 @@ class ConnectionSamsung2878(Connection):
                     if self._read_task in done:
                         buffer = await self._process_read_queue(buffer, done)
                         if buffer is None: # Connection closed
+                            buffer = b"" # Reset buffer to prevent NoneType error on next iteration
                             continue
                     
                     # Cleanup: Only cancel tasks that are NOT persistent
@@ -800,6 +806,7 @@ class ConnectionSamsung2878(Connection):
                     if self._pending_future and not self._pending_future.done():
                         self._pending_future.set_exception(e)
                     self._pending_future = None
+                    buffer = b"" # CRITICAL: Reset buffer on error to ensure clean state for next iteration
                     await self._close_connection()
                     await asyncio.sleep(self._reconnect_delay)
         finally:

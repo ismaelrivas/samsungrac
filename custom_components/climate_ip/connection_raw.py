@@ -294,9 +294,16 @@ class ConnectionRaw8888(Connection):
 
         _LOGGER.debug("%s [async_execute] Executing main command with data: %s (is_poll=%s, keep_alive=%s)", self.log_prefix, data, _is_poll, self._keep_alive)
         path = urlparse(url).path
-        body = json.loads(data) if data else None
+        
+        # --- FIX 2: Correct Data Type Handling ---
+        if isinstance(data, dict):
+            body = data
+        elif data:
+            body = json.loads(data)
+        else:
+            body = None
 
-        # --- START OF FIX: Inject Authorization Token ---
+        # --- FIX 3: Safe Token Access ---
         from homeassistant.const import CONF_TOKEN
         
         req_headers = headers.copy() if headers else {}
@@ -304,7 +311,11 @@ class ConnectionRaw8888(Connection):
         # Get token from config or controller (mimics aiohttp logic)
         current_token = self._config.get(CONF_TOKEN)
         if self._controller:
-            current_token = self._controller._config.get(CONF_TOKEN, current_token)
+             # Prefer public property if available, closer to the source of truth
+            if hasattr(self._controller, "token"):
+                current_token = self._controller.token
+            else:
+                current_token = self._controller._config.get(CONF_TOKEN, current_token)
 
         if not current_token:
             _LOGGER.error("%s [RAW] No token available! The request will fail.", self.log_prefix)
@@ -318,8 +329,9 @@ class ConnectionRaw8888(Connection):
         try:
             resp, err = await client.request(method, path, body, req_headers)
             if err:
-                _LOGGER.debug("%s API Error: %s", self.log_prefix, err)
-                return None, None
+                # --- FIX 1: Proper Error Handling ---
+                _LOGGER.error("%s API Error: %s", self.log_prefix, err)
+                raise CannotConnect(f"API Error: {err}")
             elapsed = time.perf_counter() - start_time
             _LOGGER.debug("%s [RAW] Request completed in %.3f seconds", self.log_prefix, elapsed)
             return resp, None
@@ -367,6 +379,7 @@ class ConnectionRaw8888(Connection):
         # 1. Close internal embedded command (if any)
         if self._embedded_command and hasattr(self._embedded_command, "close"):
             try:
+                _LOGGER.debug("%s [RAW] Closing embedded command...", self.log_prefix)
                 await self._embedded_command.close()
             except Exception as e:
                 _LOGGER.warning("%s [RAW] Error closing embedded command: %s", self.log_prefix, e)
@@ -392,3 +405,5 @@ class ConnectionRaw8888(Connection):
                     _LOGGER.error("%s [RAW] Error closing shared client: %s", self.log_prefix, e)
                 finally:
                     self._controller._shared_raw_client = None
+        
+        _LOGGER.debug("%s [RAW] Connection resources closed.", self.log_prefix)
