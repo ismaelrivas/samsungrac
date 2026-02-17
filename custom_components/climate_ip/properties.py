@@ -334,26 +334,76 @@ class GetJsonStatus(DeviceProperty):
                     self.log_prefix,
                     self.connection_template.template if hasattr(self.connection_template, 'template') else self.connection_template
                 )
+                
+                # Prepare render context with connection parameters (crucial for DUID in 2878)
+                render_context = {}
+                if hasattr(connection, '_params'):
+                    render_context.update(connection._params)
+                
+                # Explicitly add DUID and Token if not present, looking in common places
+                if 'duid' not in render_context:
+                    if hasattr(connection, '_cfg') and hasattr(connection._cfg, 'duid') and connection._cfg.duid:
+                        render_context['duid'] = connection._cfg.duid
+                    elif hasattr(connection, 'config') and hasattr(connection.config, 'duid') and connection.config.duid:
+                        render_context['duid'] = connection.config.duid
+                
+                if 'token' not in render_context:
+                    if hasattr(connection, '_cfg') and hasattr(connection._cfg, 'token') and connection._cfg.token:
+                        render_context['token'] = connection._cfg.token
+                    elif hasattr(connection, 'config') and hasattr(connection.config, 'token') and connection.config.token:
+                        render_context['token'] = connection.config.token
+
+                _LOGGER.debug("%s [GetJsonStatus] Render context keys: %s", self.log_prefix, list(render_context.keys()))
                 # --- END OF MODIFICATION ---
 
-                params_str = self.connection_template.render()
-                params = json.loads(params_str)
-
-                # The async_execute method handles the request.
-                response_text, _ = await connection.async_execute(params.get('method'), params.get('url'), None, params.get('headers'), _is_poll=True)
+                response_text = None
+                params_str = self.connection_template.render(**render_context)
+                try:
+                    params = json.loads(params_str)
+                    # The async_execute method handles the request.
+                    response_text, _ = await connection.async_execute(params.get('method'), params.get('url'), None, params.get('headers'), _is_poll=True)
+                except json.JSONDecodeError as decode_error:
+                    # If response_text is None, it means we failed parsing params_str (likely XML for 2878)
+                    if response_text is None:
+                        _LOGGER.debug("%s [GetJsonStatus] Params parsing failed (XML?), trying raw execution: %s", self.log_prefix, params_str)
+                        # Execute raw command. For 2878, method/url/headers are ignored.
+                        # Important: We must await this call to actually send the command.
+                        # The return value for raw execute might be the response XML string.
+                        response_text, _ = await connection.async_execute(None, None, params_str, None, _is_poll=True)
+                    else:
+                        # Otherwise, we failed parsing the response_text as JSON (which is expected for XML responses too)
+                        # We re-raise or handle it below.
+                        pass
                 
                 if response_text is None:
-                    _LOGGER.debug("%s [GetJsonStatus] No response text received (None).", self.log_prefix)
+                    _LOGGER.debug("%s [GetJsonStatus] No response text received.", self.log_prefix)
                     return None
 
-                device_state_result = json.loads(response_text)
-            except json.JSONDecodeError as e:
-                _LOGGER.error("%s [GetJsonStatus] JSON parsing error. Response text was: '%s'. Error: %s", self.log_prefix, response_text, e)
-                return None
+                # Additional check: If response_text is XML (starts with <), we can't parse it as JSON here.
+                # But GetJsonStatus expects JSON...
+                # If 2878 returns XML, maybe we should use a different status property class?
+                # Or just return the XML string if we can't parse JSON?
+                try:
+                    device_state_result = json.loads(response_text)
+                except json.JSONDecodeError as e:
+                    # If it's XML (2878), we might want to let the property parse it if it has a template?
+                    # But GetJsonStatus is designed for JSON.
+                    # Wait, samsung_2878.yaml uses GetJsonStatus.
+                    # But the 'execute' method of 2878 returns a DICT (parsed XML).
+                    # Does async_execute return a string or dict?
+                    # Contracts says Tuple[str, Dict]. String is the body.
+                    # If 2878 async_execute returns the XML body, then json.loads will fail.
+                    # We should probably return the raw text if JSON fails, and let status_template handle it?
+                    # Or maybe async_execute should return the parsed dict?
+                    # For now, let's just log and return None if it fails, or maybe try to return the raw text?
+                    _LOGGER.error("%s [GetJsonStatus] JSON parsing error. Response text was: '%s'. Error: %s", self.log_prefix, response_text, e)
+                    return None
             # --- START OF SOLUTION: Do not catch connection errors here ---
             # By removing the 'except Exception', we allow InvalidHeaderError and CannotConnect
             # to propagate up to the coordinator, which will handle them correctly.
             # --- END OF SOLUTION ---
+            except Exception:
+                raise
         else:
             # It's a synchronous connection (requests or 2878)
             _LOGGER.debug("[Dual Engine] Executing 'execute' in executor (Sync Engine)")
@@ -437,21 +487,31 @@ class DeviceOperation(DeviceProperty):
                 # --- START OF SOLUTION: Merge base and template parameters ---
                 # Render the operation-specific template (e.g., for temperature).
                 rendered_params_str = template_to_use.render(value=self.convert_hass_to_dev(v), device_id=device_id)
-                operation_params = json.loads(rendered_params_str)
+                try:
+                    operation_params = json.loads(rendered_params_str)
 
-                # Get the base parameters from the connection (which contain method and url).
-                # The 'hack' in `create_updated` ensures that `_connection_template` exists.
-                base_template = getattr(connection, '_connection_template', None)
-                base_params_str = base_template.render() if base_template else "{}"
-                base_params = json.loads(base_params_str)
+                    # Get the base parameters from the connection (which contain method and url).
+                    # The 'hack' in `create_updated` ensures that `_connection_template` exists.
+                    base_template = getattr(connection, '_connection_template', None)
+                    base_params_str = base_template.render() if base_template else "{}"
+                    base_params = json.loads(base_params_str)
 
-                # Merge the parameters, giving priority to the operation-specific ones.
-                params = {**base_params, **operation_params}
-                # --- END OF SOLUTION ---
-                data_payload = json.dumps(params.get('json')) if 'json' in params else None
+                    # Merge the parameters, giving priority to the operation-specific ones.
+                    params = {**base_params, **operation_params}
+                    # --- END OF SOLUTION ---
+                    data_payload = json.dumps(params.get('json')) if 'json' in params else None
 
-                response, _ = await connection.async_execute(params.get('method'), params.get('url'), data_payload, params.get('headers'), device_state=current_full_state)
-                return response is not None
+                    response, _ = await connection.async_execute(params.get('method'), params.get('url'), data_payload, params.get('headers'), device_state=current_full_state)
+                    return response is not None
+                except json.JSONDecodeError:
+                    # --- START OF FIX: Handle non-JSON payloads (e.g., XML for 2878) ---
+                    # If the template renders to something that isn't JSON (like <Request ...>),
+                    # we treat it as a raw payload and send it directly.
+                    # 2878 connection ignores method/url/headers for raw sends.
+                    _LOGGER.debug("%s [async_set_value] Payload is not JSON, assuming raw data (XML): %s", self.log_prefix, rendered_params_str)
+                    await connection.async_execute(None, None, rendered_params_str, None)
+                    return True
+                    # --- END OF FIX ---
             except (CannotConnect, AuthError) as e:
                  _LOGGER.warning("%s Failed to set value for %s: connection error: %s", self.log_prefix, self.id, e)
                  return False

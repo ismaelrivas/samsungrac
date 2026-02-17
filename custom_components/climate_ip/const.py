@@ -9,6 +9,8 @@ CONF_POLL_INTERVAL = "poll_interval"
 DEFAULT_POLL_INTERVAL = 60
 MIN_POLL_INTERVAL = 5
 MAX_POLL_INTERVAL = 300
+CONF_ENABLE_POLLING = "enable_polling"
+DEFAULT_ENABLE_POLLING = True
 
 # --- Configuration Flow and Entry Keys ---
 CONF_DEVICE_TYPE = "device_type"

@@ -108,6 +108,7 @@ class ConnectionRaw8888(Connection):
 
         return new_connection
 
+    # pylint: disable=too-many-arguments
     def __init__(self, config: Dict[str, Any], logger: logging.Logger, hass: Any, session: Any, ip_address: Optional[str]):
         super().__init__(config, logger)
         self._host: Optional[str] = ip_address or cast(Optional[str], config.get(CONF_IP_ADDRESS))
@@ -134,6 +135,7 @@ class ConnectionRaw8888(Connection):
             self._embedded_command.set_controller_ref(controller)
 
     async def async_get_client(self) -> Samsung8888Client:
+        """Get the raw client, initializing it if necessary (shared or standalone)."""
         # --- Shared Client Logic ---
         # If we have a controller reference, try to use a shared client stored on it.
         # This prevents multiple connections (sockets) for the same device.
@@ -184,7 +186,7 @@ class ConnectionRaw8888(Connection):
                 elif parsed.scheme == "https":
                     port = 443
                 elif parsed.scheme == "http":
-                     port = 80
+                    port = 80
 
             self._client = Samsung8888Client(
                 self._host, port, self._cert, log_prefix=self.log_prefix
@@ -204,6 +206,10 @@ class ConnectionRaw8888(Connection):
     @property
     def is_async_native(self) -> bool:
         return True
+
+    def execute(self, template, value, device_state, device_id=None):
+        """Not implemented for async connections."""
+        raise NotImplementedError("This connection is async-native. Use async_execute.")
 
     async def async_execute(
         self,
@@ -273,17 +279,17 @@ class ConnectionRaw8888(Connection):
         # If this is a poll and we are in "Periodic Reset" mode (keep_alive=False in config),
         # we explicitly close the connection before starting the new poll.
         if _is_poll and not self._keep_alive:
-             client_to_close = None
-             if self._controller and hasattr(self._controller, "_shared_raw_client"):
-                 client_to_close = self._controller._shared_raw_client
-                 self._controller._shared_raw_client = None # Clear shared ref
-             elif self._client:
-                 client_to_close = self._client
-                 self._client = None
-            
-             if client_to_close:
-                 _LOGGER.debug("%s [Periodic Reset] Closing connection before poll.", self.log_prefix)
-                 await client_to_close.close()
+            client_to_close = None
+            if self._controller and hasattr(self._controller, "_shared_raw_client"):
+                client_to_close = self._controller._shared_raw_client
+                self._controller._shared_raw_client = None # Clear shared ref
+            elif self._client:
+                client_to_close = self._client
+                self._client = None
+        
+            if client_to_close:
+                _LOGGER.debug("%s [Periodic Reset] Closing connection before poll.", self.log_prefix)
+                await client_to_close.close()
         # ---------------------------------------
 
         _LOGGER.debug("%s [async_execute] Executing main command with data: %s (is_poll=%s, keep_alive=%s)", self.log_prefix, data, _is_poll, self._keep_alive)
@@ -360,20 +366,20 @@ class ConnectionRaw8888(Connection):
         
         # 1. Close internal embedded command (if any)
         if self._embedded_command and hasattr(self._embedded_command, "close"):
-             try:
-                 await self._embedded_command.close()
-             except Exception as e:
-                 _LOGGER.warning("%s [RAW] Error closing embedded command: %s", self.log_prefix, e)
+            try:
+                await self._embedded_command.close()
+            except Exception as e:
+                _LOGGER.warning("%s [RAW] Error closing embedded command: %s", self.log_prefix, e)
 
         # 2. Close the local client if it exists
         if self._client:
-             _LOGGER.debug("%s [RAW] Closing local client...", self.log_prefix)
-             try:
-                 await self._client.close()
-             except Exception as e:
-                 _LOGGER.error("%s [RAW] Error closing local client: %s", self.log_prefix, e)
-             finally:
-                 self._client = None
+            _LOGGER.debug("%s [RAW] Closing local client...", self.log_prefix)
+            try:
+                await self._client.close()
+            except Exception as e:
+                _LOGGER.error("%s [RAW] Error closing local client: %s", self.log_prefix, e)
+            finally:
+                self._client = None
              
         # 3. Close the shared client if it exists and we have a controller ref
         if self._controller and hasattr(self._controller, "_shared_raw_client"):

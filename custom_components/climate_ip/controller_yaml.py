@@ -425,10 +425,7 @@ class YamlController(ClimateController):
         conn_type_str = connection_node.get(CONFIG_DEVICE_CONNECTION_TYPE)
         
         # Instantiate connection directly
-        if conn_type_str == "samsung_8888_aiohttp":
-            from .connection_aiohttp import ConnectionAiohttp8888
-        elif conn_type_str == "samsung_8888_raw":
-            from .connection_raw import ConnectionRaw8888
+        # Connection classes are already registered in CLIMATE_IP_CONNECTIONS via __init__.py imports
 
         self._connection = None
 
@@ -549,7 +546,7 @@ class YamlController(ClimateController):
                     # Reset counter on successful retry
                     self._consecutive_connection_errors = 0
                 except Exception as retry_exc:
-                     raise UpdateFailed(f"Retry after token refresh failed: {retry_exc}") from retry_exc
+                    raise UpdateFailed(f"Retry after token refresh failed: {retry_exc}") from retry_exc
             else:
                 _LOGGER.info("%s [Auth] Token refresh failed. SmartThings integration may not be installed or configured.", self.log_prefix)
                 # Raise ConfigEntryAuthFailed to trigger the Reconfiguration flow in Home Assistant
@@ -1151,7 +1148,6 @@ class YamlController(ClimateController):
     def attributes(self) -> list:
         return self._properties_list
 
-    # --- ADD THIS NEW PROPERTY ---
     @property
     def sensors(self) -> List["DeviceProperty"]:
         """Return a list of all defined sensor property objects."""
@@ -1174,7 +1170,6 @@ class YamlController(ClimateController):
              return self._state_getter.value
         
         return {}
-    # --- END OF ADDITION ---
 
     async def async_shutdown(self):
         """

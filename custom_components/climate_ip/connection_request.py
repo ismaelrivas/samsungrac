@@ -152,15 +152,15 @@ class ConnectionRequestBase(Connection):
         
         # Propagate to children
         for child in self._children:
-             child._update_session(session)
+            child._update_session(session)
 
     def _update_session_from_reset(self, session):
         """Entry point for updates triggered by internal reset."""
         if self._parent:
-             _LOGGER.debug("%s [Session Propagation] Delegating session update to parent.", self.log_prefix)
-             self._parent._update_session(session)
+            _LOGGER.debug("%s [Session Propagation] Delegating session update to parent.", self.log_prefix)
+            self._parent._update_session(session)
         else:
-             self._update_session(session)
+            self._update_session(session)
 
 
 
@@ -202,10 +202,10 @@ class ConnectionRequestBase(Connection):
         """Yields the persistent session without closing it on exit."""
         _LOGGER.debug("%s [Debug] Borrowing session ID: %s", self.log_prefix, id(self._session))
         if self._session and self._session.adapters:
-             adapter = self._session.get_adapter("https://")
-             _LOGGER.debug("%s [Debug] Session Adapter ID for https://: %s", self.log_prefix, id(adapter))
-             if hasattr(adapter, 'poolmanager'):
-                 _LOGGER.debug("%s [Debug] PoolManager ID: %s", self.log_prefix, id(adapter.poolmanager))
+            adapter = self._session.get_adapter("https://")
+            _LOGGER.debug("%s [Debug] Session Adapter ID for https://: %s", self.log_prefix, id(adapter))
+            if hasattr(adapter, 'poolmanager'):
+                _LOGGER.debug("%s [Debug] PoolManager ID: %s", self.log_prefix, id(adapter.poolmanager))
         
         yield self._session
 
@@ -246,8 +246,8 @@ class ConnectionRequestBase(Connection):
                     node[CONFIG_DEVICE_CONNECTION]
                 )
                 if self._embedded_command:
-                     self._children.append(self._embedded_command)
-                     _LOGGER.debug("%s [Session Propagation] Registered child connection.", self.log_prefix)
+                    self._children.append(self._embedded_command)
+                    _LOGGER.debug("%s [Session Propagation] Registered child connection.", self.log_prefix)
             if CONFIG_DEVICE_CONDITION_TEMPLATE in node:
                 self._condition_template = Template(
                     node[CONFIG_DEVICE_CONDITION_TEMPLATE]
@@ -330,14 +330,14 @@ class ConnectionRequestBase(Connection):
                         # we strictly force 'Connection: close'.
                         # pivot: Use a fresh copy of headers to avoid mutating self._params via shallow reference.
                         if getattr(self, "_force_close_connection", False):
-                             # Ensure we don't fail if headers key is missing or None
-                             if "headers" not in params or params["headers"] is None:
-                                 params["headers"] = {}
-                             else:
-                                 # Shallow copy the headers dict to detach from self._params
-                                 params["headers"] = params["headers"].copy()
+                            # Ensure we don't fail if headers key is missing or None
+                            if "headers" not in params or params["headers"] is None:
+                                params["headers"] = {}
+                            else:
+                                # Shallow copy the headers dict to detach from self._params
+                                params["headers"] = params["headers"].copy()
                              
-                             params["headers"]["Connection"] = "close"
+                            params["headers"]["Connection"] = "close"
 
                         # --- OPTIMIZATION: Fast Fail on First Attempt ---
                         # If we are seemingly in "stable" mode (keep-alive) but the device hangs (no Content-Length),
@@ -365,13 +365,13 @@ class ConnectionRequestBase(Connection):
                         # Dynamically adjust Keep-Alive support based on server response.
                         # resp.raw.version is an integer: 10 (HTTP/1.0) or 11 (HTTP/1.1)
                         if getattr(resp.raw, "version", 0) == 11:
-                             if getattr(self, "_force_close_connection", False):
-                                 _LOGGER.debug("%s [Optimization] Server speaks HTTP/1.1. Re-enabling Keep-Alive.", self.log_prefix)
-                             self._force_close_connection = False
+                            if getattr(self, "_force_close_connection", False):
+                                _LOGGER.debug("%s [Optimization] Server speaks HTTP/1.1. Re-enabling Keep-Alive.", self.log_prefix)
+                            self._force_close_connection = False
                         elif getattr(resp.raw, "version", 0) == 10:
-                             if not getattr(self, "_force_close_connection", False):
-                                 _LOGGER.debug("%s [Compatibility] Server speaks HTTP/1.0. Enforcing 'Connection: close'.", self.log_prefix)
-                             self._force_close_connection = True
+                            if not getattr(self, "_force_close_connection", False):
+                                _LOGGER.debug("%s [Compatibility] Server speaks HTTP/1.0. Enforcing 'Connection: close'.", self.log_prefix)
+                            self._force_close_connection = True
                         # --- END OF FIX ---
                         
                         # --- DEBUGGING: Log Raw Response on Error ---
@@ -430,8 +430,8 @@ class ConnectionRequestBase(Connection):
                             raise CannotConnect(f"HTTP error {e.response.status_code}") from e
                     
                     except requests.exceptions.ReadTimeout as e:
-                         # --- ADAPTIVE RECOVERY ---
-                         if not getattr(self, "_force_close_connection", False):
+                        # --- ADAPTIVE RECOVERY ---
+                        if not getattr(self, "_force_close_connection", False):
                             _LOGGER.warning(
                                 "%s [Legacy] ReadTimeout detected (%s). "
                                 "The device likely violates HTTP protocol (missing Content-Length). "
@@ -443,12 +443,12 @@ class ConnectionRequestBase(Connection):
                             if attempt < REQUEST_MAX_RETRIES - 1:
                                  continue
                          
-                         # If we were already in force close mode OR ran out of retries
-                         if attempt < REQUEST_MAX_RETRIES - 1:
+                        # If we were already in force close mode OR ran out of retries
+                        if attempt < REQUEST_MAX_RETRIES - 1:
                             _LOGGER.warning("%s ReadTimeout error. Retrying in %s seconds", self.log_prefix, LOCAL_RETRY_DELAY)
                             time.sleep(LOCAL_RETRY_DELAY)
                             continue
-                         else:
+                        else:
                             _LOGGER.error("%s Request timed out (ReadTimeout) after %s attempts: %s", self.log_prefix, REQUEST_MAX_RETRIES, e)
                             raise CannotConnect("Request timed out (ReadTimeout)") from e
 
@@ -471,8 +471,8 @@ class ConnectionRequestBase(Connection):
                             )
                             self._force_close_connection = True
                             if attempt < REQUEST_MAX_RETRIES - 1:
-                                 # Retry immediately without sleep
-                                 continue
+                                # Retry immediately without sleep
+                                continue
 
                         if attempt < REQUEST_MAX_RETRIES - 1:
                             _LOGGER.warning("%s Connection error. Retrying in %s seconds", self.log_prefix, LOCAL_RETRY_DELAY)
@@ -506,8 +506,8 @@ class ConnectionRequestBase(Connection):
     def execute(self, template, value, device_state, device_id=None):
         """Synchronously executes the command. To be run in an executor."""
         if self.embedded_command:
-             # If we have an embedded command, this acts as a command wrapper, not a simple poll.
-             pass
+            # If we have an embedded command, this acts as a command wrapper, not a simple poll.
+            pass
 
         # Determine if it's a polling request (no value). 
         # Device state might be present during updates, so we don't check for it being None.
@@ -521,24 +521,24 @@ class ConnectionRequestBase(Connection):
         
         # --- START OF FIX: Periodic Reset Logic (Legacy) ---
         if is_poll_request and not self._keep_alive:
-             _LOGGER.debug("%s [Legacy|Periodic Reset] Closing persistent session before poll.", self.log_prefix)
-             self._close_sync()
+            _LOGGER.debug("%s [Legacy|Periodic Reset] Closing persistent session before poll.", self.log_prefix)
+            self._close_sync()
              
-             # Small delay for TCP cleanup (consistent with aiohttp engine)
-             time.sleep(0.2)
+            # Small delay for TCP cleanup (consistent with aiohttp engine)
+            time.sleep(0.2)
              
-             # Re-create the session
-             new_session = requests.sessions.Session()
-             new_session.verify = False 
-             new_session.mount("https://", SamsungHTTPAdapter())
+            # Re-create the session
+            new_session = requests.sessions.Session()
+            new_session.verify = False 
+            new_session.mount("https://", SamsungHTTPAdapter())
              
-             # Reset adaptive flags to give connection reuse a chance in the new cycle
-             self._force_close_connection = False
+            # Reset adaptive flags to give connection reuse a chance in the new cycle
+            self._force_close_connection = False
              
-             # Propagate the new session to self and children (delegating to parent if exists)
-             self._update_session_from_reset(new_session)
+            # Propagate the new session to self and children (delegating to parent if exists)
+            self._update_session_from_reset(new_session)
              
-             _LOGGER.debug("%s [Legacy|Periodic Reset] New session created.", self.log_prefix)
+            _LOGGER.debug("%s [Legacy|Periodic Reset] New session created.", self.log_prefix)
         # --- END OF FIX ---
         
         if self.embedded_command:
@@ -692,7 +692,7 @@ class ConnectionRequestPrint(ConnectionRequestBase):
         c.load_from_yaml(node, self)
         return c
 
-    async def execute(self, template, value, device_state, device_id=None):
+    def execute(self, template, value, device_state, device_id=None):
         _LOGGER.debug(
             "%s ConnectionRequestPrint (dry-run), execute with params: %s, device_id: %s",
             self.log_prefix, self._params, device_id

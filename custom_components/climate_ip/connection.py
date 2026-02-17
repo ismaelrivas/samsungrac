@@ -37,12 +37,12 @@ class Connection:
     # --- START OF MODIFICATION (Milestone 0) ---
     
     # Interface for synchronous engines (requests, 2878)
-    def execute(self, *args, **kwargs) -> Any:
+    def execute(self, template, value, device_state, device_id=None) -> Any:
         """Executes a synchronous command."""
         raise NotImplementedError
     
-    # Interface for asynchronous engines (aiohttp)
-    async def async_execute(self, *args, **kwargs) -> Tuple[str, Optional[Dict[str, str]]]:
+    # Interface for asynchronous engines (aiohttp, raw)
+    async def async_execute(self, method, url, data, headers, device_state=None, _is_probe=False, _is_poll=False) -> Tuple[Optional[str], Optional[Dict[str, str]]]:
         """Executes an asynchronous command."""
         raise NotImplementedError
     
