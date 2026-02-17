@@ -1,11 +1,26 @@
 # Changelog
 
+## [9.0.11] - 2026-02-17
+
+### Fixed
+- **Connection Stability (CRITICAL)**:
+    - Fixed a regression in 9.0.10 where the `device_id` was not being correctly populated for single-device configurations.
+    - Ensured `DUID` is explicitly passed to command templates in `properties.py` to prevent empty DUIDs, resolving timeouts for 2878 devices.
+- **Sensor Reliability**: Added safe navigation to the `outdoor_temperature` sensor template in `samsung_2878.yaml` to prevent Jinja2 errors ("dict object has no attribute") during initial connection or partial state updates.
+- **Connection Robustness**:
+    - Fixed a `NoneType` error that could occur when the connection was closed unexpectedly (e.g., device offline), ensuring proper cleanup and reconnection attempts.
+    - Handled `InvalidateAccount` response gracefully during handshake (session collision), triggering a clean retry instead of an error log.
+- **Native Switches**:
+    - Introduced `switch` platform for `purify` and `auto_clean` controls, replacing the deprecated `switch.template` workarounds.
+    - Added dedicated `switches` section to `samsung_2878.yaml` and `samsungrac.yaml` for better configuration management.
+
 ## [9.0.10] - 2026-02-17
 
 ### Added
 - **Polling Control**: Added `Enable Polling` option in configuration flow (default: True). Users can now disable periodic status updates to prevent IP bans on sensitive 2878 devices.
 - **Connection**: Added support for **Anonymous TLS** connections (Cipher Suite D: `ALL:@SECLEVEL=0`) for devices that do not require a certificate.
 - **Emulator**: Added `--no-cert` flag to `emulator_2878.py` to simulate devices requiring Anonymous TLS.
+- **Native Switches**: Introduced `switch` platform for `purify` and `auto_clean` controls, replacing the deprecated `switch.template` workarounds.
 
 ### Fixed
 - **SSL Compatibility**:
@@ -13,6 +28,7 @@
     - Fixed `ValueError` when using `ssl.CERT_NONE` by ensuring `server_hostname` is always passed to `asyncio.open_connection`.
 - **Config Flow**: Added `Enable Polling` checkbox to Options Flow for existing installations.
 - **Coordinator**: Updated coordinator to respect the polling setting, disabling automatic updates if unchecked.
+- **Lifecycle Management**: Improved connection cleanup during reloads to prevent "zombie" connections.
 
 ## [9.0.9] - 2026-02-12
 

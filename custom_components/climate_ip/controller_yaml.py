@@ -61,6 +61,8 @@ from .const import (
     CONFIG_DEVICE_ATTRIBUTES,
     CONFIG_DEVICE_CONNECTION,
     CONFIG_DEVICE_OPERATIONS,
+    CONFIG_DEVICE_OPERATION_VALUES,
+    CONFIG_DEVICE_SWITCHES,
     CONFIG_DEVICE_SENSORS,
     CONFIG_DEVICE_POLL,
     CONFIG_DEVICE_STATUS,
@@ -99,6 +101,21 @@ class YamlController(ClimateController):
         self._device_id = config.get(CONF_DEVICE_ID, None) 
         self._token = config.get(CONF_TOKEN, None)
         self._unique_id = config.get("unique_id") or config.get(CONF_MAC) or self._ip_address
+
+        # --- FIX: Bugfix 9.0.10 - Fallback device_id if missing (e.g. single device config) ---
+        if not self._device_id:
+            if config.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_SAMSUNG_2878:
+                 # For 2878, the DUID is essential. Fallback to unique_id or mac.
+                 # Usually unique_id holds the sanitized MAC or DUID.
+                 self._device_id = self._unique_id
+                 _LOGGER.info("%s [Init] device_id was missing, fell back to unique_id: %s", 
+                              f"[{self._unique_id[-6:]}]" if self._unique_id else "[Unknown]", 
+                              self._device_id)
+            else:
+                 # For others, fallback to unique_id is usually safe/better than None
+                 self._device_id = self._unique_id
+        # --- END FIX ---
+
         self._id_discovered = self._device_id is not None
 
         self._operations = {}
@@ -272,7 +289,27 @@ class YamlController(ClimateController):
             op = create_property(op_key, nodes[op_key], self._connection, self, self._state_getter)
             if op is not None:
                 self._operations[op.id] = op
+                # --- FIX: Populate _operations_list ---
+                if op not in self._operations_list:
+                    self._operations_list.append(op)
+                # --- END FIX ---
                 self._service_schema_map[vol.Optional(op.id)] = op.config_validation_type
+
+        # --- START OF MODIFICATION: Load separate switches section ---
+        nodes = ac.get(CONFIG_DEVICE_SWITCHES, {})
+        _LOGGER.debug("%s Loading %d switches from 'switches' section...", self.log_prefix, len(nodes))
+        for op_key in nodes.keys():
+             _LOGGER.debug("%s [ObjTrace] Creating switch property '%s'.", self.log_prefix, op_key)
+             # Switches are just operations with type='switch'. We use create_property which checks type.
+             op = create_property(op_key, nodes[op_key], self._connection, self, self._state_getter)
+             if op is not None:
+                 self._operations[op.id] = op
+                 # --- FIX: Populate _operations_list ---
+                 if op not in self._operations_list:
+                    self._operations_list.append(op)
+                 # --- END FIX ---
+                 self._service_schema_map[vol.Optional(op.id)] = op.config_validation_type
+        # --- END OF MODIFICATION ---
 
         nodes = ac.get(CONFIG_DEVICE_ATTRIBUTES, {})
         _LOGGER.debug("%s Loading %d attributes...", self.log_prefix, len(nodes))
