@@ -138,7 +138,6 @@ class ClimateIpSensor(CoordinatorEntity[SamsungClimateCoordinator], SensorEntity
         All conversion logic is now handled by the property's status_template.
         """
         value = self.coordinator.get_property(self._key)
-        _LOGGER.debug("%s Sensor '%s' received value from coordinator: %s (type: %s)", self.log_prefix, self._key, value, type(value).__name__)
 
         if value is None or value == STATE_UNKNOWN:
             self._attr_native_value = None

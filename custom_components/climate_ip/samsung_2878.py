@@ -232,7 +232,7 @@ class ConnectionSamsung2878(Connection):
         async with self._close_lock:
             # Check if already closed to avoid redundant work and logs
             if self._writer is None and self._read_task is None:
-                _LOGGER.debug("%s Connection already closed, skipping.", self.log_prefix)
+
                 return
 
             self._is_ready.clear()
@@ -315,7 +315,7 @@ class ConnectionSamsung2878(Connection):
 
         # If we have a last known good configuration, prioritize it
         if self._last_successful_config:
-            _LOGGER.debug("%s Prioritizing last successful config: %s", self.log_prefix, self._last_successful_config)
+
             
             preferred_cert = self._last_successful_config.get('cert')
             preferred_cipher = self._last_successful_config.get('cipher_name')
@@ -342,7 +342,7 @@ class ConnectionSamsung2878(Connection):
             
             # Reconstruct the list with matching attempts first
             if matching_attempts:
-                _LOGGER.info("%s Optimizing reconnection: Restricting attempts to last known good configuration.", self.log_prefix)
+
                 all_attempts = matching_attempts
                 # We discard 'other_attempts' to avoid trying invalid configs (like No Cert)
 
@@ -356,20 +356,20 @@ class ConnectionSamsung2878(Connection):
             strategy_name = attempt['strategy_name']
 
             try:
-                _LOGGER.debug("%s Attempting connection with Strategy: '%s', Cipher: '%s', Verify: %s", self.log_prefix, strategy_name, cipher_name, verify_mode)
+
                 
                 # --- SSL Context Caching Logic ---
                 cache_key = (cert_path, ciphers, verify_mode) # The key must include all SSL parameters
                 ssl_context = self._ssl_context_cache.get(cache_key)
 
                 if not ssl_context:
-                    _LOGGER.debug("%s Creating and caching new SSL context for key: %s", self.log_prefix, cache_key)
+
                     ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
                     ssl_context.set_ciphers(ciphers)
                     ssl_context.verify_mode = verify_mode
                     ssl_context.check_hostname = False
                     if cert_path:
-                        _LOGGER.debug("%s Loading certificate: %s", self.log_prefix, os.path.basename(cert_path))
+
                         await asyncio.to_thread(ssl_context.load_verify_locations, cafile=cert_path)
                         await asyncio.to_thread(ssl_context.load_cert_chain, cert_path)
                     self._ssl_context_cache[cache_key] = ssl_context
@@ -424,7 +424,7 @@ class ConnectionSamsung2878(Connection):
             except (ConnectionRefusedError, asyncio.TimeoutError, OSError, ssl.SSLError) as e:
                 # This is an expected failure when the device is offline or the port is wrong.
                 # Log at debug level to avoid spamming logs when the device is intentionally off.
-                _LOGGER.debug("%s Connection attempt with '%s' / '%s' failed: %s. Trying next.", self.log_prefix, strategy_name, cipher_name, e)
+
                 last_error = e
                 await self._close_connection()
                 continue

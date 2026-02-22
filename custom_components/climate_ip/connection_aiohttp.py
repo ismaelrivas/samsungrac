@@ -412,7 +412,7 @@ class ConnectionAiohttp8888(Connection):
         url_path: Optional[str],
         data: Optional[str],
         headers: Optional[Dict[str, str]],
-        _is_probe: bool = False, # Flag interno (ignorado en esta versión, pero mantenido por si acaso)
+        _is_probe: bool = False, # Internal flag (ignored in this version, but kept just in case)
         _is_poll: bool = False,
     ) -> Tuple[str, Optional[Dict[str, str]]]:
         """

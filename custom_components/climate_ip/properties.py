@@ -178,9 +178,7 @@ class DeviceProperty:
         """
         # Check if the provided unit is a known temperature unit and convert it.
         # This allows using "°F", "F", "Fahrenheit", etc., in YAML.
-        _LOGGER.debug("%s [set_unit_of_measurement] for '%s' received raw unit: '%s'", self.log_prefix, self.id, unit)
         converted_unit = UNIT_MAP.get(unit, unit)
-        _LOGGER.debug("%s [set_unit_of_measurement] for '%s' converted unit is: '%s' (type: %s)", self.log_prefix, self.id, converted_unit, type(converted_unit).__name__)
         self._unit_of_measurement = converted_unit
 
     def get_connection(self, value):
@@ -265,18 +263,6 @@ class GetJsonStatus(DeviceProperty):
         """Load the connection details from the 'status' node in YAML."""
         from jinja2 import Template
         
-        # --- START OF MODIFICATION: Topology Debugging ---
-        if self._connection:
-             _LOGGER.debug(
-                 "%s [Topology] GetJsonStatus.load_from_yaml: base connection ID=%s, type=%s, parent=%s",
-                 self.log_prefix, 
-                 id(self._connection), 
-                 type(self._connection).__name__,
-                 getattr(self._connection, "_parent", "N/A")
-             )
-        else:
-             _LOGGER.debug("%s [Topology] GetJsonStatus.load_from_yaml: base connection is None!", self.log_prefix)
-        # --- END OF MODIFICATION ---
         
         super_result = super().load_from_yaml(node)
 
@@ -321,7 +307,7 @@ class GetJsonStatus(DeviceProperty):
         # --- START OF MODIFICATION (Milestone 1) ---
         # Check if the connection is native async (aiohttp)
         if connection.is_async_native:
-            _LOGGER.debug("[Dual Engine] Executing 'async_execute' (Async Engine)")
+
             try:
                 # The connection_template contains the request parameters (method, url, etc.)
                 # We need to render it to get the JSON string of parameters.
@@ -329,12 +315,6 @@ class GetJsonStatus(DeviceProperty):
                     _LOGGER.error("%s [GetJsonStatus] Connection template is missing for async execution.", self.log_prefix)
                     return None
                 
-                # --- START OF MODIFICATION: Add logging ---
-                _LOGGER.debug(
-                    "%s [GetJsonStatus] Using connection template for async execution: %s",
-                    self.log_prefix,
-                    self.connection_template.template if hasattr(self.connection_template, 'template') else self.connection_template
-                )
                 
                 # Prepare render context with connection parameters (crucial for DUID in 2878)
                 render_context = {}
@@ -354,7 +334,7 @@ class GetJsonStatus(DeviceProperty):
                     elif hasattr(connection, 'config') and hasattr(connection.config, 'token') and connection.config.token:
                         render_context['token'] = connection.config.token
 
-                _LOGGER.debug("%s [GetJsonStatus] Render context keys: %s", self.log_prefix, list(render_context.keys()))
+
                 # --- END OF MODIFICATION ---
 
                 response_text = None
@@ -366,7 +346,7 @@ class GetJsonStatus(DeviceProperty):
                 except json.JSONDecodeError as decode_error:
                     # If response_text is None, it means we failed parsing params_str (likely XML for 2878)
                     if response_text is None:
-                        _LOGGER.debug("%s [GetJsonStatus] Params parsing failed (XML?), trying raw execution: %s", self.log_prefix, params_str)
+
                         # Execute raw command. For 2878, method/url/headers are ignored.
                         # Important: We must await this call to actually send the command.
                         # The return value for raw execute might be the response XML string.
@@ -407,7 +387,7 @@ class GetJsonStatus(DeviceProperty):
                 raise
         else:
             # It's a synchronous connection (requests or 2878)
-            _LOGGER.debug("[Dual Engine] Executing 'execute' in executor (Sync Engine)")
+
 
             # This is the logic that will run now, identical to the previous one.
             # The synchronous 'execute' call is wrapped in async_add_executor_job
@@ -472,7 +452,7 @@ class DeviceOperation(DeviceProperty):
 
         # --- START: Logic to handle async nested commands ---
         if connection.is_async_native:
-            _LOGGER.debug("[Dual Engine] Executing 'async_execute' (Async Engine)")
+
             try:
                 # The `async_execute` method in ConnectionAiohttp8888 will handle its embedded command internally.
                 # We just need to call it once with the parameters for the *main* command.                
@@ -531,7 +511,7 @@ class DeviceOperation(DeviceProperty):
                 return False
         # --- END: Logic to handle async nested commands ---
         else: # Fallback to original synchronous logic
-            _LOGGER.debug("[Dual Engine] Executing 'execute' in executor (Sync Engine)")
+
             try:
                 response = await self._controller.hass.async_add_executor_job(
                     connection.execute,
@@ -842,7 +822,20 @@ class TemperatureOperation(BasicNumericOperation):
     def __init__(self, name, connection, controller, status_getter=None):
         super(TemperatureOperation, self).__init__(name, connection, controller, status_getter)
         self._unit_template = None
-        self._unit = UnitOfTemperature.CELSIUS
+        self._device_unit = UnitOfTemperature.CELSIUS
+        self._hass_unit = UnitOfTemperature.CELSIUS
+
+    def set_device_unit(self, unit: str):
+        """Set the native unit used by the device."""
+        converted_unit = UNIT_MAP.get(unit, unit)
+        self._device_unit = converted_unit
+
+    def set_hass_unit(self, unit: str):
+        """Set the display unit used by Home Assistant."""
+        converted_unit = UNIT_MAP.get(unit, unit)
+
+        self._hass_unit = converted_unit
+        self._unit_of_measurement = converted_unit
 
     @staticmethod
     def match_type(type):
@@ -870,24 +863,23 @@ class TemperatureOperation(BasicNumericOperation):
             try:
                 unit = self._unit_template.render(device_state=device_state)
                 if unit in UNIT_MAP:
-                    self._unit = UNIT_MAP[unit]
+                    self._device_unit = UNIT_MAP[unit]
             except:
-                _LOGGER.debug("%s Could not render unit template for '%s'. Using last known unit.", self.log_prefix, self.id)
-        # --- START OF MODIFICATION ---
-        # If there's no unit_template, but there is a static unit_of_measurement (from an attribute), use it.
-        elif self._unit_of_measurement:
-            self._unit = self._unit_of_measurement
-        # --- END OF MODIFICATION ---
+                _LOGGER.debug("%s Could not render unit template for '%s'. Using last known device unit.", self.log_prefix, self.id)
+        
         return await super().async_update_state(device_state_override, debug)
 
     def convert_dev_to_hass(self, dev_value):
-        """Convert device state value to the HASS representation (Celsius)."""
+        """Convert device state value to the HASS representation."""
         try:
-            # --- START OF FIX: Ensure value is always a float for HASS ---
+            # --- START OF FIX: Ensure value is a clean float for HASS ---
             # The device might send an int (e.g., 22), but HA expects a float (22.0)
             # for temperatures. This mismatch was causing the optimistic update to fail.
             # By ensuring it's a float, we align with HA's state machine.
-            return float(TemperatureConverter.convert(float(dev_value), self._unit, UnitOfTemperature.CELSIUS))
+            # CRITICAL: We also strictly round the result after any unit conversions (like F->C) 
+            # to prevent fractions like 20.55555 from appearing in the UI.
+            raw_converted = float(TemperatureConverter.convert(float(dev_value), self._device_unit, self._hass_unit))
+            return float(int(round(raw_converted)))
             # --- END OF FIX ---
         except (ValueError, TypeError):
             return None  # Return None if the value is invalid.
@@ -900,7 +892,7 @@ class TemperatureOperation(BasicNumericOperation):
             v = self._max
 
         converted_temp = TemperatureConverter.convert(
-            float(v), UnitOfTemperature.CELSIUS, self._unit
+            float(v), self._hass_unit, self._device_unit
         )
         # --- START OF FIX: Remove hardcoded multiplication ---
         # Any multiplication (e.g., by 10) should be handled by the connection_template in the YAML
