@@ -152,8 +152,19 @@ class SamsungTokenAcquirer8888:
         """Starts the custom TCP listener server."""
         try:
             # Setup SSL for the server
-            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS)
-            ssl_context.minimum_version = ssl.TLSVersion.TLSv1
+            protocol = getattr(ssl, 'PROTOCOL_TLS_CLIENT', getattr(ssl, 'PROTOCOL_TLS', ssl.PROTOCOL_TLSv1))
+            ssl_context = ssl.SSLContext(protocol)
+            if hasattr(ssl, 'TLSVersion'):
+                if hasattr(ssl.TLSVersion, 'TLSv1'):
+                    try:
+                        ssl_context.minimum_version = ssl.TLSVersion.TLSv1
+                    except Exception:
+                        pass
+                if hasattr(ssl.TLSVersion, 'TLSv1_2'):
+                    try:
+                        ssl_context.maximum_version = ssl.TLSVersion.TLSv1_2
+                    except Exception as e:
+                        _LOGGER.debug("Could not set TLS max version: %s", e)
             try:
                 ssl_context.set_ciphers('HIGH:!aNULL:!MD5:@SECLEVEL=0')
             except Exception as e:
@@ -162,6 +173,11 @@ class SamsungTokenAcquirer8888:
             await self._hass.async_add_executor_job(
                 ssl_context.load_cert_chain, self._cert_path
             )
+            
+            # Log the configured TLS limits
+            max_ver = getattr(ssl_context, 'maximum_version', 'Unknown')
+            min_ver = getattr(ssl_context, 'minimum_version', 'Unknown')
+            _LOGGER.debug("[SamsungTokenAcquirer8888 Server] SSLContext configured. Min: %s, Max: %s", str(min_ver).replace('TLSVersion.', ''), str(max_ver).replace('TLSVersion.', ''))
             
             # Start the server
             self._server = await asyncio.start_server(
@@ -188,8 +204,19 @@ class SamsungTokenAcquirer8888:
         _LOGGER.info("Requesting token from AC at %s:%s", self._ac_ip, self._ac_port)
 
         # Setup Client SSL Context
-        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS)
-        ssl_context.minimum_version = ssl.TLSVersion.TLSv1
+        protocol = getattr(ssl, 'PROTOCOL_TLS_CLIENT', getattr(ssl, 'PROTOCOL_TLS', ssl.PROTOCOL_TLSv1))
+        ssl_context = ssl.SSLContext(protocol)
+        if hasattr(ssl, 'TLSVersion'):
+            if hasattr(ssl.TLSVersion, 'TLSv1'):
+                try:
+                    ssl_context.minimum_version = ssl.TLSVersion.TLSv1
+                except Exception:
+                    pass
+            if hasattr(ssl.TLSVersion, 'TLSv1_2'):
+                try:
+                    ssl_context.maximum_version = ssl.TLSVersion.TLSv1_2
+                except Exception as e:
+                    _LOGGER.debug("Could not set TLS max version: %s", e)
         ssl_context.set_ciphers('HIGH:!aNULL:!MD5:@SECLEVEL=0')
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
@@ -197,6 +224,11 @@ class SamsungTokenAcquirer8888:
         await self._hass.async_add_executor_job(
             ssl_context.load_cert_chain, self._cert_path
         )
+
+        # Log the configured TLS limits
+        max_ver = getattr(ssl_context, 'maximum_version', 'Unknown')
+        min_ver = getattr(ssl_context, 'minimum_version', 'Unknown')
+        _LOGGER.debug("[SamsungTokenAcquirer8888 Client] SSLContext configured. Min: %s, Max: %s", str(min_ver).replace('TLSVersion.', ''), str(max_ver).replace('TLSVersion.', ''))
 
         try:
             async with aiohttp.ClientSession() as session:
@@ -220,6 +252,16 @@ class SamsungTokenAcquirer8888:
 
                     if response.status == 200:
                         _LOGGER.info("Token request accepted by AC (200 OK)")
+                        
+                        # Attempt to log the negotiated TLS version
+                        try:
+                            transport = response.connection.transport if response.connection else None
+                            ssl_obj = transport.get_extra_info('ssl_object') if transport else None
+                            negotiated_tls = ssl_obj.version() if ssl_obj else "Unknown"
+                            _LOGGER.debug("[SamsungTokenAcquirer8888 Client] Negotiated TLS Version: %s", negotiated_tls)
+                        except Exception:
+                            pass
+                            
                         # Try to read body for debugging, but don't fail if it times out (missing Content-Length)
                         try:
                             resp_text = await asyncio.wait_for(response.text(), timeout=2.0)

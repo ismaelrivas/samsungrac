@@ -128,8 +128,10 @@ class ConnectionAiohttp8888(Connection):
         try:
             _LOGGER.debug("%s [aiohttp] Creating custom SSL context. Cert: %s, Insecure: %s", self.log_prefix, has_cert, insecure_ssl)
             
-            # Use PROTOCOL_TLSv1 for maximum compatibility (as in requests)
-            context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+            # Use PROTOCOL_TLS_CLIENT to negotiate, but cap at TLS 1.2
+            # because Samsung ACs hang when receiving a TLS 1.3 Client Hello.
+            protocol = getattr(ssl, 'PROTOCOL_TLS_CLIENT', getattr(ssl, 'PROTOCOL_TLS', ssl.PROTOCOL_TLSv1))
+            context = ssl.SSLContext(protocol)
             
             # If insecure_ssl or mTLS (self-signed), we don't verify hostname/chain
             context.check_hostname = False
@@ -138,11 +140,29 @@ class ConnectionAiohttp8888(Connection):
             # Replicate the 'requests' logic to allow ALL ciphers (fixes Handshake Failure)
             context.set_ciphers("ALL:@SECLEVEL=0")
             
+            # Cap the maximum version to TLS 1.2 to prevent the AC from hanging
+            if hasattr(ssl, 'TLSVersion'):
+                if hasattr(ssl.TLSVersion, 'TLSv1_2'):
+                    try:
+                        context.maximum_version = ssl.TLSVersion.TLSv1_2
+                    except Exception as e:
+                        _LOGGER.debug("%s [aiohttp] Could not set TLS max version: %s", self.log_prefix, e)
+                if hasattr(ssl.TLSVersion, 'TLSv1'):
+                    try:
+                        context.minimum_version = ssl.TLSVersion.TLSv1
+                    except Exception:
+                        pass
+            
             if has_cert:
                 _LOGGER.debug("%s [aiohttp] Loading mTLS cert from: %s", self.log_prefix, self._cert_path)
                 loop = asyncio.get_running_loop()
                 load_chain_func = partial(context.load_cert_chain, self._cert_path)
                 await loop.run_in_executor(None, load_chain_func)
+
+            # Log the configured TLS limits
+            max_ver = getattr(context, 'maximum_version', 'Unknown')
+            min_ver = getattr(context, 'minimum_version', 'Unknown')
+            _LOGGER.debug("%s [aiohttp] SSLContext configured. Min: %s, Max: %s", self.log_prefix, str(min_ver).replace('TLSVersion.', ''), str(max_ver).replace('TLSVersion.', ''))
             
             return context
         except Exception as e:
@@ -322,7 +342,15 @@ class ConnectionAiohttp8888(Connection):
                     # Update timeout to be more granular
                     async with self._session.request("GET", probe_url, headers=probe_headers, ssl=self._shared_state["ssl_context"], timeout=aiohttp.ClientTimeout(total=10, sock_read=5)) as response:
                         if response.status in (200, 401, 403, 405): # Added 405 for Method Not Allowed (probing POST with GET)
-                            _LOGGER.info("%s [aiohttp] Connection successful and memorized. Status: %s", self.log_prefix, response.status)
+                            # Attempt to log the negotiated TLS version
+                            try:
+                                transport = response.connection.transport if response.connection else None
+                                ssl_obj = transport.get_extra_info('ssl_object') if transport else None
+                                negotiated_tls = ssl_obj.version() if ssl_obj else "Unknown"
+                                _LOGGER.info("%s [aiohttp] Connection successful. Status: %s. Negotiated TLS: %s", self.log_prefix, response.status, negotiated_tls)
+                            except Exception:
+                                _LOGGER.info("%s [aiohttp] Connection successful and memorized. Status: %s", self.log_prefix, response.status)
+                                
                             self._shared_state["initialized"] = True
                             
                             # --- START OF FIX: Optimization - Return text for reuse ---

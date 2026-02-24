@@ -348,6 +348,7 @@ class ConnectionSamsung2878(Connection):
 
         connection_successful = False
         last_error = None
+        logged_ssl_config = False
 
         for attempt in all_attempts:
             cert_path = attempt['cert']
@@ -364,14 +365,35 @@ class ConnectionSamsung2878(Connection):
 
                 if not ssl_context:
 
-                    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+                    protocol = getattr(ssl, 'PROTOCOL_TLS_CLIENT', getattr(ssl, 'PROTOCOL_TLS', ssl.PROTOCOL_TLSv1))
+                    ssl_context = ssl.SSLContext(protocol)
                     ssl_context.set_ciphers(ciphers)
-                    ssl_context.verify_mode = verify_mode
                     ssl_context.check_hostname = False
+                    ssl_context.verify_mode = verify_mode
+                    
+                    if hasattr(ssl, 'TLSVersion'):
+                        if hasattr(ssl.TLSVersion, 'TLSv1_2'):
+                            try:
+                                ssl_context.maximum_version = ssl.TLSVersion.TLSv1_2
+                            except Exception as e:
+                                _LOGGER.debug("Could not set TLS max version: %s", e)
+                        if hasattr(ssl.TLSVersion, 'TLSv1'):
+                            try:
+                                ssl_context.minimum_version = ssl.TLSVersion.TLSv1
+                            except Exception:
+                                pass
+                                
                     if cert_path:
-
                         await asyncio.to_thread(ssl_context.load_verify_locations, cafile=cert_path)
                         await asyncio.to_thread(ssl_context.load_cert_chain, cert_path)
+
+                    # Log the configured TLS limits only once per connection cycle
+                    if not logged_ssl_config:
+                        max_ver = getattr(ssl_context, 'maximum_version', 'Unknown')
+                        min_ver = getattr(ssl_context, 'minimum_version', 'Unknown')
+                        _LOGGER.debug("%s [samsung_2878] SSLContext configured. Min: %s, Max: %s", self.log_prefix, str(min_ver).replace('TLSVersion.', ''), str(max_ver).replace('TLSVersion.', ''))
+                        logged_ssl_config = True
+
                     self._ssl_context_cache[cache_key] = ssl_context
 
                 # --- START OF FIX: Use raw socket with TCP KEEPALIVE ---
@@ -411,9 +433,10 @@ class ConnectionSamsung2878(Connection):
                 ssl_object = self._writer.get_extra_info('ssl_object')
                 if ssl_object:
                     cipher = ssl_object.cipher()
+                    negotiated_tls = ssl_object.version() or "Unknown"
                     _LOGGER.info(
-                        "%s SSL connection established. Protocol: %s, Cipher: %s, Verify: %s",
-                        self.log_prefix, cipher[1], cipher[0], verify_mode
+                        "%s SSL connection established. Protocol: %s, Cipher: %s, Verify: %s, Negotiated TLS: %s",
+                        self.log_prefix, cipher[1], cipher[0], verify_mode, negotiated_tls
                     )
 
                 # Memorize the successful configuration for future reconnections
