@@ -1,6 +1,16 @@
 # Changelog
 
-## [9.0.12] - Unreleased
+## [9.1.0] - 2026-02-24
+
+### Added
+- **TLS Visibility Logs**: Added `DEBUG`-level logs in all 5 connection engines (`samsung_2878.py`, `protocol_8888.py`, `connection_aiohttp.py`, `connection_request.py`, `token_acquirer.py`) that print the configured `Min`/`Max` TLS version at context creation time, and the negotiated TLS version after a successful handshake. Helps diagnose future SSL compatibility issues without a packet capture.
+
+### Fixed
+- **Critical TLS Hang (AC Port 8888/2878)**: Samsung AC firmware hangs indefinitely when receiving a TLS 1.3 Client Hello. On modern Home Assistant OS (Python 3.10+, OpenSSL 3.x), `ssl.PROTOCOL_TLSv1` no longer guarantees a TLS 1.0-only Client Hello and may negotiate TLS 1.3 by default, triggering the firmware bug. Fixed by migrating all SSL context creation to `PROTOCOL_TLS_CLIENT` with an explicit `maximum_version = ssl.TLSVersion.TLSv1_2` cap. This prevents the TLS 1.3 Client Hello while allowing the AC to negotiate down to the version it supports (TLS 1.0 or 1.1).
+- **ValueError on SSL Context Creation**: Using `ssl.PROTOCOL_TLS_CLIENT` requires `check_hostname = False` to be set **before** `verify_mode = CERT_NONE`, otherwise Python raises `ValueError: Cannot set verify_mode to CERT_NONE when check_hostname is enabled`. Fixed the assignment order across all 5 connection engines (`samsung_2878.py`, `protocol_8888.py`, `connection_aiohttp.py`, `connection_request.py`, `token_acquirer.py`, `token_acquirer_8888.py`).
+- **Log Noise**: The `SSLContext configured...` debug log was being printed once per cipher strategy attempt (up to 5 times in `samsung_2878.py`). Fixed with a `logged_ssl_config` guard so it only prints once per connection cycle.
+
+## [9.0.12] - 2026-02-23
 
 ### Added
 - **Independent Native Temperature Units**: Added two separate configuration options (`Native Current Temperature Unit` and `Native Target Temperature Unit`) accessible from the integration's Options Flow. This allows devices that report temperatures in Fahrenheit to be correctly converted and displayed in the Home Assistant global unit (Celsius or Fahrenheit), independently for current and target temperatures. New constants `CONF_TEMP_NATIVE_CURRENT` and `CONF_TEMP_NATIVE_TARGET` added to `const.py`.

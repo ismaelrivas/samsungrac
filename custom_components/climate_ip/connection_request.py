@@ -59,9 +59,30 @@ class SamsungHTTPAdapter(HTTPAdapter):
         super().__init__(*args, **kwargs)
 
     def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
-        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+        protocol = getattr(ssl, 'PROTOCOL_TLS_CLIENT', getattr(ssl, 'PROTOCOL_TLS', ssl.PROTOCOL_TLSv1))
+        ssl_context = ssl.SSLContext(protocol)
         ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
         ssl_context.set_ciphers("ALL:@SECLEVEL=0")
+        
+        # Cap the maximum version to TLS 1.2 to prevent the AC from hanging
+        if hasattr(ssl, 'TLSVersion'):
+            if hasattr(ssl.TLSVersion, 'TLSv1_2'):
+                try:
+                    ssl_context.maximum_version = ssl.TLSVersion.TLSv1_2
+                except Exception as e:
+                    _LOGGER.debug("[SamsungHTTPAdapter] Could not set TLS max version: %s", e)
+            if hasattr(ssl.TLSVersion, 'TLSv1'):
+                try:
+                    ssl_context.minimum_version = ssl.TLSVersion.TLSv1
+                except Exception:
+                    pass
+
+        # Log the configured TLS limits
+        max_ver = getattr(ssl_context, 'maximum_version', 'Unknown')
+        min_ver = getattr(ssl_context, 'minimum_version', 'Unknown')
+        _LOGGER.debug("[SamsungHTTPAdapter] SSLContext configured. Min: %s, Max: %s", str(min_ver).replace('TLSVersion.', ''), str(max_ver).replace('TLSVersion.', ''))
+
         pool_kwargs["ssl_context"] = ssl_context
         
         # --- START OF FIX: Limit Pool Concurrency ---
@@ -113,6 +134,7 @@ class ConnectionRequestBase(Connection):
         self.update_configuration_from_hass(hass_config)
         self._condition_template = None
         self._thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        self._is_closing = False
 
         # --- START OF FIX: Persistent Session ---
         # Initialize a persistent session to support Keep-Alive.
@@ -176,6 +198,7 @@ class ConnectionRequestBase(Connection):
     def _close_sync(self):
         """Explicitly close the session and thread pool (Synchronous)."""
         _LOGGER.debug("%s [ConnectionRequest] _close_sync: Cleanup started.", self.log_prefix)
+        self._is_closing = True
         
         if hasattr(self, "_session") and self._session:
             try:
@@ -322,6 +345,10 @@ class ConnectionRequestBase(Connection):
                 # We do NOT remount it here to safe-guard connection reuse.
 
                 for attempt in range(REQUEST_MAX_RETRIES):
+                    if self._is_closing:
+                        _LOGGER.debug("%s [ConnectionRequest] Connection is closing, aborting request.", self.log_prefix)
+                        raise ConnectionError("Connection is closing")
+                        
                     try:
                         _LOGGER.debug("%s Request (attempt %s/%s): %s", self.log_prefix, attempt + 1, REQUEST_MAX_RETRIES, mask_sensitive_data(params))
                         
@@ -361,6 +388,16 @@ class ConnectionRequestBase(Connection):
                         
                         resp = session.request(**request_params)
                         
+                        # Attempt to log the negotiated TLS version
+                        try:
+                            # Access the underlying urllib3 connection's socket
+                            raw_conn = getattr(resp.raw, '_connection', None)
+                            sock = getattr(raw_conn, 'sock', None) if raw_conn else None
+                            negotiated_tls = sock.version() if sock and hasattr(sock, 'version') else "Unknown"
+                            _LOGGER.debug("%s [ConnectionRequest] Request successful. Negotiated TLS: %s", self.log_prefix, negotiated_tls)
+                        except Exception:
+                            pass
+                            
                         # --- START OF FIX: HTTP Version Detection ---
                         # Dynamically adjust Keep-Alive support based on server response.
                         # resp.raw.version is an integer: 10 (HTTP/1.0) or 11 (HTTP/1.1)
@@ -419,8 +456,9 @@ class ConnectionRequestBase(Connection):
                         if e.response.status_code in (401, 403):
                             _LOGGER.error("%s Authentication error: %s. Not retrying", self.log_prefix, e)
                             raise AuthError(f"Authentication failed with status {e.response.status_code}") from e
-                        # Retrying 500 errors with longer delay
                         elif 500 <= e.response.status_code < 600 and attempt < REQUEST_MAX_RETRIES - 1:
+                            if self._is_closing:
+                                raise ConnectionError("Connection is closing")
                             _LOGGER.warning("%s Server error (%s). Retrying in %s seconds", self.log_prefix, e.response.status_code, LOCAL_RETRY_DELAY)
                             time.sleep(LOCAL_RETRY_DELAY)
                             continue
@@ -445,6 +483,8 @@ class ConnectionRequestBase(Connection):
                          
                         # If we were already in force close mode OR ran out of retries
                         if attempt < REQUEST_MAX_RETRIES - 1:
+                            if self._is_closing:
+                                raise ConnectionError("Connection is closing")
                             _LOGGER.warning("%s ReadTimeout error. Retrying in %s seconds", self.log_prefix, LOCAL_RETRY_DELAY)
                             time.sleep(LOCAL_RETRY_DELAY)
                             continue
@@ -454,6 +494,8 @@ class ConnectionRequestBase(Connection):
 
                     except requests.exceptions.Timeout as e:
                         if attempt < REQUEST_MAX_RETRIES - 1:
+                            if self._is_closing:
+                                raise ConnectionError("Connection is closing")
                             _LOGGER.warning("%s Request timed out. Retrying in %s seconds", self.log_prefix, LOCAL_RETRY_DELAY)
                             time.sleep(LOCAL_RETRY_DELAY)
                             continue
@@ -475,6 +517,8 @@ class ConnectionRequestBase(Connection):
                                 continue
 
                         if attempt < REQUEST_MAX_RETRIES - 1:
+                            if self._is_closing:
+                                raise ConnectionError("Connection is closing")
                             _LOGGER.warning("%s Connection error. Retrying in %s seconds", self.log_prefix, LOCAL_RETRY_DELAY)
                             time.sleep(LOCAL_RETRY_DELAY)
                             continue

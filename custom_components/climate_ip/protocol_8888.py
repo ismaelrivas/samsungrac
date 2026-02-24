@@ -45,13 +45,28 @@ class Samsung8888Client:
 
     async def _create_ssl_context(self) -> ssl.SSLContext:
         """Configure SSL, replicating the logic from connection_request.py."""
-        # Always use Legacy mode (TLSv1) as it is the most compatible
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+        # Use PROTOCOL_TLS_CLIENT to negotiate, but cap at TLS 1.2
+        # because Samsung ACs hang when receiving a TLS 1.3 Client Hello.
+        protocol = getattr(ssl, 'PROTOCOL_TLS_CLIENT', getattr(ssl, 'PROTOCOL_TLS', ssl.PROTOCOL_TLSv1))
+        ctx = ssl.SSLContext(protocol)
         
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
         # Use ALL:@SECLEVEL=0 as in the original code for maximum compatibility
         ctx.set_ciphers("ALL:@SECLEVEL=0")
+        
+        # Cap the maximum version to TLS 1.2 to prevent the AC from hanging
+        if hasattr(ssl, 'TLSVersion'):
+            if hasattr(ssl.TLSVersion, 'TLSv1_2'):
+                try:
+                    ctx.maximum_version = ssl.TLSVersion.TLSv1_2
+                except Exception as e:
+                    _LOGGER.debug("%s [protocol_8888] Could not set TLS max version: %s", self.log_prefix, e)
+            if hasattr(ssl.TLSVersion, 'TLSv1'):
+                try:
+                    ctx.minimum_version = ssl.TLSVersion.TLSv1
+                except Exception:
+                    pass
         
         # --- START OF FIX: Optimize SSL for low-memory devices ---
         # Disable session tickets and compression to reduce handshake overhead
@@ -89,6 +104,11 @@ class Samsung8888Client:
                     e,
                 )
         
+        # Log the configured TLS limits
+        max_ver = getattr(ctx, 'maximum_version', 'Unknown')
+        min_ver = getattr(ctx, 'minimum_version', 'Unknown')
+        _LOGGER.debug("%s [protocol_8888] SSLContext configured. Min: %s, Max: %s", self.log_prefix, str(min_ver).replace('TLSVersion.', ''), str(max_ver).replace('TLSVersion.', ''))
+
         return ctx
 
     async def connect(self):
@@ -97,9 +117,19 @@ class Samsung8888Client:
         if not self._ssl_context:
             self._ssl_context = await self._create_ssl_context()
         try:
-            self._reader, self._writer = await asyncio.open_connection(
-                self.host, self.port, ssl=self._ssl_context
+            self._reader, self._writer = await asyncio.wait_for(
+                asyncio.open_connection(self.host, self.port, ssl=self._ssl_context),
+                timeout=10.0
             )
+            # Attempt to log the negotiated TLS version
+            try:
+                ssl_obj = self._writer.get_extra_info('ssl_object')
+                negotiated_tls = ssl_obj.version() if ssl_obj else "Unknown"
+                _LOGGER.debug("%s [Samsung8888Client] Connected successfully. Negotiated TLS: %s", self.log_prefix, negotiated_tls)
+            except Exception:
+                pass
+        except asyncio.TimeoutError:
+            raise ConnectionError(f"Connection timed out to {self.host}:{self.port}")
         except Exception as e:
             raise ConnectionError(f"Connection error: {e}")
 
@@ -169,9 +199,12 @@ class Samsung8888Client:
                         
                         request_str = "\r\n".join(req) + "\r\n\r\n" + (payload if payload else "")
                         writer.write(request_str.encode('utf-8'))
-                        await writer.drain()
-                        
-                        status_line = await reader.readline()
+                        try:
+                            await asyncio.wait_for(writer.drain(), timeout=5.0)
+                            
+                            status_line = await asyncio.wait_for(reader.readline(), timeout=10.0)
+                        except asyncio.TimeoutError:
+                            raise ConnectionError("Timeout sending request or reading status line")
                         if not status_line:
                             raise ConnectionResetError("Remote closure")
                         
@@ -185,7 +218,11 @@ class Samsung8888Client:
                         content_length = 0
                         content_type = ""
                         while True:
-                            line = await reader.readline()
+                            try:
+                                line = await asyncio.wait_for(reader.readline(), timeout=5.0)
+                            except asyncio.TimeoutError:
+                                raise ConnectionError("Timeout reading headers")
+                            
                             if not line or line == b'\r\n':
                                 break
                             line_str = line.decode('utf-8', 'ignore').strip()
@@ -206,7 +243,10 @@ class Samsung8888Client:
                         resp_body = ""
                         if content_length > 0:
                             try:
-                                resp_body = (await reader.readexactly(content_length)).decode('utf-8', 'ignore')
+                                chunk = await asyncio.wait_for(reader.readexactly(content_length), timeout=10.0)
+                                resp_body = chunk.decode('utf-8', 'ignore')
+                            except asyncio.TimeoutError:
+                                raise ConnectionError("Timeout reading response body")
                             except Exception:
                                 resp_body = ""
                         elif content_length == 0 and "content-length" in [h.lower().split(':')[0] for h in headers_received]:
@@ -278,6 +318,10 @@ class Samsung8888Client:
                         else:
                             raise ConnectionError("Unstable connection")
                     except AuthError:
+                        await self.close()
+                        raise
+                    except asyncio.CancelledError:
+                        _LOGGER.debug("%s [RAW] Request was cancelled by coordinator timeout. Closing socket.", self.log_prefix)
                         await self.close()
                         raise
                     except Exception as e:
