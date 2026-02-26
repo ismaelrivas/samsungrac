@@ -114,8 +114,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         session = async_get_clientsession(hass)
     # --- END OF FIX ---
 
-    _LOGGER.debug("Starting setup for entry %s with runtime config: %s", entry.entry_id, mask_sensitive_data(runtime_config))
-
+    _LOGGER.info("Starting setup for device %s at %s (Device Type: %s)", 
+                 runtime_config.get(CONF_MAC, "Unknown"), 
+                 runtime_config.get("ip_address", "Unknown"), 
+                 device_type)
     if devices_config := runtime_config.get(CONF_DEVICES):
         coordinators = {}
         for device_info in devices_config:

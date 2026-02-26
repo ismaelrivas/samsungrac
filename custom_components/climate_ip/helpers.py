@@ -57,6 +57,82 @@ def stream_wrapper(data: str, token: str | None, ip_address: str | None, device_
         data = data.replace("__DEVICE_ID__", str(device_id))
     return data
 
+def get_tls_version_name(version_code: Any) -> str:
+    """Safely convert a TLS version code to its friendly name."""
+    import ssl
+    if hasattr(ssl, 'TLSVersion'):
+        try:
+            return ssl.TLSVersion(version_code).name
+        except ValueError:
+            return str(version_code)
+    return str(version_code)
+
+def create_samsung_ssl_context(
+    cert_path: str | None = None,
+    ciphers: str = "ALL:@SECLEVEL=0",
+    verify_mode: Any = None,
+) -> Any:
+    """
+    Creates the standardized SSL context for Samsung devices.
+    Enforces PROTOCOL_TLS_CLIENT, sets verify mode, loads ciphers,
+    and caps the maximum TLS version to TLSv1_2 to prevent the AC handshake bug.
+    """
+    import ssl
+    import asyncio
+    
+    protocol = getattr(ssl, 'PROTOCOL_TLS_CLIENT', getattr(ssl, 'PROTOCOL_TLS', ssl.PROTOCOL_TLSv1))
+    context = ssl.SSLContext(protocol)
+    
+    context.set_ciphers(ciphers)
+    context.check_hostname = False
+    if verify_mode is not None:
+        context.verify_mode = verify_mode
+    else:
+        context.verify_mode = ssl.CERT_NONE
+        
+    if hasattr(ssl, 'TLSVersion'):
+        if hasattr(ssl.TLSVersion, 'TLSv1_2'):
+            try:
+                context.maximum_version = ssl.TLSVersion.TLSv1_2
+            except Exception as e:
+                _LOGGER.debug("Could not set TLS max version: %s", e)
+        if hasattr(ssl.TLSVersion, 'TLSv1'):
+            try:
+                context.minimum_version = ssl.TLSVersion.TLSv1
+            except Exception:
+                pass
+
+    if cert_path:
+        context.load_verify_locations(cafile=cert_path)
+        context.load_cert_chain(cert_path)
+
+    min_ver = get_tls_version_name(getattr(context, 'minimum_version', 'Unknown'))
+    max_ver = get_tls_version_name(getattr(context, 'maximum_version', 'Unknown'))
+    # _LOGGER.debug("Shared SSLContext configured. Min: %s, Max: %s, Cert: %s", min_ver, max_ver, bool(cert_path))
+
+    return context
+
+async def async_create_samsung_ssl_context(
+    cert_path: str | None = None,
+    ciphers: str = "ALL:@SECLEVEL=0",
+    verify_mode: Any = None,
+) -> Any:
+    """
+    Async wrapper for create_samsung_ssl_context.
+    Executes the blocking disk I/O parts of the SSL context creation
+    in the default executor to avoid blocking the Home Assistant event loop.
+    """
+    import asyncio
+    import functools
+    loop = asyncio.get_running_loop()
+    func = functools.partial(
+        create_samsung_ssl_context,
+        cert_path=cert_path,
+        ciphers=ciphers,
+        verify_mode=verify_mode
+    )
+    return await loop.run_in_executor(None, func)
+
 def mask_sensitive_data(data: Any) -> Any:
     """
     Recursively mask sensitive data in a dictionary or list.
@@ -85,3 +161,60 @@ def mask_sensitive_data(data: Any) -> Any:
         data = re.sub(r'(DUID=")([^"]+)(")', r'\1***\3', data)
         return data
     return data
+
+async def async_check_network_reachability(host: str, log_prefix: str = "") -> bool:
+    """Check if the device is reachable on the network.
+    Uses system ping to verify if the host is alive.
+    Results are logged at DEBUG level to help diagnose disconnections.
+    """
+    import asyncio
+    import os
+
+    process = None
+    try:
+        # -c 1 = 1 packet, -W 2 = 2 seconds timeout
+        # Use 'ping' for Linux/macOS and fallback behavior for Windows if needed
+        ping_cmd = ["ping", "-c", "1", "-W", "2", host]
+        
+        # Windows ping commands are slightly different: -n 1 for count, -w 2000 for timeout
+        if os.name == 'nt':
+            ping_cmd = ["ping", "-n", "1", "-w", "2000", host]
+
+        process = await asyncio.create_subprocess_exec(
+            *ping_cmd,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL
+        )
+        
+        # Wait for ping to finish with a safety timeout
+        await asyncio.wait_for(process.wait(), timeout=3.0)
+        
+        if process.returncode == 0:
+            _LOGGER.debug(
+                "%s Network diagnostic: Host %s responded to ICMP ping. "
+                "Network is OK.",
+                log_prefix, host
+            )
+            return True
+        else:
+            _LOGGER.debug(
+                "%s Network diagnostic: Host %s is NOT reachable (ICMP ping failed). "
+                "Check that the device is powered on and connected to your Wi-Fi.",
+                log_prefix, host
+            )
+            return False
+    except asyncio.TimeoutError:
+        if process:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+        _LOGGER.debug(
+            "%s Network diagnostic: Host %s is NOT reachable (Ping timed out). "
+            "Check that the device is powered on and connected to your Wi-Fi.",
+            log_prefix, host
+        )
+        return False
+    except Exception as e:
+        _LOGGER.debug("%s Network diagnostic (ping) error: %s", log_prefix, e)
+        return True # Fallback to trying connection if ping fails for unknown reasons

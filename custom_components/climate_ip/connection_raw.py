@@ -74,26 +74,12 @@ class ConnectionRaw8888(Connection):
             from jinja2 import Template
             new_connection._connection_template = Template(template_str)
 
-        # Convert static params to a template (HACK for legacy configs)
+        # If params are defined without an explicit connection_template, store them
+        # directly on _params. properties.py's _resolve_async_params will read them.
         elif yaml_node and CONFIG_DEVICE_CONNECTION_PARAMS in yaml_node:
             params = {**getattr(self, "_params", {}), **yaml_node.get(CONFIG_DEVICE_CONNECTION_PARAMS, {})}
             new_connection._params = params
-            template_dict = {}
-            if "json" in params:
-                template_dict["json"] = params["json"]
-            url_from_params = params.get("url", getattr(self, "_params", {}).get("url"))
-            if url_from_params:
-                template_dict["url"] = urlparse(url_from_params).path
-            template_dict["method"] = params.get("method", getattr(self, "_params", {}).get("method"))
-            if not template_dict.get("url"):
-                # Use self.log_prefix for consistency, even if it's not fully initialized yet.
-                _LOGGER.error(
-                    "%s Could not determine 'url' from params during template hack.",
-                    self.log_prefix,
-                )
-            template_str = json.dumps(template_dict)
-            from jinja2 import Template
-            new_connection._connection_template = Template(template_str)
+
 
         # Embedded commands handling
         if yaml_node and CONFIG_DEVICE_CONNECTION in yaml_node:
@@ -350,24 +336,6 @@ class ConnectionRaw8888(Connection):
         # return a tuple of (resp, error) both set to None to indicate no response.
         return None, None
 
-    def check_execute_condition(self, device_state):
-        """Replicates the condition check from connection_request.py for async."""
-        do_execute = True
-        if hasattr(self, "condition_template") and self.condition_template is not None:
-            _LOGGER.debug("%s Evaluating execute condition for a command.", self.log_prefix)
-            try:
-                rendered_condition = self.condition_template.render(device_state=device_state)
-                _LOGGER.debug("%s Execute condition result: %s", self.log_prefix, rendered_condition)
-                do_execute = str(rendered_condition).strip() == "1"
-            except Exception as e:
-                _LOGGER.error(
-                    "%s Error evaluating execute condition, executing command anyway. Error: %s",
-                    self.log_prefix,
-                    e,
-                    exc_info=True,
-                )
-                do_execute = True
-        return do_execute
 
     async def close(self):
         """

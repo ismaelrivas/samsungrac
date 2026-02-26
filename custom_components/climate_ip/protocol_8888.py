@@ -45,28 +45,11 @@ class Samsung8888Client:
 
     async def _create_ssl_context(self) -> ssl.SSLContext:
         """Configure SSL, replicating the logic from connection_request.py."""
-        # Use PROTOCOL_TLS_CLIENT to negotiate, but cap at TLS 1.2
-        # because Samsung ACs hang when receiving a TLS 1.3 Client Hello.
-        protocol = getattr(ssl, 'PROTOCOL_TLS_CLIENT', getattr(ssl, 'PROTOCOL_TLS', ssl.PROTOCOL_TLSv1))
-        ctx = ssl.SSLContext(protocol)
-        
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        # Use ALL:@SECLEVEL=0 as in the original code for maximum compatibility
-        ctx.set_ciphers("ALL:@SECLEVEL=0")
-        
-        # Cap the maximum version to TLS 1.2 to prevent the AC from hanging
-        if hasattr(ssl, 'TLSVersion'):
-            if hasattr(ssl.TLSVersion, 'TLSv1_2'):
-                try:
-                    ctx.maximum_version = ssl.TLSVersion.TLSv1_2
-                except Exception as e:
-                    _LOGGER.debug("%s [protocol_8888] Could not set TLS max version: %s", self.log_prefix, e)
-            if hasattr(ssl.TLSVersion, 'TLSv1'):
-                try:
-                    ctx.minimum_version = ssl.TLSVersion.TLSv1
-                except Exception:
-                    pass
+        from .helpers import async_create_samsung_ssl_context
+        ctx = await async_create_samsung_ssl_context(
+            ciphers="ALL:@SECLEVEL=0",
+            verify_mode=ssl.CERT_NONE
+        )
         
         # --- START OF FIX: Optimize SSL for low-memory devices ---
         # Disable session tickets and compression to reduce handshake overhead
@@ -104,10 +87,11 @@ class Samsung8888Client:
                     e,
                 )
         
-        # Log the configured TLS limits
-        max_ver = getattr(ctx, 'maximum_version', 'Unknown')
-        min_ver = getattr(ctx, 'minimum_version', 'Unknown')
-        _LOGGER.debug("%s [protocol_8888] SSLContext configured. Min: %s, Max: %s", self.log_prefix, str(min_ver).replace('TLSVersion.', ''), str(max_ver).replace('TLSVersion.', ''))
+        # Log the configured TLS limits using friendly names
+        from .helpers import get_tls_version_name
+        max_ver = get_tls_version_name(getattr(ctx, 'maximum_version', 'Unknown'))
+        min_ver = get_tls_version_name(getattr(ctx, 'minimum_version', 'Unknown'))
+        _LOGGER.debug("%s [protocol_8888] SSLContext configured. Min: %s, Max: %s", self.log_prefix, min_ver, max_ver)
 
         return ctx
 

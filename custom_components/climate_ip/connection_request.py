@@ -59,29 +59,11 @@ class SamsungHTTPAdapter(HTTPAdapter):
         super().__init__(*args, **kwargs)
 
     def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
-        protocol = getattr(ssl, 'PROTOCOL_TLS_CLIENT', getattr(ssl, 'PROTOCOL_TLS', ssl.PROTOCOL_TLSv1))
-        ssl_context = ssl.SSLContext(protocol)
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-        ssl_context.set_ciphers("ALL:@SECLEVEL=0")
-        
-        # Cap the maximum version to TLS 1.2 to prevent the AC from hanging
-        if hasattr(ssl, 'TLSVersion'):
-            if hasattr(ssl.TLSVersion, 'TLSv1_2'):
-                try:
-                    ssl_context.maximum_version = ssl.TLSVersion.TLSv1_2
-                except Exception as e:
-                    _LOGGER.debug("[SamsungHTTPAdapter] Could not set TLS max version: %s", e)
-            if hasattr(ssl.TLSVersion, 'TLSv1'):
-                try:
-                    ssl_context.minimum_version = ssl.TLSVersion.TLSv1
-                except Exception:
-                    pass
-
-        # Log the configured TLS limits
-        max_ver = getattr(ssl_context, 'maximum_version', 'Unknown')
-        min_ver = getattr(ssl_context, 'minimum_version', 'Unknown')
-        _LOGGER.debug("[SamsungHTTPAdapter] SSLContext configured. Min: %s, Max: %s", str(min_ver).replace('TLSVersion.', ''), str(max_ver).replace('TLSVersion.', ''))
+        from .helpers import create_samsung_ssl_context
+        ssl_context = create_samsung_ssl_context(
+            ciphers="ALL:@SECLEVEL=0",
+            verify_mode=ssl.CERT_NONE
+        )
 
         pool_kwargs["ssl_context"] = ssl_context
         
@@ -278,23 +260,6 @@ class ConnectionRequestBase(Connection):
 
         return True
 
-    def check_execute_condition(self, device_state):
-        do_execute = True
-        if self.condition_template is not None:
-            _LOGGER.debug("%s Evaluating execute condition", self.log_prefix)
-            try:
-                rendered_condition = self.condition_template.render(
-                    device_state=device_state
-                )
-                _LOGGER.debug("%s Execute condition result: %s", self.log_prefix, rendered_condition)
-                do_execute = rendered_condition == "1"
-            except:
-                _LOGGER.error(
-                    "%s Error evaluating execute condition, executing command anyway", self.log_prefix
-                )
-                do_execute = True
-
-        return do_execute
 
     def execute_internal(self, template, value, device_state, device_id=None) -> (json, bool, int):
         """Internal synchronous method to execute the HTTP request with retries."""
@@ -634,19 +599,11 @@ class ConnectionRequest(ConnectionRequestBase):
     def create_updated(self, node):
         c = ConnectionRequest(None, _LOGGER, session=self._session)
         
-        # --- START OF MODIFICATION: Topology Debugging ---
-        _LOGGER.debug(
-            "%s [Topology] create_updated: Creating child (ID=%s) from parent (ID=%s).",
-            self.log_prefix, id(c), id(self)
-        )
-        # --- END OF MODIFICATION ---
-        
         c.load_from_yaml(node, self)
         
         # --- START OF FIX: Child Propagation ---
         # Register this new instance as a child so it receives session updates
         self._children.append(c)
-        _LOGGER.debug("%s [Session Propagation] Registered property connection via create_updated.", self.log_prefix)
         # --- END OF FIX ---
         
         return c

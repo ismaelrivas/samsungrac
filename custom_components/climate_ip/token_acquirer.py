@@ -92,40 +92,19 @@ class SamsungTokenAcquirer:
 
             try:
                 _LOGGER.debug("Attempting connection with Strategy: '%s', Cipher: '%s', Verify: %s", strategy_name, cipher_name, verify_mode)
-                protocol = getattr(ssl, 'PROTOCOL_TLS_CLIENT', getattr(ssl, 'PROTOCOL_TLS', ssl.PROTOCOL_TLSv1))
-                ssl_context = ssl.SSLContext(protocol)
-                ssl_context.set_ciphers(ciphers)
-                ssl_context.check_hostname = False
-                ssl_context.verify_mode = verify_mode
+                from .helpers import async_create_samsung_ssl_context
                 
-                if hasattr(ssl, 'TLSVersion'):
-                    if hasattr(ssl.TLSVersion, 'TLSv1_2'):
-                        try:
-                            ssl_context.maximum_version = ssl.TLSVersion.TLSv1_2
-                        except Exception as e:
-                            _LOGGER.debug("Could not set TLS max version: %s", e)
-                    if hasattr(ssl.TLSVersion, 'TLSv1'):
-                        try:
-                            ssl_context.minimum_version = ssl.TLSVersion.TLSv1
-                        except Exception:
-                            pass
+                try:
+                    ssl_context = await async_create_samsung_ssl_context(
+                        cert_path=cert_path,
+                        ciphers=ciphers,
+                        verify_mode=verify_mode
+                    )
+                except (ssl.SSLError, FileNotFoundError) as e:
+                    _LOGGER.error("Failed to load certificate '%s': %s", cert_path, e)
+                    raise CertNotFound(f"Failed to load certificate file: {e}") from e
 
-                if cert_path:
-                    _LOGGER.debug("Loading certificate: %s", os.path.basename(cert_path))
-                    try:
-                        # Use to_thread for the blocking file I/O
-                        await asyncio.to_thread(ssl_context.load_verify_locations, cafile=cert_path)
-                        await asyncio.to_thread(ssl_context.load_cert_chain, cert_path)
-                    except (ssl.SSLError, FileNotFoundError) as e:
-                        _LOGGER.error("Failed to load certificate '%s': %s", cert_path, e)
-                        raise CertNotFound(f"Failed to load certificate file: {e}") from e
-
-                # Log the configured TLS limits
-                if not logged_ssl_config:
-                    max_ver = getattr(ssl_context, 'maximum_version', 'Unknown')
-                    min_ver = getattr(ssl_context, 'minimum_version', 'Unknown')
-                    _LOGGER.debug("[SamsungTokenAcquirer] SSLContext configured. Min: %s, Max: %s", str(min_ver).replace('TLSVersion.', ''), str(max_ver).replace('TLSVersion.', ''))
-                    logged_ssl_config = True
+                logged_ssl_config = True
 
                 conn_future = asyncio.open_connection(self._ip_address, 2878, ssl=ssl_context)
                 self._reader, self._writer = await asyncio.wait_for(conn_future, timeout=15)

@@ -436,6 +436,67 @@ class DeviceOperation(DeviceProperty):
     def __init__(self, name, connection, controller, status_getter=None):
         super(DeviceOperation, self).__init__(name, connection, controller, status_getter)
 
+    def _resolve_async_params(self, connection, dev_value, duid: Optional[str] = None) -> Optional[dict]:
+        """Resolve the final {method, url, json, headers} dict for an async command.
+
+        Checks both ``_connection_template`` (rendered) and ``_params`` (dict)
+        so that callers work whether or not the params→template HACK in
+        ``create_updated`` has serialised the params into a template first.
+
+        Strategy:
+        1. Render the *property's own* ``connection_template`` (e.g. for numeric
+           operations like temperature) if present — this is the operation-specific
+           part and always takes precedence for ``json``.
+        2. Fall back to ``connection._connection_template`` if no property template.
+        3. In either case, fill missing ``method``/``url``/``headers`` from the
+           connection's ``_params`` dict (or a parent connection_template), giving
+           the operation-specific values priority.
+
+        Returns a dict with keys ``method``, ``url``, ``json`` (optional),
+        ``headers`` (optional); or ``{'_raw': <str>}`` for non-JSON payloads;
+        or ``None`` if no parameters could be resolved at all.
+        """
+        render_ctx = {'value': dev_value, 'device_id': duid, 'duid': duid}
+
+        # ------------------------------------------------------------------ #
+        # Step 1 – resolve the "operation" part (value-specific json/url)    #
+        # ------------------------------------------------------------------ #
+        operation_params: dict = {}
+        template_to_use = self.connection_template or getattr(connection, '_connection_template', None)
+
+        if template_to_use:
+            rendered = template_to_use.render(**render_ctx)
+            try:
+                operation_params = json.loads(rendered)
+            except json.JSONDecodeError:
+                # Non-JSON payload (e.g. XML for 2878) – return as raw.
+                return {'_raw': rendered}
+        else:
+            # No template at all – read directly from _params.
+            operation_params = dict(getattr(connection, '_params', {}))
+
+        if not operation_params:
+            _LOGGER.error("%s [_resolve_async_params] No params or template found.", self.log_prefix)
+            return None
+
+        # ------------------------------------------------------------------ #
+        # Step 2 – resolve the "base" part (method + url from parent conn)   #
+        # ------------------------------------------------------------------ #
+        base_params: dict = {}
+        base_template = getattr(connection, '_connection_template', None)
+        if base_template and base_template is not template_to_use:
+            try:
+                base_params = json.loads(base_template.render(**render_ctx))
+            except (json.JSONDecodeError, Exception):
+                pass
+        # Also honour raw _params on the connection as the ultimate fallback.
+        raw_params = getattr(connection, '_params', {})
+        fallback: dict = {**raw_params, **base_params}
+
+        # Merge: base first, then operation-specific values win.
+        merged = {**fallback, **operation_params}
+        return merged
+
     async def async_set_value(self, v, device_id: Optional[str] = None):
         """Set device property value asynchronously."""
         connection = self.get_connection(v)
@@ -450,66 +511,44 @@ class DeviceOperation(DeviceProperty):
                 current_full_state = self._status_getter.value
             # --- END OF FIX ---
 
-        # --- START: Logic to handle async nested commands ---
+        # --- START: Logic to handle async native commands ---
         if connection.is_async_native:
-
             try:
-                # The `async_execute` method in ConnectionAiohttp8888 will handle its embedded command internally.
-                # We just need to call it once with the parameters for the *main* command.                
-                # --- START OF SOLUTION: Use the property's template, not the connection's ---
-                # The property's connection_template (self) is the one loaded from YAML
-                # for numeric/temperature operations. The connection's one might be empty.
-                template_to_use = self.connection_template or getattr(connection, '_connection_template', None)
-                # --- END OF SOLUTION ---
-                if not template_to_use: # Now we check after trying both sources
-                    _LOGGER.error("%s [async_set_value] Main command is missing a connection template.", self.log_prefix)
-                    return False
-
-                # --- START OF SOLUTION: Merge base and template parameters ---
-                # Render the operation-specific template (e.g., for temperature).
-                
-                # Retrieve DUID for 2878 devices
+                # Resolve DUID for 2878 devices
                 duid_for_render = device_id
                 if not duid_for_render and hasattr(self._controller, 'device_id') and self._controller.device_id:
-                     duid_for_render = self._controller.device_id
-                
-                # Fallback to connection config if not found in controller (unlikely after fix)
+                    duid_for_render = self._controller.device_id
                 if not duid_for_render and hasattr(connection, '_cfg') and hasattr(connection._cfg, 'duid') and connection._cfg.duid:
-                     duid_for_render = connection._cfg.duid
-                
-                rendered_params_str = template_to_use.render(value=self.convert_hass_to_dev(v), device_id=duid_for_render, duid=duid_for_render)
-                try:
-                    operation_params = json.loads(rendered_params_str)
+                    duid_for_render = connection._cfg.duid
 
-                    # Get the base parameters from the connection (which contain method and url).
-                    # The 'hack' in `create_updated` ensures that `_connection_template` exists.
-                    base_template = getattr(connection, '_connection_template', None)
-                    base_params_str = base_template.render() if base_template else "{}"
-                    base_params = json.loads(base_params_str)
+                dev_value = self.convert_hass_to_dev(v)
+                params = self._resolve_async_params(connection, dev_value, duid_for_render)
 
-                    # Merge the parameters, giving priority to the operation-specific ones.
-                    params = {**base_params, **operation_params}
-                    # --- END OF SOLUTION ---
-                    data_payload = json.dumps(params.get('json')) if 'json' in params else None
+                if params is None:
+                    _LOGGER.error("%s [async_set_value] Could not resolve command parameters.", self.log_prefix)
+                    return False
 
-                    response, _ = await connection.async_execute(params.get('method'), params.get('url'), data_payload, params.get('headers'), device_state=current_full_state)
-                    return response is not None
-                except json.JSONDecodeError:
-                    # --- START OF FIX: Handle non-JSON payloads (e.g., XML for 2878) ---
-                    # If the template renders to something that isn't JSON (like <Request ...>),
-                    # we treat it as a raw payload and send it directly.
-                    # 2878 connection ignores method/url/headers for raw sends.
-                    _LOGGER.debug("%s [async_set_value] Payload is not JSON, assuming raw data (XML): %s", self.log_prefix, rendered_params_str)
-                    await connection.async_execute(None, None, rendered_params_str, None)
+                if params.get('_raw'):
+                    # Non-JSON payload (e.g. XML for 2878) — send as raw body
+                    _LOGGER.debug("%s [async_set_value] Sending raw (non-JSON) payload.", self.log_prefix)
+                    await connection.async_execute(None, None, params['_raw'], None)
                     return True
-                    # --- END OF FIX ---
+
+                data_payload = json.dumps(params['json']) if 'json' in params else None
+                response, _ = await connection.async_execute(
+                    params.get('method'), params.get('url'), data_payload,
+                    params.get('headers'), device_state=current_full_state
+                )
+                return response is not None
             except (CannotConnect, AuthError) as e:
-                 _LOGGER.warning("%s Failed to set value for %s: connection error: %s", self.log_prefix, self.id, e)
-                 return False
+                _LOGGER.warning("%s Failed to set value for %s: connection error: %s", self.log_prefix, self.id, e)
+                from homeassistant.exceptions import HomeAssistantError
+                raise HomeAssistantError(f"Connection error: could not set value for {self.id}") from e
             except Exception as e:
                 _LOGGER.error("%s Error during async_set_value for %s: %s", self.log_prefix, self.id, e, exc_info=True)
-                return False
-        # --- END: Logic to handle async nested commands ---
+                from homeassistant.exceptions import HomeAssistantError
+                raise HomeAssistantError(f"Unexpected error when setting {self.id}") from e
+        # --- END: Logic to handle async native commands ---
         else: # Fallback to original synchronous logic
 
             try:
@@ -527,10 +566,12 @@ class DeviceOperation(DeviceProperty):
                 return True
             except (CannotConnect, AuthError) as e:
                  _LOGGER.warning("%s Failed to set value for %s: connection error: %s", self.log_prefix, self.id, e)
-                 return False
+                 from homeassistant.exceptions import HomeAssistantError
+                 raise HomeAssistantError(f"Connection error: could not set value for {self.id}") from e
             except Exception as e:
                 _LOGGER.error("%s Error during async_set_value for %s: %s", self.log_prefix, self.id, e, exc_info=True)
-                return False
+                from homeassistant.exceptions import HomeAssistantError
+                raise HomeAssistantError(f"Unexpected error when setting {self.id}") from e
 
     def match_value(self, value):
         """Check if value matches the operation. True if the value is correct."""

@@ -99,8 +99,13 @@ class YamlController(ClimateController):
         
         self._config = config
         self._yaml = config.get(CONF_CONFIG_FILE)
-        self._ip_address = config.get(CONF_IP_ADDRESS, None)
-        self._device_id = config.get(CONF_DEVICE_ID, None) 
+        
+        # --- START OF FIX: Handle tests vs real integration keys ---
+        # The configuration flow uses CONF_IP_ADDRESS, but our tests and older configs might use CONF_HOST
+        self._ip_address = config.get(CONF_IP_ADDRESS) or config.get("host") # "host" == CONF_HOST
+        # --- END OF FIX ---
+        
+        self._device_id = config.get(CONF_DEVICE_ID, None)
         self._token = config.get(CONF_TOKEN, None)
         self._unique_id = config.get("unique_id") or config.get(CONF_MAC) or self._ip_address
 
@@ -268,15 +273,11 @@ class YamlController(ClimateController):
         """
         if self._is_fully_initialized or not self._raw_yaml_config:
             return
-    
-        _LOGGER.debug("%s Finalizing initialization with discovered device_id: %s", self.log_prefix, self._device_id)
         
         # Use the context-aware cache
         if self._device_id in self._parsed_yaml_cache:
-            _LOGGER.debug("%s [Cache] Using cached YAML for device_id: %s", self.log_prefix, self._device_id)
             yaml_device = self._parsed_yaml_cache[self._device_id]
         else:
-            _LOGGER.debug("%s [Cache] Parsing and caching YAML for device_id: %s", self.log_prefix, self._device_id)
             final_yaml_str = stream_wrapper(
                 self._raw_yaml_config, self._token, self._ip_address, self._device_id
             )
@@ -319,15 +320,11 @@ class YamlController(ClimateController):
                 # Add support for static 'unit_of_measurement' in attributes, same as in sensors.
                 has_setter = hasattr(prop, 'set_unit_of_measurement')
                 has_unit_key = 'unit_of_measurement' in nodes[key]
-                _LOGGER.debug("%s Attribute '%s': has_setter=%s, has_unit_key=%s", self.log_prefix, key, has_setter, has_unit_key)
+                has_unit_key = 'unit_of_measurement' in nodes[key]
 
                 if has_setter and has_unit_key:
                     unit_value = nodes[key]['unit_of_measurement']
-                    _LOGGER.debug("%s Setting static unit for attribute '%s' to '%s'", self.log_prefix, key, unit_value)
                     prop.set_unit_of_measurement(unit_value)
-                else:
-                    if has_setter and not has_unit_key:
-                        _LOGGER.debug("%s Attribute '%s' supports units, but 'unit_of_measurement' not found in its YAML config.", self.log_prefix, key)
                 # --- END OF MODIFICATION ---
         
         # --- ADD THIS BLOCK TO LOAD SENSORS ---
@@ -468,9 +465,7 @@ class YamlController(ClimateController):
                      _LOGGER.debug("%s [Init] Retrieved ConfigEntry. Options: %s", self.log_prefix, entry.options)
                      if entry.options:
                         conn_method = entry.options.get(CONF_CONN_METHOD, conn_method)
-                        _LOGGER.debug("%s [Init] Connection method resolved to: %s", self.log_prefix, conn_method)
             # --- END OF FIX ---
-
             if conn_method == CONN_METHOD_AIOHTTP:
                 _LOGGER.info("%s Using 'Modern (aiohttp)' connection engine (from options)", self.log_prefix)
                 connection_node[CONFIG_DEVICE_CONNECTION_TYPE] = "samsung_8888_aiohttp"
@@ -486,12 +481,6 @@ class YamlController(ClimateController):
         # This call will now create the correct connection type based on the logic above
         # --- START OF MODIFICATION (Milestone 3) ---
 
-
-        # --- START: Logic moved from connection.py ---
-        key = self.unique_id
-        if not key:
-            _LOGGER.error("%s Cannot create a unique connection without a unique_id", self.log_prefix)
-            return False
 
         # --- START: Logic moved from connection.py ---
         key = self.unique_id
@@ -586,6 +575,46 @@ class YamlController(ClimateController):
             raise UpdateFailed("State getter is not initialized, cannot update state.")
         # --- END OF FIX ---
 
+        # --- DUAL-SPEED BACKOFF: PING GATE ---
+        # Exclude port 2878 devices since they manage their own ping gate in `samsung_2878.py`
+        if self._config.get(CONF_DEVICE_TYPE) != DEVICE_TYPE_SAMSUNG_2878 and getattr(self, "_ip_address", None):
+            try:
+                from .helpers import async_check_network_reachability
+                network_reachable = await async_check_network_reachability(self._ip_address, self.log_prefix)
+                if not network_reachable:
+                    # Increment failure counter explicitly for ping failures
+                    self._consecutive_connection_errors += 1
+                    
+                    # Create a repair issue if the device is persistently offline (3 ping failures)
+                    if self._consecutive_connection_errors == 3 and getattr(self, 'hass', None):
+                        try:
+                            from homeassistant.helpers.issue_registry import async_create_issue, IssueSeverity
+                            async_create_issue(
+                                self.hass,
+                                "climate_ip",
+                                f"connection_failed_{self._ip_address}",
+                                is_fixable=False,
+                                severity=IssueSeverity.WARNING,
+                                translation_key="connection_failed",
+                                translation_placeholders={
+                                    "host": self._ip_address,
+                                    "name": getattr(self, '_name', None) or self._ip_address
+                                }
+                            )
+                        except Exception as e:
+                            _LOGGER.debug("%s Failed to create repair issue on ping timeout: %s", self.log_prefix, e)
+
+                    if self._consecutive_connection_errors >= 2:
+                        raise CannotConnect("Host unreachable (ICMP ping failed). Device is persistently offline.")
+                    else:
+                        raise CannotConnect("Host unreachable (ICMP ping failed).")
+            except Exception as diag_err:
+                # If ping check throws some internal exception, don't fail the execution, let it try the socket
+                if isinstance(diag_err, CannotConnect):
+                    raise # Bubble up our intentionally raised exception
+                _LOGGER.debug("%s Network diagnostic failed: %s", self.log_prefix, diag_err)
+        # -------------------------------------
+
         try:
             full_device_state = await self._state_getter.async_update_state(None, self._debug)
             
@@ -596,7 +625,21 @@ class YamlController(ClimateController):
                     self.log_prefix, 
                     self._consecutive_connection_errors
                 )
-            self._consecutive_connection_errors = 0
+                self._consecutive_connection_errors = 0
+                
+                # --- START OF MODIFICATION: Resolve Repair Issue ---
+                if getattr(self, 'hass', None):
+                    try:
+                        from homeassistant.helpers.issue_registry import async_delete_issue
+                        async_delete_issue(
+                            self.hass,
+                            "climate_ip",
+                            f"connection_failed_{self._ip_address}"
+                        )
+                        _LOGGER.debug("%s Successfully resolved/deleted repair issue on reconnection.", self.log_prefix)
+                    except Exception as e:
+                        _LOGGER.debug("%s Failed to delete repair issue: %s", self.log_prefix, e)
+                # --- END OF MODIFICATION ---
             # --------------------------------------
 
         except AuthError:
@@ -642,7 +685,10 @@ class YamlController(ClimateController):
 
         except (RequestException, CannotConnect) as e:
             # --- TRANSIENT ERROR SUPPRESSION ---
-            self._consecutive_connection_errors += 1
+            if "persistently offline" in str(e):
+                self._consecutive_connection_errors = 2 # Force failure bypasses cache
+            else:
+                self._consecutive_connection_errors += 1
             
             if self._consecutive_connection_errors < 2 and self._cached_device_state:
                 _LOGGER.debug(
@@ -652,6 +698,25 @@ class YamlController(ClimateController):
                     e
                 )
                 return self._cached_device_state
+            
+            # Create a repair issue if the device is persistently offline (3 failures on the socket)
+            if self._consecutive_connection_errors == 3 and getattr(self, 'hass', None):
+                try:
+                    from homeassistant.helpers.issue_registry import async_create_issue, IssueSeverity
+                    async_create_issue(
+                        self.hass,
+                        "climate_ip",
+                        f"connection_failed_{self._ip_address}",
+                        is_fixable=False,
+                        severity=IssueSeverity.WARNING,
+                        translation_key="connection_failed",
+                        translation_placeholders={
+                            "host": self._ip_address,
+                            "name": getattr(self, '_name', None) or self._ip_address
+                        }
+                    )
+                except Exception as issue_e:
+                    _LOGGER.debug("%s Failed to create repair issue on socket timeout: %s", self.log_prefix, issue_e)
             
             # If we reached here, it's either the 2nd failure OR we have no cache.
             # We raise the exception to mark the entity as unavailable.

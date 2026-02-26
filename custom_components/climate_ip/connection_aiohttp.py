@@ -8,6 +8,7 @@ import copy
 import json
 import time
 import ssl
+import ssl
 from urllib.parse import urlparse
 import logging
 import os
@@ -128,41 +129,13 @@ class ConnectionAiohttp8888(Connection):
         try:
             _LOGGER.debug("%s [aiohttp] Creating custom SSL context. Cert: %s, Insecure: %s", self.log_prefix, has_cert, insecure_ssl)
             
-            # Use PROTOCOL_TLS_CLIENT to negotiate, but cap at TLS 1.2
-            # because Samsung ACs hang when receiving a TLS 1.3 Client Hello.
-            protocol = getattr(ssl, 'PROTOCOL_TLS_CLIENT', getattr(ssl, 'PROTOCOL_TLS', ssl.PROTOCOL_TLSv1))
-            context = ssl.SSLContext(protocol)
-            
-            # If insecure_ssl or mTLS (self-signed), we don't verify hostname/chain
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
-
-            # Replicate the 'requests' logic to allow ALL ciphers (fixes Handshake Failure)
-            context.set_ciphers("ALL:@SECLEVEL=0")
-            
-            # Cap the maximum version to TLS 1.2 to prevent the AC from hanging
-            if hasattr(ssl, 'TLSVersion'):
-                if hasattr(ssl.TLSVersion, 'TLSv1_2'):
-                    try:
-                        context.maximum_version = ssl.TLSVersion.TLSv1_2
-                    except Exception as e:
-                        _LOGGER.debug("%s [aiohttp] Could not set TLS max version: %s", self.log_prefix, e)
-                if hasattr(ssl.TLSVersion, 'TLSv1'):
-                    try:
-                        context.minimum_version = ssl.TLSVersion.TLSv1
-                    except Exception:
-                        pass
-            
-            if has_cert:
-                _LOGGER.debug("%s [aiohttp] Loading mTLS cert from: %s", self.log_prefix, self._cert_path)
-                loop = asyncio.get_running_loop()
-                load_chain_func = partial(context.load_cert_chain, self._cert_path)
-                await loop.run_in_executor(None, load_chain_func)
-
-            # Log the configured TLS limits
-            max_ver = getattr(context, 'maximum_version', 'Unknown')
-            min_ver = getattr(context, 'minimum_version', 'Unknown')
-            _LOGGER.debug("%s [aiohttp] SSLContext configured. Min: %s, Max: %s", self.log_prefix, str(min_ver).replace('TLSVersion.', ''), str(max_ver).replace('TLSVersion.', ''))
+            import ssl
+            from .helpers import async_create_samsung_ssl_context
+            context = await async_create_samsung_ssl_context(
+                cert_path=self._cert_path if has_cert else None,
+                ciphers="ALL:@SECLEVEL=0",
+                verify_mode=ssl.CERT_NONE
+            )
             
             return context
         except Exception as e:
@@ -230,48 +203,12 @@ class ConnectionAiohttp8888(Connection):
             #_LOGGER.debug("%s [create_updated] Found and creating value-specific template: %s", self.log_prefix, template_str)
             new_connection._connection_template = Template(template_str)
         
-        # HACK: Convert static params to a connection_template string.
+        # If params are defined without an explicit connection_template, store them
+        # directly on _params. properties.py's _resolve_async_params will read them.
         elif yaml_node and CONFIG_DEVICE_CONNECTION_PARAMS in yaml_node:
-            # This is a static command (like setting a mode)
-            params = {**self._params, **yaml_node.get(CONFIG_DEVICE_CONNECTION_PARAMS, {})} # Inherit from parent
-            new_connection._params.update(params) # Store params for good practice
-            
-            # --- START OF FIX (v2) ---
-            # The template must contain all necessary keys. If a key (like 'url')
-            # is missing in the value-specific params, fall back to the base connection's params.
-            template_dict = {}
-            if 'json' in params:
-                template_dict['json'] = params['json']
-            
-            # Use the value-specific method/url if present, otherwise use the base one.
-            # --- START OF FIX ---
-            # Ensure the URL is just the path, not the full URL, to prevent duplication,
-            # UNLESS it is an absolute URL (SmartThings), in which case we keep it.
-            url_from_params = params.get('url', self._params.get('url'))
-            if url_from_params:
-                parsed = urlparse(url_from_params)
-                if parsed.scheme and parsed.netloc:
-                    # Absolute URL - Keep it entirely
-                    template_dict['url'] = url_from_params
-                else:
-                    # Relative URL - Extract path only (for legacy 8888 behavior)
-                    template_dict['url'] = parsed.path
-        
-            # --- START OF FIX ---
-            # If the method is not in the current params (common for embedded commands),
-            # explicitly fall back to the base connection's params (`self._params`).
-            template_dict['method'] = params.get('method', self._params.get('method'))
-            # --- END OF FIX ---
+            params = {**self._params, **yaml_node.get(CONFIG_DEVICE_CONNECTION_PARAMS, {})}
+            new_connection._params.update(params)
 
-            if not template_dict.get('url'):
-                _LOGGER.error("%s [create_updated] HACK FAILED: Could not determine 'url' from value-specific or base params.", self.log_prefix)
-            
-            template_str = json.dumps(template_dict)
-            #_LOGGER.debug("%s [create_updated] HACK: Converting static params to template: %s", self.log_prefix, template_str)
-            new_connection._connection_template = Template(template_str)
-            # --- END OF FIX (v2) ---
-        #else:
-        #    _LOGGER.debug("%s [create_updated] No 'connection_template' or 'params' found in this YAML node.", self.log_prefix)
 
         # --- START: Replicate embedded command logic from connection_request.py ---
         # This MUST run AFTER the parent's params have been processed.
@@ -314,18 +251,15 @@ class ConnectionAiohttp8888(Connection):
             probe_headers = {"Authorization": f"Bearer {current_token}"}
 
             # --- START OF FIX: Use the shared state's SSL context ---
-            if not self._shared_state["ssl_context"]:
-                self._shared_state["ssl_context"] = await self._create_ssl_context()
+            # Skip SSL context creation entirely for plain HTTP test mode
+            if not self._config.get("use_http", False):
+                if not self._shared_state["ssl_context"]:
+                    self._shared_state["ssl_context"] = await self._create_ssl_context()
 
-            # If create_ssl_context returned None (no cert), we might still want to proceed if this is a
-            # SmartThings device which doesn't need mTLS.
-            # However, for 8888 devices, no cert = failure.
-            # We can detect this by checking if we have a token (SmartThings usually relies on token).
-            
             ssl_ctx = self._shared_state["ssl_context"]
             if ssl_ctx is None:
                 # Logic for "insecure" / no-cert connection
-                ssl_ctx = False 
+                ssl_ctx = False
 
             if True: #Indent block 
             # --- END OF FIX ---
@@ -333,14 +267,23 @@ class ConnectionAiohttp8888(Connection):
                     _LOGGER.debug("%s [aiohttp_probe] Probing connection...", self.log_prefix)
                     
                     # --- START OF FIX: Generalize Probe URL ---
-                    probe_url = f"https://{self._ip_address}:8888/devices"
+                    from homeassistant.const import CONF_PORT
+                    port = self._config.get(CONF_PORT, "8888")
+                    protocol = "http" if self._config.get("use_http", False) else "https"
+                    probe_url = f"{protocol}://{self._ip_address}:{port}/devices"
                     if self._params and self._params.get("url") and str(self._params.get("url")).startswith("http"):
                         probe_url = self._params.get("url")
                         _LOGGER.debug("%s [aiohttp_probe] Detected absolute URL, probing: %s", self.log_prefix, probe_url)
+                        
+                    # --- START OF FIX: Format probe URL ---
+                    probe_url = self._format_url(probe_url)
+                    # --- END OF FIX ---
                     # --- END OF FIX ---
 
                     # Update timeout to be more granular
-                    async with self._session.request("GET", probe_url, headers=probe_headers, ssl=self._shared_state["ssl_context"], timeout=aiohttp.ClientTimeout(total=10, sock_read=5)) as response:
+                    # If using HTTP for tests, disable SSL context requirement
+                    test_ssl_ctx = False if protocol == "http" else self._shared_state["ssl_context"]
+                    async with self._session.request("GET", probe_url, headers=probe_headers, ssl=test_ssl_ctx, timeout=aiohttp.ClientTimeout(total=10, sock_read=5)) as response:
                         if response.status in (200, 401, 403, 405): # Added 405 for Method Not Allowed (probing POST with GET)
                             # Attempt to log the negotiated TLS version
                             try:
@@ -418,21 +361,46 @@ class ConnectionAiohttp8888(Connection):
             # Retrieve the shared SSL context (should be initialized by _try_connection)
             ssl_context = self._shared_state.get("ssl_context")
             
-            # Create a dedicated session with the same timeout config as the global one
-            # We use a custom connector with a long keepalive timeout to mimic the shared one
-            # during the "active" phase (before we explicitly close it).
-            # --- START OF FIX: Inject SSL Context into Connector to force reuse ---
-            # Passing ssl=ssl_context ensures the connector treats connections as reusable
-            # for this specific SSL configuration.
-            # We also set limit=1 to enforce serial execution and prevent concurrent connections.
-            connector = aiohttp.TCPConnector(keepalive_timeout=75, ssl=ssl_context, limit=1)
-            # --- END OF FIX ---
+            # For plain HTTP test mode, use a simple connector with no SSL
+            if self._config.get("use_http", False):
+                connector = aiohttp.TCPConnector(keepalive_timeout=75, limit=1)
+            else:
+                connector = aiohttp.TCPConnector(keepalive_timeout=75, ssl=ssl_context, limit=1)
             timeout = aiohttp.ClientTimeout(total=30, connect=10)
             local_session = aiohttp.ClientSession(connector=connector, timeout=timeout)
             self._shared_state["local_session"] = local_session
-            _LOGGER.debug("%s [aiohttp] Created new local session (ID: %s) with connector (ID: %s) and fixed SSL Context.", self.log_prefix, id(local_session), id(connector))
+            _LOGGER.debug("%s [aiohttp] Created new local session (ID: %s) with connector (ID: %s).", self.log_prefix, id(local_session), id(connector))
         
         return self._shared_state["local_session"]
+
+    def _format_url(self, url: str) -> str:
+        """
+        Replaces placeholders in the URL with actual values from configuration.
+        Matches the behavior of ConnectionRequestBase._format_url.
+        """
+        from homeassistant.const import CONF_HOST, CONF_MAC, CONF_PORT
+        
+        # In aiohttp engine, _ip_address is the primary source of truth for host.
+        # Fall back to _params if not available for some reason.
+        host = self._ip_address if hasattr(self, "_ip_address") and self._ip_address else self._params.get(CONF_HOST, "")
+        
+        if "__CLIMATE_IP_HOST__" in url:
+            url = url.replace("__CLIMATE_IP_HOST__", host)
+            
+        if "__CLIMATE_IP_MAC__" in url:
+            url = url.replace("__CLIMATE_IP_MAC__", self._params.get(CONF_MAC, ""))
+            
+        # Ensure we don't accidentally send traffic to port 8888 if the config says otherwise.
+        # This is needed because samsungrac.yaml hardcodes :8888 in its URLs.
+        if ":8888/" in url:
+            port = self._config.get(CONF_PORT, "8888")
+            url = url.replace(":8888/", f":{port}/")
+            
+        # Support HTTP replacement for tests against the emulator
+        if self._config.get("use_http", False):
+            url = url.replace("https://", "http://")
+            
+        return url
 
     async def _async_execute_request(
         self,
@@ -466,23 +434,26 @@ class ConnectionAiohttp8888(Connection):
         if getattr(self, "_force_close_connection", False):
             req_headers["Connection"] = "close"
 
-        # --- FIX: REMOVE FALLBACK LOGIC ---
-        # We only use HTTPS (mTLS)
-        # --- START OF FIX: Always use the shared SSL context ---
         ssl_context = self._shared_state.get("ssl_context")
-        # --- START OF FIX: URL Handling Generalization ---
         # Detect if the path is actually an absolute URL (for SmartThings).
         if url_path and url_path.startswith("http"):
             base_url = "" # No base URL needed
             # Provide a default ssl_context (unverified) if one wasn't created via mTLS probe
             if not ssl_context:
-                # Use _create_ssl_context to get the correct lenient context for insecure_ssl=True
                 ssl_context = await self._create_ssl_context()
         else:
-            base_url = f"https://{self._ip_address}:8888"
-        # --- END OF FIX ---
+            from homeassistant.const import CONF_PORT
+            port = self._config.get(CONF_PORT, "8888")
+            base_url = f"https://{self._ip_address}:{port}"
 
         full_url = f"{base_url}{url_path}"
+        full_url = self._format_url(full_url)
+        
+        # If the final URL is plain HTTP (e.g. test mode), don't use SSL
+        if full_url.startswith("http://"):
+            ssl_context = False
+        
+
 
         try:
             # --- START OF FIX: Strict Serialization with Lock ---
@@ -511,7 +482,7 @@ class ConnectionAiohttp8888(Connection):
                     url=full_url,
                     headers=req_headers,
                     data=data,
-                    ssl=ssl_context,
+                    ssl=ssl_context,  # False for http://, SSLContext for https://
                     timeout=aiohttp.ClientTimeout(total=10),
                 ) as response:
                 
@@ -627,7 +598,7 @@ class ConnectionAiohttp8888(Connection):
                             # Execute the embedded command by calling its own async_execute method.
                             # This ensures it is fully initialized and uses its own specific parameters.
                             await self._embedded_command.async_execute(
-                                method=embedded_params.get('method'), url_path=embedded_params.get('url'),
+                                method=embedded_params.get('method'), url=embedded_params.get('url'),
                                 data=embedded_data, headers=embedded_params.get('headers', headers),
                                 device_state=device_state)
                             # --- END OF FIX ---
@@ -687,20 +658,6 @@ class ConnectionAiohttp8888(Connection):
 
         return await self._async_execute_request(method, url, data, headers, _is_probe=_is_probe, _is_poll=_is_poll)
 
-    def check_execute_condition(self, device_state):
-        """Replicates the condition check from connection_request.py for async."""
-        do_execute = True
-        if hasattr(self, 'condition_template') and self.condition_template is not None:
-            _LOGGER.debug("%s Evaluating execute condition for a command.", self.log_prefix)
-            try:
-                # The template expects '1' for true.
-                rendered_condition = self.condition_template.render(device_state=device_state)
-                _LOGGER.debug("%s Execute condition result: %s", self.log_prefix, rendered_condition)
-                do_execute = str(rendered_condition).strip() == "1"
-            except Exception as e:
-                _LOGGER.error("%s Error evaluating execute condition, executing command anyway. Error: %s", self.log_prefix, e, exc_info=True)
-                do_execute = True
-        return do_execute
 
     async def close(self):
         """
