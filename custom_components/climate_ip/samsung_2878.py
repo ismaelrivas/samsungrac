@@ -11,6 +11,7 @@ from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_PORT, CONF_TOKEN
 from .connection import Connection, register_connection
 from .exceptions import AuthError, CannotConnect
 from .properties import DeviceProperty, register_status_getter
+from homeassistant.helpers.issue_registry import async_create_issue, async_delete_issue, IssueSeverity
 from .const import (
     CONF_CERT,
     CONFIG_DEVICE_POWER_TEMPLATE,
@@ -41,7 +42,7 @@ _LOGGER = logging.getLogger(__name__)
 CONNECTION_TYPE_S2878 = "samsung_2878"
 CONF_DUID = "duid"
 
-INITIAL_RECONNECT_DELAY = 15
+INITIAL_RECONNECT_DELAY = 5
 MAX_RECONNECT_DELAY = 300
 RECONNECT_FACTOR = 2
 COMMAND_TIMEOUT = 20.0
@@ -364,35 +365,12 @@ class ConnectionSamsung2878(Connection):
                 ssl_context = self._ssl_context_cache.get(cache_key)
 
                 if not ssl_context:
-
-                    protocol = getattr(ssl, 'PROTOCOL_TLS_CLIENT', getattr(ssl, 'PROTOCOL_TLS', ssl.PROTOCOL_TLSv1))
-                    ssl_context = ssl.SSLContext(protocol)
-                    ssl_context.set_ciphers(ciphers)
-                    ssl_context.check_hostname = False
-                    ssl_context.verify_mode = verify_mode
-                    
-                    if hasattr(ssl, 'TLSVersion'):
-                        if hasattr(ssl.TLSVersion, 'TLSv1_2'):
-                            try:
-                                ssl_context.maximum_version = ssl.TLSVersion.TLSv1_2
-                            except Exception as e:
-                                _LOGGER.debug("Could not set TLS max version: %s", e)
-                        if hasattr(ssl.TLSVersion, 'TLSv1'):
-                            try:
-                                ssl_context.minimum_version = ssl.TLSVersion.TLSv1
-                            except Exception:
-                                pass
-                                
-                    if cert_path:
-                        await asyncio.to_thread(ssl_context.load_verify_locations, cafile=cert_path)
-                        await asyncio.to_thread(ssl_context.load_cert_chain, cert_path)
-
-                    # Log the configured TLS limits only once per connection cycle
-                    if not logged_ssl_config:
-                        max_ver = getattr(ssl_context, 'maximum_version', 'Unknown')
-                        min_ver = getattr(ssl_context, 'minimum_version', 'Unknown')
-                        _LOGGER.debug("%s [samsung_2878] SSLContext configured. Min: %s, Max: %s", self.log_prefix, str(min_ver).replace('TLSVersion.', ''), str(max_ver).replace('TLSVersion.', ''))
-                        logged_ssl_config = True
+                    from .helpers import async_create_samsung_ssl_context
+                    ssl_context = await async_create_samsung_ssl_context(
+                        cert_path=cert_path, 
+                        ciphers=ciphers, 
+                        verify_mode=verify_mode
+                    )
 
                     self._ssl_context_cache[cache_key] = ssl_context
 
@@ -515,6 +493,16 @@ class ConnectionSamsung2878(Connection):
         if not self._is_available:
             _LOGGER.info("%s Connection re-established", self.log_prefix)
             self._is_available = True
+            try:
+                # Clear any pending repair issues since the device came back online
+                if self._controller and getattr(self._controller, 'hass', None):
+                    async_delete_issue(
+                        self._controller.hass,
+                        "climate_ip",
+                        f"connection_failed_{self._cfg.host}"
+                    )
+            except Exception as e:
+                _LOGGER.debug("%s Could not clear repair issue: %s", self.log_prefix, e)
 
         # Request a full status update only on reconnections, not on the very first connection.
         if self._initial_connection_done:
@@ -734,6 +722,8 @@ class ConnectionSamsung2878(Connection):
         return buffer
 
 
+
+
     async def _handle_reconnection(self) -> bool:
         """Handle the reconnection process."""
         # Stateful logging: Log INFO only when the state changes from available to unavailable.
@@ -743,25 +733,128 @@ class ConnectionSamsung2878(Connection):
         else:
             _LOGGER.debug("%s Connection is down. Attempting to reconnect...", self.log_prefix)
 
+        # Run network diagnostics on every reconnect attempt to aid troubleshooting.
+        # Only attempt to open the TCP port if the ping succeeds to protect fragile ACs.
+        network_reachable = True
         try:
-            # If the handshake fails with a connection error, it returns False.
-            # We must handle this case to prevent falling through and causing an AttributeError.
-            if not await self._establish_connection_and_handshake():
-                _LOGGER.debug("%s Handshake returned False. Proceeding to retry logic.", self.log_prefix)
+            from .helpers import async_check_network_reachability
+            network_reachable = await async_check_network_reachability(self._cfg.host, self.log_prefix)
+        except Exception as diag_err:
+            _LOGGER.debug("%s Network diagnostic failed: %s", self.log_prefix, diag_err)
+
+        try:
+            # If the network is reachable, attempt handshake. Otherwise, skip to retry to protect device.
+            handshake_success = False
+            if network_reachable:
+                handshake_success = await self._establish_connection_and_handshake()
+            else:
+                _LOGGER.debug("%s Skipping port connection attempt because ICMP ping failed.", self.log_prefix)
+
+            # --- DUAL-SPEED BACKOFF LOGIC ---
+            if not network_reachable:
+                # 1. Network is fully down (router off, device unplugged, no wifi)
+                # Wait a fixed 10 seconds. Do NOT increment exponential backoff to recover quickly.
+                _LOGGER.debug("%s Host unreachable. Retrying ping in 10 seconds...", self.log_prefix)
                 self._reconnect_retries += 1
-                _LOGGER.warning("%s Connection failed. Retrying in %s seconds...", self.log_prefix, self._reconnect_delay)
+                
+                # Create a repair issue if the device is persistently offline
+                if self._reconnect_retries == 3 and self._controller and getattr(self._controller, 'hass', None):
+                    try:
+                        async_create_issue(
+                            self._controller.hass,
+                            "climate_ip",
+                            f"connection_failed_{self._cfg.host}",
+                            is_fixable=False,
+                            severity=IssueSeverity.WARNING,
+                            translation_key="connection_failed",
+                            translation_placeholders={
+                                "host": self._cfg.host,
+                                "name": getattr(self._cfg, 'name', None) or self._cfg.host
+                            }
+                        )
+                    except Exception as e:
+                        _LOGGER.debug("%s Failed to create repair issue: %s", self.log_prefix, e)
+
+                # If we've failed 2 times on the ping, force unavailability in HA
+                if self._reconnect_retries == 2:
+                    _LOGGER.error("%s AC Network is persistently offline. Forcing frontend unavailability.", self.log_prefix)
+                    if self._controller and getattr(self._controller, 'coordinator', None):
+                        self._controller.coordinator.last_update_success = False
+                        self._controller.coordinator.async_update_listeners()
+
+                self._ssl_context_cache.clear()
+                await self._close_connection()
+                await asyncio.sleep(10.0)
+                # We reset the exponential reconnect delay to 10s if we drop off the network mid-backoff
+                self._reconnect_delay = 10.0 
+                return False
+
+            # If the handshake fails with a connection error, it returns False.
+            if not handshake_success:
+                # 2. Network UP but Port 2878 closed/crashing.
+                _LOGGER.debug("%s Handshake returned False (or skipped). Proceeding to backoff logic.", self.log_prefix)
+                self._reconnect_retries += 1
+                
+                # Create a repair issue if the device is persistently offline
+                if self._reconnect_retries == 3 and self._controller and getattr(self._controller, 'hass', None):
+                    try:
+                        async_create_issue(
+                            self._controller.hass,
+                            "climate_ip",
+                            f"connection_failed_{self._cfg.host}",
+                            is_fixable=False,
+                            severity=IssueSeverity.WARNING,
+                            translation_key="connection_failed",
+                            translation_placeholders={
+                                "host": self._cfg.host,
+                                "name": getattr(self._cfg, 'name', None) or self._cfg.host
+                            }
+                        )
+                    except Exception as e:
+                        _LOGGER.debug("%s Failed to create repair issue: %s", self.log_prefix, e)
+
+                # If we've failed 2 times on the port, force unavailability in HA
+                if self._reconnect_retries == 2:
+                    _LOGGER.error("%s AC Service is persistently offline. Forcing frontend unavailability.", self.log_prefix)
+                    if self._controller and getattr(self._controller, 'coordinator', None):
+                        self._controller.coordinator.last_update_success = False
+                        self._controller.coordinator.async_update_listeners()
+
+                _LOGGER.warning("%s Port connection failed. Backing off for %s seconds...", self.log_prefix, self._reconnect_delay)
                 self._ssl_context_cache.clear() # Force fresh SSL context on retry
                 await self._close_connection()
                 await asyncio.sleep(self._reconnect_delay)
                 self._reconnect_delay = min(self._reconnect_delay * RECONNECT_FACTOR, MAX_RECONNECT_DELAY)
                 return False
+                
         except (CannotConnect, AuthError) as e:
+            # 3. Network UP but an exception occurred during connection logic
             self._reconnect_retries += 1
+
+            # Create a repair issue if the device is persistently offline
+            if self._reconnect_retries == 3 and self._controller and getattr(self._controller, 'hass', None):
+                try:
+                    async_create_issue(
+                        self._controller.hass,
+                        "climate_ip",
+                        f"connection_failed_{self._cfg.host}",
+                        is_fixable=False,
+                        severity=IssueSeverity.WARNING,
+                        translation_key="connection_failed",
+                        translation_placeholders={
+                            "host": self._cfg.host,
+                            "name": getattr(self._cfg, 'name', None) or self._cfg.host
+                        }
+                    )
+                except Exception as ex:
+                    _LOGGER.debug("%s Failed to create repair issue: %s", self.log_prefix, ex)
+
             # If reconnection fails, fail any pending command
             if self._pending_future and not self._pending_future.done():
                 self._pending_future.set_exception(CannotConnect(f"Connection lost and reconnect failed: {e}"))
                 self._pending_future = None
-            _LOGGER.warning("%s Connection failed. Retrying in %s seconds...", self.log_prefix, self._reconnect_delay)
+                
+            _LOGGER.warning("%s Port connection error. Backing off for %s seconds...", self.log_prefix, self._reconnect_delay)
             self._ssl_context_cache.clear() # Force fresh SSL context on retry
             await self._close_connection()
             await asyncio.sleep(self._reconnect_delay)
@@ -842,6 +935,14 @@ class ConnectionSamsung2878(Connection):
 
     async def async_execute(self, method, url, data, headers, device_state=None, _is_probe=False, _is_poll=False) -> Tuple[Optional[str], Optional[Dict[str, str]]]:
         """Executes an asynchronous command (raw XML for 2878)."""
+        # Fast-fail if the connection is known to be offline and in retry backoff.
+        if not self._is_ready.is_set() and self._reconnect_retries > 0:
+            _LOGGER.debug("%s Connection is in retry backoff. Fast-failing command execution.", self.log_prefix)
+            if self._reconnect_retries >= 2:
+                raise CannotConnect("Connection is persistently offline")
+            else:
+                raise CannotConnect("Connection is temporarily offline")
+
         # Wait for the connection to be ready before proceeding.
         try:
             await asyncio.wait_for(self._is_ready.wait(), timeout=COMMAND_TIMEOUT)

@@ -1,5 +1,23 @@
 # Changelog
 
+## [9.1.1] - 2026-02-26
+
+### Added
+- **Ping Gate (Port 2878)**: Implemented ICMP connectivity pre-check before every TCP reconnection attempt for port 2878 devices. If the device is unreachable at network level, the integration skips the TCP socket entirely to protect fragile AC firmware from hanging on connection attempts. Uses a fixed 10-second retry interval when the device is offline, and an adaptive exponential backoff (5→10→20→40→…s) once the ping succeeds but the port connection fails.
+- **Ping Gate (Port 8888)**: Extended the ICMP pre-check to port 8888 devices via the `DataUpdateCoordinator` polling cycle. If the device is unreachable, the polling cycle returns immediately without opening a TCP/SSL socket, reducing unnecessary network traffic and protecting older AC units.
+- **HA Repair Issues (All Devices)**: After 3 consecutive connection failures (via ping or socket), a Home Assistant Repair Issue (`connection_failed`) is automatically created in the frontend, identifying the device by name and IP. The issue is automatically resolved when the device reconnects successfully.
+- **Shared Ping Utility**: Extracted `async_check_network_reachability` to `helpers.py` as a shared async helper used by all connection engines. Supports Linux/macOS (`ping -c 1 -W 2`) and Windows (`ping -n 1 -w 2000`).
+
+### Changed
+- **Code Duplication**: Centralized the `check_execute_condition` logic into the base `Connection` class to resolve code duplication across `connection_request.py`, `connection_aiohttp.py`, and `connection_raw.py`.
+- **SSL Context**: Consolidated SSL context creation by moving `async_create_samsung_ssl_context` to `helpers.py`. All connection engines now use this shared helper, ensuring consistent TLS and cipher parameter sets.
+- **Log Refinement**: Removed redundant and noisy `[DEBUG_PRINT]`, `[DEBUG coordinator]`, and `Shared SSLContext configured` statements during application startup for a cleaner standard output.
+- **Log Verbosity (Offline Devices)**: Downgraded transient and persistent connection failure log messages in `coordinator.py` from `WARNING`/`ERROR` to `DEBUG` to prevent log spam when a device is intentionally offline or powered off.
+
+### Fixed
+- **Parameter Resolution**: Removed a fragile "template hack" in connection instantiation (`create_updated`) that forced static parameters into mock Jinja templates. Static parameters are now stored natively and resolved accurately via a new `_resolve_async_params` helper in `properties.py`.
+- **TLS Version Logging**: Fixed an issue where the `SSLContext configured...` logs printed raw OpenSSL integer codes (e.g., `769`, `771`) instead of readable names like `TLSv1` or `TLSv1_2` in certain Python environments.
+
 ## [9.1.0] - 2026-02-24
 
 ### Added

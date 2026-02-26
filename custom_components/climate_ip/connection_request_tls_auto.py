@@ -191,23 +191,6 @@ class ConnectionRequestBase(Connection):
 
         return True
 
-    def check_execute_condition(self, device_state):
-        do_execute = True
-        if self.condition_template is not None:
-            _LOGGER.debug("%s Evaluating execute condition for command.", self.log_prefix)
-            try:
-                rendered_condition = self.condition_template.render(
-                    device_state=device_state
-                )
-                _LOGGER.debug("%s Execute condition result: %s", self.log_prefix, rendered_condition)
-                do_execute = rendered_condition == "1"
-            except Exception as e:
-                _LOGGER.error(
-                    "%s Error evaluating execute condition, executing command anyway. Error: %s", self.log_prefix, e, exc_info=True
-                )
-                do_execute = True
-
-        return do_execute
 
     def execute_internal(self, template, value, device_state, device_id=None) -> Tuple[Any, bool, int]:
         import warnings

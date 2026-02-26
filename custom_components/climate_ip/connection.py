@@ -55,6 +55,38 @@ class Connection:
     
     # --- END OF MODIFICATION (Milestone 0) ---
     
+    def check_execute_condition(self, device_state) -> bool:
+        """Return True if the command should be executed for the given device state.
+
+        Evaluates the optional Jinja2 ``condition_template`` attribute.  The
+        template must render to the string ``"1"`` for the command to run.
+        Any other rendered value means skip; a missing template means always run.
+
+        This single shared implementation replaces 4 previously duplicated copies
+        in connection_request, connection_request_tls_auto, connection_aiohttp and
+        connection_raw.
+        """
+        _log = self._logger or logging.getLogger(__name__)
+        condition = getattr(self, "condition_template", None)
+        if condition is None:
+            return True
+        try:
+            rendered = condition.render(device_state=device_state)
+            _log.debug(
+                "%s Execute condition result: %s",
+                getattr(self, "log_prefix", ""),
+                rendered,
+            )
+            return str(rendered).strip() == "1"
+        except Exception as e:  # pylint: disable=broad-except
+            _log.error(
+                "%s Error evaluating execute condition, executing command anyway. Error: %s",
+                getattr(self, "log_prefix", ""),
+                e,
+                exc_info=True,
+            )
+            return True
+
     def execute_legacy(self, template, value, device_state, device_id):
         """execute connection and return JSON object as result or None if unsuccesful."""
         return None

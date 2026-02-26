@@ -65,6 +65,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
             name=f"Samsung Climate {self.log_prefix}",
             update_interval=update_interval,
             always_update=True,
+            config_entry=entry,
         )
 
         # --- START OF FIX ---
@@ -136,14 +137,14 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
             max_strikes = 3
             
             if self._consecutive_failures < max_strikes:
-                _LOGGER.warning(
+                _LOGGER.debug(
                     "%s Transient connection failure (%s/%s). Preserving last known state. Error: %s",
                     self.log_prefix, self._consecutive_failures, max_strikes, err
                 )
                 # Return the last known data to prevent 'Unavailable' state
                 return self.data if self.data else self._create_device_state()
             else:
-                _LOGGER.error("%s Persistent connection failure after %s attempts. Marking entity as unavailable.", self.log_prefix, max_strikes)
+                _LOGGER.debug("%s Persistent connection failure after %s attempts. Marking entity as unavailable.", self.log_prefix, max_strikes)
                 raise UpdateFailed(f"Failed to fetch device state after {max_strikes} attempts: {err}") from err
             # --- END OF FIX ---
 
