@@ -120,6 +120,12 @@
       "initiating_pairing_8888": "Iniciando emparejamiento con el dispositivo en **{ip_address}**. Por favor, espere."
     }
   },
+  "issues": {
+    "connection_failed": {
+      "title": "Aire Acondicionado Desconectado ({name})",
+      "description": "La integración Climate IP no ha podido conectarse al dispositivo en **{host}** tras varios intentos.\n\nNormalmente esto significa que el dispositivo no tiene corriente o ha perdido la conexión Wi-Fi.\n\nPor favor, revisa la unidad física, asegúrate de que está enchufada y verifica que tu router puede verla. Este aviso desaparecerá automáticamente en cuanto se recupere la conexión."
+    }
+  },
   "common": {
     "deprecated_yaml_title": "Climate IP - Configuración YAML Obsoleta",
     "deprecated_yaml_message": "La configuración de Climate IP a través de YAML está obsoleta y ha sido importada a la interfaz de usuario. Por favor, elimine la configuración de `climate_ip` de su archivo `configuration.yaml` y reinicie Home Assistant."

@@ -120,6 +120,12 @@
       "initiating_pairing_8888": "Initiating pairing with the device at **{ip_address}**. Please wait."
     }
   },
+  "issues": {
+    "connection_failed": {
+      "title": "Air Conditioner Offline ({name})",
+      "description": "The Climate IP integration could not connect to the device at **{host}** after multiple attempts.\n\nThis usually means the device has lost power or the Wi-Fi connection has dropped.\n\nPlease check the physical unit, ensure it is plugged in, and verify that your router can see it. This issue will resolve automatically once the connection is re-established."
+    }
+  },
   "common": {
     "deprecated_yaml_title": "Climate IP - Deprecated YAML Configuration",
     "deprecated_yaml_message": "Configuring Climate IP via YAML is deprecated and has been imported into the user interface. Please remove the `climate_ip` configuration from your `configuration.yaml` file and restart Home Assistant."
