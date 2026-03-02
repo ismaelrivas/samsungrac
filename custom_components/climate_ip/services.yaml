@@ -1,3 +1,8 @@
+reload:
+  name: Reload YAML Configurations
+  description: >
+    Clears the YAML configuration cache and completely reloads all active Climate IP integrations. Use this to instantly apply modifications to `samsung_2878.yaml` or `samsung_8888.yaml` without restarting Home Assistant.
+
 set_property:
   name: Set Property
   description: >

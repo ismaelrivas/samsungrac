@@ -1,32 +1,34 @@
 # Changelog
 
-## [9.1.1] - 2026-02-26
+## [9.2.0] - 2026-03-02
 
 ### Added
-- **Ping Gate (Port 2878)**: Implemented ICMP connectivity pre-check before every TCP reconnection attempt for port 2878 devices. If the device is unreachable at network level, the integration skips the TCP socket entirely to protect fragile AC firmware from hanging on connection attempts. Uses a fixed 10-second retry interval when the device is offline, and an adaptive exponential backoff (5→10→20→40→…s) once the ping succeeds but the port connection fails.
-- **Ping Gate (Port 8888)**: Extended the ICMP pre-check to port 8888 devices via the `DataUpdateCoordinator` polling cycle. If the device is unreachable, the polling cycle returns immediately without opening a TCP/SSL socket, reducing unnecessary network traffic and protecting older AC units.
-- **HA Repair Issues (All Devices)**: After 3 consecutive connection failures (via ping or socket), a Home Assistant Repair Issue (`connection_failed`) is automatically created in the frontend, identifying the device by name and IP. The issue is automatically resolved when the device reconnects successfully.
-- **Shared Ping Utility**: Extracted `async_check_network_reachability` to `helpers.py` as a shared async helper used by all connection engines. Supports Linux/macOS (`ping -c 1 -W 2`) and Windows (`ping -n 1 -w 2000`).
+- **Config Flow UX (Connection Test)**: Added a mandatory pre-flight connection test step in the configuration flow that validates the IP and Token against the physical AC unit before the integration is created.
+- **Config Flow UX (Port Fallback)**: Added seamless auto-detection when pairing. The integration silently falls back to the alternative protocol port and retries if the user selects the wrong port.
+- **YAML Hot-Reload Service**: Added a native `climate_ip.reload` service that purges the internal YAML schema cache and applies mapping changes instantly without restarting Home Assistant.
+- **Translations**: Added full native localization support for French (`fr.json`) and German (`de.json`). Created a canonical `strings.json` as the source of truth for all UI translations.
+- **Ping Gate**: Implemented fast ICMP connectivity pre-checks before TCP reconnections for all devices, bypassing slow socket timeouts when the AC is offline at the network level.
+- **HA Repair Issues**: Automatic creation of Home Assistant Repair Issues when a device repeatedly fails to connect. The issue resolves itself upon successful reconnection.
+- **Diagnostic Enhancements**: Secured diagnostic exports using an allowlist approach to guarantee sensitive tokens are never exported, and added visibility of the Keep-Alive fallback state.
 
 ### Changed
-- **Code Duplication**: Centralized the `check_execute_condition` logic into the base `Connection` class to resolve code duplication across `connection_request.py`, `connection_aiohttp.py`, and `connection_raw.py`.
-- **SSL Context**: Consolidated SSL context creation by moving `async_create_samsung_ssl_context` to `helpers.py`. All connection engines now use this shared helper, ensuring consistent TLS and cipher parameter sets.
-- **Log Refinement**: Removed redundant and noisy `[DEBUG_PRINT]`, `[DEBUG coordinator]`, and `Shared SSLContext configured` statements during application startup for a cleaner standard output.
-- **Log Verbosity (Offline Devices)**: Downgraded transient and persistent connection failure log messages in `coordinator.py` from `WARNING`/`ERROR` to `DEBUG` to prevent log spam when a device is intentionally offline or powered off.
+- **Network Ping Optimization**: Replaced crude OS-level `ping` subprocess calls with lightning-fast, native `icmplib.async_ping`. Gracefully falls back to datagram sockets to reduce File Descriptor exhaustion during disconnects.
+- **SSL Configuration Persistence**: The integration now permanently saves the last successful SSL configuration (`cert`, `cipher_name`, `verify_mode`) to allow instant reconnection after a Home Assistant restart.
+- **TLS Protocol Tolerance**: Made TLS connections more lenient for older Samsung devices that require lower security levels.
+- **urllib3 Context**: Scoped the workaround for Samsung's malformed HTTP headers strictly to this integration's requests, preventing cross-contamination with other Home Assistant integrations.
+- **Log Refinement & Error Messages**: Improved connection error logs to be human-readable and downgraded expected structural disconnect logs (`Timeout` and `ConnectionError`) to prevent log spam when a device is powered off.
+- **Code Refactoring & Modernization**: Significantly refactored `controller_yaml.py`, modernized integration registration syntax (`domain=DOMAIN`), standardized exception handling with `CannotConnect`, and bumped minimum required Home Assistant version to "2024.1.0".
 
 ### Fixed
-- **Parameter Resolution**: Removed a fragile "template hack" in connection instantiation (`create_updated`) that forced static parameters into mock Jinja templates. Static parameters are now stored natively and resolved accurately via a new `_resolve_async_params` helper in `properties.py`.
-- **TLS Version Logging**: Fixed an issue where the `SSLContext configured...` logs printed raw OpenSSL integer codes (e.g., `769`, `771`) instead of readable names like `TLSv1` or `TLSv1_2` in certain Python environments.
-
-## [9.1.0] - 2026-02-24
-
-### Added
-- **TLS Visibility Logs**: Added `DEBUG`-level logs in all 5 connection engines (`samsung_2878.py`, `protocol_8888.py`, `connection_aiohttp.py`, `connection_request.py`, `token_acquirer.py`) that print the configured `Min`/`Max` TLS version at context creation time, and the negotiated TLS version after a successful handshake. Helps diagnose future SSL compatibility issues without a packet capture.
-
-### Fixed
-- **Critical TLS Hang (AC Port 8888/2878)**: Samsung AC firmware hangs indefinitely when receiving a TLS 1.3 Client Hello. On modern Home Assistant OS (Python 3.10+, OpenSSL 3.x), `ssl.PROTOCOL_TLSv1` no longer guarantees a TLS 1.0-only Client Hello and may negotiate TLS 1.3 by default, triggering the firmware bug. Fixed by migrating all SSL context creation to `PROTOCOL_TLS_CLIENT` with an explicit `maximum_version = ssl.TLSVersion.TLSv1_2` cap. This prevents the TLS 1.3 Client Hello while allowing the AC to negotiate down to the version it supports (TLS 1.0 or 1.1).
-- **ValueError on SSL Context Creation**: Using `ssl.PROTOCOL_TLS_CLIENT` requires `check_hostname = False` to be set **before** `verify_mode = CERT_NONE`, otherwise Python raises `ValueError: Cannot set verify_mode to CERT_NONE when check_hostname is enabled`. Fixed the assignment order across all 5 connection engines (`samsung_2878.py`, `protocol_8888.py`, `connection_aiohttp.py`, `connection_request.py`, `token_acquirer.py`, `token_acquirer_8888.py`).
-- **Log Noise**: The `SSLContext configured...` debug log was being printed once per cipher strategy attempt (up to 5 times in `samsung_2878.py`). Fixed with a `logged_ssl_config` guard so it only prints once per connection cycle.
+- **Connection Keep-Alive Hang**: Fixed a structural bug where the integration would hang for 10 seconds waiting after the AC finished responding due to malformed headers. The solution safely strips illegal characters and proactively falls back to `Connection: close` on protocol violations.
+- **Critical TLS Hang (AC Port 8888/2878)**: Samsung AC firmware hangs indefinitely when receiving a TLS 1.3 Client Hello. Fixed by capping all SSL context creation strictly at `TLSv1_2`.
+- **Connection Cleanup Logging**: Fixed a bug where `ConnectionRequest` session cleanup logic would repeatedly log redundant closure messages during garbage collection. 
+- **Config Flow Timeout**: Fixed a bug where port 2878 devices would unconditionally time out during connection testing.
+- **SSL Context Handling**: Fixed local listener socket configuration to properly handle server-side handshake requests, and resolved Python `ValueError` exceptions caused by conflicting `check_hostname` assignments.
+- **Embedded Command Execution**: Fixed nested YAML commands with parameters (like auto power-on) being silently skipped on older devices.
+- **Reconnect Jitter**: Added random jitter to exponential backoffs to prevent "thundering herd" reconnects.
+- **Task Tracking**: Fixed orphaned background threads during integration unload.
+- **Performance & Data Types**: Fixed sensor definitions by converting YAML strings into native `SensorStateClass` enums, resolved fragile template parameter evaluations, and eliminated redundant string searches.
 
 ## [9.0.12] - 2026-02-23
 

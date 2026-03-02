@@ -32,6 +32,29 @@ from .const import DOMAIN, CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL, CONF_ENABL
 
 _LOGGER = logging.getLogger(__name__)
 
+# Known transient connectivity errors that HA's DataUpdateCoordinator always logs as ERROR.
+# We intercept them here and downgrade to WARNING since they are expected during disconnections.
+_CONNECTIVITY_PHRASES = (
+    "device unreachable",
+    "connection refused",
+    "connection timed out",
+    "host unreachable",
+    "host not found",
+    "failed to establish a connection",
+)
+
+class _ConnectivityWarningFilter(logging.Filter):
+    """Downgrades known transient connectivity ERRORs to WARNING."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno == logging.ERROR:
+            msg_lower = record.getMessage().lower()
+            if any(phrase in msg_lower for phrase in _CONNECTIVITY_PHRASES):
+                record.levelno = logging.WARNING
+                record.levelname = "WARNING"
+        return True
+
+_LOGGER.addFilter(_ConnectivityWarningFilter())
+
 class SamsungClimateCoordinator(DataUpdateCoordinator):
     """Manages data fetching for Samsung Climate devices."""
 

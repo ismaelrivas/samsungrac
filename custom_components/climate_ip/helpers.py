@@ -1,34 +1,107 @@
 import logging
 import copy
+import contextlib
+import threading
 import re
 from typing import Any
 
 _LOGGER = logging.getLogger(__name__)
 
+# --- H-12: Scoped monkey-patch for urllib3 malformed header tolerance ---
+# Some Samsung AC units send HTTP responses with malformed headers that urllib3
+# rejects. Instead of globally patching urllib3 (affecting the entire HA process),
+# this context manager temporarily overrides the check only during our requests.
+_header_patch_lock = threading.Lock()
+_header_patch_refcount = 0
+_header_patch_original_response = None
+_header_patch_original_connection = None
+_header_patch_original_parse_headers = None
+
+@contextlib.contextmanager
+def tolerant_header_parsing():
+    """Context manager that temporarily suppresses urllib3 HeaderParsingError
+    and patches http.client.parse_headers to fix spaces before colons.
+
+    Thread-safe via reference counting: the first caller patches, subsequent
+    callers just increment the counter. The last caller to exit restores.
+    """
+    global _header_patch_refcount, _header_patch_original_response
+    global _header_patch_original_connection, _header_patch_original_parse_headers
+
+    import urllib3.util.response as response_util
+    import urllib3.connection as connection_mod
+    from urllib3.exceptions import HeaderParsingError
+    import http.client
+    from io import BytesIO
+
+    def _tolerant_assert(headers):
+        try:
+            _header_patch_original_response(headers)
+        except HeaderParsingError as e:
+            _LOGGER.debug("Suppressed urllib3 HeaderParsingError: %s", e)
+
+    def _patched_parse_headers(fp, _class=http.client.HTTPMessage):
+        headers = []
+        while True:
+            line = fp.readline(http.client._MAXLINE + 1)
+            if len(line) > http.client._MAXLINE:
+                raise http.client.LineTooLong("header line")
+            
+            # FIX: Remove space before colon in header names
+            # e.g. b'X-API-Version : v1.0.0\\r\\n' -> b'X-API-Version: v1.0.0\\r\\n'
+            if line not in (b'\r\n', b'\n', b''):
+                parts = line.split(b':', 1)
+                if len(parts) == 2 and parts[0].endswith(b' '):
+                    line = parts[0][:-1] + b':' + parts[1]
+                    
+            headers.append(line)
+            if len(headers) > http.client._MAXHEADERS:
+                raise http.client.HTTPException("got more than %d headers" % http.client._MAXHEADERS)
+            if line in (b'\r\n', b'\n', b''):
+                break
+                
+        # Now feed the cleaned headers back to the original parser
+        clean_fp = BytesIO(b''.join(headers))
+        return _header_patch_original_parse_headers(clean_fp, _class)
+
+    with _header_patch_lock:
+        if _header_patch_refcount == 0:
+            _header_patch_original_response = response_util.assert_header_parsing
+            _header_patch_original_connection = connection_mod.assert_header_parsing
+            _header_patch_original_parse_headers = http.client.parse_headers
+            response_util.assert_header_parsing = _tolerant_assert
+            connection_mod.assert_header_parsing = _tolerant_assert
+            http.client.parse_headers = _patched_parse_headers
+        _header_patch_refcount += 1
+    try:
+        yield
+    finally:
+        with _header_patch_lock:
+            _header_patch_refcount -= 1
+            if _header_patch_refcount == 0:
+                response_util.assert_header_parsing = _header_patch_original_response
+                connection_mod.assert_header_parsing = _header_patch_original_connection
+                http.client.parse_headers = _header_patch_original_parse_headers
+                _header_patch_original_response = None
+                _header_patch_original_connection = None
+                _header_patch_original_parse_headers = None
+
 def find_key_in_data(data, key):
     """
     Recursively search for a key in a dictionary or a list of dictionaries.
     """
-    _LOGGER.debug(f"find_key_in_data: Searching for '{key}' in data type: {type(data)}")
-
     if isinstance(data, dict):
-        _LOGGER.debug(f"find_key_in_data: Current dict keys: {data.keys()}")
         if key in data:
-            _LOGGER.debug(f"find_key_in_data: Found '{key}' in current dict: {data[key]}")
             return data[key]
         for k, v in data.items():
-            _LOGGER.debug(f"find_key_in_data: Recursing into dict item '{k}'")
             item = find_key_in_data(v, key)
             if item is not None:
                 return item
     elif isinstance(data, list):
-        _LOGGER.debug(f"find_key_in_data: Recursing into list with {len(data)} items.")
         for i, item_in_list in enumerate(data):
-            _LOGGER.debug(f"find_key_in_data: Recursing into list item {i}")
             item = find_key_in_data(item_in_list, key)
             if item is not None:
                 return item
-    _LOGGER.debug(f"find_key_in_data: '{key}' not found in current data structure.")
     return None
 
 def get_value_by_path(data: dict, path: list) -> any:
@@ -71,20 +144,28 @@ def create_samsung_ssl_context(
     cert_path: str | None = None,
     ciphers: str = "ALL:@SECLEVEL=0",
     verify_mode: Any = None,
+    is_server: bool = False,
 ) -> Any:
     """
     Creates the standardized SSL context for Samsung devices.
-    Enforces PROTOCOL_TLS_CLIENT, sets verify mode, loads ciphers,
+    Enforces PROTOCOL_TLS_CLIENT (or PROTOCOL_TLS_SERVER), sets verify mode, loads ciphers,
     and caps the maximum TLS version to TLSv1_2 to prevent the AC handshake bug.
     """
     import ssl
     import asyncio
     
-    protocol = getattr(ssl, 'PROTOCOL_TLS_CLIENT', getattr(ssl, 'PROTOCOL_TLS', ssl.PROTOCOL_TLSv1))
+    if is_server:
+        protocol = getattr(ssl, 'PROTOCOL_TLS_SERVER', getattr(ssl, 'PROTOCOL_TLS', ssl.PROTOCOL_TLSv1))
+    else:
+        protocol = getattr(ssl, 'PROTOCOL_TLS_CLIENT', getattr(ssl, 'PROTOCOL_TLS', ssl.PROTOCOL_TLSv1))
+        
     context = ssl.SSLContext(protocol)
     
     context.set_ciphers(ciphers)
-    context.check_hostname = False
+    
+    if not is_server:
+        context.check_hostname = False
+        
     if verify_mode is not None:
         context.verify_mode = verify_mode
     else:
@@ -116,6 +197,7 @@ async def async_create_samsung_ssl_context(
     cert_path: str | None = None,
     ciphers: str = "ALL:@SECLEVEL=0",
     verify_mode: Any = None,
+    is_server: bool = False,
 ) -> Any:
     """
     Async wrapper for create_samsung_ssl_context.
@@ -129,7 +211,8 @@ async def async_create_samsung_ssl_context(
         create_samsung_ssl_context,
         cert_path=cert_path,
         ciphers=ciphers,
-        verify_mode=verify_mode
+        verify_mode=verify_mode,
+        is_server=is_server
     )
     return await loop.run_in_executor(None, func)
 
@@ -162,59 +245,67 @@ def mask_sensitive_data(data: Any) -> Any:
         return data
     return data
 
+# --- H-??/Phase 6: Native ICMP Ping via icmplib ---
+from icmplib import SocketPermissionError, ping as icmp_ping_sync
+import functools
+
+@functools.lru_cache(maxsize=None)
+def _can_use_icmp_lib_with_privilege() -> bool:
+    """Verifica si el kernel actual admite la creación de sockets ICMP crudos."""
+    try:
+        # Lanzamos un ping síncrono nulo a localhost estrictamente
+        # para probar la infraestructura de permisos del SO.
+        icmp_ping_sync("127.0.0.1", count=0, timeout=0, privileged=True)
+        return True
+    except SocketPermissionError:
+        # Bloqueado (Docker sin root, Virtualenv, Podman) -> Fallback a datagramas
+        return False
+    except Exception as e:
+        _LOGGER.debug("Error unexpected during privilege check: %s", e)
+        return False
+
+
 async def async_check_network_reachability(host: str, log_prefix: str = "") -> bool:
-    """Check if the device is reachable on the network.
-    Uses system ping to verify if the host is alive.
+    """Check if the device is reachable on the network using native icmplib.
     Results are logged at DEBUG level to help diagnose disconnections.
     """
+    from icmplib import async_ping, NameLookupError, ICMPSocketError
     import asyncio
-    import os
 
-    process = None
+    is_privileged = _can_use_icmp_lib_with_privilege()
+
     try:
-        # -c 1 = 1 packet, -W 2 = 2 seconds timeout
-        # Use 'ping' for Linux/macOS and fallback behavior for Windows if needed
-        ping_cmd = ["ping", "-c", "1", "-W", "2", host]
-        
-        # Windows ping commands are slightly different: -n 1 for count, -w 2000 for timeout
-        if os.name == 'nt':
-            ping_cmd = ["ping", "-n", "1", "-w", "2000", host]
-
-        process = await asyncio.create_subprocess_exec(
-            *ping_cmd,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL
+        # async_ping is non-blocking and handles ICMP socket pooling.
+        # We use a 2-second timeout and 1 packet as we only care if it's alive.
+        host_obj = await async_ping(
+            address=host,
+            count=1,
+            timeout=2.0,
+            interval=0.2,
+            privileged=is_privileged
         )
         
-        # Wait for ping to finish with a safety timeout
-        await asyncio.wait_for(process.wait(), timeout=3.0)
-        
-        if process.returncode == 0:
+        if host_obj.is_alive:
             _LOGGER.debug(
-                "%s Network diagnostic: Host %s responded to ICMP ping. "
+                "%s Network diagnostic: Host %s responded to ICMP ping (RTT: %sms). "
                 "Network is OK.",
-                log_prefix, host
+                log_prefix, host, host_obj.avg_rtt
             )
             return True
         else:
             _LOGGER.debug(
-                "%s Network diagnostic: Host %s is NOT reachable (ICMP ping failed). "
+                "%s Network diagnostic: Host %s is NOT reachable (ICMP ping failed/timed out). "
                 "Check that the device is powered on and connected to your Wi-Fi.",
                 log_prefix, host
             )
             return False
-    except asyncio.TimeoutError:
-        if process:
-            try:
-                process.kill()
-            except ProcessLookupError:
-                pass
-        _LOGGER.debug(
-            "%s Network diagnostic: Host %s is NOT reachable (Ping timed out). "
-            "Check that the device is powered on and connected to your Wi-Fi.",
-            log_prefix, host
-        )
+
+    except NameLookupError as err:
+        _LOGGER.debug("%s Network diagnostic: DNS Resolution failed for %s: %s", log_prefix, host, err)
+        return False
+    except ICMPSocketError as err:
+        _LOGGER.warning("%s Network diagnostic: Socket error (Errno 24?) for %s: %s", log_prefix, host, err)
         return False
     except Exception as e:
-        _LOGGER.debug("%s Network diagnostic (ping) error: %s", log_prefix, e)
-        return True # Fallback to trying connection if ping fails for unknown reasons
+        _LOGGER.warning("%s Network diagnostic (ping) error: %s", log_prefix, e)
+        return False

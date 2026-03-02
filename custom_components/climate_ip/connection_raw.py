@@ -7,15 +7,13 @@ import time
 import inspect
 from typing import Any, Dict, Tuple, Optional, cast
 from urllib.parse import urlparse
-from homeassistant.const import CONF_IP_ADDRESS
+from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC
 from .connection import Connection, register_connection
 from .exceptions import CannotConnect, AuthError
 from .const import CONF_CERT
 from .protocol_8888 import (
     Samsung8888Client,
     ProtocolError,
-    AuthError as LibAuthError,
-    ConnectionError as LibConnError,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -94,6 +92,14 @@ class ConnectionRaw8888(Connection):
 
         return new_connection
 
+    def get_diagnostics(self) -> dict:
+        """Return diagnostic information about the raw socket connection."""
+        return {
+            "is_connected": getattr(self, "_is_connected", False),
+            "reconnect_retries": getattr(self, "_reconnect_retries", 0),
+            "engine": "raw_socket"
+        }
+
     # pylint: disable=too-many-arguments
     def __init__(self, config: Dict[str, Any], logger: logging.Logger, hass: Any, session: Any, ip_address: Optional[str]):
         super().__init__(config, logger)
@@ -103,7 +109,6 @@ class ConnectionRaw8888(Connection):
             cert_file = os.path.join(os.path.dirname(__file__), cert_file)
         self._cert = cert_file
         self._controller = None # Initialize controller reference
-        self._client: Optional[Samsung8888Client] = None
         self._client: Optional[Samsung8888Client] = None
         self._params = {}
         self._connection_template = None
@@ -186,7 +191,11 @@ class ConnectionRaw8888(Connection):
         """Generate a consistent log prefix."""
         if self._controller and self._controller.unique_id:
             return self._controller.log_prefix
-        # Fallback if controller is not set yet
+        mac = self._config.get(CONF_MAC)
+        if mac:
+            duid = mac.replace(":", "")
+            return f"[{duid[-6:]}]"
+        # Fallback if controller is not set yet and no MAC available
         return f"[{self._host or 'NO_IP'}]"
 
     @property
@@ -221,19 +230,34 @@ class ConnectionRaw8888(Connection):
                     else:
                         _LOGGER.debug("%s [async_execute] Embedded command condition met. Executing it before the main command.", self.log_prefix)
                         embedded_template = getattr(self._embedded_command, "_connection_template", None)
+                        embedded_params = getattr(self._embedded_command, "_params", {})
                         if embedded_template:
                             embedded_params_str = embedded_template.render()
                             embedded_params = json.loads(embedded_params_str)
-                            embedded_data = json.dumps(embedded_params.get("json")) if "json" in embedded_params else None
+                        elif embedded_params:
+                            # Fallback: use _params directly (e.g. YAML-defined params without a Jinja template)
                             _LOGGER.debug(
-                                "%s [async_execute] Executing embedded command with its own params: %s",
+                                "%s [async_execute] Embedded command has no connection_template, using _params directly.",
+                                self.log_prefix,
+                            )
+                        else:
+                            _LOGGER.warning("%s [async_execute] Embedded command found but it has no connection_template or params.", self.log_prefix)
+                            embedded_params = None
+
+                        if embedded_params:
+                            embedded_data = json.dumps(embedded_params.get("json")) if "json" in embedded_params else None
+                            # Resolve the URL: prefer the embedded command's own URL, fall back to the main one
+                            embedded_url = embedded_params.get("url", url)
+                            embedded_method = embedded_params.get("method", method)
+                            _LOGGER.debug(
+                                "%s [async_execute] Executing embedded command with params: %s",
                                 self.log_prefix, embedded_params
                             )
                             res = cast(
                                 Any,
                                 self._embedded_command.async_execute(
-                                    method=embedded_params.get("method"),
-                                    url=embedded_params.get("url"),
+                                    method=embedded_method,
+                                    url=embedded_url,
                                     data=embedded_data,
                                     headers=embedded_params.get("headers", headers),
                                     device_state=device_state,
@@ -242,8 +266,6 @@ class ConnectionRaw8888(Connection):
                             # Support both sync and async implementations of embedded command execution.
                             if inspect.isawaitable(res):
                                 await res
-                        else:
-                            _LOGGER.warning("%s [async_execute] Embedded command found but it has no connection_template.", self.log_prefix)
                 else:
                     _LOGGER.warning("%s [async_execute] Embedded command found, but cannot check its condition (device_state missing).", self.log_prefix)
             except (CannotConnect, AuthError) as e:
@@ -321,20 +343,27 @@ class ConnectionRaw8888(Connection):
             elapsed = time.perf_counter() - start_time
             _LOGGER.debug("%s [RAW] Request completed in %.3f seconds", self.log_prefix, elapsed)
             return resp, None
-        except LibAuthError:
+        except AuthError:
             raise AuthError("Invalid token")
-        except LibConnError as e:
-            _LOGGER.debug("%s Connection error (%s)", self.log_prefix, e)
+        except CannotConnect as e:
+            # Classify common, expected connection errors with cleaner messages
+            err_str = str(e).lower()
+            if "111" in str(e) or "connection refused" in err_str:
+                msg = "Connection refused (device unreachable or offline)"
+            elif "timed out" in err_str or "etimedout" in err_str:
+                msg = "Connection timed out"
+            elif "name or service not known" in err_str or "nodename" in err_str:
+                msg = "Host not found (DNS error)"
+            else:
+                msg = f"Connection error: {e}"
+            _LOGGER.debug("%s %s", self.log_prefix, msg)
             await client.close()
             if _is_probe:
                 return None, None
-            raise CannotConnect(f"Connection failure: {e}")
+            raise CannotConnect(msg)
         except Exception as e:
             raise CannotConnect(f"Unexpected error: {e}")
 
-        # Fallback return to satisfy type checkers and handle unexpected flows;
-        # return a tuple of (resp, error) both set to None to indicate no response.
-        return None, None
 
 
     async def close(self):

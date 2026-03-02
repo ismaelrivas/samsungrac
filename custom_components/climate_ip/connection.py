@@ -33,6 +33,11 @@ class Connection:
         """Load configuration from yaml node dictionary. Use connection base as base but DO NOT modify it.
         Return True if successful False otherwise."""
         return False
+        
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Return diagnostic information about the connection for troubleshooting.
+        Override in subclasses to provide specific connection details."""
+        return {}
     
     # --- START OF MODIFICATION (Milestone 0) ---
     

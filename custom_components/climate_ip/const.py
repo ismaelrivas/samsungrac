@@ -2,8 +2,6 @@
 
 DOMAIN = "climate_ip"
 
-PLATFORMS = ["climate"]
-
 # --- Configurable Options ---
 CONF_POLL_INTERVAL = "poll_interval"
 DEFAULT_POLL_INTERVAL = 60

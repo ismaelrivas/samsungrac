@@ -84,8 +84,7 @@ from .exceptions import CannotConnect, TokenAcquisitionError, AuthTurnedOffError
 
 _LOGGER = logging.getLogger(__name__)
 
-@config_entries.HANDLERS.register(DOMAIN)
-class ClimateIpConfigFlow(config_entries.ConfigFlow):
+class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow implementing a robust, multi-step pairing process with safe task wrappers."""
 
     VERSION = 2  # Updated to reflect significant changes
@@ -102,7 +101,7 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow):
         Handle the import of a YAML configuration (legacy platform).
         This is triggered by async_setup_platform in climate.py.
         """
-        _LOGGER.debug(f"Starting YAML import for: {user_input.get(CONF_IP_ADDRESS)}")
+        _LOGGER.debug("Starting YAML import for: %s", user_input.get(CONF_IP_ADDRESS))
 
         # --- START: Sanitize MAC and set unique_id ---
         # Sanitize the MAC address by removing colons as soon as it's read.
@@ -352,7 +351,7 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow):
                 self.flow_data[CONF_NAME] = f"Samsung AC {mac}"
 
             if self.flow_data.get(CONF_TOKEN):
-                return await self._create_entry()
+                return await self.async_step_test_connection()
 
             # Validate certificate existence without modifying the stored value.
             user_cert_path = self.flow_data.get(CONF_CERT) or ""
@@ -457,7 +456,7 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow):
                     )
 
             if self.flow_data.get(CONF_TOKEN):
-                return await self._create_entry()
+                return await self.async_step_test_connection()
 
             # Validate certificate existence without modifying the stored value.
             user_cert_path = self.flow_data.get(CONF_CERT) or ""
@@ -597,6 +596,40 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow):
 
                 return self.async_show_progress_done(next_step_id="await_button")
             
+            # --- START PORT FALLBACK LOGIC ---
+            # If the initial pairing attempt fails, automatically try the other port topology
+            if not self.flow_data.get("_fallback_attempted"):
+                self.flow_data["_fallback_attempted"] = True
+                _LOGGER.info("Pairing initiation failed on selected device type. Attempting automatic port fallback.")
+                
+                device_type = self.flow_data.get(CONF_DEVICE_TYPE)
+                ip_address = self.flow_data.get(CONF_IP_ADDRESS)
+                cert_path = self.flow_data.get(CONF_CERT)
+
+                if device_type == DEVICE_TYPE_SAMSUNG_2878:
+                    _LOGGER.info("Falling back from port 2878 to port 8888 topology.")
+                    self.flow_data[CONF_DEVICE_TYPE] = DEVICE_TYPE_SAMSUNG_8888
+                    if not cert_path:
+                        self.flow_data[CONF_CERT] = 'ac14k_m.pem'
+                    self.acquirer = SamsungTokenAcquirer8888(
+                        self.hass, ip_address, self.flow_data.get(CONF_CERT)
+                    )
+                elif device_type == DEVICE_TYPE_SAMSUNG_8888:
+                    _LOGGER.info("Falling back from port 8888 to port 2878 topology.")
+                    self.flow_data[CONF_DEVICE_TYPE] = DEVICE_TYPE_SAMSUNG_2878
+                    self.acquirer = SamsungTokenAcquirer(
+                        self.hass, ip_address, cert_path
+                    )
+                
+                # Restart the pairing task with the new acquirer
+                self.task = self.hass.async_create_task(self._initiate_pairing_safe())
+                return self.async_show_progress(
+                    step_id="initiate_pairing",
+                    progress_action="initiating_pairing",
+                    progress_task=self.task,
+                )
+            # --- END PORT FALLBACK LOGIC ---
+
             self.flow_data["error_key"] = result["error"]
             return self.async_show_progress_done(next_step_id="handle_error")
 
@@ -620,8 +653,8 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow):
                 self.flow_data[CONF_TOKEN] = result["token"]
                 
                 if self.flow_data.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_SAMSUNG_2878:
-                    _LOGGER.debug("Token for 2878 device acquired. Creating entry.")
-                    return self.async_show_progress_done(next_step_id="create_entry")
+                    _LOGGER.debug("Token for 2878 device acquired. Routing to test connection.")
+                    return self.async_show_progress_done(next_step_id="test_connection")
                 else:
                     _LOGGER.debug("Token acquisition successful, advancing to discover_uuid.")
                     return self.async_show_progress_done(next_step_id="discover_uuid")
@@ -642,6 +675,87 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow):
             description_placeholders={"ip_address": self.flow_data.get(CONF_IP_ADDRESS)},
         )
         
+    async def _test_connection_safe(self) -> Dict[str, Any]:
+        """Safe wrapper for testing the connection by polling DeviceState."""
+        _LOGGER.debug("Executing safe wrapper: _test_connection_safe")
+        controller = None
+        try:
+            config_data = self.flow_data.copy()
+            # Ensure unique_id is available for cache tracking
+            if not config_data.get("unique_id"):
+                config_data["unique_id"] = config_data.get(CONF_MAC) or config_data.get(CONF_IP_ADDRESS)
+                
+            device_type = config_data.get(CONF_DEVICE_TYPE)
+            if not config_data.get(CONF_CONFIG_FILE) and device_type:
+                config_data[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE.get(device_type)
+
+            session = async_get_clientsession(self.hass)
+            config_data["hass"] = self.hass
+            config_data["session"] = session
+            controller = YamlController(config=config_data, logger=_LOGGER)
+            if not await controller.initialize():
+                _LOGGER.error("Failed to initialize controller during connection test.")
+                return {"ok": False, "error": "cannot_connect"}
+
+            # --- START FIX: Start connection manager loop ---
+            # Asynchronous connection engines (like samsung_2878) require their background
+            # tasks to be running before they can resolve explicit commands.
+            if getattr(controller, "connection", None) and hasattr(controller.connection, "start_listening"):
+                _LOGGER.debug("Starting connection manager for connection test.")
+                controller.connection.start_listening()
+            # --- END FIX ---
+
+            if not await controller.async_get_status():
+                _LOGGER.error("Failed to get device status during connection test.")
+                return {"ok": False, "error": "cannot_connect"}
+
+            _LOGGER.debug("_test_connection_safe successful, device responded to polling.")
+            return {"ok": True}
+            
+        except CannotConnect:
+            _LOGGER.warning("CannotConnect raised during connection test.")
+            return {"ok": False, "error": "cannot_connect"}
+        except Exception as e:
+            _LOGGER.error("Unknown error during connection test: %s", e, exc_info=True)
+            return {"ok": False, "error": "cannot_connect"}
+        finally:
+            if controller:
+                _LOGGER.debug("Cleaning up temporary controller in _test_connection_safe")
+                await controller.async_shutdown()
+
+    async def async_step_test_connection(self, user_input=None) -> FlowResult:
+        """Phase to validate the IP and token by polling the actual device state."""
+        _LOGGER.debug("Entering async_step_test_connection.")
+        if not self.task:
+            _LOGGER.debug("Creating task for _test_connection_safe.")
+            self.task = self.hass.async_create_task(self._test_connection_safe())
+
+        if self.task and self.task.done():
+            result = self.task.result()
+            self.task = None
+            if result["ok"]:
+                _LOGGER.debug("Connection test successful, advancing to create_entry.")
+                
+                # Check for discover_uuid routing if it's 8888 returning from manual token entry
+                if self.flow_data.get(CONF_DEVICE_TYPE) != DEVICE_TYPE_SAMSUNG_2878 and \
+                   not self.flow_data.get(CONF_DEVICE_ID):
+                    # We have a token but haven't discovered UUIDs yet for multi-zone devices
+                    return self.async_show_progress_done(next_step_id="discover_uuid")
+                    
+                return self.async_show_progress_done(next_step_id="create_entry")
+
+            # In case of failure, clear the token so the user has to re-enter it or re-pair
+            self.flow_data.pop(CONF_TOKEN, None)
+            self.flow_data["error_key"] = result["error"]
+            return self.async_show_progress_done(next_step_id="handle_error")
+
+        return self.async_show_progress(
+            step_id="test_connection",
+            progress_action="testing_connection",
+            progress_task=self.task,
+            description_placeholders={"ip_address": self.flow_data.get(CONF_IP_ADDRESS)},
+        )
+
     async def async_step_discover_uuid(self, user_input=None) -> FlowResult:
         """Step to discover indoor units from the device after getting a token."""
         _LOGGER.debug("Entering async_step_discover_uuid.")

@@ -1,25 +1,3 @@
-# Monkey-patch urllib3 to be more tolerant of malformed headers from some AC units.
-import urllib3.util.response as response_util
-from urllib3.exceptions import HeaderParsingError
-import urllib3.connection as connection_mod
-import logging
-
-_LOGGER_PATCH = logging.getLogger(__package__)
-
-_original_assert = response_util.assert_header_parsing
-
-def _tolerant_assert_header_parsing(headers):
-    """A tolerant version of assert_header_parsing that logs instead of raising."""
-    try:
-        _original_assert(headers)
-    except HeaderParsingError as e:
-        _LOGGER_PATCH.debug(
-            "Ignored HeaderParsingError: %s",
-            e
-        )
-
-response_util.assert_header_parsing = _tolerant_assert_header_parsing
-connection_mod.assert_header_parsing = _tolerant_assert_header_parsing
 import asyncio
 import copy
 import concurrent.futures
@@ -37,7 +15,7 @@ from requests.adapters import HTTPAdapter
 
 from .connection import Connection, register_connection
 from .exceptions import AuthError, CannotConnect, ConnectionRefused
-from .helpers import mask_sensitive_data
+from .helpers import mask_sensitive_data, tolerant_header_parsing
 from .const import (
     CONF_CERT,
     CONFIG_DEVICE_CONNECTION_TEMPLATE,
@@ -87,12 +65,8 @@ class SamsungHTTPAdapter(HTTPAdapter):
         return super().init_poolmanager(forced_connections, forced_maxsize, block=forced_block, **pool_kwargs)
         # --- END OF FIX ---
 
-    # --- START OF FIX: Add logging to close ---
     def close(self):
-        """Log when the adapter is closed."""
-        _LOGGER.debug("[SamsungHTTPAdapter] Closing adapter and clearing pool.")
         super().close()
-    # --- END OF FIX ---
 
     def cert_verify(self, conn, url, verify, cert):
         """
@@ -143,6 +117,26 @@ class ConnectionRequestBase(Connection):
         self._controller = controller
 
     @property
+    def is_async_native(self) -> bool:
+        """Requests is strictly synchronous."""
+        return False
+
+    def get_diagnostics(self) -> dict:
+        """Return diagnostic information about the requests connection."""
+        # Assuming _insecure_ssl and _socket_timeout are attributes that would be set
+        # or derived from the session/adapter configuration.
+        # For now, providing placeholders or deriving from existing config.
+        insecure_ssl = not self._session.verify if hasattr(self._session, 'verify') else True
+        socket_timeout = self._params.get("timeout", None)
+        force_close = getattr(self, "_force_close_connection", False)
+
+        return {
+            "engine": "requests_sync",
+            "insecure_ssl": insecure_ssl,
+            "timeout": socket_timeout,
+            "keep_alive_fallback_active": force_close,
+        }
+    @property
     def log_prefix(self) -> str:
         """Get the log prefix from the controller for consistent logging."""
         if self._controller:
@@ -179,22 +173,23 @@ class ConnectionRequestBase(Connection):
 
     def _close_sync(self):
         """Explicitly close the session and thread pool (Synchronous)."""
-        _LOGGER.debug("%s [ConnectionRequest] _close_sync: Cleanup started.", self.log_prefix)
         self._is_closing = True
         
-        if hasattr(self, "_session") and self._session:
-            try:
-                self._session.close()
-                _LOGGER.debug("%s [ConnectionRequest] Session closed.", self.log_prefix)
-            except Exception as e:
-                _LOGGER.error("%s [ConnectionRequest] Error closing session: %s", self.log_prefix, e)
-        
+        # Only the root connection (no parent) should close the shared session and emit logs.
+        if not getattr(self, "_parent", None):
+            _LOGGER.debug("%s [ConnectionRequest] _close_sync: Cleanup started.", self.log_prefix)
+            if hasattr(self, "_session") and self._session:
+                try:
+                    self._session.close()
+                    _LOGGER.debug("%s [ConnectionRequest] Session closed.", self.log_prefix)
+                except Exception as e:
+                    _LOGGER.debug("%s [ConnectionRequest] Error closing session: %s", self.log_prefix, e)
+
         if hasattr(self, "_thread_pool") and self._thread_pool:
             try:
-                _LOGGER.debug("%s [ConnectionRequest] Shutting down thread pool...", self.log_prefix)
                 self._thread_pool.shutdown(wait=False)
-            except Exception as e:
-                _LOGGER.error("%s [ConnectionRequest] Error shutting down thread pool: %s", self.log_prefix, e)
+            except Exception:
+                pass
 
     def __del__(self):
         # Fallback cleanup
@@ -367,9 +362,12 @@ class ConnectionRequestBase(Connection):
                         # Dynamically adjust Keep-Alive support based on server response.
                         # resp.raw.version is an integer: 10 (HTTP/1.0) or 11 (HTTP/1.1)
                         if getattr(resp.raw, "version", 0) == 11:
-                            if getattr(self, "_force_close_connection", False):
-                                _LOGGER.debug("%s [Optimization] Server speaks HTTP/1.1. Re-enabling Keep-Alive.", self.log_prefix)
-                            self._force_close_connection = False
+                            # Only re-enable Keep-Alive if it wasn't permanently disabled
+                            # due to a protocol violation (like missing Content-Length).
+                            if not getattr(self, "_keep_alive_broken", False):
+                                if getattr(self, "_force_close_connection", False):
+                                    _LOGGER.debug("%s [Optimization] Server speaks HTTP/1.1. Re-enabling Keep-Alive.", self.log_prefix)
+                                    self._force_close_connection = False
                         elif getattr(resp.raw, "version", 0) == 10:
                             if not getattr(self, "_force_close_connection", False):
                                 _LOGGER.debug("%s [Compatibility] Server speaks HTTP/1.0. Enforcing 'Connection: close'.", self.log_prefix)
@@ -404,7 +402,28 @@ class ConnectionRequestBase(Connection):
                             return (None, True, resp.status_code)
 
                         try:
-                            return (resp.json(), True, resp.status_code)
+                            json_data = resp.json()
+                            
+                            # --- START OF FIX: Proactive Content-Length Validation ---
+                            # If the server speaks HTTP/1.1 (Keep-Alive by default) but fails
+                            # to provide a Content-Length or chunked encoding, 'requests' will 
+                            # hang reading the socket until a timeout.
+                            # The 'requests' library automatically consumes the body when calling .json()
+                            # or .text, but if we got here, we want to proactively flag this broken 
+                            # server for future requests so we don't hang for 10 seconds again.
+                            if not resp.headers.get("Content-Length") and not resp.headers.get("Transfer-Encoding") == "chunked":
+                                if not getattr(self, "_force_close_connection", False):
+                                    _LOGGER.warning(
+                                        "%s [Protocol Violation] Server returned JSON but omitted "
+                                        "'Content-Length' header. This causes socket hangs on Keep-Alive. "
+                                        "Forcing 'Connection: close' for all future requests.",
+                                        self.log_prefix
+                                    )
+                                    self._force_close_connection = True
+                                    self._keep_alive_broken = True
+                            # --- END OF FIX ---
+                            
+                            return (json_data, True, resp.status_code)
                         except (requests.exceptions.JSONDecodeError, json.JSONDecodeError):
                             # --- START OF FIX: Treat non-JSON success response as a trigger to poll ---
                             # If the response is successful (2xx) but not valid JSON (e.g., just "OK"),
@@ -442,6 +461,7 @@ class ConnectionRequestBase(Connection):
                                 self.log_prefix, str(e)
                             )
                             self._force_close_connection = True
+                            self._keep_alive_broken = True
                             # Continue to next attempt, which will now use Connection: close
                             if attempt < REQUEST_MAX_RETRIES - 1:
                                  continue
@@ -454,7 +474,7 @@ class ConnectionRequestBase(Connection):
                             time.sleep(LOCAL_RETRY_DELAY)
                             continue
                         else:
-                            _LOGGER.error("%s Request timed out (ReadTimeout) after %s attempts: %s", self.log_prefix, REQUEST_MAX_RETRIES, e)
+                            _LOGGER.warning("%s Request timed out (ReadTimeout) after %s attempts.", self.log_prefix, REQUEST_MAX_RETRIES)
                             raise CannotConnect("Request timed out (ReadTimeout)") from e
 
                     except requests.exceptions.Timeout as e:
@@ -465,7 +485,7 @@ class ConnectionRequestBase(Connection):
                             time.sleep(LOCAL_RETRY_DELAY)
                             continue
                         else:
-                            _LOGGER.error("%s Request timed out after %s attempts: %s", self.log_prefix, REQUEST_MAX_RETRIES, e)
+                            _LOGGER.warning("%s Request timed out after %s attempts.", self.log_prefix, REQUEST_MAX_RETRIES)
                             raise CannotConnect("Request timed out") from e
 
                     except requests.exceptions.ConnectionError as e:
@@ -500,9 +520,9 @@ class ConnectionRequestBase(Connection):
 
                             if has_connection_refused(e):
                                 _LOGGER.debug("%s Connection refused after %s attempts. Device is likely offline or IP is incorrect.", self.log_prefix, REQUEST_MAX_RETRIES)
-                                raise CannotConnect("Connection was refused by the device") from e
+                                raise CannotConnect("Connection refused (device unreachable or offline)") from e
                             else:
-                                _LOGGER.error("%s Connection error after %s attempts: %s", self.log_prefix, REQUEST_MAX_RETRIES, e, exc_info=True)
+                                _LOGGER.warning("%s Connection error after %s attempts: %s", self.log_prefix, REQUEST_MAX_RETRIES, e)
                                 raise CannotConnect("Failed to establish a connection") from e
 
                     except requests.exceptions.RequestException as e:
@@ -562,29 +582,27 @@ class ConnectionRequestBase(Connection):
             _LOGGER.debug("%s Execute condition not met, skipping command", self.log_prefix)
             return {}
 
-        try:
-            # --- START: Timing measurement for sync execute ---
-            start_time = time.perf_counter()
-            # --- END: Timing measurement ---
-            # Pass device_id to the internal execution method.
+        # --- START: Timing measurement for sync execute ---
+        start_time = time.perf_counter()
+        # --- END: Timing measurement ---
+        # Pass device_id to the internal execution method.
+        with tolerant_header_parsing():
             j, ok, code = self.execute_internal(template, value, device_state, device_id)
-            elapsed = time.perf_counter() - start_time
-            _LOGGER.info("%s [REQUESTS] Execute completed in %.3f seconds (status code %s)", self.log_prefix, elapsed, code)
-            # --- END: Timing measurement ---
-            # The retry logic for server errors (5xx) is now inside execute_internal
+        elapsed = time.perf_counter() - start_time
+        _LOGGER.info("%s [REQUESTS] Execute completed in %.3f seconds (status code %s)", self.log_prefix, elapsed, code)
+        # --- END: Timing measurement ---
+        # The retry logic for server errors (5xx) is now inside execute_internal
 
-            # --- FIX: PREVENT DOUBLE POLLING ---
-            # If the command was successful but returned no data, strictly return empty dict.
-            # We DO NOT trigger a refresh here anymore. The Coordinator handles the 
-            # post-command refresh logic (Smart Polling or Delay).
-            if j is None:
-                _LOGGER.debug("%s Command returned no data (or was a simple 'OK'). Returning empty dict.", self.log_prefix)
-                return {}
-            # -----------------------------------
+        # --- FIX: PREVENT DOUBLE POLLING ---
+        # If the command was successful but returned no data, strictly return empty dict.
+        # We DO NOT trigger a refresh here anymore. The Coordinator handles the 
+        # post-command refresh logic (Smart Polling or Delay).
+        if j is None:
+            _LOGGER.debug("%s Command returned no data (or was a simple 'OK'). Returning empty dict.", self.log_prefix)
+            return {}
+        # -----------------------------------
 
-            return j
-        except Exception as e:
-            raise e
+        return j
 
 
 @register_connection
@@ -608,7 +626,8 @@ class ConnectionRequest(ConnectionRequestBase):
         
         return c
 
-
+# Dry-run fixture: sample device response used only by ConnectionRequestPrint.execute()
+# for offline testing without a real device. Not used in production connections.
 test_json = {
     "Devices": [
         {

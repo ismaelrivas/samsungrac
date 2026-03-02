@@ -1,9 +1,10 @@
 import asyncio
 import logging
 import os
+import random
 import re
 import ssl
-from typing import Callable, Dict, Any, Optional, Tuple, Coroutine
+from typing import Callable, Dict, Any, Optional, Set, Tuple, Coroutine
 
 import xmltodict
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_PORT, CONF_TOKEN
@@ -18,8 +19,9 @@ from .const import (
     CONFIG_DEVICE_CONNECTION_PARAMS,
     CONFIG_DEVICE_CONNECTION_TEMPLATE,
 )
-from .helpers import mask_sensitive_data
+from .helpers import mask_sensitive_data, async_check_network_reachability
 from .const import (
+    DOMAIN,
     DEFAULT_CONF_CERT_FILE,
     PROTOCOL_2878_DPLUG,
     PROTOCOL_2878_DRC,
@@ -83,6 +85,7 @@ class ConnectionSamsung2878(Connection):
         self._last_successful_config: Optional[Dict[str, Any]] = None
         self._ssl_context_cache: Dict[Tuple[Optional[str], str, int], ssl.SSLContext] = {}
         self._initial_connection_done = False # To prevent double poll at startup
+        self._background_tasks: Set[asyncio.Task] = set()  # Track fire-and-forget tasks for clean shutdown
         
         self.update_configuration_from_hass(hass_config)
         self._power_template = None
@@ -112,6 +115,13 @@ class ConnectionSamsung2878(Connection):
             self._reconnect_retries = 0
             self._manager_task = asyncio.create_task(self._connection_manager())
 
+    def _track_task(self, coro) -> asyncio.Task:
+        """Create a tracked background task that auto-removes itself on completion."""
+        task = asyncio.create_task(coro)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+        return task
+
     async def stop_listening(self) -> None:
         if self._manager_task:
             _LOGGER.info("%s Stopping connection manager", self.log_prefix)
@@ -121,6 +131,11 @@ class ConnectionSamsung2878(Connection):
             except asyncio.CancelledError:
                 pass
             self._manager_task = None
+        # Cancel all tracked background tasks
+        for task in list(self._background_tasks):
+            if not task.done():
+                task.cancel()
+        self._background_tasks.clear()
         await self._close_connection()
 
     def update_configuration_from_hass(self, hass_config):
@@ -159,7 +174,19 @@ class ConnectionSamsung2878(Connection):
             
             # Load the preferred connection settings if they were saved during pairing
         self._last_successful_config = None
-        if hass_config.get("preferred_connection"):
+        
+        # --- 2.1b: Restore last successful SSL config from ConfigEntry data across restarts ---
+        # The configuration entry merges its 'data' into self._config at initialization.
+        stored = self._config.get('_ssl_config_2878')
+        if stored:
+            self._last_successful_config = stored
+            _LOGGER.debug(
+                "%s Restored last successful SSL config from ConfigEntry data in init: cert=%s, cipher=%s",
+                self.log_prefix, stored.get('cert'), stored.get('cipher_name')
+            )
+        # -----------------------------------------------------------------------
+
+        if not self._last_successful_config and hass_config.get("preferred_connection"):
             self._last_successful_config = hass_config.get("preferred_connection").copy()
             # Resolve relative path in preferred config if needed, to match the runtime behavior
             pref_cert = self._last_successful_config.get('cert')
@@ -196,6 +223,27 @@ class ConnectionSamsung2878(Connection):
     @staticmethod
     def match_type(type):
         return type == CONNECTION_TYPE_S2878
+
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Return diagnostic information about the 2878 connection."""
+        diag = {
+            "is_connected": self._is_ready.is_set(),
+            "reconnect_retries": self._reconnect_retries,
+            "is_available": self._is_available,
+        }
+
+        if self._last_successful_config:
+            safe_config = {}
+            if "cert" in self._last_successful_config and self._last_successful_config["cert"]:
+                # Expose only the filename, not the full path, for privacy/security
+                safe_config["cert_filename"] = os.path.basename(self._last_successful_config["cert"])
+            if "cipher_name" in self._last_successful_config:
+                safe_config["cipher_name"] = self._last_successful_config["cipher_name"]
+            diag["last_successful_config"] = safe_config
+        else:
+            diag["last_successful_config"] = None
+
+        return diag
 
     def create_updated(self, node):
         self.load_from_yaml(node, self)
@@ -260,7 +308,7 @@ class ConnectionSamsung2878(Connection):
                         _LOGGER.warning("%s Timeout waiting for connection close, forcing reset", self.log_prefix)
                     # --- END OF FIX ---
                 except (ConnectionResetError, ssl.SSLError, asyncio.CancelledError, OSError) as e:
-                    _LOGGER.warning("%s Ignoring error during connection close: %s", self.log_prefix, e)
+                    _LOGGER.debug("%s Ignoring error during connection close: %s", self.log_prefix, e)
             self._writer = self._reader = None
 
     async def _establish_connection_and_handshake(self):
@@ -419,6 +467,19 @@ class ConnectionSamsung2878(Connection):
 
                 # Memorize the successful configuration for future reconnections
                 self._last_successful_config = {'cert': cert_path, 'cipher_name': cipher_name, 'verify_mode': verify_mode}
+                
+                # --- 2.1b: Persist to ConfigEntry data so it survives HA restarts ---
+                if hasattr(self._controller, 'coordinator') and self._controller.coordinator:
+                    entry = getattr(self._controller.coordinator, 'entry', None)
+                    hass = getattr(self._controller, 'hass', None)
+                    if entry and hass:
+                        current_data = dict(entry.data)
+                        if current_data.get('_ssl_config_2878') != self._last_successful_config:
+                            current_data['_ssl_config_2878'] = self._last_successful_config
+                            hass.config_entries.async_update_entry(entry, data=current_data)
+                            _LOGGER.debug("%s Persisted SSL config to ConfigEntry data", self.log_prefix)
+                # -------------------------------------------------------------------
+                # ------------------------------------------------------------
                 connection_successful = True
                 break  # Exit the loop on successful connection.
 
@@ -451,7 +512,7 @@ class ConnectionSamsung2878(Connection):
                 self._device_status.update(parsed_data)
                 if is_update and self._update_callback:
                     _LOGGER.debug("%s Initial message was an update, calling update callback", self.log_prefix)
-                    asyncio.create_task(self._update_callback(parsed_data))
+                    self._track_task(self._update_callback(parsed_data))
 
         if not initial_msg or (PROTOCOL_2878_DPLUG not in initial_msg and PROTOCOL_2878_DRC not in initial_msg and PROTOCOL_2878_INVALIDATE not in initial_msg):
             _LOGGER.warning("%s Handshake failed: Did not receive expected initial message (DPLUG-1.6 or DRC-1.00 or InvalidateAccount). Got: %s", self.log_prefix, initial_msg)
@@ -506,11 +567,11 @@ class ConnectionSamsung2878(Connection):
 
         # Request a full status update only on reconnections, not on the very first connection.
         if self._initial_connection_done:
-            asyncio.create_task(self._post_connect_status_request())
+            self._track_task(self._post_connect_status_request())
             # --- START OF FIX: Proactively refresh HA state after reconnection ---
             if self._controller and hasattr(self._controller, 'coordinator'):
                 _LOGGER.info("%s Requesting immediate coordinator refresh after reconnection.", self.log_prefix)
-                asyncio.create_task(self._controller.coordinator.async_request_refresh())
+                self._track_task(self._controller.coordinator.async_request_refresh())
             # --- END OF FIX ---
         
         self._initial_connection_done = True
@@ -712,7 +773,7 @@ class ConnectionSamsung2878(Connection):
                     pass  # Future was already resolved.
             if parsed_data and (is_response or is_update) and self._update_callback:
                 _LOGGER.debug("%s Calling update callback with data: %s", self.log_prefix, parsed_data)
-                asyncio.create_task(self._update_callback(parsed_data))
+                self._track_task(self._update_callback(parsed_data))
             elif is_control_okay:
                 # This is just an acknowledgment. The device will send a separate <Update> push.
                 # We don't need to do anything here except acknowledge
@@ -737,7 +798,6 @@ class ConnectionSamsung2878(Connection):
         # Only attempt to open the TCP port if the ping succeeds to protect fragile ACs.
         network_reachable = True
         try:
-            from .helpers import async_check_network_reachability
             network_reachable = await async_check_network_reachability(self._cfg.host, self.log_prefix)
         except Exception as diag_err:
             _LOGGER.debug("%s Network diagnostic failed: %s", self.log_prefix, diag_err)
@@ -820,10 +880,12 @@ class ConnectionSamsung2878(Connection):
                         self._controller.coordinator.last_update_success = False
                         self._controller.coordinator.async_update_listeners()
 
-                _LOGGER.warning("%s Port connection failed. Backing off for %s seconds...", self.log_prefix, self._reconnect_delay)
+                jitter = random.uniform(0, self._reconnect_delay * 0.2)
+                delay_with_jitter = self._reconnect_delay + jitter
+                _LOGGER.warning("%s Port connection failed. Backing off for %.1f seconds (jitter: %.1f)...", self.log_prefix, delay_with_jitter, jitter)
                 self._ssl_context_cache.clear() # Force fresh SSL context on retry
                 await self._close_connection()
-                await asyncio.sleep(self._reconnect_delay)
+                await asyncio.sleep(delay_with_jitter)
                 self._reconnect_delay = min(self._reconnect_delay * RECONNECT_FACTOR, MAX_RECONNECT_DELAY)
                 return False
                 
@@ -854,10 +916,12 @@ class ConnectionSamsung2878(Connection):
                 self._pending_future.set_exception(CannotConnect(f"Connection lost and reconnect failed: {e}"))
                 self._pending_future = None
                 
-            _LOGGER.warning("%s Port connection error. Backing off for %s seconds...", self.log_prefix, self._reconnect_delay)
+            jitter = random.uniform(0, self._reconnect_delay * 0.2)
+            delay_with_jitter = self._reconnect_delay + jitter
+            _LOGGER.warning("%s Port connection error. Backing off for %.1f seconds (jitter: %.1f)...", self.log_prefix, delay_with_jitter, jitter)
             self._ssl_context_cache.clear() # Force fresh SSL context on retry
             await self._close_connection()
-            await asyncio.sleep(self._reconnect_delay)
+            await asyncio.sleep(delay_with_jitter)
             self._reconnect_delay = min(self._reconnect_delay * RECONNECT_FACTOR, MAX_RECONNECT_DELAY)
             return False
         

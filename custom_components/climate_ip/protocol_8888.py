@@ -10,7 +10,7 @@ import ssl
 from functools import partial
 from typing import Optional, Tuple, Dict
 
-from .exceptions import AuthError
+from .exceptions import AuthError, CannotConnect
 from .helpers import mask_sensitive_data
 
 _LOGGER = logging.getLogger(__name__)
@@ -18,11 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 class ProtocolError(Exception):
     pass
 
-class ConnectionError(ProtocolError):
-    pass
-
-class AuthError(ProtocolError):
-    pass
+# AuthError and CannotConnect are imported from exceptions.py — do not redefine here.
 
 class Samsung8888Client:
     """Robust asynchronous client with multi-SSL support."""
@@ -113,9 +109,9 @@ class Samsung8888Client:
             except Exception:
                 pass
         except asyncio.TimeoutError:
-            raise ConnectionError(f"Connection timed out to {self.host}:{self.port}")
+            raise CannotConnect(f"Connection timed out to {self.host}:{self.port}")
         except Exception as e:
-            raise ConnectionError(f"Connection error: {e}")
+            raise CannotConnect(f"Connection error: {e}")
 
     async def close(self):
         if self._writer:
@@ -167,7 +163,7 @@ class Samsung8888Client:
                         writer = self._writer
                         reader = self._reader
                         if writer is None or reader is None:
-                            raise ConnectionError("No connection established")
+                            raise CannotConnect("No connection established")
                         
                         # Manual HTTP construction to avoid header errors
                         req = [f"{method} {path} HTTP/1.1", f"Host: {self.host}:{self.port}", "Connection: keep-alive"]
@@ -188,14 +184,14 @@ class Samsung8888Client:
                             
                             status_line = await asyncio.wait_for(reader.readline(), timeout=10.0)
                         except asyncio.TimeoutError:
-                            raise ConnectionError("Timeout sending request or reading status line")
+                            raise CannotConnect("Timeout sending request or reading status line")
                         if not status_line:
                             raise ConnectionResetError("Remote closure")
                         
                         try:
                             status_code = int(status_line.decode('utf-8', 'ignore').strip().split(' ')[1])
                         except Exception:
-                            raise ConnectionError(f"Invalid status: {status_line!r}")
+                            raise CannotConnect(f"Invalid status: {status_line!r}")
                         
                         # Read headers
                         headers_received = []
@@ -205,7 +201,7 @@ class Samsung8888Client:
                             try:
                                 line = await asyncio.wait_for(reader.readline(), timeout=5.0)
                             except asyncio.TimeoutError:
-                                raise ConnectionError("Timeout reading headers")
+                                raise CannotConnect("Timeout reading headers")
                             
                             if not line or line == b'\r\n':
                                 break
@@ -230,7 +226,7 @@ class Samsung8888Client:
                                 chunk = await asyncio.wait_for(reader.readexactly(content_length), timeout=10.0)
                                 resp_body = chunk.decode('utf-8', 'ignore')
                             except asyncio.TimeoutError:
-                                raise ConnectionError("Timeout reading response body")
+                                raise CannotConnect("Timeout reading response body")
                             except Exception:
                                 resp_body = ""
                         elif content_length == 0 and "content-length" in [h.lower().split(':')[0] for h in headers_received]:
@@ -300,7 +296,7 @@ class Samsung8888Client:
                             retry = True
                             continue
                         else:
-                            raise ConnectionError("Unstable connection")
+                            raise CannotConnect("Unstable connection")
                     except AuthError:
                         await self.close()
                         raise
@@ -311,8 +307,8 @@ class Samsung8888Client:
                     except Exception as e:
                         await self.close()
                         if "ssl" in str(e).lower():
-                            raise ConnectionError(f"Error SSL: {e}")
-                        raise ConnectionError(f"Unexpected error: {e}")
+                            raise CannotConnect(f"Error SSL: {e}")
+                        raise CannotConnect(f"Unexpected error: {e}")
             finally:
                 pass # Just ensuring cleanup if needed
                 

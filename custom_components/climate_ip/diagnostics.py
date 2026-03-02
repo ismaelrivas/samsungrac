@@ -21,10 +21,20 @@ async def async_get_config_entry_diagnostics(
     # The data stored could be a single coordinator or a dict of coordinators
     entry_data = hass.data[DOMAIN][entry.entry_id]
 
+    # Allowlist of safe-to-expose config keys. Anything not listed is redacted.
+    SAFE_KEYS = {
+        "device_type", "ip_address", "port", "name", "poll_interval",
+        "conn_method", "temp_native_current", "temp_native_target",
+    }
+    redacted_data = {
+        k: v if k in SAFE_KEYS else "**REDACTED**"
+        for k, v in entry.data.items()
+    }
+
     # Filter the entry data to only include relevant information for this integration.
     filtered_entry_data = {
-        "data": dict(entry.data),
-        "options": entry.options,
+        "data": redacted_data,
+        "options": dict(entry.options),
         "unique_id": entry.unique_id,
     }
     diagnostics_data = {"entry": filtered_entry_data}
@@ -35,6 +45,10 @@ async def async_get_config_entry_diagnostics(
             diagnostics_data["coordinator_data"] = asdict(entry_data.data)
         diagnostics_data["controller_state"] = entry_data.controller.state_attributes
         diagnostics_data["last_poll_response"] = entry_data.controller._state_getter.value
+        
+        if hasattr(entry_data.controller, "_connection") and hasattr(entry_data.controller._connection, "get_diagnostics"):
+            diagnostics_data["connection_diagnostics"] = entry_data.controller._connection.get_diagnostics()
+            
     elif isinstance(entry_data, dict):
         # Handle multi-device entry
         diagnostics_data["coordinators"] = {}
@@ -46,6 +60,10 @@ async def async_get_config_entry_diagnostics(
                 }
                 if coordinator.data:
                     coordinator_diag["coordinator_data"] = asdict(coordinator.data)
+                    
+                if hasattr(coordinator.controller, "_connection") and hasattr(coordinator.controller._connection, "get_diagnostics"):
+                    coordinator_diag["connection_diagnostics"] = coordinator.controller._connection.get_diagnostics()
+                    
                 diagnostics_data["coordinators"][device_id] = coordinator_diag
 
     return mask_sensitive_data(diagnostics_data)
