@@ -154,7 +154,8 @@ class SamsungTokenAcquirer8888:
             from .helpers import async_create_samsung_ssl_context
             ssl_context = await async_create_samsung_ssl_context(
                 cert_path=self._cert_path,
-                ciphers='HIGH:!aNULL:!MD5:@SECLEVEL=0'
+                ciphers='HIGH:!aNULL:!MD5:@SECLEVEL=0',
+                is_server=True
             )
             
             # Start the server

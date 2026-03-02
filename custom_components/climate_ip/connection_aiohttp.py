@@ -8,7 +8,6 @@ import copy
 import json
 import time
 import ssl
-import ssl
 from urllib.parse import urlparse
 import logging
 import os
@@ -261,87 +260,85 @@ class ConnectionAiohttp8888(Connection):
                 # Logic for "insecure" / no-cert connection
                 ssl_ctx = False
 
-            if True: #Indent block 
-            # --- END OF FIX ---
-                try:
-                    _LOGGER.debug("%s [aiohttp_probe] Probing connection...", self.log_prefix)
+            try:
+                _LOGGER.debug("%s [aiohttp_probe] Probing connection...", self.log_prefix)
+                
+                # --- START OF FIX: Generalize Probe URL ---
+                from homeassistant.const import CONF_PORT
+                port = self._config.get(CONF_PORT, "8888")
+                protocol = "http" if self._config.get("use_http", False) else "https"
+                probe_url = f"{protocol}://{self._ip_address}:{port}/devices"
+                if self._params and self._params.get("url") and str(self._params.get("url")).startswith("http"):
+                    probe_url = self._params.get("url")
+                    _LOGGER.debug("%s [aiohttp_probe] Detected absolute URL, probing: %s", self.log_prefix, probe_url)
                     
-                    # --- START OF FIX: Generalize Probe URL ---
-                    from homeassistant.const import CONF_PORT
-                    port = self._config.get(CONF_PORT, "8888")
-                    protocol = "http" if self._config.get("use_http", False) else "https"
-                    probe_url = f"{protocol}://{self._ip_address}:{port}/devices"
-                    if self._params and self._params.get("url") and str(self._params.get("url")).startswith("http"):
-                        probe_url = self._params.get("url")
-                        _LOGGER.debug("%s [aiohttp_probe] Detected absolute URL, probing: %s", self.log_prefix, probe_url)
-                        
-                    # --- START OF FIX: Format probe URL ---
-                    probe_url = self._format_url(probe_url)
-                    # --- END OF FIX ---
-                    # --- END OF FIX ---
-
-                    # Update timeout to be more granular
-                    # If using HTTP for tests, disable SSL context requirement
-                    test_ssl_ctx = False if protocol == "http" else self._shared_state["ssl_context"]
-                    async with self._session.request("GET", probe_url, headers=probe_headers, ssl=test_ssl_ctx, timeout=aiohttp.ClientTimeout(total=10, sock_read=5)) as response:
-                        if response.status in (200, 401, 403, 405): # Added 405 for Method Not Allowed (probing POST with GET)
-                            # Attempt to log the negotiated TLS version
-                            try:
-                                transport = response.connection.transport if response.connection else None
-                                ssl_obj = transport.get_extra_info('ssl_object') if transport else None
-                                negotiated_tls = ssl_obj.version() if ssl_obj else "Unknown"
-                                _LOGGER.info("%s [aiohttp] Connection successful. Status: %s. Negotiated TLS: %s", self.log_prefix, response.status, negotiated_tls)
-                            except Exception:
-                                _LOGGER.info("%s [aiohttp] Connection successful and memorized. Status: %s", self.log_prefix, response.status)
-                                
-                            self._shared_state["initialized"] = True
-                            
-                            # --- START OF FIX: Optimization - Return text for reuse ---
-                            if response.status == 200:
-                                _LOGGER.debug("%s [aiohttp_probe] Reading response body...", self.log_prefix)
-                                return await response.text()
-                            return None
-                            # --- END OF FIX ---
-                        else:
-                            raise Exception(f"Unexpected probe response: {response.status}")
-                
-                # --- START OF FIX: Handle offline device gracefully ---
-                except aiohttp.ClientConnectorError as e:
-                    # Log as warning (not error) because it's expected when AC is offline.
-                    _LOGGER.warning("%s [aiohttp_probe] Device is unreachable (offline). Connection refused: %s", self.log_prefix, e)
-                    self._shared_state["ssl_context"] = None # Reset to try again later
-                    # Raise CannotConnect to let the coordinator know and retry later, but prevent the noisy traceback below.
-                    raise CannotConnect(f"Device unreachable: {e}") from e
-                
-                # --- START OF FIX: Catch incomplete responses (missing Content-Length) ---
-                except (asyncio.TimeoutError, aiohttp.ServerTimeoutError, aiohttp.SocketTimeoutError, aiohttp.ClientPayloadError) as e:
-                    # This specifically handles the case where we got a 200 OK but the read timed out
-                    # because the device didn't send a Content-Length header or close the connection.
-                    # This is a protocol violation common in older Samsung devices.
-                    _LOGGER.error(
-                        "%s [aiohttp_probe] Device protocol violation detected! "
-                        "The device accepted the connection (200 OK) but failed to send a complete response (Timeout/PayloadError: %s). "
-                        "This indicates it does not support standard HTTP/1.1 (missing Content-Length). "
-                        "Switching to 'Robust (raw socket)' engine.",
-                        self.log_prefix,
-                         e
-                     )
-                    raise InvalidHeaderError("Device failed to provide response body (missing Content-Length/Close)") from None
+                # --- START OF FIX: Format probe URL ---
+                probe_url = self._format_url(probe_url)
+                # --- END OF FIX ---
                 # --- END OF FIX ---
 
-                except Exception as e:
-                    # --- START OF FIX: Detect malformed header error ---
-                    if "Invalid header token" in str(e):
-                        _LOGGER.error(
-                            "%s [aiohttp_probe] Malformed header error detected! "
-                            "The device does not comply with the HTTP standard. "
-                            "The integration will automatically switch to the 'Robust (raw socket)' connection engine.",
-                            self.log_prefix
-                        )
-                        raise InvalidHeaderError("Malformed HTTP headers from device") from None
-                    # --- END OF FIX ---
-                    _LOGGER.warning("%s [aiohttp_probe] Initial probe with HTTPS (mTLS) failed: %s.", self.log_prefix, e, exc_info=True)
-                    self._shared_state["ssl_context"] = None # Clear on failure to allow retries
+                # Update timeout to be more granular
+                # If using HTTP for tests, disable SSL context requirement
+                test_ssl_ctx = False if protocol == "http" else self._shared_state["ssl_context"]
+                async with self._session.request("GET", probe_url, headers=probe_headers, ssl=test_ssl_ctx, timeout=aiohttp.ClientTimeout(total=10, sock_read=5)) as response:
+                    if response.status in (200, 401, 403, 405): # Added 405 for Method Not Allowed (probing POST with GET)
+                        # Attempt to log the negotiated TLS version
+                        try:
+                            transport = response.connection.transport if response.connection else None
+                            ssl_obj = transport.get_extra_info('ssl_object') if transport else None
+                            negotiated_tls = ssl_obj.version() if ssl_obj else "Unknown"
+                            _LOGGER.info("%s [aiohttp] Connection successful. Status: %s. Negotiated TLS: %s", self.log_prefix, response.status, negotiated_tls)
+                        except Exception:
+                            _LOGGER.info("%s [aiohttp] Connection successful and memorized. Status: %s", self.log_prefix, response.status)
+                            
+                        self._shared_state["initialized"] = True
+                        
+                        # --- START OF FIX: Optimization - Return text for reuse ---
+                        if response.status == 200:
+                            _LOGGER.debug("%s [aiohttp_probe] Reading response body...", self.log_prefix)
+                            return await response.text()
+                        return None
+                        # --- END OF FIX ---
+                    else:
+                        raise Exception(f"Unexpected probe response: {response.status}")
+            
+            # --- START OF FIX: Handle offline device gracefully ---
+            except aiohttp.ClientConnectorError as e:
+                # Log as warning (not error) because it's expected when AC is offline.
+                _LOGGER.warning("%s [aiohttp_probe] Device is unreachable (offline). Connection refused: %s", self.log_prefix, e)
+                self._shared_state["ssl_context"] = None # Reset to try again later
+                # Raise CannotConnect to let the coordinator know and retry later, but prevent the noisy traceback below.
+                raise CannotConnect(f"Device unreachable: {e}") from e
+            
+            # --- START OF FIX: Catch incomplete responses (missing Content-Length) ---
+            except (asyncio.TimeoutError, aiohttp.ServerTimeoutError, aiohttp.SocketTimeoutError, aiohttp.ClientPayloadError) as e:
+                # This specifically handles the case where we got a 200 OK but the read timed out
+                # because the device didn't send a Content-Length header or close the connection.
+                # This is a protocol violation common in older Samsung devices.
+                _LOGGER.error(
+                    "%s [aiohttp_probe] Device protocol violation detected! "
+                    "The device accepted the connection (200 OK) but failed to send a complete response (Timeout/PayloadError: %s). "
+                    "This indicates it does not support standard HTTP/1.1 (missing Content-Length). "
+                    "Switching to 'Robust (raw socket)' engine.",
+                    self.log_prefix,
+                     e
+                 )
+                raise InvalidHeaderError("Device failed to provide response body (missing Content-Length/Close)") from None
+            # --- END OF FIX ---
+
+            except Exception as e:
+                # --- START OF FIX: Detect malformed header error ---
+                if "Invalid header token" in str(e):
+                    _LOGGER.error(
+                        "%s [aiohttp_probe] Malformed header error detected! "
+                        "The device does not comply with the HTTP standard. "
+                        "The integration will automatically switch to the 'Robust (raw socket)' connection engine.",
+                        self.log_prefix
+                    )
+                    raise InvalidHeaderError("Malformed HTTP headers from device") from None
+                # --- END OF FIX ---
+                _LOGGER.warning("%s [aiohttp_probe] Initial probe with HTTPS (mTLS) failed: %s.", self.log_prefix, e, exc_info=True)
+                self._shared_state["ssl_context"] = None # Clear on failure to allow retries
 
             _LOGGER.error("%s [aiohttp_probe] HTTPS (mTLS) connection probe failed. The device is unreachable or the certificate/token is incorrect.", self.log_prefix)
             raise CannotConnect("Connection initialization failed (HTTPS)")
@@ -588,22 +585,30 @@ class ConnectionAiohttp8888(Connection):
                         _LOGGER.debug("%s [async_execute] Embedded command condition met. Executing it before the main command.", self.log_prefix)
                         # The embedded command has its own template and params. We must render them.
                         embedded_template = getattr(self._embedded_command, '_connection_template', None)
+                        embedded_params = getattr(self._embedded_command, '_params', {})
                         if embedded_template:
-                            # The embedded command might not need a 'value'
                             embedded_params_str = embedded_template.render()
                             embedded_params = json.loads(embedded_params_str)
-                            embedded_data = json.dumps(embedded_params.get('json')) if 'json' in embedded_params else None
+                        elif embedded_params:
+                            # Fallback: use _params directly (e.g. YAML-defined params without a Jinja template)
+                            _LOGGER.debug(
+                                "%s [async_execute] Embedded command has no connection_template, using _params directly.",
+                                self.log_prefix,
+                            )
+                        else:
+                            _LOGGER.warning("%s [async_execute] Embedded command found but it has no connection_template or params.", self.log_prefix)
+                            embedded_params = None
 
-                            _LOGGER.debug("%s [async_execute] Executing embedded command with its own params: %s", self.log_prefix, mask_sensitive_data(embedded_params))
-                            # Execute the embedded command by calling its own async_execute method.
-                            # This ensures it is fully initialized and uses its own specific parameters.
+                        if embedded_params:
+                            embedded_data = json.dumps(embedded_params.get('json')) if 'json' in embedded_params else None
+                            embedded_url = embedded_params.get('url', url)
+                            embedded_method = embedded_params.get('method', method)
+
+                            _LOGGER.debug("%s [async_execute] Executing embedded command with params: %s", self.log_prefix, mask_sensitive_data(embedded_params))
                             await self._embedded_command.async_execute(
-                                method=embedded_params.get('method'), url=embedded_params.get('url'),
+                                method=embedded_method, url=embedded_url,
                                 data=embedded_data, headers=embedded_params.get('headers', headers),
                                 device_state=device_state)
-                            # --- END OF FIX ---
-                        else:
-                            _LOGGER.warning("%s [async_execute] Embedded command found but it has no connection_template.", self.log_prefix)
                 else:
                     _LOGGER.warning("%s [async_execute] Embedded command found, but cannot check its condition (device_state is missing). Skipping.", self.log_prefix)
 
@@ -658,6 +663,20 @@ class ConnectionAiohttp8888(Connection):
 
         return await self._async_execute_request(method, url, data, headers, _is_probe=_is_probe, _is_poll=_is_poll)
 
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Return diagnostic information about the aiohttp connection."""
+        diag = {
+            "is_connected": self._shared_state.get("initialized", False) if self._shared_state else False,
+            "force_close_connection": getattr(self, "_force_close_connection", False),
+            "keep_alive_enabled": self._keep_alive,
+        }
+        
+        # Check SSL context presence
+        if self._shared_state:
+            ssl_ctx = self._shared_state.get("ssl_context")
+            diag["has_ssl_context"] = bool(ssl_ctx)
+
+        return diag
 
     async def close(self):
         """

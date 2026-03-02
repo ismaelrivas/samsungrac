@@ -10,34 +10,12 @@ This engine creates a FRESH session for every request, which is inefficient but
 necessary for some devices that do not support Keep-Alive correctly or require
 frequent TLS renegotiation.
 
-NOTE: Unlike the 'Legacy (requests)' engine, these SmartThings devices typically 
-do NOT require the 'urllib3' monkey-patch for malformed headers, but this file 
-inherits from ConnectionRequestBase which might apply it globally.
+NOTE: The urllib3 monkey-patch for malformed headers has been replaced by
+a scoped context manager (`tolerant_header_parsing` from helpers.py) that
+is applied only during execute_internal() calls.
 """
-# Monkey-patch urllib3 to be more tolerant of malformed headers from some AC units.
-import urllib3.util.response as response_util
-from urllib3.exceptions import HeaderParsingError
-import urllib3.connection as connection_mod
-import logging
-
-_LOGGER_PATCH = logging.getLogger(__package__)
-
-_original_assert = response_util.assert_header_parsing
-
-def _tolerant_assert_header_parsing(headers):
-    """A tolerant version of assert_header_parsing that logs instead of raising."""
-    try:
-        _original_assert(headers)
-    except HeaderParsingError as e:
-        _LOGGER_PATCH.debug(
-            "Ignored HeaderParsingError: %s",
-            e
-        )
-
-response_util.assert_header_parsing = _tolerant_assert_header_parsing
-connection_mod.assert_header_parsing = _tolerant_assert_header_parsing
-import copy
 import concurrent.futures
+import copy
 import json
 import logging
 import os
@@ -51,9 +29,9 @@ from requests.adapters import HTTPAdapter
 from .connection import Connection, register_connection
 from .exceptions import AuthError, CannotConnect
 from .helpers import mask_sensitive_data
+from .helpers import tolerant_header_parsing
 from .const import (
     CONF_CERT,
-    CONFIG_DEVICE_CONNECTION_TEMPLATE,
     CONFIG_DEVICE_CONNECTION_PARAMS,
     CONFIG_DEVICE_CONNECTION,
     CONFIG_DEVICE_CONDITION_TEMPLATE,
@@ -61,7 +39,7 @@ from .const import (
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
-CONNECTION_TYPE_REQUEST = "tls_auto"
+CONNECTION_TYPE_TLS_AUTO = "tls_auto"
 CONNECTION_TYPE_REQUEST_PRINT = "request_tls_auto_print"
 
 class SamsungHTTPAdapter(HTTPAdapter):
@@ -263,10 +241,16 @@ class ConnectionRequestBase(Connection):
                 except requests.exceptions.RequestException as e:
                     _LOGGER.error("%s Unhandled request exception: %s", self.log_prefix, e, exc_info=True)
                     raise CannotConnect(f"An unexpected network error occurred: {e}") from e
-        # --- FIX: Fallback return to satisfy static analysis ---
-        # This line ensures the function returns a tuple even if the loop finishes
-        # without raising an exception (which shouldn't happen, but satisfies the linter).
+        
         return (None, False, 0)
+        
+    def get_diagnostics(self) -> dict:
+        """Return diagnostic information about the tls_auto connection."""
+        diag = super().get_diagnostics()
+        diag["engine"] = "requests_tls_auto"
+        # We don't have a direct TLS version attribute here like in connection_aiohttp, 
+        # so we just return the base diagnostics with the engine name updated.
+        return diag
 
     def execute(self, template, value, device_state, device_id=None):
         """Synchronously executes the command. To be run in an executor."""
@@ -288,12 +272,10 @@ class ConnectionRequestBase(Connection):
             return {}
 
         _LOGGER.debug("%s Executing command...", self.log_prefix)
-        try:
-            # Run the blocking execute_internal method in an executor
+        # Run the blocking execute_internal method in an executor
+        with tolerant_header_parsing():
             j, ok, code = self.execute_internal(template, value, device_state, device_id)
-            return j
-        except Exception as e:
-            raise e
+        return j
 
 
 @register_connection
@@ -303,7 +285,7 @@ class ConnectionRequestTlsAuto(ConnectionRequestBase):
 
     @staticmethod
     def match_type(type):
-        return type == CONNECTION_TYPE_REQUEST or type == "request_tls_auto"
+        return type == CONNECTION_TYPE_TLS_AUTO or type == "request_tls_auto"
 
     def create_updated(self, node):
         c = ConnectionRequestTlsAuto(None, _LOGGER, self._insecure_ssl, self._params["timeout"], self._retry_delay, self._debug)

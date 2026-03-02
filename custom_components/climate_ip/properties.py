@@ -3,6 +3,7 @@ import logging
 from typing import Any, Dict, Optional
 import homeassistant.helpers.config_validation as cv
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNKNOWN, UnitOfTemperature
+from homeassistant.components.sensor import SensorStateClass
 from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .const import (
@@ -216,7 +217,22 @@ class DeviceProperty:
             self._friendly_name = node.get("name", None)
             self._device_class = node.get("device_class", None)
             self._unit_of_measurement = node.get("unit_of_measurement", None)
-            self._state_class = node.get("state_class", None)
+
+            # Convert state_class string to SensorStateClass enum
+            raw_state_class = node.get("state_class", None)
+            if raw_state_class:
+                try:
+                    self._state_class = SensorStateClass(raw_state_class)
+                except ValueError:
+                    _LOGGER.warning(
+                        "%s Invalid state_class '%s' for property '%s'. Using None.",
+                        self.log_prefix, raw_state_class, self._id
+                    )
+                    self._state_class = None
+            elif self._device_class in ("power", "temperature", "humidity", "voltage", "current"):
+                # Auto-assign MEASUREMENT for common numeric sensor device classes
+                self._state_class = SensorStateClass.MEASUREMENT
+
             return True
         return False
 

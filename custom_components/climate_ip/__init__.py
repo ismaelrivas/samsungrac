@@ -45,6 +45,35 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [Platform.CLIMATE, Platform.SENSOR, Platform.SWITCH]
 
 
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Set up the Climate IP component."""
+    
+    async def async_reload_yaml(call):
+        """Handle the service call to reload YAML configurations."""
+        _LOGGER.info("Reloading climate_ip YAML configurations and restarting integrations.")
+        
+        # 1. Clear the dictionary holding parsed YAML files
+        clear_yaml_cache()
+        
+        # 2. Grab all loaded config entries for this domain
+        entries = hass.config_entries.async_entries(DOMAIN)
+        
+        # 3. Ask Home Assistant to elegantly reload each one
+        reload_tasks = [
+            hass.config_entries.async_reload(entry.entry_id)
+            for entry in entries
+        ]
+        
+        if reload_tasks:
+            await asyncio.gather(*reload_tasks)
+            
+        _LOGGER.info("Successfully reloaded %s climate_ip integrations.", len(reload_tasks))
+
+    # Register the new reload service
+    hass.services.async_register(DOMAIN, "reload", async_reload_yaml)
+    
+    return True
+
 
 async def async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle options update."""
