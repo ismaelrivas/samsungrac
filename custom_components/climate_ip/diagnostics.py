@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Any, Mapping
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -22,12 +22,12 @@ async def async_get_config_entry_diagnostics(
     entry_data = hass.data[DOMAIN][entry.entry_id]
 
     # Allowlist of safe-to-expose config keys. Anything not listed is redacted.
-    SAFE_KEYS = {
+    safe_keys = {
         "device_type", "ip_address", "port", "name", "poll_interval",
         "conn_method", "temp_native_current", "temp_native_target",
     }
     redacted_data = {
-        k: v if k in SAFE_KEYS else "**REDACTED**"
+        k: v if k in safe_keys else "**REDACTED**"
         for k, v in entry.data.items()
     }
 
@@ -44,26 +44,20 @@ async def async_get_config_entry_diagnostics(
         if entry_data.data:
             diagnostics_data["coordinator_data"] = asdict(entry_data.data)
         diagnostics_data["controller_state"] = entry_data.controller.state_attributes
-        diagnostics_data["last_poll_response"] = entry_data.controller._state_getter.value
-        
-        if hasattr(entry_data.controller, "_connection") and hasattr(entry_data.controller._connection, "get_diagnostics"):
-            diagnostics_data["connection_diagnostics"] = entry_data.controller._connection.get_diagnostics()
-            
+        diagnostics_data["last_poll_response"] = entry_data.controller.last_poll_data
+        diagnostics_data["connection_diagnostics"] = entry_data.controller.connection_diagnostics
     elif isinstance(entry_data, dict):
         # Handle multi-device entry
         diagnostics_data["coordinators"] = {}
         for device_id, coordinator in entry_data.items():
-            if isinstance(coordinator, SamsungClimateCoordinator):                
+            if isinstance(coordinator, SamsungClimateCoordinator):
                 coordinator_diag = {
                     "controller_state": coordinator.controller.state_attributes,
-                    "last_poll_response": coordinator.controller._state_getter.value,
+                    "last_poll_response": coordinator.controller.last_poll_data,
+                    "connection_diagnostics": coordinator.controller.connection_diagnostics,
                 }
                 if coordinator.data:
                     coordinator_diag["coordinator_data"] = asdict(coordinator.data)
-                    
-                if hasattr(coordinator.controller, "_connection") and hasattr(coordinator.controller._connection, "get_diagnostics"):
-                    coordinator_diag["connection_diagnostics"] = coordinator.controller._connection.get_diagnostics()
-                    
                 diagnostics_data["coordinators"][device_id] = coordinator_diag
 
     return mask_sensitive_data(diagnostics_data)

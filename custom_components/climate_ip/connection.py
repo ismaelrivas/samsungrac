@@ -37,28 +37,27 @@ class Connection:
     def get_diagnostics(self) -> Dict[str, Any]:
         """Return diagnostic information about the connection for troubleshooting.
         Override in subclasses to provide specific connection details."""
-        return {}
+        return {
+            "type": self.__class__.__name__,
+            "status": "not_implemented_in_base_class"
+        }
     
-    # --- START OF MODIFICATION (Milestone 0) ---
-    
-    # Interface for synchronous engines (requests, 2878)
+
     def execute(self, template, value, device_state, device_id=None) -> Any:
         """Executes a synchronous command."""
         raise NotImplementedError
     
-    # Interface for asynchronous engines (aiohttp, raw)
+
     async def async_execute(self, method, url, data, headers, device_state=None, _is_probe=False, _is_poll=False) -> Tuple[Optional[str], Optional[Dict[str, str]]]:
         """Executes an asynchronous command."""
         raise NotImplementedError
+
     
-    # Helper property for Milestone 1
     @property
     def is_async_native(self) -> bool:
         """Indicates if the connection is native asynchronous (aiohttp)."""
-        # Subclasses can override this if 'async_execute' is just a wrapper.
         return False
-    
-    # --- END OF MODIFICATION (Milestone 0) ---
+
     
     def check_execute_condition(self, device_state) -> bool:
         """Return True if the command should be executed for the given device state.

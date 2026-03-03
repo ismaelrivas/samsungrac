@@ -113,12 +113,14 @@ class DeviceProperty:
         self._connection_template = None
         self._validation_template = None
         self._device_state = None
+        self._is_valid_cache = (None, None) # Optimización CPU: (id(device_state), result)
 
         # --- ADD THESE NEW ATTRIBUTES ---
         self._friendly_name: Optional[str] = None  # For the entity name
         self._device_class: Optional[str] = None
         self._unit_of_measurement: Optional[str] = None
         self._state_class: Optional[str] = None
+        self._entity_category: Optional[str] = None
         # --- END OF ADDITIONS ---
 
     @property
@@ -131,16 +133,25 @@ class DeviceProperty:
         return self._id
 
     def is_valid(self, device_state):
-        self._device_state = device_state
         if self.validation_template is None or device_state is None:
+            self._device_state = device_state
             return True
-        else:
-            try:
-                v = self.validation_template.render(device_state=device_state)
-                return str(v).lower() == "valid"
-            except Exception as e:
-                _LOGGER.error("%s Error rendering validation template for %s: %s", self.log_prefix, self.id, e)
-                return False
+
+        # Optimización CPU: Si es el mismo objeto de estado en memoria (durante este poll), devolver caché
+        state_id = id(device_state)
+        if state_id == self._is_valid_cache[0]:
+            self._device_state = device_state
+            return self._is_valid_cache[1]
+
+        self._device_state = device_state
+        try:
+            v = self.validation_template.render(device_state=device_state)
+            result = str(v).lower() == "valid"
+            self._is_valid_cache = (state_id, result)
+            return result
+        except Exception as e:
+            _LOGGER.error("%s Error rendering validation template for %s: %s", self.log_prefix, self.id, e)
+            return False
 
     @property
     def config_validation_type(self):
@@ -167,6 +178,10 @@ class DeviceProperty:
     @property
     def unit_of_measurement(self) -> Optional[str]:
         return self._unit_of_measurement
+
+    @property
+    def entity_category(self) -> Optional[str]:
+        return self._entity_category
 
     @property
     def state_class(self) -> Optional[str]:
@@ -217,6 +232,7 @@ class DeviceProperty:
             self._friendly_name = node.get("name", None)
             self._device_class = node.get("device_class", None)
             self._unit_of_measurement = node.get("unit_of_measurement", None)
+            self._entity_category = node.get("entity_category", None)
 
             # Convert state_class string to SensorStateClass enum
             raw_state_class = node.get("state_class", None)
@@ -402,18 +418,27 @@ class GetJsonStatus(DeviceProperty):
             except Exception:
                 raise
         else:
-            # It's a synchronous connection (requests or 2878)
-
-
-            # This is the logic that will run now, identical to the previous one.
-            # The synchronous 'execute' call is wrapped in async_add_executor_job
-            # to avoid blocking the Home Assistant event loop.
-            device_state_result = await self._controller.hass.async_add_executor_job(
-                connection.execute,
-                self.connection_template,
-                None,
-                self.value
-            )
+            # It's a synchronous connection (requests)
+            device_state_result = None
+            for attempt in range(5):
+                try:
+                    # The synchronous 'execute' call is wrapped in async_add_executor_job
+                    # to avoid blocking the Home Assistant event loop.
+                    device_state_result = await self._controller.hass.async_add_executor_job(
+                        connection.execute,
+                        self.connection_template,
+                        None,
+                        self.value
+                    )
+                    break # Success
+                except Exception as e:
+                    if getattr(e, '__class__', None) and e.__class__.__name__ == 'RetryNextAttempt':
+                        delay = min(1.0 * (2 ** attempt), 15.0)
+                        _LOGGER.debug("%s Sync poll yielded RetryNextAttempt. Async sleeping %.1fs (Attempt %s/5)...", self.log_prefix, delay, attempt+1)
+                        import asyncio
+                        await asyncio.sleep(delay)
+                        continue
+                    raise
         # --- END OF MODIFICATION (Milestone 1) ---
 
         self._value = device_state_result
@@ -566,28 +591,30 @@ class DeviceOperation(DeviceProperty):
                 raise HomeAssistantError(f"Unexpected error when setting {self.id}") from e
         # --- END: Logic to handle async native commands ---
         else: # Fallback to original synchronous logic
-
-            try:
-                response = await self._controller.hass.async_add_executor_job(
-                    connection.execute,
-                    self.connection_template,
-                    self.convert_hass_to_dev(v),
-                    current_full_state,
-                    device_id
-                )
-                # The synchronous `execute` method in `connection_request.py` returns `None`
-                # on success with an empty body to trigger a poll. A `dict` or `list` is returned
-                # if there is a JSON body. An exception is raised on failure.
-                # Therefore, if no exception was raised, the command was successful.
-                return True
-            except (CannotConnect, AuthError) as e:
-                 _LOGGER.warning("%s Failed to set value for %s: connection error: %s", self.log_prefix, self.id, e)
-                 from homeassistant.exceptions import HomeAssistantError
-                 raise HomeAssistantError(f"Connection error: could not set value for {self.id}") from e
-            except Exception as e:
-                _LOGGER.error("%s Error during async_set_value for %s: %s", self.log_prefix, self.id, e, exc_info=True)
-                from homeassistant.exceptions import HomeAssistantError
-                raise HomeAssistantError(f"Unexpected error when setting {self.id}") from e
+            for attempt in range(5):
+                try:
+                    response = await self._controller.hass.async_add_executor_job(
+                        connection.execute,
+                        self.connection_template,
+                        self.convert_hass_to_dev(v),
+                        current_full_state,
+                        device_id
+                    )
+                    return True
+                except Exception as e:
+                    if getattr(e, '__class__', None) and e.__class__.__name__ == 'RetryNextAttempt':
+                        delay = min(1.0 * (2 ** attempt), 15.0)
+                        _LOGGER.debug("%s Sync command yielded RetryNextAttempt. Async sleeping %.1fs (Attempt %s/5)...", self.log_prefix, delay, attempt+1)
+                        import asyncio
+                        await asyncio.sleep(delay)
+                        continue
+                    if isinstance(e, (CannotConnect, AuthError)):
+                        _LOGGER.warning("%s Failed to set value for %s: connection error: %s", self.log_prefix, self.id, e)
+                        from homeassistant.exceptions import HomeAssistantError
+                        raise HomeAssistantError(f"Connection error: could not set value for {self.id}") from e
+                    raise
+                
+            return False
 
     def match_value(self, value):
         """Check if value matches the operation. True if the value is correct."""
@@ -673,17 +700,17 @@ class BasicDeviceOperation(DeviceOperation):
         cache_key = str(cache_key_prop) if cache_key_prop else "None"
 
         if cache_key in self._values_cache:
-            #_LOGGER.debug("%s Cache hit for '%s' with key '%s'. Returning cached values", self.log_prefix, self.name, cache_key)
-            return self._values_cache[cache_key]
-        
-        _LOGGER.debug("%s Cache miss for '%s' with key '%s'. Calculating values", self.log_prefix, self.name, cache_key)
-
-        valid_values = []
-        for ha_value in self._values:
-            if self.is_value_valid(ha_value, self._device_state):
-                valid_values.append(ha_value)
+            valid_values = self._values_cache[cache_key]
+        else:
+            _LOGGER.debug("%s Cache miss for '%s' with key '%s'. Calculating values", self.log_prefix, self.name, cache_key)
+            valid_values = []
+            for ha_value in self._values:
+                if self.is_value_valid(ha_value, self._device_state):
+                    valid_values.append(ha_value)
+            self._values_cache[cache_key] = valid_values
 
         # Detect if the list of valid values has changed since the last check.
+        # This must run even on a cache hit to flag the HA UI feature flicker.
         if sorted(valid_values) != sorted(self._last_valid_values) and self._last_valid_values:
             _LOGGER.debug("%s Valid values for '%s' changed to: %s", self.log_prefix, self.name, valid_values)
             
@@ -692,8 +719,7 @@ class BasicDeviceOperation(DeviceOperation):
                 _LOGGER.debug("%s Setting fan_modes_list_changed_pending_flicker flag", self.log_prefix)
                 self._controller._fan_modes_list_changed_pending_flicker = True
         
-        # 3. Save the result to the cache before returning it to avoid recalculation on the next call with the same state.
-        self._values_cache[cache_key] = valid_values
+        # Save the result to the cache before returning it to avoid recalculation on the next call with the same state.
         self._last_valid_values = valid_values  # Keep this for change detection.
 
         return valid_values

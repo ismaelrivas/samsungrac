@@ -1,4 +1,3 @@
-import aiofiles
 import asyncio
 import time
 
@@ -35,14 +34,12 @@ from .connection import CLIMATE_IP_CONNECTIONS
 from .controller import ATTR_POWER, ClimateController, register_controller
 from .properties import DeviceProperty, create_property, create_status_getter
 from .state import ClimateIPDeviceState
-# FIX: Import the missing constant
 from .const import (
     CONF_DEVICE_TYPE,
     DEVICE_TYPE_8888_GROUP,
     DEVICE_TYPE_AIOHTTP_SUPPORTED,
     DEVICE_TYPE_MIM_H03,
     DEVICE_TYPE_SAMSUNG_2878,
-    # --- START OF MODIFICATION (Milestone 4) ---
     CONF_CONN_METHOD,
     CONN_METHOD_AIOHTTP,
     CONN_METHOD_REQUESTS,
@@ -277,10 +274,17 @@ class YamlControllerInitMixin:
             self._raw_yaml_config = _YAML_FILE_CACHE[file]
         else:
             try:
-                async with aiofiles.open(file, "r", encoding="utf-8") as stream:
-                    self._raw_yaml_config = await stream.read()
-                    _YAML_FILE_CACHE[file] = self._raw_yaml_config
-                    _LOGGER.debug("%s [Cache] YAML file loaded and cached: %s", self.log_prefix, file)
+                def _read_file():
+                    with open(file, "r", encoding="utf-8") as stream:
+                        return stream.read()
+                        
+                if getattr(self, "hass", None):
+                    self._raw_yaml_config = await self.hass.async_add_executor_job(_read_file)
+                else:
+                    self._raw_yaml_config = _read_file()
+                    
+                _YAML_FILE_CACHE[file] = self._raw_yaml_config
+                _LOGGER.debug("%s [Cache] YAML file loaded and cached: %s", self.log_prefix, file)
             except Exception as exc:
                 _LOGGER.error("%s Error loading YAML configuration %s: %s", self.log_prefix, file, exc, exc_info=True)
                 return False

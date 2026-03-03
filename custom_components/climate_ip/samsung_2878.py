@@ -785,7 +785,7 @@ class ConnectionSamsung2878(Connection):
 
 
 
-    async def _handle_reconnection(self) -> bool:
+    async def handle_reconnection(self) -> bool:
         """Handle the reconnection process."""
         # Stateful logging: Log INFO only when the state changes from available to unavailable.
         if self._is_available:
@@ -844,9 +844,14 @@ class ConnectionSamsung2878(Connection):
 
                 self._ssl_context_cache.clear()
                 await self._close_connection()
-                await asyncio.sleep(10.0)
-                # We reset the exponential reconnect delay to 10s if we drop off the network mid-backoff
-                self._reconnect_delay = 10.0 
+                
+                # Use current exponential backoff but without jitter for network down
+                delay_to_use = self._reconnect_delay
+                _LOGGER.debug("%s Host unreachable. Retrying ping in %.1f seconds...", self.log_prefix, delay_to_use)
+                await asyncio.sleep(delay_to_use)
+                
+                # Increment exponential backoff delay for the next attempt
+                self._reconnect_delay = min(self._reconnect_delay * RECONNECT_FACTOR, MAX_RECONNECT_DELAY)
                 return False
 
             # If the handshake fails with a connection error, it returns False.
@@ -939,19 +944,18 @@ class ConnectionSamsung2878(Connection):
             while True:
                 try:
                     if not self._writer or self._writer.is_closing():
-                        if not await self._handle_reconnection():
+                        if not await self.handle_reconnection():
                             continue
 
                     if not self._reader:
                         _LOGGER.warning("%s Reader object is missing, forcing reconnection.", self.log_prefix)
                         await self._close_connection()
-                        continue
-
-                    # Ensure read task is running
-                    if not self._read_task or self._read_task.done():
-                        self._read_task = asyncio.create_task(self._reader.read(8192))
-                    
-                    tasks = [self._read_task]
+                        await self.handle_reconnection()
+                    else: # Ensure read task is running
+                        if not self._read_task or self._read_task.done():
+                            self._read_task = asyncio.create_task(self._reader.read(8192))
+                        
+                        tasks = [self._read_task]
 
                     # Ensure queue listener is running if we are ready for commands
                     if not queue_task and not self._pending_future:

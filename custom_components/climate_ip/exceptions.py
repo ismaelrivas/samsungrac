@@ -4,6 +4,9 @@ from homeassistant.exceptions import HomeAssistantError
 class CannotConnect(HomeAssistantError):
     """Error to indicate we cannot connect."""
 
+class RetryNextAttempt(HomeAssistantError):
+    """Raised to yield the executor thread back to the async loop during retries."""
+
 class ConnectionRefused(CannotConnect):
     """Error to indicate the connection was refused."""
 

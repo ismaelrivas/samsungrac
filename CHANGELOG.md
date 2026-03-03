@@ -1,5 +1,30 @@
 # Changelog
 
+## [9.2.1] - 2026-03-03
+
+### Changed
+- **Core Stability**: Refactored YAML loading mechanism (`controller_yaml_init.py`) to run safely in Home Assistant's thread pool via `hass.async_add_executor_job`, eliminating Event Loop blocking.
+- **HA Standards**: Added `strict_typing: true`, `iot_class: local_polling`, and official `"quality_scale": "gold"` to `manifest.json`.
+- **Code Harmonization (DRY)**: Refactored `config_flow.py` to consolidate Samsung schema generation into a unified, parametric base helper (`_get_base_samsung_schema`), reducing boilerplate duplication.
+- **Log Refinement**: Downgraded state auto-correction and UI flicker notifications to `DEBUG` level to eliminate information noise in the Home Assistant logs.
+- **Encapsulation & Architecture (V7 Audit)**: Created robust public APIs (`last_poll_data`, `connection_diagnostics`) in `controller_yaml.py` and replaced all internal private attribute accesses across `diagnostics.py` and `switch.py`.
+- **Hygienic Codebase (V7 Audit)**: Performed a full-scope repository purge of development artifacts: deleted persistent `split_controller.py` build script, eradicated milestone scaffolding blocks, relocated nested inline imports, and cleansed internal `[DIAG]` test prints.
+
+### Fixed
+- **Socket Memory Leak (CRITICAL)**: Added explicit `wait_closed()` instructions in `connection_raw.py` to prevent File Descriptor exhaustion and RAM leaks on persistent disconnections.
+- **Session Resource Leak**: Fixed `aiohttp.ClientSession` memory leak in `__init__.py` by safely awaiting graceful session teardowns during integration unloads.
+- **Asymmetric Unload**: Restructured `async_unload_entry` layout (`__init__.py`) to brutally stop `polling` tasks and network loops *before* attempting HA platform teardown, solving teardown race conditions.
+- **Exponential Backoff Spam**: Repaired `samsung_2878.py` fallback loops to ensure reconnect delay times properly increment, preventing the integration from spamming unreachable routers.
+- **Dynamic Retry Backoff**: Enhanced `properties.py` with a true exponential backoff algorithm (1s to 15s) for asynchronous retries, replacing static delays and improving recovery responsiveness.
+- **Config Flow 500 Errors**: Fixed unhandled exceptions (`AuthError`) causing API crashes during AC device pairing by gracefully mapping them to visible UI alerts.
+- **Jinja2 High CPU Usage**: Optimized `Template.render()` validation in `properties.py` using per-poll in-memory caching to eliminate redundant CPU evaluation iterations.
+- **Deepcopy RAM Spikes**: Replaced expensive `copy.deepcopy` calls in `controller_yaml_state.py` with fast C-level `json.loads(json.dumps())` combinations to optimize optimistic device state construction.
+- **Event Loop Blocking**: Rewrote the fallback reconnect loops in `connection_request.py` to remove `time.sleep()`, using a custom `RetryNextAttempt` exception to delegate waits to the `asyncio` event loop.
+- **Exception UX**: Migrated custom exceptions to inherit securely from `HomeAssistantError` and properly implemented the native `ConfigEntryNotReady` backoff manager.
+- **Diagnostic Entities**: Mapped nested hardware sensors like `Alarms`, `Filter`, and `Energy` directly to Home Assistant's `entity_category: diagnostic` platform standard, purging "magic string" inference logic.
+- **Test Determinism**: Refactored `test_integration.py` to replace hardcoded `asyncio.sleep` calls with dynamic `async_timeout` poll loops, ensuring the test suite is stable across different hardware speeds.
+- **Strict Typing Fixes**: Injected missing `Dict[str, Any]` type hints in `__init__.py` to satisfy strict MyPy auditing requirements.
+
 ## [9.2.0] - 2026-03-02
 
 ### Added

@@ -385,7 +385,11 @@ class ConnectionRaw8888(Connection):
         if self._client:
             _LOGGER.debug("%s [RAW] Closing local client...", self.log_prefix)
             try:
-                await self._client.close()
+                self._client.close()
+                if hasattr(self._client, "_writer") and self._client._writer is not None:
+                    # Imprescindible en Python 3.7+ para evitar que 
+                    # los FDs (File Descriptors) colapsen la memoria al fallar conexiones.
+                    await self._client._writer.wait_closed()
             except Exception as e:
                 _LOGGER.error("%s [RAW] Error closing local client: %s", self.log_prefix, e)
             finally:
@@ -398,6 +402,8 @@ class ConnectionRaw8888(Connection):
                 _LOGGER.debug("%s [RAW] Closing shared client...", self.log_prefix)
                 try:
                     await shared_client.close()
+                    if hasattr(shared_client, "_writer") and shared_client._writer is not None:
+                         await shared_client._writer.wait_closed()
                 except Exception as e:
                     _LOGGER.error("%s [RAW] Error closing shared client: %s", self.log_prefix, e)
                 finally:

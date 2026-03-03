@@ -35,21 +35,17 @@ from .connection import CLIMATE_IP_CONNECTIONS
 from .controller import ATTR_POWER, ClimateController, register_controller
 from .properties import DeviceProperty, create_property, create_status_getter
 from .state import ClimateIPDeviceState
-# FIX: Import the missing constant
 from .const import (
     CONF_DEVICE_TYPE,
     DEVICE_TYPE_8888_GROUP,
     DEVICE_TYPE_AIOHTTP_SUPPORTED,
     DEVICE_TYPE_MIM_H03,
     DEVICE_TYPE_SAMSUNG_2878,
-    # --- START OF MODIFICATION (Milestone 4) ---
     CONF_CONN_METHOD,
     CONN_METHOD_AIOHTTP,
     CONN_METHOD_REQUESTS,
     CONN_METHOD_RAW,
-    # --- END OF MODIFICATION (Milestone 4) ---
-    # --- END OF MODIFICATION (Milestone 4) ---
-    DOMAIN, # Import DOMAIN
+    DOMAIN,
 )
 from .exceptions import CannotConnect, AuthError, InvalidHeaderError
 from .helpers import stream_wrapper, get_value_by_path, mask_sensitive_data
@@ -259,24 +255,27 @@ class YamlController(YamlControllerInitMixin, YamlControllerStateMixin, ClimateC
     @property
     def sensors(self) -> List["DeviceProperty"]:
         """Return a list of all defined sensor property objects."""
-        # Return the actual property objects, not just the names
         return [self._sensors[name] for name in self._sensors_list if name in self._sensors]
 
     @property
+    def last_poll_data(self) -> Any:
+        """Return the last raw poll response for diagnostics."""
+        return self._state_getter.value if self._state_getter else None
+
+    @property
+    def connection_diagnostics(self) -> Dict[str, Any]:
+        """Return connection diagnostic info."""
+        if hasattr(self, '_connection') and hasattr(self._connection, 'get_diagnostics'):
+            return self._connection.get_diagnostics()
+        return {}
+
+    @property
     def device_state(self) -> Dict[str, Any]:
-        """
-        Return the current *unwrapped* device state.
-        This provides access to the sub-device state (e.g. {'Mode': ...}) 
-        which is used by properties and sensors, rather than the raw connection state
-        (e.g. {'Devices': ...}).
-        """
+        """Return the current unwrapped device state."""
         if self._last_device_state:
              return self._last_device_state
-        
-        # Fallback to raw state if no unwrapped state is available yet
         if self._state_getter:
              return self._state_getter.value
-        
         return {}
 
 

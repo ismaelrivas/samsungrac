@@ -35,21 +35,17 @@ from .connection import CLIMATE_IP_CONNECTIONS
 from .controller import ATTR_POWER, ClimateController, register_controller
 from .properties import DeviceProperty, create_property, create_status_getter
 from .state import ClimateIPDeviceState
-# FIX: Import the missing constant
 from .const import (
     CONF_DEVICE_TYPE,
     DEVICE_TYPE_8888_GROUP,
     DEVICE_TYPE_AIOHTTP_SUPPORTED,
     DEVICE_TYPE_MIM_H03,
     DEVICE_TYPE_SAMSUNG_2878,
-    # --- START OF MODIFICATION (Milestone 4) ---
     CONF_CONN_METHOD,
     CONN_METHOD_AIOHTTP,
     CONN_METHOD_REQUESTS,
     CONN_METHOD_RAW,
-    # --- END OF MODIFICATION (Milestone 4) ---
-    # --- END OF MODIFICATION (Milestone 4) ---
-    DOMAIN, # Import DOMAIN
+    DOMAIN,
 )
 from .exceptions import CannotConnect, AuthError, InvalidHeaderError
 from .helpers import stream_wrapper, get_value_by_path, mask_sensitive_data
@@ -74,10 +70,9 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 CONST_CONTROLLER_TYPE = "yaml"
-CONST_MAX_GET_STATUS_RETRIES = 4
+from .const import MAX_GET_STATUS_RETRIES
 
-# Class-level cache to store the raw content of YAML files.
-from .exceptions import CannotConnect, AuthError, InvalidHeaderError
+# Exception and update coordinator imports for state management.
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
@@ -405,10 +400,8 @@ class YamlControllerStateMixin:
         if not self._is_fully_initialized:
             return {}
 
-        # FIX: Check if coordinator exists before accessing its data.
-        # --- START OF FIX: Add null check for self.coordinator ---
+        # Check if coordinator exists before accessing its data.
         current_hass_state = self.coordinator.data if self.coordinator else None
-        # --- END OF FIX ---
         if not current_hass_state:
             _LOGGER.debug("%s Coordinator data is not available (normal during setup or first poll)", self.log_prefix)
 
@@ -441,7 +434,7 @@ class YamlControllerStateMixin:
                     
                     # Simplified logic: Take the first valid device
                     found_device = devices_list[0] if devices_list[0] else None
-                    # TODO: This should be improved to select the device based on self._device_id
+                    # Future improvement: select the device based on self._device_id
                     if found_device:
                         _LOGGER.debug("%s Success. 'device_to_process' is now the sub-device", self.log_prefix)
                         device_to_process = found_device
@@ -506,8 +499,8 @@ class YamlControllerStateMixin:
             if hasattr(op, 'values') and op.value is not None and op.value != STATE_UNKNOWN:
                 if op.value not in op.values:
                     new_value = op.values[0] if op.values else STATE_UNKNOWN
-                    _LOGGER.info(
-                        "%s State auto-correction for '%s'. Value '%s' is no longer valid in %s. Setting to '%s'. Triggering UI flicker",
+                    _LOGGER.debug(
+                        "%s State auto-correction for '%s'. Value '%s' is no longer valid in %s. Setting to '%s'.",
                         self.log_prefix, op.name, op.value, op.values, new_value,
                     )
                     op._value = new_value
@@ -551,20 +544,12 @@ class YamlControllerStateMixin:
             _LOGGER.warning("%s [HASS->DEV] No previous real device state available to use as a template", self.log_prefix)
             return {}
 
-        reconstructed_state = copy.deepcopy(last_real_state)
+        import json
+        reconstructed_state = json.loads(json.dumps(last_real_state))
 
         all_props = list(self._operations.values()) + list(self._properties.values())
 
         for op in all_props:
-            # --- START OF FIX: Prioritize internal value over HASS state ---
-            # When merging or predicting, the internal property value (op.value) might be more
-            # up-to-date than the HASS state, which could be stale.
-            if op.value is not None and op.value != STATE_UNKNOWN: # Check internal property value first
-                hass_value = op.value
-            else:
-                hass_value = getattr(hass_state, op.id, None)
-            # --- END OF FIX ---
-
             hass_value = getattr(hass_state, op.id, None)
         
             if hass_value is not None:                
@@ -597,7 +582,8 @@ class YamlControllerStateMixin:
             _LOGGER.warning("%s [PROP->DEV] No previous real device state available to use as a template", self.log_prefix)
             return {}
 
-        reconstructed_state = copy.deepcopy(last_real_state)
+        import json
+        reconstructed_state = json.loads(json.dumps(last_real_state))
         _LOGGER.debug("%s [PROP->DEV] Building future state from template: %s", self.log_prefix, str(reconstructed_state)[:200] + "...")
 
         # Now, iterate through all properties and inject their *current* internal values
@@ -770,9 +756,6 @@ class YamlControllerStateMixin:
             if device_key is None:
                 if property_name == ATTR_TEMPERATURE:
                     _LOGGER.debug("%s [Predict] Manual-injecting temperature: %s", self.log_prefix, new_value)
-                    # --- START OF FIX: Handle nested device structure ---
-                    # The 'Temperatures' key is inside the first item of the 'Devices' list.
-                    # We need to navigate to it correctly.
                     device_list = future_state.get('Devices')
                     if isinstance(device_list, list) and len(device_list) > 0:
                         device_obj = device_list[0]
@@ -780,14 +763,11 @@ class YamlControllerStateMixin:
                             device_obj['Temperatures'][0]['desired'] = new_value
                         else:
                             _LOGGER.warning("%s [Predict] 'Temperatures' key missing inside 'Devices' list.", self.log_prefix)
-                    # --- START OF FIX: Fallback for 2878 devices ---
                     elif 'AC_FUN_TEMPSET' in future_state:
                         _LOGGER.debug("%s [Predict] Manual-injecting for 2878-style device into AC_FUN_TEMPSET", self.log_prefix)
                         future_state['AC_FUN_TEMPSET'] = str(new_value)
                     else:
                         _LOGGER.warning("%s [Predict] Manual prediction failed. Neither 'Devices' nor 'AC_FUN_TEMPSET' found.", self.log_prefix)
-                    # --- END OF FIX ---
-                    # --- END OF FIX ---
 
                 elif property_name == ATTR_HVAC_MODE:
                     if 'AC_FUN_OPMODE' in future_state:

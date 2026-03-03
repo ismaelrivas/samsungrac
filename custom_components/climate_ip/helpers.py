@@ -280,7 +280,7 @@ async def async_check_network_reachability(host: str, log_prefix: str = "") -> b
         host_obj = await async_ping(
             address=host,
             count=1,
-            timeout=2.0,
+            timeout=0.5,
             interval=0.2,
             privileged=is_privileged
         )

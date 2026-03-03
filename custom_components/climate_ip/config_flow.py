@@ -197,9 +197,12 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         except CannotConnect:
             _LOGGER.warning("Cannot connect to the device during pairing initiation.")
             return {"ok": False, "error": "cannot_connect"}
+        except AuthError as e:
+            _LOGGER.warning("Authentication failed during pairing: %s", e)
+            return {"ok": False, "error": "invalid_auth"}
         except Exception as e:
             _LOGGER.error("Error during pairing initiation: %s", e, exc_info=True)
-            return {"ok": False, "error": "pairing_init_failed"}
+            return {"ok": False, "error": "unknown_error"}
 
     async def _wait_token_safe(self) -> Dict[str, Any]:
         """Safe wrapper for the wait_for_token phase to prevent exceptions from escaping."""
@@ -231,7 +234,6 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if device_type == DEVICE_TYPE_SAMSUNG_2878:
                 return await self.async_step_samsung_2878()
             
-            # --- START OF MODIFICATION (Milestone 4) ---
             if device_type in DEVICE_TYPE_8888_GROUP:
                 return await self.async_step_samsung_8888()
             if device_type in [
@@ -241,7 +243,6 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return await self.async_step_rest_api()
 
             return self.async_abort(reason="not_implemented")
-            # --- END OF MODIFICATION (Milestone 4) ---
 
         schema = vol.Schema({
             vol.Required(CONF_DEVICE_TYPE): SelectSelector(
@@ -261,12 +262,14 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(step_id="user", data_schema=schema)
 
-    def _get_samsung_2878_schema(self, mac_required: bool = False) -> vol.Schema:
-        """Helper to dynamically generate the schema for the Samsung 2878 step."""
+    def _get_base_samsung_schema(self, mac_required: bool = False, is_8888: bool = False) -> vol.Schema:
+        """Helper to dynamically generate the shared base schema for Samsung devices."""
         raw_mac = self.flow_data.get(CONF_MAC, "")
         formatted_mac = ":".join(raw_mac[i:i+2] for i in range(0, len(raw_mac), 2)) if raw_mac else ""
 
-        schema_dict = {vol.Required(CONF_IP_ADDRESS, default=self.flow_data.get(CONF_IP_ADDRESS, "")): str}
+        schema_dict = {
+            vol.Required(CONF_IP_ADDRESS, default=self.flow_data.get(CONF_IP_ADDRESS, "")): str
+        }
         
         if mac_required:
             schema_dict[vol.Required(CONF_MAC, default=formatted_mac)] = str
@@ -276,15 +279,18 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         schema_dict.update({
             vol.Optional(CONF_NAME, default=self.flow_data.get(CONF_NAME, "")): str,
             vol.Optional(CONF_TOKEN, default=self.flow_data.get(CONF_TOKEN, "")): str,
-            vol.Optional(CONF_CERT, default=self.flow_data.get(CONF_CERT, "")): str,
+            vol.Optional(CONF_CERT, default=self.flow_data.get(CONF_CERT, "ac14k_m.pem" if is_8888 else "")): str,
             vol.Optional(
                 CONF_POLL_INTERVAL, default=str(datetime.timedelta(seconds=self.flow_data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)))
-            ): TextSelector(
-                TextSelectorConfig(type=TextSelectorType.TEXT)
-            ),
-            vol.Optional(
-                CONF_ENABLE_POLLING, default=self.flow_data.get(CONF_ENABLE_POLLING, DEFAULT_ENABLE_POLLING)
-            ): bool,
+            ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
+        })
+        
+        if not is_8888:
+            schema_dict.update({
+                vol.Optional(CONF_ENABLE_POLLING, default=self.flow_data.get(CONF_ENABLE_POLLING, DEFAULT_ENABLE_POLLING)): bool,
+            })
+
+        schema_dict.update({
             vol.Optional(
                 CONF_TEMP_NATIVE_CURRENT, default=self.flow_data.get(CONF_TEMP_NATIVE_CURRENT, DEFAULT_CONF_TEMP_UNIT)
             ): SelectSelector(
@@ -303,6 +309,26 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
         })
         return vol.Schema(schema_dict)
+
+    def _get_samsung_2878_schema(self, mac_required: bool = False) -> vol.Schema:
+        """Helper to dynamically generate the schema for the Samsung 2878 step via the DRY base."""
+        return self._get_base_samsung_schema(mac_required=mac_required, is_8888=False)
+
+    def _validate_poll_interval(self, user_input: Dict[str, Any]) -> Optional[int]:
+        """Parse and validate the poll interval from user input. Returns seconds or raises ValueError."""
+        val = user_input.get(CONF_POLL_INTERVAL)
+        if val is None:
+            return None
+        if isinstance(val, (int, float)):
+            seconds = int(val)
+        else:
+            time_period = cv.time_period_str(str(val))
+            seconds = int(time_period.total_seconds())
+        if seconds < MIN_POLL_INTERVAL:
+            raise vol.Invalid(f"Minimum interval is {MIN_POLL_INTERVAL} seconds")
+        if seconds > MAX_POLL_INTERVAL:
+            raise vol.Invalid(f"Maximum interval is {MAX_POLL_INTERVAL} seconds")
+        return seconds
 
     async def async_step_samsung_2878(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
         """Handle IP/MAC input and resolution for old Samsung devices."""
@@ -324,19 +350,9 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Validate polling interval
             if CONF_POLL_INTERVAL in user_input:
                 try:
-                    val = user_input[CONF_POLL_INTERVAL]
-                    if isinstance(val, (int, float)):
-                        seconds = int(val)
-                    else:
-                        time_period = cv.time_period_str(str(val))
-                        seconds = int(time_period.total_seconds())
-
-                    if seconds < MIN_POLL_INTERVAL:
-                        raise vol.Invalid(f"Minimum interval is {MIN_POLL_INTERVAL} seconds")
-                    if seconds > MAX_POLL_INTERVAL:
-                        raise vol.Invalid(f"Maximum interval is {MAX_POLL_INTERVAL} seconds")
-                    
-                    self.flow_data[CONF_POLL_INTERVAL] = seconds
+                    seconds = self._validate_poll_interval(user_input)
+                    if seconds is not None:
+                        self.flow_data[CONF_POLL_INTERVAL] = seconds
                 except (vol.Invalid, ValueError):
                     errors[CONF_POLL_INTERVAL] = "invalid_poll_interval"
                     return self.async_show_form(
@@ -373,46 +389,8 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors)
 
     def _get_samsung_8888_schema(self, mac_required: bool = False) -> vol.Schema:
-        """Helper to dynamically generate the schema for the Samsung 8888/MIM-H03 step."""
-        raw_mac = self.flow_data.get(CONF_MAC, "")
-        formatted_mac = ":".join(raw_mac[i:i+2] for i in range(0, len(raw_mac), 2)) if raw_mac else ""
-
-        schema_dict = {
-            vol.Required(CONF_IP_ADDRESS, default=self.flow_data.get(CONF_IP_ADDRESS, "")): str,
-        }
-        
-        if mac_required:
-            schema_dict[vol.Required(CONF_MAC, default=formatted_mac)] = str
-        else:
-            schema_dict[vol.Optional(CONF_MAC, default=formatted_mac)] = str
-
-        schema_dict.update({
-            vol.Optional(CONF_NAME, default=self.flow_data.get(CONF_NAME, "")): str,
-            vol.Optional(CONF_TOKEN, default=""): str,
-            vol.Optional(CONF_CERT, default="ac14k_m.pem"): str,
-            vol.Optional(
-                CONF_POLL_INTERVAL, default=str(datetime.timedelta(seconds=self.flow_data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)))
-            ): TextSelector(
-                TextSelectorConfig(type=TextSelectorType.TEXT)
-            ),
-            vol.Optional(
-                CONF_TEMP_NATIVE_CURRENT, default=self.flow_data.get(CONF_TEMP_NATIVE_CURRENT, DEFAULT_CONF_TEMP_UNIT)
-            ): SelectSelector(
-                SelectSelectorConfig(
-                    options=[UnitOfTemperature.CELSIUS, UnitOfTemperature.FAHRENHEIT],
-                    mode=SelectSelectorMode.DROPDOWN,
-                )
-            ),
-            vol.Optional(
-                CONF_TEMP_NATIVE_TARGET, default=self.flow_data.get(CONF_TEMP_NATIVE_TARGET, DEFAULT_CONF_TEMP_UNIT)
-            ): SelectSelector(
-                SelectSelectorConfig(
-                    options=[UnitOfTemperature.CELSIUS, UnitOfTemperature.FAHRENHEIT],
-                    mode=SelectSelectorMode.DROPDOWN,
-                )
-            ),
-        })
-        return vol.Schema(schema_dict)
+        """Helper to dynamically generate the schema for the Samsung 8888/MIM-H03 step via the DRY base."""
+        return self._get_base_samsung_schema(mac_required=mac_required, is_8888=True)
 
     async def async_step_samsung_8888(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
         """Handle IP input and token acquisition for modern Samsung devices."""
@@ -434,19 +412,9 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Validate polling interval
             if CONF_POLL_INTERVAL in user_input:
                 try:
-                    val = user_input[CONF_POLL_INTERVAL]
-                    if isinstance(val, (int, float)):
-                        seconds = int(val)
-                    else:
-                        time_period = cv.time_period_str(str(val))
-                        seconds = int(time_period.total_seconds())
-
-                    if seconds < MIN_POLL_INTERVAL:
-                        raise vol.Invalid(f"Minimum interval is {MIN_POLL_INTERVAL} seconds")
-                    if seconds > MAX_POLL_INTERVAL:
-                        raise vol.Invalid(f"Maximum interval is {MAX_POLL_INTERVAL} seconds")
-                    
-                    self.flow_data[CONF_POLL_INTERVAL] = seconds
+                    seconds = self._validate_poll_interval(user_input)
+                    if seconds is not None:
+                        self.flow_data[CONF_POLL_INTERVAL] = seconds
                 except (vol.Invalid, ValueError):
                     errors[CONF_POLL_INTERVAL] = "invalid_poll_interval"
                     return self.async_show_form(
@@ -512,27 +480,13 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if device_type:
                 test_data[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE.get(device_type)
             
-            if device_type:
-                test_data[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE.get(device_type)
-            
             # Validate polling interval before connection test
             if CONF_POLL_INTERVAL in user_input:
                 try:
-                    val = user_input[CONF_POLL_INTERVAL]
-                    if isinstance(val, (int, float)):
-                        seconds = int(val)
-                    else:
-                        time_period = cv.time_period_str(str(val))
-                        seconds = int(time_period.total_seconds())
-
-                    if seconds < MIN_POLL_INTERVAL:
-                        raise vol.Invalid(f"Minimum interval is {MIN_POLL_INTERVAL} seconds")
-                    if seconds > MAX_POLL_INTERVAL:
-                        raise vol.Invalid(f"Maximum interval is {MAX_POLL_INTERVAL} seconds")
-                    
-                    self.flow_data[CONF_POLL_INTERVAL] = seconds
-                    # Update test_data as well if needed, though controller uses its own logic
-                    test_data[CONF_POLL_INTERVAL] = seconds
+                    seconds = self._validate_poll_interval(user_input)
+                    if seconds is not None:
+                        self.flow_data[CONF_POLL_INTERVAL] = seconds
+                        test_data[CONF_POLL_INTERVAL] = seconds
                 except (vol.Invalid, ValueError):
                     errors[CONF_POLL_INTERVAL] = "invalid_poll_interval"
                     return self.async_show_form(

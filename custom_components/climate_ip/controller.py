@@ -1,6 +1,6 @@
 """Base class for a climate device controller."""
 import logging
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type, Generic, TypeVar
 
 from homeassistant.const import UnitOfTemperature
 
@@ -8,8 +8,9 @@ ATTR_POWER = "power"
 
 CLIMATE_CONTROLLERS: List[Type["ClimateController"]] = []
 
+_T = TypeVar('_T')
 
-class ClimateController:
+class ClimateController(Generic[_T]):
     """Abstract base class for a device controller."""
     def __init__(self, config: Dict[str, Any], logger: logging.Logger):
         """Initialize the controller."""

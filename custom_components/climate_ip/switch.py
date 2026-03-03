@@ -41,12 +41,10 @@ async def async_setup_entry(
             
         for op in ops:
             if isinstance(op, str):
-
-                 # Try to get the object from the controller
-                 # We need to access the private _operations dict or use a getter if available
-                 # operations property *should* return objects, but let's be safe.
-                 if hasattr(controller, "_operations") and op in controller._operations:
-                     op = controller._operations[op]
+                 # Use public accessor instead of private _operations dict
+                 prop_obj = controller.get_property_object(op)
+                 if prop_obj is not None:
+                     op = prop_obj
                  else:
                      _LOGGER.error("Switch setup: Could not find operation object for '%s'", op)
                      continue

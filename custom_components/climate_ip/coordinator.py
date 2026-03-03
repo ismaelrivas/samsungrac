@@ -1,6 +1,7 @@
 """DataUpdateCoordinator for the Samsung Climate integration."""
 import asyncio
 import logging
+import time
 from datetime import timedelta
 from typing import Any, Dict, Optional, Tuple
 from homeassistant.config_entries import ConfigEntry
@@ -55,7 +56,7 @@ class _ConnectivityWarningFilter(logging.Filter):
 
 _LOGGER.addFilter(_ConnectivityWarningFilter())
 
-class SamsungClimateCoordinator(DataUpdateCoordinator):
+class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     """Manages data fetching for Samsung Climate devices."""
 
     def __init__(self, hass: Any, controller: Any, entry: ConfigEntry) -> None:
@@ -117,6 +118,31 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
         """Unregister the climate entity instance."""
         self._entity = None
 
+    @callback
+    def async_set_updated_data(self, data: ClimateIPDeviceState) -> None:
+        """Intercept data update to trigger UI flicker if necessary."""
+        super().async_set_updated_data(data)
+        
+        # Check if the fan mode list changed during the state update.
+        if self.controller and getattr(self.controller, "_fan_modes_list_changed_pending_flicker", False):
+            _LOGGER.debug("%s Fan modes list changed. Triggering UI flicker via background task", self.log_prefix)
+            if hasattr(self, "_entity") and self._entity:
+                self.hass.async_create_task(self._async_flicker_ui())
+            self.controller._fan_modes_list_changed_pending_flicker = False
+
+    async def _async_flicker_ui(self) -> None:
+        """Flicker the UI to force a re-render of the climate card options."""
+        if not hasattr(self, "_entity") or not self._entity:
+            return
+        try:
+            # Flicker OFF
+            await self._entity.async_flicker_feature(ClimateEntityFeature.FAN_MODE, False)
+            await asyncio.sleep(0.1)  # Short delay for UI to process the change.
+            # Flicker ON
+            await self._entity.async_flicker_feature(ClimateEntityFeature.FAN_MODE, True)
+        except Exception as e:
+            _LOGGER.debug("%s Error during UI flicker: %s", self.log_prefix, e)
+
     async def _async_update_data(self) -> ClimateIPDeviceState:
         """Fetch the latest state from the device."""
         try:
@@ -172,8 +198,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
             # --- END OF FIX ---
 
         except Exception as err:
-            _LOGGER.error("%s Unexpected error during update", self.log_prefix, exc_info=True)
-            raise UpdateFailed(f"An unexpected error occurred: {err}") from err
+            _LOGGER.critical("%s Fatal unexpected error during update: %s", self.log_prefix, err, exc_info=True)
+            raise UpdateFailed(f"Fatal error: {err}") from err
 
     async def async_handle_push_update(self, new_data: Optional[Dict[str, Any]] = None) -> None:
         """Handle a state update received via push from the connection."""
@@ -183,18 +209,6 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
             if new_data:
                 # Use the merge logic in the controller.
                 await self.controller.async_merge_device_state(new_data, is_response=False, is_update=True)
-
-                # Check if the fan mode list changed during the state update.
-                if self.controller._fan_modes_list_changed_pending_flicker:
-                    _LOGGER.debug("%s Fan modes list changed. Triggering UI flicker", self.log_prefix)
-                    if self._entity:
-                        # Flicker OFF
-                        await self._entity.async_flicker_feature(ClimateEntityFeature.FAN_MODE, False)
-                        await asyncio.sleep(0.1)  # Short delay for UI to process the change.
-                        # Flicker ON
-                        await self._entity.async_flicker_feature(ClimateEntityFeature.FAN_MODE, True)
-                    # Reset the flag after handling it.
-                    self.controller._fan_modes_list_changed_pending_flicker = False
 
                 # Create the new state object and notify listeners.
                 updated_state = self._create_device_state()
@@ -241,7 +255,6 @@ class SamsungClimateCoordinator(DataUpdateCoordinator):
 
     async def _run_smart_poll(self, property_name: str, new_value: Any) -> None:
         """Execute the smart polling logic after a debounce delay."""
-        import time
         start_time = time.time()
         max_retries = 3
         poll_interval = 1.0 # Wait 1 second between attempts

@@ -14,7 +14,7 @@ from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_PORT, CONF_TOKEN
 from requests.adapters import HTTPAdapter
 
 from .connection import Connection, register_connection
-from .exceptions import AuthError, CannotConnect, ConnectionRefused
+from .exceptions import CannotConnect, AuthError, InvalidHeaderError, RetryNextAttempt
 from .helpers import mask_sensitive_data, tolerant_header_parsing
 from .const import (
     CONF_CERT,
@@ -443,9 +443,8 @@ class ConnectionRequestBase(Connection):
                         elif 500 <= e.response.status_code < 600 and attempt < REQUEST_MAX_RETRIES - 1:
                             if self._is_closing:
                                 raise ConnectionError("Connection is closing")
-                            _LOGGER.warning("%s Server error (%s). Retrying in %s seconds", self.log_prefix, e.response.status_code, LOCAL_RETRY_DELAY)
-                            time.sleep(LOCAL_RETRY_DELAY)
-                            continue
+                            _LOGGER.warning("%s Server error (%s). Delegating retry to async loop.", self.log_prefix, e.response.status_code)
+                            raise RetryNextAttempt(f"Server error {e.response.status_code}")
                         else:
                             # Enhanced error logging
                             _LOGGER.error("%s HTTP error: %s. Body: %s. Not retrying", self.log_prefix, e, getattr(e.response, 'text', 'No Body'))
@@ -470,9 +469,8 @@ class ConnectionRequestBase(Connection):
                         if attempt < REQUEST_MAX_RETRIES - 1:
                             if self._is_closing:
                                 raise ConnectionError("Connection is closing")
-                            _LOGGER.warning("%s ReadTimeout error. Retrying in %s seconds", self.log_prefix, LOCAL_RETRY_DELAY)
-                            time.sleep(LOCAL_RETRY_DELAY)
-                            continue
+                            _LOGGER.warning("%s ReadTimeout error. Delegating retry to async loop.", self.log_prefix)
+                            raise RetryNextAttempt("ReadTimeout error")
                         else:
                             _LOGGER.warning("%s Request timed out (ReadTimeout) after %s attempts.", self.log_prefix, REQUEST_MAX_RETRIES)
                             raise CannotConnect("Request timed out (ReadTimeout)") from e
@@ -481,9 +479,8 @@ class ConnectionRequestBase(Connection):
                         if attempt < REQUEST_MAX_RETRIES - 1:
                             if self._is_closing:
                                 raise ConnectionError("Connection is closing")
-                            _LOGGER.warning("%s Request timed out. Retrying in %s seconds", self.log_prefix, LOCAL_RETRY_DELAY)
-                            time.sleep(LOCAL_RETRY_DELAY)
-                            continue
+                            _LOGGER.warning("%s Request timed out. Delegating retry to async loop.", self.log_prefix)
+                            raise RetryNextAttempt("Timeout error")
                         else:
                             _LOGGER.warning("%s Request timed out after %s attempts.", self.log_prefix, REQUEST_MAX_RETRIES)
                             raise CannotConnect("Request timed out") from e
@@ -504,9 +501,8 @@ class ConnectionRequestBase(Connection):
                         if attempt < REQUEST_MAX_RETRIES - 1:
                             if self._is_closing:
                                 raise ConnectionError("Connection is closing")
-                            _LOGGER.warning("%s Connection error. Retrying in %s seconds", self.log_prefix, LOCAL_RETRY_DELAY)
-                            time.sleep(LOCAL_RETRY_DELAY)
-                            continue
+                            _LOGGER.warning("%s Connection error. Delegating retry to async loop.", self.log_prefix)
+                            raise RetryNextAttempt("Connection error")
                         else:
                             # Recursively check the exception chain for the root cause.
                             def has_connection_refused(exc):

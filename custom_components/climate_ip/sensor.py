@@ -7,23 +7,22 @@ from typing import Any
 
 from homeassistant.components.sensor import (
     SensorEntity,
+    SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-# Import STATE_UNKNOWN
 from homeassistant.const import STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 
 from .const import DOMAIN
 from .coordinator import SamsungClimateCoordinator
-# Import DeviceProperty to use as a type hint
 from .properties import DeviceProperty, UniqueIdProperty
 
 _LOGGER = logging.getLogger(__name__)
 
-# --- REMOVE THE HARDCODED SENSOR_TYPES TUPLE ---
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -46,7 +45,7 @@ async def async_setup_entry(
         # to assign sensors to specific sub-devices if they report them.
         # For now, this assumes sensors are global to the controller.
         coordinator = next(iter(coordinators.values()))
-        raw_device_state = coordinator.controller._state_getter.value
+        raw_device_state = coordinator.controller.device_state
         for sensor_prop in coordinator.controller.sensors:
             if sensor_prop.is_valid(raw_device_state):
                 entities_to_add.append(ClimateIpSensor(coordinator, sensor_prop))
@@ -90,6 +89,13 @@ class ClimateIpSensor(CoordinatorEntity[SamsungClimateCoordinator], SensorEntity
         self._attr_device_class = self._property.device_class
         self._attr_native_unit_of_measurement = self._property.unit_of_measurement
         self._attr_state_class = self._property.state_class
+
+        raw_entity_category = getattr(self._property, 'entity_category', None)
+        if raw_entity_category:
+            try:
+                self._attr_entity_category = EntityCategory(raw_entity_category)
+            except ValueError:
+                _LOGGER.warning("Invalid entity_category '%s'", raw_entity_category)
 
         # Set initial state will be handled by the first coordinator update
         # self._attr_native_value = None
@@ -145,7 +151,7 @@ class ClimateIpSensor(CoordinatorEntity[SamsungClimateCoordinator], SensorEntity
 
         # If the property type is 'string', assign the value directly.
         # Otherwise, try to convert it to a number (float).
-        if isinstance(self._property, UniqueIdProperty): # UniqueIdProperty is our 'string' type
+        if isinstance(self._property, UniqueIdProperty) or getattr(self._property, 'value_is_string', False):
             self._attr_native_value = str(value)
         else:
             try:

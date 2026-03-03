@@ -274,7 +274,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         # `super()._handle_coordinator_update()` just wraps this, so we call it directly.
         self.async_schedule_update_ha_state()
 
-    async def async_flicker_feature(self, feature: ClimateEntityFeature, enable: bool):
+    async def async_flicker_feature(self, feature: ClimateEntityFeature, enable: bool) -> None:
         """
         Enable or disable a feature flag and force a state write.
         Used by the coordinator to force the UI to re-render controls.
@@ -306,7 +306,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         return self._attr_device_info
 
     @property
-    def name(self):
+    def name(self) -> str:
         """Return the name of the climate device."""
         return self._name
 
@@ -315,7 +315,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         """Return the list of supported features."""
         return self._supported_features
 
-    async def async_set_temperature(self, **kwargs):
+    async def async_set_temperature(self, **kwargs) -> None:
         """Set new target temperature."""
         if (temp := kwargs.get(ATTR_TEMPERATURE)) is not None:
             # Predict corrections based on the new temperature.
@@ -331,13 +331,13 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             # Send the command to the device.
             await self.coordinator.async_set_property(ATTR_TEMPERATURE, temp, corrections)
 
-    async def async_set_hvac_mode(self, hvac_mode: str):
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
         _, corrections = await self.coordinator.async_predict_and_correct(
             self.coordinator.data, ATTR_HVAC_MODE, hvac_mode
         )
 
-        self._attr_hvac_mode = HVACMode(hvac_mode)
+        self._attr_hvac_mode = hvac_mode
         self._apply_optimistic_corrections(corrections)
         self.async_write_ha_state()
 
@@ -354,7 +354,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
                 setattr(self, f"_attr_{prop}", value)
 
 
-    async def async_set_fan_mode(self, fan_mode: str):
+    async def async_set_fan_mode(self, fan_mode: str) -> None:
         """Set new target fan mode."""
         # Check if the requested fan mode is valid for the current HVAC mode.
         if fan_mode not in self.fan_modes:
@@ -374,7 +374,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
         await self.coordinator.async_set_property(ATTR_FAN_MODE, fan_mode, corrections)
 
-    async def async_set_swing_mode(self, swing_mode: str):
+    async def async_set_swing_mode(self, swing_mode: str) -> None:
         """Set new target swing operation."""
         _, corrections = await self.coordinator.async_predict_and_correct(
             self.coordinator.data, ATTR_SWING_MODE, swing_mode
@@ -386,7 +386,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
         await self.coordinator.async_set_property(ATTR_SWING_MODE, swing_mode, corrections)
 
-    async def async_set_preset_mode(self, preset_mode: str):
+    async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set new target preset mode."""
         _, corrections = await self.coordinator.async_predict_and_correct(
             self.coordinator.data, ATTR_PRESET_MODE, preset_mode
@@ -398,7 +398,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
         await self.coordinator.async_set_property(ATTR_PRESET_MODE, preset_mode, corrections)
 
-    async def async_turn_on(self):
+    async def async_turn_on(self) -> None:
         """Turn the climate device on."""
         _, corrections = await self.coordinator.async_predict_and_correct(
             self.coordinator.data, ATTR_POWER, STATE_ON
@@ -410,7 +410,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
         await self.coordinator.async_set_property(ATTR_POWER, STATE_ON, corrections)
 
-    async def async_turn_off(self):
+    async def async_turn_off(self) -> None:
         """Turn the climate device off."""
         _, corrections = await self.coordinator.async_predict_and_correct(
             self.coordinator.data, ATTR_POWER, STATE_OFF
@@ -447,7 +447,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         self.async_schedule_update_ha_state(force_refresh=True)
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> Dict[str, Any]:
         """Return the state attributes."""
         # Core properties must be filtered out because HA merges extra_state_attributes 
         # overwriting the core entity properties, which breaks any formatting or rounding 
