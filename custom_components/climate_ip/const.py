@@ -8,7 +8,7 @@ PLATFORMS = ["climate"]
 CONF_POLL_INTERVAL = "poll_interval"
 DEFAULT_POLL_INTERVAL = 60
 MIN_POLL_INTERVAL = 5
-MAX_POLL_INTERVAL = 300
+MAX_POLL_INTERVAL = 21600
 CONF_ENABLE_POLLING = "enable_polling"
 DEFAULT_ENABLE_POLLING = True
 
@@ -20,6 +20,8 @@ CONF_NAME = "name"
 CONF_SELECTED_DEVICES = "selected_devices"
 CONF_DEVICES = "devices"
 CONF_DEVICE_ID = "device_id"
+CONF_TEMP_NATIVE_CURRENT = "temp_native_current"
+CONF_TEMP_NATIVE_TARGET = "temp_native_target"
 
 # --- Connection Method Constants (for Dual Engine) ---
 CONF_CONN_METHOD = "connection_method"

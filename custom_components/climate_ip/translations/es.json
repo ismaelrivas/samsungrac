@@ -11,7 +11,7 @@
     },
     "connection_method": {
       "options": {
-        "requests": "Legacy (requests)",
+        "requests": "Legacy (Obsoleto)",
         "aiohttp": "Moderno (aiohttp)"
       }
     }
@@ -22,7 +22,9 @@
         "title": "Ajustar Opciones",
         "description": "Modifica las opciones de la integración.",
         "data": {
-          "poll_interval": "Intervalo de sondeo (segundos)"
+          "poll_interval": "Intervalo de sondeo (segundos o hh:mm:ss)",
+          "temp_native_current": "Unidad Nativa Actual (AC -> HA)",
+          "temp_native_target": "Unidad Nativa Objetivo (HA -> AC)"
         }
       }
     }
@@ -46,7 +48,9 @@
           "name": "Nombre (Opcional)",
           "token": "Token (Opcional)",
           "cert": "Certificado (Opcional)",
-          "poll_interval": "Intervalo de sondeo (segundos)"
+          "poll_interval": "Intervalo de sondeo (segundos)",
+          "temp_native_current": "Unidad Nativa Actual (AC -> HA)",
+          "temp_native_target": "Unidad Nativa Objetivo (HA -> AC)"
         }
       },
       "samsung_8888": {
@@ -101,7 +105,8 @@
       "timeout_8888": "Tiempo de espera agotado. Asegúrate de presionar el botón 'AP' en el dispositivo en los próximos 60 segundos.",
       "invalid_response": "El dispositivo devolvió una respuesta inesperada. El emparejamiento ha fallado.",
       "final_validation_failed": "La validación final falló. No se pudo conectar al dispositivo con las credenciales obtenidas. Por favor, reinicia el dispositivo e inténtalo de nuevo.",
-      "cert_not_found": "El archivo de certificado no se encontró. Asegúrate de que el nombre es correcto y está en el directorio de la integración."
+      "cert_not_found": "El archivo de certificado no se encontró. Asegúrate de que el nombre es correcto y está en el directorio de la integración.",
+      "invalid_poll_interval": "Intervalo de sondeo inválido. Introduce un número (segundos) o formato 'hh:mm:ss'. Debe estar entre 5s y 6h."
     },
     "abort": {
       "already_configured": "Este dispositivo (misma dirección MAC o ID) ya ha sido configurado.",

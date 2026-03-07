@@ -10,10 +10,14 @@ from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
-    NumberSelector,
+    NumberSelector,         # Keep NumberSelector locally if needed elsewhere, though we replace it for poll interval
     NumberSelectorMode,
     NumberSelectorConfig,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
 )
+import datetime
 import homeassistant.helpers.config_validation as cv
 from getmac import get_mac_address
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -22,6 +26,7 @@ from homeassistant.const import (
     CONF_IP_ADDRESS,
     CONF_MAC,
     CONF_TOKEN,
+    UnitOfTemperature,
 )
 from homeassistant.core import callback
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
@@ -40,10 +45,16 @@ from .const import (
     CONF_CONFIG_FILE,
     CONF_DEVICE_ID,
     CONF_DEVICES,
+    DEFAULT_CONF_CERT_FILE,
+    DEFAULT_CONF_CONFIG_FILE,
+    DEFAULT_CONF_TEMP_UNIT,
+    DEFAULT_CONF_CONTROLLER,
     CONF_DISCOVERED_DEVICES,
     CONF_SELECTED_DEVICES,
     CONF_DEVICE_TYPE,
     DEVICE_TYPE_MIM_H03,
+    CONF_TEMP_NATIVE_CURRENT,
+    CONF_TEMP_NATIVE_TARGET,
     # --- START OF MODIFICATION (Milestone 4) ---
     DEVICE_TYPE_8888_GROUP,
     # --- START OF MODIFICATION (Milestone 4) ---
@@ -268,18 +279,29 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow):
             vol.Optional(CONF_TOKEN, default=self.flow_data.get(CONF_TOKEN, "")): str,
             vol.Optional(CONF_CERT, default=self.flow_data.get(CONF_CERT, "")): str,
             vol.Optional(
-                CONF_POLL_INTERVAL, default=self.flow_data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
-            ): NumberSelector(
-                NumberSelectorConfig(
-                    min=MIN_POLL_INTERVAL,
-                    max=MAX_POLL_INTERVAL,
-                    unit_of_measurement="seconds",
-                    mode=NumberSelectorMode.BOX,
-                )
+                CONF_POLL_INTERVAL, default=str(datetime.timedelta(seconds=self.flow_data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)))
+            ): TextSelector(
+                TextSelectorConfig(type=TextSelectorType.TEXT)
             ),
             vol.Optional(
                 CONF_ENABLE_POLLING, default=self.flow_data.get(CONF_ENABLE_POLLING, DEFAULT_ENABLE_POLLING)
             ): bool,
+            vol.Optional(
+                CONF_TEMP_NATIVE_CURRENT, default=self.flow_data.get(CONF_TEMP_NATIVE_CURRENT, DEFAULT_CONF_TEMP_UNIT)
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=[UnitOfTemperature.CELSIUS, UnitOfTemperature.FAHRENHEIT],
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(
+                CONF_TEMP_NATIVE_TARGET, default=self.flow_data.get(CONF_TEMP_NATIVE_TARGET, DEFAULT_CONF_TEMP_UNIT)
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=[UnitOfTemperature.CELSIUS, UnitOfTemperature.FAHRENHEIT],
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
         })
         return vol.Schema(schema_dict)
 
@@ -299,6 +321,30 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow):
                     data_schema=self._get_samsung_2878_schema(mac_required=(error_reason == "mac_resolve_failed")),
                     errors=errors,
                 )
+
+            # Validate polling interval
+            if CONF_POLL_INTERVAL in user_input:
+                try:
+                    val = user_input[CONF_POLL_INTERVAL]
+                    if isinstance(val, (int, float)):
+                        seconds = int(val)
+                    else:
+                        time_period = cv.time_period_str(str(val))
+                        seconds = int(time_period.total_seconds())
+
+                    if seconds < MIN_POLL_INTERVAL:
+                        raise vol.Invalid(f"Minimum interval is {MIN_POLL_INTERVAL} seconds")
+                    if seconds > MAX_POLL_INTERVAL:
+                        raise vol.Invalid(f"Maximum interval is {MAX_POLL_INTERVAL} seconds")
+                    
+                    self.flow_data[CONF_POLL_INTERVAL] = seconds
+                except (vol.Invalid, ValueError):
+                    errors[CONF_POLL_INTERVAL] = "invalid_poll_interval"
+                    return self.async_show_form(
+                        step_id="samsung_2878",
+                        data_schema=self._get_samsung_2878_schema(),
+                        errors=errors,
+                    )
 
             # Standardize the name to ensure consistency
             if not self.flow_data.get(CONF_NAME):
@@ -346,13 +392,24 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow):
             vol.Optional(CONF_TOKEN, default=""): str,
             vol.Optional(CONF_CERT, default="ac14k_m.pem"): str,
             vol.Optional(
-                CONF_POLL_INTERVAL, default=self.flow_data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
-            ): NumberSelector(
-                NumberSelectorConfig(
-                    min=MIN_POLL_INTERVAL,
-                    max=MAX_POLL_INTERVAL,
-                    unit_of_measurement="seconds",
-                    mode=NumberSelectorMode.BOX,
+                CONF_POLL_INTERVAL, default=str(datetime.timedelta(seconds=self.flow_data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)))
+            ): TextSelector(
+                TextSelectorConfig(type=TextSelectorType.TEXT)
+            ),
+            vol.Optional(
+                CONF_TEMP_NATIVE_CURRENT, default=self.flow_data.get(CONF_TEMP_NATIVE_CURRENT, DEFAULT_CONF_TEMP_UNIT)
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=[UnitOfTemperature.CELSIUS, UnitOfTemperature.FAHRENHEIT],
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(
+                CONF_TEMP_NATIVE_TARGET, default=self.flow_data.get(CONF_TEMP_NATIVE_TARGET, DEFAULT_CONF_TEMP_UNIT)
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=[UnitOfTemperature.CELSIUS, UnitOfTemperature.FAHRENHEIT],
+                    mode=SelectSelectorMode.DROPDOWN,
                 )
             ),
         })
@@ -374,6 +431,30 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow):
                     data_schema=self._get_samsung_8888_schema(mac_required=(error_reason == "mac_resolve_failed")),
                     errors=errors,
                 )
+
+            # Validate polling interval
+            if CONF_POLL_INTERVAL in user_input:
+                try:
+                    val = user_input[CONF_POLL_INTERVAL]
+                    if isinstance(val, (int, float)):
+                        seconds = int(val)
+                    else:
+                        time_period = cv.time_period_str(str(val))
+                        seconds = int(time_period.total_seconds())
+
+                    if seconds < MIN_POLL_INTERVAL:
+                        raise vol.Invalid(f"Minimum interval is {MIN_POLL_INTERVAL} seconds")
+                    if seconds > MAX_POLL_INTERVAL:
+                        raise vol.Invalid(f"Maximum interval is {MAX_POLL_INTERVAL} seconds")
+                    
+                    self.flow_data[CONF_POLL_INTERVAL] = seconds
+                except (vol.Invalid, ValueError):
+                    errors[CONF_POLL_INTERVAL] = "invalid_poll_interval"
+                    return self.async_show_form(
+                        step_id="samsung_8888",
+                        data_schema=self._get_samsung_8888_schema(),
+                        errors=errors,
+                    )
 
             if self.flow_data.get(CONF_TOKEN):
                 return await self._create_entry()
@@ -415,14 +496,9 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow):
         schema[vol.Required(CONF_TOKEN)] = str
         schema[vol.Optional(CONF_NAME)] = str
         schema[vol.Optional(
-            CONF_POLL_INTERVAL, default=self.flow_data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
-        )] = NumberSelector(
-            NumberSelectorConfig(
-                min=MIN_POLL_INTERVAL,
-                max=MAX_POLL_INTERVAL,
-                unit_of_measurement="seconds",
-                mode=NumberSelectorMode.BOX,
-            )
+            CONF_POLL_INTERVAL, default=str(datetime.timedelta(seconds=self.flow_data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)))
+        )] = TextSelector(
+            TextSelectorConfig(type=TextSelectorType.TEXT)
         )
         
         return vol.Schema(schema)
@@ -437,6 +513,35 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow):
             if device_type:
                 test_data[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE.get(device_type)
             
+            if device_type:
+                test_data[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE.get(device_type)
+            
+            # Validate polling interval before connection test
+            if CONF_POLL_INTERVAL in user_input:
+                try:
+                    val = user_input[CONF_POLL_INTERVAL]
+                    if isinstance(val, (int, float)):
+                        seconds = int(val)
+                    else:
+                        time_period = cv.time_period_str(str(val))
+                        seconds = int(time_period.total_seconds())
+
+                    if seconds < MIN_POLL_INTERVAL:
+                        raise vol.Invalid(f"Minimum interval is {MIN_POLL_INTERVAL} seconds")
+                    if seconds > MAX_POLL_INTERVAL:
+                        raise vol.Invalid(f"Maximum interval is {MAX_POLL_INTERVAL} seconds")
+                    
+                    self.flow_data[CONF_POLL_INTERVAL] = seconds
+                    # Update test_data as well if needed, though controller uses its own logic
+                    test_data[CONF_POLL_INTERVAL] = seconds
+                except (vol.Invalid, ValueError):
+                    errors[CONF_POLL_INTERVAL] = "invalid_poll_interval"
+                    return self.async_show_form(
+                        step_id="rest_api",
+                        data_schema=self._get_rest_api_schema(),
+                        errors=errors,
+                    )
+
             # --- START OF FIX: Cleanup controller ---
             controller = None
             try:
@@ -879,6 +984,32 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     data_schema=self._get_options_schema(),
                     errors={"base": "token_required_for_aiohttp"},
                 )
+            # Validate polling interval
+            if CONF_POLL_INTERVAL in user_input:
+                try:
+                    val = user_input[CONF_POLL_INTERVAL]
+                    # Attempt to parse using HA's time_period validator which handles ints and "hh:mm:ss"
+                    # If existing value is int, handle gracefully
+                    if isinstance(val, (int, float)):
+                        seconds = int(val)
+                    else:
+                        time_period = cv.time_period_str(str(val))
+                        seconds = int(time_period.total_seconds())
+
+                    if seconds < MIN_POLL_INTERVAL:
+                        raise vol.Invalid(f"Minimum interval is {MIN_POLL_INTERVAL} seconds")
+                    if seconds > MAX_POLL_INTERVAL:
+                        raise vol.Invalid(f"Maximum interval is {MAX_POLL_INTERVAL} seconds ({datetime.timedelta(seconds=MAX_POLL_INTERVAL)})")
+                    
+                    user_input[CONF_POLL_INTERVAL] = seconds
+
+                except (vol.Invalid, ValueError) as e:
+                    return self.async_show_form(
+                        step_id="init",
+                        data_schema=self._get_options_schema(),
+                        errors={CONF_POLL_INTERVAL: "invalid_poll_interval"},
+                    )
+
             return self.async_create_entry(title="", data=user_input)
 
         return self.async_show_form(
@@ -908,13 +1039,43 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             )
 
         # Get the current value for poll_interval from options, falling back to data, then to default.
-        current_interval = self.config_entry.options.get(
+        current_interval_seconds = self.config_entry.options.get(
             CONF_POLL_INTERVAL, self.config_entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
         )
+        
+        # Convert to string representation for display (e.g. "0:01:00" for 60s)
+        # This makes it easy for the user to edit in hh:mm:ss format
+        current_interval_str = str(datetime.timedelta(seconds=int(current_interval_seconds)))
+
         schema_dict[vol.Required(
-            CONF_POLL_INTERVAL, default=current_interval
-        )] = NumberSelector(
-            NumberSelectorConfig(min=MIN_POLL_INTERVAL, max=MAX_POLL_INTERVAL, unit_of_measurement="seconds", mode=NumberSelectorMode.BOX)
+            CONF_POLL_INTERVAL, default=current_interval_str
+        )] = TextSelector(
+            TextSelectorConfig(type=TextSelectorType.TEXT)
+        )
+        
+
+        current_native_current_unit = self.config_entry.options.get(
+            CONF_TEMP_NATIVE_CURRENT, self.config_entry.data.get(CONF_TEMP_NATIVE_CURRENT, DEFAULT_CONF_TEMP_UNIT)
+        )
+        schema_dict[vol.Required(
+            CONF_TEMP_NATIVE_CURRENT, default=current_native_current_unit
+        )] = SelectSelector(
+            SelectSelectorConfig(
+                options=[UnitOfTemperature.CELSIUS, UnitOfTemperature.FAHRENHEIT],
+                mode=SelectSelectorMode.DROPDOWN,
+            )
+        )
+
+        current_native_target_unit = self.config_entry.options.get(
+            CONF_TEMP_NATIVE_TARGET, self.config_entry.data.get(CONF_TEMP_NATIVE_TARGET, DEFAULT_CONF_TEMP_UNIT)
+        )
+        schema_dict[vol.Required(
+            CONF_TEMP_NATIVE_TARGET, default=current_native_target_unit
+        )] = SelectSelector(
+            SelectSelectorConfig(
+                options=[UnitOfTemperature.CELSIUS, UnitOfTemperature.FAHRENHEIT],
+                mode=SelectSelectorMode.DROPDOWN,
+            )
         )
 
         current_enable_polling = self.config_entry.options.get(

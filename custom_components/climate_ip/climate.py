@@ -21,8 +21,8 @@ from homeassistant.const import (
     CONF_IP_ADDRESS,
     CONF_MAC,
     CONF_NAME,
-    CONF_TEMPERATURE_UNIT,
     CONF_TOKEN,
+    PRECISION_WHOLE,
     STATE_OFF,
     STATE_ON,
 )
@@ -75,7 +75,6 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(CONFIG_DEVICE_NAME): cv.string,
         vol.Optional(CONF_CERT, default=DEFAULT_CONF_CERT_FILE): cv.string,
         vol.Optional(CONF_CONFIG_FILE, default=DEFAULT_CONF_CONFIG_FILE): cv.string,
-        vol.Optional(CONF_TEMPERATURE_UNIT, default=DEFAULT_CONF_TEMP_UNIT): cv.string,
         vol.Optional(CONF_CONTROLLER, default=DEFAULT_CONF_CONTROLLER): cv.string,
         vol.Optional(CONF_DEBUG, default=False): cv.boolean,
         vol.Optional(CONFIG_DEVICE_POLL, default=""): cv.string,
@@ -200,12 +199,16 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         self._supported_features = features
 
         # Set the temperature step from the configuration.
-        self._attr_target_temperature_step = self._config.get(CONF_TEMP_STEP, 1.0)
+        # We try to cast it to an integer if it's a whole number (e.g. 1 instead of 1.0) 
+        # to encourage the UI to drop `.0` decimals.
+        step = self._config.get(CONF_TEMP_STEP, 1.0)
+        self._attr_target_temperature_step = int(step) if step == int(step) else step
+        self._attr_precision = PRECISION_WHOLE
 
         # Initialize all state attributes to prevent AttributeError on startup.
         self._attr_hvac_mode: HVACMode | None = None
         self._attr_target_temperature: float | None = None
-        self._attr_current_temperature: float | None = None
+        self._attr_current_temperature: int | float | None = None
         self._attr_fan_mode: str | None = None
         self._attr_swing_mode: str | None = None
         self._attr_preset_mode: str | None = None
@@ -253,7 +256,9 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         if state:
             self._attr_hvac_mode = state.hvac_mode or HVACMode.OFF
             self._attr_target_temperature = state.target_temperature
-            self._attr_current_temperature = state.current_temperature # Also sync current temperature
+            
+            # Use raw current temperature, allowing HA PRECISION_WHOLE to handle frontend formatting
+            self._attr_current_temperature = state.current_temperature
             self._attr_fan_mode = state.fan_mode
             self._attr_swing_mode = state.swing_mode
             self._attr_preset_mode = state.preset_mode
@@ -444,21 +449,26 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
     @property
     def extra_state_attributes(self):
         """Return the state attributes."""
-        return self.coordinator.state_attributes
+        # Core properties must be filtered out because HA merges extra_state_attributes 
+        # overwriting the core entity properties, which breaks any formatting or rounding 
+        # applied by the getters.
+        core_attrs = {
+            ATTR_TEMPERATURE, ATTR_CURRENT_TEMPERATURE, 
+            ATTR_HVAC_MODE, ATTR_FAN_MODE, ATTR_SWING_MODE, ATTR_PRESET_MODE
+        }
+        return {
+            k: v for k, v in self.coordinator.state_attributes.items() 
+            if k not in core_attrs
+        }
 
     @property
     def temperature_unit(self):
         """Return the temperature unit."""
-        # --- INICIO DE LA MODIFICACIÓN ---
-        # Priorizar la unidad del sensor de temperatura actual si está definida.
-        # Esto permite que el YAML anule la unidad de toda la entidad.
-        current_temp_prop = self.coordinator.get_property_object(ATTR_CURRENT_TEMPERATURE)
-        if current_temp_prop and current_temp_prop.unit_of_measurement:
-            # La propiedad ya contiene la constante de HA (p. ej., UnitOfTemperature.FAHRENHEIT)
-            return current_temp_prop.unit_of_measurement
-        # Caer de nuevo al valor por defecto del controlador si no hay una unidad específica.
-        return self.coordinator.temperature_unit
-        # --- FIN DE LA MODIFICACIÓN ---
+        # Force HA to recognize that all temperature properties returned by the entity
+        # are ALREADY in the HA global display unit (e.g. Celsius). 
+        # This prevents the frontend from applying secondary floating-point math
+        # conversions (like (F-32)*5/9) over our integers.
+        return self.hass.config.units.temperature_unit
 
     @property
     def current_temperature(self):

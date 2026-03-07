@@ -41,7 +41,7 @@ async def async_setup_entry(
             
         for op in ops:
             if isinstance(op, str):
-                 _LOGGER.debug("Switch setup: 'op' is string '%s', fetching object.", op)
+
                  # Try to get the object from the controller
                  # We need to access the private _operations dict or use a getter if available
                  # operations property *should* return objects, but let's be safe.
@@ -51,7 +51,7 @@ async def async_setup_entry(
                      _LOGGER.error("Switch setup: Could not find operation object for '%s'", op)
                      continue
 
-            _LOGGER.debug("Switch setup: op type=%s, value=%s", type(op), op)
+
             # We skip 'power' because it's the main control for the climate entity
             if not hasattr(op, "id"):
                  _LOGGER.error("Switch setup: op has no id! op=%s", op)
@@ -61,7 +61,14 @@ async def async_setup_entry(
                 continue
                 
             if op.match_type(PROPERTY_TYPE_SWITCH):
-                _LOGGER.debug("Creating switch entity for %s", op.id)
+                # Check if the switch is valid for this device (based on capabilities)
+                # We use the raw device state from the controller for validation, not the wrapper
+                raw_device_state = controller.device_state
+                if not op.is_valid(raw_device_state):
+
+                    continue
+
+
                 entities.append(SamsungClimateSwitch(coordinator, op))
 
     if entities:

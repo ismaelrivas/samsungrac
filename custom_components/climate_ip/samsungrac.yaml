@@ -27,6 +27,7 @@ device:
         'off': { value: 'Spi_Off', connection: { params: { json: { "options": [ "Spi_Off"] } } } }
         'on': { value: 'Spi_On', connection: { params: { json: { "options": [ "Spi_On"] } } } }
       status_template: '{{ "on" if "Spi_On" in device_state.Mode.options else "off" }}'
+      validation_template: '{{ "valid" if "Spi_On" in device_state.Mode.options or "Spi_Off" in device_state.Mode.options else "invalid" }}'
     auto_clean:
       type: switch
       connection:
@@ -35,6 +36,7 @@ device:
         'off': { value: 'Autoclean_Off', connection: { params: { json: { "options": [ "Autoclean_Off"] } } } }
         'on': { value: 'Autoclean_On', connection: { params: { json: { "options": [ "Autoclean_On"] } } } }
       status_template: '{{ "on" if "Autoclean_On" in device_state.Mode.options else "off" }}'
+      validation_template: '{{ "valid" if "Autoclean_On" in device_state.Mode.options or "Autoclean_Off" in device_state.Mode.options else "invalid" }}'
     beep:
       type: switch
       connection:
@@ -43,6 +45,7 @@ device:
         'off': { value: 'Volume_Mute', connection: { params: { json: { "options": [ "Volume_Mute"] } } } }
         'on': { value: 'Volume_100', connection: { params: { json: { "options": [ "Volume_100"] } } } }
       status_template: '{{ "off" if "Volume_Mute" in device_state.Mode.options else "on" }}'
+      validation_template: '{{ "valid" if "Volume_Mute" in device_state.Mode.options or "Volume_100" in device_state.Mode.options else "invalid" }}'
   operations:
     hvac: # hvac_mode
       type: modes
@@ -166,7 +169,7 @@ device:
     current_temperature:
       type: number
       status_template: '{{ device_state.Temperatures.0.current }}'
-      unit_template: 'Fahrenheit'
+      unit_template: 'Celsius'
     min_temp:
       type: number
       status_template: '8'

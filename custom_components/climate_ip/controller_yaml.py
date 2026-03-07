@@ -20,7 +20,6 @@ from homeassistant.const import (
     ATTR_TEMPERATURE,
     CONF_MAC,
     CONF_IP_ADDRESS,
-    CONF_TEMPERATURE_UNIT,
     CONF_TOKEN,
     STATE_ON,
     STATE_UNKNOWN,
@@ -67,6 +66,9 @@ from .const import (
     CONFIG_DEVICE_POLL,
     CONFIG_DEVICE_STATUS,
     CONFIG_DEVICE_CONNECTION_TYPE,
+    DEFAULT_CONF_TEMP_UNIT,
+    CONF_TEMP_NATIVE_CURRENT,
+    CONF_TEMP_NATIVE_TARGET,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -285,7 +287,7 @@ class YamlController(ClimateController):
 
         nodes = ac.get(CONFIG_DEVICE_OPERATIONS, {})
         for op_key in nodes.keys():
-            _LOGGER.debug("%s [ObjTrace] Creating property '%s'. Connection ID: %s, Prefix: %s", self.log_prefix, op_key, id(self._connection), self._connection.log_prefix)
+
             op = create_property(op_key, nodes[op_key], self._connection, self, self._state_getter)
             if op is not None:
                 self._operations[op.id] = op
@@ -295,30 +297,25 @@ class YamlController(ClimateController):
                 # --- END FIX ---
                 self._service_schema_map[vol.Optional(op.id)] = op.config_validation_type
 
-        # --- START OF MODIFICATION: Load separate switches section ---
         nodes = ac.get(CONFIG_DEVICE_SWITCHES, {})
-        _LOGGER.debug("%s Loading %d switches from 'switches' section...", self.log_prefix, len(nodes))
         for op_key in nodes.keys():
-             _LOGGER.debug("%s [ObjTrace] Creating switch property '%s'.", self.log_prefix, op_key)
-             # Switches are just operations with type='switch'. We use create_property which checks type.
-             op = create_property(op_key, nodes[op_key], self._connection, self, self._state_getter)
-             if op is not None:
-                 self._operations[op.id] = op
-                 # --- FIX: Populate _operations_list ---
-                 if op not in self._operations_list:
+            # Switches are just operations with type='switch'. We use create_property which checks type.
+            op = create_property(op_key, nodes[op_key], self._connection, self, self._state_getter)
+            if op is not None:
+                self._operations[op.id] = op
+                # --- FIX: Populate _operations_list ---
+                if op not in self._operations_list:
                     self._operations_list.append(op)
-                 # --- END FIX ---
-                 self._service_schema_map[vol.Optional(op.id)] = op.config_validation_type
+                # --- END FIX ---
+                self._service_schema_map[vol.Optional(op.id)] = op.config_validation_type
         # --- END OF MODIFICATION ---
 
         nodes = ac.get(CONFIG_DEVICE_ATTRIBUTES, {})
-        _LOGGER.debug("%s Loading %d attributes...", self.log_prefix, len(nodes))
         for key in nodes.keys():
-            _LOGGER.debug("%s Processing attribute '%s' from YAML", self.log_prefix, key)
             prop = create_property(key, nodes[key], self._connection, self, self._state_getter)
             if prop is not None:
                 self._properties[prop.id] = prop
-                # --- INICIO DE LA MODIFICACIÓN ---
+                # --- START OF MODIFICATION ---
                 # Add support for static 'unit_of_measurement' in attributes, same as in sensors.
                 has_setter = hasattr(prop, 'set_unit_of_measurement')
                 has_unit_key = 'unit_of_measurement' in nodes[key]
@@ -349,6 +346,57 @@ class YamlController(ClimateController):
                 self._sensors_list.append(name)
         # --- END OF ADDITION ---
         
+        # --- START OF MODIFICATION: Apply temperature unit from config/options ---
+        # Retrieve the Native temperature units from the config entry options (primary) or data (fallback)
+        # For the display unit, we use Home Assistant's global configured temperature unit
+        configured_unit = self.hass.config.units.temperature_unit if self.hass else DEFAULT_CONF_TEMP_UNIT
+        native_current_unit = DEFAULT_CONF_TEMP_UNIT
+        native_target_unit = DEFAULT_CONF_TEMP_UNIT
+
+        entry_id = self._config.get("entry_id")
+        if self.hass and entry_id:
+            entry = self.hass.config_entries.async_get_entry(entry_id)
+            if entry:
+                native_current_unit = entry.options.get(CONF_TEMP_NATIVE_CURRENT, entry.data.get(CONF_TEMP_NATIVE_CURRENT, configured_unit))
+                native_target_unit = entry.options.get(CONF_TEMP_NATIVE_TARGET, entry.data.get(CONF_TEMP_NATIVE_TARGET, configured_unit))
+                _LOGGER.debug("%s [Init] Configured temperature units - Display (HA Global): %s, Native Current: %s, Native Target: %s", 
+                              self.log_prefix, configured_unit, native_current_unit, native_target_unit)
+        
+        # Helper function to apply unit
+        def apply_unit(prop):
+            if not prop: return
+            # Check if it's a temperature property or has device_class "temperature"
+            is_temp = False
+            if hasattr(prop, 'match_type') and prop.match_type("temperature"):
+                is_temp = True
+            elif prop.device_class == "temperature":
+                is_temp = True
+            
+            if is_temp:
+                if hasattr(prop, 'set_hass_unit') and hasattr(prop, 'set_device_unit'):
+                    _LOGGER.debug("%s Applying dual units to property '%s'. Display: %s", self.log_prefix, prop.id, configured_unit)
+                    prop.set_hass_unit(configured_unit)
+                    if prop.id == ATTR_TEMPERATURE:
+                        prop.set_device_unit(native_target_unit)
+                    else:
+                        prop.set_device_unit(native_current_unit)
+                elif hasattr(prop, 'set_unit_of_measurement'):
+                    _LOGGER.debug("%s Applying configured unit '%s' to property '%s'", self.log_prefix, configured_unit, prop.id)
+                    prop.set_unit_of_measurement(configured_unit)
+
+        # Iterate over all operations
+        for op in self._operations.values():
+            apply_unit(op)
+            
+        # Iterate over all attributes (properties)
+        for prop in self._properties.values():
+            apply_unit(prop)
+            
+        # Iterate over all sensors
+        for sensor in self._sensors.values():
+            apply_unit(sensor)
+        # --- END OF MODIFICATION ---
+
         self._operations_list = list(self._operations.keys())
         self._properties_list = list(self._properties.keys())
         self._is_fully_initialized = True
@@ -388,7 +436,7 @@ class YamlController(ClimateController):
             _LOGGER.error("%s YAML configuration is empty or could not be read.", self.log_prefix)
             return False
         # --- END OF FIX ---
-        # El parseo inicial usa el device_id actual (que puede ser None) como clave de cache.
+        # The initial parsing uses the current device_id (which can be None) as the cache key.
         partial_render_str = stream_wrapper(self._raw_yaml_config, self._token, self._ip_address, self._device_id)
         yaml_device = yaml.safe_load(partial_render_str)
         self._parsed_yaml_cache[self._device_id] = yaml_device
@@ -437,14 +485,7 @@ class YamlController(ClimateController):
 
         # This call will now create the correct connection type based on the logic above
         # --- START OF MODIFICATION (Milestone 3) ---
-        _LOGGER.debug(
-            "%s Calling create_connection. Session is valid: %s, HASS is valid: %s",
-            self.log_prefix, self._session is not None, self.hass is not None
-        )
-        _LOGGER.debug(
-            "%s Connection node being passed to create_connection: %s",
-            self.log_prefix, mask_sensitive_data(connection_node)
-        )
+
 
         # --- START: Logic moved from connection.py ---
         key = self.unique_id
@@ -685,7 +726,7 @@ class YamlController(ClimateController):
     @property
     def poll(self) -> Optional[bool]:
         """Return the polling state from the YAML configuration."""
-        _LOGGER.debug("%s Poll property accessed, returning: %s", self.log_prefix, self._poll)
+
         return self._poll
 
     async def async_update_properties_from_state(self, full_device_state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -790,6 +831,10 @@ class YamlController(ClimateController):
 
         _LOGGER.debug("%s Checking for post-update state inconsistencies", self.log_prefix)
         for op_name, op in self._operations.items():
+            # Skip auto-correction for properties that are not supported by the device
+            if hasattr(op, 'is_valid') and not op.is_valid(device_to_process):
+                continue
+                
             if hasattr(op, 'values') and op.value is not None and op.value != STATE_UNKNOWN:
                 if op.value not in op.values:
                     new_value = op.values[0] if op.values else STATE_UNKNOWN
@@ -838,7 +883,6 @@ class YamlController(ClimateController):
             return {}
 
         reconstructed_state = copy.deepcopy(last_real_state)
-        _LOGGER.debug("%s [HASS->DEV] Rebuilding from real state template (deepcopied)", self.log_prefix)
 
         all_props = list(self._operations.values()) + list(self._properties.values())
 
@@ -853,14 +897,10 @@ class YamlController(ClimateController):
             # --- END OF FIX ---
 
             hass_value = getattr(hass_state, op.id, None)
-            _LOGGER.debug("%s [HASS->DEV] Prop: '%s', HASS Value: %s (type: %s)", self.log_prefix, op.id, hass_value, type(hass_value).__name__)
         
             if hass_value is not None:                
                 # This conversion is what matters for building the device state
                 device_value = op.convert_hass_to_dev(hass_value)
-                # --- START OF LOGGING ---
-                _LOGGER.debug("%s [HASS->DEV] Prop: '%s', Device Value: %s (type: %s)", self.log_prefix, op.id, device_value, type(device_value).__name__)
-                # --- END OF LOGGING ---
                 # Optimization: Use cached device key from template.
                 device_key = self._get_cached_device_key_from_prop(op) # Get the key like 'AC_FUN_OPMODE'
                 # --- START OF FIX: Ensure key exists before writing ---
@@ -869,10 +909,7 @@ class YamlController(ClimateController):
                     reconstructed_state[device_key] = device_value
                 # --- END OF FIX ---
                 
-        # --- START OF LOGGING ---
-        _LOGGER.debug("%s [HASS->DEV] Final reconstructed state: %s", self.log_prefix, str(reconstructed_state)[:200] + "...")
         return reconstructed_state
-        # --- END OF LOGGING ---
 
     async def _build_device_state_from_props(self) -> Optional[Dict[str, Any]]: # Used for prediction
         """
@@ -959,7 +996,6 @@ class YamlController(ClimateController):
         # Key not in cache, so we calculate and store it.
         key = self._get_device_key_from_template(prop.status_template)
         self._prop_template_key_cache[prop_id] = key
-        _LOGGER.debug("%s [Cache] Stored template key for '%s' -> '%s'", self.log_prefix, prop_id, key)
         return key
 
     def _get_device_key_from_template(self, template_obj: Any) -> Optional[str]:
@@ -986,10 +1022,6 @@ class YamlController(ClimateController):
         
         # If no match, it's likely a complex template. This is not an error,
         # so we log at debug level instead of warning to keep logs clean.
-        if any(keyword in template_string for keyword in ['if', 'else', 'for']):
-            _LOGGER.debug("%s [Regex] Template is complex, cannot auto-extract key. This is normal for templates with logic.", self.log_prefix)
-        else:
-            _LOGGER.debug("%s [Regex] Could not extract 'device_state' key from template: %s", self.log_prefix, template_string)
         return None
 
     async def async_predict_and_correct_state(self, current_hass_state: ClimateIPDeviceState, property_name: str, new_value: Any) -> Tuple[ClimateEntityFeature, Dict[str, Any]]:
@@ -1255,6 +1287,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_IP_ADDRESS): cv.string,
         vol.Optional(CONF_TOKEN): cv.string,
         vol.Optional(CONF_DEVICE_ID): cv.string,
-        vol.Optional(CONF_TEMPERATURE_UNIT, default=UnitOfTemperature.CELSIUS): cv.string,
+        vol.Optional(CONF_TEMP_NATIVE_CURRENT, default=DEFAULT_CONF_TEMP_UNIT): cv.string,
+        vol.Optional(CONF_TEMP_NATIVE_TARGET, default=DEFAULT_CONF_TEMP_UNIT): cv.string,
     }
 )

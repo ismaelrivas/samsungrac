@@ -11,7 +11,7 @@
     },
     "connection_method": {
       "options": {
-        "requests": "Legacy (requests)",
+        "requests": "Legacy (Obsolete)",
         "aiohttp": "Modern (aiohttp)"
       }
     }
@@ -22,7 +22,9 @@
         "title": "Adjust Options",
         "description": "Modify the integration options.",
         "data": {
-          "poll_interval": "Poll Interval (seconds)"
+          "poll_interval": "Poll Interval (seconds or hh:mm:ss)",
+          "temp_native_current": "Native Current Temp Unit (AC -> HA)",
+          "temp_native_target": "Native Target Temp Unit (HA -> AC)"
         }
       }
     }
@@ -46,7 +48,9 @@
           "name": "Name (Optional)",
           "token": "Token (Optional)",
           "cert": "Certificate (Optional)",
-          "poll_interval": "Poll Interval (seconds)"
+          "poll_interval": "Poll Interval (seconds)",
+          "temp_native_current": "Native Current Temp Unit (AC -> HA)",
+          "temp_native_target": "Native Target Temp Unit (HA -> AC)"
         }
       },
       "samsung_8888": {
@@ -101,7 +105,8 @@
       "timeout_8888": "Timeout expired. Make sure to press the 'AP' button on the device within the next 60 seconds.",
       "invalid_response": "The device returned an unexpected response. Pairing has failed.",
       "final_validation_failed": "Final validation failed. Could not connect to the device with the obtained credentials. Please restart the device and try again.",
-      "cert_not_found": "The certificate file was not found. Make sure the name is correct and it is in the integration's directory."
+      "cert_not_found": "The certificate file was not found. Make sure the name is correct and it is in the integration's directory.",
+      "invalid_poll_interval": "Invalid polling interval. Enter a number (seconds) or format 'hh:mm:ss'. Must be between 5s and 6h."
     },
     "abort": {
       "already_configured": "This device (same MAC address or ID) has already been configured.",

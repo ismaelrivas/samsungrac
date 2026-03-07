@@ -215,40 +215,38 @@ class Samsung8888Client:
                         else:
                             # Fallback: read until closed or timeout and try to assemble complete JSON
                             buffer = b""
-                            timeout_task = asyncio.create_task(asyncio.sleep(2.0))
-                            read_task = asyncio.create_task(reader.read(8192))
-                            try:
-                                while True:
-                                    done, pending = await asyncio.wait(
-                                        [timeout_task, read_task],
-                                        return_when=asyncio.FIRST_COMPLETED
-                                    )
-                                    if timeout_task in done:
-                                        # Timeout - give up reading more
-                                        for task in pending:
-                                            task.cancel()
-                                        break
-                                    if read_task in done:
-                                        chunk = read_task.result()
-                                        if not chunk:
-                                            # Connection closed or no more data
-                                            break
-                                        buffer += chunk
-                                        # try parse as JSON; if fails, keep reading
-                                        try:
-                                            resp_body_candidate = buffer.decode('utf-8', 'ignore')
-                                            json.loads(resp_body_candidate)
-                                            resp_body = resp_body_candidate
-                                            break
-                                        except (json.JSONDecodeError, UnicodeDecodeError):
-                                            # Not complete yet, keep reading
-                                            read_task = asyncio.create_task(reader.read(8192))
-                                            continue
-                            finally:
-                                # Cancel any pending tasks
-                                for t in (timeout_task, read_task):
-                                    if not t.done():
-                                        t.cancel()
+                            end_time = asyncio.get_running_loop().time() + 5.0
+                            
+                            while True:
+                                timeout_left = end_time - asyncio.get_running_loop().time()
+                                if timeout_left <= 0:
+                                    _LOGGER.debug("%s [RAW] Read loop reached 5.0s absolute timeout.", self.log_prefix)
+                                    break
+                                
+                                try:
+                                    chunk = await asyncio.wait_for(reader.read(8192), timeout=timeout_left)
+                                    if not chunk:
+                                        break # Connection closed
+                                    
+                                    buffer += chunk
+                                    resp_body_candidate = buffer.decode('utf-8', 'ignore')
+                                    
+                                    if not resp_body_candidate.strip():
+                                        continue
+                                        
+                                    try:
+                                        json.loads(resp_body_candidate)
+                                        resp_body = resp_body_candidate
+                                        break # Valid JSON found
+                                    except json.JSONDecodeError:
+                                        continue # Not full JSON yet, keep reading
+                                        
+                                except asyncio.TimeoutError:
+                                    _LOGGER.debug("%s [RAW] Socket chunk read timed out.", self.log_prefix)
+                                    break
+                            
+                            if not resp_body:
+                                resp_body = buffer.decode('utf-8', 'ignore')
     
                         _LOGGER.debug("%s Headers received: %s", self.log_prefix, headers_received)
                         _LOGGER.debug("%s Content-Length: %d, Content-Type: %s", self.log_prefix, content_length, content_type)
