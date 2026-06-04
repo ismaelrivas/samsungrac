@@ -1,0 +1,258 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Sélectionner le type d'appareil",
+        "description": "Choisissez le type de climatiseur Samsung à configurer.",
+        "data": {
+          "device_type": "Type d'appareil"
+        }
+      },
+      "samsung_2878": {
+        "title": "Configurer le climatiseur Samsung (Port 2878)",
+        "description": "Configuration pour les anciens climatiseurs Samsung. L'appareil doit être branché mais ÉTEINT (en veille) avant de commencer.",
+        "data": {
+          "ip_address": "Adresse IP",
+          "port": "Port",
+          "mac": "Adresse MAC (Facultatif)",
+          "name": "Nom (Facultatif)",
+          "token": "Jeton (Facultatif)",
+          "cert": "Chemin du certificat (Facultatif)",
+          "poll_interval": "Intervalle de mise à jour (format HH:MM:SS)",
+          "temp_native_current": "Unité de température actuelle native",
+          "temp_native_target": "Unité de température cible native"
+        }
+      },
+      "samsung_8888": {
+        "title": "Configurer le climatiseur Samsung (Port 8888)",
+        "description": "Configuration pour les climatiseurs Samsung modernes.",
+        "data": {
+          "ip_address": "Adresse IP",
+          "port": "Port",
+          "mac": "Adresse MAC (Facultatif)",
+          "name": "Nom (Facultatif)",
+          "cert": "Chemin du certificat (Facultatif)",
+          "token": "Jeton (Facultatif)",
+          "poll_interval": "Intervalle de mise à jour (format HH:MM:SS)"
+        }
+      },
+      "mim_h03": {
+        "title": "Configurer le Samsung MIM-H03",
+        "description": "Configuration pour le contrôleur de pompe à chaleur MIM-H03.",
+        "data": {
+          "ip_address": "Adresse IP",
+          "port": "Port",
+          "mac": "Adresse MAC (Facultatif)",
+          "name": "Nom (Facultatif)",
+          "cert": "Chemin du certificat (Facultatif)",
+          "token": "Jeton (Facultatif)",
+          "poll_interval": "Intervalle de mise à jour (format HH:MM:SS)"
+        }
+      },
+      "rest_api": {
+        "title": "Configurer un appareil API REST",
+        "description": "Fournissez les détails de la connexion API REST.",
+        "data": {
+          "ip_address": "Hôte API / Adresse IP",
+          "device_id": "ID de l'appareil",
+          "token": "Jeton d'accès",
+          "name": "Nom (Facultatif)",
+          "cert": "Chemin du certificat (Facultatif)",
+          "poll_interval": "Intervalle de mise à jour (format HH:MM:SS)"
+        }
+      },
+      "select_devices": {
+        "title": "Sélectionner les unités intérieures",
+        "description": "Trouvé {device_count} unités intérieures. Veuillez sélectionner celles que vous souhaitez ajouter à Home Assistant.",
+        "data": {
+          "selected_devices": "Unités intérieures"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Réauthentifier l'intégration",
+        "description": "L'authentification pour {device_name} a échoué. Voulez-vous recommencer le processus d'appairage pour obtenir un nouveau jeton ?"
+      },
+      "reconfigure_confirm": {
+        "title": "Reconfigurer {device_name}",
+        "description": "Mettre à jour les paramètres de connectivité pour **{device_name}** (actuellement à `{ip_address}`). Seuls les champs modifiés seront mis à jour.",
+        "data": {
+          "ip_address": "Adresse IP",
+          "mac": "Adresse MAC (Facultatif)",
+          "token": "Jeton (Facultatif)",
+          "cert": "Chemin du certificat (Facultatif)"
+        }
+      }
+    },
+    "progress": {
+      "initiating_pairing": "Initiation de l'appairage avec l'appareil. Veuillez patienter...",
+      "initiating_pairing_8888": "Initiation de l'appairage avec l'appareil à **{ip_address}**. Veuillez patienter...",
+      "awaiting_button_press": "En attente de la pression du bouton... \n\nVeuillez appuyer sur le bouton **Power** ou **Set** de l'appareil à **{ip_address}** dans les 45 prochaines secondes.",
+      "awaiting_ap_button_press": "En attente de la pression du bouton... \n\nVeuillez appuyer sur le bouton **AP** du module MIM-H03 à **{ip_address}** dans les 45 prochaines secondes.",
+      "acquire_8888": "En attente de la pression du bouton... \n\nVeuillez appuyer sur le bouton **Power** du climatiseur à **{ip_address}** dans les 20 prochaines secondes.",
+      "testing_connection": "Test de la connexion à l'appareil..."
+    },
+    "error": {
+      "cannot_connect": "Échec de la connexion à l'appareil. Veuillez vérifier l'adresse IP et vous assurer que l'appareil est en ligne.",
+      "invalid_auth": "L'authentification a échoué. Le jeton peut être incorrect ou expiré.",
+      "unknown_error": "Une erreur inattendue s'est produite.",
+      "mac_resolve_failed": "Impossible de découvrir automatiquement l'adresse MAC. Veuillez la saisir manuellement.",
+      "invalid_poll_interval": "Format de l'intervalle de mise à jour invalide. Veuillez utiliser HH:MM:SS (ex: 0:01:00 pour 1 minute).",
+      "cert_not_found": "Le fichier de certificat spécificado est introuvable. Veuillez vous assurer qu'il se trouve dans le dossier `custom_components/climate_ip`.",
+      "token_acquisition_failed": "Échec de l'obtention du jeton de l'appareil.",
+      "auth_failed_turned_off": "L'authentification a échoué. Veuillez vous assurer que le climatiseur est en mode veille (ÉTEINT) avant de commencer le processus d'appairage.",
+      "no_devices_selected": "Vous devez sélectionner au moins un appareil pour continuer.",
+      "pairing_init_failed": "Échec de la mise de l'appareil en mode appairage.",
+      "token_required_for_aiohttp": "Le moteur 'Moderne (aiohttp)' nécessite un jeton manuel.",
+      "device_id_required": "L'ID de l'appareil est requis pour cette configuration.",
+      "port_in_use": "Le port d'écoute (8888/8889) est déjà utilisé.",
+      "timeout_8888": "Délai d'attente dépassé pour la pression du bouton.",
+      "invalid_response": "L'appareil a renvoyé une réponse inattendue.",
+      "final_validation_failed": "La validation finale a échoué. Impossible de se connecter avec les informations d'identification obtenues."
+    },
+    "abort": {
+      "already_configured": "Cet appareil est déjà configuré.",
+      "not_implemented": "Ce type d'appareil n'est pas encore entièrement implémenté.",
+      "no_mac_address_found": "Impossible de déterminer un identifiant unique (MAC/UUID) pour l'appareil.",
+      "no_coordinator_uuid": "Coordinateur MIM-H03 trouvé, mas son UUID est manquant.",
+      "no_coordinator_found": "Impossible de trouver le coordinateur MIM-H03.",
+      "discovery_failed": "Échec de la découverte des détails de l'appareil après une authentification réussie.",
+      "no_unique_id": "Échec de l'attribution d'un identifiant unique aux appareils.",
+      "cannot_connect": "Échec de la connexion ou de la récupération de l'état initial de l'appareil.",
+      "unknown_error": "Une erreur inattendue s'est produite pendant le processus de configuration.",
+      "reauth_successful": "La réauthentification a réussi.",
+      "reconfigure_successful": "Les paramètres de connectivité de l'appareil ont été mis à jour avec succès."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options de l'appareil",
+        "description": "Configurez le comportement de l'intégration du climatiseur Samsung.",
+        "data": {
+          "connection_method": "Moteur de connexion",
+          "poll_interval": "Intervalle de mise à jour (format HH:MM:SS)",
+          "enable_polling": "Activer l'interrogation périodique",
+          "temp_native_current": "Unité de température actuelle native",
+          "temp_native_target": "Unité de température cible native"
+        }
+      }
+    },
+    "error": {
+      "token_required_for_aiohttp": "La méthode de connexion 'Moderne (aiohttp)' nécessite un jeton valide. Veuillez réauthentifier l'appareil.",
+      "invalid_poll_interval": "Format d'intervalle de mise à jour invalide. Veuillez utiliser HH:MM:SS (ex: 0:01:00 pour 1 minute)."
+    }
+  },
+  "exceptions": {
+    "cannot_connect": {
+      "message": "Échec de la connexion à l'appareil."
+    },
+    "invalid_response": {
+      "message": "L'appareil a renvoyé une réponse inattendue."
+    },
+    "invalid_auth": {
+      "message": "L'authentification a échoué. Le jeton peut être incorrect ou expiré."
+    },
+    "cert_not_found": {
+      "message": "Le fichier de certificat spécifié est introuvable."
+    },
+    "token_acquisition_failed": {
+      "message": "Échec de l'obtention du jeton de l'appareil."
+    },
+    "auth_failed_turned_off": {
+      "message": "L'authentification a échoué. Veuillez vous assurer que le climatiseur est en mode veille (ÉTEINT) avant de commencer le processus d'appairage."
+    }
+  },
+  "issues": {
+    "connection_failed": {
+      "title": "Connexion au climatiseur Samsung perdue ({name})",
+      "description": "Impossible de communiquer avec le climatiseur Samsung **{name}** à l'adresse **{host}**. Veuillez vérifier que l'appareil est sous tension et connecté à votre réseau local."
+    }
+  },
+  "selector": {
+    "device_type": {
+      "options": {
+        "samsung_2878": "Ancien climatiseur Samsung (Port 2878)",
+        "samsung_8888": "Climatiseur Samsung moderne (Port 8888)",
+        "mim_h03": "Pompe à chaleur Samsung MIM-H03",
+        "smartthings_hvac": "SmartThings HVAC (API REST)",
+        "smartthings_dhw": "SmartThings ECS (API REST)"
+      }
+    },
+    "connection_method": {
+      "options": {
+        "requests": "Héritage (Obsolète - Sera supprimé)",
+        "aiohttp": "Moderne (aiohttp - Recommandé)",
+        "raw": "Robusto (Raw socket - Pour Wi-Fi instable)"
+      }
+    }
+  },
+  "common": {
+    "deprecated_yaml_title": "Climate IP - Configuration YAML obsolète",
+    "deprecated_yaml_message": "La configuration de Climate IP via YAML est obsolète et a été importée. Veuillez la supprimer de votre fichier configuration.yaml."
+  },
+  "entity": {
+    "climate": {
+      "samsung_ac": {
+        "state_attributes": {
+          "preset_mode": {
+            "state": {
+              "WindFree": "WindFree"
+            }
+          }
+        }
+      }
+    },
+    "sensor": {
+      "outdoor_temperature": {
+        "name": "Température Extérieure"
+      },
+      "filter_clean_alarm": {
+        "name": "Alarme Nettoyage Filtre"
+      },
+      "filter_time": {
+        "name": "Temps Filtre"
+      },
+      "filter_alarm_time": {
+        "name": "Temps Alarme Filtre"
+      },
+      "auto_clean": {
+        "name": "Nettoyage Automatique"
+      },
+      "purify": {
+        "name": "Purifier"
+      },
+      "used_power": {
+        "name": "Consommation Électrique"
+      },
+      "used_time": {
+        "name": "Temps d'Utilisation"
+      },
+      "filter_use_time": {
+        "name": "Temps d'Utilisation Filtre"
+      },
+      "wifi_connection_status": {
+        "name": "État Connexion Wi-Fi"
+      },
+      "internet_connection_status": {
+        "name": "État Connexion Internet"
+      },
+      "split_version": {
+        "name": "Version Unité Intérieure"
+      },
+      "external_unit_version": {
+        "name": "Version Unité Extérieure"
+      }
+    },
+    "switch": {
+      "purify": {
+        "name": "Purifier"
+      },
+      "auto_clean": {
+        "name": "Nettoyage Automatique"
+      },
+      "beep": {
+        "name": "Bip"
+      }
+    }
+  }
+}

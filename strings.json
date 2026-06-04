@@ -1,0 +1,258 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Select Device Type",
+                "description": "Choose the type of Samsung Air Conditioner to configure.",
+                "data": {
+                    "device_type": "Device Type"
+                }
+            },
+            "samsung_2878": {
+                "title": "Configure Samsung AC (Port 2878)",
+                "description": "Configuration for older Samsung AC units. Please note that the device should be plugged in but POWERED OFF (standby) before starting.",
+                "data": {
+                    "ip_address": "IP Address",
+                    "port": "Port",
+                    "mac": "MAC Address (Optional)",
+                    "name": "Name (Optional)",
+                    "token": "Token (Optional)",
+                    "cert": "Certificate path (Optional)",
+                    "poll_interval": "Update Interval (HH:MM:SS format)",
+                    "temp_native_current": "Native Current Temp Unit",
+                    "temp_native_target": "Native Target Temp Unit"
+                }
+            },
+            "samsung_8888": {
+                "title": "Configure Samsung AC (Port 8888)",
+                "description": "Configuration for modern Samsung AC units.",
+                "data": {
+                    "ip_address": "IP Address",
+                    "port": "Port",
+                    "mac": "MAC Address (Optional)",
+                    "name": "Name (Optional)",
+                    "cert": "Certificate path (Optional)",
+                    "token": "Token (Optional)",
+                    "poll_interval": "Update Interval (HH:MM:SS format)"
+                }
+            },
+            "mim_h03": {
+                "title": "Configure Samsung MIM-H03",
+                "description": "Configuration for MIM-H03 heatpump controller.",
+                "data": {
+                    "ip_address": "IP Address",
+                    "port": "Port",
+                    "mac": "MAC Address (Optional)",
+                    "name": "Name (Optional)",
+                    "cert": "Certificate path (Optional)",
+                    "token": "Token (Optional)",
+                    "poll_interval": "Update Interval (HH:MM:SS format)"
+                }
+            },
+            "rest_api": {
+                "title": "Configure REST API Device",
+                "description": "Provide details for the REST API connection.",
+                "data": {
+                    "ip_address": "API Host/IP Address",
+                    "device_id": "Device ID",
+                    "token": "Access Token",
+                    "name": "Name (Optional)",
+                    "cert": "Certificate path (Optional)",
+                    "poll_interval": "Update Interval (HH:MM:SS format)"
+                }
+            },
+            "select_devices": {
+                "title": "Select Indoor Units",
+                "description": "Found {device_count} indoor units. Please select which ones you want to add to Home Assistant.",
+                "data": {
+                    "selected_devices": "Indoor Units"
+                }
+            },
+            "reauth_confirm": {
+                "title": "Reauthenticate Integration",
+                "description": "The authentication for {device_name} failed. Would you like to restart the pairing process to acquire a new token?"
+            },
+            "reconfigure_confirm": {
+                "title": "Reconfigure {device_name}",
+                "description": "Update the connectivity settings for **{device_name}** (currently at `{ip_address}`). Only fields you change will be updated.",
+                "data": {
+                    "ip_address": "IP Address",
+                    "mac": "MAC Address (Optional)",
+                    "token": "Token (Optional)",
+                    "cert": "Certificate path (Optional)"
+                }
+            }
+        },
+        "progress": {
+            "initiating_pairing": "Initiating pairing with the device. Please wait...",
+            "initiating_pairing_8888": "Initiating pairing with the device at **{ip_address}**. Please wait...",
+            "awaiting_button_press": "Waiting for button press... \n\nPlease press the **Power** or **Set** button on the device at **{ip_address}** within the next 45 seconds.",
+            "awaiting_ap_button_press": "Waiting for button press... \n\nPlease press the **AP** button on the MIM-H03 module at **{ip_address}** within the next 45 seconds.",
+            "acquire_8888": "Waiting for button press... \n\nPlease press the **Power** button on the AC at **{ip_address}** within the next 20 seconds.",
+            "testing_connection": "Testing connection to the device..."
+        },
+        "error": {
+            "cannot_connect": "Failed to connect to the device. Please check the IP address and ensure the device is online.",
+            "invalid_auth": "Authentication failed. The token might be incorrect or expired.",
+            "unknown_error": "An unexpected error occurred.",
+            "mac_resolve_failed": "Could not auto-discover the MAC address. Please enter it manually.",
+            "invalid_poll_interval": "Invalid update interval format. Please use HH:MM:SS (e.g., 0:01:00 for 1 minute).",
+            "cert_not_found": "The specified certificate file was not found. Please ensure it is in the `climate_ip` integration folder.",
+            "token_acquisition_failed": "Failed to acquire token from the device.",
+            "auth_failed_turned_off": "Authentication failed. Please ensure the AC is in standby (OFF) before starting the pairing process.",
+            "no_devices_selected": "You must select at least one device to continue.",
+            "pairing_init_failed": "Failed to put device in pairing mode.",
+            "token_required_for_aiohttp": "The 'Modern (aiohttp)' engine requires a manual token.",
+            "device_id_required": "Device ID is required for this setup.",
+            "port_in_use": "Listening port (8888/8889) is already in use.",
+            "timeout_8888": "Timeout waiting for button press.",
+            "invalid_response": "Device returned an unexpected response.",
+            "final_validation_failed": "Final validation failed. Could not connect with acquired credentials."
+        },
+        "abort": {
+            "already_configured": "This device is already configured.",
+            "not_implemented": "This device type is not yet fully implemented.",
+            "no_mac_address_found": "Could not determine a unique ID (MAC/UUID) for the device.",
+            "no_coordinator_uuid": "MIM-H03 coordinator found, but its UUID is missing.",
+            "no_coordinator_found": "Could not find the MIM-H03 coordinator device.",
+            "discovery_failed": "Failed to discover device details after successful authentication.",
+            "no_unique_id": "Failed to assign a unique identifier to the devices.",
+            "cannot_connect": "Failed to connect or fetch initial status from the device.",
+            "unknown_error": "An unexpected error occurred during the setup process.",
+            "reauth_successful": "Re-authentication was successful.",
+            "reconfigure_successful": "The device connectivity settings have been updated successfully."
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Device Options",
+                "description": "Configure the behavior of the Samsung AC integration.",
+                "data": {
+                    "connection_method": "Connection Engine",
+                    "poll_interval": "Update Interval (HH:MM:SS format)",
+                    "enable_polling": "Enable Periodic Polling",
+                    "temp_native_current": "Native Current Temp Unit",
+                    "temp_native_target": "Native Target Temp Unit"
+                }
+            }
+        },
+        "error": {
+            "token_required_for_aiohttp": "The 'Modern (aiohttp)' connection method requires a valid token. Please re-authenticate the device.",
+            "invalid_poll_interval": "Invalid update interval format. Please use HH:MM:SS (e.g., 0:01:00 for 1 minute)."
+        }
+    },
+    "exceptions": {
+        "cannot_connect": {
+            "message": "Failed to connect to the device."
+        },
+        "invalid_response": {
+            "message": "Device returned an unexpected response."
+        },
+        "invalid_auth": {
+            "message": "Authentication failed. The token might be incorrect or expired."
+        },
+        "cert_not_found": {
+            "message": "The specified certificate file was not found."
+        },
+        "token_acquisition_failed": {
+            "message": "Failed to acquire token from the device."
+        },
+        "auth_failed_turned_off": {
+            "message": "Authentication failed. Please ensure the AC is in standby (OFF) before starting the pairing process."
+        }
+    },
+    "issues": {
+        "connection_failed": {
+            "title": "Samsung AC Connection Lost ({name})",
+            "description": "Unable to communicate with Samsung AC **{name}** at **{host}**. Please verify the device is powered on and connected to your local network."
+        }
+    },
+    "selector": {
+        "device_type": {
+            "options": {
+                "samsung_2878": "Older Samsung AC (Port 2878)",
+                "samsung_8888": "Modern Samsung AC (Port 8888)",
+                "mim_h03": "Samsung MIM-H03 Heatpump",
+                "smartthings_hvac": "SmartThings HVAC (REST API)",
+                "smartthings_dhw": "SmartThings DHW (REST API)"
+            }
+        },
+        "connection_method": {
+            "options": {
+                "requests": "Legacy (Obsolete - Will be removed)",
+                "aiohttp": "Modern (aiohttp - Recommended)",
+                "raw": "Robust (raw socket - For unstable Wi-Fi)"
+            }
+        }
+    },
+    "common": {
+        "deprecated_yaml_title": "Climate IP - YAML Configuration Deprecated",
+        "deprecated_yaml_message": "Climate IP configuration via YAML is deprecated and has been imported. Please remove it from configuration.yaml."
+    },
+    "entity": {
+        "climate": {
+            "samsung_ac": {
+                "state_attributes": {
+                    "preset_mode": {
+                        "state": {
+                            "WindFree": "WindFree"
+                        }
+                    }
+                }
+            }
+        },
+        "sensor": {
+            "outdoor_temperature": {
+                "name": "Outdoor Temperature"
+            },
+            "filter_clean_alarm": {
+                "name": "Filter Clean Alarm"
+            },
+            "filter_time": {
+                "name": "Filter Time"
+            },
+            "filter_alarm_time": {
+                "name": "Filter Alarm Time"
+            },
+            "auto_clean": {
+                "name": "Auto Clean"
+            },
+            "purify": {
+                "name": "Purify"
+            },
+            "used_power": {
+                "name": "Electrical Consumption"
+            },
+            "used_time": {
+                "name": "Usage Time"
+            },
+            "filter_use_time": {
+                "name": "Filter Usage Time"
+            },
+            "wifi_connection_status": {
+                "name": "Wi-Fi Connection Status"
+            },
+            "internet_connection_status": {
+                "name": "Internet Connection Status"
+            },
+            "split_version": {
+                "name": "Split Version"
+            },
+            "external_unit_version": {
+                "name": "External Unit Version"
+            }
+        },
+        "switch": {
+            "purify": {
+                "name": "Purify"
+            },
+            "auto_clean": {
+                "name": "Auto Clean"
+            },
+            "beep": {
+                "name": "Beep"
+            }
+        }
+    }
+}

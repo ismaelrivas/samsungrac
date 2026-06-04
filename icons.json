@@ -1,0 +1,40 @@
+{
+  "entity": {
+    "climate": {
+      "samsung_ac": {
+        "default": "mdi:air-conditioner",
+        "state": {
+          "off":      "mdi:air-conditioner",
+          "cool":     "mdi:snowflake",
+          "heat":     "mdi:fire",
+          "dry":      "mdi:water-percent",
+          "fan_only": "mdi:fan",
+          "auto":     "mdi:thermostat-auto",
+          "heat_cool":"mdi:sun-snowflake-variant"
+        }
+      }
+    },
+    "sensor": {
+      "outdoor_temp": {
+        "default": "mdi:thermometer"
+      },
+      "indoor_temp": {
+        "default": "mdi:home-thermometer"
+      },
+      "power_usage": {
+        "default": "mdi:lightning-bolt"
+      }
+    },
+    "switch": {
+      "wind_free": {
+        "default": "mdi:weather-windy"
+      },
+      "auto_clean": {
+        "default": "mdi:spray-bottle"
+      },
+      "purify": {
+        "default": "mdi:air-purifier"
+      }
+    }
+  }
+}

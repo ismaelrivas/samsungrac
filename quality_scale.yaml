@@ -1,0 +1,58 @@
+rules:
+  # ======================== BRONZE ========================
+  config_flow: done
+  test_coverage_setup_integration: done
+  unique_config_entry_per_device: done
+  config_flow_test_coverage: done
+  appropriate_polling: done
+  entity_unavailability: done
+  action_exceptions: done
+  entity_unique_id: done
+  has_entity_name: done
+  dependency_transparency: done
+
+  # ======================== SILVER ========================
+  config_entry_unloading: done
+  log_when_unavailable: done
+  entity_state_updates_when_relevant: done
+  reauthentication_flow: done
+  handle_coordinator_update_errors: done
+  reconfiguration_flow: done
+  parallel_updates: done
+  code_owner: done
+
+  # ======================== GOLD ========================
+  devices: done
+  diagnostics: done
+  discovery:
+    status: exempt
+    comment: >
+      Samsung AC devices do not support mDNS/Zeroconf or DHCP discovery.
+      Device discovery requires proprietary Samsung pairing protocol.
+      Config Flow provides manual IP entry with ARP-based MAC resolution.
+  docs_high_level_description: done
+  docs_installation_instructions: done
+  docs_entities: done
+  entity_translations: done
+  integration_owner: done
+  test_coverage:
+    status: done
+    comment: >
+      159 tests passing (exit code 0 in CI).
+  icon_translations: done
+  appropriate_log_level: done
+  repair_issues: done
+
+  # ======================== PLATINUM ========================
+  async_dependency:
+    status: exempt
+    comment: >
+      The `requests` library (synchronous) is retained deliberately for
+      backward compatibility with legacy Samsung AC devices requiring
+      specific TLS1.1 cipher suites not supported by aiohttp.
+      Migration to aiohttp is planned as a distinct future milestone.
+  inject_websession: done
+  strict_typing: done
+  exception_translations: done
+  runtime_data: done
+  entity_descriptions: done

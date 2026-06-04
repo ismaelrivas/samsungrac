@@ -1,0 +1,388 @@
+"""DataUpdateCoordinator for the Samsung Climate integration."""
+
+import asyncio
+import logging
+from datetime import timedelta
+from typing import Any
+
+from homeassistant.components.climate import ClimateEntityFeature, HVACMode
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_MAC
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.update_coordinator import (
+    DataUpdateCoordinator,
+    UpdateFailed,
+)
+from homeassistant.helpers import device_registry as dr
+
+from .const import (
+    CONF_CONN_METHOD,
+    CONF_ENABLE_POLLING,
+    CONF_NAME,
+    CONF_POLL_INTERVAL,
+    CONN_METHOD_RAW,
+    DEFAULT_ENABLE_POLLING,
+    DEFAULT_POLL_INTERVAL,
+    DOMAIN,
+)
+from .controller import ControllerInterface
+from .exceptions import AuthError, CannotConnect, InvalidHeaderError
+from .state import ClimateIPDeviceState
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
+    """Manages data fetching for Samsung Climate devices."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        controller: ControllerInterface,
+        entry: ConfigEntry,
+        device_info: dict[str, Any] | None = None,
+        parent_unique_id: str | None = None,
+    ) -> None:  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+        """Initialize the data coordinator."""
+        self.controller = controller
+        self.entry = entry
+        #self._entity = None  # Reference to the ClimateIP entity
+
+        # Inject callbacks into the controller to avoid circular dependencies.
+
+        def _save_new_token(new_token: str) -> None:
+            """Callback to save the renewed token from the network layer."""
+            new_data = dict(self.entry.data)
+            new_data["token"] = new_token
+            self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+            _LOGGER.info("%s Persisted new network token to Config Entry.", self.log_prefix)  # pragma: no mutate
+
+        self.controller.on_token_refreshed = _save_new_token
+
+        def _get_current_state() -> Any:
+            """Callback for the controller to get the current cached state."""
+            return self.data
+
+        self.controller.get_current_state_callback = _get_current_state
+
+        # Inject the push updates handler callback.
+        self.controller.on_push_update_callback = self.async_handle_push_update
+
+        def _save_ssl_config(ssl_config: dict[str, Any]) -> None:
+            """Callback to save SSL configuration to the config entry."""
+            current_data = dict(self.entry.data)
+            if current_data.get("_ssl_config_2878") != ssl_config:
+                current_data["_ssl_config_2878"] = ssl_config
+                self.hass.config_entries.async_update_entry(self.entry, data=current_data)
+                _LOGGER.info("%s Persisted SSL config to ConfigEntry data.", self.log_prefix)  # pragma: no mutate
+
+        self.controller.on_ssl_config_updated = _save_ssl_config
+
+        async def _request_refresh() -> None:
+            """Callback to request an immediate data refresh."""
+            await self.async_request_refresh()
+
+        self.controller.request_refresh_callback = _request_refresh
+
+        def _on_connection_failed() -> None:
+            """Callback when connection persistently fails."""
+            self.last_update_success = False
+            self.async_update_listeners()
+
+        self.controller.on_connection_failed_callback = _on_connection_failed
+
+        def _handle_persistent_offline(reason: str) -> None:
+            """Callback for the network layer to force UI unavailability immediately."""
+            _LOGGER.debug("%s Network layer declared device offline. Forcing UpdateFailed.", self.log_prefix)  # pragma: no mutate
+            self.async_set_update_error(UpdateFailed(f"Device offline: {reason}"))
+
+        self.controller.on_offline_callback = _handle_persistent_offline
+
+        # Determine the update interval from options → data → default.
+        enable_polling = entry.options.get(
+            CONF_ENABLE_POLLING, entry.data.get(CONF_ENABLE_POLLING, DEFAULT_ENABLE_POLLING)
+        )
+        poll_interval_seconds = entry.options.get(
+            CONF_POLL_INTERVAL, entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
+        )
+        update_interval = (
+            timedelta(seconds=poll_interval_seconds)
+            if (controller.poll and enable_polling)
+            else None
+        )
+        # fmt: off
+        _LOGGER.debug('%s Initializing coordinator with update interval: %s', self.log_prefix, update_interval)  # pragma: no mutate
+        # fmt: on
+
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=f"Samsung Climate {self.log_prefix}",
+            update_interval=update_interval,
+            config_entry=entry,
+        )
+
+        # Build comprehensive DeviceInfo
+        if device_info:
+            # Sub-device (e.g., Indoor Unit connected via a MIM-H03)
+            name = device_info.get("name") or "Unknown Unit"
+            did = device_info.get("id")
+
+            # Avoid redundant "ID XXX (ID XXX (Name))"
+            if did and not name.startswith(f"ID {did}"):
+                final_name = f"ID {did} ({name})"
+            else:
+                final_name = name
+
+            # Parent linkage for hierarchical display in HA UI
+            via_device = (DOMAIN, parent_unique_id) if parent_unique_id else None
+
+            # NOTE: For sub-devices, we DO NOT include 'connections' (MAC) to prevent
+            # Home Assistant from merging multiple units behind the same gateway into one.
+            self.device_info = DeviceInfo(
+                identifiers={(DOMAIN, self.unique_id)},
+                name=final_name,
+                manufacturer="Samsung",
+                via_device=via_device,
+            )
+        else:
+            # Standalone/Parent device (e.g. the Wifi-kit itself or a single AC)
+            mac = self.entry.data.get(CONF_MAC)
+            conns = {(dr.CONNECTION_NETWORK_MAC, mac)} if mac else set()
+
+            self.device_info = DeviceInfo(
+                identifiers={(DOMAIN, self.unique_id)},
+                name=self.entry.data.get(CONF_NAME, f"Samsung AC {self.unique_id}"),
+                manufacturer="Samsung",
+                connections=conns,
+            )
+
+
+
+    # def register_entity(self, entity: Any) -> None:
+    #     """Register the climate entity instance."""
+    #     self._entity = entity
+
+    # def unregister_entity(self, entity: Any) -> None:
+    #     """Unregister the climate entity instance."""
+    #     _ = entity
+    #     self._entity = None
+
+    @callback
+    def async_set_updated_data(self, data: Any) -> None:
+        """Intercept data update to trigger listeners."""
+        super().async_set_updated_data(data)
+
+    async def _async_update_data(self) -> Any:
+        """Fetch the latest state from the device."""
+        try:
+            await asyncio.wait_for(self.controller.async_get_status(), timeout=30.0)
+            return self._create_device_state()
+
+        except InvalidHeaderError as err:
+            # fmt: off
+            _LOGGER.warning("%s Malformed header error detected! Automatically switching to the 'Robust (raw socket)' connection engine. Error: %s", self.log_prefix, err)  # pragma: no mutate
+            # fmt: on
+            new_options = dict(self.entry.options)
+            new_options[CONF_CONN_METHOD] = CONN_METHOD_RAW
+            self.hass.config_entries.async_update_entry(self.entry, options=new_options)
+            # fmt: off
+            raise UpdateFailed("Switching to 'Robust (Raw)' connection engine due to non-standard HTTP headers. Reload is in progress.") from None  # pragma: no mutate
+            # fmt: on
+
+        except (AuthError, ConfigEntryAuthFailed) as err:
+            raise ConfigEntryAuthFailed(f"Authentication failed: {err}") from err  # pragma: no mutate
+
+        except UpdateFailed:
+            # If a lower layer already raised a clean UpdateFailed, pass it through
+            raise  # pragma: no mutate
+
+        except (CannotConnect, ConnectionRefusedError, asyncio.TimeoutError, OSError) as err:
+            # fmt: off
+            _LOGGER.debug("%s Network error during state update: %s", self.log_prefix, err)  # pragma: no mutate
+            # fmt: on
+            raise UpdateFailed(f"Network error during update: {err}") from err  # pragma: no mutate
+
+        except (ValueError, TypeError, KeyError) as err:
+            # fmt: off
+            _LOGGER.error("%s Data parsing error during update: %s", self.log_prefix, err, exc_info=True)  # pragma: no mutate
+            # fmt: on
+            raise UpdateFailed(f"Data parsing error: {err}") from err  # pragma: no mutate
+
+        except Exception as err:  # pylint: disable=import-outside-toplevel,broad-exception-caught
+            # fmt: off
+            _LOGGER.critical("%s Fatal unexpected error during update: %s", self.log_prefix, err, exc_info=True)  # pragma: no mutate
+            # fmt: on
+            raise UpdateFailed(f"Fatal error: {err}") from err  # pragma: no mutate
+
+    async def async_handle_push_update(self, new_data: dict[str, Any] | None = None) -> None:
+        """Handle a state update received via push from the connection."""
+        try:
+            # fmt: off
+            _LOGGER.debug("%s Push update received with data: %s", self.log_prefix, new_data)  # pragma: no mutate
+            # fmt: on
+
+            if new_data:
+                if await self.controller.async_merge_device_state(
+                    new_data, is_response=False, is_update=True
+                ):
+                    updated_state = self._create_device_state()
+                    self.async_set_updated_data(updated_state)
+                else:
+                    # fmt: off
+                    _LOGGER.debug("Push update discarded by controller (validation failed or junk data).")  # pragma: no mutate
+                    # fmt: on
+            else:
+                # fmt: off
+                _LOGGER.debug("%s Push update did not contain state data, skipping processing", self.log_prefix)  # pragma: no mutate
+                # fmt: on
+
+        except Exception as err:  # pylint: disable=import-outside-toplevel,broad-exception-caught
+            # fmt: off
+            _LOGGER.error("%s Unexpected error during push update: %s", self.log_prefix, err, exc_info=True)  # pragma: no mutate
+            # fmt: on
+
+    def _create_device_state(self) -> ClimateIPDeviceState:
+        """Fetch the strictly typed state representation directly from the controller."""
+        state = self.controller.climate_state
+        # fmt: off
+        _LOGGER.debug("%s Fetched typed climate state: %s", self.log_prefix, state)  # pragma: no mutate
+        # fmt: on
+        return state
+
+    async def async_set_property(
+        self,
+        property_name: str,
+        new_value: Any,
+        corrections: dict[str, Any] | None = None,
+        device_id: str | None = None,
+    ) -> None:
+        """Set a property on the controller. Optimistic state is handled by the entity."""
+        try:
+            properties_to_set = {property_name: new_value}
+            if corrections:
+                properties_to_set.update(corrections)
+
+            # fmt: off
+            _LOGGER.debug("%s Dispatching commands to controller: %s", self.log_prefix, properties_to_set)  # pragma: no mutate
+            # fmt: on
+
+            results = []
+            for prop, val in properties_to_set.items():
+                if isinstance(val, HVACMode):
+                    val = val.value
+                results.append(
+                    await self.controller.async_set_property(prop, val, device_id)
+                )
+
+            if not all(results):
+                # fmt: off
+                _LOGGER.debug("%s Not all properties were set successfully. Requesting sync refresh to revert state.", self.log_prefix)  # pragma: no mutate
+                # fmt: on
+                await self.async_request_refresh()
+
+        except (CannotConnect, asyncio.TimeoutError, OSError) as err:
+            # fmt: off
+            _LOGGER.error("%s Network error setting properties: %s", self.log_prefix, type(err).__name__)  # pragma: no mutate
+            # fmt: on
+            await self.async_request_refresh()
+            raise UpdateFailed(f"Network error setting property {property_name}: {err}") from err  # pragma: no mutate
+
+        except (ValueError, TypeError, KeyError) as err:
+            # fmt: off
+            _LOGGER.error("%s Data error setting properties: %s", self.log_prefix, err, exc_info=True)  # pragma: no mutate
+            # fmt: on
+            await self.async_request_refresh()
+            raise UpdateFailed(f"Data error setting property {property_name}: {err}") from err  # pragma: no mutate
+
+        except Exception as err:  # pylint: disable=import-outside-toplevel,broad-exception-caught
+            # fmt: off
+            _LOGGER.error("%s Error setting properties: %s", self.log_prefix, err, exc_info=True)  # pragma: no mutate
+            # fmt: on
+            # Revert state on failure
+            await self.async_request_refresh()
+            raise UpdateFailed(f"Failed to set property {property_name}: {err}") from err  # pragma: no mutate
+
+    async def async_predict_and_correct(
+        self,
+        current_state: Any,
+        property_name: str,
+        new_value: Any,
+    ) -> tuple[Any, dict[str, Any]]:
+        """Pass through to the controller's prediction method."""
+        if hasattr(self.controller, "async_predict_and_correct_state"):
+            if isinstance(new_value, HVACMode):
+                new_value = new_value.value
+            changed_flags, corrections = await self.controller.async_predict_and_correct_state(
+                current_state, property_name, new_value
+            )
+
+            # Push the fast-tracked predicted state through the coordinator
+            # This triggers all entities to immediately see new valid modes/lists.
+            predicted_state = self._create_device_state()
+            self.async_set_updated_data(predicted_state)
+
+            return changed_flags, corrections
+        _LOGGER.debug("%s Controller does not support state prediction", self.log_prefix)  # pragma: no mutate
+        return ClimateEntityFeature(0), {}
+
+    @property
+    def log_prefix(self) -> str:
+        """Return the log prefix from the controller."""
+        return self.controller.log_prefix
+
+    @property
+    def unique_id(self) -> str:
+        """Return the unique ID from the controller."""
+        return self.controller.unique_id
+
+    @property
+    def operations(self) -> list:
+        """Return the list of settable operations."""
+        return self.controller.operations
+
+    @property
+    def attributes(self) -> list:
+        """Return the list of read-only attributes."""
+        return self.controller.attributes
+
+    @property
+    def is_push_device(self) -> bool:
+        """Return True if the device uses push-based updates."""
+        return self.controller.is_push_device
+
+    @property
+    def state_attributes(self) -> dict[str, Any]:
+        """Return the state attributes from the controller."""
+        return self.controller.state_attributes
+
+    @property
+    def poll(self) -> bool:
+        """Return the polling state from the controller."""
+        return self.controller.poll
+
+    @property
+    def temperature_unit(self) -> str:
+        """Return the temperature unit from the controller."""
+        return self.controller.temperature_unit
+
+    def get_property(self, property_name: str) -> Any:
+        """Return a property value from the controller."""
+        return self.controller.get_property(property_name)
+
+    def get_property_object(self, property_name: str) -> Any:
+        """Return the property object from the controller."""
+        return self.controller.get_property_object(property_name)
+
+    async def async_shutdown(self) -> None:
+        """Shut down the coordinator and its controller.
+
+        Called when the config entry is unloaded.
+        """
+        _LOGGER.debug("%s Shutting down coordinator", self.log_prefix)  # pragma: no mutate
+        if self.controller:
+            await self.controller.async_shutdown()
+
+        _LOGGER.debug("%s Coordinator shutdown complete", self.log_prefix)  # pragma: no mutate
