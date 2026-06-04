@@ -84,9 +84,10 @@ class ConnectionRaw8888(Connection):
                 yaml_node[CONFIG_DEVICE_CONNECTION_TEMPLATE], self._hass
             )
         elif yaml_node and CONFIG_DEVICE_CONNECTION_PARAMS in yaml_node:
+            params_node = yaml_node[CONFIG_DEVICE_CONNECTION_PARAMS] or {}
             params = {
                 **self._params,
-                **yaml_node.get(CONFIG_DEVICE_CONNECTION_PARAMS, {}),
+                **params_node,
             }
             new_connection._params = params
 

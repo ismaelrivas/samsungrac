@@ -61,6 +61,11 @@ async def test_create_updated(connection_config, mock_logger, mock_hass):
         assert new_conn is not conn
         assert new_conn._params == {"test": "param"}
 
+        # Test with None
+        new_conn_none = conn.create_updated(None)
+        assert isinstance(new_conn_none, ConnectionRaw8888)
+        assert new_conn_none is not conn
+
         # pylint: disable=import-outside-toplevel,duplicate-code
         # Test with params
         yaml_node = {"params": {"new": "value"}}
