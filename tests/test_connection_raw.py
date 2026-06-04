@@ -72,6 +72,16 @@ async def test_create_updated(connection_config, mock_logger, mock_hass):
         new_conn_tmpl = conn.create_updated(yaml_node_tmpl)
         assert new_conn_tmpl._connection_template is not None
         assert new_conn_tmpl._connection_template.hass == mock_hass
+
+        # Test with embedded command and condition template
+        yaml_node_embedded = {
+            "connection": {
+                "condition_template": "{{ condition }}"
+            }
+        }
+        new_conn_embedded = conn.create_updated(yaml_node_embedded)
+        assert new_conn_embedded._embedded_command is not None
+        assert new_conn_embedded._embedded_command.condition_template.hass == mock_hass
         # pylint: enable=duplicate-code
 
 
@@ -133,44 +143,68 @@ async def test_async_execute_cannot_connect_classification(connection_config, mo
             mock_client.request.side_effect = CannotConnect("Error 111")
             with pytest.raises(CannotConnect) as exc:
                 await conn.async_execute("GET", "/test", None, None)
-            assert "Connection refused (device unreachable or offline)" in str(exc.value)
+            assert str(exc.value) == "Connection refused (device unreachable or offline)"
 
             mock_client.request.side_effect = CannotConnect("Connection refused by peer")
             with pytest.raises(CannotConnect) as exc:
                 await conn.async_execute("GET", "/test", None, None)
-            assert "Connection refused (device unreachable or offline)" in str(exc.value)
+            assert str(exc.value) == "Connection refused (device unreachable or offline)"
 
             # Test timed out
             mock_client.request.side_effect = CannotConnect("timed out")
             with pytest.raises(CannotConnect) as exc:
                 await conn.async_execute("GET", "/test", None, None)
-            assert "Connection timed out" in str(exc.value)
+            assert str(exc.value) == "Connection timed out"
             
             mock_client.request.side_effect = CannotConnect("etimedout")
             with pytest.raises(CannotConnect) as exc:
                 await conn.async_execute("GET", "/test", None, None)
-            assert "Connection timed out" in str(exc.value)
+            assert str(exc.value) == "Connection timed out"
 
             # Test DNS error
             mock_client.request.side_effect = CannotConnect("name or service not known")
             with pytest.raises(CannotConnect) as exc:
                 await conn.async_execute("GET", "/test", None, None)
-            assert "Host not found (DNS error)" in str(exc.value)
+            assert str(exc.value) == "Host not found (DNS error)"
             
             mock_client.request.side_effect = CannotConnect("nodename")
             with pytest.raises(CannotConnect) as exc:
                 await conn.async_execute("GET", "/test", None, None)
-            assert "Host not found (DNS error)" in str(exc.value)
+            assert str(exc.value) == "Host not found (DNS error)"
+
+            # Test else block (unknown error)
+            mock_client.request.side_effect = CannotConnect("unknown error")
+            with pytest.raises(CannotConnect) as exc:
+                await conn.async_execute("GET", "/test", None, None)
+            assert str(exc.value) == "Connection error: unknown error"
 
 
 async def test_load_from_yaml_keep_alive(connection_config, mock_logger, mock_hass):
-    """Test that load_from_yaml properly updates keep_alive."""
+    """Test that load_from_yaml properly updates keep_alive and params."""
     with patch("os.path.exists", return_value=True):
         conn = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
         assert conn._keep_alive is True # Default
+        conn._params = {"existing": "val"}
         
-        conn.load_from_yaml({"keep_alive": False}, None)
+        # Test empty node returns False
+        assert conn.load_from_yaml({}, None) is False
+
+        # Test keep_alive and params
+        result = conn.load_from_yaml({"keep_alive": False, "params": {"new": "val"}}, None)
+        assert result is True
         assert conn._keep_alive is False
+        assert conn._params == {"existing": "val", "new": "val"}
+
+        # Test partial (only keep_alive)
+        result2 = conn.load_from_yaml({"keep_alive": True}, None)
+        assert result2 is True
+        assert conn._keep_alive is True
+        assert conn._params == {"existing": "val", "new": "val"}
+
+        # Test partial (only params)
+        result3 = conn.load_from_yaml({"params": {"newer": "val"}}, None)
+        assert result3 is True
+        assert conn._params == {"existing": "val", "new": "val", "newer": "val"}
 
 
 async def test_8888_raw_all_placeholders_replaced(connection_config, mock_logger, mock_hass):
@@ -261,6 +295,32 @@ async def test_execute_raises_not_implemented(connection_config, mock_logger, mo
         conn = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
         with pytest.raises(NotImplementedError):
             conn.execute(None, None, {})
+
+
+async def test_async_get_client_port_parsing(connection_config, mock_logger, mock_hass):
+    """Test URL port parsing in async_get_client."""
+    with patch("os.path.exists", return_value=True):
+        conn = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
+        
+        # Test https (443)
+        conn._params = {"url": "https://test.com/path"}
+        with patch("custom_components.climate_ip.connection_raw.Samsung8888Client") as mock_client_cls:
+            await conn.async_get_client()
+            mock_client_cls.assert_called_once_with("192.168.1.100", 443, "cert.pem", log_prefix="[192.168.1.100] ")
+
+        # Test fallback to 80
+        conn._params = {"url": "http://test.com/path"}
+        conn._client = None
+        with patch("custom_components.climate_ip.connection_raw.Samsung8888Client") as mock_client_cls:
+            await conn.async_get_client()
+            mock_client_cls.assert_called_once_with("192.168.1.100", 80, "cert.pem", log_prefix="[192.168.1.100] ")
+
+        # Test default port 8888 when no URL
+        conn._params = {}
+        conn._client = None
+        with patch("custom_components.climate_ip.connection_raw.Samsung8888Client") as mock_client_cls:
+            await conn.async_get_client()
+            mock_client_cls.assert_called_once_with("192.168.1.100", 8888, "cert.pem", log_prefix="[192.168.1.100] ")
 
 
 async def test_close_standalone(connection_config, mock_logger, mock_hass):
