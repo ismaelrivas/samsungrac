@@ -201,7 +201,7 @@ async def test_execute_raises_not_implemented(connection_config, mock_logger, mo
 async def test_async_get_client(connection_config, mock_logger, mock_hass):
     """Test all paths of async_get_client."""
     with patch("os.path.exists", return_value=True):
-        # 1. Standalone client (no controller)
+        # 1. Standalone client (no controller, no explicit port, https)
         conn = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
         conn._params = {"url": "https://test.com/path"}
         
@@ -222,6 +222,20 @@ async def test_async_get_client(connection_config, mock_logger, mock_hass):
         with patch("custom_components.climate_ip.connection_raw.Samsung8888Client") as mock_client_cls:
             await conn_http.async_get_client()
             mock_client_cls.assert_called_once_with("192.168.1.100", 80, conn_http._cert, log_prefix=conn_http.log_prefix)
+
+        # 1c. Standalone client (explicit port) (kills mutant 41)
+        conn_explicit = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
+        conn_explicit._params = {"url": "http://test.com:5678/path"}
+        with patch("custom_components.climate_ip.connection_raw.Samsung8888Client") as mock_client_cls:
+            await conn_explicit.async_get_client()
+            mock_client_cls.assert_called_once_with("192.168.1.100", 5678, conn_explicit._cert, log_prefix=conn_explicit.log_prefix)
+
+        # 1d. Standalone client (no url, default port) (kills mutants 33, 34)
+        conn_def = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
+        conn_def._params = {}
+        with patch("custom_components.climate_ip.connection_raw.Samsung8888Client") as mock_client_cls:
+            await conn_def.async_get_client()
+            mock_client_cls.assert_called_once_with("192.168.1.100", 8888, conn_def._cert, log_prefix=conn_def.log_prefix)
 
         # 2. Standalone client, no host raises CannotConnect
         conn2 = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)

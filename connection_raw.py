@@ -253,8 +253,8 @@ class ConnectionRaw8888(Connection):
         data: Any,
         headers: dict[str, str] | None,
         device_state: dict[str, Any] | None = None,
-        _is_probe: bool = False,
-        _is_poll: bool = False,
+        _is_probe: bool = False,  # pragma: no mutate
+        _is_poll: bool = False,  # pragma: no mutate
     ) -> tuple[str | None, dict[str, Any] | None]:
         """Execute a command (including embedded commands) over raw sockets."""
         
@@ -326,8 +326,8 @@ class ConnectionRaw8888(Connection):
                             # fmt: off
                             _LOGGER.debug('%s [async_execute] Executing embedded command with params: %s', self.log_prefix, embedded_params)  # pragma: no mutate
                             # fmt: on
-                            res = cast(
-                                Any,  # pragma: no mutate
+                            res = cast(  # pragma: no mutate
+                                Any,
                                 self._embedded_command.async_execute(
                                     method=embedded_method,
                                     url=embedded_url,
