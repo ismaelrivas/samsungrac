@@ -195,3 +195,31 @@ async def test_yaml_file_read_uses_executor(
     assert any(
         "load_yaml" in name for name in executor_calls
     ), f"No load_yaml call found in executor dispatches: {executor_calls}"
+
+
+async def test_async_set_property_registers_pending_update(
+    yaml_config: dict,  # type: ignore[type-arg]
+    mock_logger: logging.Logger,
+    mock_hass: MagicMock,
+) -> None:
+    """Test that async_set_property strictly delegates to poller.register_pending_update."""
+    controller = YamlController(yaml_config, mock_logger, hass=mock_hass, session=MagicMock())
+    
+    # Mock loader dependencies
+    controller.loader.is_fully_initialized = True
+    
+    # Mock the operation
+    mock_op = AsyncMock()
+    mock_op.async_set_value.return_value = True
+    controller.loader.operations = {"fan_mode": mock_op}
+    
+    # Mock the poller
+    mock_poller = MagicMock()
+    controller.poller = mock_poller
+    
+    result = await controller.async_set_property("fan_mode", "high")
+    
+    assert result is True
+    # Strict transactional assertion on the delegation contract
+    mock_poller.register_pending_update.assert_called_once_with("fan_mode", "high")
+    mock_op.async_set_value.assert_called_once_with("high", "test_device_id")
