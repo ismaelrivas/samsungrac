@@ -202,6 +202,23 @@ class YamlController(ClimateController):
         """Return the polling state from the YAML configuration."""
         return self.loader.poll
 
+    @property
+    def available(self) -> bool:
+        """Return True if the controller is connected and available."""
+        if hasattr(self, "loader") and hasattr(self.loader, "connection") and self.loader.connection:
+            return self.loader.connection.get_diagnostics().get("is_available", True)
+        return True
+
+    @property
+    def id(self) -> str | None:
+        """Return the unique id of the controller."""
+        return self._unique_id
+
+    async def update_state(self) -> bool:
+        """Asynchronously update the state of the controller from the device."""
+        result = await self.async_update_state()
+        return result is not None
+
     async def initialize(self) -> bool:
         """Perform initial YAML configuration loading and set up the base connection."""
         return await self.loader.async_initialize()
