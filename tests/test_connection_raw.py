@@ -593,6 +593,61 @@ async def test_async_execute_mutants_coverage(connection_config, mock_logger, mo
             with pytest.raises(TypeError):
                 await conn.async_execute("GET", "/main", None, None, device_state={"state": "on"})
 
+async def test_async_execute_embedded_and_path(connection_config, mock_logger, mock_hass):
+    """Test embedded template async_render, render, format_placeholders, and path fallback."""
+    with patch("os.path.exists", return_value=True):
+        conn = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
+        conn._host = "1.1.1.1"
+        mock_controller = MagicMock()
+        mock_controller.device_id = "DEV456"
+        conn.set_controller_ref(mock_controller)
+
+        mock_client = AsyncMock()
+        mock_client.request.return_value = ('{"ok": 1}', None)
+
+        # Test embedded template async_render, format_placeholders, and url fallback
+        conn._embedded_command = MagicMock()
+        conn._embedded_command._params = {}
+        
+        mock_template = MagicMock()
+        mock_template.async_render.return_value = '{"method": "POST"}'
+        conn._embedded_command._connection_template = mock_template
+        conn._embedded_command.check_execute_condition = MagicMock(return_value=True)
+        conn._embedded_command.async_execute = AsyncMock(return_value=(None, None))
+        
+        with patch.object(conn, "async_get_client", return_value=mock_client):
+            await conn.async_execute("PUT", "/main/__CLIMATE_IP_HOST__", None, None, device_state={"state": "on"})
+            mock_template.async_render.assert_called_once()
+            
+            # embedded command should execute with method POST, and fallback url "/main/1.1.1.1"
+            conn._embedded_command.async_execute.assert_called_once()
+            emb_method, emb_url, emb_data, emb_headers = conn._embedded_command.async_execute.call_args[0]
+            assert emb_method == "POST"
+            assert emb_url == "/main/1.1.1.1"
+
+        # Test render, embedded params replacement
+        del mock_template.async_render
+        mock_template.render.return_value = '{"url": "/emb/__DEVICE_ID__/__CLIMATE_IP_HOST__", "method": "GET"}'
+        conn._embedded_command._connection_template = mock_template
+        conn._embedded_command.async_execute.reset_mock()
+        
+        with patch.object(conn, "async_get_client", return_value=mock_client):
+            await conn.async_execute("PUT", "/main", None, None, device_state={"state": "on"})
+            mock_template.render.assert_called_once()
+            conn._embedded_command.async_execute.assert_called_once()
+            emb_method, emb_url, emb_data, emb_headers = conn._embedded_command.async_execute.call_args[0]
+            assert emb_method == "GET"
+            assert emb_url == "/emb/DEV456/1.1.1.1"
+
+        # Test url=None path fallback (Kills mutant 129)
+        conn._embedded_command = None
+        with patch.object(conn, "async_get_client", return_value=mock_client):
+            mock_client.request.reset_mock()
+            await conn.async_execute("PUT", None, None, None)
+            mock_client.request.assert_called_once()
+            method, path, data, headers = mock_client.request.call_args[0]
+            assert path == ""
+
 @pytest.mark.asyncio
 async def test_async_execute_defaults(mock_logger):
     """

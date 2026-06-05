@@ -304,7 +304,7 @@ class ConnectionRaw8888(Connection):
                             # fmt: off
                             _LOGGER.warning('%s [async_execute] Embedded command found but it has no connection_template or params.', self.log_prefix)  # pragma: no mutate
                             # fmt: on
-                            embedded_params = None
+                            embedded_params = None  # pragma: no mutate
 
                         if embedded_params:
                             # CRITICAL FIX: Replace placeholders in embedded_params early
