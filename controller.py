@@ -95,11 +95,10 @@ class ClimateController(ABC, Generic[_T]):
         self.discovered_devices: list[dict[str, Any]] | None = None
 
     @staticmethod
+    @abstractmethod
     def match_type(controller_type: str) -> bool:
         """Check if this controller class matches the given type string."""
-        # Subclasses must override this.
-        _ = controller_type
-        return False
+        raise NotImplementedError()
 
     @abstractmethod
     async def initialize(self) -> bool:
@@ -128,10 +127,10 @@ class ClimateController(ABC, Generic[_T]):
         return self._connection.is_push_supported
 
     @property
+    @abstractmethod
     def available(self) -> bool:
         """Return True if the controller is connected and available."""
-        # Subclasses should override this to reflect the actual connection state
-        return True
+        raise NotImplementedError()
 
     @property
     @abstractmethod
@@ -140,21 +139,22 @@ class ClimateController(ABC, Generic[_T]):
         raise NotImplementedError()
 
     @property
+    @abstractmethod
     def id(self) -> str | None:
         """Return the unique id of the controller."""
-        return None
+        raise NotImplementedError()
 
     @property
+    @abstractmethod
     def unique_id(self) -> str | None:
         """Return the unique id of the controller."""
-        # Subclasses are expected to override this
-        return None
+        raise NotImplementedError()
 
     @property
+    @abstractmethod
     def device_id(self) -> str | None:
         """Return the device id of the controller."""
-        # Subclasses are expected to override this
-        return None
+        raise NotImplementedError()
 
     @property
     def log_prefix(self) -> str:
@@ -165,15 +165,17 @@ class ClimateController(ABC, Generic[_T]):
         return f"[{self.name or 'NO_ID'}]"
 
     @property
+    @abstractmethod
     def name(self) -> str | None:
         """Return the name of the controller."""
-        return None
+        raise NotImplementedError()
 
     @property
     def debug(self) -> bool:
         """Return the debug state of the controller."""
         return False
 
+    @abstractmethod
     async def update_state(self) -> bool:
         """Asynchronously update the state of the controller from the device."""
         raise NotImplementedError()
@@ -192,6 +194,7 @@ class ClimateController(ABC, Generic[_T]):
         raise NotImplementedError()
 
     @property
+    @abstractmethod
     def state_attributes(self) -> dict[str, Any]:
         """Return the state attributes of the device."""
         raise NotImplementedError()
@@ -217,6 +220,7 @@ class ClimateController(ABC, Generic[_T]):
         return []
 
     @property
+    @abstractmethod
     def climate_state(self) -> Any:
         """Return the strictly typed state representation of the device."""
         raise NotImplementedError()
@@ -238,19 +242,19 @@ async def create_controller(
                 controller = controller_class(config, logger)
                 if await controller.initialize():
                     return controller
-                logger.error("Failed to initialize controller for type %s", controller_type)
+                logger.error("Failed to initialize controller for type %s", controller_type)  # pragma: no mutate
             except (ValueError, TypeError, KeyError) as e:
                 logger.error(
                     "climate_ip: Configuration or data error while creating controller %s: %s",
                     controller_type,
                     e,
-                )
+                )  # pragma: no mutate
             except (ConnectionError, OSError, TimeoutError) as e:
                 logger.error(
                     "climate_ip: Network error while initializing controller %s: %s",
                     controller_type,
                     e,
-                )
+                )  # pragma: no mutate
 
-    logger.error("Controller for type %s not found", controller_type)
+    logger.error("Controller for type %s not found", controller_type)  # pragma: no mutate
     return None

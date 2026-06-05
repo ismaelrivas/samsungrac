@@ -2,6 +2,7 @@
 
 import logging
 import pytest
+from typing import Any
 from unittest.mock import patch
 
 from custom_components.climate_ip.controller import (
@@ -60,6 +61,22 @@ class DummyController(ClimateController):
 
     def get_property(self, property_name):
         """Get property."""
+        return None
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def id(self) -> str | None:
+        return "dummy_id"
+
+    @property
+    def state_attributes(self) -> dict:
+        return {}
+
+    @property
+    def climate_state(self) -> Any:
         return None
 
 
