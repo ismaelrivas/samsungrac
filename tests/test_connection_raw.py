@@ -438,9 +438,9 @@ async def test_async_execute_placeholders_and_request(connection_config, mock_lo
         
         with patch.object(conn, "async_get_client", return_value=mock_client):
             # Execute with placeholders
-            headers_in = {"Custom": "__CLIMATE_IP_MAC__"}
-            data_in = {"payload": "__DEVICE_ID__", "tok": "__CLIMATE_IP_TOKEN__"}
-            resp, err = await conn.async_execute("PUT", "/path/__CLIMATE_IP_TOKEN__/__CLIMATE_IP_HOST__/__DEVICE_ID__", data_in, headers_in)
+            headers_in = {"Custom": "__CLIMATE_IP_MAC__", "Token": "__CLIMATE_IP_TOKEN__", "Host": "__CLIMATE_IP_HOST__", "DevId": "__DEVICE_ID__"}
+            data_in = {"payload": "__DEVICE_ID__", "tok": "__CLIMATE_IP_TOKEN__", "mac": "__CLIMATE_IP_MAC__", "host": "__CLIMATE_IP_HOST__"}
+            resp, err = await conn.async_execute("PUT", "/path/__CLIMATE_IP_TOKEN__/__CLIMATE_IP_HOST__/__DEVICE_ID__/__CLIMATE_IP_MAC__", data_in, headers_in)
             
             assert resp == '{"ok": 1}'
             assert err is None
@@ -450,11 +450,26 @@ async def test_async_execute_placeholders_and_request(connection_config, mock_lo
             c_method, c_path, c_body, c_headers = mock_client.request.call_args[0]
             
             assert c_method == "PUT"
-            assert c_path == "/path/CTRL_TOKEN/192.168.1.100/DEV456"
-            assert c_body == {"payload": "DEV456", "tok": "CTRL_TOKEN"}
+            assert c_path == "/path/CTRL_TOKEN/192.168.1.100/DEV456/AA:BB"
+            assert c_body == {"payload": "DEV456", "tok": "CTRL_TOKEN", "mac": "AA:BB", "host": "192.168.1.100"}
             assert c_headers["Custom"] == "AA:BB"
+            assert c_headers["Token"] == "CTRL_TOKEN"
+            assert c_headers["Host"] == "192.168.1.100"
+            assert c_headers["DevId"] == "DEV456"
             assert c_headers["Authorization"] == "Bearer CTRL_TOKEN"
             assert c_headers["Content-Type"] == "application/json"
+
+            # Test string data JSON parsing (kills mutant 150)
+            mock_client.request.reset_mock()
+            await conn.async_execute("PUT", "/x", '{"string_json": 1}', None)
+            c_method, c_path, c_body, c_headers = mock_client.request.call_args[0]
+            assert c_body == {"string_json": 1}
+
+            # Test None data parsing (kills mutant 152)
+            mock_client.request.reset_mock()
+            await conn.async_execute("PUT", "/x", None, None)
+            c_method, c_path, c_body, c_headers = mock_client.request.call_args[0]
+            assert c_body is None
 
 async def test_async_execute_exceptions(connection_config, mock_logger, mock_hass):
     """Test exception handling in async_execute."""
