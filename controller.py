@@ -247,16 +247,16 @@ async def create_controller(
                 logger.error("Failed to initialize controller for type %s", controller_type)  # pragma: no mutate
             except (ValueError, TypeError, KeyError) as e:
                 logger.error(
-                    "climate_ip: Configuration or data error while creating controller %s: %s",
+                    "climate_ip: Configuration or data error while creating controller %s: %s",  # pragma: no mutate
                     controller_type,
                     e,
-                )  # pragma: no mutate
+                )
             except (ConnectionError, OSError, TimeoutError) as e:
                 logger.error(
-                    "climate_ip: Network error while initializing controller %s: %s",
+                    "climate_ip: Network error while initializing controller %s: %s",  # pragma: no mutate
                     controller_type,
                     e,
-                )  # pragma: no mutate
+                )
 
     logger.error("Controller for type %s not found", controller_type)  # pragma: no mutate
     return None

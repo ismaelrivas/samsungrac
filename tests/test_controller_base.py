@@ -16,6 +16,7 @@ class DummyController(ClimateController):
 
     def __init__(self, config, logger, uid_override=None):
         super().__init__(config, logger)
+        self._saved_config = config
         self._uid = uid_override
 
     @staticmethod
@@ -180,3 +181,40 @@ def test_controller_base_init_state():
     assert controller._connection is None
     assert controller._shared_raw_client is None
     assert controller.discovered_devices is None
+
+
+def test_register_controller_kills_mutants():
+    """Test register_controller to kill mutants."""
+    from custom_components.climate_ip.controller import register_controller, CLIMATE_CONTROLLERS
+    
+    class FakeController(DummyController):
+        pass
+    
+    initial_len = len(CLIMATE_CONTROLLERS)
+    register_controller(FakeController)
+    
+    assert CLIMATE_CONTROLLERS[-1] is FakeController
+    assert len(CLIMATE_CONTROLLERS) == initial_len + 1
+    
+    CLIMATE_CONTROLLERS.remove(FakeController)
+
+
+@pytest.mark.asyncio
+async def test_create_controller_success_kills_mutants():
+    """Test successful creation to kill config and logger mutations."""
+    logger = logging.getLogger(__name__)
+    config = {"unique_test": True}
+
+    class SuccessController(DummyController):
+        @staticmethod
+        def match_type(controller_type: str) -> bool:
+            return controller_type == "success_mutant"
+
+    with patch(
+        "custom_components.climate_ip.controller.CLIMATE_CONTROLLERS",
+        [SuccessController],
+    ):
+        controller = await create_controller("success_mutant", config, logger)
+        assert controller is not None
+        assert controller._saved_config is config  # Kills config=None mutant
+        assert controller._logger is logger        # Kills logger=None mutant
