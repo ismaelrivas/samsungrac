@@ -90,6 +90,7 @@ class ClimateController(Generic[_T]):
         _ = config  # unused in base class; subclasses use it
         self._logger = logger
         self._connection = None
+        self._shared_raw_client = None
         self.discovered_devices: list[dict[str, Any]] | None = None
 
     @staticmethod

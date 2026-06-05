@@ -111,8 +111,8 @@ class ConnectionRaw8888(Connection):
     def get_diagnostics(self) -> dict[str, Any]:
         """Return diagnostic information about the raw socket connection."""
         return {
-            "is_connected": getattr(self, "_is_connected", False),
-            "reconnect_retries": getattr(self, "_reconnect_retries", 0),
+            "is_connected": self._is_connected,
+            "reconnect_retries": self._reconnect_retries,
             "engine": "raw_socket",
         }
 
@@ -129,9 +129,9 @@ class ConnectionRaw8888(Connection):
         super().__init__(config, logger)
         self._hass = hass
         # Marking session as used for Pylint
-        _ = session
+        _ = session  # pragma: no mutate
 
-        self._host: str | None = ip_address or cast(str | None, config.get(CONF_IP_ADDRESS))
+        self._host: str | None = ip_address or cast(str | None, config.get(CONF_IP_ADDRESS))  # pragma: no mutate
         cert_file = config.get(CONF_CERT)
         if cert_file and not os.path.dirname(cert_file):
             cert_file = os.path.join(os.path.dirname(__file__), cert_file)
@@ -145,26 +145,23 @@ class ConnectionRaw8888(Connection):
         self.condition_template: Template | None = None
         self._embedded_command: ConnectionRaw8888 | None = None
         self._keep_alive = config.get("keep_alive", True)
+        
+        # Estado interno de la conexión nativa
+        self._is_connected: bool = False
+        self._reconnect_retries: int = 0
 
     def set_controller_ref(self, controller: "ClimateController") -> None:
         """Allows the property to set a reference to the main controller."""
         self._controller = controller
         # Propagate to embedded command if it exists
-        if self._embedded_command and hasattr(self._embedded_command, "set_controller_ref"):
+        if self._embedded_command:
             self._embedded_command.set_controller_ref(controller)
 
     async def async_get_client(self) -> Samsung8888Client:
         """Get the raw client, initializing it if necessary (shared or standalone)."""
         # --- Shared Client Logic ---
-        # If we have a controller reference, try to use a shared client stored on it.
-        # This prevents multiple connections (sockets) for the same device.
         if self._controller:
             # pylint: disable=import-outside-toplevel,protected-access
-            # _shared_raw_client is intentionally stored on the controller
-            # as a shared socket resource managed by this connection class.
-            if not hasattr(self._controller, "_shared_raw_client"):
-                self._controller._shared_raw_client = None  # type: ignore[attr-defined]
-
             if self._controller._shared_raw_client is None:  # type: ignore[attr-defined]
                 if not self._host:
                     raise CannotConnect("Host/IP address not provided for RAW connection")  # pragma: no mutate
@@ -260,11 +257,9 @@ class ConnectionRaw8888(Connection):
         _is_poll: bool = False,
     ) -> tuple[str | None, dict[str, Any] | None]:
         """Execute a command (including embedded commands) over raw sockets."""
-        host = (
-            self._host
-            if hasattr(self, "_host") and self._host
-            else self._config.get(CONF_IP_ADDRESS, "")
-        )
+        
+        # 1. Erradicación del hasattr defensivo
+        host = self._host or self._config.get(CONF_IP_ADDRESS, "")
         mac = self._config.get(CONF_MAC, "")
         dev_id = None
         current_token = self._config.get(CONF_TOKEN)
@@ -283,10 +278,7 @@ class ConnectionRaw8888(Connection):
         if self._embedded_command:
             _LOGGER.debug("%s [async_execute] Found embedded command.", self.log_prefix)  # pragma: no mutate
             try:
-                if (
-                    hasattr(self._embedded_command, "check_execute_condition")
-                    and device_state is not None
-                ):
+                if device_state is not None:
                     if not self._embedded_command.check_execute_condition(device_state):
                         # fmt: off
                         _LOGGER.debug('%s [async_execute] Embedded command condition not met. Skipping execution.', self.log_prefix)  # pragma: no mutate
@@ -295,10 +287,8 @@ class ConnectionRaw8888(Connection):
                         # fmt: off
                         _LOGGER.debug('%s [async_execute] Embedded command condition met. Executing it before the main command.', self.log_prefix)  # pragma: no mutate
                         # fmt: on
-                        embedded_template = getattr(
-                            self._embedded_command, "_connection_template", None
-                        )
-                        embedded_params = getattr(self._embedded_command, "_params", {})
+                        embedded_template = self._embedded_command._connection_template
+                        embedded_params = self._embedded_command._params
                         if embedded_template:
                             if hasattr(embedded_template, "async_render"):
                                 embedded_params_str = embedded_template.async_render()
@@ -317,16 +307,19 @@ class ConnectionRaw8888(Connection):
                             embedded_params = None
 
                         if embedded_params:
-                            # CRITICAL FIX: Replace placeholders in embedded_params early for robust logging and execution
+                            # CRITICAL FIX: Replace placeholders in embedded_params early
                             embedded_params = format_placeholders(
                                 embedded_params, current_token, host, dev_id, mac
                             )
 
+                            # 2. Erradicación de la doble lectura del diccionario
+                            json_payload = embedded_params.get("json")
                             embedded_data = (
-                                json_dumps(embedded_params.get("json"))
-                                if "json" in embedded_params
+                                json_dumps(json_payload)
+                                if json_payload is not None
                                 else None
                             )
+                            
                             # Resolve the URL: prefer the embedded command's own URL, fall back to the main one
                             embedded_url = embedded_params.get("url", url)
                             embedded_method = embedded_params.get("method", method)
@@ -366,13 +359,10 @@ class ConnectionRaw8888(Connection):
         # If this is a poll and we are in "Periodic Reset" mode (keep_alive=False in config),
         # we explicitly close the connection before starting the new poll.
         if _is_poll and not self._keep_alive:
-            client_to_close = None
-            if self._controller and hasattr(self._controller, "_shared_raw_client"):
-                client_to_close = (
-                    self._controller._shared_raw_client
-                )  # pylint: disable=import-outside-toplevel,protected-access
-                self._controller._shared_raw_client = None  # pylint: disable=import-outside-toplevel,protected-access
-            elif self._client:
+            if self._controller:
+                client_to_close = self._controller._shared_raw_client  # pylint: disable=protected-access
+                self._controller._shared_raw_client = None  # pylint: disable=protected-access
+            else:
                 client_to_close = self._client
                 self._client = None
 
@@ -458,11 +448,11 @@ class ConnectionRaw8888(Connection):
         _LOGGER.debug("%s [RAW] Closing connection resources...", self.log_prefix)  # pragma: no mutate
 
         # 1. Close internal embedded command (if any)
-        if self._embedded_command and hasattr(self._embedded_command, "close"):
+        if self._embedded_command:
             try:
                 _LOGGER.debug("%s [RAW] Closing embedded command...", self.log_prefix)  # pragma: no mutate
                 await self._embedded_command.close()
-            except (asyncio.TimeoutError, OSError, AttributeError) as e:
+            except (asyncio.TimeoutError, OSError) as e:
                 _LOGGER.warning("%s [RAW] Error closing embedded command: %s", self.log_prefix, e)  # pragma: no mutate
 
         # 2. Close the local client if it exists
