@@ -79,6 +79,14 @@ class DummyController(ClimateController):
     def climate_state(self) -> Any:
         return None
 
+    @property
+    def operations(self) -> list[str]:
+        return []
+
+    @property
+    def attributes(self) -> list[str]:
+        return []
+
 
 @pytest.mark.parametrize(
     "unique_id, expected_prefix",

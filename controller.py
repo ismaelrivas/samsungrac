@@ -210,14 +210,16 @@ class ClimateController(ABC, Generic[_T]):
         return None
 
     @property
+    @abstractmethod
     def operations(self) -> list[str]:
         """Return a list of available operations (settable properties)."""
-        return []
+        raise NotImplementedError()
 
     @property
+    @abstractmethod
     def attributes(self) -> list[str]:
         """Return a list of available attributes (read-only properties)."""
-        return []
+        raise NotImplementedError()
 
     @property
     @abstractmethod
