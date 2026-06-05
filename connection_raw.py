@@ -327,7 +327,7 @@ class ConnectionRaw8888(Connection):
                             _LOGGER.debug('%s [async_execute] Executing embedded command with params: %s', self.log_prefix, embedded_params)  # pragma: no mutate
                             # fmt: on
                             res = cast(
-                                Any,
+                                Any,  # pragma: no mutate
                                 self._embedded_command.async_execute(
                                     method=embedded_method,
                                     url=embedded_url,

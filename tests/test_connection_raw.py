@@ -205,6 +205,13 @@ async def test_async_get_client(connection_config, mock_logger, mock_hass):
             assert client_cached == client
             mock_client_cls.assert_not_called()
             
+        # 1b. Standalone client (http)
+        conn_http = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
+        conn_http._params = {"url": "http://test.com/path"}
+        with patch("custom_components.climate_ip.connection_raw.Samsung8888Client") as mock_client_cls:
+            await conn_http.async_get_client()
+            mock_client_cls.assert_called_once_with("192.168.1.100", 80, conn_http._cert, log_prefix=conn_http.log_prefix)
+
         # 2. Standalone client, no host raises CannotConnect
         conn2 = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
         conn2._host = None
@@ -229,6 +236,25 @@ async def test_async_get_client(connection_config, mock_logger, mock_hass):
             client_cached = await conn3.async_get_client()
             assert client_cached == client
             mock_client_cls.assert_not_called()
+
+        # 3b. Shared client (https and http)
+        conn3b = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
+        conn3b._params = {"url": "https://test.com/path"}
+        mock_controller_b = MagicMock()
+        mock_controller_b._shared_raw_client = None
+        conn3b.set_controller_ref(mock_controller_b)
+        with patch("custom_components.climate_ip.connection_raw.Samsung8888Client") as mock_client_cls:
+            await conn3b.async_get_client()
+            mock_client_cls.assert_called_once_with("192.168.1.100", 443, conn3b._cert, log_prefix=conn3b.log_prefix)
+
+        conn3c = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
+        conn3c._params = {"url": "http://test.com/path"}
+        mock_controller_c = MagicMock()
+        mock_controller_c._shared_raw_client = None
+        conn3c.set_controller_ref(mock_controller_c)
+        with patch("custom_components.climate_ip.connection_raw.Samsung8888Client") as mock_client_cls:
+            await conn3c.async_get_client()
+            mock_client_cls.assert_called_once_with("192.168.1.100", 80, conn3c._cert, log_prefix=conn3c.log_prefix)
 
         # 4. Shared client, no host raises CannotConnect
         conn4 = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
@@ -581,6 +607,16 @@ async def test_async_execute_mutants_coverage(connection_config, mock_logger, mo
             # Uses _host (1.1.1.1) and fallback to connection config token (CONN_TOKEN)
             assert url == "/x/1.1.1.1/CONN_TOKEN"
 
+        # Test 3: Test fallback to empty string when neither _host nor _config IP is set
+        conn._host = None
+        conn._config = {"token": "SOME_TOKEN"}
+        with patch.object(conn, "async_get_client", return_value=mock_client):
+            mock_client.request.reset_mock()
+            await conn.async_execute("POST", "/x/__CLIMATE_IP_HOST__", None, None)
+            mock_client.request.assert_called_once()
+            method, url, data, headers = mock_client.request.call_args[0]
+            assert url == "/x/"  # Replaced with empty string
+
 
         # Test embedded command raising Exception
         conn._embedded_command = MagicMock()
@@ -621,9 +657,9 @@ async def test_async_execute_embedded_and_path(connection_config, mock_logger, m
             
             # embedded command should execute with method POST, and fallback url "/main/1.1.1.1"
             conn._embedded_command.async_execute.assert_called_once()
-            emb_method, emb_url, emb_data, emb_headers = conn._embedded_command.async_execute.call_args[0]
-            assert emb_method == "POST"
-            assert emb_url == "/main/1.1.1.1"
+            emb_kwargs = conn._embedded_command.async_execute.call_args[1]
+            assert emb_kwargs["method"] == "POST"
+            assert emb_kwargs["url"] == "/main/__CLIMATE_IP_HOST__"
 
         # Test render, embedded params replacement
         del mock_template.async_render
@@ -635,9 +671,9 @@ async def test_async_execute_embedded_and_path(connection_config, mock_logger, m
             await conn.async_execute("PUT", "/main", None, None, device_state={"state": "on"})
             mock_template.render.assert_called_once()
             conn._embedded_command.async_execute.assert_called_once()
-            emb_method, emb_url, emb_data, emb_headers = conn._embedded_command.async_execute.call_args[0]
-            assert emb_method == "GET"
-            assert emb_url == "/emb/DEV456/1.1.1.1"
+            emb_kwargs = conn._embedded_command.async_execute.call_args[1]
+            assert emb_kwargs["method"] == "GET"
+            assert emb_kwargs["url"] == "/emb/DEV456/1.1.1.1"
 
         # Test url=None path fallback (Kills mutant 129)
         conn._embedded_command = None
