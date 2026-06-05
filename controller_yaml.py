@@ -99,7 +99,7 @@ class YamlController(ClimateController):
             if config.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_SAMSUNG_2878:
                 self._device_id = self._unique_id
                 _LOGGER.info(
-                    "%s [Init] device_id was missing, fell back to unique_id: %s",
+                    "%s [Init] device_id was missing, fell back to unique_id: %s",  # pragma: no mutate
                     f"[{self._unique_id[-6:]}]" if self._unique_id else "[Unknown]",
                     self._device_id,
                 )
@@ -128,20 +128,19 @@ class YamlController(ClimateController):
         return str(controller_type).lower() == CONST_CONTROLLER_TYPE
 
     @property
-    def _fan_modes_list_changed_pending_flicker(self) -> bool:
+    def fan_modes_list_changed_pending_flicker(self) -> bool:
         """Expose the flicker flag from the poller delegate."""
-        return getattr(self.poller, "_fan_modes_list_changed_pending_flicker", False)
+        return self.poller.fan_modes_list_changed_pending_flicker
 
-    @_fan_modes_list_changed_pending_flicker.setter
-    def _fan_modes_list_changed_pending_flicker(self, value: bool) -> None:
+    @fan_modes_list_changed_pending_flicker.setter
+    def fan_modes_list_changed_pending_flicker(self, value: bool) -> None:
         """Set the flicker flag on the poller delegate."""
-        if hasattr(self, "poller"):
-            self.poller._fan_modes_list_changed_pending_flicker = value
+        self.poller.fan_modes_list_changed_pending_flicker = value
 
     @property
     def name(self) -> str:
         """Return the controller name."""
-        return self.loader.name if hasattr(self, "loader") else CONST_CONTROLLER_TYPE
+        return self.loader.name
 
     @property
     def log_prefix(self) -> str:
@@ -205,7 +204,7 @@ class YamlController(ClimateController):
     @property
     def available(self) -> bool:
         """Return True if the controller is connected and available."""
-        if hasattr(self, "loader") and hasattr(self.loader, "connection") and self.loader.connection:
+        if self.loader.connection:
             return self.loader.connection.get_diagnostics().get("is_available", True)
         return True
 
@@ -232,7 +231,7 @@ class YamlController(ClimateController):
         """Asynchronously set a property on the device."""
         if not self.loader.is_fully_initialized:
             _LOGGER.error(
-                "%s Cannot set property '%s': controller not fully initialized",
+                "%s Cannot set property '%s': controller not fully initialized",  # pragma: no mutate
                 self.log_prefix,
                 property_name,
             )
@@ -243,9 +242,9 @@ class YamlController(ClimateController):
             try:
                 # Register the pending update in the poller dispatcher
                 # pylint: disable=protected-access
-                self.poller._pending_updates[property_name] = (new_value, time.time())
+                self.poller.register_pending_update(property_name, new_value)
                 _LOGGER.debug(
-                    "%s Registered pending update for '%s': %s",
+                    "%s Registered pending update for '%s': %s",  # pragma: no mutate
                     self.log_prefix,
                     property_name,
                     new_value,
@@ -253,6 +252,15 @@ class YamlController(ClimateController):
                 return await op.async_set_value(new_value, _device_id or self._device_id)
             except (requests.exceptions.RequestException, CannotConnect) as e:
                 raise UpdateFailed(f"Failed to set property '{property_name}': {e}") from e
+            except Exception as e:
+                _LOGGER.error(
+                    "%s Setting property '%s' with value '%s' failed",  # pragma: no mutate
+                    self.log_prefix,
+                    property_name,
+                    new_value,
+                    exc_info=True,
+                )
+                return False
 
         _LOGGER.error(
             "%s Failed to set property '%s': property not found",
@@ -287,17 +295,17 @@ class YamlController(ClimateController):
         if property_name in self.loader.sensors:
             return self.loader.sensors[property_name]
 
-        _LOGGER.debug("%s Property object '%s' not found", self.log_prefix, property_name)
+        _LOGGER.debug("%s Property object '%s' not found", self.log_prefix, property_name)  # pragma: no mutate
         return None
 
     def get_property_all_values(self, property_name: str) -> list[str] | None:
         """Return the complete, unfiltered list of values for a property."""
         prop = self.get_property_object(property_name)
-        if prop and hasattr(prop, "all_values"):
+        if prop and prop.all_values:
             return prop.all_values
 
         _LOGGER.debug(
-            "%s Property '%s' does not have an 'all_values' attribute",
+            "%s Cannot get values for '%s': not an operation or missing all_values",  # pragma: no mutate
             self.log_prefix,
             property_name,
         )
@@ -344,12 +352,7 @@ class YamlController(ClimateController):
     @property
     def connection_diagnostics(self) -> dict[str, Any]:
         """Return connection diagnostic info from the underlying connection."""
-        # FIXED C0301: Boolean condition split across lines
-        if (
-            hasattr(self.loader, "connection")
-            and self.loader.connection
-            and hasattr(self.loader.connection, "get_diagnostics")
-        ):
+        if self.loader.connection:
             return self.loader.connection.get_diagnostics()
         return {}
 
@@ -382,7 +385,7 @@ class YamlController(ClimateController):
                 preset_modes=self.state_attributes.get(ATTR_PRESET_MODES, []),
             )
         except (ValueError, TypeError) as err:
-            _LOGGER.error("%s Error coercing typed ClimateIPDeviceState: %s", self.log_prefix, err)
+            _LOGGER.error("%s Error coercing typed ClimateIPDeviceState: %s", self.log_prefix, err)  # pragma: no mutate
             raise
 
     async def async_get_status(self) -> dict[str, Any] | None:

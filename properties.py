@@ -203,6 +203,15 @@ class DeviceProperty:
         return self._friendly_name or self._name
 
     @property
+    def all_values(self) -> list[Any]:
+        """Return all available values for this property if applicable.
+
+        This replaces hasattr checks and implements a formal object contract.
+        By default, properties don't have a specific list of values.
+        """
+        return []
+
+    @property
     def device_class(self) -> str | None:
         """Return the device class."""
         return self._device_class

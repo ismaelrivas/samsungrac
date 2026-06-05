@@ -63,7 +63,11 @@ class YamlStatePoller:
         self._device_state_key_regex = re.compile(
             r"device_state[\[\.](['\"]?)([A-Za-z0-9_]+)\1"
         )
-        self._fan_modes_list_changed_pending_flicker: bool = False
+        self.fan_modes_list_changed_pending_flicker: bool = False
+
+    def register_pending_update(self, property_id: str, value: Any) -> None:
+        """Register a pending update for a property to override the fetched state temporarily."""
+        self._pending_updates[property_id] = (value, time.time())
 
     async def _refresh_smartthings_token(self) -> str | None:
         """Attempt to refresh an expired SmartThings token using the official HA integration."""
@@ -565,7 +569,7 @@ class YamlStatePoller:
                         hasattr(op, "_feature_flag")
                         and op._feature_flag == ClimateEntityFeature.FAN_MODE
                     ):
-                        self._fan_modes_list_changed_pending_flicker = True
+                        self.fan_modes_list_changed_pending_flicker = True
 
         self._rebuild_attributes()
         return corrections
