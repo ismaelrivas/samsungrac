@@ -225,8 +225,13 @@ class ConnectionAiohttp8888(Connection):
 
     @property
     def is_async_native(self) -> bool:
-        """Return True if connection is native async."""
+        """Indicates if the connection is native asynchronous (aiohttp)."""
         return True
+
+    @property
+    def is_push_supported(self) -> bool:
+        """Return True indicating this connection type supports push updates."""
+        return False
 
     async def _try_connection(self) -> str | None:
         """

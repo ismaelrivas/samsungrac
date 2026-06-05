@@ -2,6 +2,7 @@
 """Base class for a climate device controller."""
 
 import logging
+from abc import ABC, abstractmethod
 from typing import Any, Generic, Protocol, TypeVar, runtime_checkable
 
 from homeassistant.const import UnitOfTemperature
@@ -81,7 +82,7 @@ class ControllerInterface(Protocol):
         """Predict and correct the state after a change."""
 
 
-class ClimateController(Generic[_T]):
+class ClimateController(ABC, Generic[_T]):
     """Abstract base class for a device controller."""
 # pylint: disable=import-outside-toplevel,too-many-public-methods,useless-return
 
@@ -100,18 +101,19 @@ class ClimateController(Generic[_T]):
         _ = controller_type
         return False
 
+    @abstractmethod
     async def initialize(self) -> bool:
         """Perform asynchronous initialization for the controller.
 
         Returns:
             True if initialization was successful, False otherwise.
         """
-        return False
+        raise NotImplementedError()
 
+    @abstractmethod
     async def async_get_status(self) -> dict[str, Any] | None:
         """Get the current status of the device for the DataUpdateCoordinator."""
-        self._logger.warning("async_get_status not implemented for this controller")
-        return None
+        raise NotImplementedError()
 
     @property
     def connection(self) -> Any | None:
@@ -123,11 +125,7 @@ class ClimateController(Generic[_T]):
         """Return True if the device uses push-based updates."""
         if not self._connection:
             return False
-        return (
-            hasattr(self._connection, "start_listening")
-            and hasattr(self._connection, "stop_listening")
-            and hasattr(self._connection, "set_update_callback")
-        )
+        return self._connection.is_push_supported
 
     @property
     def available(self) -> bool:
@@ -136,9 +134,10 @@ class ClimateController(Generic[_T]):
         return True
 
     @property
+    @abstractmethod
     def poll(self) -> bool | None:
         """Return the polling state of the controller."""
-        return None
+        raise NotImplementedError()
 
     @property
     def id(self) -> str | None:
@@ -177,20 +176,20 @@ class ClimateController(Generic[_T]):
 
     async def update_state(self) -> bool:
         """Asynchronously update the state of the controller from the device."""
-        return False
+        raise NotImplementedError()
 
+    @abstractmethod
     async def async_set_property(self, property_name: str, new_value: Any) -> bool:
         """Asynchronously set the value of a property on the device."""
-        _ = property_name, new_value  # unused in base class; subclasses override
-        return False
+        raise NotImplementedError()
 
     async def async_refresh_from_connection(self) -> None:
         """Refresh the controller's properties from the connection's internal state."""
 
+    @abstractmethod
     def get_property(self, property_name: str) -> Any:
         """Return the value of a property."""
-        _ = property_name  # unused in base class; subclasses override
-        return None
+        raise NotImplementedError()
 
     @property
     def state_attributes(self) -> dict[str, Any]:

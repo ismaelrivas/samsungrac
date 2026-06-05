@@ -23,6 +23,10 @@ class MockConnection(Connection):
         self.is_executing = False
         self.id = "mock_device"
 
+    @property
+    def is_push_supported(self) -> bool:
+        return False
+
     async def async_execute(
         self,
         method: str | None = None,

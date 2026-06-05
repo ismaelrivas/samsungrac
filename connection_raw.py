@@ -236,6 +236,11 @@ class ConnectionRaw8888(Connection):
         """Return True if connection is native async."""
         return True
 
+    @property
+    def is_push_supported(self) -> bool:
+        """Return True indicating this connection type supports push updates."""
+        return False
+
     def execute(
         self,
         template: Template | None,

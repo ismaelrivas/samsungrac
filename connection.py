@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from abc import abstractmethod
 from typing import Any
 
 CLIMATE_IP_CONNECTIONS: list[type["Connection"]] = []
@@ -112,6 +113,12 @@ class Connection:
     def is_async_native(self) -> bool:
         """Indicate if the connection is native asynchronous (aiohttp)."""
         return False
+
+    @property
+    @abstractmethod
+    def is_push_supported(self) -> bool:
+        """Return True if this connection type supports push updates."""
+        raise NotImplementedError()
 
     def check_execute_condition(self, device_state: dict[str, Any] | None) -> bool:
         """Return True if the command should be executed for the given device state.

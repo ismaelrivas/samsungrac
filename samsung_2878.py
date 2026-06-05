@@ -158,6 +158,11 @@ class ConnectionSamsung2878(Connection):
         """Indicates if the connection is native asynchronous (aiohttp/2878)."""
         return True
 
+    @property
+    def is_push_supported(self) -> bool:
+        """Return True indicating this connection type supports push updates."""
+        return True
+
     def set_update_callback(
         self, callback: Callable[[dict[str, Any]], Coroutine[Any, Any, None]]
     ) -> None:

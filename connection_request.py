@@ -150,7 +150,12 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
 
     @property
     def is_async_native(self) -> bool:
-        """Requests is strictly synchronous."""
+        """Indicates if the connection is native asynchronous."""
+        return False
+
+    @property
+    def is_push_supported(self) -> bool:
+        """Return True indicating this connection type supports push updates."""
         return False
 
     @property
