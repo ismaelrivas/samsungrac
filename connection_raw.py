@@ -254,12 +254,12 @@ class ConnectionRaw8888(Connection):
         headers: dict[str, str] | None,
         device_state: dict[str, Any] | None = None,
         _is_probe: bool = False,
-        _is_poll: bool = False,  # pragma: no mutate
+        _is_poll: bool = False,
     ) -> tuple[str | None, dict[str, Any] | None]:
         """Execute a command (including embedded commands) over raw sockets."""
         
         # 1. Erradicación del hasattr defensivo
-        host = self._host or self._config.get(CONF_IP_ADDRESS, "")  # pragma: no mutate
+        host = self._host or self._config.get(CONF_IP_ADDRESS, "")
         mac = self._config.get(CONF_MAC, "")
         dev_id = None
         current_token = self._config.get(CONF_TOKEN)
@@ -269,7 +269,7 @@ class ConnectionRaw8888(Connection):
             if hasattr(self._controller, "token"):
                 current_token = self._controller.token
             else:
-                current_token = self._controller._config.get(CONF_TOKEN, current_token)  # type: ignore[attr-defined] # pylint: disable=import-outside-toplevel,protected-access  # pragma: no mutate
+                current_token = self._controller._config.get(CONF_TOKEN, current_token)  # type: ignore[attr-defined] # pylint: disable=import-outside-toplevel,protected-access
 
             if hasattr(self._controller, "device_id"):
                 dev_id = self._controller.device_id

@@ -543,30 +543,43 @@ async def test_async_execute_mutants_coverage(connection_config, mock_logger, mo
         conn = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
         conn._params = {"url": "/test"}
         
-        # Test 1: Test without _host set (fallback to config IP)
+        # Test 1: Test without _host set (fallback to config IP) and without controller token (fallback to config token)
         conn._host = None
+        conn._config[CONF_IP_ADDRESS] = "2.2.2.2"
+        conn._config[CONF_TOKEN] = "CONN_TOKEN"
         
-        # Test controller missing device_id and fallback token
         mock_controller = MagicMock()
         del mock_controller.device_id
         del mock_controller.token
-        mock_controller._config = {"token": "fallback_token"}
+        mock_controller._config = {CONF_TOKEN: "CTRL_CONFIG_TOKEN"}
         conn.set_controller_ref(mock_controller)
 
         mock_client = AsyncMock()
         mock_client.request.return_value = ('{"ok": 1}', None)
         
         with patch.object(conn, "async_get_client", return_value=mock_client):
-            # Do NOT pass _is_probe or _is_poll to test defaults
-            await conn.async_execute("POST", "/x", {"test": 1}, None)
+            await conn.async_execute("POST", "/x/__CLIMATE_IP_HOST__/__CLIMATE_IP_TOKEN__", {"test": "__CLIMATE_IP_HOST__"}, None)
             
             mock_client.request.assert_called_once()
             method, url, data, headers = mock_client.request.call_args[0]
-            # Since dev_id is missing, fallback happens, token comes from _config
             assert method == "POST"
-            
-            # _is_poll default is False, so client is not closed
+            # Fallback to config IP (2.2.2.2) and controller config token (CTRL_CONFIG_TOKEN)
+            assert url == "/x/2.2.2.2/CTRL_CONFIG_TOKEN"
+            assert data == {"test": "2.2.2.2"}
             mock_client.close.assert_not_called()
+
+        # Test 2: Test with _host set and controller config missing token
+        conn._host = "1.1.1.1"
+        mock_controller._config = {} # Missing CONF_TOKEN
+        
+        with patch.object(conn, "async_get_client", return_value=mock_client):
+            mock_client.request.reset_mock()
+            await conn.async_execute("POST", "/x/__CLIMATE_IP_HOST__/__CLIMATE_IP_TOKEN__", None, None)
+            
+            mock_client.request.assert_called_once()
+            method, url, data, headers = mock_client.request.call_args[0]
+            # Uses _host (1.1.1.1) and fallback to connection config token (CONN_TOKEN)
+            assert url == "/x/1.1.1.1/CONN_TOKEN"
 
 
         # Test embedded command raising Exception
