@@ -468,7 +468,7 @@ class ConnectionRaw8888(Connection):
                 self._client = None
 
         # 3. Close the shared client if it exists and we have a controller ref
-        if self._controller and hasattr(self._controller, "_shared_raw_client"):
+        if self._controller and self._controller._shared_raw_client:
             shared_client = self._controller._shared_raw_client  # pylint: disable=import-outside-toplevel,protected-access
             if shared_client:
                 _LOGGER.debug("%s [RAW] Closing shared client...", self.log_prefix)  # pragma: no mutate

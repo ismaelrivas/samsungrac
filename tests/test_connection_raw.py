@@ -99,6 +99,17 @@ async def test_create_updated(connection_config, mock_logger, mock_hass):
         new_conn_tmpl = conn.create_updated(yaml_node_tmpl)
         assert new_conn_tmpl._connection_template is not None
         assert new_conn_tmpl._connection_template.hass == mock_hass
+        
+        # Test embedded command creation (kills mutant 27)
+        yaml_embedded = {
+            "connection_template": '{"method": "POST"}',
+            "condition_template": "{{ True }}"
+        }
+        yaml_node_with_embedded = {"connection": yaml_embedded}
+        conn_with_embedded = conn.create_updated(yaml_node_with_embedded)
+        assert conn_with_embedded._embedded_command is not None
+        # Verify the embedded command used the correct yaml node
+        assert conn_with_embedded._embedded_command._connection_template is not None
 
         # Test with embedded command and condition template
         yaml_node_embedded = {
