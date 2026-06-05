@@ -170,3 +170,13 @@ async def test_create_controller_initialization_failure(caplog):
             controller = await create_controller("fail_init", {}, logger)
             assert controller is None
             assert "Failed to initialize controller for type fail_init" in caplog.text
+
+
+def test_controller_base_init_state():
+    """Test the base state initialization to kill mutmut mutations."""
+    logger = logging.getLogger(__name__)
+    controller = DummyController({"test": "config"}, logger)
+    assert controller._logger is logger
+    assert controller._connection is None
+    assert controller._shared_raw_client is None
+    assert controller.discovered_devices is None

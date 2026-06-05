@@ -88,7 +88,7 @@ class ClimateController(ABC, Generic[_T]):
 
     def __init__(self, config: dict[str, Any], logger: logging.Logger) -> None:
         """Initialize the controller."""
-        _ = config  # unused in base class; subclasses use it
+        # pylint: disable=unused-argument
         self._logger = logger
         self._connection = None
         self._shared_raw_client = None
