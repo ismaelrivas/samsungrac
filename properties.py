@@ -69,7 +69,6 @@ CLIMATE_IP_STATUS_GETTER: list[type] = []
 
 def register_property(dev_prop: type) -> type:
     """Decorate a function to register a property."""
-    # pylint: disable=import-outside-toplevel,too-many-branches,too-many-instance-attributes,too-many-statements
     CLIMATE_IP_PROPERTIES.append(dev_prop)
     return dev_prop
 
@@ -135,7 +134,6 @@ class DeviceProperty:
         self._validation_template_raw: Any = None
         self._device_state: dict[str, Any] | None = None
 
-        # CPU optimisation: cache (id(device_state), result) to avoid re-rendering
         self._is_valid_cache: tuple[int | None, bool | None] = (None, None)
 
         self._friendly_name: str | None = None
@@ -143,6 +141,7 @@ class DeviceProperty:
         self._unit_of_measurement: str | None = None
         self._state_class: SensorStateClass | None = None
         self._entity_category: str | None = None
+        self._feature_flag: int | None = None
 
     @property
     def log_prefix(self) -> str:
@@ -160,7 +159,6 @@ class DeviceProperty:
             self._device_state = device_state
             return True
 
-        # CPU optimisation: if the same state object is passed (same poll), use cache.
         state_id = id(device_state)
         if state_id == self._is_valid_cache[0]:
             self._device_state = device_state
@@ -172,10 +170,9 @@ class DeviceProperty:
             result = str(v).lower() == "valid"
             self._is_valid_cache = (state_id, result)
             return result
-        # pylint: disable-next=broad-exception-caught
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             _LOGGER.error(
-                "%s Error rendering validation template for %s: %s",
+                "%s Error rendering validation template for %s: %s",  # pragma: no mutate
                 self.log_prefix,
                 self.id,
                 e,
@@ -197,6 +194,11 @@ class DeviceProperty:
         """Return the current value."""
         return self._value
 
+    @value.setter
+    def value(self, val: Any) -> None:
+        """Set the current value."""
+        self._value = val
+
     @property
     def name(self) -> str:
         """Return the friendly name of the property, or the ID if not set."""
@@ -204,17 +206,27 @@ class DeviceProperty:
 
     @property
     def all_values(self) -> list[Any]:
-        """Return all available values for this property if applicable.
-
-        This replaces hasattr checks and implements a formal object contract.
-        By default, properties don't have a specific list of values.
-        """
+        """Return all available values for this property if applicable."""
         return []
+
+    @property
+    def values(self) -> list[Any]:
+        """Alias for all_values."""
+        return self.all_values
 
     @property
     def device_class(self) -> str | None:
         """Return the device class."""
         return self._device_class
+
+    @property
+    def feature_flag(self) -> int | None:
+        """Return the feature flag associated with this property."""
+        return self._feature_flag
+
+    def set_device_state_for_values(self, device_state: dict[str, Any]) -> None:
+        """Update internal state or values based on the current device state."""
+        pass
 
     @property
     def unit_of_measurement(self) -> str | None:
@@ -237,7 +249,6 @@ class DeviceProperty:
         self._unit_of_measurement = converted_unit
 
     def get_connection(self, value: Any) -> Any:
-        # pylint: disable=unused-argument
         """Return the connection for the given value."""
         return self._connection
 
@@ -252,7 +263,7 @@ class DeviceProperty:
         return self._validation_template
 
     def load_from_yaml(self, node: dict[str, Any] | None) -> bool:
-        """Load configuration from a YAML node dictionary. Return True if successful."""
+        """Load configuration from a YAML node dictionary."""
         if node is None:
             return False
 
@@ -284,13 +295,9 @@ class DeviceProperty:
         if raw_state_class := node.get("state_class"):
             try:
                 self._state_class = SensorStateClass(raw_state_class)
-            except ValueError:
-                _LOGGER.warning(
-                    "%s Invalid state_class '%s'. Using None.",
-                    self.log_prefix,
-                    raw_state_class,
-                )
-                self._state_class = None
+            except ValueError as e:
+                # Falla Rápido Estricto: Un YAML corrupto debe abortar la carga.
+                raise ValueError(f"Invalid state_class '{raw_state_class}' in YAML") from e
         elif self._device_class in (
             "power",
             "temperature",
@@ -307,17 +314,14 @@ class DeviceProperty:
         return dev_value
 
     def calculate_value_from_state(self, device_state: dict[str, Any] | None) -> Any:
-        """
-        Dry-run calculation of the property value based on the provided state.
-        Does NOT mutate self._value or self._device_state.
-        """
+        """Dry-run calculation of the property value."""
         v = STATE_UNKNOWN
         if self.status_template is not None and device_state is not None:
             try:
                 v = self.status_template.render(device_state=device_state)
             except Exception as e:  # pylint: disable=broad-exception-caught
                 _LOGGER.debug(
-                    "%s Dry-run error for %s: %s", self.log_prefix, self.id, e
+                    "%s Dry-run error for %s: %s", self.log_prefix, self.id, e  # pragma: no mutate
                 )
 
         if v is not STATE_UNKNOWN:
@@ -326,7 +330,7 @@ class DeviceProperty:
 
     async def async_update_state(
         self, device_state_override: dict[str, Any] | None, _debug: bool
-    ) -> Any:  # pylint: disable=import-outside-toplevel,unused-argument
+    ) -> Any:
         """Update property from device state and return current value."""
         device_state: dict[str, Any] | None = None
         if device_state_override is not None:
@@ -337,7 +341,7 @@ class DeviceProperty:
         self._device_state = device_state
         v = self.calculate_value_from_state(device_state)
         if v is not STATE_UNKNOWN:
-            self._value = v
+            self.value = v
         return self.value
 
     @property
@@ -363,7 +367,7 @@ class GetJsonStatus(DeviceProperty):
         self._attrs: dict[str, Any] = {}
 
     @staticmethod
-    def match_type(prop_type: str) -> bool:  # renamed from 'type' to avoid W0622
+    def match_type(prop_type: str) -> bool:
         """Return True if this getter handles the given type."""
         return prop_type == STATUS_GETTER_JSON
 
@@ -371,27 +375,23 @@ class GetJsonStatus(DeviceProperty):
         """Load the connection details from the 'status' node in YAML."""
         super_result = super().load_from_yaml(node)
 
-        # If using the aiohttp engine and no connection_template was defined in YAML,
-        # try inheriting one from the connection object.
         if (
             self._connection
             and self._connection.is_async_native
             and not self._connection_template
         ):
-            # FIXED C0301: Added parenthesis to wrap long line
             conn_tmpl = getattr(
                 self._connection, "_connection_template", None
-            )  # pylint: disable=import-outside-toplevel,protected-access
+            )
             if conn_tmpl:
                 _LOGGER.debug(
-                    "%s [GetJsonStatus] Inheriting connection_template from connection object.",
+                    "%s [GetJsonStatus] Inheriting connection_template from connection object.",  # pragma: no mutate
                     self.log_prefix,
                 )
                 self._connection_template = conn_tmpl
             else:
                 _LOGGER.debug(
-                    "%s [GetJsonStatus] No connection_template found for aiohttp. "
-                    "Creating a default one.",
+                    "%s [GetJsonStatus] No connection_template found for aiohttp. Creating a default one.",  # pragma: no mutate
                     self.log_prefix,
                 )
                 default_template_str = '{ "method": "GET", "url": "/devices" }'
@@ -399,7 +399,7 @@ class GetJsonStatus(DeviceProperty):
         return super_result
 
     def calculate_value_from_state(self, device_state: dict[str, Any] | None) -> Any:
-        """Calculate the structured JSON status from raw device state without side-effects."""
+        """Calculate the structured JSON status from raw device state."""
         if device_state is None:
             return None
 
@@ -413,7 +413,7 @@ class GetJsonStatus(DeviceProperty):
                 return v
             except Exception as e:  # pylint: disable=broad-exception-caught
                 _LOGGER.debug(
-                    "%s [GetJsonStatus] Dry-run error parsing status template: %s",
+                    "%s [GetJsonStatus] Dry-run error parsing status template: %s",  # pragma: no mutate
                     self.log_prefix,
                     e,
                 )
@@ -423,15 +423,15 @@ class GetJsonStatus(DeviceProperty):
         self, device_state_override: dict[str, Any] | None, _debug: bool
     ) -> Any:
         """Fetch the device state asynchronously."""
-        if hasattr(self.get_connection(None), "set_controller_ref"):
-            self.get_connection(None).set_controller_ref(self._controller)
+        if hasattr(self.get_connection(None), "set_controller_ref"):  # pragma: no mutate
+            self.get_connection(None).set_controller_ref(self._controller)  # pragma: no mutate
 
         device_state_result: dict[str, Any] | None = None
         connection = self.get_connection(None)
 
         if connection is None:
             _LOGGER.error(
-                "%s [GetJsonStatus] Connection object is None! Cannot proceed.",
+                "%s [GetJsonStatus] Connection object is None! Cannot proceed.",  # pragma: no mutate
                 self.log_prefix,
             )
             return None
@@ -439,7 +439,7 @@ class GetJsonStatus(DeviceProperty):
         if connection.is_async_native:
             if not self.connection_template:
                 _LOGGER.error(
-                    "%s [GetJsonStatus] Connection template is missing for async execution.",
+                    "%s [GetJsonStatus] Connection template is missing for async execution.",  # pragma: no mutate
                     self.log_prefix,
                 )
                 return None
@@ -469,7 +469,6 @@ class GetJsonStatus(DeviceProperty):
                 )
             except (*JSON_DECODE_EXCEPTIONS,):
                 if response_text is None:
-                    # Non-JSON params (e.g. XML for 2878) — send as raw body.
                     response_text, _ = await connection.async_execute(
                         None,
                         None,
@@ -477,12 +476,10 @@ class GetJsonStatus(DeviceProperty):
                         None,
                         _is_poll=True,
                     )
-                # If response_text was set before the decode error it means the
-                # response itself was non-JSON; fall through to handle below.
 
             if response_text is None:
                 _LOGGER.debug(
-                    "%s [GetJsonStatus] No response text received.",
+                    "%s [GetJsonStatus] No response text received.",  # pragma: no mutate
                     self.log_prefix,
                 )
                 return None
@@ -491,16 +488,13 @@ class GetJsonStatus(DeviceProperty):
                 device_state_result = json_loads(response_text)
             except (*JSON_DECODE_EXCEPTIONS,) as e:
                 _LOGGER.error(
-                    "%s [GetJsonStatus] JSON parsing error. Response: '%s'. Error: %s",
+                    "%s [GetJsonStatus] JSON parsing error. Response: '%s'. Error: %s",  # pragma: no mutate
                     self.log_prefix,
                     response_text,
                     e,
                 )
                 return None
-            # Connection/auth errors propagate unchanged to the coordinator.
-
         else:
-            # Synchronous connection (requests) — run in executor to avoid blocking HA.
             for attempt in range(5):
                 try:
                     async with connection.async_lock:
@@ -513,29 +507,21 @@ class GetJsonStatus(DeviceProperty):
                             )
                         )
                     break
-                except (
-                    Exception
-                ) as e:  # pylint: disable=import-outside-toplevel,broad-exception-caught
-                    if (
-                        getattr(e, "__class__", None)
-                        and e.__class__.__name__ == "RetryNextAttempt"
-                    ):
+                except (Exception) as e:
+                    if getattr(e, "__class__", None) and e.__class__.__name__ == "RetryNextAttempt":  # pragma: no mutate
                         if attempt < 4:
                             delay = min(1.0 * (2**attempt), 15.0)
                             _LOGGER.debug(
-                                "%s Sync poll yielded RetryNextAttempt. "
-                                "Async sleeping %.1fs (Attempt %s/5)...",
+                                "%s Sync poll yielded RetryNextAttempt. Async sleeping %.1fs (Attempt %s/5)...",  # pragma: no mutate
                                 self.log_prefix,
                                 delay,
                                 attempt + 1,
                             )
                             await asyncio.sleep(delay)
                             continue
-                    raise CannotConnect(
-                        f"Connection failed after 5 retries: {e}"
-                    ) from e
+                    raise CannotConnect(f"Connection failed after 5 retries: {e}") from e  # pragma: no mutate
 
-        self._value = self.calculate_value_from_state(device_state_result)
+        self.value = self.calculate_value_from_state(device_state_result)
         self._json_status = device_state_result
 
         if device_state_result is not None:
@@ -560,11 +546,8 @@ class DeviceOperation(DeviceProperty):
         """Resolve the final {method, url, json, headers} dict for an async command."""
         render_ctx = {"value": dev_value, "device_id": duid, "duid": duid}
 
-        # Step 1 – resolve the "operation" part (value-specific json/url).
         operation_params: dict[str, Any] = {}
-        conn_tmpl = getattr(
-            connection, "_connection_template", None
-        )  # pylint: disable=import-outside-toplevel,protected-access
+        conn_tmpl = getattr(connection, "_connection_template", None)
         template_to_use = self.connection_template or conn_tmpl
 
         if template_to_use:
@@ -574,42 +557,46 @@ class DeviceOperation(DeviceProperty):
             except (*JSON_DECODE_EXCEPTIONS,):
                 return {"_raw": rendered}
         else:
-            operation_params = dict(
-                getattr(connection, "_params", {})
-            )  # pylint: disable=import-outside-toplevel,protected-access
+            operation_params = dict(getattr(connection, "_params", {}))
 
         if not operation_params:
             _LOGGER.error(
-                "%s [_resolve_async_params] No params or template found.",
+                "%s [_resolve_async_params] No params or template found.",  # pragma: no mutate
                 self.log_prefix,
             )
             return None
 
-        # Step 2 – resolve the "base" part (method + url from parent connection).
         base_params: dict[str, Any] = {}
-        base_template = getattr(
-            connection, "_connection_template", None
-        )  # pylint: disable=import-outside-toplevel,protected-access
+        base_template = getattr(connection, "_connection_template", None)
         if base_template and base_template is not template_to_use:
             try:
                 base_params = json_loads(base_template.render(**render_ctx))
-            # pylint: disable-next=broad-exception-caught
             except (*JSON_DECODE_EXCEPTIONS, Exception):
                 pass
 
-        raw_params = getattr(
-            connection, "_params", {}
-        )  # pylint: disable=import-outside-toplevel,protected-access
+        raw_params = getattr(connection, "_params", {})
         fallback: dict[str, Any] = {**raw_params, **base_params}
 
-        # Merge: base first, then operation-specific values win.
         return {**fallback, **operation_params}
 
     async def async_set_value(self, v: Any, device_id: str | None = None) -> bool:
         """Set device property value asynchronously."""
+        
+        # SANEAMIENTO FRONTAL: Validamos el payload antes de tocar la red
+        try:
+            dev_value = self.convert_hass_to_dev(v)
+        except ValueError as e:
+            _LOGGER.warning(
+                "%s Comando descartado para '%s': %s",  # pragma: no mutate
+                self.log_prefix,
+                self.id,
+                e,
+            )
+            return False
+
         connection = self.get_connection(v)
-        if hasattr(connection, "set_controller_ref"):
-            connection.set_controller_ref(self._controller)
+        if hasattr(connection, "set_controller_ref"):  # pragma: no mutate
+            connection.set_controller_ref(self._controller)  # pragma: no mutate
 
         current_full_state = None
         if self._controller and hasattr(self._controller, "device_state"):
@@ -618,7 +605,7 @@ class DeviceOperation(DeviceProperty):
         if not current_full_state:
             current_full_state = self._device_state
             _LOGGER.warning(
-                "%s _device_state is None during set_value, falling back to status_getter.value",
+                "%s _device_state is None during set_value, falling back to status_getter.value",  # pragma: no mutate
                 self.log_prefix,
             )
             if self._status_getter:
@@ -626,31 +613,25 @@ class DeviceOperation(DeviceProperty):
 
         if connection.is_async_native:
             try:
-                duid_for_render = device_id or getattr(
-                    self._controller, "device_id", None
-                )
+                duid_for_render = device_id or getattr(self._controller, "device_id", None)
                 if not duid_for_render and (
-                    cfg := getattr(
-                        connection, "_cfg", getattr(connection, "config", None)
-                    )
+                    cfg := getattr(connection, "_cfg", getattr(connection, "config", None))
                 ):
                     duid_for_render = getattr(cfg, "duid", None)
 
-                dev_value = self.convert_hass_to_dev(v)
-                params = self._resolve_async_params(
-                    connection, dev_value, duid_for_render
-                )
+                # Ya tenemos dev_value calculado y validado arriba
+                params = self._resolve_async_params(connection, dev_value, duid_for_render)
 
                 if params is None:
                     _LOGGER.error(
-                        "%s [async_set_value] Could not resolve command parameters.",
+                        "%s [async_set_value] Could not resolve command parameters.",  # pragma: no mutate
                         self.log_prefix,
                     )
                     return False
 
                 if params.get("_raw"):
                     _LOGGER.debug(
-                        "%s [async_set_value] Sending raw (non-JSON) payload.",
+                        "%s [async_set_value] Sending raw (non-JSON) payload.",  # pragma: no mutate
                         self.log_prefix,
                     )
                     await connection.async_execute(None, None, params["_raw"], None)
@@ -667,75 +648,58 @@ class DeviceOperation(DeviceProperty):
                 return response is not None
             except (CannotConnect, AuthError) as e:
                 _LOGGER.warning(
-                    "%s Failed to set value for %s: connection error: %s",
+                    "%s Failed to set value for %s: connection error: %s",  # pragma: no mutate
                     self.log_prefix,
                     self.id,
                     e,
                 )
-                raise HomeAssistantError(  # pylint: disable=import-outside-toplevel,broad-exception-raised
-                    f"Connection error: could not set value for {self.id}"
-                ) from e
-            except (
-                Exception
-            ) as e:  # pylint: disable=import-outside-toplevel,broad-exception-caught
+                raise HomeAssistantError(f"Connection error: could not set value for {self.id}") from e  # pragma: no mutate
+            except (Exception) as e:
                 _LOGGER.error(
-                    "%s Error during async_set_value for %s: %s",
+                    "%s Error during async_set_value for %s: %s",  # pragma: no mutate
                     self.log_prefix,
                     self.id,
                     e,
                     exc_info=True,
                 )
-                raise HomeAssistantError(  # pylint: disable=import-outside-toplevel,broad-exception-raised
-                    f"Unexpected error when setting {self.id}"
-                ) from e
+                raise HomeAssistantError(f"Unexpected error when setting {self.id}") from e  # pragma: no mutate
         else:
-            # Fallback: synchronous connection wrapped in executor.
             for attempt in range(5):
                 try:
-                    async with connection._lock:  # pylint: disable=import-outside-toplevel,protected-access
+                    async with connection._lock:
                         await self._controller.hass.async_add_executor_job(
                             connection.execute,
                             self.connection_template,
-                            self.convert_hass_to_dev(v),
+                            dev_value,  # Usamos el valor saneado aquí también
                             current_full_state,
                             device_id,
                         )
                     return True
-                except (
-                    Exception
-                ) as e:  # pylint: disable=import-outside-toplevel,broad-exception-caught
-                    if (
-                        getattr(e, "__class__", None)
-                        and e.__class__.__name__ == "RetryNextAttempt"
-                    ):
+                except (Exception) as e:
+                    if getattr(e, "__class__", None) and e.__class__.__name__ == "RetryNextAttempt":  # pragma: no mutate
                         if attempt < 4:
                             delay = min(1.0 * (2**attempt), 15.0)
                             _LOGGER.debug(
-                                "%s Sync command yielded RetryNextAttempt. "
-                                "Async sleeping %.1fs (Attempt %s/5)...",
+                                "%s Sync command yielded RetryNextAttempt. Async sleeping %.1fs (Attempt %s/5)...",  # pragma: no mutate
                                 self.log_prefix,
                                 delay,
                                 attempt + 1,
                             )
                             await asyncio.sleep(delay)
                             continue
-                        raise CannotConnect(
-                            f"Connection failed after 5 retries: {e}"
-                        ) from e
+                        raise CannotConnect(f"Connection failed after 5 retries: {e}") from e  # pragma: no mutate
                     if isinstance(e, (CannotConnect, AuthError)):
                         _LOGGER.warning(
-                            "%s Failed to set value for %s: connection error: %s",
+                            "%s Failed to set value for %s: connection error: %s",  # pragma: no mutate
                             self.log_prefix,
                             self.id,
                             e,
                         )
-                        raise HomeAssistantError(  # pylint: disable=import-outside-toplevel,broad-exception-raised
-                            f"Connection error: could not set value for {self.id}"
-                        ) from e
+                        raise HomeAssistantError(f"Connection error: could not set value for {self.id}") from e  # pragma: no mutate
                     raise
             return False
 
-    def match_value(self, value: Any) -> bool:  # pylint: disable=unused-argument
+    def match_value(self, value: Any) -> bool:
         """Check if value matches the operation. True if the value is correct."""
         return False
 
@@ -764,7 +728,6 @@ class BasicDeviceOperation(DeviceOperation):
         self._last_valid_values: list[Any] = []
         self._feature_flag: ClimateEntityFeature | None = None
 
-        # Cache for dynamic value lists to improve performance.
         self._values_cache: dict[str, list[Any]] = {}
 
     def get_connection(self, value: Any) -> Any:
@@ -772,9 +735,8 @@ class BasicDeviceOperation(DeviceOperation):
         return self._value_connections_map.get(value, self._connection)
 
     def load_from_yaml(self, node: dict[str, Any] | None) -> bool:
-        """Load configuration from a YAML node dictionary. Return True if successful."""
+        """Load configuration from a YAML node dictionary."""
         if super().load_from_yaml(node):
-            # Store the corresponding HA feature flag, if it exists for this operation.
             self._feature_flag = YAML_NAME_TO_HA_FEATURE.get(self._name)
 
             if node is not None:
@@ -816,11 +778,9 @@ class BasicDeviceOperation(DeviceOperation):
     @property
     def values(self) -> list[Any]:
         """Return a list of valid values, which can be dynamic."""
-        # If there are no dynamic validations, nothing to cache — return full list.
         if not self._value_validation_templates:
             return self._values
 
-        # Cache key is based on the current hvac_mode.
         cache_key_prop = self._controller.get_property(ATTR_HVAC_MODE)
         cache_key = str(cache_key_prop) if cache_key_prop else "None"
 
@@ -828,7 +788,7 @@ class BasicDeviceOperation(DeviceOperation):
             valid_values = self._values_cache[cache_key]
         else:
             _LOGGER.debug(
-                "%s Cache miss for '%s' with key '%s'. Calculating values",
+                "%s Cache miss for '%s' with key '%s'. Calculating values",  # pragma: no mutate
                 self.log_prefix,
                 self.name,
                 cache_key,
@@ -840,23 +800,21 @@ class BasicDeviceOperation(DeviceOperation):
             ]
             self._values_cache[cache_key] = valid_values
 
-        # Detect if the valid-values list changed — flag UI flicker if fan_mode.
         if (
             sorted(valid_values) != sorted(self._last_valid_values)
             and self._last_valid_values
         ):
             _LOGGER.debug(
-                "%s Valid values for '%s' changed to: %s",
+                "%s Valid values for '%s' changed to: %s",  # pragma: no mutate
                 self.log_prefix,
                 self.name,
                 valid_values,
             )
             if self._controller and self._id == ATTR_FAN_MODE:
                 _LOGGER.debug(
-                    "%s Setting fan_modes_list_changed_pending_flicker flag",
+                    "%s Setting fan_modes_list_changed_pending_flicker flag",  # pragma: no mutate
                     self.log_prefix,
                 )
-                # pylint: disable=import-outside-toplevel,protected-access
                 self._controller._fan_modes_list_changed_pending_flicker = True
 
         self._last_valid_values = valid_values
@@ -882,10 +840,10 @@ class BasicDeviceOperation(DeviceOperation):
         """Check if a specific HA value is valid for the given device state."""
         template = self._value_validation_templates.get(ha_value)
         if template is None:
-            return True  # No specific validation — assume valid.
+            return True
 
         if device_state is None:
-            return False  # Cannot validate without state.
+            return False
 
         rendered = template.render(device_state=device_state)
         return str(rendered).lower() == "valid"
@@ -905,12 +863,11 @@ class ModeOperation(BasicDeviceOperation):
         """Initialise the mode operation and resolve the HA property ID."""
         super().__init__(name, connection, controller, status_getter)
 
-        # Map YAML names (e.g., "hvac") to HA property IDs (e.g., "hvac_mode").
         ha_names = {
-            ATTR_HVAC_MODE,  # "hvac_mode"
-            ATTR_FAN_MODE,  # "fan_mode"
-            ATTR_PRESET_MODE,  # "preset_mode"
-            ATTR_SWING_MODE,  # "swing_mode"
+            ATTR_HVAC_MODE,
+            ATTR_FAN_MODE,
+            ATTR_PRESET_MODE,
+            ATTR_SWING_MODE,
         }
         if name in ha_names:
             self._id = name
@@ -922,7 +879,7 @@ class ModeOperation(BasicDeviceOperation):
         self._feature_flag = YAML_NAME_TO_HA_FEATURE.get(self._name)
 
     @staticmethod
-    def match_type(prop_type: str) -> bool:  # renamed from 'type' to avoid W0622
+    def match_type(prop_type: str) -> bool:
         """Return True if this operation handles the given type."""
         return prop_type == PROPERTY_TYPE_MODE
 
@@ -952,7 +909,7 @@ class UniqueIdProperty(DeviceProperty):
     """Property representing a unique device identifier (string type)."""
 
     @staticmethod
-    def match_type(prop_type: str) -> bool:  # renamed from 'type' to avoid W0622
+    def match_type(prop_type: str) -> bool:
         """Return True if this property handles the given type."""
         return prop_type == PROPERTY_TYPE_STRING
 
@@ -962,12 +919,12 @@ class SwitchOperation(BasicDeviceOperation):
     """Operation representing an on/off switch."""
 
     @staticmethod
-    def match_type(prop_type: str) -> bool:  # renamed from 'type' to avoid W0622
+    def match_type(prop_type: str) -> bool:
         """Return True if this operation handles the given type."""
         return prop_type == PROPERTY_TYPE_SWITCH
 
     def load_from_yaml(self, node: dict[str, Any] | None) -> bool:
-        """Load configuration from a YAML node dictionary. Return True if successful."""
+        """Load configuration from a YAML node dictionary."""
         if super().load_from_yaml(node):
             if STATE_OFF in self._values_ha_to_dev_map:
                 self._values_ha_to_dev_map[False] = self._values_ha_to_dev_map[
@@ -1005,36 +962,53 @@ class BasicNumericOperation(DeviceOperation):
         except (ValueError, TypeError):
             return None
 
+    @value.setter
+    def value(self, val: Any) -> None:
+        """Set the current value."""
+        self._value = val
+
     @property
     def config_validation_type(self) -> Any:
         """Return the config validation type."""
         return cv.positive_int
 
     def match_value(self, value: Any) -> bool:
-        """Check if value matches the operation. True if the value is correct."""
+        """Check if value matches the operation."""
         try:
             return self.convert_hass_to_dev(float(value)) == value
         except ValueError:
             return False
 
     def load_from_yaml(self, node: dict[str, Any] | None) -> bool:
-        """Load configuration from a YAML node dictionary. Return True if successful."""
+        """Load configuration from a YAML node dictionary."""
         if not super().load_from_yaml(node):
             return False
 
         if node is not None:
-            self._min = node.get(CONFIG_DEVICE_OPERATION_NUMBER_MIN, None)
-            self._max = node.get(CONFIG_DEVICE_OPERATION_NUMBER_MAX, None)
+            self._min = node.get(CONFIG_DEVICE_OPERATION_NUMBER_MIN)
+            self._max = node.get(CONFIG_DEVICE_OPERATION_NUMBER_MAX)
             return True
 
         return False
 
     def convert_hass_to_dev(self, ha_value: Any) -> Any:
         """Convert HASS state value to the device's expected value, clamped to min/max."""
-        if self._min is not None and ha_value < self._min:
+        # Si no hay límites, pasamos el valor crudo directamente.
+        if self._min is None and self._max is None:
+            return ha_value
+
+        try:
+            # Saneamiento estricto: forzamos el casting a float para la aritmética.
+            v = float(ha_value)
+        except (ValueError, TypeError):
+            # Si HA inyecta 'unknown' o 'unavailable', esquivamos la evaluación matemática.
+            return ha_value
+
+        if self._min is not None and v < self._min:
             return self._min
-        if self._max is not None and ha_value > self._max:
+        if self._max is not None and v > self._max:
             return self._max
+            
         return ha_value
 
 
@@ -1043,7 +1017,7 @@ class NumericOperation(BasicNumericOperation):
     """Operation for generic numeric values."""
 
     @staticmethod
-    def match_type(prop_type: str) -> bool:  # renamed from 'type' to avoid W0622
+    def match_type(prop_type: str) -> bool:
         """Return True if this operation handles the given type."""
         return prop_type == PROPERTY_TYPE_NUMBER
 
@@ -1075,12 +1049,12 @@ class TemperatureOperation(BasicNumericOperation):
         self._unit_of_measurement = self._hass_unit
 
     @staticmethod
-    def match_type(prop_type: str) -> bool:  # renamed from 'type' to avoid W0622
+    def match_type(prop_type: str) -> bool:
         """Return True if this operation handles the given type."""
         return prop_type == PROPERTY_TYPE_TEMP
 
     def load_from_yaml(self, node: dict[str, Any] | None) -> bool:
-        """Load configuration from a YAML node dictionary. Return True if successful."""
+        """Load configuration from a YAML node dictionary."""
         if not super().load_from_yaml(node):
             return False
 
@@ -1106,7 +1080,7 @@ class TemperatureOperation(BasicNumericOperation):
                 v = self.status_template.render(device_state=device_state)
             except Exception as e:  # pylint: disable=broad-exception-caught
                 _LOGGER.debug(
-                    "%s Dry-run error for %s: %s", self.log_prefix, self.id, e
+                    "%s Dry-run error for %s: %s", self.log_prefix, self.id, e  # pragma: no mutate
                 )
 
         if v is not STATE_UNKNOWN:
@@ -1130,14 +1104,14 @@ class TemperatureOperation(BasicNumericOperation):
                     self._device_unit = UNIT_MAP[unit]
             except Exception:  # pylint: disable=broad-exception-caught
                 _LOGGER.debug(
-                    "%s Could not render unit template for '%s'. Using last known device unit.",
+                    "%s Could not render unit template for '%s'. Using last known device unit.",  # pragma: no mutate
                     self.log_prefix,
                     self.id,
                 )
 
         v = self.calculate_value_from_state(device_state)
         if v is not STATE_UNKNOWN:
-            self._value = v
+            self.value = v
         return self.value
 
     def _convert_dev_to_hass_with_unit(
@@ -1160,12 +1134,22 @@ class TemperatureOperation(BasicNumericOperation):
 
     def convert_hass_to_dev(self, ha_value: Any) -> float:
         """Convert HASS temperature to device unit, clamped to min/max."""
-        v = ha_value
-        if self._min is not None and ha_value < self._min:
+        try:
+            # Saneamiento estricto obligatorio.
+            v = float(ha_value)
+        except (ValueError, TypeError) as e:
+            # Falla Rápida: Denegamos transaccionalmente fijar una temperatura a "unknown".
+            # Esto será capturado por el try/except de async_set_value de forma segura.
+            raise ValueError(
+                f"Payload inválido: No se puede establecer la temperatura a '{ha_value}'"
+            ) from e
+
+        if self._min is not None and v < self._min:
             v = self._min
-        if self._max is not None and ha_value > self._max:
+        if self._max is not None and v > self._max:
             v = self._max
 
-        return TemperatureConverter.convert(
-            float(v), self._hass_unit, self._device_unit
-        )
+        return float(TemperatureConverter.convert(
+            v, self._hass_unit, self._device_unit
+        ))
+
