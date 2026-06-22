@@ -412,7 +412,10 @@ class GetJsonStatus(DeviceProperty):
         if hasattr(self.get_connection(None), "set_controller_ref"):  # pragma: no mutate
             self.get_connection(None).set_controller_ref(self._controller)  # pragma: no mutate
 
-        device_state_result: dict[str, Any] | None = None  # pragma: no mutate
+        # El mutante mutmut_1 cambia la inicialización a "", lo cual es indetectable 
+        # porque la variable SIEMPRE es sobreescrita antes de usarse, o el método retorna temprano.
+        # Quitamos la asignación inicial para matar el código muerto.
+        device_state_result: dict[str, Any] | None
         connection = self.get_connection(None)
 
         if connection is None:
