@@ -386,3 +386,75 @@ async def test_build_device_state_from_props_rest_api_exhaustive():
     assert dev_on["Wind"]["direction"] == "All"
     assert dev_on["Mode"]["options"][0] == "Quiet"
     assert dev_on["Mode"]["options"][1] == "Sleep_2"
+
+# ====================================================================================
+# FRENTE G: EL MONO DEL CAOS (Aserciones de Tipado Defensivo y Longitudes)
+# ====================================================================================
+
+async def test_build_device_state_chaos_monkey_guards():
+    """Fuerza cargas corruptas para matar mutantes de isinstance(), len() y duck-typing."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock
+
+    mock_controller = MagicMock()
+    mock_controller.config.get.return_value = "REST_API"
+    poller = YamlStatePoller(mock_controller)
+
+    def setup_ops(op_id, val):
+        op = MagicMock()
+        op.id = op_id
+        op.value = val
+        op.convert_hass_to_dev.return_value = val
+        mock_controller.loader.operations = {"op": op}
+        mock_controller.loader.properties = {}
+        mock_controller.loader.sensors = {}
+
+    # --- CASO 1: 'Devices' NO es una lista (Mata isinstance(device_list, list)) ---
+    setup_ops("hvac", "Cool")
+    mock_controller.loader.state_getter.value = {"Devices": "ESTO_ES_UN_STRING"}
+    res = await poller._build_device_state_from_props()
+    # Si la guardia está, ignora la actualización y no explota.
+    assert res["Devices"] == "ESTO_ES_UN_STRING"
+
+    # --- CASO 2: 'Devices' es lista vacía (Mata len(device_list) > 0) ---
+    mock_controller.loader.state_getter.value = {"Devices": []}
+    res = await poller._build_device_state_from_props()
+    assert res["Devices"] == []
+
+    # --- CASO 3: El interior de 'Devices' no es un dict (Mata isinstance(device_obj, dict)) ---
+    mock_controller.loader.state_getter.value = {"Devices": ["ESTO_NO_ES_UN_DICT"]}
+    res = await poller._build_device_state_from_props()
+    assert res["Devices"] == ["ESTO_NO_ES_UN_DICT"]
+
+    # --- CASO 4: Array 'Temperatures' vacío (Mata len(...) > 0 en temperatura) ---
+    setup_ops("temperature", 22.0)
+    mock_controller.loader.state_getter.value = {"Devices": [{"Temperatures": []}]}
+    res = await poller._build_device_state_from_props()
+    # La lógica original ignora listas vacías si ya existe la clave. 
+    # Si mutmut cambia > 0 por >= 0, dará IndexError al intentar acceder a [0].
+    assert res["Devices"][0]["Temperatures"] == [] 
+
+    # --- CASO 5: Arrays 'options' de Mode (Mata mutantes de len == 1, len > 1) ---
+    setup_ops("good_sleep", 1.0)
+    
+    # Longitud 0: No debe hacer nada (Mata si cambian a >= 1 -> IndexError)
+    mock_controller.loader.state_getter.value = {"Devices": [{"Mode": {"options": []}}]}
+    res = await poller._build_device_state_from_props()
+    assert res["Devices"][0]["Mode"]["options"] == []
+
+    # Longitud 1: Debe hacer append (Mata si cambian len == 1 a != 1)
+    mock_controller.loader.state_getter.value = {"Devices": [{"Mode": {"options": ["Eco"]}}]}
+    res = await poller._build_device_state_from_props()
+    assert res["Devices"][0]["Mode"]["options"] == ["Eco", "Sleep_1"]
+
+    # Longitud > 1: Debe sobrescribir el índice [1] (Mata si mutan el índice estricto)
+    mock_controller.loader.state_getter.value = {"Devices": [{"Mode": {"options": ["Eco", "Sleep_Old", "Extra"]}}]}
+    res = await poller._build_device_state_from_props()
+    assert res["Devices"][0]["Mode"]["options"] == ["Eco", "Sleep_1", "Extra"]
+
+    # --- CASO 6: op_value nulo (Mata 'if op_value is None: continue') ---
+    setup_ops("hvac", None)
+    mock_controller.loader.state_getter.value = {"Devices": [{}]}
+    res = await poller._build_device_state_from_props()
+    # No debe haber añadido "Operation" porque la propiedad era None
+    assert "Operation" not in res["Devices"][0]
