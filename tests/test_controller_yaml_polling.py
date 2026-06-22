@@ -262,69 +262,127 @@ async def test_async_update_properties_pending_ttl_and_degradation():
     assert corrections["prop_deg"] == "Auto"
 
 # ====================================================================================
-# FRENTE F: RECONSTRUCCIÓN MASIVA DE JSON (El laberinto de diccionarios)
+# FRENTE F: AUTOPSIA EXHAUSTIVA DE FACTORÍAS JSON (El Abismo Absoluto)
 # ====================================================================================
 
-async def test_build_device_state_from_props_samsung_rest():
-    """Autopsia de la generación de diccionarios para la API REST (no 2878)."""
+async def test_build_device_state_from_props_samsung_2878_exhaustive():
+    """Barre todas las ramificaciones de alias y estados para el protocolo 2878."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from custom_components.climate_ip.const import DEVICE_TYPE_SAMSUNG_2878
+    from homeassistant.components.climate.const import ATTR_HVAC_MODE, ATTR_FAN_MODE
+    from homeassistant.const import ATTR_TEMPERATURE
+    from unittest.mock import MagicMock
+
     mock_controller = MagicMock()
-    mock_controller.config.get.return_value = "REST_API" # is_2878 = False
+    mock_controller.config.get.return_value = DEVICE_TYPE_SAMSUNG_2878
+    mock_controller.loader.state_getter.value = {"_is_not_falsy": True}
     
-    # Simulamos el último estado real
-    mock_controller.loader.state_getter.value = {"Devices": [{"id": "1", "Operation": {"power": "Off"}}]}
-    
-    # Creamos mocks de operaciones que obliguen a ejecutar todas las ramas complejas
-    def create_mock_op(op_id, value):
+    def create_op(op_id, value):
         op = MagicMock()
         op.id = op_id
         op.value = value
         op.convert_hass_to_dev.return_value = value
         return op
-    
-    mock_controller.loader.operations = {
-        "hvac": create_mock_op("hvac", "Cool"),
-        "temp": create_mock_op("temperature", 22.0),
-        "fan": create_mock_op("fan", "3"), # .isdigit() test
-        "swing": create_mock_op("swing", "Up"),
-        "preset": create_mock_op("preset_mode", "Eco"),
-        "sleep": create_mock_op("good_sleep", 1.5) # float(device_value) test
-    }
-    mock_controller.loader.properties = {}
-    
+        
     poller = YamlStatePoller(mock_controller)
-    reconstructed = await poller._build_device_state_from_props()
-    
-    assert reconstructed is not None
-    device_obj = reconstructed["Devices"][0]
-    
-    # Aserciones estrictas contra mutaciones de claves de diccionarios ("Wind", "Mode", etc.)
-    assert device_obj["Operation"]["power"] == "On"
-    assert device_obj["Mode"]["modes"] == ["Cool"]
-    assert device_obj["Temperatures"][0]["desired"] == 22.0
-    assert device_obj["Wind"]["speedLevel"] == 3 # Casteado a int por isdigit()
-    assert device_obj["Wind"]["direction"] == "Up"
-    assert device_obj["Mode"]["options"][0] == "Eco"
-    
-    # good_sleep test ("Sleep_1")
-    assert "Sleep_1" in device_obj["Mode"]["options"]
+    poller._get_cached_device_key_from_prop = MagicMock(return_value="CUSTOM_KEY")
 
-async def test_build_device_state_from_props_2878():
-    """Autopsia de la generación de diccionarios para la API del puerto 2878."""
+    # BARRIDO 1: Estado OFF con alias nativos
+    mock_controller.loader.operations = {
+        "hvac": create_op("hvac", "Off"),
+        "temp": create_op("temperature", 22.0),
+        "fan": create_op("fan", "Auto"),
+        "swing": create_op("swing", "Up") # Debe usar fallback a CUSTOM_KEY
+    }
+    
+    res_off = await poller._build_device_state_from_props()
+    assert res_off["AC_FUN_OPMODE"] == "Off"
+    assert res_off["AC_FUN_POWER"] == "Off"
+    assert res_off["AC_FUN_TEMPSET"] == "22.0"
+    assert res_off["AC_FUN_WINDLEVEL"] == "Auto"
+    assert res_off["CUSTOM_KEY"] == "Up"
+
+    # BARRIDO 2: Estado ON con alias de Home Assistant y alias alternos
+    mock_controller.loader.operations = {
+        "hvac_ha": create_op(ATTR_HVAC_MODE, "Cool"),
+        "hvac_alt": create_op("hvac_mode", "Heat"),  # Sobrescribirá a Cool, asertamos "Heat"
+        "temp_ha": create_op(ATTR_TEMPERATURE, 25.5),
+        "fan_ha": create_op(ATTR_FAN_MODE, "Low"),
+        "fan_alt": create_op("fan_mode", "High")     # Sobrescribirá a Low, asertamos "High"
+    }
+    
+    res_on = await poller._build_device_state_from_props()
+    assert res_on["AC_FUN_OPMODE"] == "Heat"
+    assert res_on["AC_FUN_POWER"] == "On"
+    assert res_on["AC_FUN_TEMPSET"] == "25.5"
+    assert res_on["AC_FUN_WINDLEVEL"] == "High"
+
+
+async def test_build_device_state_from_props_rest_api_exhaustive():
+    """Barre todas las ramificaciones de alias y estados para el protocolo REST (Puerto 8888)."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from homeassistant.components.climate.const import ATTR_HVAC_MODE, ATTR_FAN_MODE, ATTR_SWING_MODE, ATTR_PRESET_MODE
+    from homeassistant.const import ATTR_TEMPERATURE
+    from unittest.mock import MagicMock
+
     mock_controller = MagicMock()
-    mock_controller.config.get.return_value = DEVICE_TYPE_SAMSUNG_2878
-    mock_controller.loader.state_getter.value = {"_is_not_falsy": True} # Evita el return temprano por if not last_real_state
+    mock_controller.config.get.return_value = "REST_API"
     
-    op = MagicMock()
-    op.id = "hvac"
-    op.value = "Heat"
-    op.convert_hass_to_dev.return_value = "Heat"
-    
-    mock_controller.loader.operations = {"hvac": op}
-    mock_controller.loader.properties = {}
-    
+    def create_op(op_id, value):
+        op = MagicMock()
+        op.id = op_id
+        op.value = value
+        op.convert_hass_to_dev.return_value = value
+        return op
+
     poller = YamlStatePoller(mock_controller)
-    reconstructed = await poller._build_device_state_from_props()
+
+    # BARRIDO 1: Generación inicial desde 0 y estado OFF
+    mock_controller.loader.state_getter.value = {"Devices": [{}]}
+    mock_controller.loader.operations = {
+        "hvac": create_op("hvac", "Off"),
+        "temp": create_op("temperature", 21.0),
+        "fan": create_op("fan", "Auto"), # string para saltar isdigit()
+        "fan_max": create_op("fan_max", "3"), # string numérico para testear isdigit()
+        "swing": create_op("swing", "Up"),
+        "preset": create_op("preset_mode", "Eco"),
+        "sleep": create_op("good_sleep", 1.0)
+    }
     
-    assert reconstructed is not None
-    assert reconstructed["AC_FUN_OPMODE"] == "Heat"
-    assert reconstructed["AC_FUN_POWER"] == "On"
+    res_off = await poller._build_device_state_from_props()
+    dev_off = res_off["Devices"][0]
+    
+    assert dev_off["Operation"]["power"] == "Off"
+    assert dev_off["Temperatures"][0]["desired"] == 21.0
+    assert dev_off["Wind"]["speedLevel"] == "Auto"
+    assert dev_off["Wind"]["maxSpeedLevel"] == 3 # Debe asertarse como int puro
+    assert dev_off["Wind"]["direction"] == "Up"
+    assert dev_off["Mode"]["options"] == ["Eco", "Sleep_1"] # preset y sleep fusionados
+
+    # BARRIDO 2: Mutación de JSON pre-existente y estado ON con alias de HA
+    mock_controller.loader.state_getter.value = {
+        "Devices": [{
+            "Operation": {"power": "Off"},
+            "Temperatures": [{"desired": 18.0}, {"desired": 99.0}],
+            "Mode": {"options": ["OldPreset", "OldSleep"]}
+        }]
+    }
+    mock_controller.loader.operations = {
+        "hvac_ha": create_op(ATTR_HVAC_MODE, "Dry"),
+        "temp_ha": create_op(ATTR_TEMPERATURE, 26.5),
+        "fan_ha": create_op(ATTR_FAN_MODE, "Low"),
+        "swing_ha": create_op(ATTR_SWING_MODE, "All"),
+        "preset_ha": create_op(ATTR_PRESET_MODE, "Quiet"),
+        "sleep_alt": create_op("good_sleep", 2.0)
+    }
+
+    res_on = await poller._build_device_state_from_props()
+    dev_on = res_on["Devices"][0]
+
+    assert dev_on["Operation"]["power"] == "On"
+    assert dev_on["Mode"]["modes"] == ["Dry"]
+    assert dev_on["Temperatures"][0]["desired"] == 26.5
+    assert dev_on["Wind"]["speedLevel"] == "Low"
+    assert dev_on["Wind"]["direction"] == "All"
+    assert dev_on["Mode"]["options"][0] == "Quiet"
+    assert dev_on["Mode"]["options"][1] == "Sleep_2"
