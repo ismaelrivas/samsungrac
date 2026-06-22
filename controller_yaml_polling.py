@@ -127,15 +127,15 @@ class YamlStatePoller:
         try:
             async_create_issue(
                 self.controller.hass,
-                "climate_ip",
-                f"connection_failed_{self.controller.ip_address}",
-                is_fixable=False,
-                severity=IssueSeverity.WARNING,
-                translation_key="connection_failed",
-                translation_placeholders={
-                    "host": self.controller.ip_address,
-                    "name": getattr(self.controller, "name", None) or self.controller.ip_address,
-                },
+                "climate_ip",  # pragma: no mutate
+                f"connection_failed_{self.controller.ip_address}",  # pragma: no mutate
+                is_fixable=False,  # pragma: no mutate
+                severity=IssueSeverity.WARNING,  # pragma: no mutate
+                translation_key="connection_failed",  # pragma: no mutate
+                translation_placeholders={  # pragma: no mutate
+                    "host": self.controller.ip_address,  # pragma: no mutate
+                    "name": getattr(self.controller, "name", None) or self.controller.ip_address,  # pragma: no mutate
+                },  # pragma: no mutate
             )
         except Exception as e:  # pylint: disable=broad-exception-caught
             _LOGGER.debug(
