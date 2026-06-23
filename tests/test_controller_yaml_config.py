@@ -552,3 +552,84 @@ async def test_async_finish_initialization_entry_data_fallback():
         # Debe haber extraído los valores del diccionario .data porque .options estaba vacío
         # Si mutmut cambia .data.get(..., def) a None, esta aserción explotará
         mock_prop.set_device_unit.assert_any_call("Rankine")
+
+# ====================================================================================
+# FRENTE O: LA PARADOJA DE LA CACHÉ FANTASMA
+# ====================================================================================
+
+async def test_async_finish_initialization_strict_cache_hit():
+    """Fuerza un error fatal si el fallback del device_id no acierta en la caché."""
+    from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
+    from unittest.mock import MagicMock, patch
+
+    mock_controller = MagicMock()
+    # Eliminamos intencionalmente device_id para forzar el uso del fallback ""
+    if hasattr(mock_controller, "device_id"):
+        delattr(mock_controller, "device_id")
+        
+    loader = YamlConfigLoader(mock_controller)
+    loader.is_fully_initialized = False
+    
+    # EL VENENO: Llenamos la caché con la clave "", pero destruimos el YAML en crudo.
+    fake_yaml = {"device": {"operations": {"ghost_op": {"type": "A"}}}}
+    loader._parsed_yaml_cache = {"": fake_yaml}
+    loader._parsed_yaml_config = {"poison": True} # Si no usa la caché, el diccionario operations quedará vacío
+    
+    def fake_create(key, node, conn, ctrl, getter):
+        prop = MagicMock()
+        prop.id = key
+        return prop
+
+    with patch("custom_components.climate_ip.controller_yaml_config.create_property", side_effect=fake_create):
+        await loader.async_finish_initialization()
+        
+    # Si mutmut cambió "" por None o "XXXX", buscará en la caché y fallará.
+    # Al fallar, intentará leer `_parsed_yaml_config` (que es {"poison": True}), 
+    # y el diccionario operations quedará vacío.
+    assert "ghost_op" in loader.operations
+
+# ====================================================================================
+# FRENTE P: LA TRAMPA DEL DEFAULT Y ASERCIONES DE LISTA COMPLETAS
+# ====================================================================================
+
+async def test_async_finish_initialization_getattr_defaults_and_dedup():
+    """Fuerza fallbacks de getattr inyectando mocks sin atributo 'id'."""
+    from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
+    from unittest.mock import MagicMock, patch
+
+    mock_controller = MagicMock()
+    loader = YamlConfigLoader(mock_controller)
+    loader.is_fully_initialized = False
+    
+    loader._parsed_yaml_config = {
+        "device": {
+            "operations": {"op_key_1": {"type": "A"}},
+            "switches": {"sw_key_1": {"type": "B"}},
+            "attributes": {"attr_key_1": {"type": "C"}},
+            "sensors": {"sen_key_1": {"type": "D"}}
+        }
+    }
+    # Evitamos Cache Miss
+    loader._parsed_yaml_cache = {"": loader._parsed_yaml_config}
+
+    # Factoría letal que devuelve un objeto estricto SIN atributo 'id'
+    class IdlessProp:
+        def __init__(self):
+            self.config_validation_type = str
+    
+    with patch("custom_components.climate_ip.controller_yaml_config.create_property", return_value=IdlessProp()):
+        await loader.async_finish_initialization()
+
+    # 1. Aserción del Default (Mata mutantes de getattr(op, "id", op_key))
+    # Al no tener .id, la clave del diccionario DEBE ser el op_key original.
+    assert "op_key_1" in loader.operations
+    assert "sw_key_1" in loader.operations
+    assert "attr_key_1" in loader.properties
+    assert "sen_key_1" in loader.sensors
+    
+    # 2. Aserción de Deduplicación Completa (Mata if op_id not in self.operations_list)
+    # Si mutmut cambia `not in` por `in`, la lista no hará el append y quedará vacía.
+    assert loader.operations_list.count("op_key_1") == 1
+    assert loader.operations_list.count("sw_key_1") == 1
+    assert loader.properties_list.count("attr_key_1") == 1
+    assert loader.sensors_list.count("sen_key_1") == 1
