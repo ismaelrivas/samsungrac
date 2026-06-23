@@ -458,3 +458,331 @@ async def test_build_device_state_chaos_monkey_guards():
     res = await poller._build_device_state_from_props()
     # No debe haber añadido "Operation" porque la propiedad era None
     assert "Operation" not in res["Devices"][0]
+
+
+# ====================================================================================
+# FRENTE H: CORTOCIRCUITO DE RENDIMIENTO (Dirty Check)
+# ====================================================================================
+
+async def test_async_update_properties_dirty_check():
+    """Aserta que la evaluación de estado idéntico bloquea la propagación a menos que se fuerce."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    import time
+    from unittest.mock import MagicMock
+    
+    mock_controller = MagicMock()
+    mock_controller.loader.is_fully_initialized = True
+    mock_controller.debug = False
+    mock_controller.loader._parsed_yaml_cache = {}
+    poller = YamlStatePoller(mock_controller)
+    
+    fake_state = {"power": "on"}
+    poller._last_device_state = fake_state
+    
+    # 1. Estado idéntico, sin forzar, sin pendientes (Mata mutaciones en if not force_update and...)
+    # NO PASAMOS los kwargs explícitamente para matar los mutantes de valores por defecto (is_prediction=True, force_update=True)
+    result = await poller.async_update_properties_from_state(fake_state)
+    assert result == {}
+    
+    # 2. Estado idéntico, pero con force_update=True (Mata if no respeta force_update)
+    # Debe pasar el cortocircuito y devolver dict (aunque sea vacío si no hay correcciones)
+    from unittest.mock import AsyncMock
+    mock_prop = MagicMock()
+    mock_prop.id = "hvac"
+    mock_prop.template = None
+    mock_prop.status_template = None
+    mock_prop.async_update_state = AsyncMock()
+    mock_controller.loader.operations = {"hvac": mock_prop}
+    mock_controller.loader.properties = {}
+    mock_controller.loader.sensors = {}
+    
+    result_forced = await poller.async_update_properties_from_state(fake_state, is_prediction=False, force_update=True)
+    assert isinstance(result_forced, dict)
+    mock_prop.async_update_state.assert_called_once()
+    
+    # 3. Estado idéntico, force_update=False, pero con pending_updates activas
+    mock_prop.reset_mock()
+    poller._pending_updates = {"hvac": ("val", time.time())}
+    result_pending = await poller.async_update_properties_from_state(fake_state, is_prediction=False, force_update=False)
+    assert isinstance(result_pending, dict)
+    mock_prop.async_update_state.assert_not_called()
+
+# ====================================================================================
+# FRENTE I: ENRUTAMIENTO MULTI-DISPOSITIVO (Sub-device Selector)
+# ====================================================================================
+
+async def test_async_update_properties_sub_device_routing():
+    """Verifica que el poller extrae el sub-diccionario correcto en arrays de dispositivos."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock
+    
+    mock_controller = MagicMock()
+    mock_controller.loader.is_fully_initialized = True
+    mock_controller.device_id = "TARGET_ID"
+    mock_controller.debug = False
+    poller = YamlStatePoller(mock_controller)
+    
+    # Configuramos el id_map de la caché simulada
+    mock_controller.loader._parsed_yaml_cache = {
+        "TARGET_ID": {
+            "device": {
+                "identifiers": {
+                    "path_to_devices": ["Devices"],
+                    "id": ["id"]
+                }
+            }
+        }
+    }
+    
+    # Payload con múltiples dispositivos. El target está en la segunda posición.
+    full_payload = {
+        "Devices": [
+            {"id": "WRONG_ID", "power": "off"},
+            {"id": "TARGET_ID", "power": "on"},
+            {"id": "ANOTHER_ID", "power": "standby"}
+        ]
+    }
+    
+    from unittest.mock import AsyncMock
+    mock_prop = MagicMock()
+    mock_prop.template = None
+    mock_prop.status_template = None
+    mock_prop.async_update_state = AsyncMock()
+    mock_controller.loader.operations = {"test": mock_prop}
+    mock_controller.loader.properties = {}
+    mock_controller.loader.sensors = {}
+    
+    # Ejecutamos forzando la actualización
+    await poller.async_update_properties_from_state(full_payload, force_update=True)
+    
+    # ASERCIÓN CRÍTICA: La propiedad debió recibir exclusivamente el sub-diccionario del TARGET_ID
+    # Mata mutantes de la iteración `next(...)` y la comparación `== str(...)`
+    mock_prop.async_update_state.assert_called_once_with(
+        {"id": "TARGET_ID", "power": "on"}, 
+        False
+    )
+    
+    # Test Fallback: Si el ID no existe en la lista, debe usar el índice [0]
+    mock_prop.async_update_state.reset_mock()
+    
+    # El dispositivo es TARGET_ID, pero el payload ya no lo incluye.
+    payload_without_target = {
+        "Devices": [
+            {"id": "WRONG_ID", "power": "off"},
+            {"id": "ANOTHER_ID", "power": "standby"}
+        ]
+    }
+    
+    await poller.async_update_properties_from_state(payload_without_target, force_update=True)
+    mock_prop.async_update_state.assert_called_once_with(
+        {"id": "WRONG_ID", "power": "off"}, 
+        False
+    )
+
+# ====================================================================================
+# FRENTE J: DEFAULTS Y CHAOS CACHE EN ENRUTAMIENTO MULTI-DISPOSITIVO
+# ====================================================================================
+
+async def test_async_update_properties_defaults_and_chaos_cache():
+    """Mata mutantes que alteran parámetros por defecto y diccionarios faltantes en la caché."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock, AsyncMock
+
+    class FakeController:
+        def __init__(self):
+            self.loader = MagicMock()
+            self.debug = False
+            self.log_prefix = "test"
+            # device_id is deliberately missing
+
+    mock_controller = FakeController()
+    mock_controller.loader.is_fully_initialized = True
+    
+    # 1. Caché completamente vacía (Mata los .get(CONFIG_DEVICE, {}) -> None)
+    mock_controller.loader._parsed_yaml_cache = {}
+    
+    poller = YamlStatePoller(mock_controller)
+    
+    mock_prop = MagicMock()
+    mock_prop.template = None
+    mock_prop.status_template = None
+    mock_prop.async_update_state = AsyncMock()
+    mock_controller.loader.operations = {"test": mock_prop}
+    mock_controller.loader.properties = {}
+    mock_controller.loader.sensors = {}
+
+    fake_payload = {"some": "data"}
+    
+    # 2. Llamada SIN is_prediction ni force_update, confiando en los DEFAULTS
+    # Mata a: is_prediction=True, force_update=True
+    # Como force_update es False (default) y pending_updates es vacío, si el estado cambia, procesará.
+    # Necesitamos asegurar que pase el cortocircuito dirty-check
+    poller._last_device_state_str = "different_state"
+
+    await poller.async_update_properties_from_state(fake_payload)
+    mock_prop.async_update_state.assert_called_once_with({"some": "data"}, False)
+
+    # 1.5. Test de `force_update=True` mutation (Mata Mutante 2)
+    # Llamamos de nuevo con el MISMO payload (no ha cambiado el estado)
+    mock_prop.async_update_state.reset_mock()
+    await poller.async_update_properties_from_state(fake_payload)
+    # Al no haber cambiado el estado, y ser force_update=False por defecto, no debe llamarse
+    mock_prop.async_update_state.assert_not_called()
+    
+    # 1.7. Test de falta de `_parsed_yaml_cache` para matar defaults en getattr
+    # Reemplazamos `loader` por un mock estricto que lanzará AttributeError real
+    # al no tener `_parsed_yaml_cache`
+    class StrictLoader:
+        is_fully_initialized = True
+        operations = {"test": mock_prop}
+        properties = {}
+        sensors = {}
+        # NO tiene _parsed_yaml_cache
+
+    mock_controller.loader = StrictLoader()
+    mock_prop.async_update_state.reset_mock()
+    poller._last_device_state_str = "different_state_2"
+    await poller.async_update_properties_from_state({"some": "new_data"})
+    mock_prop.async_update_state.assert_called_once_with({"some": "new_data"}, False)
+
+    # 1.8 Test de Exception en el bloque try (Mata mutantes en el bloque except)
+    # Asignar None hace que cache.get lance AttributeError
+    mock_controller.loader._parsed_yaml_cache = None
+    mock_prop.async_update_state.reset_mock()
+    poller._last_device_state_str = "different_state_exc"
+    await poller.async_update_properties_from_state({"some": "exc_data"})
+    mock_prop.async_update_state.assert_called_once_with({"some": "exc_data"}, False)
+
+    # 1.9 Test del dirty check (Mata mutantes de is_prediction y condiciones del dirty check)
+    mock_prop.async_update_state.reset_mock()
+    poller._last_device_state = {"some": "dirty_data"}
+    poller._last_device_state_str = "{'some': 'dirty_data'}"
+    res = await poller.async_update_properties_from_state({"some": "dirty_data"})
+    assert res == {}
+    mock_prop.async_update_state.assert_not_called()
+
+    # Restauramos para el siguiente test
+    mock_controller.loader = MagicMock()
+    mock_controller.loader.is_fully_initialized = True
+    mock_controller.loader.operations = {"test": mock_prop}
+
+    # Al no haber id_map, `device_to_process` NUNCA DEBE SER REASIGNADO,
+    # con lo cual si el mutante puso `device_to_process = None`, el mock recibirá None en lugar del payload real.
+    # 2. Test del default device_id en la caché (Mata Mutante 41)
+    mock_prop.async_update_state.reset_mock()
+    
+    # Creamos un caché donde la clave es "XXXX", que es el default de getattr(..., "device_id", "XXXX")
+    mock_controller.loader._parsed_yaml_cache = {
+        "XXXX": {
+            "device": {
+                "identifiers": {
+                    "path_to_devices": ["Devices"],
+                    "id": ["id"]
+                }
+            }
+        }
+    }
+    # Pasamos DOS dispositivos en la lista. El primero tiene id "WRONG", el segundo id "".
+    # Así, si el `getattr` con el default "" es mutado (ej. a None o "XXXX"), el match fallará.
+    # Al fallar el match, el código hará fallback a `devices_list[0]` ("WRONG"),
+    # con lo cual la aserción sobre mock_prop fallará porque esperaba el de id "".
+    payload_list_2 = {"Devices": [
+        {"id": "WRONG", "power": "on"},
+        {"id": "", "power": "off"}
+    ]}
+
+    await poller.async_update_properties_from_state(payload_list_2)
+    mock_prop.async_update_state.assert_called_once_with({"id": "", "power": "off"}, False)
+
+    # 3. Test de current_hass_state default (Mata Mutante 11)
+    mock_prop.async_update_state.reset_mock()
+    poller._build_device_state_from_hass = AsyncMock(return_value={"power": "on"})
+    await poller.async_update_properties_from_state(None, current_hass_state="FAKE_HASS_STATE")
+    poller._build_device_state_from_hass.assert_called_once_with("FAKE_HASS_STATE")
+    mock_prop.async_update_state.assert_called_once_with({"power": "on"}, False)
+
+@pytest.mark.asyncio
+async def test_async_update_properties_ttl():
+    """Mata mutantes de time.time() y el umbral de 15.0s en async_update_properties_from_state."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock, AsyncMock
+
+    class MockProp:
+        id = "wind_speed"
+        value = "low"
+        async_update_state = AsyncMock()
+        convert_hass_to_dev = MagicMock(return_value="high_dev")
+
+    mock_prop = MockProp()
+
+    class FakeController:
+        def __init__(self):
+            class FakeLoader:
+                is_fully_initialized = True
+                operations = {"wind": mock_prop}
+                properties = {}
+                sensors = {}
+                # _parsed_yaml_cache deliberately missing
+            self.loader = FakeLoader()
+            self.debug = False
+            self.log_prefix = "test"
+
+    mock_controller = FakeController()
+    poller = YamlStatePoller(mock_controller)
+    
+    # Simulamos que _get_cached_device_key_from_prop retorna "WindLevel"
+    poller._get_cached_device_key_from_prop = MagicMock(return_value="WindLevel")
+
+    device_payload = {"WindLevel": "low_dev"}
+
+    # CASO 1: TTL Válido (< 15.0)
+    # mock_prop.value debe ser "high" y mock_prop.convert_hass_to_dev debe ser llamado
+    # Además el device_payload debe inyectarse con "high_dev"
+    with patch("time.time", return_value=100.0):
+        poller._pending_updates = {"wind_speed": ("high", 86.0)} # Delta 14.0s
+        poller._last_device_state_str = "dirty"
+        await poller.async_update_properties_from_state(device_payload)
+        
+        assert mock_prop.value == "high"
+        # En el primer bucle se inyecta en el payload, y en el segundo bucle el continue salta
+        # el `async_update_state`
+        mock_prop.async_update_state.assert_not_called()
+        assert "wind_speed" in poller._pending_updates
+
+    # CASO 2: TTL Expirado (>= 15.0)
+    mock_prop.async_update_state.reset_mock()
+    with patch("time.time", return_value=100.0):
+        poller._pending_updates = {"wind_speed": ("high", 85.0)} # Delta 15.0s
+        poller._last_device_state_str = "dirty2"
+        await poller.async_update_properties_from_state(device_payload)
+        
+        # Debe llamar a async_update_state porque expiró y no saltó con continue
+        mock_prop.async_update_state.assert_called_once()
+        # Debe haber eliminado el pending update
+        assert "wind_speed" not in poller._pending_updates
+
+@pytest.mark.asyncio
+async def test_async_get_status_cache_ttl():
+    """Mata mutantes de time.time() y < 2.0 en async_get_status."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock, AsyncMock, patch
+
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+
+    poller.async_update_state = AsyncMock(return_value={"power": "on"})
+    poller._cached_device_state = {"power": "on"}
+    poller._last_state_fetch_time = 100.0
+
+    # 1. Exactamente 2.0s de diferencia (mata < 2.0 mutado a <= 2.0)
+    # Al no ser ESTRICTAMENTE menor, el caché caduca y llama a async_update_state
+    with patch("time.time", return_value=102.0):
+        await poller.async_get_status()
+        poller.async_update_state.assert_called_once()
+
+    # 2. Exactamente 1.99s (mata < 2.0 mutado a False)
+    # Al ser menor, usa la caché
+    poller.async_update_state.reset_mock()
+    with patch("time.time", return_value=101.99):
+        await poller.async_get_status()
+        poller.async_update_state.assert_not_called()

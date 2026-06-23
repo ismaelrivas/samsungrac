@@ -364,7 +364,7 @@ class YamlStatePoller:
                 # Acceso seguro a la caché interna del loader
                 cache = getattr(self.controller.loader, "_parsed_yaml_cache", {})
                 id_map = (
-                    cache.get(getattr(self.controller, "device_id", ""), {})
+                    cache.get(getattr(self.controller, "device_id", "XXXX"), {})
                     .get(CONFIG_DEVICE, {})
                     .get("identifiers")
                 )
@@ -398,7 +398,7 @@ class YamlStatePoller:
                                 device_to_discover, id_map.get("id", [])
                             )
                             # Only update if current device_id is missing or "0"
-                            curr_dev_id = getattr(self.controller, "device_id", None)
+                            curr_dev_id = getattr(self.controller, "device_id", "")
                             if discovered_id is not None and (
                                 not curr_dev_id or curr_dev_id == "0"
                             ):
@@ -463,11 +463,10 @@ class YamlStatePoller:
         try:
             cache = getattr(self.controller.loader, "_parsed_yaml_cache", {})
             id_map = (
-                cache.get(getattr(self.controller, "device_id", ""), {})
+                cache.get(getattr(self.controller, "device_id", "XXXX"), {})
                 .get(CONFIG_DEVICE, {})
                 .get("identifiers")
             )
-
             if id_map:
                 devices_list = get_value_by_path(
                     full_device_state, id_map.get("path_to_devices", [])

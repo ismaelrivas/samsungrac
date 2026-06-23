@@ -8,12 +8,12 @@ import os
 def main():
     start_total_time = time.time()
     
-    # Read survived5.log
-    if not os.path.exists('survived5.log'):
-        print("Error: survived5.log not found.")
+    # Read survived_latest.log
+    if not os.path.exists('survived_latest.log'):
+        print("Error: survived_latest.log not found.")
         return
 
-    with open('survived5.log', 'r') as f:
+    with open('survived_latest.log', 'r') as f:
         lines = f.readlines()
 
     # Parse targets
@@ -46,7 +46,7 @@ def main():
 
         mutants_by_file.setdefault(file_path, []).append((mut_id, clean_target, target))
 
-    script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
+    script_dir = Path('/workspaces/ha_data/config')
 
     with open('mutantes.txt', 'w') as out:
         for file_path, mutants in mutants_by_file.items():

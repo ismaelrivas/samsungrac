@@ -1495,3 +1495,313 @@ def test_basic_numeric_bounds_strict(mock_connection, mock_controller):
     res_max = op.convert_hass_to_dev(30)
     assert res_max == 30
     assert type(res_max) is int, "Strict boundary failure on _max"
+import pytest
+from unittest.mock import MagicMock, AsyncMock
+from homeassistant.const import UnitOfTemperature, STATE_UNKNOWN, STATE_ON, STATE_OFF
+from homeassistant.components.climate.const import ATTR_HVAC_MODE
+from custom_components.climate_ip.properties import TemperatureOperation, ModeOperation, SwitchOperation, BasicDeviceOperation, BasicNumericOperation, DeviceProperty, GetJsonStatus
+
+async def test_temperature_operation_mutants():
+    conn = MagicMock(is_async_native=True, _params={}, async_execute=AsyncMock(return_value=("ok", None)))
+    conn._lock = AsyncMock()
+    conn.create_updated.return_value = conn
+    ctrl = MagicMock()
+    ctrl.device_state = "test_state"
+    ctrl.hass = MagicMock()
+    
+    op = TemperatureOperation("test_temp", conn, ctrl)
+    
+    # load_from_yaml mutants
+    yaml_node = {
+        "status_template": "{{ device_state.val }}",
+        "unit_template": "{{ device_state.unit }}",
+        "min": 10,
+        "max": 30,
+        "unit": "F"
+    }
+    assert op.load_from_yaml(yaml_node) is True
+    assert op._unit_template is not None
+    assert op._min == 10
+    
+    # set_hass_unit mutants
+    op.set_hass_unit(UnitOfTemperature.CELSIUS)
+    assert op._hass_unit == UnitOfTemperature.CELSIUS
+    
+    # calculate_value_from_state mutants
+    assert op.calculate_value_from_state(None) == STATE_UNKNOWN
+    assert op.calculate_value_from_state({"val": ""}) is None
+    assert op.calculate_value_from_state({"val": "invalid"}) is None
+    
+    assert op.calculate_value_from_state({"val": "77", "unit": "F"}) == 25.0
+    
+    # async_update_state mutants
+    await op.async_update_state({"val": "86", "unit": "F"}, False)
+    assert op.value == 30.0
+    
+    await op.async_update_state(None, False)
+    
+    await op.async_update_state({"val": "invalid"}, False)
+    
+    # convert_hass_to_dev mutants
+    op._min = 20
+    assert op.convert_hass_to_dev(10) == 68.0
+    assert op.convert_hass_to_dev(20) == 68.0
+    op._max = 40
+    assert op.convert_hass_to_dev(50) == 104.0
+    assert op.convert_hass_to_dev(40) == 104.0
+
+async def test_device_property_mutants():
+    conn = MagicMock(is_async_native=True, _params={}, async_execute=AsyncMock(return_value=("ok", None)))
+    conn._lock = AsyncMock()
+    conn.create_updated.return_value = conn
+    ctrl = MagicMock()
+    
+    op = DeviceProperty("test_prop", conn, ctrl)
+    assert op.load_from_yaml({"type": "test", "name": "Test"}) is True
+    
+    op.set_unit_of_measurement("C")
+    assert op._unit_of_measurement == UnitOfTemperature.CELSIUS
+
+async def test_basic_device_operation_mutants():
+    conn = MagicMock()
+    conn.create_updated.return_value = conn
+    ctrl = MagicMock()
+    
+    op = BasicDeviceOperation("test_bdo", conn, ctrl)
+    op._values_ha_to_dev_map = {"ha_val": {"connection": {"type": "new"}}}
+    assert op.load_from_yaml({"type": "test", "values": {"ha_val": {}}}) is True
+
+async def test_basic_numeric_operation_mutants():
+    conn = MagicMock()
+    ctrl = MagicMock()
+    op = BasicNumericOperation("test_bno", conn, ctrl)
+    assert op.load_from_yaml({"type": "test"}) is True
+
+async def test_mode_operation_mutants():
+    conn = MagicMock()
+    ctrl = MagicMock()
+    op = ModeOperation("test_mode", conn, ctrl)
+    
+    # load_from_yaml false return
+    assert op.load_from_yaml(None) is False
+    
+    # test calculate_value_from_state None_mode"
+    assert op.id == "test_mode_mode"
+    
+    op2 = ModeOperation(ATTR_HVAC_MODE, conn, ctrl)
+    assert op2.id == ATTR_HVAC_MODE
+
+async def test_switch_operation_mutants():
+    conn = MagicMock()
+    ctrl = MagicMock()
+    op = SwitchOperation("test_switch", conn, ctrl)
+    op._values_ha_to_dev_map = {STATE_OFF: "0", STATE_ON: "1"}
+    assert op.load_from_yaml({"type": "switch", "values": {STATE_ON: {}, STATE_OFF: {}}}) is True
+
+async def test_getjsonstatus_mutants():
+    conn = MagicMock()
+    ctrl = MagicMock()
+    op = GetJsonStatus("test_json", conn, ctrl)
+    assert op.load_from_yaml({"type": "json"}) is True
+    op.calculate_value_from_state(None)
+
+async def test_deviceoperation_async_set_value_mutants():
+    from custom_components.climate_ip.properties import DeviceOperation
+    conn = MagicMock(is_async_native=True)
+    conn._lock = AsyncMock()
+    conn.async_execute = AsyncMock(return_value=("ok", None))
+    ctrl = MagicMock()
+    
+    op = DeviceOperation("test_set", conn, ctrl)
+    op.convert_hass_to_dev = MagicMock(return_value="dev_val")
+    op._resolve_async_params = MagicMock(return_value={"method": "GET", "_raw": "raw"})
+    
+    # is_async_native = True
+    assert await op.async_set_value("ha_val") is True
+
+    # is_async_native = False
+    conn.is_async_native = False
+    ctrl.hass.async_add_executor_job = AsyncMock(return_value=True)
+    assert await op.async_set_value("ha_val", device_id="duid") is True
+
+# ====================================================================================
+# FRENTE 4.3: ASEDIO DE PRECISIÓN (Gases, Clase Base y Fallbacks Nulos)
+# ====================================================================================
+
+async def test_device_property_base_unit_and_gas_classes(mock_connection, mock_controller):
+    """Mata mutantes de strings fijos en YAML y set_unit_of_measurement base."""
+    from custom_components.climate_ip.properties import DeviceProperty
+    from homeassistant.components.sensor import SensorStateClass
+    
+    # 1. Mapeo de gases tóxicos (Mata mutaciones de "carbon_monoxide", "gas" y TOTAL_INCREASING)
+    op_co = DeviceProperty("test_co", mock_connection, mock_controller)
+    op_co.load_from_yaml({"device_class": "carbon_monoxide"})
+    assert op_co._state_class == SensorStateClass.TOTAL_INCREASING
+    
+    op_gas = DeviceProperty("test_gas", mock_connection, mock_controller)
+    op_gas.load_from_yaml({"device_class": "gas"})
+    assert op_gas._state_class == SensorStateClass.TOTAL_INCREASING
+
+    # 2. set_unit_of_measurement en la clase base (Mata .get(unit, None) devolviendo el default)
+    op_unit = DeviceProperty("test_unit", mock_connection, mock_controller)
+    op_unit.set_unit_of_measurement("UNIDAD_BASE_DESCONOCIDA")
+    assert op_unit._unit_of_measurement == "UNIDAD_BASE_DESCONOCIDA"
+
+async def test_device_property_connection_fallback_dict(mock_connection, mock_controller):
+    """Mata el mutante silencioso node.get(CONFIG_DEVICE_CONNECTION, None)."""
+    from custom_components.climate_ip.properties import DeviceProperty
+    from custom_components.climate_ip.const import CONFIG_DEVICE_CONNECTION
+    
+    op = DeviceProperty("test_conn", mock_connection, mock_controller)
+    
+    # Inyectamos un YAML sin la clave CONFIG_DEVICE_CONNECTION
+    op.load_from_yaml({"name": "Test"})
+    
+    # Asertamos rígidamente que la factoría recibió un diccionario vacío y no None
+    mock_connection.create_updated.assert_called_with({})
+
+import pytest
+from unittest.mock import MagicMock, AsyncMock, patch
+from homeassistant.const import UnitOfTemperature, STATE_UNKNOWN, STATE_ON, STATE_OFF
+from homeassistant.components.climate.const import ATTR_HVAC_MODE
+from homeassistant.components.sensor import SensorStateClass
+from custom_components.climate_ip.properties import TemperatureOperation, ModeOperation, SwitchOperation, BasicDeviceOperation, BasicNumericOperation, DeviceProperty, GetJsonStatus
+from jinja2 import Template
+
+async def test_device_property_remaining_mutants():
+    conn = MagicMock(is_async_native=True, _params={})
+    conn._lock = AsyncMock()
+    conn.create_updated.return_value = conn
+    ctrl = MagicMock()
+    
+    op = DeviceProperty("test_prop", conn, ctrl)
+    
+    # load_from_yaml -> None connection config
+    op.load_from_yaml({"type": "test", "name": "Test"})
+    conn.create_updated.assert_called_with({})
+    
+    # device classes
+    op.load_from_yaml({"type": "test", "device_class": "carbon_monoxide"})
+    assert op._state_class == SensorStateClass.TOTAL_INCREASING
+    
+    # set_unit_of_measurement unknown unit
+    op.set_unit_of_measurement("unknown_unit")
+    assert op._unit_of_measurement == "unknown_unit"
+    
+    # is_valid with None device_state mutant
+    op._validation_template = Template("{% if device_state %}valid{% else %}invalid{% endif %}")
+    assert op.is_valid({"val": "ok"}) is True
+    
+    # calculate_value_from_state boolean or
+    with patch("custom_components.climate_ip.properties._LOGGER.debug") as mock_debug:
+        op._status_template = None
+        assert op.calculate_value_from_state({"val": "ok"}) == STATE_UNKNOWN
+        mock_debug.assert_not_called()
+        
+    # async_update_state
+    op._status_getter = MagicMock(value={"val": "got"})
+    await op.async_update_state({"val": "override"}, False)
+    assert op._device_state == {"val": "override"}
+    
+    await op.async_update_state(None, False)
+    assert op._device_state == {"val": "got"}
+    
+    op._status_getter = None
+    await op.async_update_state(None, False)
+    assert op._device_state is None
+
+async def test_getjsonstatus_remaining_mutants():
+    conn = MagicMock(is_async_native=False)
+    conn._lock = AsyncMock()
+    conn.create_updated.return_value = conn
+    ctrl = MagicMock()
+    op = GetJsonStatus("test_json", conn, ctrl)
+    
+    # load_from_yaml boolean logic
+    op._connection_template = None
+    op.load_from_yaml({"type": "json"})
+    assert op._connection_template is None
+    
+    # calculate_value_from_state none device_state
+    op._status_template = Template('{"result": "{{ device_state.val }}"}')
+    assert op.calculate_value_from_state({"val": "ok"}) == {"result": "ok"}
+
+async def test_basicdeviceoperation_remaining_mutants():
+    conn = MagicMock()
+    conn.create_updated.return_value = conn
+    ctrl = MagicMock()
+    op = BasicDeviceOperation("test_bdo", conn, ctrl)
+    
+    # load_from_yaml empty values
+    assert op.load_from_yaml({"type": "test", "values": {}}) is False
+    
+    # with connection parameter
+    op.load_from_yaml({"type": "test", "values": {"ha_val": {"connection": {"type": "new"}}}})
+    conn.create_updated.assert_called_with({"type": "new"})
+    
+    # load_from_yaml empty values
+    assert op.load_from_yaml({"type": "test", "values": {}}) is False
+    
+    # with connection parameter
+    op.load_from_yaml({"type": "test", "values": {"ha_val": {"connection": {"type": "new"}}}})
+    conn.create_updated.assert_called_with({"type": "new"})
+
+async def test_basicnumericoperation_remaining_mutants():
+    conn = MagicMock()
+    ctrl = MagicMock()
+    op = BasicNumericOperation("test_bno", conn, ctrl)
+
+async def test_modeoperation_remaining_mutants():
+    conn = MagicMock()
+    ctrl = MagicMock()
+    status_getter = MagicMock()
+    op = ModeOperation("test_mode", conn, ctrl, status_getter=status_getter)
+    assert op._status_getter == status_getter
+
+async def test_switchoperation_remaining_mutants():
+    conn = MagicMock()
+    ctrl = MagicMock()
+    op = SwitchOperation("test_switch", conn, ctrl)
+    assert op.load_from_yaml({"type": "switch"}) is False
+
+async def test_temperatureoperation_remaining_mutants():
+    conn = MagicMock(is_async_native=True, _params={})
+    conn._lock = AsyncMock()
+    ctrl = MagicMock()
+    op = TemperatureOperation("test_temp", conn, ctrl)
+    
+    # load_from_yaml false return
+    assert op.load_from_yaml(None) is False
+    
+    # set_hass_unit measurement
+    op.set_hass_unit(UnitOfTemperature.CELSIUS)
+    assert op._unit_of_measurement == UnitOfTemperature.CELSIUS
+    
+    # calculate_value_from_state unit fallback
+    op._device_unit = UnitOfTemperature.FAHRENHEIT
+    op._unit_template = Template("{{ device_state.unit }}")
+    op.calculate_value_from_state({"unit": "unknown"})
+    assert op._device_unit == UnitOfTemperature.FAHRENHEIT
+    
+    op._unit_template = None
+    op.calculate_value_from_state({"val": "10"})
+    assert op._device_unit == UnitOfTemperature.FAHRENHEIT
+    
+    # async_update_state
+    op._status_getter = MagicMock(value={"val": "got"})
+    await op.async_update_state({"val": "override"}, False)
+    assert op.value is None
+    
+    # kill mutant 4 (async_update_state boolean or)
+    with patch("custom_components.climate_ip.properties._LOGGER.debug") as mock_debug:
+        op._unit_template = None
+        await op.async_update_state({"val": "ok"}, False)
+        mock_debug.assert_not_called()
+        
+    # kill mutant 1 (calculate_value_from_state device_unit = None)
+    op._device_unit = UnitOfTemperature.FAHRENHEIT
+    op._hass_unit = UnitOfTemperature.CELSIUS
+    op._unit_template = None
+    op._status_template = Template("{{ device_state.val }}")
+    v = op.calculate_value_from_state({"val": "77"})
+    assert v == 25.0
