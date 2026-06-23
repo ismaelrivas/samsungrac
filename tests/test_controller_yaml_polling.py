@@ -1132,3 +1132,48 @@ async def test_async_update_properties_loop_sequences_and_eviction_handling():
     # --- ASERCIONES DEL TERCER BUCLE (set_device_state_for_values) ---
     for p in all_props_list:
         p.set_device_state_for_values.assert_called_once_with(fake_device_state)
+
+# ====================================================================================
+# FRENTE S: EL FLAG DE PARPADEO DEL UI (fan_modes_list_changed_pending_flicker)
+# ====================================================================================
+
+async def test_async_update_properties_fan_flicker_flag():
+    """Mata los mutantes que alteran el flag del ventilador durante la degradación de estado."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from homeassistant.components.climate import ClimateEntityFeature
+    
+    mock_controller = MagicMock()
+    mock_controller.loader.is_fully_initialized = True
+    mock_controller.debug = False
+    poller = YamlStatePoller(mock_controller)
+    
+    # Utilizamos el patrón Stub que descubriste para evitar la auto-generación de Mocks
+    class FakeFanProp:
+        def __init__(self):
+            self.id = "fan_prop"
+            self.value = "EstadoInvalido" # Forzamos la degradación
+            self.values = ["Auto", "High"]
+            self.feature_flag = ClimateEntityFeature.FAN_MODE
+            
+        def is_valid(self, state):
+            return True
+            
+        def set_device_state_for_values(self, state):
+            pass
+            
+    fake_fan = FakeFanProp()
+    mock_controller.loader.operations = {"fan_prop": fake_fan}
+    mock_controller.loader.properties = {}
+    mock_controller.loader.sensors = {}
+    
+    # 1. Aseguramos el estado inicial en False (Mata mutantes que lo inicializan en True/None)
+    poller.fan_modes_list_changed_pending_flicker = False
+    
+    # Ejecutamos el despachador
+    await poller.async_update_properties_from_state({"raw": "data"}, force_update=True)
+    
+    # 2. Aserción de degradación: el valor inválido cayó al primer elemento permitido
+    assert fake_fan.value == "Auto"
+    
+    # 3. Aserción de Estado Secundario: El flag DEBE activarse (Mata != FAN_MODE, = False, = None)
+    assert poller.fan_modes_list_changed_pending_flicker is True
