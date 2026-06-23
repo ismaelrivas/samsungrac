@@ -78,8 +78,8 @@ class YamlStatePoller:
                 
             entries = self.controller.hass.config_entries.async_entries("smartthings")
             if not entries:
-                _LOGGER.debug(
-                    "%s [Auth] No Official SmartThings config entries found.",  # pragma: no mutate
+                _LOGGER.debug(  # pragma: no mutate
+                    "%s [Auth] No Official SmartThings config entries found.",
                     self.controller.log_prefix,
                 )
                 return None
@@ -97,15 +97,15 @@ class YamlStatePoller:
             await session.async_ensure_token_valid()
             token: str | None = session.token.get("access_token")
             masked = f"***{token[-6:]}" if token and len(token) > 6 else "None"
-            _LOGGER.debug(
-                "%s [Auth] OAuth2 session token validated. Token: %s",  # pragma: no mutate
+            _LOGGER.debug(  # pragma: no mutate
+                "%s [Auth] OAuth2 session token validated. Token: %s",
                 self.controller.log_prefix,
                 masked,
             )
             return token
         except Exception as e:  # pylint: disable=broad-exception-caught
-            _LOGGER.error(
-                "%s [Auth] Error refreshing SmartThings token via OAuth2: %s",  # pragma: no mutate
+            _LOGGER.error(  # pragma: no mutate
+                "%s [Auth] Error refreshing SmartThings token via OAuth2: %s",
                 self.controller.log_prefix,
                 e,
             )
@@ -138,14 +138,14 @@ class YamlStatePoller:
                 },  # pragma: no mutate
             )
         except Exception as e:  # pylint: disable=broad-exception-caught
-            _LOGGER.debug(
-                "%s Failed to create repair issue: %s", self.controller.log_prefix, e  # pragma: no mutate
+            _LOGGER.debug(  # pragma: no mutate
+                "%s Failed to create repair issue: %s", self.controller.log_prefix, e
             )
 
     def _update_all_connections_token(self, new_token: str) -> None:
         """Propagate the new token to all active connection engines."""
-        _LOGGER.debug(
-            "%s [Auth] Propagating new token to all connections.",  # pragma: no mutate
+        _LOGGER.debug(  # pragma: no mutate
+            "%s [Auth] Propagating new token to all connections.",
             self.controller.log_prefix,
         )
         updated_connections: set = set()
@@ -158,8 +158,8 @@ class YamlStatePoller:
                 if hasattr(conn, "update_auth_token"):
                     conn.update_auth_token(new_token)
                     updated_connections.add(conn)
-        _LOGGER.debug(
-            "%s [Auth] Updated token for %d unique connection objects.",  # pragma: no mutate
+        _LOGGER.debug(  # pragma: no mutate
+            "%s [Auth] Updated token for %d unique connection objects.",
             self.controller.log_prefix,
             len(updated_connections),
         )
@@ -186,14 +186,14 @@ class YamlStatePoller:
         """Fetch status using a short cache to prevent double-polling storms."""
         now_ts = time.time()
         if self._cached_device_state and (now_ts - self._last_state_fetch_time < 2.0):
-            _LOGGER.debug(
-                "%s [Cache] Returning cached device state (TTL < 2s) to prevent double polling.",  # pragma: no mutate
+            _LOGGER.debug(  # pragma: no mutate
+                "%s [Cache] Returning cached device state (TTL < 2s) to prevent double polling.",
                 self.controller.log_prefix,
             )
             return self._cached_device_state.copy()
 
-        _LOGGER.debug(
-            "%s Polling device for state. Connection ID: %s",  # pragma: no mutate
+        _LOGGER.debug(  # pragma: no mutate
+            "%s Polling device for state. Connection ID: %s",
             self.controller.log_prefix,
             id(self.controller.loader.connection),
         )
@@ -226,8 +226,8 @@ class YamlStatePoller:
             except Exception as diag_err:  # pylint: disable=broad-exception-caught
                 if isinstance(diag_err, CannotConnect):
                     raise
-                _LOGGER.debug(
-                    "%s Network diagnostic failed: %s",  # pragma: no mutate
+                _LOGGER.debug(  # pragma: no mutate
+                    "%s Network diagnostic failed: %s",
                     self.controller.log_prefix,
                     diag_err,
                 )
@@ -240,8 +240,8 @@ class YamlStatePoller:
             )
 
             if self._consecutive_connection_errors > 0:
-                _LOGGER.info(
-                    "%s Connection recovered after %d failure(s). Counter reset.",  # pragma: no mutate
+                _LOGGER.info(  # pragma: no mutate
+                    "%s Connection recovered after %d failure(s). Counter reset.",
                     self.controller.log_prefix,
                     self._consecutive_connection_errors,
                 )
@@ -253,27 +253,27 @@ class YamlStatePoller:
                             "climate_ip",
                             f"connection_failed_{self.controller.ip_address}",
                         )
-                        _LOGGER.debug(
-                            "%s Successfully resolved/deleted repair issue.",  # pragma: no mutate
+                        _LOGGER.debug(  # pragma: no mutate
+                            "%s Successfully resolved/deleted repair issue.",
                             self.controller.log_prefix,
                         )
                     except Exception as e:  # pylint: disable=broad-exception-caught
-                        _LOGGER.debug(
-                            "%s Failed to delete repair issue: %s",  # pragma: no mutate
+                        _LOGGER.debug(  # pragma: no mutate
+                            "%s Failed to delete repair issue: %s",
                             self.controller.log_prefix,
                             e,
                         )
 
         except AuthError as exc:
-            _LOGGER.info(
-                "%s [Auth] Authentication failed (401). Refreshing token via OAuth2Session...",  # pragma: no mutate
+            _LOGGER.info(  # pragma: no mutate
+                "%s [Auth] Authentication failed (401). Refreshing token via OAuth2Session...",
                 self.controller.log_prefix,
             )
             new_token = await self._refresh_smartthings_token()
 
             if new_token and new_token != getattr(self.controller, "token", None):
-                _LOGGER.info(
-                    "%s [Auth] Automatically retrieved new Access Token from SmartThings integration.",  # pragma: no mutate
+                _LOGGER.info(  # pragma: no mutate
+                    "%s [Auth] Automatically retrieved new Access Token from SmartThings integration.",
                     self.controller.log_prefix,
                 )
                 if hasattr(self.controller, "token"):
@@ -297,8 +297,8 @@ class YamlStatePoller:
                         f"Retry after token refresh failed: {retry_exc}"  # pragma: no mutate
                     ) from retry_exc
             else:
-                _LOGGER.info(
-                    "%s [Auth] Token refresh failed. SmartThings integration may not be installed.",  # pragma: no mutate
+                _LOGGER.info(  # pragma: no mutate
+                    "%s [Auth] Token refresh failed. SmartThings integration may not be installed.",
                     self.controller.log_prefix,
                 )
                 # pylint: disable=import-outside-toplevel,bad-exception-cause
@@ -308,8 +308,8 @@ class YamlStatePoller:
                 ) from exc
 
         except InvalidHeaderError:
-            _LOGGER.debug(
-                "%s Malformed HTTP header detected, bubbling up to coordinator.",  # pragma: no mutate
+            _LOGGER.debug(  # pragma: no mutate
+                "%s Malformed HTTP header detected, bubbling up to coordinator.",
                 self.controller.log_prefix,
             )
             raise
@@ -321,8 +321,8 @@ class YamlStatePoller:
                 self._consecutive_connection_errors += 1
 
             if self._consecutive_connection_errors <= 2 and self._cached_device_state is not None:
-                _LOGGER.debug(
-                    "%s Connection failed (%d/3). Using cached state to prevent unavailability. Error: %s",  # pragma: no mutate
+                _LOGGER.debug(  # pragma: no mutate
+                    "%s Connection failed (%d/3). Using cached state to prevent unavailability. Error: %s",
                     self.controller.log_prefix,
                     self._consecutive_connection_errors,
                     e,
@@ -335,8 +335,8 @@ class YamlStatePoller:
             reason = (
                 str(e).rsplit(":", maxsplit=1)[-1].strip() if ":" in str(e) else str(e)
             )
-            _LOGGER.debug(
-                "%s Device unreachable (attempt %d). Marking as unavailable. Reason: %s",  # pragma: no mutate
+            _LOGGER.debug(  # pragma: no mutate
+                "%s Device unreachable (attempt %d). Marking as unavailable. Reason: %s",
                 self.controller.log_prefix,
                 self._consecutive_connection_errors,
                 reason,
@@ -345,8 +345,8 @@ class YamlStatePoller:
 
         if full_device_state is None:
             if self._cached_device_state:
-                _LOGGER.debug(
-                    "%s Failed to get latest state (API Error), using cached state.",  # pragma: no mutate
+                _LOGGER.debug(  # pragma: no mutate
+                    "%s Failed to get latest state (API Error), using cached state.",
                     self.controller.log_prefix,
                 )
                 return self._cached_device_state
@@ -370,8 +370,8 @@ class YamlStatePoller:
                 )
 
                 if id_map:
-                    _LOGGER.debug(
-                        "%s 'identifiers' map found, running discovery",  # pragma: no mutate
+                    _LOGGER.debug(  # pragma: no mutate
+                        "%s 'identifiers' map found, running discovery",
                         self.controller.log_prefix,
                     )
                     self.controller.discovered_devices = get_value_by_path(
@@ -405,8 +405,8 @@ class YamlStatePoller:
                                 if hasattr(self.controller, "device_id"):
                                     self.controller.device_id = str(discovered_id)
 
-                            _LOGGER.info(
-                                "%s Discovered/Confirmed device with id=%s",  # pragma: no mutate
+                            _LOGGER.info(  # pragma: no mutate
+                                "%s Discovered/Confirmed device with id=%s",
                                 self.controller.log_prefix,
                                 getattr(self.controller, "device_id", "unknown"),
                             )
@@ -414,8 +414,8 @@ class YamlStatePoller:
                 await self.controller.loader.async_finish_initialization()
 
             except Exception as e:  # pylint: disable=broad-exception-caught
-                _LOGGER.error(
-                    "%s Error during initial device discovery: %s",  # pragma: no mutate
+                _LOGGER.error(  # pragma: no mutate
+                    "%s Error during initial device discovery: %s",
                     self.controller.log_prefix,
                     e,
                     exc_info=True,
@@ -446,8 +446,8 @@ class YamlStatePoller:
 
         if full_device_state is None:
             if not current_hass_state:
-                _LOGGER.error(
-                    "%s [UpdateProps] Cannot rebuild state from HASS: coordinator data is null.",  # pragma: no mutate
+                _LOGGER.error(  # pragma: no mutate
+                    "%s [UpdateProps] Cannot rebuild state from HASS: coordinator data is null.",
                     self.controller.log_prefix,
                 )
                 return {}
@@ -488,8 +488,8 @@ class YamlStatePoller:
                     if found_device:
                         device_to_process = found_device
         except Exception as e:  # pylint: disable=broad-exception-caught
-            _LOGGER.error(
-                "%s Error during sub-device selection: %s",  # pragma: no mutate
+            _LOGGER.error(  # pragma: no mutate
+                "%s Error during sub-device selection: %s",
                 self.controller.log_prefix,
                 e,
                 exc_info=True,
@@ -538,8 +538,8 @@ class YamlStatePoller:
                 if hasattr(prop, "async_update_state"):
                     await prop.async_update_state(device_to_process, getattr(self.controller, "debug", False))
             except Exception as e:  # pylint: disable=broad-exception-caught
-                _LOGGER.error(
-                    "%s FAILED to update property '%s'. Error: %s",  # pragma: no mutate
+                _LOGGER.error(  # pragma: no mutate
+                    "%s FAILED to update property '%s'. Error: %s",
                     self.controller.log_prefix,
                     getattr(prop, "name", "unknown"),
                     e,
@@ -822,8 +822,8 @@ class YamlStatePoller:
                 preset_mode=prop_values.get("preset_mode"),
             )
         except Exception as e:  # pylint: disable=broad-exception-caught
-            _LOGGER.error(
-                "%s [AtomicMerge] Dry-run calculation failed: %s",  # pragma: no mutate
+            _LOGGER.error(  # pragma: no mutate
+                "%s [AtomicMerge] Dry-run calculation failed: %s",
                 self.controller.log_prefix,
                 e,
             )
@@ -859,15 +859,15 @@ class YamlStatePoller:
         structured_candidate = self._calculate_structured_state(candidate_state)
 
         if structured_candidate is None:
-            _LOGGER.warning(
-                "%s [AtomicMerge] Push update discarded: dry-run validation failed for payload: %s",  # pragma: no mutate
+            _LOGGER.warning(  # pragma: no mutate
+                "%s [AtomicMerge] Push update discarded: dry-run validation failed for payload: %s",
                 self.controller.log_prefix,
                 new_data,
             )
             return False
 
-        _LOGGER.debug(
-            "%s [AtomicMerge] Committing push update to global state.",  # pragma: no mutate
+        _LOGGER.debug(  # pragma: no mutate
+            "%s [AtomicMerge] Committing push update to global state.",
             self.controller.log_prefix,
         )
 
@@ -920,8 +920,8 @@ class YamlStatePoller:
                 invalidated.add(prop_id)
 
         for prop_id in invalidated:
-            _LOGGER.debug(
-                "%s [AtomicMerge] Evicting stale pending update for '%s' (push superseded it).",  # pragma: no mutate
+            _LOGGER.debug(  # pragma: no mutate
+                "%s [AtomicMerge] Evicting stale pending update for '%s' (push superseded it).",
                 self.controller.log_prefix,
                 prop_id,
             )
@@ -1003,15 +1003,15 @@ class YamlStatePoller:
 
         prop_to_change = self.controller.loader.operations.get(property_name)
         if not prop_to_change:
-            _LOGGER.debug(
-                "%s [Predict] prop_to_change for '%s' is None. Returning early.",  # pragma: no mutate
+            _LOGGER.debug(  # pragma: no mutate
+                "%s [Predict] prop_to_change for '%s' is None. Returning early.",
                 self.controller.log_prefix,
                 property_name,
             )
             return ClimateEntityFeature(0), {}
 
-        _LOGGER.debug(
-            "%s [Predict] prop_to_change found: %s. Setting its _value to: %s",  # pragma: no mutate
+        _LOGGER.debug(  # pragma: no mutate
+            "%s [Predict] prop_to_change found: %s. Setting its _value to: %s",
             self.controller.log_prefix,
             getattr(prop_to_change, "id", "unknown"),
             new_value,
@@ -1024,14 +1024,14 @@ class YamlStatePoller:
 
         future_state = await self._build_device_state_from_props()
         if not future_state:
-            _LOGGER.debug(
-                "%s [Predict] future_state is empty. Returning early.",  # pragma: no mutate
+            _LOGGER.debug(  # pragma: no mutate
+                "%s [Predict] future_state is empty. Returning early.",
                 self.controller.log_prefix,
             )
             return ClimateEntityFeature(0), {}
 
-        _LOGGER.debug(
-            "%s [Predict] Initial future_state built from props: %s",  # pragma: no mutate
+        _LOGGER.debug(  # pragma: no mutate
+            "%s [Predict] Initial future_state built from props: %s",
             self.controller.log_prefix,
             future_state,
         )
@@ -1047,7 +1047,7 @@ class YamlStatePoller:
         """Shut down the poller and cleanly close any active connections."""
         conn = getattr(self.controller.loader, "connection", None)
         if conn:
-            _LOGGER.debug("%s Shutting down connection...", self.controller.log_prefix)  # pragma: no mutate
+            _LOGGER.debug("%s Shutting down connection...", self.controller.log_prefix)
 
             async def _try(coro):  # pylint: disable=invalid-name
                 try:
