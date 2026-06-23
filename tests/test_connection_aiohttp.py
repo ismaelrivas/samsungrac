@@ -182,3 +182,46 @@ def test_dummy_mutmut():
     from custom_components.climate_ip.connection_aiohttp import dummy_mutmut_test
     assert dummy_mutmut_test() == 42
 
+
+# ====================================================================================
+# FRENTE A: CICLO DE VIDA Y ESTADO COMPARTIDO (__init__, close, get_diagnostics)
+# ====================================================================================
+
+@pytest.mark.asyncio
+async def test_aiohttp_lifecycle_and_shared_state():
+    """Valida los estados por defecto, el diagnóstico y el cierre atómico de sesiones."""
+    from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
+    
+    mock_session = MagicMock()
+    mock_hass = MagicMock()
+    config = {"keep_alive": False, "token": "test_token"}
+    
+    conn = ConnectionAiohttp8888(config, logging.getLogger(), mock_hass, mock_session, "192.168.1.100")
+    
+    # 1. Aserciones de Inicialización (Mata mutantes que alteran None, False o diccionarios)
+    assert conn._force_close_connection is False
+    assert conn._connection_template is None
+    assert conn._ssl_context is None
+    assert conn._embedded_command is None
+    assert "local_session" in conn._shared_state
+    assert conn._shared_state["local_session"] is None
+    
+    # 2. Diagnóstico Estricto (Mata mutantes de .get("initialized", False))
+    diag = conn.get_diagnostics()
+    assert diag["is_connected"] is False
+    assert diag["force_close_connection"] is False
+    assert diag["keep_alive_enabled"] is False
+    
+    # 3. Cierre y purga (Mata mutantes que alteran "initialized" = False en el reset)
+    conn._shared_state["initialized"] = True
+    conn._shared_state["ssl_context"] = "FAKE_SSL"
+    conn._shared_state["local_session"] = AsyncMock() # Simulamos una sesión local
+    conn._shared_state["local_session"].closed = False
+    
+    await conn.close()
+    
+    assert conn._shared_state["initialized"] is False
+    assert conn._shared_state["ssl_context"] is None
+    assert conn._shared_state["local_session"] is None
+
+
