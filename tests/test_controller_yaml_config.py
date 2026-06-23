@@ -98,5 +98,99 @@ async def test_yaml_config_cache_hit_and_miss():
     with patch("custom_components.climate_ip.controller_yaml_config.create_property"):
         await loader.async_finish_initialization()
         
-    # No debería haber explotado y el estado debe mantenerse consistente usando la caché
     assert len(loader.operations) == ops_count
+
+# ====================================================================================
+# FRENTE D: ASERCIÓN ESTRICTA DE ARGUMENTOS DE CONEXIÓN
+# ====================================================================================
+
+async def test_async_initialize_connection_instantiation_args():
+    """Valida que los motores de red se instancien con los argumentos exactos requeridos."""
+    from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader, _YAML_FILE_CACHE
+    from unittest.mock import MagicMock, AsyncMock, patch
+
+    mock_controller = MagicMock()
+    mock_controller.log_prefix = "[Test]"
+    
+    mock_hass = MagicMock()
+    mock_hass.async_add_executor_job = AsyncMock()
+    mock_controller.hass = mock_hass
+    
+    mock_controller._session = "SESSION_INSTANCE"
+    mock_controller.ip_address = "192.168.1.100"
+    mock_controller._yaml = "/test.yaml"
+    # Forzamos la rama `else` del tipo de conexión (generic/REST)
+    mock_controller._config = {"device_type": "UNKNOWN_GENERIC"} 
+
+    loader = YamlConfigLoader(mock_controller)
+    yaml_data = {
+        "device": {"connection": {"type": "test_conn_type"}}
+    }
+    loader._parsed_yaml_config = yaml_data
+    _YAML_FILE_CACHE["/test.yaml"] = yaml_data
+
+    # Creamos un interceptor estricto que no sea un MagicMock permisivo
+    class InterceptorConnection:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+        
+        @staticmethod
+        def match_type(conn_type):
+            return conn_type == "test_conn_type"
+            
+        def load_from_yaml(self, node, state_getter):
+            return True
+
+    # Inyectamos nuestra clase de conexión para auditar los argumentos
+    with patch("custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS", [InterceptorConnection]):
+        await loader.async_initialize()
+
+        # Autopsia de la instanciación (Mata mutantes que omiten hass, config, o cambian argumentos)
+        assert loader.connection is not None
+        assert loader.connection.args[0] == mock_controller._config
+        assert loader.connection.kwargs.get("hass") == mock_hass
+
+# ====================================================================================
+# FRENTE E: CORTAFUEGOS DE UNIDADES TERMODINÁMICAS (Fallbacks de Temperatura)
+# ====================================================================================
+
+async def test_async_finish_initialization_temperature_fallbacks():
+    """Fuerza la ausencia de dependencias HASS para asertar el uso de unidades por defecto."""
+    from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
+    from custom_components.climate_ip.const import DEFAULT_CONF_TEMP_UNIT
+    from unittest.mock import MagicMock, patch
+
+    mock_controller = MagicMock()
+    mock_controller.device_id = "temp_device_test"
+    # 1. Eliminamos el objeto hass por completo
+    if hasattr(mock_controller, "hass"):
+        delattr(mock_controller, "hass")
+    
+    mock_controller._config = {}
+
+    loader = YamlConfigLoader(mock_controller)
+    loader.is_fully_initialized = False
+
+    # Inyectamos un YAML simulado
+    loader._parsed_yaml_config = {
+        "device": {
+            "operations": {
+                "target_temp": {"type": "temperature"}
+            }
+        }
+    }
+
+    # Creamos un mock de la propiedad que registre las llamadas de unidades
+    mock_prop = MagicMock()
+    mock_prop.id = "temperature"
+    mock_prop.device_class = "temperature" # Forzamos el chequeo is_temp
+
+    with patch("custom_components.climate_ip.controller_yaml_config.create_property", return_value=mock_prop):
+        await loader.async_finish_initialization()
+
+        # Al no haber HASS ni config_entries, el código DEBE usar DEFAULT_CONF_TEMP_UNIT
+        # Esto destruye a los mutantes que alteran la asignación inicial de `configured_unit`
+        # y `native_target_unit`
+        mock_prop.set_hass_unit.assert_called_once_with(DEFAULT_CONF_TEMP_UNIT)
+        mock_prop.set_device_unit.assert_called_with(DEFAULT_CONF_TEMP_UNIT)
