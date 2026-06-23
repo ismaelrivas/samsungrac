@@ -906,3 +906,145 @@ def test_rebuild_attributes_exact_strings(mock_now):
     assert saved_attrs["custom_attr"] == "value"
     assert saved_attrs["last_sync"] == "2026-06-07 15:30:00"
 
+
+# ====================================================================================
+# FRENTE N: INTEGRACIÓN DE HASS Y COORDINATOR (get_current_state_callback)
+# ====================================================================================
+
+async def test_async_update_state_coordinator_callback():
+    """Aserta el paso del estado del HASS al despachador de propiedades."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock, AsyncMock, patch
+    
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    mock_controller.loader.state_getter.async_update_state = AsyncMock(return_value={"raw": "data"})
+    
+    # 1. Rama SIN callback (Mata mutantes que alteran if hasattr(..., 'get_current_state_callback'))
+    if hasattr(mock_controller, "get_current_state_callback"):
+        delattr(mock_controller, "get_current_state_callback")
+    
+    with patch.object(poller, "async_update_properties_from_state") as mock_dispatch:
+        await poller.async_update_state()
+        mock_dispatch.assert_called_once_with({"raw": "data"}, current_hass_state=None)
+        
+    # 2. Rama CON callback (Mata mutaciones de asignación current_state = None)
+    mock_controller.get_current_state_callback = MagicMock(return_value="HASS_STATE_OBJECT")
+    
+    with patch.object(poller, "async_update_properties_from_state") as mock_dispatch:
+        await poller.async_update_state()
+        mock_dispatch.assert_called_once_with({"raw": "data"}, current_hass_state="HASS_STATE_OBJECT")
+
+# ====================================================================================
+# FRENTE O: PARSEO DE OFFLINE PERSISTENTE Y CONTADORES
+# ====================================================================================
+
+async def test_async_update_state_persistently_offline():
+    """Verifica que el error 'persistently offline' asigna exactamente 2 al contador."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from custom_components.climate_ip.exceptions import CannotConnect
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+    import pytest
+    from unittest.mock import MagicMock
+    
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    mock_controller.config.get.return_value = "REST_API"
+    
+    # 1. Fallo "persistently offline" (Mata mutantes en `if "persistently offline" in str(e)`)
+    mock_controller.loader.state_getter.async_update_state.side_effect = CannotConnect(
+        "Host unreachable (ICMP ping failed). Device is persistently offline."
+    )
+    
+    with pytest.raises(UpdateFailed):
+        await poller.async_update_state()
+        
+    assert poller._consecutive_connection_errors == 2
+    
+    # 2. Fallo de red genérico (Debe sumar 1, en lugar de igualar a 2)
+    poller._consecutive_connection_errors = 0
+    mock_controller.loader.state_getter.async_update_state.side_effect = CannotConnect("Timeout")
+    
+    with pytest.raises(UpdateFailed):
+        await poller.async_update_state()
+        
+    assert poller._consecutive_connection_errors == 1
+
+# ====================================================================================
+# FRENTE P: CACHÉ DE CLAVES DE PLANTILLA (prop_template_key_cache)
+# ====================================================================================
+
+def test_get_cached_device_key_from_prop_and_register():
+    """Evalúa la caché de plantillas y el registro de pending_updates."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock
+    import time
+    
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    
+    # --- test register_pending_update (Mata la mutación self._pending_updates[...] = None) ---
+    poller.register_pending_update("hvac", "Cool")
+    assert "hvac" in poller._pending_updates
+    val, ts = poller._pending_updates["hvac"]
+    assert val == "Cool"
+    assert isinstance(ts, float)
+
+    # --- test _get_cached_device_key_from_prop ---
+    # 1. Propiedad sin ID (Mata prop_id = getattr(prop, "id", None) -> None)
+    assert poller._get_cached_device_key_from_prop(MagicMock(spec=[])) is None
+    
+    prop = MagicMock()
+    prop.id = "target_prop"
+    prop.status_template = None
+    
+    # 2. Propiedad sin template
+    assert poller._get_cached_device_key_from_prop(prop) is None
+    
+    # 3. Primer acceso (Cache Miss)
+    prop.id = "target_prop_2"
+    prop.status_template = MagicMock()
+    prop.status_template.template = "{{ device_state.power }}"
+    assert poller._get_cached_device_key_from_prop(prop) == "power"
+    assert poller._prop_template_key_cache["target_prop_2"] == "power"
+    
+    # 4. Segundo acceso (Cache Hit) (Mata iteradores que ignoran la caché)
+    prop.status_template.template = "{{ device_state.mode }}" # Mutamos el origen
+    # Al estar cacheado, debe seguir devolviendo "power" y NO "mode"
+    assert poller._get_cached_device_key_from_prop(prop) == "power"
+
+# ====================================================================================
+# FRENTE Q: CADENAS DE FALLBACK .GET() (async_update_properties_from_state)
+# ====================================================================================
+
+async def test_async_update_properties_cache_get_chains():
+    """Mata mutantes que eliminan el fallback {} de los encadenamientos .get()."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock
+    import pytest
+    
+    mock_controller = MagicMock()
+    mock_controller.loader.is_fully_initialized = True
+    mock_controller.device_id = "test_device"
+    poller = YamlStatePoller(mock_controller)
+    
+    # Si mutmut cambia .get(CONFIG_DEVICE, {}) a .get(CONFIG_DEVICE, None),
+    # el siguiente .get("identifiers") lanzará AttributeError matando al mutante.
+    
+    # Escenario 1: device_id existe en caché, pero sin CONFIG_DEVICE
+    mock_controller.loader._parsed_yaml_cache = {"test_device": {}} 
+    
+    try:
+        res = await poller.async_update_properties_from_state({"raw": "data"})
+        assert isinstance(res, dict)
+    except AttributeError:
+        pytest.fail("Fallback roto: el encadenamiento .get() falló.")
+        
+    # Escenario 2: device_id ni siquiera existe en caché
+    mock_controller.loader._parsed_yaml_cache = {} 
+    
+    try:
+        res2 = await poller.async_update_properties_from_state({"raw": "data"})
+        assert isinstance(res2, dict)
+    except AttributeError:
+        pytest.fail("Fallback roto: el encadenamiento .get() falló en la raíz.")
