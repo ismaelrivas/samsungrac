@@ -307,3 +307,130 @@ async def test_async_finish_initialization_apply_unit_polymorphism():
     prop_other.set_hass_unit.assert_not_called()
     prop_duck.set_hass_unit.assert_called_once()
     prop_isinstance.set_hass_unit.assert_called_once()
+
+# ====================================================================================
+# FRENTE I: LA TRAMPA DE LA IDENTIDAD ASIMÉTRICA (op_key vs op.id)
+# ====================================================================================
+
+async def test_async_finish_initialization_asymmetric_id_fallback():
+    """Valida que si op.id existe, NO se use op_key. Mata mutantes de getattr('id')."""
+    from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
+    from unittest.mock import MagicMock, patch
+
+    mock_controller = MagicMock()
+    loader = YamlConfigLoader(mock_controller)
+    loader.is_fully_initialized = False
+    
+    # Inyectamos diccionarios con llaves YAML que son DIFERENTES al ID real de la propiedad
+    loader._parsed_yaml_config = {
+        "device": {
+            "operations": {"yaml_op_key": {"type": "A"}},
+            "switches": {"yaml_switch_key": {"type": "B"}},
+            "attributes": {"yaml_attr_key": {"type": "C"}},
+            "sensors": {"yaml_sensor_key": {"type": "D"}} # Sensors usa la variable 'name'
+        }
+    }
+    loader._parsed_yaml_cache = {"": loader._parsed_yaml_config}
+
+    def fake_create(key, node, conn, ctrl, getter):
+        prop = MagicMock()
+        # El ID interno es diferente a la clave del YAML
+        prop.id = f"real_id_for_{key}" 
+        return prop
+
+    with patch("custom_components.climate_ip.controller_yaml_config.create_property", side_effect=fake_create):
+        await loader.async_finish_initialization()
+
+        # Si mutmut cambia getattr(op, "id", op_key) por getattr(op, "XXidXX", op_key), 
+        # las listas registrarán "yaml_op_key" en lugar de "real_id_for_yaml_op_key", y el test explotará.
+        assert "real_id_for_yaml_op_key" in loader.operations
+        assert "yaml_op_key" not in loader.operations
+        
+        assert "real_id_for_yaml_switch_key" in loader.operations
+        assert "real_id_for_yaml_attr_key" in loader.properties
+
+# ====================================================================================
+# FRENTE J: INYECCIÓN PROFUNDA DE CONFIG ENTRIES (Opciones HASS)
+# ====================================================================================
+
+async def test_async_finish_initialization_config_entry_options():
+    """Fuerza la evaluación de unidades y motores de red mediante entry.options."""
+    from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
+    from custom_components.climate_ip.const import CONF_CONN_METHOD, CONF_TEMP_NATIVE_CURRENT, CONF_TEMP_NATIVE_TARGET
+    from unittest.mock import MagicMock, patch
+
+    mock_controller = MagicMock()
+    # Inyectamos el entry_id
+    mock_controller._config = {"entry_id": "test_entry_777", "device_type": "samsung_8888"}
+    
+    # Preparamos el Mock de Home Assistant para devolver un ConfigEntry
+    mock_entry = MagicMock()
+    mock_entry.options = {
+        CONF_CONN_METHOD: "raw",
+        CONF_TEMP_NATIVE_CURRENT: "Kelvin",
+        CONF_TEMP_NATIVE_TARGET: "Fahrenheit"
+    }
+    mock_controller.hass.config_entries.async_get_entry.return_value = mock_entry
+
+    loader = YamlConfigLoader(mock_controller)
+    loader.is_fully_initialized = False
+    loader._parsed_yaml_config = {
+        "device": {
+            "operations": {"temp_op": {"type": "temperature"}}, # Gatilla TemperatureOperation
+            "connection": {}
+        }
+    }
+    loader._parsed_yaml_cache = {"": loader._parsed_yaml_config}
+
+    mock_temp_prop = MagicMock()
+    mock_temp_prop.device_class = "temperature"
+    mock_temp_prop.id = "temperature"
+
+    with patch("custom_components.climate_ip.controller_yaml_config.create_property", return_value=mock_temp_prop):
+        await loader.async_finish_initialization()
+        
+        # 1. Validación de Unidades (Mata mutantes de entry.options.get(CONF_TEMP...))
+        mock_temp_prop.set_device_unit.assert_called_with("Fahrenheit")
+        
+    # Validamos la parte de conexión ejecutando async_initialize
+    class DummySamsungConn:
+        def __init__(self, *args, **kwargs):
+            pass
+        @staticmethod
+        def match_type(conn_type):
+            return conn_type == "samsung_8888_raw"
+        def load_from_yaml(self, node, state_getter):
+            return True
+
+    with patch("custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS", [DummySamsungConn]):
+        # Prevent load_yaml check failing by using absolute path or mocking cache
+        mock_controller._yaml = "/test_j.yaml"
+        from custom_components.climate_ip.controller_yaml_config import _YAML_FILE_CACHE
+        _YAML_FILE_CACHE["/test_j.yaml"] = loader._parsed_yaml_config
+        
+        await loader.async_initialize()
+        # Debe haber extraído "raw" de las opciones del ConfigEntry y creado la conexión
+        assert isinstance(loader.connection, DummySamsungConn)
+
+# ====================================================================================
+# FRENTE K: CORTOCIRCUITOS Y EARLY EXITS
+# ====================================================================================
+
+async def test_async_finish_initialization_early_exits():
+    """Aserción dura de los condicionales de salida prematura (Mata el mutante de 'or/and')."""
+    from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
+    from unittest.mock import MagicMock
+
+    loader = YamlConfigLoader(MagicMock())
+    
+    # 1. Ya inicializado (debe abortar sin tocar nada)
+    loader.is_fully_initialized = True
+    loader._parsed_yaml_config = {"device": {"operations": {"a": "b"}}}
+    await loader.async_finish_initialization()
+    assert len(loader.operations) == 0 # Abortó
+    
+    # 2. Sin YAML parseado (debe abortar)
+    loader.is_fully_initialized = False
+    loader._parsed_yaml_config = None
+    await loader.async_finish_initialization()
+    assert len(loader.operations) == 0 # Abortó
