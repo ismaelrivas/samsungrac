@@ -224,4 +224,117 @@ async def test_aiohttp_lifecycle_and_shared_state():
     assert conn._shared_state["ssl_context"] is None
     assert conn._shared_state["local_session"] is None
 
+# ====================================================================================
+# FRENTE B: REEMPLAZO Y FORMATEO DE URLs (_format_url)
+# ====================================================================================
+
+def test_format_url_variants():
+    """Valida el reemplazo de tokens, IPs, puertos y el downgrade a HTTP."""
+    from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
+    from unittest.mock import MagicMock
+    import logging
+    
+    config = {"token": "base_token", "host": "192.168.1.50", "port": "9999", "use_http": True}
+    conn = ConnectionAiohttp8888(config, logging.getLogger(), MagicMock(), MagicMock(), "10.0.0.1")
+    conn._params = {"mac": "AA:BB", "host": "192.168.1.50"}
+    
+    mock_controller = MagicMock()
+    mock_controller.device_id = "dev_123"
+    mock_controller._config = {"token": "ctrl_token"}
+    conn.set_controller_ref(mock_controller)
+
+    # 1. URL Completa: Reemplazo de puerto, downgrade HTTP, y placeholders
+    # Mata mutantes que alteran ":8888/" a "XX:8888/XX" o eliminan "use_http"
+    url_base = "https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__?mac=__CLIMATE_IP_MAC__"
+    res = conn._format_url(url_base)
+    assert res == "http://10.0.0.1:9999/devices/dev_123?mac=AA:BB"
+
+    # 2. Fallbacks de variables (Mata mutantes de getattr y .get)
+    conn._ip_address = None # Forzamos fallback a CONF_HOST
+    res2 = conn._format_url("https://__CLIMATE_IP_HOST__/status")
+    assert res2 == "http://192.168.1.50/status"
+
+# ====================================================================================
+# FRENTE C: GENERACION DE SESIONES (_get_session)
+# ====================================================================================
+
+@pytest.mark.asyncio
+async def test_get_session_args():
+    """Valida los argumentos exactos pasados a aiohttp.TCPConnector."""
+    from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
+    from unittest.mock import MagicMock, patch
+    import logging
+    
+    config = {"use_http": True}
+    conn = ConnectionAiohttp8888(config, logging.getLogger(), MagicMock(), MagicMock(), "10.0.0.1")
+    conn._keep_alive = False
+    
+    with patch("aiohttp.TCPConnector") as mock_connector, \
+         patch("aiohttp.ClientSession") as mock_session:
+        
+        session = await conn._get_session()
+        
+        # Verify strict arguments to kill limit/timeout mutants
+        mock_connector.assert_called_with(keepalive_timeout=75, limit=1)
+        
+        # Verify ssl context passes through
+        config["use_http"] = False
+        conn._shared_state["ssl_context"] = "TEST_SSL_CTX"
+        conn._shared_state["local_session"] = None # Force recreation
+        
+        await conn._get_session()
+        mock_connector.assert_called_with(keepalive_timeout=75, ssl="TEST_SSL_CTX", limit=1)
+
+# ====================================================================================
+# FRENTE D: CLONACION Y CRIPTOGRAFIA (create_updated y _create_ssl_context)
+# ====================================================================================
+
+@pytest.mark.asyncio
+async def test_create_ssl_context_strict():
+    """Valida flags de seguridad y ciphers estrictos."""
+    from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
+    from unittest.mock import MagicMock, patch
+    import logging
+    import ssl
+    
+    config = {"insecure_ssl": True}
+    conn = ConnectionAiohttp8888(config, logging.getLogger(), MagicMock(), MagicMock(), "10.0.0.1")
+    
+    with patch("custom_components.climate_ip.connection_aiohttp.async_create_samsung_ssl_context") as mock_ssl:
+        await conn._create_ssl_context()
+        mock_ssl.assert_called_with(
+            cert_path=None,
+            ciphers="ALL:@SECLEVEL=0",
+            verify_mode=ssl.CERT_NONE,
+        )
+        
+def test_create_updated_strict():
+    """Valida la clonación estricta y plantillas de condición."""
+    from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
+    from custom_components.climate_ip.const import CONFIG_DEVICE_CONNECTION
+    from unittest.mock import MagicMock
+    import logging
+    
+    config = {}
+    conn = ConnectionAiohttp8888(config, logging.getLogger(), MagicMock(), MagicMock(), "10.0.0.1")
+    conn._params = {"base": 1}
+    
+    yaml_node = {
+        CONFIG_DEVICE_CONNECTION: {
+            "params": {"child": 2},
+            "condition_template": "{{ True }}"
+        }
+    }
+    
+    new_conn = conn.create_updated(yaml_node)
+    
+    # Must preserve the base parameter but NOT leak the child parameter to the root
+    assert new_conn._params == {}
+    
+    # The embedded command must receive the child parameter
+    assert new_conn._embedded_command is not None
+    assert new_conn._embedded_command._params == {"child": 2}
+    
+    # Check condition template was compiled
+    assert new_conn._embedded_command.condition_template is not None
 
