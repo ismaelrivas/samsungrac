@@ -95,15 +95,15 @@ class YamlConfigLoader:
         _LOGGER.debug("%s Loading configuration file: %s", self.controller.log_prefix, file)  # pragma: no mutate
 
         if file is None:
-            _LOGGER.error(
-                "%s No configuration file specified. Aborting initialization.",  # pragma: no mutate
+            _LOGGER.error(  # pragma: no mutate
+                "%s No configuration file specified. Aborting initialization.",
                 self.controller.log_prefix,
             )
             return False
 
         if file in _YAML_FILE_CACHE:
-            _LOGGER.debug(
-                "%s [Cache] Using cached YAML file content for: %s",  # pragma: no mutate
+            _LOGGER.debug(  # pragma: no mutate
+                "%s [Cache] Using cached YAML file content for: %s",
                 self.controller.log_prefix,
                 file,
             )
@@ -118,12 +118,12 @@ class YamlConfigLoader:
                     self._parsed_yaml_config = load_yaml(file)
 
                 _YAML_FILE_CACHE[file] = self._parsed_yaml_config
-                _LOGGER.debug(
-                    "%s [Cache] YAML file loaded and cached: %s", self.controller.log_prefix, file  # pragma: no mutate
+                _LOGGER.debug(  # pragma: no mutate
+                    "%s [Cache] YAML file loaded and cached: %s", self.controller.log_prefix, file
                 )
             except Exception as exc:  # pylint: disable=import-outside-toplevel,broad-exception-caught
-                _LOGGER.error(
-                    "%s Error loading YAML configuration %s: %s",  # pragma: no mutate
+                _LOGGER.error(  # pragma: no mutate
+                    "%s Error loading YAML configuration %s: %s",
                     self.controller.log_prefix,
                     file,
                     exc,
@@ -132,8 +132,8 @@ class YamlConfigLoader:
                 return False
 
         if not self._parsed_yaml_config:
-            _LOGGER.error(
-                "%s YAML configuration is empty or could not be read.", self.controller.log_prefix  # pragma: no mutate
+            _LOGGER.error(  # pragma: no mutate
+                "%s YAML configuration is empty or could not be read.", self.controller.log_prefix
             )
             return False
 
@@ -141,8 +141,8 @@ class YamlConfigLoader:
         self._parsed_yaml_cache[getattr(self.controller, "device_id", "")] = yaml_device
 
         if CONFIG_DEVICE not in yaml_device:
-            _LOGGER.error(
-                "%s Configuration file '%s' is missing the 'device' root key",  # pragma: no mutate
+            _LOGGER.error(  # pragma: no mutate
+                "%s Configuration file '%s' is missing the 'device' root key",
                 self.controller.log_prefix,
                 file,
             )
@@ -166,8 +166,8 @@ class YamlConfigLoader:
             if getattr(self.controller, "hass", None) and entry_id:
                 entry = self.controller.hass.config_entries.async_get_entry(entry_id)
                 if entry:
-                    _LOGGER.debug(
-                        "%s [Init] Retrieved ConfigEntry. Options: %s",  # pragma: no mutate
+                    _LOGGER.debug(  # pragma: no mutate
+                        "%s [Init] Retrieved ConfigEntry. Options: %s",
                         self.controller.log_prefix,
                         entry.options,
                     )
@@ -175,22 +175,22 @@ class YamlConfigLoader:
                         conn_method = entry.options.get(CONF_CONN_METHOD, conn_method)
 
             if conn_method == CONN_METHOD_AIOHTTP:
-                _LOGGER.info(
-                    "%s Using 'Modern (aiohttp)' connection engine (from options)",  # pragma: no mutate
+                _LOGGER.info(  # pragma: no mutate
+                    "%s Using 'Modern (aiohttp)' connection engine (from options)",
                     self.controller.log_prefix,
                 )
                 connection_node[CONFIG_DEVICE_CONNECTION_TYPE] = "samsung_8888_aiohttp"
             elif conn_method == CONN_METHOD_RAW:
-                _LOGGER.info(
-                    "%s Using 'Robust (raw socket)' connection engine (from options)",  # pragma: no mutate
+                _LOGGER.info(  # pragma: no mutate
+                    "%s Using 'Robust (raw socket)' connection engine (from options)",
                     self.controller.log_prefix,
                 )
                 connection_node[CONFIG_DEVICE_CONNECTION_TYPE] = "samsung_8888_raw"
             else:
-                _LOGGER.warning(
-                    "%s [DEPRECATED] Using obsolete 'request' (synchronous) engine. "  # pragma: no mutate
-                    "Please reconfigure this device via Integrations UI -> Reconfigure "  # pragma: no mutate
-                    "to use Modern (aiohttp) or Robust (raw socket) for better performance and stability.",  # pragma: no mutate
+                _LOGGER.warning(  # pragma: no mutate
+                    "%s [DEPRECATED] Using obsolete 'request' (synchronous) engine. "
+                    "Please reconfigure this device via Integrations UI -> Reconfigure "
+                    "to use Modern (aiohttp) or Robust (raw socket) for better performance and stability.",
                     self.controller.log_prefix,
                 )
                 connection_node[CONFIG_DEVICE_CONNECTION_TYPE] = ac.get(
@@ -199,8 +199,8 @@ class YamlConfigLoader:
 
         key = getattr(self.controller, "unique_id", None)
         if not key:
-            _LOGGER.error(
-                "%s Cannot create a unique connection without a unique_id",  # pragma: no mutate
+            _LOGGER.error(  # pragma: no mutate
+                "%s Cannot create a unique connection without a unique_id",
                 self.controller.log_prefix,
             )
             return False
@@ -212,8 +212,8 @@ class YamlConfigLoader:
 
         for conn_class in CLIMATE_IP_CONNECTIONS:
             if conn_class.match_type(conn_type_str):  # type: ignore[attr-defined]
-                _LOGGER.debug(
-                    "%s Found matching connection class '%s' for type '%s'",  # pragma: no mutate
+                _LOGGER.debug(  # pragma: no mutate
+                    "%s Found matching connection class '%s' for type '%s'",
                     self.controller.log_prefix,
                     conn_class.__name__,
                     conn_type_str,
@@ -244,8 +244,8 @@ class YamlConfigLoader:
                     break
 
         if not self.connection:
-            _LOGGER.error(
-                "%s No matching connection class found for type '%s'",  # pragma: no mutate
+            _LOGGER.error(  # pragma: no mutate
+                "%s No matching connection class found for type '%s'",
                 self.controller.log_prefix,
                 conn_type_str,
             )
@@ -254,8 +254,8 @@ class YamlConfigLoader:
             _LOGGER.error("%s Could not create connection object", self.controller.log_prefix)  # pragma: no mutate
             return False
 
-        _LOGGER.debug(
-            "%s Connection object created successfully. Type: %s",  # pragma: no mutate
+        _LOGGER.debug(  # pragma: no mutate
+            "%s Connection object created successfully. Type: %s",
             self.controller.log_prefix,
             type(self.connection).__name__,
         )
@@ -264,8 +264,8 @@ class YamlConfigLoader:
             "state", ac.get(CONFIG_DEVICE_STATUS, {}), self.connection, self.controller
         )
         if self.state_getter is None:
-            _LOGGER.error(
-                "%s Missing 'status' configuration node in '%s'", self.controller.log_prefix, file  # pragma: no mutate
+            _LOGGER.error(  # pragma: no mutate
+                "%s Missing 'status' configuration node in '%s'", self.controller.log_prefix, file
             )
             return False
 
@@ -365,8 +365,8 @@ class YamlConfigLoader:
                     CONF_TEMP_NATIVE_TARGET,
                     entry.data.get(CONF_TEMP_NATIVE_TARGET, configured_unit),
                 )
-                _LOGGER.debug(
-                    "%s [Init] Configured temperature units — Display: %s, Native Current: %s, Native Target: %s",  # pragma: no mutate
+                _LOGGER.debug(  # pragma: no mutate
+                    "%s [Init] Configured temperature units — Display: %s, Native Current: %s, Native Target: %s",
                     self.controller.log_prefix,
                     configured_unit,
                     native_current_unit,
@@ -382,8 +382,8 @@ class YamlConfigLoader:
 
             if is_temp:
                 if hasattr(prop_instance, "set_hass_unit") and hasattr(prop_instance, "set_device_unit"):
-                    _LOGGER.debug(
-                        "%s Applying dual units to property '%s'. Display: %s",  # pragma: no mutate
+                    _LOGGER.debug(  # pragma: no mutate
+                        "%s Applying dual units to property '%s'. Display: %s",
                         self.controller.log_prefix,
                         getattr(prop_instance, "id", "unknown"),
                         configured_unit,
@@ -394,8 +394,8 @@ class YamlConfigLoader:
                     else:
                         prop_instance.set_device_unit(native_current_unit)
                 elif hasattr(prop_instance, "set_unit_of_measurement"):
-                    _LOGGER.debug(
-                        "%s Applying configured unit '%s' to property '%s'",  # pragma: no mutate
+                    _LOGGER.debug(  # pragma: no mutate
+                        "%s Applying configured unit '%s' to property '%s'",
                         self.controller.log_prefix,
                         configured_unit,
                         getattr(prop_instance, "id", "unknown"),
@@ -412,6 +412,6 @@ class YamlConfigLoader:
         self.operations_list = list(self.operations.keys())
         self.properties_list = list(self.properties.keys())
         self.is_fully_initialized = True
-        _LOGGER.debug(
-            "%s Controller config loading is now fully completed.", self.controller.log_prefix  # pragma: no mutate
+        _LOGGER.debug(  # pragma: no mutate
+            "%s Controller config loading is now fully completed.", self.controller.log_prefix
         )

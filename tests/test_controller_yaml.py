@@ -81,6 +81,19 @@ async def test_controller_initialization(
     assert "hass" not in controller._config
     assert "session" not in controller._config
 
+    # Hardening against YamlConfigLoader.__init__ dead assignment mutants
+    from homeassistant.const import ATTR_ENTITY_ID
+    assert controller.loader.connection is None
+    assert controller.loader.state_getter is None
+    assert controller.loader.name == "yaml"
+    assert controller.loader.poll is None
+    assert controller.loader.is_fully_initialized is False
+    assert controller.loader._parsed_yaml_config is None
+    assert controller.loader.properties_list == []
+    assert len(controller.loader.service_schema_map) == 1
+    key = list(controller.loader.service_schema_map.keys())[0]
+    assert key.schema == ATTR_ENTITY_ID
+
 
 
 async def test_initialize_loads_yaml(
