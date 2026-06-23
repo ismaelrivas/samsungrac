@@ -21,8 +21,8 @@ def mock_hass():
 async def test_get_diagnostics(connection_config, mock_logger, mock_hass):
     with patch("os.path.exists", return_value=True):
         conn = ConnectionAiohttp8888(connection_config, mock_logger, mock_hass, None, "192.168.1.100")
-        conn._shared_state["initialized"] = True
-        conn._shared_state["ssl_context"] = MagicMock()
+        conn._shared_state.initialized = True
+        conn._shared_state.ssl_context = MagicMock()
         conn._force_close_connection = True
         
         diag = conn.get_diagnostics()
@@ -42,12 +42,12 @@ async def test_close_connection(connection_config, mock_logger, mock_hass):
         # Setup local session
         local_session_mock = AsyncMock()
         local_session_mock.closed = False
-        conn._shared_state["local_session"] = local_session_mock
+        conn._shared_state.local_session = local_session_mock
         
         await conn.close()
         
         embedded_mock.close.assert_called_once()
         local_session_mock.close.assert_called_once()
-        assert conn._shared_state["initialized"] is False
-        assert conn._shared_state["ssl_context"] is None
-        assert conn._shared_state["local_session"] is None
+        assert conn._shared_state.initialized is False
+        assert conn._shared_state.ssl_context is None
+        assert conn._shared_state.local_session is None

@@ -50,7 +50,7 @@ async def test_initialization(connection_config, mock_logger, mock_hass, mock_se
         )
         assert conn._ip_address == "192.168.1.100"
         assert conn._token == "test_token"
-        assert conn._shared_state["initialized"] is False
+        assert conn._shared_state.initialized is False
 
 
 
@@ -87,8 +87,8 @@ async def test_execute_request_success(connection_config, mock_logger, mock_hass
         )
 
         # Mock shared state to avoid actual probe
-        conn._shared_state["initialized"] = True
-        conn._shared_state["ssl_context"] = MagicMock()
+        conn._shared_state.initialized = True
+        conn._shared_state.ssl_context = MagicMock()
 
         # pylint: disable=import-outside-toplevel,duplicate-code
         # Mock response
@@ -118,8 +118,8 @@ async def test_execute_request_auth_error(connection_config, mock_logger, mock_h
             connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
         )
 
-        conn._shared_state["initialized"] = True
-        conn._shared_state["ssl_context"] = MagicMock()
+        conn._shared_state.initialized = True
+        conn._shared_state.ssl_context = MagicMock()
 
         mock_response = AsyncMock()
         mock_response.status = 401
@@ -142,8 +142,8 @@ async def test_execute_request_connection_error(
             connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
         )
 
-        conn._shared_state["initialized"] = True
-        conn._shared_state["ssl_context"] = MagicMock()
+        conn._shared_state.initialized = True
+        conn._shared_state.ssl_context = MagicMock()
 
         mock_session.request.side_effect = aiohttp.ClientConnectorError(MagicMock(), MagicMock())
 
@@ -203,8 +203,8 @@ async def test_aiohttp_lifecycle_and_shared_state():
     assert conn._connection_template is None
     assert conn._ssl_context is None
     assert conn._embedded_command is None
-    assert "local_session" in conn._shared_state
-    assert conn._shared_state["local_session"] is None
+    assert hasattr(conn._shared_state, "local_session")
+    assert conn._shared_state.local_session is None
     
     # 2. Diagnóstico Estricto (Mata mutantes de .get("initialized", False))
     diag = conn.get_diagnostics()
@@ -213,16 +213,16 @@ async def test_aiohttp_lifecycle_and_shared_state():
     assert diag["keep_alive_enabled"] is False
     
     # 3. Cierre y purga (Mata mutantes que alteran "initialized" = False en el reset)
-    conn._shared_state["initialized"] = True
-    conn._shared_state["ssl_context"] = "FAKE_SSL"
-    conn._shared_state["local_session"] = AsyncMock() # Simulamos una sesión local
-    conn._shared_state["local_session"].closed = False
+    conn._shared_state.initialized = True
+    conn._shared_state.ssl_context = "FAKE_SSL"
+    conn._shared_state.local_session = AsyncMock() # Simulamos una sesión local
+    conn._shared_state.local_session.closed = False
     
     await conn.close()
     
-    assert conn._shared_state["initialized"] is False
-    assert conn._shared_state["ssl_context"] is None
-    assert conn._shared_state["local_session"] is None
+    assert conn._shared_state.initialized is False
+    assert conn._shared_state.ssl_context is None
+    assert conn._shared_state.local_session is None
 
 # ====================================================================================
 # FRENTE B: REEMPLAZO Y FORMATEO DE URLs (_format_url)
@@ -279,8 +279,8 @@ async def test_get_session_args():
         
         # Verify ssl context passes through
         config["use_http"] = False
-        conn._shared_state["ssl_context"] = "TEST_SSL_CTX"
-        conn._shared_state["local_session"] = None # Force recreation
+        conn._shared_state.ssl_context = "TEST_SSL_CTX"
+        conn._shared_state.local_session = None # Force recreation
         
         await conn._get_session()
         mock_connector.assert_called_with(keepalive_timeout=75, ssl="TEST_SSL_CTX", limit=1)

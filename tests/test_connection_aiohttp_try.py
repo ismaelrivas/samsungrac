@@ -41,7 +41,7 @@ async def test_try_connection_success(connection_config, mock_logger, mock_hass,
         
         res = await conn._try_connection()
         assert res == '{"result": "ok"}'
-        assert conn._shared_state["initialized"] is True
+        assert conn._shared_state.initialized is True
 
 async def test_try_connection_success_no_body(connection_config, mock_logger, mock_hass, mock_session):
     with patch("os.path.exists", return_value=True):
@@ -57,7 +57,7 @@ async def test_try_connection_success_no_body(connection_config, mock_logger, mo
         
         res = await conn._try_connection()
         assert res is None
-        assert conn._shared_state["initialized"] is True
+        assert conn._shared_state.initialized is True
 
 async def test_try_connection_unexpected_status(connection_config, mock_logger, mock_hass, mock_session):
     with patch("os.path.exists", return_value=True):
@@ -118,7 +118,7 @@ async def test_try_connection_generic_error(connection_config, mock_logger, mock
 async def test_try_connection_already_initialized(connection_config, mock_logger, mock_hass, mock_session):
     with patch("os.path.exists", return_value=True):
         conn = ConnectionAiohttp8888(connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100")
-        conn._shared_state["initialized"] = True
+        conn._shared_state.initialized = True
         
         res = await conn._try_connection()
         assert res is None

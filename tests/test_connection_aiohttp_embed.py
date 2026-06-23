@@ -26,7 +26,7 @@ def mock_session():
 async def test_async_execute_with_embedded_command_condition_met(connection_config, mock_logger, mock_hass, mock_session):
     with patch("os.path.exists", return_value=True):
         conn = ConnectionAiohttp8888(connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100")
-        conn._shared_state["initialized"] = True
+        conn._shared_state.initialized = True
         conn._try_connection = AsyncMock()
         
         # Mock main command execution
@@ -56,7 +56,7 @@ async def test_async_execute_with_embedded_command_condition_met(connection_conf
 async def test_async_execute_with_embedded_command_condition_not_met(connection_config, mock_logger, mock_hass, mock_session):
     with patch("os.path.exists", return_value=True):
         conn = ConnectionAiohttp8888(connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100")
-        conn._shared_state["initialized"] = True
+        conn._shared_state.initialized = True
         conn._try_connection = AsyncMock()
         
         mock_response = AsyncMock()
@@ -79,7 +79,7 @@ async def test_async_execute_with_embedded_command_condition_not_met(connection_
 async def test_async_execute_with_embedded_command_no_condition(connection_config, mock_logger, mock_hass, mock_session):
     with patch("os.path.exists", return_value=True):
         conn = ConnectionAiohttp8888(connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100")
-        conn._shared_state["initialized"] = True
+        conn._shared_state.initialized = True
         conn._try_connection = AsyncMock()
         
         mock_response = AsyncMock()
@@ -105,7 +105,7 @@ async def test_async_execute_with_embedded_command_no_condition(connection_confi
 async def test_async_execute_main_condition_not_met(connection_config, mock_logger, mock_hass, mock_session):
     with patch("os.path.exists", return_value=True):
         conn = ConnectionAiohttp8888(connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100")
-        conn._shared_state["initialized"] = True
+        conn._shared_state.initialized = True
         conn._try_connection = AsyncMock()
         
         conn.check_execute_condition = MagicMock(return_value=False)

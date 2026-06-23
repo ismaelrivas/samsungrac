@@ -25,7 +25,7 @@ async def test_get_session_keep_alive_no_session(connection_config, mock_logger,
         
         session = await conn._get_session()
         assert session is not None
-        assert session == conn._shared_state["local_session"]
+        assert session == conn._shared_state.local_session
         
 async def test_get_session_use_http(connection_config, mock_logger, mock_hass):
     with patch("os.path.exists", return_value=True):
@@ -34,7 +34,7 @@ async def test_get_session_use_http(connection_config, mock_logger, mock_hass):
         
         session = await conn._get_session()
         assert session is not None
-        assert "local_session" in conn._shared_state
+        assert hasattr(conn._shared_state, "local_session")
 
 async def test_get_session_reuse_local_session(connection_config, mock_logger, mock_hass):
     with patch("os.path.exists", return_value=True):

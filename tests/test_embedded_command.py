@@ -319,8 +319,8 @@ def _make_aiohttp_connection():
             "192.168.1.100",
         )
     # Pre-initialize to skip the probe
-    conn._shared_state["initialized"] = True
-    conn._shared_state["ssl_context"] = MagicMock()
+    conn._shared_state.initialized = True
+    conn._shared_state.ssl_context = MagicMock()
     return conn
 
 

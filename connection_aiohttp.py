@@ -12,9 +12,18 @@ import inspect
 import logging
 import os
 import ssl
+from dataclasses import dataclass, field
 from typing import Any, cast
 
 import aiohttp
+
+@dataclass
+class AiohttpSharedState:
+    """Strict state container for the aiohttp connection engine."""
+    initialized: bool = False
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    ssl_context: ssl.SSLContext | None = None
+    local_session: aiohttp.ClientSession | None = None
 
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_PORT, CONF_TOKEN
 from homeassistant.helpers.json import json_dumps
@@ -68,15 +77,10 @@ class ConnectionAiohttp8888(Connection):
         self._token: str | None = config.get(CONF_TOKEN)
         self._cert_path: str | None = self._resolve_cert_path(config.get(CONF_CERT))
 
-        # Object to share initialization state across all copies.
+        # Strict object to share initialization state across all copies.
         # The Lock prevents race conditions during the first initialization.
         # We also store 'local_session' here so it is shared across copies (commands).
-        self._shared_state: dict[str, Any] = {
-            "initialized": False,
-            "lock": asyncio.Lock(),
-            "ssl_context": None,
-            "local_session": None,
-        }
+        self._shared_state = AiohttpSharedState()
 
         # This will hold the Jinja2 template for this specific connection instance.
         self._connection_template: Template | None = None
@@ -244,12 +248,12 @@ class ConnectionAiohttp8888(Connection):
         Returns response text if successful, None otherwise.
         """
         # Use Lock for safe, one-time initialization
-        if self._shared_state["initialized"]:
+        if self._shared_state.initialized:
             return None
 
-        async with self._shared_state["lock"]:
+        async with self._shared_state.lock:
             # Double-check in case another task initialized it while we were waiting for the lock.
-            if self._shared_state["initialized"]:
+            if self._shared_state.initialized:
                 return None
 
             current_token = self._token
@@ -261,10 +265,10 @@ class ConnectionAiohttp8888(Connection):
 
             # Use the shared state's SSL context, skip for plain HTTP test mode
             if not self._config.get("use_http", False):
-                if not self._shared_state["ssl_context"]:
-                    self._shared_state["ssl_context"] = await self._create_ssl_context()
+                if self._shared_state.ssl_context is None:
+                    self._shared_state.ssl_context = await self._create_ssl_context()
 
-            ssl_ctx = self._shared_state["ssl_context"]
+            ssl_ctx = self._shared_state.ssl_context
             if ssl_ctx is None:
                 # Logic for "insecure" / no-cert connection
                 ssl_ctx = False
@@ -296,7 +300,7 @@ class ConnectionAiohttp8888(Connection):
                 # CRITICAL FIX: Do NOT access self._session directly — it may be None
                 # when keep_alive=False. Always go through _get_session() which handles
                 # both a HA-shared session and a locally-created one.
-                test_ssl_ctx = False if protocol == "http" else self._shared_state["ssl_context"]
+                test_ssl_ctx = False if protocol == "http" else self._shared_state.ssl_context
                 probe_session = await self._get_session()
                 async with probe_session.request("GET", probe_url, headers=probe_headers, ssl=test_ssl_ctx, timeout=aiohttp.ClientTimeout(total=10, sock_read=5)) as response:  # type: ignore[arg-type]
 
@@ -322,7 +326,7 @@ class ConnectionAiohttp8888(Connection):
                                 response.status,
                             )
 
-                        self._shared_state["initialized"] = True
+                        self._shared_state.initialized = True
 
                         # Optimization - Return text for reuse in initial poll
                         if response.status == 200:
@@ -347,7 +351,7 @@ class ConnectionAiohttp8888(Connection):
                     self.log_prefix,
                     clean_msg,
                 )
-                self._shared_state["ssl_context"] = None  # Reset to try again later
+                self._shared_state.ssl_context = None  # Reset to try again later
                 raise CannotConnect(f"Device unreachable: {clean_msg}") from e
 
             # Catch incomplete responses (missing Content-Length) which is common in older devices.
@@ -387,7 +391,7 @@ class ConnectionAiohttp8888(Connection):
                     e,
                     exc_info=True,
                 )
-                self._shared_state["ssl_context"] = None  # Clear on failure to allow retries
+                self._shared_state.ssl_context = None  # Clear on failure to allow retries
 
             _LOGGER.error(  # pragma: no mutate
                 "%s [aiohttp_probe] HTTPS (mTLS) connection probe failed. The device is unreachable or the certificate/token is incorrect.",
@@ -415,10 +419,10 @@ class ConnectionAiohttp8888(Connection):
                 self.log_prefix,
             )
 
-        local_session = self._shared_state.get("local_session")
+        local_session = self._shared_state.local_session
         if local_session is None or local_session.closed:
             # Retrieve the shared SSL context (should be initialized by _try_connection)
-            ssl_context = self._shared_state.get("ssl_context")
+            ssl_context = self._shared_state.ssl_context
 
             # For plain HTTP test mode, use a simple connector with no SSL
             if self._config.get("use_http", False):
@@ -427,7 +431,7 @@ class ConnectionAiohttp8888(Connection):
                 connector = aiohttp.TCPConnector(keepalive_timeout=75, ssl=ssl_context, limit=1)  # type: ignore[arg-type]
             timeout = aiohttp.ClientTimeout(total=30, connect=10)
             local_session = aiohttp.ClientSession(connector=connector, timeout=timeout)
-            self._shared_state["local_session"] = local_session
+            self._shared_state.local_session = local_session
             _LOGGER.debug(  # pragma: no mutate
                 "%s [aiohttp] Created new local session (ID: %s) with connector (ID: %s).",
                 self.log_prefix,
@@ -435,7 +439,7 @@ class ConnectionAiohttp8888(Connection):
                 id(connector),
             )
 
-        return self._shared_state["local_session"]
+        return self._shared_state.local_session
 
     def _format_url(self, url: str) -> str:
         """
@@ -516,7 +520,7 @@ class ConnectionAiohttp8888(Connection):
         if getattr(self, "_force_close_connection", False):
             req_headers["Connection"] = "close"
 
-        ssl_context = self._shared_state.get("ssl_context")
+        ssl_context = self._shared_state.ssl_context
         # Detect if the path is actually an absolute URL (for SmartThings).
         if url_path and url_path.startswith("http"):
             base_url = ""  # No base URL needed
@@ -820,9 +824,9 @@ class ConnectionAiohttp8888(Connection):
 
         # Periodic Reset Logic: For local sessions not preserving keep_alive, explicitly close and reopen
         if _is_poll and not self._keep_alive:
-            local_session = self._shared_state.get("local_session")
-            if local_session:
-                self._shared_state["local_session"] = None
+            local_session = self._shared_state.local_session
+            if local_session is not None:
+                self._shared_state.local_session = None
 
             if local_session and not local_session.closed:
                 _LOGGER.debug(  # pragma: no mutate
@@ -855,16 +859,12 @@ class ConnectionAiohttp8888(Connection):
     def get_diagnostics(self) -> dict[str, Any]:
         """Return diagnostic information about the aiohttp connection."""
         diag = {
-            "is_connected": (
-                self._shared_state.get("initialized", False) if self._shared_state else False
-            ),
+            "is_connected": self._shared_state.initialized,
             "force_close_connection": getattr(self, "_force_close_connection", False),
             "keep_alive_enabled": self._keep_alive,
         }
 
-        if self._shared_state:
-            ssl_ctx = self._shared_state.get("ssl_context")
-            diag["has_ssl_context"] = bool(ssl_ctx)
+        diag["has_ssl_context"] = self._shared_state.ssl_context is not None
 
         return diag
 
@@ -887,8 +887,8 @@ class ConnectionAiohttp8888(Connection):
                 )
 
         # 2. Close the local session if it exists (for keep_alive=False)
-        local_session = self._shared_state.get("local_session")
-        if local_session:
+        local_session = self._shared_state.local_session
+        if local_session is not None:
             _LOGGER.debug(  # pragma: no mutate
                 "%s [aiohttp] Closing local session (ID: %s)...", self.log_prefix, id(local_session)
             )
@@ -902,15 +902,15 @@ class ConnectionAiohttp8888(Connection):
                     "%s [aiohttp] Error closing local session: %s", self.log_prefix, e
                 )
             finally:
-                self._shared_state["local_session"] = None
+                self._shared_state.local_session = None
 
         # 3. Reset shared state to allow clean re-initialization
         try:
-            async with self._shared_state["lock"]:
-                self._shared_state["initialized"] = False
-                self._shared_state["ssl_context"] = None
-                if self._shared_state.get("local_session"):
-                    self._shared_state["local_session"] = None
+            async with self._shared_state.lock:
+                self._shared_state.initialized = False
+                self._shared_state.ssl_context = None
+                if self._shared_state.local_session is not None:
+                    self._shared_state.local_session = None
         except (RuntimeError, ValueError) as e:
             _LOGGER.error(  # pragma: no mutate
                 "%s [aiohttp] Error locking/resetting shared state during close: %s",
