@@ -434,3 +434,121 @@ async def test_async_finish_initialization_early_exits():
     loader._parsed_yaml_config = None
     await loader.async_finish_initialization()
     assert len(loader.operations) == 0 # Abortó
+
+# ====================================================================================
+# FRENTE L: LA PURGA DE LAS 4 DIMENSIONES (Operations, Switches, Attributes, Sensors)
+# ====================================================================================
+
+async def test_async_finish_initialization_all_loops_exhaustive():
+    """Fuerza la asimetría de IDs y el parseo en las 4 listas del loader para matar bucles espejo."""
+    from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
+    from unittest.mock import MagicMock, patch
+
+    mock_controller = MagicMock()
+    mock_controller.device_id = "test_dev_loops"
+    loader = YamlConfigLoader(mock_controller)
+    loader.is_fully_initialized = False
+    
+    # Inyectamos datos en TODAS las categorías simultáneamente
+    loader._parsed_yaml_config = {
+        "device": {
+            "operations": {"yaml_op": {"type": "A"}},
+            "switches": {"yaml_sw": {"type": "B"}},
+            "attributes": {"yaml_attr": {"type": "C"}},
+            "sensors": {"yaml_sen": {"type": "D"}}
+        }
+    }
+    loader._parsed_yaml_cache = {}
+
+    # Generador asimétrico de propiedades
+    def fake_create(key, node, conn, ctrl, getter):
+        prop = MagicMock()
+        prop.id = f"real_{key}" # Asimetría para matar getattr(..., "id", key)
+        prop.config_validation_type = str
+        return prop
+
+    with patch("custom_components.climate_ip.controller_yaml_config.create_property", side_effect=fake_create):
+        await loader.async_finish_initialization()
+
+        # Aserciones implacables de mapeo y deduplicación (Mata mutantes 42-135)
+        assert "real_yaml_op" in loader.operations
+        assert "real_yaml_sw" in loader.operations
+        assert "real_yaml_attr" in loader.properties
+        assert "yaml_sen" in loader.sensors
+        
+        # Validamos que las listas de deduplicación se llenaron (Mata "if op_id not in...")
+        assert "real_yaml_sw" in loader.operations_list
+        assert "real_yaml_attr" in loader.properties_list
+        assert "yaml_sen" in loader.sensors_list
+
+# ====================================================================================
+# FRENTE M: LA CASCADA DE CONFIGURACIÓN PRIVADA/PÚBLICA (_config vs config)
+# ====================================================================================
+
+async def test_async_initialize_config_fallback_cascade():
+    """Fuerza la ejecución del getattr anidado eliminando _config y usando config."""
+    from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
+    from unittest.mock import MagicMock
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE
+
+    mock_controller = MagicMock()
+    # 1. Destruimos el atributo privado para obligar a usar el público
+    if hasattr(mock_controller, "_config"):
+        delattr(mock_controller, "_config")
+    
+    # 2. Asignamos el atributo público
+    mock_controller.config = {
+        CONF_DEVICE_TYPE: "samsung_2878"
+    }
+
+    loader = YamlConfigLoader(mock_controller)
+    loader._parsed_yaml_config = {"device": {}}
+    
+    mock_controller._yaml = "/test_m.yaml"
+    from custom_components.climate_ip.controller_yaml_config import _YAML_FILE_CACHE
+    _YAML_FILE_CACHE["/test_m.yaml"] = loader._parsed_yaml_config
+    
+    await loader.async_initialize()
+    
+    # Si mutmut alteró getattr(..., "config", {}), el device_type será None 
+    # y no entrará en la rama de samsung_2878, por lo que connection_node fallará.
+    assert type(loader.connection).__name__ == "ConnectionSamsung2878"
+
+# ====================================================================================
+# FRENTE N: EL RESCATE DE ENTRY.DATA (Unidades Térmicas)
+# ====================================================================================
+
+async def test_async_finish_initialization_entry_data_fallback():
+    """Evalúa la extracción de unidades cuando options está vacío pero data existe."""
+    from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
+    from custom_components.climate_ip.const import CONF_TEMP_NATIVE_CURRENT, CONF_TEMP_NATIVE_TARGET
+    from unittest.mock import MagicMock, patch
+
+    mock_controller = MagicMock()
+    mock_controller._config = {"entry_id": "test_entry"}
+    
+    # Opciones vacías, Data lleno (Mata mutantes 200-208)
+    mock_entry = MagicMock()
+    mock_entry.options = {} 
+    mock_entry.data = {
+        CONF_TEMP_NATIVE_CURRENT: "Kelvin",
+        CONF_TEMP_NATIVE_TARGET: "Rankine"
+    }
+    mock_controller.hass.config_entries.async_get_entry.return_value = mock_entry
+
+    loader = YamlConfigLoader(mock_controller)
+    loader.is_fully_initialized = False
+    loader._parsed_yaml_config = {"device": {"operations": {"t": {"type": "temperature"}}}}
+    loader._parsed_yaml_cache = {"": loader._parsed_yaml_config}
+
+    mock_prop = MagicMock()
+    mock_prop.device_class = "temperature"
+    from homeassistant.const import ATTR_TEMPERATURE
+    mock_prop.id = ATTR_TEMPERATURE
+
+    with patch("custom_components.climate_ip.controller_yaml_config.create_property", return_value=mock_prop):
+        await loader.async_finish_initialization()
+        
+        # Debe haber extraído los valores del diccionario .data porque .options estaba vacío
+        # Si mutmut cambia .data.get(..., def) a None, esta aserción explotará
+        mock_prop.set_device_unit.assert_any_call("Rankine")
