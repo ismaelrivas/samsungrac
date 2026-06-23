@@ -110,7 +110,7 @@ class YamlConfigLoader:
             self._parsed_yaml_config = _YAML_FILE_CACHE[file]
         else:
             try:
-                if getattr(self.controller, "hass", None):
+                if hasattr(self.controller, "hass") and self.controller.hass is not None:
                     self._parsed_yaml_config = await self.controller.hass.async_add_executor_job(
                         load_yaml, file
                     )

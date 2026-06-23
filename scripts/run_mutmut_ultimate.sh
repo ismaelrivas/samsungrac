@@ -10,6 +10,6 @@ rm -rf mutants/ .mutmut-cache .coverage custom_components/climate_ip/.coverage m
 
 echo "2. Iniciando mutmut run SIN archivo de cobertura en el fichero: $TARGET_FILE"
 echo "   (Mutmut correrá la suite completa para cada mutante, lo cual es más lento pero 100% seguro)."
-PYTHONPATH=/workspaces/ha_data/config python -m mutmut run
+python -m mutmut run
 echo "3. Resumen final:"
 #mutmut results
