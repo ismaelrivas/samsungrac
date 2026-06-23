@@ -94,6 +94,7 @@ async def test_async_update_state_network_failures_and_cache():
     # Mockeamos el resto de dependencias para evitar ruido
     poller.async_update_properties_from_state = AsyncMock()
     mock_controller.loader.is_fully_initialized = True
+    mock_controller.debug = False
     
     # Simulamos que ya tenemos una caché válida de un estado anterior
     poller._cached_device_state = {"power": "on"}
@@ -216,6 +217,7 @@ async def test_async_update_properties_pending_ttl_and_degradation():
     """Verifica el TTL de 15 segundos y la degradación de estados inválidos a UNKNOWN."""
     mock_controller = MagicMock()
     mock_controller.loader.is_fully_initialized = True
+    mock_controller.debug = False
     poller = YamlStatePoller(mock_controller)
     
     # Propiedad 1: TTL válido (< 15s)
@@ -473,6 +475,7 @@ async def test_async_update_properties_dirty_check():
     mock_controller = MagicMock()
     mock_controller.loader.is_fully_initialized = True
     mock_controller.debug = False
+    mock_controller.debug = False
     mock_controller.loader._parsed_yaml_cache = {}
     poller = YamlStatePoller(mock_controller)
     
@@ -518,6 +521,7 @@ async def test_async_update_properties_sub_device_routing():
     
     mock_controller = MagicMock()
     mock_controller.loader.is_fully_initialized = True
+    mock_controller.debug = False
     mock_controller.device_id = "TARGET_ID"
     mock_controller.debug = False
     poller = YamlStatePoller(mock_controller)
@@ -597,6 +601,7 @@ async def test_async_update_properties_defaults_and_chaos_cache():
 
     mock_controller = FakeController()
     mock_controller.loader.is_fully_initialized = True
+    mock_controller.debug = False
     
     # 1. Caché completamente vacía (Mata los .get(CONFIG_DEVICE, {}) -> None)
     mock_controller.loader._parsed_yaml_cache = {}
@@ -664,6 +669,7 @@ async def test_async_update_properties_defaults_and_chaos_cache():
     # Restauramos para el siguiente test
     mock_controller.loader = MagicMock()
     mock_controller.loader.is_fully_initialized = True
+    mock_controller.debug = False
     mock_controller.loader.operations = {"test": mock_prop}
 
     # Al no haber id_map, `device_to_process` NUNCA DEBE SER REASIGNADO,
@@ -800,6 +806,7 @@ async def test_calculate_structured_state_exhaustive():
 
     mock_controller = MagicMock()
     mock_controller.loader.is_fully_initialized = True
+    mock_controller.debug = False
     poller = YamlStatePoller(mock_controller)
 
     def create_op(op_id, calc_val):
@@ -840,6 +847,7 @@ async def test_calculate_structured_state_exhaustive():
     assert poller._calculate_structured_state(raw_state) is None
 
     mock_controller.loader.is_fully_initialized = True
+    mock_controller.debug = False
     mock_controller.loader.operations["hvac"].calculate_value_from_state.side_effect = Exception("Boom")
     # Si explota el cálculo, el método debe tragar la excepción y retornar None (Mata except: pass)
     assert poller._calculate_structured_state(raw_state) is None
@@ -1025,6 +1033,7 @@ async def test_async_update_properties_cache_get_chains():
     
     mock_controller = MagicMock()
     mock_controller.loader.is_fully_initialized = True
+    mock_controller.debug = False
     mock_controller.device_id = "test_device"
     poller = YamlStatePoller(mock_controller)
     
@@ -1048,3 +1057,78 @@ async def test_async_update_properties_cache_get_chains():
         assert isinstance(res2, dict)
     except AttributeError:
         pytest.fail("Fallback roto: el encadenamiento .get() falló en la raíz.")
+
+# ====================================================================================
+# FRENTE R: INTEGRIDAD SECUENCIAL DE BUCLES Y DESPACHO ORDENADO (Mata 72 supervivientes)
+# ====================================================================================
+
+async def test_async_update_properties_loop_sequences_and_eviction_handling():
+    """Garantiza que las mutaciones de flujo (break/continue) destruyan la ejecución multiobjeto."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock, AsyncMock
+    import time
+
+    mock_controller = MagicMock()
+    mock_controller.loader.is_fully_initialized = True
+    mock_controller.debug = False
+    poller = YamlStatePoller(mock_controller)
+    poller._get_cached_device_key_from_prop = MagicMock(return_value="power_key")
+
+    # Creamos 3 propiedades distintas para rellenar el bucle secuencial
+    # Si mutmut cambia un 'continue' por un 'break', las propiedades posteriores quedarán ciegas
+    class FakeProp:
+        def __init__(self, id_val):
+            self.id = id_val
+            self.value = None
+            self._value = None
+            self.convert_hass_to_dev = MagicMock()
+            self.async_update_state = AsyncMock()
+            self.set_device_state_for_values = MagicMock()
+
+    prop_active = FakeProp("active_prop")
+    prop_active.convert_hass_to_dev.return_value = "dev_active"
+    
+    prop_stale = FakeProp("stale_prop")
+    prop_standard = FakeProp("standard_prop")
+
+
+    # El orden de la lista es CRÍTICO para capturar el cortocircuito del bucle
+    all_props_list = [prop_active, prop_stale, prop_standard]
+    mock_controller.loader.operations = {p.id: p for p in all_props_list}
+    mock_controller.loader.properties = {}
+    mock_controller.loader.sensors = {}
+
+    # Configuramos las actualizaciones pendientes (una viva, una muerta por TTL)
+    now = time.time()
+    poller._pending_updates = {
+        "active_prop": ("ha_active", now - 2.0),  # Activa (<15s)
+        "stale_prop": ("ha_stale", now - 20.0)   # Caducada (>15s)
+    }
+
+    fake_device_state = {"power_key": "original_value"}
+
+    # Ejecutamos el pipeline forzando la actualización
+    await poller.async_update_properties_from_state(fake_device_state, force_update=True)
+
+    # --- ASURACIONES DEL PRIMER BUCLE (Fusión de Claves) ---
+    # La propiedad activa debió inyectar su valor en el diccionario de red global
+    assert fake_device_state["power_key"] == "dev_active"
+
+    # --- ASERCIONES DEL SEGUNDO BUCLE (Despacho de Valores y Evicción) ---
+    # 1. Propiedad Activa: Debe asignar el valor pendiente y saltar con 'continue'
+    # Si mutmut cambió 'continue' por 'break', las siguientes dos propiedades jamás se actualizarán
+    assert prop_active.value == "ha_active" or prop_active._value == "ha_active"
+    prop_active.async_update_state.assert_not_called() # El continue evita la llamada directa de red
+
+    # 2. Propiedad Caducada: El TTL la expulsó del diccionario de pendientes
+    assert "stale_prop" not in poller._pending_updates
+    # Al no estar activa, debe actualizarse con el flujo normal de red
+    prop_stale.async_update_state.assert_called_once_with(fake_device_state, False)
+
+    # 3. Propiedad Estándar: No tiene pendientes, evalúa la salud del final del bucle
+    # Si el mutante rompió el bucle en la propiedad 1 o 2, esta aserción explotará
+    prop_standard.async_update_state.assert_called_once_with(fake_device_state, False)
+
+    # --- ASERCIONES DEL TERCER BUCLE (set_device_state_for_values) ---
+    for p in all_props_list:
+        p.set_device_state_for_values.assert_called_once_with(fake_device_state)
