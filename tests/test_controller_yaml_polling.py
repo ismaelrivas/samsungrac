@@ -786,3 +786,123 @@ async def test_async_get_status_cache_ttl():
     with patch("time.time", return_value=101.99):
         await poller.async_get_status()
         poller.async_update_state.assert_not_called()
+
+# ====================================================================================
+# FRENTE K: _calculate_structured_state (El Mapeo Estricto de Estado)
+# ====================================================================================
+
+async def test_calculate_structured_state_exhaustive():
+    """Aserta el mapeo rígido de las propiedades de HA al objeto ClimateIPDeviceState."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from homeassistant.components.climate.const import ATTR_HVAC_MODE, ATTR_FAN_MODE, ATTR_SWING_MODE, ATTR_PRESET_MODE
+    from homeassistant.const import ATTR_TEMPERATURE
+    from unittest.mock import MagicMock
+
+    mock_controller = MagicMock()
+    mock_controller.loader.is_fully_initialized = True
+    poller = YamlStatePoller(mock_controller)
+
+    def create_op(op_id, calc_val):
+        op = MagicMock()
+        op.id = op_id
+        op.calculate_value_from_state.return_value = calc_val
+        return op
+
+    # Inyectamos exactamente las claves que la función busca internamente
+    mock_controller.loader.operations = {
+        "hvac": create_op(ATTR_HVAC_MODE, "Cool"),
+        "temp": create_op(ATTR_TEMPERATURE, 22.5),
+        "fan": create_op(ATTR_FAN_MODE, "High"),
+        "swing": create_op(ATTR_SWING_MODE, "Off"),
+        "preset": create_op(ATTR_PRESET_MODE, "Eco"),
+        "cur_temp": create_op("current_temperature", 24.0)
+    }
+    mock_controller.loader.properties = {}
+    mock_controller.loader.sensors = {}
+
+    raw_state = {"dummy": "data"}
+    state_obj = poller._calculate_structured_state(raw_state)
+
+    # 1. Aserciones Estrictas de Mapeo (Mata mutantes que cambian "hvac_mode" por "XXhvac_modeXX" o None)
+    assert state_obj is not None
+    if hasattr(state_obj.hvac_mode, "value"):
+        assert state_obj.hvac_mode.value == "cool"
+    else:
+        assert str(state_obj.hvac_mode).lower() == "cool"
+    assert state_obj.target_temperature == 22.5
+    assert state_obj.current_temperature == 24.0
+    assert state_obj.fan_mode == "High"
+    assert state_obj.swing_mode == "Off"
+    assert state_obj.preset_mode == "Eco"
+
+    # 2. Cortocircuitos de Inicialización y Excepciones
+    mock_controller.loader.is_fully_initialized = False
+    assert poller._calculate_structured_state(raw_state) is None
+
+    mock_controller.loader.is_fully_initialized = True
+    mock_controller.loader.operations["hvac"].calculate_value_from_state.side_effect = Exception("Boom")
+    # Si explota el cálculo, el método debe tragar la excepción y retornar None (Mata except: pass)
+    assert poller._calculate_structured_state(raw_state) is None
+
+# ====================================================================================
+# FRENTE L: REGEX Y EXTRACCIÓN DE PLANTILLAS (_get_device_key_from_template)
+# ====================================================================================
+
+def test_device_key_from_template_regex():
+    """Mata mutantes que alteran el patrón Regex de búsqueda de estado."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+
+    class FakeTemplate:
+        def __init__(self, text):
+            self.template = text
+
+    # Prueba 1: Sintaxis de corchetes con comillas simples (Mata mutación de group)
+    tmpl_bracket = FakeTemplate("{{ device_state['Operation'] }}")
+    assert poller._get_device_key_from_template(tmpl_bracket) == "Operation"
+
+    # Prueba 2: Sintaxis de punto
+    tmpl_dot = FakeTemplate("{{ device_state.power_level }}")
+    assert poller._get_device_key_from_template(tmpl_dot) == "power_level"
+
+    # Prueba 3: Objeto vacío o patrón sin coincidencia
+    assert poller._get_device_key_from_template(None) is None
+    assert poller._get_device_key_from_template(FakeTemplate("{{ otra_cosa['val'] }}")) is None
+
+# ====================================================================================
+# FRENTE M: _rebuild_attributes Y FORMATOS DE FECHA
+# ====================================================================================
+
+@patch("custom_components.climate_ip.controller_yaml_polling.dt_util.now")
+def test_rebuild_attributes_exact_strings(mock_now):
+    """Aserta el formato exacto de fecha y las claves del diccionario de atributos."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock
+    import datetime
+
+    # Fijamos el tiempo para evitar condiciones de carrera y asertar el formato %Y-%m-%d %H:%M:%S
+    fake_time = datetime.datetime(2026, 6, 7, 15, 30, 0)
+    mock_now.return_value = fake_time
+
+    mock_controller = MagicMock()
+    mock_controller.name = "TestAC"
+    poller = YamlStatePoller(mock_controller)
+
+    # Creamos una propiedad que inyecte un atributo extra
+    mock_prop = MagicMock()
+    mock_prop.state_attributes = {"custom_attr": "value"}
+    mock_controller.loader.operations = {"prop": mock_prop}
+    mock_controller.loader.properties = {}
+
+    poller._rebuild_attributes()
+
+    # Interceptamos cómo se guardaron los atributos en el controlador (Mata "XXlast_syncXX" o formatos rotos)
+    saved_attrs = mock_controller.update_state_attributes.call_args[0][0]
+    
+    from homeassistant.const import ATTR_NAME
+    assert saved_attrs[ATTR_NAME] == "TestAC" # ATTR_NAME
+    assert saved_attrs["custom_attr"] == "value"
+    assert saved_attrs["last_sync"] == "2026-06-07 15:30:00"
+
