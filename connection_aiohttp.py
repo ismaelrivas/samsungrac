@@ -187,46 +187,35 @@ class ConnectionAiohttp8888(Connection):
     def create_updated(self, yaml_node: dict[str, Any] | None) -> "ConnectionAiohttp8888":
         """
         Creates a new connection instance with updated parameters from YAML.
-        This is crucial for async operations where each 'value' can have its own
-        connection_template OR static params.
-
-        HACK: This also converts static 'params' blocks into a
-        'connection_template' because the async_set_value in properties.py
-        fails to check _params.
         """
         # pylint: disable=protected-access
-        # Rationale: create_updated works on a shallow copy of self (same class).
-        # All attribute accesses on new_connection are internal manipulation,
-        # not external access to a foreign class's internals.
-
         new_connection = copy.copy(self)
         new_connection._params = {}
         new_connection._controller = self._controller
         new_connection._shared_state = self._shared_state
 
-        if yaml_node and "keep_alive" in yaml_node:
-            new_connection._keep_alive = yaml_node["keep_alive"]
+        if yaml_node is not None:
+            if "keep_alive" in yaml_node:
+                new_connection._keep_alive = yaml_node["keep_alive"]
 
-        if yaml_node and CONFIG_DEVICE_CONNECTION_TEMPLATE in yaml_node:
-            new_connection._connection_template = Template(
-                yaml_node[CONFIG_DEVICE_CONNECTION_TEMPLATE], getattr(self, "_hass", None)
-            )
-        elif yaml_node and CONFIG_DEVICE_CONNECTION_PARAMS in yaml_node:
-            params = {**self._params, **yaml_node.get(CONFIG_DEVICE_CONNECTION_PARAMS, {})}
-            new_connection._params.update(params)
+            if CONFIG_DEVICE_CONNECTION_TEMPLATE in yaml_node:
+                new_connection._connection_template = Template(
+                    yaml_node[CONFIG_DEVICE_CONNECTION_TEMPLATE], getattr(self, "_hass", None)
+                )
+            elif CONFIG_DEVICE_CONNECTION_PARAMS in yaml_node:
+                params = {**self._params, **yaml_node.get(CONFIG_DEVICE_CONNECTION_PARAMS, {})}
+                new_connection._params.update(params)
 
-        if yaml_node and CONFIG_DEVICE_CONNECTION in yaml_node:
-            new_connection._embedded_command = new_connection.create_updated(
-                yaml_node[CONFIG_DEVICE_CONNECTION]
-            )
-            if CONFIG_DEVICE_CONDITION_TEMPLATE in yaml_node[CONFIG_DEVICE_CONNECTION]:
-                condition_str = yaml_node[CONFIG_DEVICE_CONNECTION][
-                    CONFIG_DEVICE_CONDITION_TEMPLATE
-                ]
-                if new_connection._embedded_command:
-                    new_connection._embedded_command.condition_template = Template(
-                        condition_str, getattr(self, "_hass", None)
-                    )
+            if CONFIG_DEVICE_CONNECTION in yaml_node:
+                new_connection._embedded_command = new_connection.create_updated(
+                    yaml_node[CONFIG_DEVICE_CONNECTION]
+                )
+                if CONFIG_DEVICE_CONDITION_TEMPLATE in yaml_node[CONFIG_DEVICE_CONNECTION]:
+                    condition_str = yaml_node[CONFIG_DEVICE_CONNECTION][CONFIG_DEVICE_CONDITION_TEMPLATE]
+                    if new_connection._embedded_command is not None:
+                        new_connection._embedded_command.condition_template = Template(
+                            condition_str, getattr(self, "_hass", None)
+                        )
         # pylint: enable=protected-access
 
         return new_connection
@@ -434,7 +423,7 @@ class ConnectionAiohttp8888(Connection):
             ssl_context = self._shared_state.ssl_context
 
             # For plain HTTP test mode, use a simple connector with no SSL
-            if self._config.get("use_http", False):
+            if self._config.get("use_http") is True:
                 connector = aiohttp.TCPConnector(keepalive_timeout=75, limit=1)
             else:
                 connector = aiohttp.TCPConnector(keepalive_timeout=75, ssl=ssl_context, limit=1)  # type: ignore[arg-type]
@@ -727,14 +716,16 @@ class ConnectionAiohttp8888(Connection):
         # Ensure initialization before any execution
         probe_response_text = await self._try_connection()
 
-        if self._embedded_command:
+        if self._embedded_command is not None:
             _LOGGER.debug(  # pragma: no mutate
                 "%s [async_execute] Found embedded command.", self.log_prefix
             )
             try:
-                # Check the condition before executing the embedded command
-                if hasattr(self._embedded_command, "check_execute_condition") and device_state:
-                    if not self._embedded_command.check_execute_condition(device_state):
+                # Patrón seguro: extracción de método + callable() en lugar de hasattr()
+                embed_check_func = getattr(self._embedded_command, "check_execute_condition", None)
+                
+                if callable(embed_check_func) and device_state is not None:
+                    if embed_check_func(device_state) is False:
                         _LOGGER.debug(  # pragma: no mutate
                             "%s [async_execute] Embedded command condition not met. Skipping execution.",
                             self.log_prefix,
@@ -745,17 +736,19 @@ class ConnectionAiohttp8888(Connection):
                             self.log_prefix,
                         )
 
-                        embedded_template = getattr(
-                            self._embedded_command, "_connection_template", None
-                        )
+                        embedded_template = getattr(self._embedded_command, "_connection_template", None)
                         embedded_params = getattr(self._embedded_command, "_params", {})
-                        if embedded_template:
-                            if hasattr(embedded_template, "async_render"):
-                                embedded_params_str = embedded_template.async_render()
+                        
+                        if embedded_template is not None:
+                            # Patrón seguro para Template (soporta render síncrono y asíncrono)
+                            async_render_func = getattr(embedded_template, "async_render", None)
+                            if callable(async_render_func):
+                                embedded_params_str = async_render_func()
                             else:
                                 embedded_params_str = embedded_template.render()
+                                
                             embedded_params = json_loads(embedded_params_str)
-                        elif embedded_params:
+                        elif bool(embedded_params) is True:
                             _LOGGER.debug(  # pragma: no mutate
                                 "%s [async_execute] Embedded command has no connection_template, using _params directly.",
                                 self.log_prefix,
@@ -767,7 +760,7 @@ class ConnectionAiohttp8888(Connection):
                             )
                             embedded_params = None
 
-                        if embedded_params:
+                        if embedded_params is not None:
                             # CRITICAL FIX: Replace placeholders early for robust logging and execution
                             embedded_params = format_placeholders(
                                 embedded_params, token, host, dev_id, mac
@@ -822,9 +815,8 @@ class ConnectionAiohttp8888(Connection):
                 raise
 
         # Execute the main command
-        if hasattr(self, "check_execute_condition") and not self.check_execute_condition(
-            device_state
-        ):
+        main_check_func = getattr(self, "check_execute_condition", None)
+        if callable(main_check_func) and main_check_func(device_state) is False:
             _LOGGER.debug(  # pragma: no mutate
                 "%s [async_execute] Condition not met (template result false). Skipping execution.",
                 self.log_prefix,
