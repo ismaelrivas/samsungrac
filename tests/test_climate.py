@@ -212,9 +212,6 @@ async def test_climate_init_legacy_config_priority(hass: HomeAssistant) -> None:
 
 async def test_climate_main_unique_id_fallback(hass: HomeAssistant) -> None:
     """Verify that _main_unique_id uses the provided value or falls back safely to the coordinator's unique_id."""
-    from custom_components.climate_ip.climate import ClimateIP, ClimateIPEntityDescription
-    from unittest.mock import MagicMock
-
     mock_coordinator = MagicMock()
     mock_coordinator.unique_id = "coord_id_123"
     description = ClimateIPEntityDescription(key="samsung_ac")
