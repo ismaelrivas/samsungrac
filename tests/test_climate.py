@@ -3,15 +3,32 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
-from homeassistant.components.climate import HVACMode
+from homeassistant.components.climate import HVACMode, ATTR_HVAC_MODE, ATTR_FAN_MODE
+from homeassistant.const import (
+    STATE_OFF,
+    STATE_ON,
+    PRECISION_HALVES,
+    PRECISION_WHOLE,
+    PRECISION_TENTHS,
+    ATTR_TEMPERATURE as HA_ATTR_TEMPERATURE,
+)
+from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import SOURCE_IMPORT
+from homeassistant.helpers.issue_registry import IssueSeverity
+
 from custom_components.climate_ip.climate import (
     ClimateIP,
     ClimateIPEntityDescription,
+    ATTR_SWING_MODE,
+    ATTR_PRESET_MODE,
+    async_setup_entry,
+    async_setup_platform,
+    DOMAIN,
+    CONF_DEVICES,
 )
+from custom_components.climate_ip.const import CONF_TARGET_TEMP_STEP, CONF_TEMP_STEP
 from custom_components.climate_ip.controller import ATTR_POWER
 from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
-from homeassistant.const import STATE_OFF, STATE_ON
-from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture
@@ -221,11 +238,6 @@ async def test_auto_mode_correction_revert(hass: HomeAssistant) -> None:
 
 async def test_climate_init_options_priority_and_halves(hass: HomeAssistant) -> None:
     """Verify that entry options have priority and configure step=0.5."""
-    from custom_components.climate_ip.climate import ClimateIP, ClimateIPEntityDescription
-    from custom_components.climate_ip.const import CONF_TARGET_TEMP_STEP, CONF_TEMP_STEP
-    from homeassistant.const import PRECISION_HALVES
-    from unittest.mock import MagicMock
-
     mock_coordinator = MagicMock()
     # Inject options (Priority 1) with 0.5
     mock_coordinator.entry.options = {CONF_TARGET_TEMP_STEP: 0.5}
@@ -242,11 +254,6 @@ async def test_climate_init_options_priority_and_halves(hass: HomeAssistant) -> 
 
 async def test_climate_init_config_priority_and_integer_cast(hass: HomeAssistant) -> None:
     """Verify that without options, it reads config directly, and that floats representing integers are cast to int."""
-    from custom_components.climate_ip.climate import ClimateIP, ClimateIPEntityDescription
-    from custom_components.climate_ip.const import CONF_TARGET_TEMP_STEP, CONF_TEMP_STEP
-    from homeassistant.const import PRECISION_WHOLE
-    from unittest.mock import MagicMock
-
     mock_coordinator = MagicMock()
     mock_coordinator.entry = None  # Force the branch where there is no entry or options
 
@@ -263,10 +270,6 @@ async def test_climate_init_config_priority_and_integer_cast(hass: HomeAssistant
 
 async def test_climate_init_legacy_config_priority(hass: HomeAssistant) -> None:
     """Verify fallback to the legacy CONF_TEMP_STEP key."""
-    from custom_components.climate_ip.climate import ClimateIP, ClimateIPEntityDescription
-    from custom_components.climate_ip.const import CONF_TEMP_STEP
-    from unittest.mock import MagicMock
-
     mock_coordinator = MagicMock()
     mock_coordinator.entry = None
 
@@ -276,7 +279,6 @@ async def test_climate_init_legacy_config_priority(hass: HomeAssistant) -> None:
 
     entity = ClimateIP(coordinator=mock_coordinator, description=description, config=config)
 
-    from homeassistant.const import PRECISION_TENTHS
     # Lethal Assertion
     assert entity.target_temperature_step == 0.1, "Legacy temp_step key was not respected"
     assert entity.precision == PRECISION_TENTHS, "Precision was not adjusted to tenths"
@@ -302,10 +304,6 @@ async def test_climate_main_unique_id_fallback(hass: HomeAssistant) -> None:
 
 async def test_climate_optimistic_side_effects(hass: HomeAssistant) -> None:
     """Verify that _apply_optimistic_corrections applies side effects correctly."""
-    from custom_components.climate_ip.climate import ClimateIP, ClimateIPEntityDescription
-    from homeassistant.components.climate import HVACMode
-    from unittest.mock import MagicMock, AsyncMock, patch
-
     mock_coordinator = MagicMock()
     mock_coordinator.unique_id = "coord_side_effects"
     mock_coordinator.async_set_property = AsyncMock()
@@ -338,11 +336,6 @@ async def test_climate_optimistic_side_effects(hass: HomeAssistant) -> None:
 
 async def test_climate_init_precision_whole(hass: HomeAssistant) -> None:
     """Verify that a step > 0.5 (like 1.0) explicitly assigns PRECISION_WHOLE."""
-    from custom_components.climate_ip.climate import ClimateIP, ClimateIPEntityDescription
-    from custom_components.climate_ip.const import CONF_TARGET_TEMP_STEP
-    from homeassistant.const import PRECISION_WHOLE
-    from unittest.mock import MagicMock
-
     mock_coordinator = MagicMock()
     mock_coordinator.entry = None
 
@@ -356,10 +349,6 @@ async def test_climate_init_precision_whole(hass: HomeAssistant) -> None:
 
 async def test_climate_sync_data_full(hass: HomeAssistant) -> None:
     """Verify that _sync_data_from_coordinator correctly copies all properties when state is present."""
-    from custom_components.climate_ip.climate import ClimateIP, ClimateIPEntityDescription
-    from homeassistant.components.climate import HVACMode
-    from unittest.mock import MagicMock
-
     mock_coordinator = MagicMock()
     mock_coordinator.unique_id = "test_sync_full"
     
@@ -398,9 +387,6 @@ async def test_climate_sync_data_full(hass: HomeAssistant) -> None:
 
 async def test_climate_sync_data_none(hass: HomeAssistant) -> None:
     """Verify that _sync_data_from_coordinator falls back correctly when state is None."""
-    from custom_components.climate_ip.climate import ClimateIP, ClimateIPEntityDescription
-    from unittest.mock import MagicMock
-
     mock_coordinator = MagicMock()
     mock_coordinator.unique_id = "test_sync_none"
     mock_coordinator.data = None
@@ -440,10 +426,6 @@ async def test_climate_sync_data_none(hass: HomeAssistant) -> None:
 
 async def test_public_async_set_hvac_mode_behavior(hass: HomeAssistant) -> None:
     """Verify local state change and network output of the HVAC delegator."""
-    from custom_components.climate_ip.climate import ClimateIP
-    from homeassistant.components.climate import ATTR_HVAC_MODE, HVACMode
-    from unittest.mock import AsyncMock, MagicMock
-    
     mock_coord = MagicMock()
     # Simulate that the async predictor does not require additional corrections
     mock_coord.async_predict_and_correct = AsyncMock(return_value=({}, {}))
@@ -467,10 +449,6 @@ async def test_public_async_set_hvac_mode_behavior(hass: HomeAssistant) -> None:
 
 async def test_public_async_set_fan_mode_behavior(hass: HomeAssistant) -> None:
     """Verify local state change and network output of the Fan delegator."""
-    from custom_components.climate_ip.climate import ClimateIP
-    from homeassistant.components.climate import ATTR_FAN_MODE 
-    from unittest.mock import AsyncMock, MagicMock
-    
     mock_coord = MagicMock()
     mock_coord.async_predict_and_correct = AsyncMock(return_value=({}, {}))
     mock_coord.async_set_property = AsyncMock()
@@ -506,8 +484,6 @@ async def test_async_set_temperature_with_valid_temp_kills_mutants(base_climate_
     positional arguments passed to _async_set_climate_mode.
     A strict assert_awaited_once_with covers all argument-swap variants.
     """
-    from homeassistant.const import ATTR_TEMPERATURE as HA_ATTR_TEMPERATURE
-
     # -- Path: temperature value is present → helper must be called exactly once --
     await base_climate_entity.async_set_temperature(temperature=21.0)
 
@@ -536,8 +512,6 @@ async def test_async_set_swing_mode_strict_args_kills_mutants(base_climate_entit
     _async_set_climate_mode (attr_name, mode_value, local_attr). The strict
     assert_called_once_with fires on any deviation.
     """
-    from custom_components.climate_ip.climate import ATTR_SWING_MODE
-
     base_climate_entity._attr_swing_modes = ["vertical", "horizontal"]
 
     await base_climate_entity.async_set_swing_mode("vertical")
@@ -556,8 +530,6 @@ async def test_async_set_preset_mode_strict_args_kills_mutants(base_climate_enti
 
     Same pattern as swing: every mutant swaps one positional argument.
     """
-    from custom_components.climate_ip.climate import ATTR_PRESET_MODE
-
     await base_climate_entity.async_set_preset_mode("sleep")
 
     base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(
@@ -603,12 +575,6 @@ async def test_async_setup_entry_multi_device_kills_mutants() -> None:
     - ClimateIP receives the exact 5-tuple of arguments (mutants 15-33)
     - async_add_entities is called with update_before_add=True (mutants 34-38)
     """
-    from custom_components.climate_ip.climate import (
-        async_setup_entry,
-        ClimateIPEntityDescription,
-        CONF_DEVICES,
-    )
-
     entry = MagicMock()
     entry.data = {
         CONF_DEVICES: [
@@ -678,8 +644,6 @@ async def test_async_setup_entry_multi_device_skips_unmatched_device_info() -> N
     Kills mutants 3-5 that short-circuit the 'next()' generator to always
     return a truthy value or to skip the id-equality filter.
     """
-    from custom_components.climate_ip.climate import async_setup_entry, CONF_DEVICES
-
     entry = MagicMock()
     entry.data = {
         CONF_DEVICES: [{"id": "known_device", "ip": "10.0.0.1"}]
@@ -715,8 +679,6 @@ async def test_async_setup_entry_multi_device_missing_conf_fallback() -> None:
     entity is created for that coordinator.  Any mutation of the fallback causes a
     TypeError that kills the mutant.
     """
-    from custom_components.climate_ip.climate import async_setup_entry, CONF_DEVICES
-
     entry = MagicMock()
     # Deliberately omit CONF_DEVICES so the .get(CONF_DEVICES, []) fallback fires
     entry.data = {"other_irrelevant_key": "value"}
@@ -746,8 +708,6 @@ async def test_async_setup_entry_single_device_kills_mutants() -> None:
     Description must use the literal key 'samsung_ac' and translation_key 'samsung_ac'.
     device_info must be None.  unique_id comes from entry.unique_id.
     """
-    from custom_components.climate_ip.climate import async_setup_entry
-
     entry = MagicMock()
     entry.data = {"ip": "10.0.0.5"}
     entry.unique_id = "single_uid_abc"
@@ -812,10 +772,6 @@ async def test_async_setup_platform_fresh_install_kills_mutants(
     async_setup_platform via 'from homeassistant.helpers.issue_registry import ...'.
     The patch must target the function at its definition site, not on climate.py.
     """
-    from custom_components.climate_ip.climate import async_setup_platform, DOMAIN
-    from homeassistant.helpers.issue_registry import IssueSeverity
-    from homeassistant.config_entries import SOURCE_IMPORT
-
     config = {"ip_address": "192.168.1.100"}
 
     # Plain MagicMock: return_value is the literal string, not a coroutine wrapper
@@ -864,9 +820,6 @@ async def test_async_setup_platform_already_imported_skips_task(
     When an existing SOURCE_IMPORT entry exists, async_create_task must NOT
     be called (early return path).
     """
-    from custom_components.climate_ip.climate import async_setup_platform
-    from homeassistant.config_entries import SOURCE_IMPORT
-
     existing_entry = MagicMock()
     existing_entry.source = SOURCE_IMPORT
 
