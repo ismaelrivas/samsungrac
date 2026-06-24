@@ -144,7 +144,7 @@ async def test_async_execute_embedded_command_strict(connection_config, mock_log
         # Attach embedded command with a condition that always evaluates to True
         conn._embedded_command = embed_conn
         embed_conn.condition_template = MagicMock()
-        embed_conn.condition_template.async_render.return_value = "True"
+        embed_conn.condition_template.async_render = AsyncMock(return_value="True")
         
         await conn.async_execute("GET", "/main", None, {}, device_state={})
         

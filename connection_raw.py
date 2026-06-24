@@ -296,7 +296,7 @@ class ConnectionRaw8888(Connection):
                         embedded_params = self._embedded_command._params
                         if embedded_template:
                             if hasattr(embedded_template, "async_render"):
-                                embedded_params_str = embedded_template.async_render()
+                                embedded_params_str = await embedded_template.async_render()
                             else:
                                 embedded_params_str = embedded_template.render()
                             embedded_params = json_loads(embedded_params_str)

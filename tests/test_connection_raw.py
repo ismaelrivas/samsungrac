@@ -671,7 +671,7 @@ async def test_async_execute_embedded_and_path(connection_config, mock_logger, m
         conn._embedded_command._params = {}
         
         mock_template = MagicMock()
-        mock_template.async_render.return_value = '{"method": "POST"}'
+        mock_template.async_render = AsyncMock(return_value='{"method": "POST"}')
         conn._embedded_command._connection_template = mock_template
         conn._embedded_command.check_execute_condition = MagicMock(return_value=True)
         conn._embedded_command.async_execute = AsyncMock(return_value=(None, None))
