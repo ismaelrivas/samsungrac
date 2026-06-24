@@ -370,9 +370,8 @@ class ConnectionAiohttp8888(Connection):
                     self.log_prefix,
                     e,
                 )
-                raise InvalidHeaderError(
-                    "Device failed to provide response body (missing Content-Length/Close)"
-                ) from None
+                error_msg = "Device failed to provide response body (missing Content-Length/Close)"
+                raise InvalidHeaderError(error_msg) from e
 
             except (aiohttp.ClientError, ValueError, RuntimeError) as e:
                 # Detect malformed header error
@@ -383,7 +382,8 @@ class ConnectionAiohttp8888(Connection):
                         "The integration will automatically switch to the 'Robust (raw socket)' connection engine.",
                         self.log_prefix,
                     )
-                    raise InvalidHeaderError("Malformed HTTP headers from device") from None
+                    error_msg = "Malformed HTTP headers from device"
+                    raise InvalidHeaderError(error_msg) from e
 
                 _LOGGER.warning(  # pragma: no mutate
                     "%s [aiohttp_probe] Initial probe with HTTPS (mTLS) failed: %s.",
@@ -397,7 +397,8 @@ class ConnectionAiohttp8888(Connection):
                 "%s [aiohttp_probe] HTTPS (mTLS) connection probe failed. The device is unreachable or the certificate/token is incorrect.",
                 self.log_prefix,
             )
-            raise CannotConnect("Connection initialization failed (HTTPS)")
+            error_msg = "Connection initialization failed (HTTPS)"
+            raise CannotConnect(error_msg) from None
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """
@@ -420,7 +421,15 @@ class ConnectionAiohttp8888(Connection):
             )
 
         local_session = self._shared_state.local_session
-        if local_session is None or local_session.closed:
+        
+        # Determine if we need a new session
+        needs_new_session = False
+        if local_session is None:
+            needs_new_session = True
+        elif local_session.closed is True: # Estricto
+            needs_new_session = True
+
+        if needs_new_session:
             # Retrieve the shared SSL context (should be initialized by _try_connection)
             ssl_context = self._shared_state.ssl_context
 
@@ -517,7 +526,7 @@ class ConnectionAiohttp8888(Connection):
             req_headers["Content-Type"] = "application/json"
 
         # Adaptive Keep-Alive Logic: If we previously detected stability issues, force Connection: close
-        if getattr(self, "_force_close_connection", False):
+        if self._force_close_connection:
             req_headers["Connection"] = "close"
 
         ssl_context = self._shared_state.ssl_context
@@ -548,7 +557,7 @@ class ConnectionAiohttp8888(Connection):
                     method,
                     full_url,
                     mask_sensitive_data(data),
-                    getattr(self, "_force_close_connection", "False"),
+                    self._force_close_connection,
                 )
 
                 session = await self._get_session()
@@ -572,7 +581,7 @@ class ConnectionAiohttp8888(Connection):
 
                 # HTTP Version Detection to adjust Keep-Alive
                 if response.version and response.version.major == 1 and response.version.minor >= 1:
-                    if getattr(self, "_force_close_connection", False):
+                    if self._force_close_connection:
                         _LOGGER.debug(  # pragma: no mutate
                             "%s [aiohttp] Server speaks HTTP/%s.%s. Re-enabling Keep-Alive.",
                             self.log_prefix,
@@ -581,7 +590,7 @@ class ConnectionAiohttp8888(Connection):
                         )
                     self._force_close_connection = False
                 else:
-                    if not getattr(self, "_force_close_connection", False) and response.version:
+                    if not self._force_close_connection and response.version:
                         _LOGGER.debug(  # pragma: no mutate
                             "%s [aiohttp] Server speaks HTTP/%s.%s. Enforcing 'Connection: close'.",
                             self.log_prefix,
@@ -630,7 +639,7 @@ class ConnectionAiohttp8888(Connection):
                 clean_e = str(e)
 
             # If we timed out and haven't forced close yet, it's highly likely the "missing Content-Length" issue.
-            if not getattr(self, "_force_close_connection", False):
+            if not self._force_close_connection:
                 _LOGGER.warning(  # pragma: no mutate
                     "%s [aiohttp] Timeout/Error detected (%s). "
                     "The device likely violates HTTP protocol (missing Content-Length). "
@@ -860,7 +869,7 @@ class ConnectionAiohttp8888(Connection):
         """Return diagnostic information about the aiohttp connection."""
         diag = {
             "is_connected": self._shared_state.initialized,
-            "force_close_connection": getattr(self, "_force_close_connection", False),
+            "force_close_connection": self._force_close_connection,
             "keep_alive_enabled": self._keep_alive,
         }
 
