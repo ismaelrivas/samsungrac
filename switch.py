@@ -46,12 +46,14 @@ async def async_setup_entry(  # pylint: disable=import-outside-toplevel,too-many
                 if prop_obj is not None:
                     op = prop_obj
                 else:
-                    _LOGGER.error("Switch setup: Could not find operation object for '%s'", op)
+                    msg = "Switch setup: Could not find operation object for '%s'"  # pragma: no mutate
+                    _LOGGER.error(msg, op)  # pragma: no mutate
                     continue
 
             # We skip 'power' because it's the main control for the climate entity
             if not hasattr(op, "id"):
-                _LOGGER.error("Switch setup: op has no id! op=%s", op)
+                msg = "Switch setup: op has no id! op=%s"  # pragma: no mutate
+                _LOGGER.error(msg, op)  # pragma: no mutate
                 continue
 
             if op.id == "power":
@@ -117,7 +119,8 @@ class SamsungClimateSwitch(CoordinatorEntity[SamsungClimateCoordinator], SwitchE
 
     async def async_turn_on(self, **kwargs: Any) -> None:  # pylint: disable=import-outside-toplevel,unused-argument
         """Turn the entity on."""
-        _LOGGER.debug("Turning on %s", self.name)
+        msg = "Turning on %s"  # pragma: no mutate
+        _LOGGER.debug(msg, self.name)  # pragma: no mutate
         if await self._controller.async_set_property(self.entity_description.key, "on"):
             self._attr_is_on = True
             self.async_write_ha_state()
@@ -125,7 +128,8 @@ class SamsungClimateSwitch(CoordinatorEntity[SamsungClimateCoordinator], SwitchE
 
     async def async_turn_off(self, **kwargs: Any) -> None:  # pylint: disable=import-outside-toplevel,unused-argument
         """Turn the entity off."""
-        _LOGGER.debug("Turning off %s", self.name)
+        msg = "Turning off %s"  # pragma: no mutate
+        _LOGGER.debug(msg, self.name)  # pragma: no mutate
         if await self._controller.async_set_property(self.entity_description.key, "off"):
             self._attr_is_on = False
             self.async_write_ha_state()
