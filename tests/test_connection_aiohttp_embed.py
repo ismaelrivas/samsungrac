@@ -114,3 +114,45 @@ async def test_async_execute_main_condition_not_met(connection_config, mock_logg
         
         assert res_text == "{}"
         assert headers == {}
+
+async def test_async_execute_embedded_command_strict(connection_config, mock_logger, mock_hass, mock_session):
+    with patch("os.path.exists", return_value=True):
+        conn = ConnectionAiohttp8888(connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100")
+        conn._shared_state.initialized = True
+        conn._try_connection = AsyncMock()
+        
+        # Main mock response
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text.return_value = '{"result": "ok"}'
+        mock_response.headers = {"Content-Type": "application/json"}
+        mock_response.version = MagicMock(major=1, minor=1)
+        mock_context = AsyncMock()
+        mock_context.__aenter__.return_value = mock_response
+        mock_session.request.return_value = mock_context
+        
+        # Create embedded command
+        embed_conn = ConnectionAiohttp8888(connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100")
+        embed_conn._params = {
+            "method": "POST",
+            "url": "/embedded_endpoint",
+            "json": {"action": "test"}
+        }
+        embed_conn.async_execute = AsyncMock(return_value=('{"result": "embedded"}', {}))
+        embed_conn.check_execute_condition = MagicMock(return_value=True)
+        
+        # Attach embedded command with a condition that always evaluates to True
+        conn._embedded_command = embed_conn
+        embed_conn.condition_template = MagicMock()
+        embed_conn.condition_template.async_render.return_value = "True"
+        
+        await conn.async_execute("GET", "/main", None, {}, device_state={})
+        
+        # Verificar que async_execute del embebido se llamó con SUS parámetros exactos
+        embed_conn.async_execute.assert_called_once_with(
+            method="POST", 
+            url="/embedded_endpoint", 
+            data='{"action":"test"}', 
+            headers={},
+            device_state={}
+        )

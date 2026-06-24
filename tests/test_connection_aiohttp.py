@@ -108,6 +108,22 @@ async def test_execute_request_success(connection_config, mock_logger, mock_hass
 
         assert response_text == '{"result": "ok"}'
         assert headers == {"Content-Type": "application/json"}
+
+        # Aserciones de Caja Blanca Extremas
+        mock_session.request.assert_called_once()
+        _, kwargs = mock_session.request.call_args
+        
+        # Blindaje de mutantes 45-56 (Cabeceras)
+        req_headers = kwargs.get("headers", {})
+        assert "Authorization" in req_headers, "Falta la cabecera Authorization"
+        assert req_headers["Authorization"] == f"Bearer {conn._token}", "Token incorrecto"
+        assert "Content-Type" in req_headers, "Falta la cabecera Content-Type"
+        assert req_headers["Content-Type"] == "application/json", "Content-Type incorrecto"
+        
+        # Blindaje de mutantes 112-116 (Timeouts)
+        timeout_arg = kwargs.get("timeout")
+        assert timeout_arg is not None, "Falta el argumento timeout"
+        assert timeout_arg.total == 10, f"Timeout total incorrecto: {timeout_arg.total}"
         
         # ASERCIONES DE CAJA BLANCA: Validar que el payload, timeout y headers sean exactos
         mock_session.request.assert_called_once()
@@ -422,3 +438,118 @@ def test_format_url_strict_evaluations():
     
     assert ":9999/" in formatted_port, "El mutante deshabilitó el reemplazo del puerto por defecto"
     assert "http://" in formatted_port, "El mutante deshabilitó el reemplazo de https a http"
+
+async def test_adaptive_keep_alive_on_timeout_recovery(connection_config, mock_logger, mock_hass, mock_session):
+    """Testea que el motor cambia a force_close y reintenta tras un ClientError."""
+    from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
+    from unittest.mock import AsyncMock
+    import aiohttp
+    
+    conn = ConnectionAiohttp8888(
+        config=connection_config, 
+        logger=mock_logger, 
+        hass=mock_hass, 
+        session=mock_session, 
+        ip_address="192.168.1.100"
+    )
+    
+    conn._shared_state.initialized = True
+    conn._shared_state.ssl_context = None
+    
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.text.return_value = "{}"
+    mock_response.headers = {}
+    mock_response.raise_for_status = AsyncMock()
+    mock_context = AsyncMock()
+    mock_context.__aenter__.return_value = mock_response
+
+    # Hacemos que el mock falle la primera vez y funcione la segunda
+    mock_session.request.side_effect = [
+        aiohttp.ClientConnectorError(None, OSError("Mocked Error")),
+        mock_context # Segunda vez funciona
+    ]
+    
+    await conn._async_execute_request("GET", "/test", None, {})
+    
+    # Verificamos que reintentó
+    assert mock_session.request.call_count == 2
+    
+    # Verificamos que el segundo intento llevaba la cabecera salvavidas
+    retry_kwargs = mock_session.request.call_args_list[1][1]
+    assert "Connection" in retry_kwargs["headers"]
+    assert retry_kwargs["headers"]["Connection"] == "close"
+    
+    # Y que el estado interno se actualizó correctamente
+    assert conn._force_close_connection is True
+
+async def test_close_awaits_socket_teardown(connection_config, mock_logger, mock_hass, mock_session):
+    from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
+    with patch("os.path.exists", return_value=True):
+        conn = ConnectionAiohttp8888(
+            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+        )
+        conn._shared_state.local_session = mock_session
+        
+        with patch("asyncio.sleep") as mock_sleep:
+            mock_session.closed = False
+            await conn.close()
+            mock_sleep.assert_called_with(0.1)
+            assert mock_session.close.call_count == 1
+
+def test_create_updated_preserves_memory_references(connection_config, mock_logger, mock_hass, mock_session):
+    from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
+    with patch("os.path.exists", return_value=True):
+        base_conn = ConnectionAiohttp8888(
+            config={"keep_alive": True, "token": "base"}, 
+            logger=mock_logger, 
+            hass=mock_hass, 
+            session=mock_session, 
+            ip_address="192.168.1.100"
+        )
+        base_conn._controller = "MockControllerRef"
+        
+        # Creamos un clon con nuevos parámetros
+        new_conn = base_conn.create_updated({"keep_alive": False})
+        
+        # ASERCIONES ESTRICTAS DE MEMORIA
+        assert new_conn._controller == "MockControllerRef", "Perdió la referencia al controlador"
+        assert new_conn._shared_state is base_conn._shared_state, "Perdió el estado compartido"
+        assert new_conn._keep_alive is False, "No actualizó el parámetro hijo"
+
+async def test_execution_uses_controller_token_priority(connection_config, mock_logger, mock_hass, mock_session):
+    from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
+    with patch("os.path.exists", return_value=True):
+        # Conexión con un token base
+        conn = ConnectionAiohttp8888(
+            config={"token": "TOKEN_BASE"}, 
+            logger=mock_logger, 
+            hass=mock_hass, 
+            session=mock_session, 
+            ip_address="192.168.1.100"
+        )
+        conn._shared_state.initialized = True
+        conn._shared_state.ssl_context = None
+        
+        # Inyectamos el controlador con un token dominante
+        mock_controller = MagicMock()
+        mock_controller._config = {"token": "TOKEN_DOMINANTE"}
+        mock_controller.device_id = "DEV_123"
+        conn._controller = mock_controller
+        
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text.return_value = '{"result": "ok"}'
+        mock_response.headers = {"Content-Type": "application/json"}
+        mock_response.raise_for_status = AsyncMock()
+        mock_context = AsyncMock()
+        mock_context.__aenter__.return_value = mock_response
+        mock_session.request.return_value = mock_context
+        
+        await conn._async_execute_request("GET", "/test", None, {})
+        
+        # ASERCIÓN ESTRICTA
+        _, kwargs = mock_session.request.call_args
+        actual_headers = kwargs.get("headers", {})
+        
+        assert actual_headers["Authorization"] == "Bearer TOKEN_DOMINANTE", "No usó el token del controlador"
