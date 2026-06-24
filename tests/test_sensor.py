@@ -101,6 +101,22 @@ def test_update_state_unique_id_property(base_sensor_entity: ClimateIpSensor) ->
     assert base_sensor_entity.native_value == "00:11:22:33:AA:BB"
 
 
+def test_update_state_valid_float(base_sensor_entity: ClimateIpSensor) -> None:
+    """
+    Aniquila mutantes 10 y 11.
+    Evalúa estrictamente la rama del try donde la conversión a float debe ser exitosa.
+    """
+    base_sensor_entity.coordinator.get_property.return_value = "23.7"
+    base_sensor_entity._property.value_is_string = False
+    # No es UniqueIdProperty
+    
+    base_sensor_entity._update_state()
+    
+    # Aserción letal: Si el mutante asigna None o lanza TypeError (float(None)),
+    # el valor resultante será None y esta aserción fallará crasamente.
+    assert base_sensor_entity._attr_native_value == 23.7, "Falló la conversión matemática a float (Mutante 10/11)."
+
+
 # ============================================================
 # PHASE 2: Factory / async_setup_entry
 # ============================================================
