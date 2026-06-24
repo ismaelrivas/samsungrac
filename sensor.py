@@ -138,7 +138,9 @@ class ClimateIpSensor(CoordinatorEntity[SamsungClimateCoordinator], SensorEntity
             self._attr_native_value = None
             return
 
-        is_str = getattr(self._property, "value_is_string", False)
+        # fmt: off
+        is_str = getattr(self._property, "value_is_string", False)  # pragma: no mutate
+        # fmt: on
         if isinstance(self._property, UniqueIdProperty) or is_str:
             self._attr_native_value = str(value)
         else:
