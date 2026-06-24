@@ -104,10 +104,24 @@ async def test_execute_request_success(connection_config, mock_logger, mock_hass
         mock_session.request.return_value = mock_context
         # pylint: enable=duplicate-code
 
-        response_text, headers = await conn.async_execute("GET", "/test", None, None)
+        response_text, headers = await conn.async_execute("GET", "/test", None, {})
 
         assert response_text == '{"result": "ok"}'
         assert headers == {"Content-Type": "application/json"}
+        
+        # ASERCIONES DE CAJA BLANCA: Validar que el payload, timeout y headers sean exactos
+        mock_session.request.assert_called_once()
+        _, kwargs = mock_session.request.call_args
+        actual_headers = kwargs.get("headers", {})
+
+        assert "Authorization" in actual_headers, "Falta la cabecera Authorization"
+        assert actual_headers["Authorization"] == "Bearer test_token", "Token de Auth incorrecto"
+        assert "Content-Type" in actual_headers, "Falta la cabecera Content-Type"
+        assert actual_headers["Content-Type"] == "application/json", "Content-Type incorrecto"
+
+        actual_timeout = kwargs.get("timeout")
+        assert actual_timeout is not None, "El mutante borró el timeout"
+        assert actual_timeout.total == 10, f"El mutante cambió el timeout total: {actual_timeout.total}"
 
 
 
@@ -338,3 +352,73 @@ def test_create_updated_strict():
     # Check condition template was compiled
     assert new_conn._embedded_command.condition_template is not None
 
+
+async def test_adaptive_keep_alive_fallback(connection_config, mock_logger, mock_hass, mock_session):
+    """Prueba que el motor añade Connection: close si el flag de force_close está activo."""
+    from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
+    from unittest.mock import AsyncMock
+    
+    conn = ConnectionAiohttp8888(
+        config=connection_config, 
+        logger=mock_logger, 
+        hass=mock_hass, 
+        session=mock_session, 
+        ip_address="192.168.1.100"
+    )
+    
+    conn._shared_state.initialized = True
+    conn._shared_state.ssl_context = None
+    
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.text.return_value = "{}"
+    mock_response.headers = {}
+    mock_response.raise_for_status = AsyncMock()
+
+    mock_context = AsyncMock()
+    mock_context.__aenter__.return_value = mock_response
+    mock_session.request.return_value = mock_context
+    
+    # Inyectamos el estado forzado (simulando que en el pasado falló)
+    conn._force_close_connection = True
+    
+    # Al ejecutar, DEBE inyectar el header de cierre
+    await conn._async_execute_request(method="GET", url_path="/test", data=None, headers={}, _is_poll=False)
+    
+    _, kwargs = mock_session.request.call_args
+    actual_headers = kwargs.get("headers", {})
+    
+    assert "Connection" in actual_headers, "El mutante borró el header de Connection"
+    assert actual_headers["Connection"] == "close", "El mutante alteró el valor de Connection: close"
+
+def test_format_url_strict_evaluations():
+    """Valida los mutantes que atacan la formación de URLs, HTTP fallback y reemplazo de puertos."""
+    from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
+    from unittest.mock import MagicMock
+    import logging
+    
+    config = {
+        "host": "192.168.1.50",
+        "mac": "AA:BB:CC:DD",
+        "token": "tok123",
+        "port": "9999", # Puerto custom para pillar al mutante
+        "use_http": True # Activa HTTP para pillar al mutante
+    }
+    
+    # Constructor mockeado
+    conn = ConnectionAiohttp8888(config=config, logger=logging.getLogger(), hass=MagicMock(), session=None, ip_address=None)
+    conn._params = config
+    
+    # 1. Test básico de placeholders
+    url_base = "https://__CLIMATE_IP_HOST__/devices/__CLIMATE_IP_MAC__"
+    formatted = conn._format_url(url_base)
+    
+    # Validamos el reemplazo y el cambio a HTTP
+    assert "http://192.168.1.50/devices/AA:BB:CC:DD" in formatted, "Mutante sobrevivió alterando la inyección de host/mac o el fallback HTTP"
+
+    # 2. Test del puerto custom (:8888/ -> :9999/)
+    url_port = "https://1.1.1.1:8888/api"
+    formatted_port = conn._format_url(url_port)
+    
+    assert ":9999/" in formatted_port, "El mutante deshabilitó el reemplazo del puerto por defecto"
+    assert "http://" in formatted_port, "El mutante deshabilitó el reemplazo de https a http"

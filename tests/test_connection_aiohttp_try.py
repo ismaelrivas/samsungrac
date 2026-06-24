@@ -42,6 +42,14 @@ async def test_try_connection_success(connection_config, mock_logger, mock_hass,
         res = await conn._try_connection()
         assert res == '{"result": "ok"}'
         assert conn._shared_state.initialized is True
+        
+        # ASERCIONES DE CAJA BLANCA: timeout de try_connection
+        mock_session.request.assert_called_once()
+        _, kwargs = mock_session.request.call_args
+        actual_timeout = kwargs.get("timeout")
+        assert actual_timeout is not None, "El mutante borró el timeout"
+        assert actual_timeout.total == 10, f"El mutante cambió el timeout total: {actual_timeout.total}"
+        assert getattr(actual_timeout, "sock_read", None) == 5, "El mutante borró o alteró el sock_read del probe"
 
 async def test_try_connection_success_no_body(connection_config, mock_logger, mock_hass, mock_session):
     with patch("os.path.exists", return_value=True):
