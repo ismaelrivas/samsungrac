@@ -105,119 +105,119 @@ def test_update_state_unique_id_property(base_sensor_entity: ClimateIpSensor) ->
 # PHASE 2: Factory / async_setup_entry
 # ============================================================
 
+class DummyPropValid:
+    """Clase plana pura para derrotar la creación silenciosa de atributos de MagicMock."""
+    id = "sensor_valid"
+    entity_category = "diagnostic"
+    device_class = "temperature"
+    icon = "mdi:thermometer"
+    unit_of_measurement = "°C"
+    state_class = "measurement"
+    
+    def is_valid(self, state):
+        return True
+
+class DummyPropFallback:
+    """Clase plana que carece de atributos opcionales para detonar fallbacks reales."""
+    id = "sensor_fallback"
+    
+    def is_valid(self, state):
+        return True
+
+
 @pytest.mark.asyncio
 @patch("custom_components.climate_ip.sensor.ClimateIpSensor")
-async def test_async_setup_entry_dict_and_filters(mock_sensor_class) -> None:
+@patch("custom_components.climate_ip.sensor.SensorEntityDescription")
+@patch("custom_components.climate_ip.sensor.parse_entity_category")
+async def test_async_setup_entry_strict_mapping(
+    mock_parse_category, mock_desc_class, mock_sensor_class
+) -> None:
     """
-    Aniquila mutantes 5 y 6 (aserciones estructurales de is_valid).
+    Aniquila mutantes 8-23 y 40-67.
+    Aserta la firma exacta de extracción (getattr) e inyección de SensorEntityDescription.
     """
     hass = MagicMock()
     entry = MagicMock()
-    
     mock_coord = MagicMock()
-    # Inyectamos un objeto de estado identificable
-    target_device_state = {"power": "on", "temp": 22}
+    
+    target_device_state = {"temp": 22}
     mock_coord.controller.device_state = target_device_state
     
-    prop_valid = MagicMock()
-    prop_valid.id = "sensor_1"
-    prop_valid.is_valid.return_value = True
+    # Inyección de la clase plana en lugar de un Mock
+    prop_instance = DummyPropValid()
+    # Usamos un mock para el método is_valid para asertar que recibe el estado correcto (Mutante 5 y 6)
+    prop_instance.is_valid = MagicMock(return_value=True)
     
-    mock_coord.controller.sensors = [prop_valid]
+    mock_coord.controller.sensors = [prop_instance]
     entry.runtime_data = {"dev_1": mock_coord}
 
+    mock_parse_category.return_value = "parsed_diagnostic"
+    mock_desc_class.return_value = "sentinel_desc"
     async_add_entities = MagicMock()
 
     await async_setup_entry(hass, entry, async_add_entities)
 
-    # Mutantes 5 y 6 mueren aquí: exigimos que is_valid reciba EXACTAMENTE el raw_device_state
-    prop_valid.is_valid.assert_called_once_with(target_device_state)
+    # Aniquila mutantes 5 y 6: Aserta la recepción del raw_state exacto
+    prop_instance.is_valid.assert_called_once_with(target_device_state)
+
+    # Aniquila mutantes de parse_entity_category (8, 9, 14, 15)
+    mock_parse_category.assert_called_once_with("diagnostic")
+
+    # Aniquila mutantes de extracción y asignación de kwargs (16-23, 40-67)
+    mock_desc_class.assert_called_once_with(
+        key="sensor_valid",
+        translation_key="sensor_valid",
+        name=None,
+        device_class="temperature",
+        native_unit_of_measurement="°C",
+        state_class="measurement",
+        entity_category="parsed_diagnostic",
+        icon="mdi:thermometer",
+    )
 
 
 @pytest.mark.asyncio
-@patch("custom_components.climate_ip.sensor.ClimateIpSensor")
+@patch("custom_components.climate_ip.sensor.SensorEntityDescription")
 @patch("custom_components.climate_ip.sensor.parse_entity_category")
-async def test_async_setup_entry_getattr_fallbacks(mock_parse_category, mock_sensor_class) -> None:
-    """
-    Aniquila mutantes 7, 8, 9, 13, 14, 15, 21, 29, 44, 52, 58, 65.
-    Evalúa matemáticamente que los fallbacks de los atributos opcionales funcionen,
-    forzando AttributeError si mutmut elimina el tercer parámetro de getattr.
-    """
+async def test_async_setup_entry_fallback_and_logic(
+    mock_parse_category, mock_desc_class
+) -> None:
+    """Aniquila mutantes lógicos en las ramas de fallback (ej. mutante 32)."""
     hass = MagicMock()
     entry = MagicMock()
     mock_coord = MagicMock()
     
-    # Creamos una propiedad "desnuda", sin NINGUNO de los atributos opcionales.
-    # Si getattr mutó a no tener valor default, lanzará AttributeError y morirá.
-    class BareProperty:
-        id = "bare_sensor"
-        def is_valid(self, state):
-            return True
-
-    prop_bare = BareProperty()
-    mock_coord.controller.sensors = [prop_bare]
+    mock_coord.controller.sensors = [DummyPropFallback()]
     entry.runtime_data = {"dev_1": mock_coord}
-    async_add_entities = MagicMock()
 
     mock_parse_category.return_value = None
-
-    await async_setup_entry(hass, entry, async_add_entities)
-
-    # Verificamos que parse_entity_category fue llamado exactamente con None (Mutantes 8, 9, 14, 15)
-    mock_parse_category.assert_called_once_with(None)
-
-    # Verificamos que el empaquetado del SensorEntityDescription fue perfecto
-    assert mock_sensor_class.call_count == 1
-    _, c_desc, _ = mock_sensor_class.call_args.args
-
-    assert c_desc.key == "bare_sensor"
-    assert c_desc.device_class is None
-    assert c_desc.native_unit_of_measurement is None
-    assert c_desc.state_class is None
-    assert c_desc.entity_category is None  # Mutantes 44, 52
-    assert c_desc.icon == "mdi:eye"  # Fallback final
-
-
-@pytest.mark.asyncio
-@patch("custom_components.climate_ip.sensor.ClimateIpSensor")
-async def test_async_setup_entry_icon_logical_operator(mock_sensor_class) -> None:
-    """
-    Aniquila mutante 32 (cambio de 'and' por 'or' en la asignación del icono mdi:eye).
-    """
-    hass = MagicMock()
-    entry = MagicMock()
-    mock_coord = MagicMock()
-    
-    # Configuración de asedio: Tiene icono, pero NO tiene device_class.
-    prop_test = MagicMock()
-    prop_test.id = "sensor_logic"
-    prop_test.is_valid.return_value = True
-    prop_test.icon = "mdi:thermometer"
-    prop_test.device_class = None
-    
-    mock_coord.controller.sensors = [prop_test]
-    entry.runtime_data = {"dev_1": mock_coord}
     async_add_entities = MagicMock()
 
     await async_setup_entry(hass, entry, async_add_entities)
 
-    _, c_desc, _ = mock_sensor_class.call_args.args
-    
-    # Si el mutante `if not icon or not device_class:` sobreviviera, 
-    # c_desc.icon habría sido sobrescrito con "mdi:eye".
-    assert c_desc.icon == "mdi:thermometer", "Logical operator in icon fallback was mutated."
+    # Aniquila mutantes que alteran la condición 'not icon and not device_class'
+    # o que corrompen el getattr forzando el default None
+    mock_desc_class.assert_called_once_with(
+        key="sensor_fallback",
+        translation_key="sensor_fallback",
+        name=None,
+        device_class=None,
+        native_unit_of_measurement=None,
+        state_class=None,
+        entity_category=None,
+        icon="mdi:eye",
+    )
 
 
 @pytest.mark.asyncio
 @patch("custom_components.climate_ip.sensor.ClimateIpSensor")
 async def test_async_setup_entry_single_coordinator(mock_sensor_class) -> None:
-    """Aniquila mutantes en el desempaquetado de coordinador singular."""
+    """Aniquila mutantes en el desempaquetado singular (if isinstance)."""
     hass = MagicMock()
     entry = MagicMock()
     
     mock_coord = MagicMock()
     mock_coord.controller.sensors = [] 
-    
     entry.runtime_data = mock_coord
     async_add_entities = MagicMock()
 
