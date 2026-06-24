@@ -110,10 +110,27 @@ def test_no_stale_supported_features_annotation() -> None:
     ), "_supported_features stale annotation is still present in ClimateIP or a parent class"
 
 
-def test_climate_translation_key_and_device_info(base_climate_entity: ClimateIP) -> None:
+def test_climate_translation_key_and_device_info(hass: HomeAssistant) -> None:
     """Test that ClimateIP correctly maps translation_key and device_info."""
-    assert base_climate_entity.translation_key == "samsung_ac"
-    assert base_climate_entity.device_info is base_climate_entity.coordinator.device_info
+    mock_coordinator = MagicMock(spec=SamsungClimateCoordinator)
+    mock_coordinator.unique_id = "test_unique_id"
+    mock_coordinator.operations = ["power"]
+    mock_coordinator.log_prefix = "[TEST]"
+    mock_coordinator.data = MagicMock()
+    mock_coordinator.device_info = {"identifiers": {("climate_ip", "test_unique_id")}}
+
+    description = ClimateIPEntityDescription(
+        key="samsung_ac",
+        translation_key="samsung_ac",
+    )
+    climate = ClimateIP(coordinator=mock_coordinator, description=description, config={})
+    climate.hass = hass
+
+    # Test Translation Key comes from description
+    assert climate.translation_key == "samsung_ac"
+
+    # Test Device Info matches Coordinator (Parent linkage)
+    assert climate.device_info == {"identifiers": {("climate_ip", "test_unique_id")}}
 
 
 async def test_auto_mode_correction_revert(base_climate_entity: ClimateIP) -> None:
