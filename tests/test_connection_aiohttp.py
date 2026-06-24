@@ -51,6 +51,7 @@ async def test_initialization(connection_config, mock_logger, mock_hass, mock_se
         assert conn._ip_address == "192.168.1.100"
         assert conn._token == "test_token"
         assert conn._shared_state.initialized is False
+        assert conn.async_lock is not None  # Verificamos que el padre creó el candado
 
 
 
@@ -111,7 +112,24 @@ async def test_execute_request_success(connection_config, mock_logger, mock_hass
 
         # Aserciones de Caja Blanca Extremas
         mock_session.request.assert_called_once()
-        _, kwargs = mock_session.request.call_args
+        args, kwargs = mock_session.request.call_args
+        
+        # 1. Asertar URL y Método
+        assert args[0] == "GET", "El método HTTP fue mutado"
+        assert kwargs["url"] == "https://192.168.1.100:8888/test", "La URL fue mutada o generada incorrectamente"
+        
+        # 2. Asertar Payload
+        assert "data" in kwargs, "El mutante eliminó el kwarg data"
+        assert kwargs["data"] is None, "El payload fue mutado"
+        
+        # 3. Asertar SSL Context
+        assert "ssl" in kwargs, "El mutante eliminó el kwarg ssl"
+        assert kwargs["ssl"] is conn._shared_state.ssl_context, "El contexto SSL inyectado es incorrecto o None"
+        
+        # 4. Asertar Timeout estricto
+        assert "timeout" in kwargs, "El mutante eliminó el kwarg timeout"
+        timeout = kwargs["timeout"]
+        assert timeout.total == 10, f"El mutante alteró el timeout.total a {timeout.total}"
         
         # Blindaje de mutantes 45-56 (Cabeceras)
         req_headers = kwargs.get("headers", {})
@@ -119,25 +137,6 @@ async def test_execute_request_success(connection_config, mock_logger, mock_hass
         assert req_headers["Authorization"] == f"Bearer {conn._token}", "Token incorrecto"
         assert "Content-Type" in req_headers, "Falta la cabecera Content-Type"
         assert req_headers["Content-Type"] == "application/json", "Content-Type incorrecto"
-        
-        # Blindaje de mutantes 112-116 (Timeouts)
-        timeout_arg = kwargs.get("timeout")
-        assert timeout_arg is not None, "Falta el argumento timeout"
-        assert timeout_arg.total == 10, f"Timeout total incorrecto: {timeout_arg.total}"
-        
-        # ASERCIONES DE CAJA BLANCA: Validar que el payload, timeout y headers sean exactos
-        mock_session.request.assert_called_once()
-        _, kwargs = mock_session.request.call_args
-        actual_headers = kwargs.get("headers", {})
-
-        assert "Authorization" in actual_headers, "Falta la cabecera Authorization"
-        assert actual_headers["Authorization"] == "Bearer test_token", "Token de Auth incorrecto"
-        assert "Content-Type" in actual_headers, "Falta la cabecera Content-Type"
-        assert actual_headers["Content-Type"] == "application/json", "Content-Type incorrecto"
-
-        actual_timeout = kwargs.get("timeout")
-        assert actual_timeout is not None, "El mutante borró el timeout"
-        assert actual_timeout.total == 10, f"El mutante cambió el timeout total: {actual_timeout.total}"
 
 
 
@@ -553,3 +552,203 @@ async def test_execution_uses_controller_token_priority(connection_config, mock_
         actual_headers = kwargs.get("headers", {})
         
         assert actual_headers["Authorization"] == "Bearer TOKEN_DOMINANTE", "No usó el token del controlador"
+
+async def test_http_1_0_forces_connection_close(connection_config, mock_logger, mock_hass, mock_session):
+    """Prueba que un servidor antiguo fuerza el cierre de la conexión."""
+    with patch("os.path.exists", return_value=True):
+        conn = ConnectionAiohttp8888(
+            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+        )
+        conn._shared_state.initialized = True
+        
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.version = MagicMock(major=1, minor=0) # SIMULAMOS HTTP 1.0
+        mock_response.headers = {}
+        mock_response.text.return_value = '{}'
+        mock_response.raise_for_status = MagicMock()
+        
+        mock_context = AsyncMock()
+        mock_context.__aenter__.return_value = mock_response
+        mock_session.request.return_value = mock_context
+        
+        await conn._async_execute_request("GET", "/test", None, {})
+        
+        assert conn._force_close_connection is True, "El mutante alteró la validación minor >= 1 de HTTP"
+
+async def test_absolute_url_skips_base_url_formatting(connection_config, mock_logger, mock_hass, mock_session):
+    """Prueba que una URL absoluta ignora el formateo base y SSL."""
+    with patch("os.path.exists", return_value=True):
+        conn = ConnectionAiohttp8888(
+            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+        )
+        conn._shared_state.initialized = True
+        
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {}
+        mock_response.text.return_value = '{}'
+        mock_response.raise_for_status = MagicMock()
+        mock_context = AsyncMock()
+        mock_context.__aenter__.return_value = mock_response
+        mock_session.request.return_value = mock_context
+
+        await conn._async_execute_request("GET", "http://external-api.com/path", None, {})
+        
+        _, kwargs = mock_session.request.call_args
+        assert kwargs["url"] == "http://external-api.com/path", "El mutante rompió la detección startswith('http')"
+        assert kwargs["ssl"] is False, "El mutante usó SSL en una conexión plana HTTP"
+
+
+async def test_async_execute_request_respects_custom_headers(mock_session, mock_logger, mock_hass):
+    """Garantiza que las cabeceras inyectadas manualmente no son sobrescritas."""
+    conn = ConnectionAiohttp8888(config={"token": "TOKEN_BASE"}, logger=mock_logger, hass=mock_hass, session=mock_session, ip_address="1.1.1.1")
+    conn._shared_state.initialized = True
+    
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.text.return_value = "{}"
+    mock_response.headers = {}
+    mock_context = AsyncMock()
+    mock_context.__aenter__.return_value = mock_response
+    mock_session.request.return_value = mock_context
+    
+    custom_headers = {
+        "Authorization": "Bearer TOKEN_CUSTOM",
+        "Content-Type": "text/xml"
+    }
+    
+    await conn._async_execute_request("GET", "/test", None, headers=custom_headers)
+    
+    _, kwargs = mock_session.request.call_args
+    assert kwargs["headers"]["Authorization"] == "Bearer TOKEN_CUSTOM", "El mutante sobrescribió la cabecera Auth"
+    assert kwargs["headers"]["Content-Type"] == "text/xml", "El mutante sobrescribió el Content-Type"
+
+
+async def test_retry_request_kwargs_strict(mock_session, mock_logger, mock_hass):
+    """Exige que el reintento tras un fallo pase EXACTAMENTE los mismos parámetros a la red."""
+    conn = ConnectionAiohttp8888(config={"token": "tok"}, logger=mock_logger, hass=mock_hass, session=mock_session, ip_address="1.1.1.1")
+    
+    # Simulamos fallo en el 1er intento, éxito en el 2do
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.headers = {}
+    mock_response.text.return_value = "{}"
+    
+    mock_context_success = AsyncMock()
+    mock_context_success.__aenter__.return_value = mock_response
+    
+    mock_session.request.side_effect = [
+        aiohttp.ClientConnectorError(None, OSError("mock error")),
+        mock_context_success
+    ]
+    
+    await conn._async_execute_request("POST", "/test", "payload_secreto", {"H": "1"})
+    
+    assert mock_session.request.call_count == 2
+    retry_args, retry_kwargs = mock_session.request.call_args_list[1]
+    
+    # ASERCIONES MILIMÉTRICAS DEL REINTENTO
+    assert retry_args[0] == "POST"
+    assert "https://1.1.1.1:8888/test" in retry_args[1]
+    assert retry_kwargs["data"] == "payload_secreto"
+    assert retry_kwargs["headers"]["H"] == "1"
+    assert retry_kwargs["headers"]["Connection"] == "close"
+    assert retry_kwargs["timeout"].total == 10
+
+
+async def test_async_execute_default_poll_is_false(mock_session, mock_logger, mock_hass):
+    """Prueba que _is_poll es estrictamente False por defecto, evitando el cierre de sesiones locales."""
+    conn = ConnectionAiohttp8888(config={"keep_alive": False, "token": "tok"}, logger=mock_logger, hass=mock_hass, session=mock_session, ip_address="1.1.1.1")
+    conn._shared_state.initialized = True
+    
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.text.return_value = "{}"
+    mock_response.headers = {}
+    
+    mock_context = AsyncMock()
+    mock_context.__aenter__.return_value = mock_response
+    
+    mock_local = MagicMock()
+    mock_local.closed = False
+    mock_local.close = AsyncMock()
+    mock_local.request.return_value = mock_context
+    conn._shared_state.local_session = mock_local
+    
+    # Llamamos SIN el argumento _is_poll
+    await conn.async_execute("GET", "/test", None, {})
+    
+    # Si mutmut cambió el default a True, la sesión se cerrará y el test fallará
+    mock_local.close.assert_not_called()
+
+
+async def test_async_execute_embedded_command_kwargs_strict(mock_session, mock_logger, mock_hass):
+    """Valida la delegación exacta de argumentos al comando embebido anidado."""
+    from homeassistant.helpers.json import json_dumps
+    
+    conn = ConnectionAiohttp8888(config={"token": "tok"}, logger=mock_logger, hass=mock_hass, session=mock_session, ip_address="1.1.1.1")
+    
+    embed_mock = AsyncMock()
+    embed_mock.check_execute_condition.return_value = True
+    # Simulamos un template que devuelve un JSON configurador
+    embed_mock._connection_template.async_render = AsyncMock(
+        return_value='{"method": "PUT", "url": "/embed", "json": {"key": "val"}, "headers": {"X": "Y"}}'
+    )
+    conn._embedded_command = embed_mock
+    conn._shared_state.initialized = True
+    
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.text.return_value = "{}"
+    mock_response.headers = {}
+    mock_context = AsyncMock()
+    mock_context.__aenter__.return_value = mock_response
+    mock_session.request.return_value = mock_context
+    
+    await conn.async_execute("GET", "/main", None, {}, device_state={"state": "on"})
+    
+    # Verificamos qué se le pasó al comando embebido
+    embed_mock.async_execute.assert_called_once()
+    kwargs = embed_mock.async_execute.call_args[1]
+    
+    assert kwargs["method"] == "PUT"
+    assert kwargs["url"] == "/embed"
+    assert kwargs["data"] == json_dumps({"key": "val"})  # Mata a los mutantes de json_dumps
+    assert kwargs["headers"] == {"X": "Y"}
+    assert kwargs["device_state"] == {"state": "on"}
+
+
+async def test_async_execute_delegates_to_request_strictly(mock_logger, mock_hass):
+    """Asegura que async_execute pasa intactos los parámetros a _async_execute_request."""
+    conn = ConnectionAiohttp8888(config={"token": "tok"}, logger=mock_logger, hass=mock_hass, session=None, ip_address="1.1.1.1")
+    conn._shared_state.initialized = True
+    
+    with patch.object(conn, "_async_execute_request", new_callable=AsyncMock) as mock_req:
+        await conn.async_execute("PATCH", "/main", "payload", {"H": "1"}, _is_poll=True)
+        
+        mock_req.assert_called_once_with("PATCH", "/main", "payload", {"H": "1"}, _is_poll=True)
+
+
+async def test_controller_fallback_to_base_token(mock_session, mock_logger, mock_hass):
+    """Prueba que si el controlador no tiene token, se usa el de la conexión base."""
+    conn = ConnectionAiohttp8888(config={"token": "BASE_TOKEN"}, logger=mock_logger, hass=mock_hass, session=mock_session, ip_address="1.1.1.1")
+    conn._shared_state.initialized = True
+    
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.text.return_value = "{}"
+    mock_response.headers = {}
+    mock_context = AsyncMock()
+    mock_context.__aenter__.return_value = mock_response
+    mock_session.request.return_value = mock_context
+    
+    mock_controller = MagicMock()
+    mock_controller._config = {}  # Diccionario vacío, fuerza el fallback a BASE_TOKEN
+    conn.set_controller_ref(mock_controller)
+    
+    await conn._async_execute_request("GET", "/test", None, {})
+    
+    _, kwargs = mock_session.request.call_args
+    assert kwargs["headers"]["Authorization"] == "Bearer BASE_TOKEN"
+
