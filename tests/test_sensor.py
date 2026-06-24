@@ -117,6 +117,26 @@ def test_update_state_valid_float(base_sensor_entity: ClimateIpSensor) -> None:
     assert base_sensor_entity._attr_native_value == 23.7, "Falló la conversión matemática a float (Mutante 10/11)."
 
 
+def test_update_state_float_parsing_failure(base_sensor_entity: ClimateIpSensor) -> None:
+    """Aniquila mutantes en el bloque try/except de float(), incluyendo el Mutante 12."""
+    # Al no ser string ni UniqueIdProperty, intentará castear a float
+    base_sensor_entity._property.value_is_string = False
+    
+    # Inyectamos una cadena corrupta que detonará ValueError
+    base_sensor_entity.coordinator.get_property.return_value = "not_a_number"
+    
+    # Forzamos un valor previo conocido que NO sea None ni un string vacío
+    base_sensor_entity._attr_native_value = 50.0
+    
+    base_sensor_entity._update_state()
+    
+    # El except debe capturarlo y setear a None explícitamente.
+    # El uso de 'is None' asegura que si mutmut lo cambia a '""', el test fallará.
+    assert base_sensor_entity._attr_native_value is None, (
+        "El fallo de casteo a float debe asignar exactamente None (aniquila Mutante 12)."
+    )
+
+
 # ============================================================
 # PHASE 2: Factory / async_setup_entry
 # ============================================================
