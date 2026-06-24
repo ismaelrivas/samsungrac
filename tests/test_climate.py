@@ -50,74 +50,36 @@ def base_climate_entity(hass: HomeAssistant) -> ClimateIP:
 
 
 
-async def test_turn_on_dry_helper(hass: HomeAssistant) -> None:
+async def test_turn_on_dry_helper(base_climate_entity: ClimateIP) -> None:
     """Test that turn_on and turn_off use the DRY helper _async_set_climate_mode."""
-
-    # Mock the coordinator and its necessary attributes
-    mock_coordinator = MagicMock(spec=SamsungClimateCoordinator)
-    mock_coordinator.unique_id = "test_unique_id"
-    mock_coordinator.operations = [ATTR_POWER]
-    mock_coordinator.data = MagicMock()
-    mock_coordinator.log_prefix = "[TEST]"
-    mock_coordinator.device_info = MagicMock()
-
-    # Initialize the entity with description
-    # pylint: disable=import-outside-toplevel,unexpected-keyword-arg
-    description = ClimateIPEntityDescription(
-        key="samsung_ac",
-        translation_key="samsung_ac",
-    )
-    entity = ClimateIP(coordinator=mock_coordinator, description=description, config={})
-    entity.hass = hass
+    base_climate_entity.coordinator.operations = [ATTR_POWER]
 
     # Patch the helper function we want to verify is called
-    with patch.object(entity, "_async_set_climate_mode", new_callable=AsyncMock) as mock_helper:
-
+    with patch.object(base_climate_entity, "_async_set_climate_mode", new_callable=AsyncMock) as mock_helper:
         # Test turn on
-        await entity.async_turn_on()
+        await base_climate_entity.async_turn_on()
         mock_helper.assert_awaited_once_with(ATTR_POWER, STATE_ON, None)
         mock_helper.reset_mock()
 
         # Test turn off
-        await entity.async_turn_off()
-        assert entity._attr_hvac_mode == HVACMode.OFF  # pylint: disable=import-outside-toplevel,protected-access
+        await base_climate_entity.async_turn_off()
+        assert base_climate_entity._attr_hvac_mode == HVACMode.OFF
         mock_helper.assert_awaited_once_with(ATTR_POWER, STATE_OFF, None)
 
 
-
-async def test_optimistic_turn_off(hass: HomeAssistant) -> None:
+async def test_optimistic_turn_off(base_climate_entity: ClimateIP) -> None:
     """Verify that turning off predicts state immediately (predict and correct)."""
-    mock_coordinator = MagicMock(spec=SamsungClimateCoordinator)
-    mock_coordinator.unique_id = "test_unique_id"
-    mock_coordinator.operations = [ATTR_POWER]
-    mock_coordinator.data = MagicMock()
-    mock_coordinator.log_prefix = "[TEST]"
-    mock_coordinator.device_info = MagicMock()
-
-    # Setup mock for predict and correct
-    mock_coordinator.async_predict_and_correct = AsyncMock(
+    base_climate_entity.coordinator.operations = [ATTR_POWER]
+    base_climate_entity.coordinator.async_predict_and_correct = AsyncMock(
         return_value=({"power": "off"}, {"power": "off"})
     )
+    base_climate_entity.entity_id = "climate.test_ac"
+    base_climate_entity._attr_hvac_mode = HVACMode.COOL
 
-    # pylint: disable=import-outside-toplevel,unexpected-keyword-arg
-    description = ClimateIPEntityDescription(
-        key="samsung_ac",
-        translation_key="samsung_ac",
-    )
-    entity = ClimateIP(coordinator=mock_coordinator, description=description, config={})
-    entity.hass = hass
-    entity.entity_id = "climate.test_ac"
-    entity._attr_hvac_mode = HVACMode.COOL  # Set initial state  # pylint: disable=import-outside-toplevel,protected-access
+    with patch.object(base_climate_entity, "async_write_ha_state"):
+        await base_climate_entity.async_turn_off()
 
-    # Use context manager for patch to bypass HA Core frame guard
-    with patch.object(entity, "async_write_ha_state"):
-        # Execute the method without patching _async_set_climate_mode
-        # to evaluate the actual path
-        await entity.async_turn_off()
-
-    # The entity state should be instantly updated
-    assert entity.hvac_mode == HVACMode.OFF
-
+    assert base_climate_entity.hvac_mode == HVACMode.OFF
 
 
 # ---------------------------------------------------------------------------
@@ -148,41 +110,16 @@ def test_no_stale_supported_features_annotation() -> None:
     ), "_supported_features stale annotation is still present in ClimateIP or a parent class"
 
 
-def test_climate_translation_key_and_device_info() -> None:
+def test_climate_translation_key_and_device_info(base_climate_entity: ClimateIP) -> None:
     """Test that ClimateIP correctly maps translation_key and device_info."""
-    mock_coordinator = MagicMock(spec=SamsungClimateCoordinator)
-    mock_coordinator.unique_id = "test_unique_id"
-    mock_coordinator.operations = ["power"]
-    mock_coordinator.log_prefix = "[TEST]"
-    mock_coordinator.data = MagicMock()
-    mock_coordinator.device_info = {"identifiers": {("climate_ip", "test_unique_id")}}
-
-    # pylint: disable=import-outside-toplevel,unexpected-keyword-arg
-    description = ClimateIPEntityDescription(
-        key="samsung_ac",
-        translation_key="samsung_ac",
-    )
-    climate = ClimateIP(coordinator=mock_coordinator, description=description, config={})
-
-    # Test Translation Key comes from description
-    assert climate.translation_key == "samsung_ac"
-
-    # Test Device Info matches Coordinator (Parent linkage)
-    assert climate.device_info == mock_coordinator.device_info
+    assert base_climate_entity.translation_key == "samsung_ac"
+    assert base_climate_entity.device_info is base_climate_entity.coordinator.device_info
 
 
-async def test_auto_mode_correction_revert(hass: HomeAssistant) -> None:
+async def test_auto_mode_correction_revert(base_climate_entity: ClimateIP) -> None:
     """Test that a PUSH update correctly reverts an incorrect optimistic state."""
     # This test ensures that if HA predicts "low" but the device says "auto",
     # the state machine eventually converges on the device truth.
-    mock_coordinator = MagicMock(spec=SamsungClimateCoordinator)
-    mock_coordinator.unique_id = "test_flicker"
-    mock_coordinator.operations = ["fan"]
-    mock_coordinator.log_prefix = "[FLICKER]"
-    mock_coordinator.device_info = MagicMock()
-    mock_coordinator.last_update_success = True
-
-    # 1. Hardware Truth: Fan is in "auto"
     mock_data = MagicMock()
     mock_data.fan_mode = "auto"
     mock_data.fan_modes = ["auto", "low", "medium", "high"]
@@ -194,43 +131,33 @@ async def test_auto_mode_correction_revert(hass: HomeAssistant) -> None:
     mock_data.swing_modes = []
     mock_data.preset_mode = None
     mock_data.preset_modes = []
-    mock_coordinator.data = mock_data
+    base_climate_entity.coordinator.data = mock_data
+    base_climate_entity.coordinator.unique_id = "test_flicker"
+    base_climate_entity.coordinator.operations = ["fan"]
+    base_climate_entity.coordinator.log_prefix = "[FLICKER]"
+    base_climate_entity.coordinator.last_update_success = True
 
-    # Mock async_predict_and_correct to return (predicted_data, corrections)
-    mock_coordinator.async_predict_and_correct = AsyncMock(
-        return_value=({}, {})
-    )
+    base_climate_entity.entity_id = "climate.flicker_ac"
+    base_climate_entity._attr_fan_mode = "low"
+    base_climate_entity.coordinator.async_set_property.return_value = True
 
-    # pylint: disable=import-outside-toplevel,unexpected-keyword-arg
-    description = ClimateIPEntityDescription(
-        key="samsung_ac",
-        translation_key="samsung_ac",
-    )
-    entity = ClimateIP(coordinator=mock_coordinator, description=description, config={})
-    entity.hass = hass
-    entity.entity_id = "climate.flicker_ac"
-
-    # 2. User sets "low" (Optimistic Update)
-    mock_coordinator.async_set_property = AsyncMock(return_value=True)
-
-    with patch.object(entity, "async_write_ha_state"):
-        await entity.async_set_fan_mode("low")
+    with patch.object(base_climate_entity, "async_write_ha_state"):
+        await base_climate_entity.async_set_fan_mode("low")
 
     # Verify optimistic prediction
-    assert entity.fan_mode == "low"
-    assert entity._attr_fan_mode == "low"  # pylint: disable=import-outside-toplevel,protected-access
+    assert base_climate_entity.fan_mode == "low"
+    assert base_climate_entity._attr_fan_mode == "low"
 
     # 3. Device PUSH/POLL update arrives: It says "auto" (Hardware truth)
-    # We update the coordinator data to reflect the real hardware state
     mock_data.fan_mode = "auto"
 
     # Trigger entity update
-    with patch.object(entity, "async_write_ha_state") as mock_write:
-        entity._handle_coordinator_update()  # pylint: disable=import-outside-toplevel,protected-access
+    with patch.object(base_climate_entity, "async_write_ha_state") as mock_write:
+        base_climate_entity._handle_coordinator_update()
 
     # 4. Verify Reconstruction: It should have reverted to "auto"
-    assert entity.fan_mode == "auto"
-    assert entity._attr_fan_mode == "auto"  # pylint: disable=import-outside-toplevel,protected-access
+    assert base_climate_entity.fan_mode == "auto"
+    assert base_climate_entity._attr_fan_mode == "auto"
     mock_write.assert_called()
 
 
@@ -300,37 +227,29 @@ async def test_climate_main_unique_id_fallback(hass: HomeAssistant) -> None:
     entity_fallback = ClimateIP(coordinator=mock_coordinator, description=description, config={}, main_unique_id=None)
     assert entity_fallback._main_unique_id == "coord_id_123", "Fallback to coordinator.unique_id failed"
     assert entity_fallback.unique_id == "coord_id_123", "The unique_id property does not match the coordinator"
-
-
-async def test_climate_optimistic_side_effects(hass: HomeAssistant) -> None:
+async def test_climate_optimistic_side_effects(base_climate_entity: ClimateIP) -> None:
     """Verify that _apply_optimistic_corrections applies side effects correctly."""
-    mock_coordinator = MagicMock()
-    mock_coordinator.unique_id = "coord_side_effects"
-    mock_coordinator.async_set_property = AsyncMock()
+    base_climate_entity.coordinator.unique_id = "coord_side_effects"
     
     # Simulate that when turning on, the device also corrects the fan_mode to "auto"
-    mock_coordinator.async_predict_and_correct = AsyncMock(
+    base_climate_entity.coordinator.async_predict_and_correct = AsyncMock(
         return_value=({}, {"fan_mode": "auto"})
     )
     
-    description = ClimateIPEntityDescription(key="samsung_ac")
-    entity = ClimateIP(coordinator=mock_coordinator, description=description, config={})
-    entity.hass = hass
-    
     # Initial state
-    entity._attr_fan_mode = "low"
+    base_climate_entity._attr_fan_mode = "low"
     
-    with patch.object(entity, "async_write_ha_state"):
-        await entity.async_set_hvac_mode(HVACMode.COOL)
+    with patch.object(base_climate_entity, "async_write_ha_state"):
+        await base_climate_entity.async_set_hvac_mode(HVACMode.COOL)
         
     # Lethal Assertion for Mutant 1 and 10: The side effect MUST be applied
-    assert entity.fan_mode == "auto", "Optimistic corrections were not applied"
+    assert base_climate_entity.fan_mode == "auto", "Optimistic corrections were not applied"
 
     # Lethal Assertion for Mutants 2-5 and 15-20: Exact arguments AND await execution MUST be present
-    mock_coordinator.async_predict_and_correct.assert_awaited_once_with(
-        mock_coordinator.data, "hvac_mode", HVACMode.COOL
+    base_climate_entity.coordinator.async_predict_and_correct.assert_awaited_once_with(
+        base_climate_entity.coordinator.data, "hvac_mode", HVACMode.COOL
     )
-    mock_coordinator.async_set_property.assert_awaited_once_with(
+    base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(
         "hvac_mode", HVACMode.COOL, {"fan_mode": "auto"}
     )
 
@@ -347,10 +266,9 @@ async def test_climate_init_precision_whole(hass: HomeAssistant) -> None:
     assert entity.target_temperature_step == 1.0, "Step was not configured to 1.0"
     assert entity.precision == PRECISION_WHOLE, "Step 1.0 did not assign PRECISION_WHOLE"
 
-async def test_climate_sync_data_full(hass: HomeAssistant) -> None:
+async def test_climate_sync_data_full(base_climate_entity: ClimateIP) -> None:
     """Verify that _sync_data_from_coordinator correctly copies all properties when state is present."""
-    mock_coordinator = MagicMock()
-    mock_coordinator.unique_id = "test_sync_full"
+    base_climate_entity.coordinator.unique_id = "test_sync_full"
     
     mock_state = MagicMock()
     mock_state.hvac_mode = HVACMode.HEAT
@@ -364,111 +282,91 @@ async def test_climate_sync_data_full(hass: HomeAssistant) -> None:
     mock_state.swing_modes = ["vertical", "horizontal"]
     mock_state.preset_modes = ["boost", "eco"]
     
-    mock_coordinator.data = mock_state
-
-    description = ClimateIPEntityDescription(key="samsung_ac")
-    entity = ClimateIP(coordinator=mock_coordinator, description=description, config={})
-    entity.hass = hass
+    base_climate_entity.coordinator.data = mock_state
     
     # Entity __init__ calls _sync_data_from_coordinator, but let's call it explicitly to be sure
-    entity._sync_data_from_coordinator()
+    base_climate_entity._sync_data_from_coordinator()
 
     # Lethal Assertions for Mutants 2, 11, 12
-    assert entity.hvac_mode == HVACMode.HEAT, "hvac_mode was not synchronized"
-    assert entity.target_temperature == 25.0, "target_temperature was not synchronized"
-    assert entity.current_temperature == 22.0, "current_temperature was not synchronized"
-    assert entity.fan_mode == "high", "fan_mode was not synchronized"
-    assert entity.swing_mode == "vertical", "swing_mode was not synchronized"
-    assert entity.preset_mode == "boost", "preset_mode was not synchronized"
-    assert entity.hvac_modes == [HVACMode.HEAT, HVACMode.OFF], "hvac_modes was not synchronized"
-    assert entity.fan_modes == ["high", "low"], "fan_modes was not synchronized"
-    assert entity.swing_modes == ["vertical", "horizontal"], "swing_modes was not synchronized"
-    assert entity.preset_modes == ["boost", "eco"], "preset_modes was not synchronized"
+    assert base_climate_entity.hvac_mode == HVACMode.HEAT, "hvac_mode was not synchronized"
+    assert base_climate_entity.target_temperature == 25.0, "target_temperature was not synchronized"
+    assert base_climate_entity.current_temperature == 22.0, "current_temperature was not synchronized"
+    assert base_climate_entity.fan_mode == "high", "fan_mode was not synchronized"
+    assert base_climate_entity.swing_mode == "vertical", "swing_mode was not synchronized"
+    assert base_climate_entity.preset_mode == "boost", "preset_mode was not synchronized"
+    assert base_climate_entity.hvac_modes == [HVACMode.HEAT, HVACMode.OFF], "hvac_modes was not synchronized"
+    assert base_climate_entity.fan_modes == ["high", "low"], "fan_modes was not synchronized"
+    assert base_climate_entity.swing_modes == ["vertical", "horizontal"], "swing_modes was not synchronized"
+    assert base_climate_entity.preset_modes == ["boost", "eco"], "preset_modes was not synchronized"
 
-async def test_climate_sync_data_none(hass: HomeAssistant) -> None:
+async def test_climate_sync_data_none(base_climate_entity: ClimateIP) -> None:
     """Verify that _sync_data_from_coordinator falls back correctly when state is None."""
-    mock_coordinator = MagicMock()
-    mock_coordinator.unique_id = "test_sync_none"
-    mock_coordinator.data = None
-
-    description = ClimateIPEntityDescription(key="samsung_ac")
-    
-    # Initialize with a state to ensure it resets
-    entity = ClimateIP(coordinator=mock_coordinator, description=description, config={})
-    entity.hass = hass
+    base_climate_entity.coordinator.unique_id = "test_sync_none"
+    base_climate_entity.coordinator.data = None
     
     # Force initial values to non-None/non-empty to test the reset
-    entity._attr_hvac_mode = "dummy"
-    entity._attr_target_temperature = 99.0
-    entity._attr_current_temperature = 99.0
-    entity._attr_fan_mode = "dummy"
-    entity._attr_swing_mode = "dummy"
-    entity._attr_preset_mode = "dummy"
-    entity._attr_hvac_modes = ["dummy"]
-    entity._attr_fan_modes = ["dummy"]
-    entity._attr_swing_modes = ["dummy"]
-    entity._attr_preset_modes = ["dummy"]
+    base_climate_entity._attr_hvac_mode = "dummy"
+    base_climate_entity._attr_target_temperature = 99.0
+    base_climate_entity._attr_current_temperature = 99.0
+    base_climate_entity._attr_fan_mode = "dummy"
+    base_climate_entity._attr_swing_mode = "dummy"
+    base_climate_entity._attr_preset_mode = "dummy"
+    base_climate_entity._attr_hvac_modes = ["dummy"]
+    base_climate_entity._attr_fan_modes = ["dummy"]
+    base_climate_entity._attr_swing_modes = ["dummy"]
+    base_climate_entity._attr_preset_modes = ["dummy"]
     
     # Trigger the fallback block
-    entity._sync_data_from_coordinator()
+    base_climate_entity._sync_data_from_coordinator()
 
     # Lethal Assertions for Mutants 13-19: Must be strictly None or []
-    assert entity.hvac_mode is None, "hvac_mode did not reset to None"
-    assert entity.target_temperature is None, "target_temperature did not reset to None"
-    assert entity.current_temperature is None, "current_temperature did not reset to None"
-    assert entity.fan_mode is None, "fan_mode did not reset to None"
-    assert entity.swing_mode is None, "swing_mode did not reset to None"
-    assert entity.preset_mode is None, "preset_mode did not reset to None"
-    assert entity.hvac_modes == [], "hvac_modes did not reset to []"
-    assert entity.fan_modes == [], "fan_modes did not reset to []"
-    assert entity.swing_modes == [], "swing_modes did not reset to []"
-    assert entity.preset_modes == [], "preset_modes did not reset to []"
+    assert base_climate_entity.hvac_mode is None, "hvac_mode did not reset to None"
+    assert base_climate_entity.target_temperature is None, "target_temperature did not reset to None"
+    assert base_climate_entity.current_temperature is None, "current_temperature did not reset to None"
+    assert base_climate_entity.fan_mode is None, "fan_mode did not reset to None"
+    assert base_climate_entity.swing_mode is None, "swing_mode did not reset to None"
+    assert base_climate_entity.preset_mode is None, "preset_mode did not reset to None"
+    assert base_climate_entity.hvac_modes == [], "hvac_modes did not reset to []"
+    assert base_climate_entity.fan_modes == [], "fan_modes did not reset to []"
+    assert base_climate_entity.swing_modes == [], "swing_modes did not reset to []"
+    assert base_climate_entity.preset_modes == [], "preset_modes did not reset to []"
 
-async def test_public_async_set_hvac_mode_behavior(hass: HomeAssistant) -> None:
+async def test_public_async_set_hvac_mode_behavior(base_climate_entity: ClimateIP) -> None:
     """Verify local state change and network output of the HVAC delegator."""
-    mock_coord = MagicMock()
     # Simulate that the async predictor does not require additional corrections
-    mock_coord.async_predict_and_correct = AsyncMock(return_value=({}, {}))
-    mock_coord.async_set_property = AsyncMock()
-    
-    entity = ClimateIP(coordinator=mock_coord, description=MagicMock(), config={})
-    entity.async_write_ha_state = MagicMock()
+    base_climate_entity.coordinator.async_predict_and_correct = AsyncMock(return_value=({}, {}))
     
     # Establish an initial state
-    entity._attr_hvac_mode = HVACMode.OFF
+    base_climate_entity._attr_hvac_mode = HVACMode.OFF
     
     # Execute the public API just as Home Assistant would
-    await entity.async_set_hvac_mode(HVACMode.COOL)
+    await base_climate_entity.async_set_hvac_mode(HVACMode.COOL)
     
     # LETHAL ASSERTIONS (Mutants 7 and 8)
     # 1. Verify that the local string ("_attr_hvac_mode") was applied correctly:
-    assert entity._attr_hvac_mode == HVACMode.COOL, "Local state was not updated (leak in local_attr variable)"
+    assert base_climate_entity._attr_hvac_mode == HVACMode.COOL, "Local state was not updated (leak in local_attr variable)"
     
     # 2. Verify that the network output uses the appropriate constant and correct values:
-    mock_coord.async_set_property.assert_awaited_once_with(ATTR_HVAC_MODE, HVACMode.COOL, {})
+    base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(ATTR_HVAC_MODE, HVACMode.COOL, {})
 
-async def test_public_async_set_fan_mode_behavior(hass: HomeAssistant) -> None:
+async def test_public_async_set_fan_mode_behavior(base_climate_entity: ClimateIP) -> None:
     """Verify local state change and network output of the Fan delegator."""
-    mock_coord = MagicMock()
-    mock_coord.async_predict_and_correct = AsyncMock(return_value=({}, {}))
-    mock_coord.async_set_property = AsyncMock()
-    
-    entity = ClimateIP(coordinator=mock_coord, description=MagicMock(), config={})
-    entity.async_write_ha_state = MagicMock()
+    # Simulate that the async predictor does not require additional corrections
+    base_climate_entity.coordinator.async_predict_and_correct = AsyncMock(return_value=({}, {}))
     
     # Prerequisite: The mode must exist in available options or the function's guard will abort
-    entity._attr_fan_modes = ["low", "high"]
-    entity._attr_fan_mode = "low"
+    base_climate_entity._attr_fan_modes = ["low", "high"]
+    base_climate_entity._attr_fan_mode = "low"
     
     # Execute the public API
-    await entity.async_set_fan_mode("high")
+    await base_climate_entity.async_set_fan_mode("high")
     
     # LETHAL ASSERTIONS (Mutant 2)
     # 1. Check state update
-    assert entity._attr_fan_mode == "high", "Local fan state was not updated."
+    assert base_climate_entity._attr_fan_mode == "high", "Local fan state was not updated."
     
     # 2. Rigorously check the async signature towards the coordinator
-    mock_coord.async_set_property.assert_awaited_once_with(ATTR_FAN_MODE, "high", {})
+    base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(ATTR_FAN_MODE, "high", {})
 
 
 # ============================================================
