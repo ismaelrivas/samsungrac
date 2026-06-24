@@ -64,13 +64,8 @@ async def async_setup_entry(
                 entities_to_add.append(ClimateIpSensor(coordinator, description, sensor_prop))
 
     if entities_to_add:
-        # fmt: off
-        _LOGGER.info(
-            "%s Adding %d YAML-defined sensors to Home Assistant.",
-            coordinators[0].log_prefix if coordinators else "[ClimateIP]",
-            len(entities_to_add),
-        )  # pragma: no mutate
-        # fmt: on
+        msg = "%s Adding %d YAML-defined sensors to Home Assistant."  # pragma: no mutate
+        _LOGGER.info(msg, coordinators[0].log_prefix if coordinators else "[ClimateIP]", len(entities_to_add))  # pragma: no mutate
         async_add_entities(entities_to_add)
 
 
@@ -125,13 +120,8 @@ class ClimateIpSensor(CoordinatorEntity[SamsungClimateCoordinator], SensorEntity
             self.async_write_ha_state()
         else:
             self._attr_native_value = None
-            # fmt: off
-            _LOGGER.debug(
-                "%s Marking sensor '%s' as unavailable because it is no longer valid.",
-                self.log_prefix,
-                self.entity_description.key,
-            )  # pragma: no mutate
-            # fmt: on
+            msg = "%s Marking sensor '%s' as unavailable because it is no longer valid."  # pragma: no mutate
+            _LOGGER.debug(msg, self.log_prefix, self.entity_description.key)  # pragma: no mutate
             self.async_write_ha_state()
 
     def _update_state(self) -> None:
@@ -152,11 +142,5 @@ class ClimateIpSensor(CoordinatorEntity[SamsungClimateCoordinator], SensorEntity
                 self._attr_native_value = float(value)
             except (ValueError, TypeError):
                 self._attr_native_value = None
-                # fmt: off
-                _LOGGER.warning(
-                    "%s Could not parse sensor value for %s: %s",
-                    self.log_prefix,
-                    self.entity_description.key,
-                    value,
-                )  # pragma: no mutate
-                # fmt: on
+                msg = "%s Could not parse sensor value for %s: %s"  # pragma: no mutate
+                _LOGGER.warning(msg, self.log_prefix, self.entity_description.key, value)  # pragma: no mutate
