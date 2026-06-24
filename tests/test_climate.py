@@ -754,6 +754,43 @@ async def test_async_setup_entry_multi_device_skips_unmatched_device_info() -> N
     )
 
 
+# --- async_setup_entry: CONF_DEVICES fallback boundary (mutants 8 and 10) ---
+
+async def test_async_setup_entry_multi_device_missing_conf_fallback() -> None:
+    """Kill mutants 8 and 10 in async_setup_entry.
+
+    Both mutants corrupt the fallback argument of entry.data.get(CONF_DEVICES, []):
+      - Mutant 8: changes [] to None  → generator crashes: TypeError: 'NoneType' not iterable
+      - Mutant 10: removes the arg entirely → same crash
+
+    The fix: inject an entry.data dict that does NOT contain CONF_DEVICES at all,
+    forcing Python to evaluate the fallback.  The generator then yields no items,
+    next() returns its default (None), and device_info is None — so no ClimateIP
+    entity is created for that coordinator.  Any mutation of the fallback causes a
+    TypeError that kills the mutant.
+    """
+    from custom_components.climate_ip.climate import async_setup_entry, CONF_DEVICES
+
+    entry = MagicMock()
+    # Deliberately omit CONF_DEVICES so the .get(CONF_DEVICES, []) fallback fires
+    entry.data = {"other_irrelevant_key": "value"}
+    entry.unique_id = "main_id"
+
+    mock_coord_1 = MagicMock()
+    entry.runtime_data = {"dev1": mock_coord_1}
+
+    async_add_entities = MagicMock()
+
+    with patch("custom_components.climate_ip.climate.ClimateIP") as mock_climate_class:
+        await async_setup_entry(MagicMock(), entry, async_add_entities)
+
+    # No matching device_info → entity must NOT be created
+    assert mock_climate_class.call_count == 0, (
+        "No entity should be created when CONF_DEVICES is absent from entry.data "
+        "(fallback must be [] not None — mutants 8/10)"
+    )
+
+
 # --- async_setup_entry — single-device path (mutants 39-59) ---
 
 async def test_async_setup_entry_single_device_kills_mutants() -> None:
@@ -817,40 +854,37 @@ async def test_async_setup_platform_fresh_install_kills_mutants(
 
     Verifies:
     - async_create_issue is called with the exact 8-field signature (mutants 1-20)
-    - async_create_task is called with name='climate_ip_yaml_import' (mutants 28/39/40)
-    - async_init is called with DOMAIN, context={'source': SOURCE_IMPORT}, data=config (mutants 31-38)
+    - async_create_task is called with the exact task name (mutants 28/39/40)
+    - async_init is called with DOMAIN, context={'source': SOURCE_IMPORT},
+      data=config (mutants 31-38)
 
-    NOTE: async_init is patched as a regular MagicMock (not AsyncMock) so its
-    return value is passed directly to async_create_task without being awaited.
-    This lets us do identity comparison without coroutine wrapping.
+    NOTE: async_init is replaced by a plain MagicMock (not AsyncMock) so its
+    return value passes directly to async_create_task without coroutine wrapping.
+    This lets us do strict identity comparison on the payload.
+
+    NOTE on patch target: async_create_issue is imported locally inside
+    async_setup_platform via 'from homeassistant.helpers.issue_registry import ...'.
+    The patch must target the function at its definition site, not on climate.py.
     """
     from custom_components.climate_ip.climate import async_setup_platform, DOMAIN
     from homeassistant.helpers.issue_registry import IssueSeverity
     from homeassistant.config_entries import SOURCE_IMPORT
 
-    config = {"ip_address": "192.168.1.50", "token": "abc123"}
+    config = {"ip_address": "192.168.1.100"}
 
-    # Use a plain MagicMock (not AsyncMock) so return_value is not wrapped
-    mock_flow_init = MagicMock(return_value="sentinel_coroutine_value")
+    # Plain MagicMock: return_value is the literal string, not a coroutine wrapper
+    mock_flow_init = MagicMock(return_value="sentinel_task_payload")
+    hass.config_entries.flow.async_init = mock_flow_init
+    hass.config_entries.async_entries.return_value = []
+    hass.async_create_task = MagicMock()
 
-    with (
-        patch(
-            "homeassistant.helpers.issue_registry.async_create_issue"
-        ) as mock_create_issue,
-        patch.object(
-            hass.config_entries.flow,
-            "async_init",
-            new=mock_flow_init,
-        ),
-        patch.object(hass, "async_create_task") as mock_create_task,
-    ):
-        # No existing SOURCE_IMPORT entries → full execution path
-        hass.config_entries.async_entries.return_value = []
-
+    with patch(
+        "homeassistant.helpers.issue_registry.async_create_issue"
+    ) as mock_issue:
         await async_setup_platform(hass, config, MagicMock())
 
-    # -- Issue creation: all 8 keyword arguments must be exact (mutants 1-20) --
-    mock_create_issue.assert_called_once_with(
+    # -- Issue creation: all 8 kwargs must be exact (mutants 1-20) --
+    mock_issue.assert_called_once_with(
         hass,
         DOMAIN,
         "deprecated_yaml",
@@ -861,17 +895,14 @@ async def test_async_setup_platform_fresh_install_kills_mutants(
         translation_key="deprecated_yaml",
     )
 
-    # -- Flow init must carry correct domain, context key, and data (mutants 31-38) --
+    # -- Flow init: correct domain, context key, and config payload (mutants 31-38) --
     mock_flow_init.assert_called_once_with(
-        DOMAIN,
-        context={"source": SOURCE_IMPORT},
-        data=config,
+        DOMAIN, context={"source": SOURCE_IMPORT}, data=config
     )
 
-    # -- Task must wrap the coroutine returned by async_init with name= (mutants 27-30, 39-40) --
-    mock_create_task.assert_called_once_with(
-        "sentinel_coroutine_value",
-        name="climate_ip_yaml_import",
+    # -- Task creation: exact payload + name (mutants 27-30, 39-40) --
+    hass.async_create_task.assert_called_once_with(
+        "sentinel_task_payload", name="climate_ip_yaml_import"
     )
 
 
