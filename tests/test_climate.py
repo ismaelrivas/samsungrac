@@ -588,45 +588,32 @@ async def test_async_setup_entry_multi_device_kills_mutants() -> None:
     mock_coord_2 = MagicMock()
     entry.runtime_data = {"dev1": mock_coord_1, "dev2": mock_coord_2}
 
-    created_entities = []
-
-    def fake_climate_ip(coordinator, desc, data, device_info, uid):
-        obj = MagicMock()
-        obj._coordinator = coordinator
-        obj._desc = desc
-        obj._data = data
-        obj._device_info = device_info
-        obj._uid = uid
-        created_entities.append(obj)
-        return obj
-
     async_add_entities = MagicMock()
 
-    with patch(
-        "custom_components.climate_ip.climate.ClimateIP",
-        side_effect=fake_climate_ip,
-    ):
+    with patch("custom_components.climate_ip.climate.ClimateIP") as mock_climate_class:
         await async_setup_entry(MagicMock(), entry, async_add_entities)
 
     # Two entities must have been created — one per device
-    assert len(created_entities) == 2, "Expected exactly 2 ClimateIP instances"
+    assert mock_climate_class.call_count == 2, "Expected exactly 2 ClimateIP instances"
 
     # --- Device 1 assertions ---
-    e1 = created_entities[0]
-    assert e1._coordinator is mock_coord_1, "Coordinator mismatch for dev1 (mutant 1/23)"
-    assert e1._desc.key == "samsung_ac_dev1", "Key mismatch for dev1 (mutant 16/18)"
-    assert e1._desc.translation_key == "samsung_ac", "translation_key mismatch (mutant 17/20/21)"
-    assert e1._data == dict(entry.data), "Data dict mismatch (mutant 25/33)"
-    assert e1._device_info == {"id": "dev1", "ip": "192.168.0.10"}, (
+    c1_args = mock_climate_class.call_args_list[0].args
+    coordinator_1, desc_1, data_1, device_info_1, uid_1 = c1_args
+    assert coordinator_1 is mock_coord_1, "Coordinator mismatch for dev1 (mutant 1/23)"
+    assert desc_1.key == "samsung_ac_dev1", "Key mismatch for dev1 (mutant 16/18)"
+    assert desc_1.translation_key == "samsung_ac", "translation_key mismatch (mutant 17/20/21)"
+    assert data_1 == dict(entry.data), "Data dict mismatch (mutant 25/33)"
+    assert device_info_1 == {"id": "dev1", "ip": "192.168.0.10"}, (
         "device_info mismatch — device lookup filter is broken (mutants 3-14)"
     )
-    assert e1._uid == "main_unique_id", "unique_id mismatch (mutant 27)"
+    assert uid_1 == "main_unique_id", "unique_id mismatch (mutant 27)"
 
     # --- Device 2 assertions (different coordinator / device_info) ---
-    e2 = created_entities[1]
-    assert e2._coordinator is mock_coord_2, "Coordinator mismatch for dev2"
-    assert e2._desc.key == "samsung_ac_dev2"
-    assert e2._device_info == {"id": "dev2", "ip": "192.168.0.20"}
+    c2_args = mock_climate_class.call_args_list[1].args
+    coordinator_2, desc_2, data_2, device_info_2, uid_2 = c2_args
+    assert coordinator_2 is mock_coord_2, "Coordinator mismatch for dev2"
+    assert desc_2.key == "samsung_ac_dev2"
+    assert device_info_2 == {"id": "dev2", "ip": "192.168.0.20"}
 
     # --- async_add_entities must be called with update_before_add=True (mutants 34-38) ---
     async_add_entities.assert_called_once()
@@ -714,36 +701,21 @@ async def test_async_setup_entry_single_device_kills_mutants() -> None:
     mock_coord = MagicMock()
     entry.runtime_data = mock_coord  # not a dict → triggers else-branch
 
-    created: list = []
-
-    def fake_climate_ip(coordinator, desc, data, device_info, uid):
-        obj = MagicMock()
-        obj._coordinator = coordinator
-        obj._desc = desc
-        obj._data = data
-        obj._device_info = device_info
-        obj._uid = uid
-        created.append(obj)
-        return obj
-
     async_add_entities = MagicMock()
-    with patch(
-        "custom_components.climate_ip.climate.ClimateIP",
-        side_effect=fake_climate_ip,
-    ):
+    with patch("custom_components.climate_ip.climate.ClimateIP") as mock_climate_class:
         await async_setup_entry(MagicMock(), entry, async_add_entities)
 
-    assert len(created) == 1
+    assert mock_climate_class.call_count == 1
 
-    e = created[0]
-    assert e._coordinator is mock_coord, "Coordinator must be runtime_data directly (mutant 39)"
-    assert e._desc.key == "samsung_ac", "key must be literal 'samsung_ac' (mutants 41/43/45/46)"
-    assert e._desc.translation_key == "samsung_ac", (
+    coordinator, desc, data, device_info, uid = mock_climate_class.call_args.args
+    assert coordinator is mock_coord, "Coordinator must be runtime_data directly (mutant 39)"
+    assert desc.key == "samsung_ac", "key must be literal 'samsung_ac' (mutants 41/43/45/46)"
+    assert desc.translation_key == "samsung_ac", (
         "translation_key must be 'samsung_ac' (mutants 42/44/47/48)"
     )
-    assert e._data == dict(entry.data), "data must be a fresh dict copy (mutants 52/59)"
-    assert e._device_info is None, "device_info must be None for single-device (mutant 26 analog)"
-    assert e._uid == "single_uid_abc", "uid must come from entry.unique_id (mutants 53)"
+    assert data == dict(entry.data), "data must be a fresh dict copy (mutants 52/59)"
+    assert device_info is None, "device_info must be None for single-device (mutant 26 analog)"
+    assert uid == "single_uid_abc", "uid must come from entry.unique_id (mutants 53)"
 
     # async_add_entities must receive a single-element list (mutants 49-58)
     async_add_entities.assert_called_once()
