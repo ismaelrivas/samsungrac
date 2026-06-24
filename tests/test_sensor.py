@@ -163,7 +163,7 @@ async def test_async_setup_entry_strict_mapping(
     # Aniquila mutantes de parse_entity_category (8, 9, 14, 15)
     mock_parse_category.assert_called_once_with("diagnostic")
 
-    # Aniquila mutantes de extracción y asignación de kwargs (16-23, 40-67)
+    # Aniquila mutantes de extracción y asignación de kwargs
     mock_desc_class.assert_called_once_with(
         key="sensor_valid",
         translation_key="sensor_valid",
@@ -174,6 +174,16 @@ async def test_async_setup_entry_strict_mapping(
         entity_category="parsed_diagnostic",
         icon="mdi:thermometer",
     )
+
+    # Aniquila Mutante 71: Aserta explícitamente los argumentos posicionales del constructor
+    mock_sensor_class.assert_called_once_with(
+        mock_coord, mock_desc_class.return_value, prop_instance
+    )
+
+    # Aniquila Mutante 68: Aserta la identidad del objeto en la lista, no solo su longitud
+    async_add_entities.assert_called_once()
+    entities_passed = async_add_entities.call_args[0][0]
+    assert entities_passed == [mock_sensor_class.return_value], "El mutante hizo append de None en lugar del sensor instanciado."
 
 
 @pytest.mark.asyncio
