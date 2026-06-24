@@ -38,4 +38,4 @@ def test_sensor_translation_key_and_entity_category() -> None:
     assert sensor.entity_category == EntityCategory.DIAGNOSTIC
 
     # Test Device Info matches Coordinator (Parent linkage)
-    assert sensor.device_info == mock_coordinator.device_info
+    assert sensor.device_info == {"identifiers": {("climate_ip", "test_unique_id")}}

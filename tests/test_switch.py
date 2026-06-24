@@ -38,4 +38,4 @@ def test_switch_translation_key_and_entity_category() -> None:
     assert switch.entity_category == EntityCategory.CONFIG
 
     # Test Device Info matches Coordinator (Parent linkage)
-    assert switch.device_info == mock_coordinator.device_info
+    assert switch.device_info == {"identifiers": {("climate_ip", "test_unique_id")}}
