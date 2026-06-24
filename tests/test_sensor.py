@@ -210,6 +210,46 @@ async def test_async_setup_entry_fallback_and_logic(
 
 
 @pytest.mark.asyncio
+@patch("custom_components.climate_ip.sensor.SensorEntityDescription")
+@patch("custom_components.climate_ip.sensor.parse_entity_category")
+async def test_async_setup_entry_icon_logical_operator_inverse(
+    mock_parse_category, mock_desc_class
+) -> None:
+    """
+    Aniquila Mutante 32 (cambio de 'and' por 'or' en la asignación del icono).
+    Evaluamos el caso inverso: No hay icono, pero SÍ hay device_class.
+    En el código original ('and'): No se asigna 'mdi:eye' porque hay device_class.
+    En el código mutado ('or'): Se asignaría 'mdi:eye' de forma errónea.
+    """
+    hass = MagicMock()
+    entry = MagicMock()
+    mock_coord = MagicMock()
+    
+    class DummyPropDeviceClassOnly:
+        id = "sensor_dev_class_only"
+        device_class = "temperature"
+        icon = None  # Crucial: Icon is explicitly None
+        
+        def is_valid(self, state):
+            return True
+            
+    mock_coord.controller.sensors = [DummyPropDeviceClassOnly()]
+    entry.runtime_data = {"dev_1": mock_coord}
+
+    mock_parse_category.return_value = None
+    async_add_entities = MagicMock()
+
+    await async_setup_entry(hass, entry, async_add_entities)
+
+    # Extraemos los kwargs con los que se intentó crear el SensorEntityDescription
+    mock_desc_class.assert_called_once()
+    kwargs = mock_desc_class.call_args.kwargs
+    
+    # Aserción letal: El icono debe seguir siendo None, no "mdi:eye"
+    assert kwargs["icon"] is None, "El mutante 'or' reescribió el icono a mdi:eye ignorando el device_class."
+
+
+@pytest.mark.asyncio
 @patch("custom_components.climate_ip.sensor.ClimateIpSensor")
 async def test_async_setup_entry_single_coordinator(mock_sensor_class) -> None:
     """Aniquila mutantes en el desempaquetado singular (if isinstance)."""
