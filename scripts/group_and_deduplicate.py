@@ -2,13 +2,13 @@ import re
 import os
 
 def parse_survived_log():
-    """Parse survived5.log and return a list of mutant metadata dicts."""
-    if not os.path.exists('survived5.log'):
-        print("Error: survived5.log not found.")
+    """Parse survived_latest.log and return a list of mutant metadata dicts."""
+    if not os.path.exists('survived_latest.log'):
+        print("Error: survived_latest.log not found.")
         return []
 
     mutants = []
-    with open('survived5.log', 'r') as f:
+    with open('survived_latest.log', 'r') as f:
         for line in f:
             if 'survived' not in line:
                 continue

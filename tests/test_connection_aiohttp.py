@@ -432,12 +432,12 @@ def test_format_url_strict_evaluations():
     # Validamos el reemplazo y el cambio a HTTP
     assert "http://192.168.1.50/devices/AA:BB:CC:DD" in formatted, "Mutante sobrevivió alterando la inyección de host/mac o el fallback HTTP"
 
-    # 2. Test del puerto custom (:8888/ -> :9999/)
-    url_port = "https://1.1.1.1:8888/api"
+    # 2. Test del puerto custom (:8888/ -> :9999/) y fallback HTTP estricto
+    url_port = "https://192.168.1.50:8888/devices/__CLIMATE_IP_MAC__"
     formatted_port = conn._format_url(url_port)
     
-    assert ":9999/" in formatted_port, "El mutante deshabilitó el reemplazo del puerto por defecto"
-    assert "http://" in formatted_port, "El mutante deshabilitó el reemplazo de https a http"
+    # ASERCIONES ESTRICTAS (Matan mutantes 33, 42, 53, 56)
+    assert formatted_port == "http://192.168.1.50:9999/devices/AA:BB:CC:DD", "Fallo en reemplazo de puerto o protocolo"
 
 async def test_adaptive_keep_alive_on_timeout_recovery(connection_config, mock_logger, mock_hass, mock_session):
     """Testea que el motor cambia a force_close y reintenta tras un ClientError."""
