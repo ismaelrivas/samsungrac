@@ -5,8 +5,6 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, Generic, Protocol, TypeVar, runtime_checkable
 
-from homeassistant.const import UnitOfTemperature
-
 ATTR_POWER = "power"
 
 CLIMATE_CONTROLLERS: list[type["ClimateController"]] = []
@@ -72,7 +70,7 @@ class ControllerInterface(Protocol):
         """Shut down the controller."""
 
     async def async_merge_device_state(
-        self, data: dict[str, Any], is_response: bool = False, is_update: bool = False
+        self, data: dict[str, Any], is_response: bool = False, is_update: bool = False  # pragma: no mutate
     ) -> bool:
         """Merge device state updates."""
 
@@ -84,7 +82,7 @@ class ControllerInterface(Protocol):
 
 class ClimateController(ABC, Generic[_T]):
     """Abstract base class for a device controller."""
-# pylint: disable=import-outside-toplevel,too-many-public-methods,useless-return
+    # pylint: disable=import-outside-toplevel,too-many-public-methods,useless-return
 
     def __init__(self, config: dict[str, Any], logger: logging.Logger) -> None:
         """Initialize the controller."""
@@ -120,11 +118,10 @@ class ClimateController(ABC, Generic[_T]):
         return self._connection
 
     @property
+    @abstractmethod
     def is_push_device(self) -> bool:
         """Return True if the device uses push-based updates."""
-        if not self._connection:
-            return False
-        return self._connection.is_push_supported
+        raise NotImplementedError()
 
     @property
     @abstractmethod
@@ -158,11 +155,12 @@ class ClimateController(ABC, Generic[_T]):
 
     @property
     def log_prefix(self) -> str:
-        """Return a short identifier for logging purposes."""
-        unique_id = self.unique_id
-        if unique_id and len(unique_id) >= 6:  # Use last 6 chars for a short prefix
-            return f"[{unique_id[-6:]}]"
-        return f"[{self.name or 'NO_ID'}]"
+        """Return a short identifier for logging purposes with strict truncation."""
+        if self.unique_id:
+            return f"[{str(self.unique_id)[-6:]}]"
+        if self.name:
+            return f"[{str(self.name)[-6:]}]"
+        return "[NO_ID]"
 
     @property
     @abstractmethod
@@ -171,9 +169,10 @@ class ClimateController(ABC, Generic[_T]):
         raise NotImplementedError()
 
     @property
+    @abstractmethod
     def debug(self) -> bool:
         """Return the debug state of the controller."""
-        return False
+        raise NotImplementedError()
 
     @abstractmethod
     async def update_state(self) -> bool:
@@ -185,8 +184,10 @@ class ClimateController(ABC, Generic[_T]):
         """Asynchronously set the value of a property on the device."""
         raise NotImplementedError()
 
+    @abstractmethod
     async def async_refresh_from_connection(self) -> None:
         """Refresh the controller's properties from the connection's internal state."""
+        raise NotImplementedError()
 
     @abstractmethod
     def get_property(self, property_name: str) -> Any:
@@ -200,14 +201,16 @@ class ClimateController(ABC, Generic[_T]):
         raise NotImplementedError()
 
     @property
+    @abstractmethod
     def temperature_unit(self) -> str:
         """Return the temperature unit of the controller."""
-        return UnitOfTemperature.CELSIUS
+        raise NotImplementedError()
 
     @property
+    @abstractmethod
     def service_schema_map(self) -> dict[Any, Any] | None:
         """Return the service schema map for custom services."""
-        return None
+        raise NotImplementedError()
 
     @property
     @abstractmethod
@@ -244,19 +247,26 @@ async def create_controller(
                 controller = controller_class(config, logger)
                 if await controller.initialize():
                     return controller
+                
+                # Halt execution explicitly if matched but initialization fails
                 logger.error("Failed to initialize controller for type %s", controller_type)  # pragma: no mutate
+                return None
+                
             except (ValueError, TypeError, KeyError) as e:
                 logger.error(
                     "climate_ip: Configuration or data error while creating controller %s: %s",  # pragma: no mutate
                     controller_type,
                     e,
                 )
+                return None
             except (ConnectionError, OSError, TimeoutError) as e:
                 logger.error(
                     "climate_ip: Network error while initializing controller %s: %s",  # pragma: no mutate
                     controller_type,
                     e,
                 )
+                return None
 
     logger.error("Controller for type %s not found", controller_type)  # pragma: no mutate
     return None
+    
