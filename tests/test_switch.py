@@ -6,8 +6,9 @@ import pytest
 from homeassistant.components.switch import SwitchEntityDescription
 from homeassistant.const import EntityCategory
 
-from custom_components.climate_ip.switch import SamsungClimateSwitch
+from custom_components.climate_ip.switch import SamsungClimateSwitch, async_setup_entry
 from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
+from custom_components.climate_ip.properties import PROPERTY_TYPE_SWITCH
 
 
 @pytest.fixture
@@ -50,6 +51,37 @@ def base_switch_entity() -> SamsungClimateSwitch:
 
 
 # ============================================================
+# Dummy Classes (stubs for async_setup_entry tests)
+# ============================================================
+
+
+class DummySwitchPropValid:
+    """Clase plana para derrotar la creación silenciosa de atributos de MagicMock."""
+    id = "good_switch"
+    entity_category = "config"
+    device_class = "outlet"
+    icon = "mdi:power-socket"
+
+    def match_type(self, prop_type):
+        return prop_type == PROPERTY_TYPE_SWITCH
+
+    def is_valid(self, state):
+        return True
+
+
+class DummySwitchPropFallback:
+    """Clase plana que carece de atributos opcionales para detonar fallbacks."""
+    id = "fallback_switch"
+    value = "off"
+
+    def match_type(self, prop_type):
+        return prop_type == PROPERTY_TYPE_SWITCH
+
+    def is_valid(self, state):
+        return True
+
+
+# ============================================================
 # PHASE 1: Constructor & Base Attributes
 # ============================================================
 
@@ -72,6 +104,11 @@ def test_switch_initialization(base_switch_entity: SamsungClimateSwitch) -> None
     
     # Mutante 8: self._attr_unique_id = None
     assert base_switch_entity._attr_unique_id == "test_mac_123_test_switch_id"
+
+    # Aniquila Mutante 9: self._attr_device_info = None
+    assert base_switch_entity._attr_device_info == {"identifiers": {("climate_ip", "test_mac_123")}}, (
+        "El device_info no se asignó o fue corrompido con None."
+    )
 
 
 # ============================================================
@@ -121,6 +158,14 @@ def test_update_state_unknown_fallback(base_switch_entity: SamsungClimateSwitch)
     base_switch_entity._update_state()
     assert base_switch_entity._attr_is_on is None, "El fallback de estado desconocido debe ser None."
 
+def test_update_state_missing_value_attribute(base_switch_entity: SamsungClimateSwitch) -> None:
+    """Eliminate Mutant 6 for fallback when 'value' attribute is missing."""
+    # Delete the 'value' attribute
+    del base_switch_entity._operation.value
+    base_switch_entity._update_state()
+    assert base_switch_entity._attr_is_on is None
+
+
 
 # ============================================================
 # PHASE 3: Network Operations
@@ -150,3 +195,267 @@ async def test_async_turn_off(base_switch_entity: SamsungClimateSwitch) -> None:
     assert base_switch_entity._attr_is_on is False
     base_switch_entity.async_write_ha_state.assert_called_once()
     base_switch_entity.coordinator.async_request_refresh.assert_awaited_once()
+
+# ============================================================
+# PHASE 4: Factory / async_setup_entry
+# ============================================================
+
+
+@pytest.mark.asyncio
+@patch("custom_components.climate_ip.switch.SamsungClimateSwitch")
+@patch("custom_components.climate_ip.switch.SwitchEntityDescription")
+@patch("custom_components.climate_ip.switch.parse_entity_category")
+async def test_async_setup_entry_strict_mapping(
+    mock_parse_category, mock_desc_class, mock_switch_class
+) -> None:
+    """Aniquila mutantes en la iteración, filtros y mapeo de atributos completos."""
+    hass = MagicMock()
+    entry = MagicMock()
+    mock_coord = MagicMock()
+    
+    target_device_state = {"power": "on"}
+    mock_coord.controller.device_state = target_device_state
+    
+    prop_instance = DummySwitchPropValid()
+    prop_instance.match_type = MagicMock(return_value=True)
+    prop_instance.is_valid = MagicMock(return_value=True)
+    
+    mock_coord.controller.operations = [prop_instance]
+    entry.runtime_data = {"dev_1": mock_coord}
+
+    mock_parse_category.return_value = "parsed_config"
+    mock_desc_class.return_value = "sentinel_desc"
+    async_add_entities = MagicMock()
+
+    await async_setup_entry(hass, entry, async_add_entities)
+
+    # Validaciones estrictas de firma
+    prop_instance.match_type.assert_called_once_with(PROPERTY_TYPE_SWITCH)
+    prop_instance.is_valid.assert_called_once_with(target_device_state)
+    mock_parse_category.assert_called_once_with("config")
+
+    mock_desc_class.assert_called_once_with(
+        key="good_switch",
+        translation_key="good_switch",
+        name=None,
+        device_class="outlet",
+        entity_category="parsed_config",
+        icon="mdi:power-socket",
+    )
+
+    mock_switch_class.assert_called_once_with(
+        mock_coord, mock_desc_class.return_value, prop_instance
+    )
+
+    async_add_entities.assert_called_once()
+    assert async_add_entities.call_args[0][0] == [mock_switch_class.return_value]
+
+
+@pytest.mark.asyncio
+@patch("custom_components.climate_ip.switch.SwitchEntityDescription")
+@patch("custom_components.climate_ip.switch.parse_entity_category")
+async def test_async_setup_entry_fallbacks(mock_parse_category, mock_desc_class) -> None:
+    """Aniquila mutantes en los operadores lógicos del fallback de iconos."""
+    hass = MagicMock()
+    entry = MagicMock()
+    mock_coord = MagicMock()
+    
+    mock_coord.controller.operations = [DummySwitchPropFallback()]
+    entry.runtime_data = {"dev_1": mock_coord}
+
+    mock_parse_category.return_value = None
+    async_add_entities = MagicMock()
+
+    await async_setup_entry(hass, entry, async_add_entities)
+
+    # Si falta el device_class y el icon, debe inyectar el toggle-switch por defecto
+    mock_desc_class.assert_called_once_with(
+        key="fallback_switch",
+        translation_key="fallback_switch",
+        name=None,
+        device_class=None,
+        entity_category=None,
+        icon="mdi:toggle-switch",
+    )
+
+
+
+@pytest.mark.asyncio
+@patch("custom_components.climate_ip.switch.SamsungClimateSwitch")
+async def test_async_setup_entry_single_coordinator_and_dict_ops(mock_switch_class) -> None:
+    """Aniquila mutantes en las ramas de manejo de diccionarios para coordinadores y operaciones."""
+    hass = MagicMock()
+    entry = MagicMock()
+    mock_coord = MagicMock()
+    
+    # Suministramos operaciones como Diccionario en lugar de lista
+    mock_coord.controller.operations = {"key_ignorado": DummySwitchPropFallback()}
+    
+    # Suministramos coordinator_data directamente, no como diccionario
+    entry.runtime_data = mock_coord
+    
+    async_add_entities = MagicMock()
+
+    await async_setup_entry(hass, entry, async_add_entities)
+
+    assert mock_switch_class.call_count == 1
+    async_add_entities.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("custom_components.climate_ip.switch.SamsungClimateSwitch")
+async def test_async_setup_entry_get_property_object_failure(mock_switch_class) -> None:
+    """Eliminate mutants 9, 10, 11 by strict execution tracing of string operations."""
+    hass = MagicMock()
+    entry = MagicMock()
+    mock_coord = MagicMock()
+
+    # Creamos un objeto válido para que actúe como "testigo" de que el bucle avanzó
+    # Si mutmut cambia la validación de string a None o invierte el 'if', este objeto
+    # o no será llamado, o será procesado erróneamente.
+    valid_op_after_string = DummySwitchPropValid()
+    valid_op_after_string.match_type = MagicMock(return_value=True)
+    valid_op_after_string.is_valid = MagicMock(return_value=True)
+
+    mock_coord.controller.operations = ["string_op", valid_op_after_string]
+    mock_coord.controller.get_property_object.return_value = None
+    entry.runtime_data = {"dev_1": mock_coord}
+
+    async_add_entities = MagicMock()
+    await async_setup_entry(hass, entry, async_add_entities)
+
+    # Mutante 10: Asegura que get_property_object recibe exactamente "string_op"
+    mock_coord.controller.get_property_object.assert_called_once_with("string_op")
+
+    # Mutantes 9 y 11: Si la evaluación del objeto string falla correctamente (prop_obj is None),
+    # el bucle debe hacer 'continue' y procesar 'valid_op_after_string'.
+    # Si mutmut invierte la lógica ('if prop_obj is None: op = prop_obj'), la iteración explotará
+    # o se detendrá. Por tanto, exigimos que la clase se instancie EXACTAMENTE 1 vez.
+    assert mock_switch_class.call_count == 1, (
+        "El bucle no manejó el string_op correctamente o abortó la iteración."
+    )
+    async_add_entities.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("custom_components.climate_ip.switch.SwitchEntityDescription")
+@patch("custom_components.climate_ip.switch.parse_entity_category")
+@patch("custom_components.climate_ip.switch.SamsungClimateSwitch")
+async def test_async_setup_entry_continue_vs_break(
+    mock_switch_class, mock_parse_category, mock_desc_class
+) -> None:
+    """Elimina los mutantes 13, 21, 25 y 30 garantizando el uso de continue en lugar de break."""
+    hass = MagicMock()
+    entry = MagicMock()
+    mock_coord = MagicMock()
+
+    # Mutante 21: Objeto sin atributo 'id'
+    class NoIdProp:
+        pass
+
+    # Mutante 25: ID es "power"
+    class PowerProp:
+        id = "power"
+
+    # Mutante 30: No válido para el estado del dispositivo
+    class InvalidProp:
+        id = "invalid_switch"
+        def match_type(self, t): return True
+        def is_valid(self, s): return False
+
+    valid_prop = DummySwitchPropValid()
+    valid_prop.match_type = MagicMock(return_value=True)
+    valid_prop.is_valid = MagicMock(return_value=True)
+
+    # ORDEN CRÍTICO: Los elementos que deben saltarse van PRIMERO.
+    # Si cualquiera de ellos muta de 'continue' a 'break', la iteración aborta
+    # antes de procesar el 'valid_prop' final, dejando el call_count en 0.
+    mock_coord.controller.operations = [
+        NoIdProp(),
+        PowerProp(),
+        InvalidProp(),
+        valid_prop
+    ]
+
+    entry.runtime_data = {"dev_1": mock_coord}
+    mock_parse_category.return_value = "parsed_config"
+    mock_desc_class.return_value = "sentinel_desc"
+    async_add_entities = MagicMock()
+
+    await async_setup_entry(hass, entry, async_add_entities)
+
+    # Aserción Letal
+    assert mock_switch_class.call_count == 1, (
+        "La iteración se detuvo prematuramente. Un filtro usó 'break' en lugar de 'continue'."
+    )
+    async_add_entities.assert_called_once()
+
+@pytest.mark.asyncio
+@patch("custom_components.climate_ip.switch.SwitchEntityDescription")
+@patch("custom_components.climate_ip.switch.parse_entity_category")
+async def test_async_setup_entry_icon_logical_operator_inverse(mock_parse_category, mock_desc_class) -> None:
+    """Eliminate mutant 56 that inverts logical operator for icon fallback."""
+    hass = MagicMock()
+    entry = MagicMock()
+    mock_coord = MagicMock()
+    class IconOnlyProp:
+        id = "icon_only"
+        device_class = None
+        icon = "mdi:lightbulb"
+        def match_type(self, t):
+            return True
+        def is_valid(self, s):
+            return True
+    mock_coord.controller.operations = [IconOnlyProp()]
+    entry.runtime_data = {"dev_1": mock_coord}
+    mock_parse_category.return_value = None
+    async_add_entities = MagicMock()
+    await async_setup_entry(hass, entry, async_add_entities)
+    mock_desc_class.assert_called_once_with(
+        key="icon_only",
+        translation_key="icon_only",
+        name=None,
+        device_class=None,
+        entity_category=None,
+        icon="mdi:lightbulb",
+    )
+    async_add_entities.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("custom_components.climate_ip.switch.SamsungClimateSwitch")
+@patch("custom_components.climate_ip.switch.SwitchEntityDescription")
+@patch("custom_components.climate_ip.switch.parse_entity_category")
+async def test_async_setup_entry_get_property_object_success(
+    mock_parse_category, mock_desc_class, mock_switch_class
+) -> None:
+    """Elimina al Mutante 11 asertando el Happy Path de la resolución de strings."""
+    hass = MagicMock()
+    entry = MagicMock()
+    mock_coord = MagicMock()
+
+    # Operación string que SÍ se resuelve a un objeto válido
+    mock_coord.controller.operations = ["string_op_valid"]
+
+    valid_prop = DummySwitchPropValid()
+    valid_prop.match_type = MagicMock(return_value=True)
+    valid_prop.is_valid = MagicMock(return_value=True)
+
+    # Configuramos el factory para devolver el objeto válido
+    mock_coord.controller.get_property_object.return_value = valid_prop
+    entry.runtime_data = {"dev_1": mock_coord}
+
+    mock_parse_category.return_value = "parsed_config"
+    mock_desc_class.return_value = "sentinel_desc"
+    async_add_entities = MagicMock()
+
+    await async_setup_entry(hass, entry, async_add_entities)
+
+    # Aserción Letal:
+    # Si mutmut cambia `if prop_obj is not None` por `if prop_obj is None`,
+    # el objeto válido caerá en la rama 'else', se ejecutará 'continue',
+    # y el contador de llamadas será 0.
+    assert mock_switch_class.call_count == 1, (
+        "El string operation válido no instanció la entidad. "
+        "El mutante 11 invirtió el chequeo de 'is not None'."
+    )

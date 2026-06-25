@@ -137,7 +137,7 @@ class SamsungClimateSwitch(CoordinatorEntity[SamsungClimateCoordinator], SwitchE
 
     def _update_state(self) -> None:
         """Update internal state from operation value."""
-        value = self._operation.value
+        value = getattr(self._operation, "value", None)
 
         if value in ["on", "On", True]:
             self._attr_is_on = True
