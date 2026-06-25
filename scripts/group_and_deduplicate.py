@@ -1,5 +1,6 @@
 import re
 import os
+import datetime
 
 def parse_survived_log():
     """Parse survived_latest.log and return a list of mutant metadata dicts."""
@@ -131,6 +132,7 @@ def main():
     # ── Write analysis report ──────────────────────────────────────────────
     with open('mutant_analysis.md', 'w') as out:
         out.write('# Mutant Hardening Analysis & Grouping\n\n')
+        out.write(f'Generated on: {datetime.datetime.now().isoformat()}\n\n')
         out.write(f'- **Total Mutants Analysed**: {len(mutants)}\n')
         out.write(f'- **Non-Redundant Mutants**: {non_redundant_count}\n')
         out.write(f'- **Redundant/Excluded Mutants**: {redundant_count}\n\n')
