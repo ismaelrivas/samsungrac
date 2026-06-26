@@ -91,10 +91,10 @@ async def async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None
     """Handle options update."""
     # This is called when the user changes options in the UI.
     # Reloading the entry triggers async_unload_entry, which performs the definitive cleanup.
-    _LOGGER.debug(
-        "Configuration options updated, reloading climate_ip integration for entry %s",
-        entry.entry_id,
-    )
+    _LOGGER.debug(  # pragma: no mutate
+        "Configuration options updated, reloading climate_ip integration for entry %s",  # pragma: no mutate
+        entry.entry_id,  # pragma: no mutate
+    )  # pragma: no mutate
     await hass.config_entries.async_reload(entry.entry_id)
 
 
@@ -258,11 +258,11 @@ async def async_remove_config_entry_device(
     _hass: HomeAssistant, entry: ClimateIPConfigEntry, device_entry: Any
 ) -> bool:
     """Remove a config entry from a device."""
-    _LOGGER.debug(
-        "Removing device %s from config entry %s",
-        device_entry.id,
-        entry.entry_id,
-    )
+    _LOGGER.debug(  # pragma: no mutate
+        "Removing device %s from config entry %s",  # pragma: no mutate
+        device_entry.id,  # pragma: no mutate
+        entry.entry_id,  # pragma: no mutate
+    )  # pragma: no mutate
     # If the user removes a device from the integrations page, this allows HA to delete it
     # from the Device Registry if the integration confirms it's okay (returning True).
     # Since we dynamically re-add devices upon startup if they exist, returning True is safe

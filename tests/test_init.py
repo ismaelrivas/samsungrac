@@ -3,18 +3,35 @@
 # pylint: disable=protected-access,import-outside-toplevel,reimported,redefined-outer-name
 
 import asyncio
+import logging
+import ssl
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from homeassistant.core import HomeAssistant
+
 from custom_components.climate_ip import (
+    PLATFORMS,
+    CONFIG_ENTRY_VERSION,
+    async_migrate_entry,
+    async_remove_config_entry_device,
     async_setup,
     async_setup_entry,
     async_unload_entry,
+    async_update_listener,
 )
-from custom_components.climate_ip.const import DOMAIN
-from homeassistant.core import HomeAssistant
-
+from custom_components.climate_ip.const import (
+    CONF_CONFIG_FILE,
+    CONF_DEVICE_ID,
+    CONF_DEVICE_TYPE,
+    CONF_DEVICES,
+    DEVICE_TYPE_TO_CONFIG_FILE,
+    DOMAIN,
+)
+from custom_components.climate_ip.controller_yaml import YamlController
+from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878
 
 async def test_async_setup(hass: HomeAssistant) -> None:
     """Test that the component sets up correctly."""
@@ -97,10 +114,6 @@ async def test_unload_entry(hass: HomeAssistant) -> None:
 
 async def test_migrate_entry_v1_to_current(hass: HomeAssistant) -> None:
     """Verify that v1 entries are migrated correctly without data loss."""
-    from custom_components.climate_ip import (
-        CONFIG_ENTRY_VERSION,
-        async_migrate_entry,
-    )
 
     legacy_entry = MagicMock()
     legacy_entry.version = 1
@@ -122,7 +135,6 @@ async def test_migrate_entry_v1_to_current(hass: HomeAssistant) -> None:
 
 async def test_migrate_entry_future_version_rejected(hass: HomeAssistant) -> None:
     """Future config entry versions must be rejected gracefully without crashing."""
-    from custom_components.climate_ip import async_migrate_entry
 
     future_entry = MagicMock()
     future_entry.version = 999
@@ -147,13 +159,6 @@ def test_hass_not_in_config_dict() -> None:
 
     The config dict must remain serializable — no HA runtime objects allowed.
     """
-    import logging
-    from unittest.mock import MagicMock
-
-    import aiohttp
-
-    from custom_components.climate_ip.controller_yaml import YamlController
-    from homeassistant.core import HomeAssistant
 
     mock_hass = MagicMock(spec=HomeAssistant)
     mock_session = MagicMock(spec=aiohttp.ClientSession)
@@ -185,7 +190,6 @@ def test_hass_not_in_config_dict() -> None:
 
 async def test_unload_while_connecting(hass: HomeAssistant) -> None:
     """Test race condition when unloading while connection is in progress."""
-    from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878
 
     config = {"host": "192.168.1.100", "port": 2878, "cert": "dummy.pem", "duid": "12345"}
     logger = MagicMock()
@@ -219,8 +223,6 @@ async def test_unload_while_connecting(hass: HomeAssistant) -> None:
 
 async def test_migration_runs_for_v1(hass: HomeAssistant) -> None:
     """Asegura que la migración se ejecuta si es v1 y actualiza la entrada."""
-    from custom_components.climate_ip import async_migrate_entry
-    from unittest.mock import patch, MagicMock
 
     # Entrada v1
     mock_entry = MagicMock()
@@ -239,8 +241,6 @@ async def test_migration_runs_for_v1(hass: HomeAssistant) -> None:
 
 async def test_migration_ignored_for_current_version(hass: HomeAssistant) -> None:
     """Asegura que la migración v1 no se ejecute si la versión ya es la correcta."""
-    from custom_components.climate_ip import async_migrate_entry
-    from unittest.mock import patch, MagicMock
 
     # Entrada ya en v2. Usamos datos INVÁLIDOS para v1.
     # Si el mutante cambia 'if entry.version == 1:' a '!= 1' o '== 2',
@@ -257,8 +257,7 @@ async def test_migration_ignored_for_current_version(hass: HomeAssistant) -> Non
 
 async def test_migration_v1_validates_token_strictly(hass: HomeAssistant) -> None:
     """Force a validation failure ONLY on the token."""
-    from custom_components.climate_ip import async_migrate_entry
-    from unittest.mock import MagicMock
+
     mock_entry = MagicMock()
     mock_entry.version = 1
     # Invalid token (list), MAC absent or valid
@@ -269,8 +268,7 @@ async def test_migration_v1_validates_token_strictly(hass: HomeAssistant) -> Non
 
 async def test_migration_v1_validates_mac_strictly(hass: HomeAssistant) -> None:
     """Force a validation failure ONLY on the mac."""
-    from custom_components.climate_ip import async_migrate_entry
-    from unittest.mock import MagicMock
+
     mock_entry = MagicMock()
     mock_entry.version = 1
     # Invalid MAC (list), valid token
@@ -281,8 +279,6 @@ async def test_migration_v1_validates_mac_strictly(hass: HomeAssistant) -> None:
 
 async def test_setup_entry_instantiates_controller_strictly(hass: HomeAssistant) -> None:
     """Verify YamlController is instantiated with exact required arguments."""
-    from custom_components.climate_ip import async_setup_entry, async_update_listener
-    from unittest.mock import patch, MagicMock, AsyncMock
 
     # Base configuration to pass the initial validations of async_setup_entry
     mock_entry = MagicMock()
@@ -290,12 +286,14 @@ async def test_setup_entry_instantiates_controller_strictly(hass: HomeAssistant)
         "ip_address": "192.168.1.100",
         "token": "valid_token",
         "mac": "00:11:22:33:44:55",
-        "device_id": "test_device"
+        "device_id": "test_device",
+        CONF_DEVICE_TYPE: "samsung_2878"
     }
     mock_entry.options = {}
     # Ensure version is correct so it doesn't trigger migration
     mock_entry.version = 2 
     mock_entry.unique_id = "test_mac_123" 
+    mock_entry.entry_id = "test_entry_123"
 
     # Patch YamlController inside the __init__.py namespace
     with patch("custom_components.climate_ip.YamlController") as mock_yaml_class:
@@ -315,7 +313,6 @@ async def test_setup_entry_instantiates_controller_strictly(hass: HomeAssistant)
             result = await async_setup_entry(hass, mock_entry)
 
         # 1. Assertion to kill mutant 108 (controller = None)
-        # If the mutant assigns None, .initialize() will never be called on the mock
         mock_instance.initialize.assert_awaited_once()
 
         # 2. Assertion to kill mutants 109 to 116 (arguments removed or None)
@@ -332,6 +329,10 @@ async def test_setup_entry_instantiates_controller_strictly(hass: HomeAssistant)
         # Assertion for Mutant 2: The dictionary MUST contain the unique_id copied from the entry
         assert kwargs["config"].get("unique_id") == "test_mac_123", "The unique_id was lost or altered"
         
+        # ASERCIONES LETALES (Mutantes 8-11): Validamos que la inyección inicial funciona bien
+        assert kwargs["config"].get("entry_id") == "test_entry_123", "The entry_id was not injected"
+        assert kwargs["config"].get(CONF_CONFIG_FILE) == DEVICE_TYPE_TO_CONFIG_FILE["samsung_2878"], "device_type fallback missing"
+        
         # Mutant 84: Verify standalone injection
         mock_coord_class.assert_called_once_with(hass, mock_instance, mock_entry)
         
@@ -347,9 +348,6 @@ async def test_setup_entry_instantiates_controller_strictly(hass: HomeAssistant)
 
 async def test_setup_entry_multi_device_branch_and_unique_id_logic(hass: HomeAssistant) -> None:
     """Verify ID 0 filtering and strict conditional logic for unique_id generation."""
-    from custom_components.climate_ip.const import CONF_DEVICES, CONF_DEVICE_ID
-    from custom_components.climate_ip import async_setup_entry
-    from unittest.mock import patch, MagicMock, AsyncMock
 
     mock_entry = MagicMock()
     mock_entry.unique_id = "parent_entry_mac"
@@ -427,8 +425,6 @@ async def test_setup_entry_multi_device_branch_and_unique_id_logic(hass: HomeAss
 
 async def test_setup_entry_total_initialization_failure(hass: HomeAssistant) -> None:
     """Verify that async_setup_entry aborts and returns False if no controller initializes."""
-    from custom_components.climate_ip import async_setup_entry
-    from unittest.mock import patch, MagicMock, AsyncMock
 
     mock_entry = MagicMock()
     mock_entry.data = {"ip_address": "192.168.1.100"} # Standalone
@@ -456,9 +452,6 @@ async def test_setup_entry_total_initialization_failure(hass: HomeAssistant) -> 
 
 async def test_setup_entry_multi_device_partial_failure(hass: HomeAssistant) -> None:
     """Verify that if a sub-device fails, the loop continues with the rest (continue vs break)."""
-    from custom_components.climate_ip.const import CONF_DEVICES
-    from custom_components.climate_ip import async_setup_entry
-    from unittest.mock import patch, MagicMock, AsyncMock
 
     mock_entry = MagicMock()
     mock_entry.data = {
@@ -495,9 +488,6 @@ async def test_setup_entry_multi_device_partial_failure(hass: HomeAssistant) -> 
 
 async def test_setup_entry_coordinator_instantiation_strict(hass: HomeAssistant) -> None:
     """Verify strict dependency injection in the SamsungClimateCoordinator."""
-    from custom_components.climate_ip.const import CONF_DEVICES
-    from custom_components.climate_ip import async_setup_entry
-    from unittest.mock import patch, MagicMock, AsyncMock
 
     mock_entry = MagicMock()
     mock_entry.unique_id = "parent_mac"
@@ -532,3 +522,26 @@ async def test_setup_entry_coordinator_instantiation_strict(hass: HomeAssistant)
         device_info_payload = kwargs.get("device_info")
         assert device_info_payload is not None, "Missing device_info payload"
         assert device_info_payload.get("name") == "Zone A", "The sub-device name was lost or incorrectly extracted"
+
+async def test_async_update_listener(hass: HomeAssistant) -> None:
+    """Verify that updating options triggers a clean integration reload."""
+
+    entry = MagicMock()
+    entry.entry_id = "test_reload_id_123"
+    hass.config_entries.async_reload = AsyncMock()
+
+    await async_update_listener(hass, entry)
+
+    # Lethal Assertion: Must reload exactly the current entry ID
+    hass.config_entries.async_reload.assert_awaited_once_with("test_reload_id_123")
+
+
+async def test_async_remove_config_entry_device(hass: HomeAssistant) -> None:
+    """Verify the integration permits Home Assistant to remove child devices."""
+
+    entry = MagicMock()
+    device_entry = MagicMock()
+
+    # The function is simple but must be strictly validated to return True
+    result = await async_remove_config_entry_device(hass, entry, device_entry)
+    assert result is True
