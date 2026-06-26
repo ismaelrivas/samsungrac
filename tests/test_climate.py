@@ -731,3 +731,39 @@ async def test_async_set_property_strict_args(base_climate_entity: ClimateIP):
     
     # Asertamos la actualización síncrona en el core de HA
     base_climate_entity.async_write_ha_state.assert_called_once()
+
+async def test_async_setup_entry_partial_corruption_kills_mutant_16():
+    """
+    Test ensuring that if a device lacks info, 'continue' is used instead of 'break',
+    allowing subsequent devices to initialize. Kills mutant 16.
+    """
+
+    mock_hass = MagicMock()  # Instantiated locally to avoid missing fixture errors
+    mock_add_entities = MagicMock()
+    mock_entry = MagicMock()
+    
+    # We inject TWO devices into the coordinator. 
+    # Order is vital: the corrupt one goes first so the mutant's 'break' aborts execution.
+    mock_entry.runtime_data = {
+        "corrupt_device": MagicMock(),
+        "valid_device": MagicMock()
+    }
+    
+    # In the configuration, we ONLY provide info for the valid one.
+    mock_entry.data = {
+        "devices": [
+            {"id": "valid_device", "name": "Living Room AC"}
+        ]
+    }
+    mock_entry.unique_id = "main_entry_123"
+
+    await async_setup_entry(mock_hass, mock_entry, mock_add_entities)
+
+    # Relentless Assertion:
+    # If the code uses 'continue' (our code), 1 entity will be added (the valid one).
+    # If the code uses 'break' (the mutant), the loop dies at the corrupt one and 0 are added.
+    mock_add_entities.assert_called_once()
+    entities_created = mock_add_entities.call_args[0][0]
+    
+    assert len(entities_created) == 1, "The 'break' mutant survived by aborting the entire loop!"
+    assert entities_created[0].entity_description.key == "samsung_ac_valid_device"

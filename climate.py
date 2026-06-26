@@ -3,7 +3,7 @@
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
@@ -56,13 +56,21 @@ from .coordinator import SamsungClimateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-SUPPORTED_FEATURES_MAP: dict[str, ClimateEntityFeature] = {
+SUPPORTED_FEATURES_MAP: Final[dict[str, ClimateEntityFeature]] = {
     const.ATTR_TEMPERATURE: ClimateEntityFeature.TARGET_TEMPERATURE,
     ATTR_FAN_MODE: ClimateEntityFeature.FAN_MODE,
     ATTR_SWING_MODE: ClimateEntityFeature.SWING_MODE,
     ATTR_PRESET_MODE: ClimateEntityFeature.PRESET_MODE,
 }
 
+# MAPA ESTRICTO PARA PREDICCIONES OPTIMISTAS (Elimina el vector de ataque hasattr dinámico)
+ALLOWED_OPTIMISTIC_CORRECTIONS: Final[dict[str, str]] = {
+    const.ATTR_TEMPERATURE: "_attr_target_temperature",
+    ATTR_HVAC_MODE: "_attr_hvac_mode",
+    ATTR_FAN_MODE: "_attr_fan_mode",
+    ATTR_SWING_MODE: "_attr_swing_mode",
+    ATTR_PRESET_MODE: "_attr_preset_mode",
+}
 
 # Legacy platform schema for YAML import.
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
@@ -132,21 +140,29 @@ async def async_setup_entry(
         # Create entities for a multi-device setup.
         entities: list[ClimateIP] = []
         for device_id, coordinator in coordinators.items():
-            # Find the device_info for this specific device_id in the entry data.
             device_info = next(
                 (d for d in entry.data.get(CONF_DEVICES, []) if d.get("id") == device_id),
                 None,
             )
-            if device_info:
-                desc = ClimateIPEntityDescription(
-                    key=f"samsung_ac_{device_id}",
-                    translation_key="samsung_ac",
+            # PROTECCIÓN DE LA FACTORÍA: Evitar creación de entidades zombies si la config está corrupta
+            if not device_info:
+                _LOGGER.error("Device info missing for device %s. Skipping entity creation to prevent orphan objects.", device_id) # pragma: no mutate
+                continue
+
+            desc = ClimateIPEntityDescription(
+                key=f"samsung_ac_{device_id}",
+                translation_key="samsung_ac",
+            )
+            entities.append(
+                ClimateIP(
+                    coordinator, desc, dict(entry.data), device_info, entry.unique_id
                 )
-                entities.append(
-                    ClimateIP(
-                        coordinator, desc, dict(entry.data), device_info, entry.unique_id
-                    )
-                )
+            )
+        
+        if not entities:
+            _LOGGER.error("No valid entities could be initialized from the provided coordinators.") # pragma: no mutate
+            return
+            
         async_add_entities(entities, update_before_add=True)
     else:
         # Fallback for single-device setups.
@@ -174,12 +190,9 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
     entity_description: ClimateIPEntityDescription
 
-    # Use _attr_has_entity_name = True and _attr_name = None so HA builds the
-    # display name from DeviceInfo — avoids double-prefixing the device name.
     _attr_has_entity_name = True
     _attr_name = None
 
-    # Strict type hints for internal attributes to satisfy MyPy and HA architecture
     _attr_hvac_mode: HVACMode | None
     _attr_target_temperature: float | None
     _attr_current_temperature: float | None
@@ -201,21 +214,16 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         config: dict[str, Any],
         _device_info: dict[str, Any] | None = None,
         main_unique_id: str | None = None,
-    ) -> None:  # pylint: disable=too-many-arguments
+    ) -> None:
         """Initialize the climate device."""
         super().__init__(coordinator)
         self.entity_description = description
         self._config = config
         self._main_unique_id = main_unique_id or str(coordinator.unique_id)
 
-        # Inherit all device registration metadata from the coordinator.
-        # This ensures that Climate entities, Sensors, and Switches are all
-        # correctly grouped under the same device in the HA registry.
         self._attr_unique_id = str(self.coordinator.unique_id)
         self._attr_device_info = self.coordinator.device_info
 
-        # Set the temperature step from the configuration if provided explicitly.
-        # Priority: Options Flow -> Config Flow -> YAML/Legacy
         from .const import CONF_TARGET_TEMP_STEP, DEFAULT_TARGET_TEMP_STEP
 
         entry = getattr(self.coordinator, "entry", None)
@@ -225,11 +233,17 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             CONF_TARGET_TEMP_STEP,
             self._config.get(
                 CONF_TARGET_TEMP_STEP,
-                self._config.get(CONF_TEMP_STEP, DEFAULT_TARGET_TEMP_STEP)
+                self._config.get(CONF_TEMP_STEP)
             )
         )
 
-        step: float = float(configured_step)
+        # PARSEO DEFENSIVO DEL STEP DE TEMPERATURA
+        try:
+            step: float = float(configured_step)
+        except (ValueError, TypeError):
+            _LOGGER.warning("%s Invalid temp step configured. Falling back to default.", self.log_prefix) # pragma: no mutate
+            step = float(DEFAULT_TARGET_TEMP_STEP)
+
         self._attr_target_temperature_step = int(step) if step == int(step) else step
 
         if step < 0.5:
@@ -239,16 +253,12 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         else:
             self._attr_precision = const.PRECISION_WHOLE
 
-        # Ingest initial data immediately
         self._sync_data_from_coordinator()
-        #self.coordinator.register_entity(self)
 
     @property
     def log_prefix(self) -> str:
         """Return the log prefix from the coordinator for consistency."""
         return self.coordinator.log_prefix
-
-
 
     def _sync_data_from_coordinator(self) -> None:
         """Synchronize the entity's state with the latest data from the coordinator."""
@@ -312,15 +322,18 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         return features
 
     def _apply_optimistic_corrections(self, corrections: dict[str, Any] | None) -> None:
-        """Apply predicted corrections to the entity's optimistic state during a set operation."""
+        """Apply predicted corrections strictly using ALLOWED_OPTIMISTIC_CORRECTIONS map."""
         if not corrections:
             return
+        
         _LOGGER.debug("%s Applying optimistic corrections: %s", self.log_prefix, corrections)  # pragma: no mutate
+        
         for prop, value in corrections.items():
-            if hasattr(self, f"_attr_{prop}"):
-                setattr(self, f"_attr_{prop}", value)
+            if target_attr := ALLOWED_OPTIMISTIC_CORRECTIONS.get(prop):
+                setattr(self, target_attr, value)
+            else:
+                _LOGGER.debug("%s Ignoring unmapped optimistic correction for property: %s", self.log_prefix, prop)  # pragma: no mutate
 
-    # --- REFACTORED: DRY pattern applied to state setters ---
     async def _async_set_climate_mode(
         self, attr_name: str, mode_value: Any, local_attr: str | None
     ) -> None:
@@ -328,8 +341,9 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         _, corrections = await self.coordinator.async_predict_and_correct(
             self.coordinator.data, attr_name, mode_value
         )
-        if local_attr:
+        if local_attr and hasattr(self, local_attr):
             setattr(self, local_attr, mode_value)
+            
         self._apply_optimistic_corrections(corrections)
         self.async_write_ha_state()
         await self.coordinator.async_set_property(attr_name, mode_value, corrections)
@@ -343,12 +357,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             )
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        """Set new target hvac mode.
-
-        Changes are applied optimistically via the prediction engine.
-        Side-effect changes, like restricted fan modes, are evaluated and pushed
-        immediately to update UI dependents before the network round-trip.
-        """
+        """Set new target hvac mode."""
         await self._async_set_climate_mode(ATTR_HVAC_MODE, hvac_mode, "_attr_hvac_mode")
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
@@ -382,8 +391,6 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         """Turn the climate device off."""
         self._attr_hvac_mode = HVACMode.OFF
         await self._async_set_climate_mode(ATTR_POWER, const.STATE_OFF, None)
-
-    # --------------------------------------------------------
 
     async def async_service_set_property(self, **kwargs: Any) -> None:
         """Set a property on the device via action call."""
@@ -441,14 +448,22 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
     @property
     def min_temp(self) -> float:
-        """Return the minimum temperature."""
+        """Return the minimum temperature strictly."""
         min_t_prop = self.coordinator.get_property_object(ATTR_MIN_TEMP)
-        min_t = min_t_prop.value if min_t_prop else None
-        return float(min_t) if min_t is not None else DEFAULT_CLIMATE_IP_TEMP_MIN
+        if min_t_prop and min_t_prop.value is not None:
+            try:
+                return float(min_t_prop.value)
+            except (ValueError, TypeError):
+                pass
+        return float(DEFAULT_CLIMATE_IP_TEMP_MIN)
 
     @property
     def max_temp(self) -> float:
-        """Return the maximum temperature."""
+        """Return the maximum temperature strictly."""
         max_t_prop = self.coordinator.get_property_object(ATTR_MAX_TEMP)
-        max_t = max_t_prop.value if max_t_prop else None
-        return float(max_t) if max_t is not None else DEFAULT_CLIMATE_IP_TEMP_MAX
+        if max_t_prop and max_t_prop.value is not None:
+            try:
+                return float(max_t_prop.value)
+            except (ValueError, TypeError):
+                pass
+        return float(DEFAULT_CLIMATE_IP_TEMP_MAX)
