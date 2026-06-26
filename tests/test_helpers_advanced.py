@@ -2,17 +2,32 @@
 """Tests for the tolerant_header_parsing context manager (H-12) and find_key_in_data."""
 # pylint: disable=broad-exception-caught,import-outside-toplevel
 
+import asyncio
 import threading
 
 import pytest
 
+import ssl
+from homeassistant.helpers.entity import EntityCategory
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
 from custom_components.climate_ip.helpers import (
+    async_check_network_reachability,
+    async_create_samsung_ssl_context,
+    async_get_mac_address,
+    format_placeholders,
+    get_tls_version_name,
+    get_value_by_path,
+    mask_sensitive_data,
+    parse_entity_category,
+    stream_wrapper,
     create_samsung_ssl_context,
     find_key_in_data,
     safe_xml_to_dict,
     tolerant_header_parsing,
+    ICMPSocketError,
 )
-
 
 class TestTolerantHeaderParsing:
     """Tests for the urllib3 monkey-patch context manager."""
@@ -238,3 +253,218 @@ class TestCreateSamsungSslContext:
         # Check that TLS 1.3 is NOT enabled as maximum (Samsung bug)
         if hasattr(ssl, "TLSVersion"):
             assert ctx.maximum_version == ssl.TLSVersion.TLSv1_2
+
+def test_safe_xml_to_dict_list_conversion():
+    """Kills mutmut 6, 7, 8: Ensures identical sibling tags become lists."""
+    xml_string = "<root><item>1</item><item>2</item></root>"
+    result = safe_xml_to_dict(xml_string)
+    assert result == {"root": {"item": ["1", "2"]}}
+
+def test_safe_xml_to_dict_text_with_attributes():
+    """Kills mutmut 9, 10, 12, 13, 14: Ensures elements with attrs and text use '#text'."""
+    xml_string = '<root id="5">hello</root>'
+    result = safe_xml_to_dict(xml_string)
+    assert result == {"root": {"@id": "5", "#text": "hello"}}
+
+# --- parse_entity_category ---
+def test_parse_entity_category():
+    assert parse_entity_category("config") == EntityCategory.CONFIG
+    assert parse_entity_category("diagnostic") == EntityCategory.DIAGNOSTIC
+    assert parse_entity_category(None) is None
+    assert parse_entity_category("invalid_category") is None
+
+
+# --- get_value_by_path ---
+def test_get_value_by_path():
+    data = {"level1": {"level2": {"level3": "target_value"}}}
+    assert get_value_by_path(data, ["level1", "level2", "level3"]) == "target_value"
+    assert get_value_by_path(data, ["level1", "wrong_level"]) is None
+    assert get_value_by_path(data, []) is None
+    assert get_value_by_path(None, ["level1"]) is None
+    assert get_value_by_path({"level1": "not_a_dict"}, ["level1", "level2"]) is None
+
+
+# --- stream_wrapper ---
+def test_stream_wrapper():
+    template = "Token:__CLIMATE_IP_TOKEN__, Host:__CLIMATE_IP_HOST__, Mac:__CLIMATE_IP_MAC__, ID:__DEVICE_ID__"
+    result = stream_wrapper(template, "my_token", "192.168.1.10", "dev_123", "00:11:22:33:44:55")
+    assert result == "Token:my_token, Host:192.168.1.10, Mac:00:11:22:33:44:55, ID:dev_123"
+
+    # Test partial replacements
+    partial = stream_wrapper("Token:__CLIMATE_IP_TOKEN__", None, None, None)
+    assert partial == "Token:__CLIMATE_IP_TOKEN__"
+
+
+# --- get_tls_version_name ---
+def test_get_tls_version_name():
+    assert get_tls_version_name(0) == "Unknown"
+    
+    # Test valid TLS version
+    if hasattr(ssl, "TLSVersion") and hasattr(ssl.TLSVersion, "TLSv1_2"):
+        assert get_tls_version_name(ssl.TLSVersion.TLSv1_2) == ssl.TLSVersion.TLSv1_2.name
+        
+    # Test fallback to string representation for invalid types
+    assert get_tls_version_name(9999) == "9999"
+
+
+# --- async_create_samsung_ssl_context ---
+@pytest.mark.asyncio
+async def test_async_create_samsung_ssl_context():
+    context = await async_create_samsung_ssl_context(is_server=False)
+    assert isinstance(context, ssl.SSLContext)
+    assert context.check_hostname is False
+    assert context.verify_mode == ssl.CERT_NONE
+
+# --- format_placeholders ---
+def test_format_placeholders():
+    data = {
+        "key1": "Host:__CLIMATE_IP_HOST__",
+        "key2": [
+            "Token:__CLIMATE_IP_TOKEN__", 
+            {"nested": "ID:__DEVICE_ID__"},
+            "Mac:__CLIMATE_IP_MAC__",
+            "Host:__CLIMATE_IP_HOST__" 
+        ],
+        "key3": 42,
+        "key4": "Mac:__CLIMATE_IP_MAC__"
+    }
+    result = format_placeholders(data, "tok", "1.1.1.1", "dev_id", "11:22:33:44:55:66")
+    
+    assert result["key1"] == "Host:1.1.1.1"
+    assert result["key2"][0] == "Token:tok"
+    assert result["key2"][1]["nested"] == "ID:dev_id"
+    assert result["key2"][2] == "Mac:11:22:33:44:55:66"
+    assert result["key2"][3] == "Host:1.1.1.1"
+    assert result["key3"] == 42
+    assert result["key4"] == "Mac:11:22:33:44:55:66"
+
+# --- mask_sensitive_data ---
+def test_mask_sensitive_data():
+    raw_data = {
+        "Authorization": "Bearer 123", 
+        "unique_id": "uid_12345",      
+        "DeviceToken": "dtok_123",     
+        "DUID": "duid_12",             
+        "device_id": "12345678",        
+        "uuid": "1234567",              
+        "token": "123456",              
+        "mac": "AABBCCDDEEFF",         
+        "nested_limits": {
+            "mac": "1234567",         
+            "device_id": "123456",    
+            "token": "12345",         
+            "uuid": "1234",           
+            "DUID": "123"             
+        },
+        "normal_key": "visible"
+    }
+    masked = mask_sensitive_data(raw_data)
+    
+    assert masked["Authorization"] == "***er 123"
+    assert masked["unique_id"] == "***_12345"
+    assert masked["DeviceToken"] == "***ok_123"
+    assert masked["DUID"] == "***uid_12"
+    assert masked["device_id"] == "***345678"
+    assert masked["uuid"] == "***234567"
+    assert masked["token"] == "***3456"
+    assert masked["mac"] == "***DDEEFF"
+    assert masked["nested_limits"]["mac"] == "***234567"
+    assert masked["nested_limits"]["device_id"] == "***3456"
+    assert masked["nested_limits"]["token"] == "***2345"
+    assert masked["nested_limits"]["uuid"] == "1234"
+    assert masked["nested_limits"]["DUID"] == "123"
+    assert masked["normal_key"] == "visible"
+
+
+# --- async_get_mac_address ---
+@pytest.mark.asyncio
+@patch("asyncio.create_subprocess_exec")
+async def test_async_get_mac_address(mock_exec):
+    mock_proc = AsyncMock()
+    # Cambiamos la MAC a una con LETRAS para cazar el mutante '.lower()' a '.upper()'
+    mock_proc.communicate.return_value = (b"Address HWtype 1A:2B:3C:4D:5E:6F C eth0", b"")
+    mock_exec.return_value = mock_proc
+
+    mac = await async_get_mac_address("192.168.1.10")
+    assert mac == "1a:2b:3c:4d:5e:6f"
+    
+    # Matamos los mutantes que quitan los argumentos o los cambian a None
+    mock_exec.assert_called_with(
+        "arp", "-n", "192.168.1.10", 
+        stdout=asyncio.subprocess.PIPE, 
+        stderr=asyncio.subprocess.DEVNULL
+    )
+
+    mock_proc.communicate.return_value = (b"No entries", b"")
+    assert await async_get_mac_address("192.168.1.11") is None
+
+@pytest.mark.asyncio
+@patch("asyncio.create_subprocess_exec")
+@patch("platform.system")
+async def test_async_get_mac_address_windows(mock_system, mock_exec):
+    mock_system.return_value = "Windows"  # Forzamos la entrada al IF
+    
+    mock_proc = AsyncMock()
+    mock_proc.communicate.return_value = (b"1A-2B-3C-4D-5E-6F", b"")
+    mock_exec.return_value = mock_proc
+
+    mac = await async_get_mac_address("192.168.1.10")
+    assert mac == "1a-2b-3c-4d-5e-6f"
+    
+    # Validamos que los argumentos del SO sean puramente los de Windows
+    mock_exec.assert_called_with(
+        "arp", "-a", "192.168.1.10", 
+        stdout=asyncio.subprocess.PIPE, 
+        stderr=asyncio.subprocess.DEVNULL
+    )
+
+# --- mask_sensitive_data (Añadido para cazar al Mutante 29) ---
+def test_mask_sensitive_data_list():
+    """Test explicit list processing to kill Mutant 29."""
+    data = [{"token": "12345678"}]
+    # Si mutmut cambia 'item' a 'None', devolverá [None] y este assert fallará
+    assert mask_sensitive_data(data) == [{"token": "***345678"}]
+
+
+# --- async_check_network_reachability (Actualizado) ---
+@pytest.mark.asyncio
+@patch("custom_components.climate_ip.helpers.async_ping")
+async def test_async_check_network_reachability(mock_ping):
+    mock_host = MagicMock()
+    mock_host.is_alive = True
+    mock_host.avg_rtt = 10
+    mock_ping.return_value = mock_host
+    assert await async_check_network_reachability("192.168.1.100") is True
+    
+    mock_ping.assert_called_with(
+        address="192.168.1.100", count=1, timeout=0.5, interval=0.2, privileged=False
+    )
+
+    mock_host.is_alive = False
+    assert await async_check_network_reachability("192.168.1.100") is False
+
+    mock_ping.side_effect = OSError("Permission denied")
+    assert await async_check_network_reachability("192.168.1.100") is True
+
+    # ¡LA TRAMPA PARA EL MUTANTE 23!
+    if ICMPSocketError is not None:
+        mock_ping.side_effect = ICMPSocketError("Mocked socket error")
+        assert await async_check_network_reachability("192.168.1.100") is False
+
+
+# --- async_check_network_reachability (Nuevo Test para Mutantes 2 y 5) ---
+@pytest.mark.asyncio
+async def test_async_check_network_reachability_no_library():
+    """Test fallback logic when icmplib is missing or fails to load."""
+    import custom_components.climate_ip.helpers as helpers_module
+    original_ping = helpers_module.async_ping
+    
+    # Simulamos que la librería no está instalada en el sistema
+    helpers_module.async_ping = None
+    
+    try:
+        # Esto debería usar la vía de escape y devolver True
+        assert await async_check_network_reachability("192.168.1.100") is True
+    finally:
+        # Restauramos el módulo a su estado original para no romper otros tests
+        helpers_module.async_ping = original_ping
