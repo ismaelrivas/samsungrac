@@ -122,13 +122,11 @@ async def test_control_device(_mock_report_usage, hass, emulator_8888, mock_conf
     # 3. Verify emulator received the command
     import asyncio
 
-    import async_timeout
-
     queue = emulator_8888["queue"]
 
     # Wait for the command to hit the queue deterministically with a 2.0s timeout
     try:
-        async with async_timeout.timeout(2.0):
+        async with asyncio.timeout(2.0):
             while queue.empty():
                 await asyncio.sleep(0.01)
     except TimeoutError:
