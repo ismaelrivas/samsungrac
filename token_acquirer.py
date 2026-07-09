@@ -50,7 +50,7 @@ class SamsungTokenAcquirer:
         _LOGGER.debug(
             "Final resolved certificate path to be used for connection: %s",
             self._resolved_cert_path,
-        )
+        )  # pragma: no mutate
 
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
@@ -63,6 +63,7 @@ class SamsungTokenAcquirer:
         """
         last_error: Exception | None = None
 
+        # pragma: no mutate start
         # Define cipher suites to try
         cipher_configs = [
             ("HIGH:!DH:!aNULL:@SECLEVEL=0", "Cipher Suite A"),
@@ -98,6 +99,7 @@ class SamsungTokenAcquirer:
             strategies.append({"cert": None, "name": "No Certificate (Default)"})
             # As a fallback, try with the integration's default certificate.
             strategies.append({"cert": default_cert_path, "name": "Default Certificate (Fallback)"})
+        # pragma: no mutate end
 
         # Build a list of all possible connection attempts
         all_attempts = [
@@ -142,7 +144,7 @@ class SamsungTokenAcquirer:
                     "SSL connection successful with Strategy: '%s', Cipher: '%s'",
                     strategy_name,
                     cipher_name,
-                )
+                )  # pragma: no mutate
 
                 # Attempt to log the negotiated TLS version
                 try:
@@ -151,7 +153,7 @@ class SamsungTokenAcquirer:
                     _LOGGER.debug(
                         "[SamsungTokenAcquirer] Negotiated TLS Version: %s",
                         negotiated_tls,
-                    )
+                    )  # pragma: no mutate
                 except Exception:  # pylint: disable=broad-exception-caught
                     pass
 
@@ -163,11 +165,11 @@ class SamsungTokenAcquirer:
                             _LOGGER.debug(
                                 "Received initial handshake: %s",
                                 initial_data.decode("utf-8", "ignore"),
-                            )
+                            )  # pragma: no mutate
                 except TimeoutError:
                     _LOGGER.warning(
                         "Did not receive initial handshake, but connection is open. Continuing."
-                    )
+                    )  # pragma: no mutate
 
                 # --- Return Logic ---
                 successful_config: dict[str, Any] = {"cert": None, "verify_mode": verify_mode}
@@ -177,13 +179,13 @@ class SamsungTokenAcquirer:
                     successful_config["cert"] = os.path.basename(default_cert_path)
 
                 if failed_attempts_log:
-                    _LOGGER.debug("Previous failed connection attempts: %s", failed_attempts_log)
+                    _LOGGER.debug("Previous failed connection attempts: %s", failed_attempts_log)  # pragma: no mutate
 
                 _LOGGER.info(
                     "Successful connection config found: cert='%s', verify_mode=%s",
                     successful_config.get("cert"),
                     successful_config.get("verify_mode"),
-                )
+                )  # pragma: no mutate
                 return successful_config
 
             except TimeoutError as e:
@@ -207,7 +209,7 @@ class SamsungTokenAcquirer:
         _LOGGER.warning(
             "All connection attempts failed. Summary of errors: %s",
             failed_attempts_log,
-        )
+        )  # pragma: no mutate
         raise CannotConnect(
             f"All connection attempts failed. Last error: {last_error}"
         ) from last_error
@@ -217,14 +219,14 @@ class SamsungTokenAcquirer:
         Phase 1: Connects, puts the device in pairing mode,
         and returns the successful connection config.
         """
-        _LOGGER.info("Initiating pairing for %s", self._ip_address)
+        _LOGGER.info("Initiating pairing for %s", self._ip_address)  # pragma: no mutate
         successful_config = await self._connect()
 
         if not self._writer:
             raise TokenAcquisitionError("Connection failed, writer not available.")
 
         request_msg = b'<Request Type="GetToken" />\r\n'
-        _LOGGER.debug("Sending GetToken request: %s", request_msg.decode("utf-8").strip())
+        _LOGGER.debug("Sending GetToken request: %s", request_msg.decode("utf-8").strip())  # pragma: no mutate
         self._writer.write(request_msg)
         await self._writer.drain()
 
@@ -236,7 +238,7 @@ class SamsungTokenAcquirer:
                 data = await self._reader.read(4096)
 
             decoded_data = data.decode("utf-8", "ignore")
-            _LOGGER.debug("Received response for GetToken: %s", decoded_data.strip())
+            _LOGGER.debug("Received response for GetToken: %s", decoded_data.strip())  # pragma: no mutate
 
             # FIXED C0301: Split long condition for readability
             is_valid_resp = (
@@ -246,7 +248,7 @@ class SamsungTokenAcquirer:
             if not is_valid_resp:
                 raise TokenAcquisitionError("Did not receive 'Ready' status from AC unit")
 
-            _LOGGER.info("AC unit is 'Ready'. Pairing initiated successfully.")
+            _LOGGER.info("AC unit is 'Ready'. Pairing initiated successfully.")  # pragma: no mutate
             return successful_config  # Return the successful config dict
 
         except TimeoutError as exc:
@@ -259,7 +261,7 @@ class SamsungTokenAcquirer:
         if not self._reader:
             raise TokenAcquisitionError("Connection not established. Run initiate_pairing first")
 
-        _LOGGER.info("Now listening for the token...")
+        _LOGGER.info("Now listening for the token...")  # pragma: no mutate
         try:
             async with asyncio.timeout(45.0):
                 data = await self._reader.read(4096)
@@ -271,12 +273,12 @@ class SamsungTokenAcquirer:
             _LOGGER.debug(
                 "Received data after button press: %s",
                 mask_sensitive_data(decoded_buffer),
-            )
+            )  # pragma: no mutate
 
             if 'Status="Fail"' in decoded_buffer and 'Type="Authenticate"' in decoded_buffer:
                 error_code_match = ERROR_CODE_RE.search(decoded_buffer)
                 error_code = error_code_match.group(1) if error_code_match else "Unknown"
-                _LOGGER.error("Authentication failed with ErrorCode: %s", error_code)
+                _LOGGER.error("Authentication failed with ErrorCode: %s", error_code)  # pragma: no mutate
                 if error_code == "301":
                     raise AuthTurnedOffError(
                         "Authentication failed: The device was likely turned off "
@@ -289,7 +291,7 @@ class SamsungTokenAcquirer:
 
             token_match = TOKEN_RE.search(decoded_buffer)
             if token_match:
-                _LOGGER.info("Successfully acquired token.")
+                _LOGGER.info("Successfully acquired token.")  # pragma: no mutate
                 return token_match.group(1)
 
             raise TokenAcquisitionError("Received unexpected data instead of a token")
@@ -301,9 +303,9 @@ class SamsungTokenAcquirer:
     async def async_close(self) -> None:
         """Closes the connection."""
         if self._writer:
-            _LOGGER.info("Closing connection.")
+            _LOGGER.info("Closing connection.")  # pragma: no mutate
             self._writer.close()
             try:
                 await self._writer.wait_closed()
             except (ssl.SSLError, ConnectionResetError, asyncio.CancelledError):
-                _LOGGER.debug("Ignoring non-critical error during connection close.")
+                _LOGGER.debug("Ignoring non-critical error during connection close.")  # pragma: no mutate
