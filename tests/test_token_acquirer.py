@@ -35,14 +35,19 @@ async def test_init_path_resolution(mock_hass):
     assert acq2._resolved_cert_path.endswith("cert.pem")
     assert "/" in acq2._resolved_cert_path  # Should have been joined with __file__
 
-async def test_cert_not_found(acquirer):
-    """Test that a CertNotFound error is gracefully caught and raises properly if all strategies fail."""
+async def test_cert_not_found(acquirer, caplog):
+    """Test that a CertNotFound error is gracefully caught and logs properly if all strategies fail."""
     with patch(
         "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
         side_effect=FileNotFoundError("missing cert"),
     ):
-        with pytest.raises(CannotConnect):
+        with pytest.raises(CannotConnect) as exc_info:
             await acquirer.async_initiate_pairing()
+        
+        # Verify the exception message doesn't mask the error
+        assert "All connection attempts failed" in str(exc_info.value)
+        # Verify that the logs accurately capture the CertNotFound error for all attempts
+        assert "CertNotFound" in caplog.text
 
 async def test_connection_refused_fallback(acquirer):
     """Test that ConnectionRefusedError bubbles up to CannotConnect."""
@@ -50,8 +55,9 @@ async def test_connection_refused_fallback(acquirer):
         "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
         return_value=MagicMock(),
     ), patch("asyncio.open_connection", side_effect=ConnectionRefusedError("Refused")), patch("asyncio.sleep", new_callable=AsyncMock):
-        with pytest.raises(CannotConnect):
+        with pytest.raises(CannotConnect) as exc_info:
             await acquirer.async_initiate_pairing()
+        assert "ConnectionRefusedError" in str(exc_info.value) or "Refused" in str(exc_info.value)
 
 async def test_timeout_fallback(acquirer):
     """Test that TimeoutError during open_connection bubbles up."""
@@ -59,8 +65,9 @@ async def test_timeout_fallback(acquirer):
         "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
         return_value=MagicMock(),
     ), patch("asyncio.open_connection", side_effect=TimeoutError("Timeout")), patch("asyncio.sleep", new_callable=AsyncMock):
-        with pytest.raises(CannotConnect):
+        with pytest.raises(CannotConnect) as exc_info:
             await acquirer.async_initiate_pairing()
+        assert "Timeout" in str(exc_info.value)
 
 async def test_successful_pairing_and_token(acquirer):
     """Test a successful token acquisition flow."""
@@ -220,12 +227,16 @@ async def test_connect_user_cert(acquirer):
     mock_writer = MagicMock()
     
     # Return successfully on the first strategy
-    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
-        with patch("custom_components.climate_ip.helpers.async_create_samsung_ssl_context", return_value=MagicMock()):
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)) as mock_open:
+        with patch("custom_components.climate_ip.helpers.async_create_samsung_ssl_context", return_value=MagicMock()) as mock_ssl:
             config = await acquirer._connect()
+            
+            # Assert correct arguments were passed to open_connection
+            mock_open.assert_called_with("192.168.1.100", 2878, ssl=mock_ssl.return_value)
+            
             assert config is not None
-            assert config["cert"] == acquirer._user_cert_path
-            assert config["verify_mode"] == ssl.CERT_REQUIRED
+            assert config.get("cert") == acquirer._user_cert_path
+            assert config.get("verify_mode") == ssl.CERT_REQUIRED
 
 async def test_connect_default_cert_fallback(acquirer):
     """Test that _connect falls back to default cert if first strategies fail."""
@@ -238,12 +249,18 @@ async def test_connect_default_cert_fallback(acquirer):
     mock_reader = AsyncMock()
     mock_writer = MagicMock()
     
-    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)) as mock_open:
         with patch("custom_components.climate_ip.helpers.async_create_samsung_ssl_context", side_effect=mock_create_ssl):
             config = await acquirer._connect()
+            
+            # Should have called open_connection successfully on the second attempt
+            assert mock_open.call_count == 1
+            # IP and Port must remain intact in fallback attempts
+            mock_open.assert_called_with("192.168.1.100", 2878, ssl=mock_open.call_args.kwargs["ssl"])
+            
             assert config is not None
-            assert config["cert"] == "ac14k_m.pem"
-            assert config["verify_mode"] == ssl.CERT_NONE
+            assert config.get("cert") == "ac14k_m.pem"
+            assert config.get("verify_mode") == ssl.CERT_NONE
 
 async def test_connect_cipher_fallback(acquirer):
     """Test that _connect tries fallback ciphers if the first one fails."""
@@ -259,8 +276,27 @@ async def test_connect_cipher_fallback(acquirer):
     mock_reader = AsyncMock()
     mock_writer = MagicMock()
     
-    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)) as mock_open:
         with patch("custom_components.climate_ip.helpers.async_create_samsung_ssl_context", side_effect=mock_create_ssl):
             config = await acquirer._connect()
             assert config is not None
+            # Assert correct arguments were passed to open_connection
+            mock_open.assert_called_with("192.168.1.100", 2878, ssl=mock_open.call_args.kwargs["ssl"])
             assert call_count == 2
+
+async def test_connect_timeout_handshake(acquirer):
+    """Test that _connect handles a TimeoutError during the initial handshake."""
+    # Reader raises TimeoutError on read()
+    mock_reader = AsyncMock()
+    mock_reader.read.side_effect = TimeoutError()
+    mock_writer = MagicMock()
+    
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.helpers.async_create_samsung_ssl_context", return_value=MagicMock()):
+            # The code should catch the TimeoutError, log a warning, and continue to return the config
+            config = await acquirer._connect()
+            assert config is not None
+            assert config.get("cert") is None
+            assert config.get("verify_mode") == ssl.CERT_NONE
+            # Assert read was called
+            mock_reader.read.assert_called_once()

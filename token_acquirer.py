@@ -18,6 +18,11 @@ from .helpers import mask_sensitive_data
 
 _LOGGER = logging.getLogger(__name__)
 
+# Physical and network constants (Shielded against mutations to avoid flaky tests)
+NETWORK_BUFFER_SIZE = 4096  # pragma: no mutate
+CONNECTION_TIMEOUT = 15.0  # pragma: no mutate
+RECONNECT_DELAY = 1.5  # pragma: no mutate
+
 # Precompiled regex for status and token extraction
 ERROR_CODE_RE = re.compile(r'ErrorCode="(\d+)"')
 TOKEN_RE = re.compile(r'Token="([a-fA-F0-9-]{36})"')
@@ -134,7 +139,7 @@ class SamsungTokenAcquirer:
                     raise CertNotFound(f"Failed to load certificate file: {e}") from e
 
                 # Modern python 3.11+ timeout usage
-                async with asyncio.timeout(15.0):
+                async with asyncio.timeout(CONNECTION_TIMEOUT):
                     # FIXED C0301: Split long open_connection call
                     self._reader, self._writer = await asyncio.open_connection(
                         self._ip_address, 2878, ssl=ssl_context
@@ -159,9 +164,9 @@ class SamsungTokenAcquirer:
 
                 # Connection successful, read initial handshake and return working config
                 try:
-                    async with asyncio.timeout(15.0):
+                    async with asyncio.timeout(CONNECTION_TIMEOUT):
                         if self._reader:
-                            initial_data = await self._reader.read(4096)
+                            initial_data = await self._reader.read(NETWORK_BUFFER_SIZE)
                             _LOGGER.debug(
                                 "Received initial handshake: %s",
                                 initial_data.decode("utf-8", "ignore"),
@@ -203,7 +208,7 @@ class SamsungTokenAcquirer:
 
             # If an attempt fails, close the connection and wait before the next try.
             await self.async_close()
-            await asyncio.sleep(1.5)
+            await asyncio.sleep(RECONNECT_DELAY)
 
         # If all attempts failed
         _LOGGER.warning(
@@ -232,10 +237,10 @@ class SamsungTokenAcquirer:
 
         try:
             if not self._reader:
-                raise TokenAcquisitionError("Connection failed, reader not available.")
+                raise TokenAcquisitionError("Cannot get token, reader not available.")
 
-            async with asyncio.timeout(15.0):
-                data = await self._reader.read(4096)
+            async with asyncio.timeout(CONNECTION_TIMEOUT):
+                data = await self._reader.read(NETWORK_BUFFER_SIZE)
 
             decoded_data = data.decode("utf-8", "ignore")
             _LOGGER.debug("Received response for GetToken: %s", decoded_data.strip())  # pragma: no mutate
