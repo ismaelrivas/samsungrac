@@ -232,6 +232,7 @@ async def test_step_reauth_rest_api(hass: HomeAssistant) -> None:
         },
         title="SmartThings HVAC",
     )
+    entry.add_to_hass(hass)
     hass.config_entries.async_get_entry.return_value = entry
 
     flow = ClimateIpConfigFlow()
@@ -1284,7 +1285,7 @@ async def test_validate_cert_path_mutants_coverage(hass: HomeAssistant) -> None:
     import custom_components.climate_ip.config_flow as cf
     expected_dir = os.path.dirname(cf.__file__)
     
-    with patch("custom_components.climate_ip.helpers.resolve_cert_path") as mock_resolve:
+    with patch("custom_components.climate_ip.config_flow.resolve_cert_path") as mock_resolve:
         mock_resolve.return_value = "/dummy/resolved/path.pem"
         with patch("os.path.exists", return_value=True):
             assert await flow._async_validate_cert_path("my_cert.pem") is True
@@ -1817,9 +1818,14 @@ async def test_get_smartthings_token_mutants(hass: HomeAssistant) -> None:
     flow.hass.config_entries.async_entries.assert_called_once_with("smartthings")
     assert token == "valid_token"
     
-    # Test empty fallback
-    flow.hass.config_entries.async_entries.return_value = []
-    assert flow._get_smartthings_token() is None
+    # Test empty fallback: SmartThings entry EXISTS, but has NO token (KILLS M12)
+    mock_entry_empty = MagicMock()
+    mock_entry_empty.data = {} # Ausencia total de 'access_token' (evalúa a None)
+    flow.hass.config_entries.async_entries.return_value = [mock_entry_empty]
+    
+    # M12: Cambia `return str(tok) if tok is not None else ""` por `else "XXXX"`
+    # ASERCIÓN LETAL:
+    assert flow._get_smartthings_token() == ""
 
 async def test_pairing_wrappers_mutants(hass: HomeAssistant) -> None:
     """Kill mutants in _initiate_pairing_safe and _wait_token_safe."""
@@ -1877,33 +1883,20 @@ async def test_pairing_wrappers_mutants(hass: HomeAssistant) -> None:
     flow.acquirer.async_wait_for_token.assert_awaited_once()
 
 def test_validate_poll_interval_mutants() -> None:
-    """Kill mutants in _validate_poll_interval."""
-    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    """Kill mutants in validate_poll_interval."""
+    from custom_components.climate_ip.helpers import validate_poll_interval
     from custom_components.climate_ip.const import MIN_POLL_INTERVAL, MAX_POLL_INTERVAL
-    import voluptuous as vol
     import pytest
     
-    flow = ClimateIpConfigFlow()
+    assert validate_poll_interval(120) == 120
+    assert validate_poll_interval(MIN_POLL_INTERVAL) == MIN_POLL_INTERVAL
+    assert validate_poll_interval(MAX_POLL_INTERVAL) == MAX_POLL_INTERVAL
     
-    # Kill mutmut_4: Ensures valid integer path is fully covered and doesn't crash
-    assert flow._validate_poll_interval({"poll_interval": 120}) == 120
-    
-    # Rigorous None handling validation (as suggested)
-    assert flow._validate_poll_interval({}) is None
-    assert flow._validate_poll_interval({"poll_interval": None}) is None
-    
-    # Kill mutmut_9: Tests exactly MIN_POLL_INTERVAL boundary
-    assert flow._validate_poll_interval({"poll_interval": MIN_POLL_INTERVAL}) == MIN_POLL_INTERVAL
-    
-    # Kill mutmut_10: Tests exactly MAX_POLL_INTERVAL boundary
-    assert flow._validate_poll_interval({"poll_interval": MAX_POLL_INTERVAL}) == MAX_POLL_INTERVAL
-    
-    # Validate out of bounds
-    with pytest.raises(vol.Invalid):
-        flow._validate_poll_interval({"poll_interval": MIN_POLL_INTERVAL - 1})
+    with pytest.raises(ValueError):
+        validate_poll_interval(MIN_POLL_INTERVAL - 1)
         
-    with pytest.raises(vol.Invalid):
-        flow._validate_poll_interval({"poll_interval": MAX_POLL_INTERVAL + 1})
+    with pytest.raises(ValueError):
+        validate_poll_interval(MAX_POLL_INTERVAL + 1)
 
 async def test_async_step_await_button_mutants(hass: HomeAssistant) -> None:
     """Kill mutants in async_step_await_button."""
@@ -2840,6 +2833,21 @@ async def test_async_step_test_connection_mutants(hass: HomeAssistant) -> None:
     assert CONF_TOKEN not in flow.flow_data
     assert flow.flow_data["error_key"] == "auth_error"
     assert flow.task is None # Kills task=None assignments
+
+    # Case 1b: Test connection RAISES EXCEPTION (KILLS THE LEGION M8-M21)
+    flow.flow_data = {"ip_address": "1.2.3.4", "device_type": "dummy"}
+    flow.task = MagicMock()
+    flow.task.done.return_value = True
+    # FORZAMOS LA EXCEPCIÓN PARA ENTRAR EN EL BLOQUE `except Exception:`
+    flow.task.result.side_effect = Exception("Simulated crash")
+    
+    res1b = await flow.async_step_test_connection()
+    assert res1b["type"] == "progress_done"
+    assert res1b["step_id"] == "handle_error"
+    # ASERCIÓN ESTRICTA DE FRANCOTIRADOR:
+    # Si mutmut cambia esto a "UNKNOWN_ERROR" o "XXunknown_errorXX", fallará.
+    assert flow.flow_data["error_key"] == "unknown_error"
+    assert flow.task is None
     
     # Case 2: Success, 2878 Device -> always routes to create_entry
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878, CONF_TOKEN: "good"}
@@ -3249,6 +3257,7 @@ async def test_async_step_import_mutants(hass: HomeAssistant) -> None:
     # Kills replacing logic, dictionary assignations, and title fallback
     with patch.object(flow, "async_set_unique_id") as mock_set_uid, \
          patch.object(flow, "_abort_if_unique_id_configured") as mock_abort, \
+         patch.object(flow, "_test_connection_safe", return_value={"ok": True}), \
          patch.object(flow, "async_create_entry", return_value={"type": "create_entry"}) as mock_create:
         
         user_input = {
@@ -3276,6 +3285,7 @@ async def test_async_step_import_mutants(hass: HomeAssistant) -> None:
     flow2.hass = hass
     with patch.object(flow2, "async_set_unique_id"), \
          patch.object(flow2, "_abort_if_unique_id_configured"), \
+         patch.object(flow2, "_test_connection_safe", return_value={"ok": True}), \
          patch.object(flow2, "async_create_entry", return_value={"type": "create_entry"}) as mock_create2:
         
         user_input2 = {
@@ -3365,7 +3375,7 @@ async def test_test_connection_safe_8888_strict_kwargs(hass: HomeAssistant) -> N
     # Escenario B: Con certificado válido (debe invocar load_verify_locations)
     flow.flow_data[CONF_CERT] = "valid_cert.pem"
     with patch("custom_components.climate_ip.config_flow.async_get_clientsession") as mock_session_func_cert, \
-         patch("custom_components.climate_ip.helpers.resolve_cert_path", return_value="/fake/valid_cert.pem") as mock_resolve, \
+         patch("custom_components.climate_ip.config_flow.resolve_cert_path", return_value="/fake/valid_cert.pem") as mock_resolve, \
          patch("os.path.exists", return_value=True) as mock_exists:
         
         mock_session_cert = MagicMock()
@@ -3574,6 +3584,15 @@ async def test_rest_api_schema_and_routing_mutants(hass: HomeAssistant) -> None:
     assert res_bad_poll["type"] == "form"
     assert res_bad_poll["step_id"] == "rest_api"
     assert res_bad_poll["errors"][CONF_POLL_INTERVAL] == "invalid_poll_interval"
+
+    # Ataque 1.5: Intervalo de polling válido enviado por el usuario
+    res_good_poll = await flow.async_step_rest_api({
+        CONF_IP_ADDRESS: "api.smartthings.com",
+        CONF_TOKEN: "my_token",
+        CONF_POLL_INTERVAL: 120
+    })
+    assert "errors" not in res_good_poll or CONF_POLL_INTERVAL not in res_good_poll.get("errors", {})
+    assert flow.flow_data[CONF_POLL_INTERVAL] == 120
 
     # Ataque 2: Evaluación exacta del Schema generado (Mata defaults y mutaciones vol.Optional)
     flow.flow_data.pop(CONF_TOKEN, None)
@@ -4147,14 +4166,11 @@ async def test_discovery_ghost_name(hass):
     pass
 
 async def test_validate_poll_interval_bounds(hass):
-    """Mata al mutante de vol.Invalid en _validate_poll_interval."""
-    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
-    flow = ClimateIpConfigFlow()
-    flow.hass = hass
-    flow.DEBUG_ME = True
+    """Mata al mutante de ValueError en validate_poll_interval."""
+    from custom_components.climate_ip.helpers import validate_poll_interval
     
-    with pytest.raises(vol.Invalid) as exc:
-        flow._validate_poll_interval({"poll_interval": 1})
+    with pytest.raises(ValueError) as exc:
+        validate_poll_interval(1)
     assert "Interval must be between" in str(exc.value)
 
 async def test_trampa2_placeholders_and_step_ids(hass):
@@ -4172,7 +4188,7 @@ async def test_trampa2_placeholders_and_step_ids(hass):
         CONF_IP_ADDRESS: "192.168.1.100",
         CONF_MAC: "AA:BB:CC"
     }
-    with patch("custom_components.climate_ip.config_flow.ClimateIpConfigFlow._validate_poll_interval", return_value=None):
+    with patch("custom_components.climate_ip.config_flow.validate_poll_interval", return_value=10):
         with patch("custom_components.climate_ip.config_flow.ClimateIpConfigFlow._async_process_samsung_device_step", return_value=None):
             # 1. Llamar sin task para ver el async_show_progress
             class DummyTaskNotDone:
@@ -4221,6 +4237,10 @@ async def test_options_flow_invalid_poll_interval(hass: HomeAssistant) -> None:
     
     assert result2["type"] == "form"
     assert result2["errors"]["poll_interval"] == "invalid_poll_interval"
+
+    # Ataque 3: user_input vacío
+    result_empty = await flow.async_step_init({})
+    assert result_empty["type"] == "create_entry"
 
 
 async def test_reconfigure_flow_with_discovery(hass: HomeAssistant) -> None:
@@ -4303,3 +4323,688 @@ async def test_discovery_missing_attributes(hass: HomeAssistant) -> None:
         discovered = flow.flow_data[CONF_DISCOVERED_DEVICES][0]
         assert discovered["uuid"] == ""
         assert "Indoor Unit 3" in discovered["name"]
+
+
+# ============================================================
+# SNIPER SUITE — Plan A (mutantes.txt)
+# ============================================================
+
+@pytest.mark.asyncio
+async def test_import_cannot_connect_reason(hass: HomeAssistant) -> None:
+    """Mata M43, M44, M45: reason de abort debe ser exactamente 'cannot_connect'."""
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SAMSUNG_2878
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC
+
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.DEBUG_ME = True
+    flow.context = {}
+
+    with patch.object(flow, "_test_connection_safe", return_value={"ok": False, "error": "cannot_connect"}):
+        res = await flow.async_step_import({
+            CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
+            CONF_IP_ADDRESS: "1.1.1.1",
+            CONF_MAC: "AA:BB:CC:DD:EE:FF",
+        })
+    assert res["type"] == "abort"
+    # M43: reason=None → HA no puede mostrar pantalla correcta
+    # M44: reason="XXcannot_connectXX" → pantalla incorrecta
+    # M45: reason="CANNOT_CONNECT" → pantalla incorrecta
+    assert res["reason"] == "cannot_connect"
+
+
+@pytest.mark.asyncio
+async def test_import_connection_tested_when_device_type_present(hass: HomeAssistant) -> None:
+    """Mata M33: La condición 'if CONF_DEVICE_TYPE in self.flow_data' NO debe estar invertida."""
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SAMSUNG_2878
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC
+
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.DEBUG_ME = True
+    flow.context = {}
+
+    with patch.object(flow, "_test_connection_safe", return_value={"ok": True}) as mock_test, \
+         patch.object(flow, "async_set_unique_id"), \
+         patch.object(flow, "_abort_if_unique_id_configured"), \
+         patch.object(flow, "async_create_entry", return_value={"type": "create_entry"}):
+        await flow.async_step_import({
+            CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
+            CONF_IP_ADDRESS: "1.1.1.1",
+            CONF_MAC: "AA:BB:CC:DD:EE:FF",
+        })
+    # M33 invierte la condición → NO se llama a _test_connection_safe cuando DEVICE_TYPE está presente
+    mock_test.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_rest_api_clientsession_receives_hass(hass: HomeAssistant) -> None:
+    """Mata M47: async_get_clientsession debe recibir self.hass, no None."""
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SMARTTHINGS_HVAC
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
+
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.DEBUG_ME = True
+    flow.context = {}
+    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
+
+    with patch("custom_components.climate_ip.config_flow.async_get_clientsession") as mock_sess:
+        mock_get = AsyncMock()
+        mock_get.__aenter__.return_value.status = 200
+        mock_sess.return_value.get.return_value = mock_get
+        with patch.object(flow, "async_set_unique_id"), \
+             patch.object(flow, "_abort_if_unique_id_configured"), \
+             patch.object(flow, "_create_entry", return_value={"type": "create_entry"}):
+            await flow.async_step_rest_api({
+                CONF_IP_ADDRESS: "api.smartthings.com",
+                CONF_TOKEN: "valid-token-12345",
+                "device_id": "my-device-id",
+            })
+    # M47: async_get_clientsession(None) → sesión inválida
+    mock_sess.assert_called_once_with(flow.hass)
+
+
+@pytest.mark.asyncio
+async def test_rest_api_ipv6_url_has_brackets(hass: HomeAssistant) -> None:
+    """Mata M51: Con IPv6, la URL debe tener corchetes [fe80::1]."""
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SMARTTHINGS_HVAC
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
+
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.DEBUG_ME = True
+    flow.context = {}
+    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
+
+    with patch("custom_components.climate_ip.config_flow.async_get_clientsession") as mock_sess:
+        mock_get = AsyncMock()
+        mock_get.__aenter__.return_value.status = 200
+        mock_sess.return_value.get.return_value = mock_get
+        with patch.object(flow, "async_set_unique_id"), \
+             patch.object(flow, "_abort_if_unique_id_configured"), \
+             patch.object(flow, "_create_entry", return_value={"type": "create_entry"}):
+            await flow.async_step_rest_api({
+                CONF_IP_ADDRESS: "fe80::1",
+                CONF_TOKEN: "valid-token-12345",
+                "device_id": "my-device-id",
+            })
+    call_url = mock_sess.return_value.get.call_args[0][0]
+    # M51: "XX:XX" nunca se cumple → sin corchetes → la URL sería "https://fe80::1/v1/devices" (inválida)
+    assert "[fe80::1]" in call_url, f"URL sin corchetes IPv6: {call_url}"
+
+
+@pytest.mark.asyncio
+async def test_rest_api_no_mac_abort_reason(hass: HomeAssistant) -> None:
+    """Mata M81, M82, M84, M85, M86: unique_id vacío aborta con reason exacto 'no_mac_address_found'."""
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SMARTTHINGS_HVAC
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
+
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.DEBUG_ME = True
+    flow.context = {}
+    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
+
+    with patch("custom_components.climate_ip.config_flow.async_get_clientsession") as mock_sess:
+        mock_get = AsyncMock()
+        mock_get.__aenter__.return_value.status = 200
+        mock_sess.return_value.get.return_value = mock_get
+        # No CONF_DEVICE_ID ni CONF_MAC → unique_id = "" → abort
+        res = await flow.async_step_rest_api({
+            CONF_IP_ADDRESS: "api.smartthings.com",
+            CONF_TOKEN: "valid-token-12345",
+        })
+
+    assert res["type"] == "abort"
+
+    # M82: unique_id="XXXX" → truthy → no aborta → dispositivo duplicado
+    # M84: reason=None; M85: reason="XXno_mac_address_foundXX"; M86: reason="NO_MAC_ADDRESS_FOUND"
+    assert res["reason"] == "no_mac_address_found"
+
+
+@pytest.mark.asyncio
+async def test_cert_validation_called_with_correct_value(hass: HomeAssistant) -> None:
+    """Mata M121: _async_validate_cert_path debe llamarse con cert_value, no con None."""
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SAMSUNG_2878, CONF_CERT
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
+
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.DEBUG_ME = True
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
+        CONF_IP_ADDRESS: "10.0.0.1",
+        CONF_MAC: "AA:BB:CC:DD:EE:FF",
+        CONF_TOKEN: "tok",
+        CONF_CERT: "my_cert.pem",
+    }
+    flow._get_reconfigure_entry = MagicMock(return_value=MagicMock(data={}))
+
+    with patch.object(flow, "_async_resolve_mac_and_set_unique_id", return_value=None), \
+         patch.object(flow, "_async_validate_cert_path", return_value=False) as mock_val:
+        await flow.async_step_reconfigure_confirm(user_input={
+            CONF_IP_ADDRESS: "10.0.0.1",
+            CONF_MAC: "AA:BB:CC:DD:EE:FF",
+            CONF_TOKEN: "tok",
+            CONF_CERT: "my_cert.pem",
+        })
+    # M121: llamaría con None → siempre pasa o siempre falla según el mock → comportamiento incorrecto
+    mock_val.assert_called_once_with("my_cert.pem")
+
+
+@pytest.mark.asyncio
+async def test_reconfigure_null_token_routes_to_pairing(hass: HomeAssistant) -> None:
+    """Mata M157: token_val=None→XXXX haría if not token_val False, saltando el bloque de pairing."""
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SAMSUNG_2878, CONF_CERT
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC
+
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
+        CONF_IP_ADDRESS: "10.0.0.1",
+        CONF_MAC: "AA:BB:CC:DD:EE:FF",
+        # ¡CONF_TOKEN TOTALMENTE AUSENTE para que get() devuelva None!
+    }
+    flow._get_reconfigure_entry = MagicMock(return_value=MagicMock(data={}))
+
+    with patch.object(flow, "_async_resolve_mac_and_set_unique_id", return_value=None), \
+         patch.object(flow, "_async_validate_cert_path", return_value=True), \
+         patch.object(flow, "async_step_initiate_pairing", return_value={"type": "progress", "step_id": "await_button"}) as mock_pairing:
+        
+        await flow.async_step_reconfigure_confirm(user_input={
+            CONF_IP_ADDRESS: "10.0.0.1",
+            CONF_MAC: "AA:BB:CC:DD:EE:FF",
+            # ¡SIN CONF_TOKEN EN EL INPUT TAMPOCO!
+            CONF_CERT: "",
+        })
+    
+    # M157: Al inyectar "XXXX", el código cree que hay token y no llama a pairing.
+    # Exigimos estrictamente que sí se llame.
+    mock_pairing.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_reconfigure_cert_fallback_name_is_exact(hass: HomeAssistant) -> None:
+    """Mata M161, M162, M163: target_cert_name debe ser exactamente 'ac14k_m.pem'."""
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SAMSUNG_8888, CONF_CERT
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
+
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.DEBUG_ME = True
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888,
+        CONF_IP_ADDRESS: "10.0.0.1",
+        CONF_MAC: "AA:BB:CC:DD:EE:FF",
+        CONF_CERT: "",  # vacío → fuerza uso de target_cert_name
+    }
+    flow._get_reconfigure_entry = MagicMock(return_value=MagicMock(data={}))
+
+    with patch.object(flow, "_async_resolve_mac_and_set_unique_id", return_value=None), \
+         patch.object(flow, "_async_validate_cert_path", return_value=True), \
+         patch("custom_components.climate_ip.config_flow.SamsungTokenAcquirer8888") as mock_acq:
+        mock_acq.return_value = MagicMock()
+        await flow.async_step_reconfigure_confirm(user_input={
+            CONF_IP_ADDRESS: "10.0.0.1",
+            CONF_MAC: "AA:BB:CC:DD:EE:FF",
+            CONF_TOKEN: "",  # vacío → pairing con cert fallback
+            CONF_CERT: "",
+        })
+
+    mock_acq.assert_called_once()
+    # El tercer argumento posicional es el cert
+    actual_cert = mock_acq.call_args[0][2]
+    # M161: None → SamsungTokenAcquirer8888 recibe None → error SSL
+    # M162: "XXac14k_m.pemXX" → cert incorrecto → falla
+    # M163: "AC14K_M.PEM" → case-sensitive en Linux → cert no encontrado
+    assert actual_cert == "ac14k_m.pem"
+
+
+@pytest.mark.asyncio
+async def test_reconfigure_update_entry_called_with_real_entry(hass: HomeAssistant) -> None:
+    """Mata M182, M184: async_update_entry debe llamarse con el entry real, no con None."""
+    from homeassistant import config_entries
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SAMSUNG_2878, DOMAIN, CONF_CERT
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
+    from unittest.mock import ANY
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
+            CONF_IP_ADDRESS: "192.168.1.100",
+            CONF_MAC: "AA:BB:CC:DD:EE:FF",
+            CONF_TOKEN: "old_token",
+        },
+        unique_id="AA:BB:CC:DD:EE:FF",
+    )
+
+    flow = ClimateIpConfigFlow()
+    flow._get_reconfigure_entry = MagicMock(return_value=entry)
+    flow.hass = hass
+    flow.DEBUG_ME = True
+    flow.context = {"source": config_entries.SOURCE_RECONFIGURE, "entry_id": entry.entry_id}
+
+    await flow.async_step_reconfigure()
+
+    with patch.object(flow, "_async_resolve_mac_and_set_unique_id", return_value=None), \
+         patch.object(flow, "_async_validate_cert_path", return_value=True), \
+         patch.object(hass.config_entries, "async_update_entry") as mock_update, \
+         patch.object(hass.config_entries, "async_reload", new=AsyncMock()):
+        result = await flow.async_step_reconfigure_confirm(user_input={
+            CONF_IP_ADDRESS: "192.168.1.200",
+            CONF_MAC: "AA:BB:CC:DD:EE:FF",
+            CONF_TOKEN: "new_token",
+            CONF_CERT: "",
+        })
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "reconfigure_successful"
+
+    mock_update.assert_called_once()
+    # M182: primer arg es None → HA no actualiza el entry correcto
+    # M184: sin primer arg posicional → TypeError o actualiza entry incorrecto
+    actual_entry_arg = mock_update.call_args[0][0]
+    assert actual_entry_arg is not None
+    assert actual_entry_arg is entry
+    # Verificar que los datos nuevos se propagaron
+    actual_data = mock_update.call_args.kwargs.get("data") or mock_update.call_args[1].get("data")
+    assert actual_data[CONF_IP_ADDRESS] == "192.168.1.200"
+    assert actual_data[CONF_TOKEN] == "new_token"
+
+
+# ============================================================
+# ATAQUE 1 — Grupo A: Forzar bloque except en los 3 steps de progreso
+# Mata: M7-M14 en initiate_pairing, await_button, test_connection
+# ============================================================
+
+@pytest.mark.asyncio
+async def test_force_except_in_all_progress_steps(hass: HomeAssistant) -> None:
+    """Mata Grupo A: el bloque except debe producir error_key 'unknown_error', nunca éxito."""
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SAMSUNG_2878
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
+
+    # ── async_step_test_connection ──────────────────────────────────────────
+    flow_tc = ClimateIpConfigFlow()
+    flow_tc.hass = hass
+    flow_tc.DEBUG_ME = True
+    flow_tc.context = {}
+    flow_tc.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
+        CONF_IP_ADDRESS: "1.2.3.4",
+    }
+    # Tarea que lanza excepción al llamar .result()
+    mock_task_tc = MagicMock()
+    mock_task_tc.done.return_value = True
+    mock_task_tc.result.side_effect = RuntimeError("Fallo fatal en test_connection")
+    flow_tc.task = mock_task_tc
+
+    result_tc = await flow_tc.async_step_test_connection()
+
+    # M7 (result=None) → AttributeError en result.get("ok") → crash
+    # M10 (ok:True) → el flujo avanzaría a discover_uuid/create_entry aunque hubo excepción
+    assert result_tc["type"] == "progress_done"
+    assert result_tc["step_id"] == "handle_error"
+    assert flow_tc.flow_data["error_key"] == "unknown_error"
+
+    # ── async_step_await_button ─────────────────────────────────────────────
+    flow_ab = ClimateIpConfigFlow()
+    flow_ab.hass = hass
+    flow_ab.DEBUG_ME = True
+    flow_ab.context = {}
+    flow_ab.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
+        CONF_IP_ADDRESS: "1.2.3.4",
+    }
+    mock_task_ab = MagicMock()
+    mock_task_ab.done.return_value = True
+    mock_task_ab.result.side_effect = RuntimeError("Fallo fatal en await_button")
+    flow_ab.task = mock_task_ab
+
+    result_ab = await flow_ab.async_step_await_button()
+
+    assert result_ab["type"] == "progress_done"
+    assert result_ab["step_id"] == "handle_error"
+    assert flow_ab.flow_data["error_key"] == "unknown_error"
+
+    # ── async_step_initiate_pairing ─────────────────────────────────────────
+    flow_ip = ClimateIpConfigFlow()
+    flow_ip.hass = hass
+    flow_ip.DEBUG_ME = True
+    flow_ip.context = {}
+    flow_ip.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
+        CONF_IP_ADDRESS: "1.2.3.4",
+        CONF_MAC: "AA:BB:CC:DD:EE:FF",
+        "_fallback_attempted": True,  # Salta el fallback, va directo a handle_error
+    }
+    mock_task_ip = MagicMock()
+    mock_task_ip.done.return_value = True
+    mock_task_ip.result.side_effect = RuntimeError("Fallo fatal en initiate_pairing")
+    flow_ip.task = mock_task_ip
+
+    result_ip = await flow_ip.async_step_initiate_pairing()
+
+    assert result_ip["type"] == "progress_done"
+    assert result_ip["step_id"] == "handle_error"
+    assert flow_ip.flow_data["error_key"] == "unknown_error"
+
+
+# ── Ataque 1B: Grupo F — next_step_id en await_button success path ──────────
+@pytest.mark.asyncio
+async def test_await_button_success_next_step_id_strict(hass: HomeAssistant) -> None:
+    """Mata M45, M46, M47: next_step_id debe ser exactamente 'discover_uuid' al tener éxito (no 2878)."""
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_MIM_H03
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
+
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.DEBUG_ME = True
+    flow.context = {}
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03,  # No es 2878 → va a discover_uuid
+        CONF_IP_ADDRESS: "1.2.3.4",
+    }
+    mock_task = MagicMock()
+    mock_task.done.return_value = True
+    mock_task.result.return_value = {"ok": True, "token": "valid-token-abcde"}
+    flow.task = mock_task
+
+    result = await flow.async_step_await_button()
+
+    assert result["type"] == "progress_done"
+    # M45: next_step_id=None → HA busca step "None" → crash
+    # M46: "XXdiscover_uuidXX" → step no existe → crash
+    # M47: "DISCOVER_UUID" → step no existe → crash
+    assert result["step_id"] == "discover_uuid"
+    assert flow.flow_data[CONF_TOKEN] == "valid-token-abcde"
+
+
+# ============================================================
+# ATAQUE 2 — Grupo D: YamlController strict instantiation (M82-M86)
+# ============================================================
+
+@pytest.mark.asyncio
+async def test_yaml_controller_instantiation_strict(hass: HomeAssistant) -> None:
+    """Mata M82, M84, M85, M86: YamlController debe recibir logger=_LOGGER, hass y _session reales."""
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SAMSUNG_2878
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
+
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.DEBUG_ME = True
+    flow.context = {}
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
+        CONF_IP_ADDRESS: "192.168.1.50",
+        CONF_MAC: "AA:BB:CC:DD:EE:FF",
+        CONF_TOKEN: "valid-token-12345",
+    }
+
+    with patch("custom_components.climate_ip.config_flow.YamlController") as mock_ctrl_class, \
+         patch("custom_components.climate_ip.config_flow.async_get_clientsession") as mock_sess:
+
+        mock_sess_instance = MagicMock()
+        mock_sess.return_value = mock_sess_instance
+
+        mock_ctrl = AsyncMock()
+        mock_ctrl.initialize.return_value = True
+        mock_ctrl.loader = MagicMock()
+        mock_ctrl.loader.state_getter = AsyncMock()
+        mock_ctrl.loader.state_getter.async_update_state = AsyncMock(return_value={"state": "ok"})
+        mock_ctrl.async_shutdown = AsyncMock()
+        mock_ctrl_class.return_value = mock_ctrl
+
+        result = await flow._test_connection_safe()
+
+    assert result["ok"] is True
+
+    # M82: logger=None → el controlador no puede logear nada → fallo silencioso
+    # M84: sin logger (kwarg borrado) → TypeError en YamlController.__init__
+    mock_ctrl_class.assert_called_once()
+    call_kwargs = mock_ctrl_class.call_args.kwargs
+    assert call_kwargs.get("logger") is not None, "logger no debe ser None (M82/M84)"
+
+    # M85: controller.hass = None → el controlador no puede acceder a HA
+    assert mock_ctrl.hass is hass, "hass debe ser el objeto real de HA (M85)"
+
+    # M86: controller._session = None → peticiones HTTP fallan silenciosamente
+    assert mock_ctrl._session is mock_sess_instance, "_session debe ser la sesión real (M86)"
+
+    # Verificar que async_get_clientsession fue llamado con hass (no con None)
+    mock_sess.assert_called_once_with(hass)
+
+
+# ============================================================
+# ATAQUE 3 — Grupos C + E: _test_connection_safe dict mutations + unique_id
+# ============================================================
+
+@pytest.mark.asyncio
+async def test_test_connection_safe_8888_failure_dict_strict(hass: HomeAssistant) -> None:
+    """Mata M57-M63: el dict de fallo de 8888 debe ser exactamente {'ok':False,'error':'cannot_connect'}."""
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SAMSUNG_8888
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
+
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.DEBUG_ME = True
+    flow.context = {}
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888,
+        CONF_IP_ADDRESS: "192.168.1.10",
+        CONF_TOKEN: "valid-token-12345",
+    }
+
+    with patch("custom_components.climate_ip.config_flow.async_get_clientsession") as mock_sess:
+        mock_get = AsyncMock()
+        mock_get.__aenter__.return_value.status = 403  # Falla → no 200
+        mock_sess.return_value.get.return_value = mock_get
+
+        result = await flow._test_connection_safe()
+
+    # M59: {"ok": True, ...} → el llamador cree que conectó cuando falló → ¡LETAL!
+    # M57: {"XXokXX": False} → result.get("ok") devuelve None → fallo silencioso
+    # M60-63: key "error" mutada → llamador no puede leer el error
+    assert result["ok"] is False
+    assert result["error"] == "cannot_connect"
+
+
+@pytest.mark.asyncio
+async def test_test_connection_safe_unknown_device_type_dict_strict(hass: HomeAssistant) -> None:
+    """Mata M109-M115: el dict de tipo desconocido debe ser {'ok':False,'error':'cannot_connect'}."""
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE
+    from homeassistant.const import CONF_IP_ADDRESS
+
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.DEBUG_ME = True
+    flow.context = {}
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: "unknown_device_type_xyz",
+        CONF_IP_ADDRESS: "1.1.1.1",
+    }
+
+    result = await flow._test_connection_safe()
+
+    # M111: {"ok": True, ...} → LETAL: el flujo procedera como si conectara
+    assert result["ok"] is False
+    assert result["error"] == "cannot_connect"
+
+
+@pytest.mark.asyncio
+async def test_rest_api_unique_id_empty_fallback_strict(hass: HomeAssistant) -> None:
+    """Mata M77, M78: unique_id vacío debe abortar con 'no_mac_address_found', no con XXXX truthy."""
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SMARTTHINGS_HVAC
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
+
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.DEBUG_ME = True
+    flow.context = {}
+    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
+
+    with patch("custom_components.climate_ip.config_flow.async_get_clientsession") as mock_sess:
+        mock_get = AsyncMock()
+        mock_get.__aenter__.return_value.status = 200
+        mock_sess.return_value.get.return_value = mock_get
+
+        # Sin CONF_DEVICE_ID ni CONF_MAC → unique_id = "" → debe abortar
+        # M78: unique_id = "XXXX" → truthy → NO aborta → async_set_unique_id("XXXX") → duplicado
+        result = await flow.async_step_rest_api({
+            CONF_IP_ADDRESS: "api.smartthings.com",
+            CONF_TOKEN: "valid-token-12345",
+            # Sin device_id ni MAC → único fallback es ""
+        })
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "no_mac_address_found"
+
+
+@pytest.mark.asyncio
+async def test_rest_api_errors_base_unknown_error_strict(hass: HomeAssistant) -> None:
+    """Mata M94-M98: errors['base'] debe ser exactamente 'unknown_error' tras excepción genérica."""
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SMARTTHINGS_HVAC
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
+
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.DEBUG_ME = True
+    flow.context = {}
+    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
+
+    with patch("custom_components.climate_ip.config_flow.async_get_clientsession") as mock_sess:
+        # Forzamos excepción genérica (no AbortFlow) dentro del bloque try de async_step_rest_api
+        mock_sess.side_effect = Exception("Red caída")
+
+        result = await flow.async_step_rest_api({
+            CONF_IP_ADDRESS: "api.smartthings.com",
+            CONF_TOKEN: "valid-token-12345",
+        })
+
+    assert result["type"] == "form"
+    # M94: errors["base"] = None → HA no muestra mensaje de error al usuario
+    # M95: errors["XXbaseXX"] = "unknown_error" → HA busca clave "XXbaseXX" → sin error visible
+    # M96: errors["BASE"] = "unknown_error" → clave incorrecta → sin error visible
+    # M97: errors["base"] = "XXunknown_errorXX" → clave strings.json inexistente
+    # M98: errors["base"] = "UNKNOWN_ERROR" → clave strings.json inexistente
+    assert result["errors"].get("base") == "unknown_error"
+
+async def test_config_flow_async_remove(hass: HomeAssistant) -> None:
+    """Kill Mxx inside async_remove to test cleanup of background tasks."""
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    
+    mock_task = MagicMock()
+    mock_acquirer = AsyncMock()
+    
+    flow.task = mock_task
+    flow.acquirer = mock_acquirer
+    
+    flow.async_remove()
+    
+    mock_task.cancel.assert_called_once()
+    mock_acquirer.async_close.assert_called_once()
+
+async def test_config_flow_async_get_options_flow() -> None:
+    """Kill Mxx inside async_get_options_flow by asserting it returns OptionsFlowHandler."""
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow, OptionsFlowHandler
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+    
+    mock_entry = MockConfigEntry(domain="climate_ip", title="Test", data={})
+    options_flow = ClimateIpConfigFlow.async_get_options_flow(mock_entry)
+    
+    assert isinstance(options_flow, OptionsFlowHandler)
+    assert options_flow._config_entry is mock_entry
+
+async def test_config_flow_options_falsy_values(hass: HomeAssistant) -> None:
+    """Kill None Fallback mutants in _get_options_schema."""
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    from custom_components.climate_ip.const import (
+        CONF_DEVICE_TYPE, CONF_CONN_METHOD, DEVICE_TYPE_SMARTTHINGS_HVAC, CONF_POLL_INTERVAL
+    )
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    # If the mutant changes `is None` to `not x`, passing empty strings will be caught by `not x` 
+    # but bypass `is None`. We pass empty string, the schema default should be empty string, NOT the fallback.
+    mock_entry = MockConfigEntry(
+        domain="climate_ip", 
+        title="Test", 
+        data={CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC, CONF_CONN_METHOD: "should_not_be_used", CONF_POLL_INTERVAL: 999},
+        options={CONF_CONN_METHOD: "", CONF_POLL_INTERVAL: 0}
+    )
+    
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    
+    options_flow = ClimateIpConfigFlow.async_get_options_flow(mock_entry)
+    schema = options_flow._get_options_schema()
+    
+    # Assert that the default is exactly the falsy value ("") and not the fallback ("should_not_be_used")
+    conn_marker = next(k for k in schema.schema if getattr(k, "schema", None) == CONF_CONN_METHOD)
+    assert conn_marker.default() == ""
+    
+    poll_marker = next(k for k in schema.schema if getattr(k, "schema", None) == CONF_POLL_INTERVAL)
+    assert poll_marker.default() == "0:00:00"
+
+async def test_config_flow_options_none_fallbacks(hass: HomeAssistant) -> None:
+    """Kill 'if False' mutants for None Fallbacks in _get_options_schema."""
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    from custom_components.climate_ip.const import (
+        CONF_DEVICE_TYPE, CONF_CONN_METHOD, CONN_METHOD_REQUESTS, DEVICE_TYPE_SMARTTHINGS_HVAC, CONF_POLL_INTERVAL
+    )
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    # Case 1: options={}, data={...} -> triggers first fallback
+    mock_entry1 = MockConfigEntry(
+        domain="climate_ip", 
+        title="Test1", 
+        data={CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC, CONF_CONN_METHOD: CONN_METHOD_REQUESTS, CONF_POLL_INTERVAL: 123},
+        options={}
+    )
+    flow1 = ClimateIpConfigFlow()
+    flow1.hass = hass
+    options_flow1 = ClimateIpConfigFlow.async_get_options_flow(mock_entry1)
+    schema1 = options_flow1._get_options_schema()
+    
+    conn_marker1 = next(k for k in schema1.schema if getattr(k, "schema", None) == CONF_CONN_METHOD)
+    assert conn_marker1.default() == CONN_METHOD_REQUESTS
+    
+    poll_marker1 = next(k for k in schema1.schema if getattr(k, "schema", None) == CONF_POLL_INTERVAL)
+    assert poll_marker1.default() == "0:02:03"  # 123 seconds
+
+    # Case 2: options={}, data={} -> triggers absolute default fallback
+    mock_entry2 = MockConfigEntry(
+        domain="climate_ip", 
+        title="Test2", 
+        data={CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC},
+        options={}
+    )
+    flow2 = ClimateIpConfigFlow()
+    flow2.hass = hass
+    options_flow2 = ClimateIpConfigFlow.async_get_options_flow(mock_entry2)
+    schema2 = options_flow2._get_options_schema()
+    
+    from custom_components.climate_ip.const import CONN_METHOD_AIOHTTP, DEFAULT_POLL_INTERVAL
+    conn_marker2 = next(k for k in schema2.schema if getattr(k, "schema", None) == CONF_CONN_METHOD)
+    assert conn_marker2.default() == CONN_METHOD_AIOHTTP
+    
+    poll_marker2 = next(k for k in schema2.schema if getattr(k, "schema", None) == CONF_POLL_INTERVAL)
+    assert poll_marker2.default() == "0:01:00"  # 60 seconds (DEFAULT_POLL_INTERVAL)

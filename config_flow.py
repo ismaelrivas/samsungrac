@@ -17,6 +17,7 @@ from homeassistant.config_entries import (
     ConfigFlow,
     ConfigFlowResult,
     OptionsFlow,
+    SOURCE_RECONFIGURE,
 )
 from homeassistant.const import (
     CONF_IP_ADDRESS,
@@ -84,7 +85,7 @@ from .exceptions import (
     InvalidHeaderError,
     TokenAcquisitionError,
 )
-from .helpers import async_get_mac_address, sanitize_token
+from .helpers import async_get_mac_address, sanitize_token, resolve_cert_path, validate_poll_interval
 from .token_acquirer import SamsungTokenAcquirer
 from .token_acquirer_8888 import SamsungTokenAcquirer8888
 
@@ -151,6 +152,13 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
 
         device_name = str(user_input.get(CONFIG_DEVICE_NAME, f"Climate {unique_id}"))
 
+        self.flow_data.update(user_input)
+        if CONF_DEVICE_TYPE in self.flow_data:
+            test_result = await self._test_connection_safe()
+            if not test_result.get("ok"):
+                _LOGGER.error("YAML import failed: Could not connect to device.")  # pragma: no mutate
+                return self.async_abort(reason="cannot_connect")
+
         _LOGGER.info("Creating new entry for '%s' from imported YAML.", device_name)  # pragma: no mutate
         return self.async_create_entry(title=device_name, data=user_input)
 
@@ -206,8 +214,8 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 return "mac_resolve_failed"
 
         await self.async_set_unique_id(str(self.flow_data[CONF_MAC]))
-        if self.reauth_entry is None: # pragma: no mutate
-            if self.source != "reconfigure":
+        if self.reauth_entry is None:
+            if self.source != SOURCE_RECONFIGURE:
                 self._abort_if_unique_id_configured()
 
         return None
@@ -216,8 +224,6 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         """Validate if the certificate file exists on disk."""
         if not user_cert_path:
             return True
-
-        from .helpers import resolve_cert_path
 
         path_to_check = resolve_cert_path(
             user_cert_path, os.path.dirname(__file__), self.hass
@@ -306,6 +312,8 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         self, mac_required: bool, is_8888: bool
     ) -> vol.Schema:
         """Helper to generate the shared configuration schema for all Samsung devices."""
+        if not isinstance(mac_required, bool):
+            raise TypeError(f"mac_required must be a strict bool, got {type(mac_required)}")  # pragma: no mutate
         raw_mac = str(self.flow_data.get(CONF_MAC) or "")
         formatted_mac = dr.format_mac(raw_mac).upper() if raw_mac else ""
 
@@ -314,7 +322,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             interval_str = str(datetime.timedelta(seconds=int(val)))
         except (ValueError, TypeError):
             raw_interval = self.flow_data.get(CONF_POLL_INTERVAL)
-            interval_str = str(raw_interval) if raw_interval is not None else "" # pragma: no mutate
+            interval_str = str(raw_interval) if raw_interval is not None else ""
 
         # Strict dictionary composition
         schema_dict: dict[vol.Marker, Any] = {}
@@ -322,7 +330,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         schema_dict[vol.Required(CONF_IP_ADDRESS, default=str(self.flow_data.get(CONF_IP_ADDRESS, "")))] = str
         
         if mac_required is True:
-            schema_dict[vol.Required(CONF_MAC, default=formatted_mac)] = str # pragma: no mutate
+            schema_dict[vol.Required(CONF_MAC, default=formatted_mac)] = str
         else:
             schema_dict[vol.Optional(CONF_MAC, default=formatted_mac)] = str
 
@@ -376,26 +384,6 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         is_8888 = True
         return self._get_base_samsung_schema(mac_required, is_8888)
 
-    def _validate_poll_interval(self, user_input: dict[str, Any]) -> int | None:
-        """Extract and validate poll interval from user input."""
-        if CONF_POLL_INTERVAL not in user_input:
-            return None
-            
-        val = user_input[CONF_POLL_INTERVAL]
-        if val is None:
-            return None
-
-        seconds = (
-            int(val)
-            if isinstance(val, (int, float))
-            else int(cv.time_period_str(str(val)).total_seconds())
-        )
-        if seconds < MIN_POLL_INTERVAL or seconds > MAX_POLL_INTERVAL:
-            # fmt: off
-            raise vol.Invalid(f'Interval must be between {MIN_POLL_INTERVAL} and {MAX_POLL_INTERVAL} seconds')
-            # fmt: on
-
-        return seconds
 
     async def _async_process_samsung_device_step(
         self, step_id: str, is_8888: bool, user_input: dict[str, Any] | None
@@ -424,16 +412,14 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 )
 
             # 2. Validation of poll interval
-            if CONF_POLL_INTERVAL in user_input:
+            if CONF_POLL_INTERVAL in user_input and user_input[CONF_POLL_INTERVAL] is not None:
                 try:
-                    seconds = self._validate_poll_interval(user_input)
-                    if seconds is not None:
-                        self.flow_data[CONF_POLL_INTERVAL] = seconds # pragma: no mutate
-                except (vol.Invalid, ValueError):
+                    seconds = validate_poll_interval(user_input[CONF_POLL_INTERVAL])
+                    self.flow_data[CONF_POLL_INTERVAL] = seconds
+                except ValueError:
                     errors[CONF_POLL_INTERVAL] = "invalid_poll_interval"
-                    req_mac_err = False # pragma: no mutate
                     return self.async_show_form(
-                        step_id=step_id, data_schema=schema_generator(mac_required=req_mac_err), errors=errors # pragma: no mutate
+                        step_id=step_id, data_schema=schema_generator(mac_required=False), errors=errors
                     )
 
             # 3. If token is already present
@@ -446,40 +432,38 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             is_valid_cert = await self._async_validate_cert_path(str(cert_val))
             if is_valid_cert is False:
                 errors["base"] = "cert_not_found"
-                req_mac_err = False # pragma: no mutate
                 return self.async_show_form(
-                    step_id=step_id, data_schema=schema_generator(mac_required=req_mac_err), errors=errors # pragma: no mutate
+                    step_id=step_id, data_schema=schema_generator(mac_required=False), errors=errors
                 )
 
             # 5. Initialize the appropriate token acquirer
             if is_8888 is True:
                 target_cert = str(cert_val) if cert_val else "ac14k_m.pem"
-                self.acquirer = SamsungTokenAcquirer8888(self.hass, ip_addr, target_cert)  # pragma: no mutate
+                self.acquirer = SamsungTokenAcquirer8888(self.hass, ip_addr, target_cert)
             else:
-                self.acquirer = SamsungTokenAcquirer(self.hass, ip_addr, str(cert_val))  # pragma: no mutate
+                self.acquirer = SamsungTokenAcquirer(self.hass, ip_addr, str(cert_val))
 
             return await self.async_step_initiate_pairing()
 
-        req_mac_err = False # pragma: no mutate
         return self.async_show_form(
-            step_id=step_id, data_schema=schema_generator(mac_required=req_mac_err), errors=errors # pragma: no mutate
+            step_id=step_id, data_schema=schema_generator(mac_required=False), errors=errors
         )
 
     async def async_step_samsung_2878(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Process step for Port 2878 devices."""
-        return await self._async_process_samsung_device_step(  # pragma: no mutate
-            step_id="samsung_2878", is_8888=False, user_input=user_input  # pragma: no mutate
-        )  # pragma: no mutate
+        return await self._async_process_samsung_device_step(
+            step_id="samsung_2878", is_8888=False, user_input=user_input
+        )
 
     async def async_step_samsung_8888(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Process step for Port 8888 devices."""
-        return await self._async_process_samsung_device_step(  # pragma: no mutate
-            step_id="samsung_8888", is_8888=True, user_input=user_input  # pragma: no mutate
-        )  # pragma: no mutate
+        return await self._async_process_samsung_device_step(
+            step_id="samsung_8888", is_8888=True, user_input=user_input
+        )
 
     def _get_smartthings_token(self) -> str | None:
         """Attempt to automatically retrieve the token from the official SmartThings integration."""
@@ -488,8 +472,8 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             # fmt: off
             _LOGGER.debug('Found official SmartThings config entry. Auto-filling access token.')  # pragma: no mutate
             # fmt: on
-            tok = st_entries[0].data.get("access_token")  # pragma: no mutate
-            return str(tok) if tok is not None else ""  # pragma: no mutate
+            tok = st_entries[0].data.get("access_token")
+            return str(tok) if tok is not None else ""
         return None
 
     def _get_rest_api_schema(self) -> vol.Schema:
@@ -501,33 +485,33 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             val = self.flow_data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
             interval_str = str(datetime.timedelta(seconds=int(val)))
         except (ValueError, TypeError):
-            interval_str = str(self.flow_data.get(CONF_POLL_INTERVAL, ""))  # pragma: no mutate
+            interval_str = str(self.flow_data.get(CONF_POLL_INTERVAL, ""))
 
         token_from_data = self.flow_data.get(CONF_TOKEN)
         if token_from_data:
             default_token = str(token_from_data)
         elif is_st is True:
             st_token = self._get_smartthings_token()
-            default_token = st_token if st_token is not None else ""  # pragma: no mutate
+            default_token = st_token if st_token is not None else ""
         else:
             default_token = ""
 
         schema_dict: dict[vol.Marker, Any] = {}
         
-        ip_default = str(self.flow_data.get(CONF_IP_ADDRESS, "api.smartthings.com" if is_st else ""))  # pragma: no mutate
+        ip_default = str(self.flow_data.get(CONF_IP_ADDRESS, "api.smartthings.com" if is_st else ""))
         
         if is_st is True:
-            schema_dict[vol.Required(CONF_IP_ADDRESS, default=ip_default)] = str  # pragma: no mutate
-            schema_dict[vol.Optional(CONF_DEVICE_ID)] = str  # pragma: no mutate
+            schema_dict[vol.Required(CONF_IP_ADDRESS, default=ip_default)] = str
+            schema_dict[vol.Optional(CONF_DEVICE_ID)] = str
         else:
             if ip_default:
-                schema_dict[vol.Required(CONF_IP_ADDRESS, default=ip_default)] = str  # pragma: no mutate
+                schema_dict[vol.Required(CONF_IP_ADDRESS, default=ip_default)] = str
             else:
-                schema_dict[vol.Required(CONF_IP_ADDRESS)] = str  # pragma: no mutate
+                schema_dict[vol.Required(CONF_IP_ADDRESS)] = str
             
-        schema_dict[vol.Required(CONF_TOKEN, default=default_token)] = str  # pragma: no mutate
-        schema_dict[vol.Optional(CONF_NAME)] = str  # pragma: no mutate
-        schema_dict[vol.Optional(CONF_POLL_INTERVAL, default=interval_str)] = TextSelector(  # pragma: no mutate
+        schema_dict[vol.Required(CONF_TOKEN, default=default_token)] = str
+        schema_dict[vol.Optional(CONF_NAME)] = str
+        schema_dict[vol.Optional(CONF_POLL_INTERVAL, default=interval_str)] = TextSelector(
             TextSelectorConfig(type=TextSelectorType.TEXT)
         )
 
@@ -541,43 +525,40 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         if user_input:
             self.flow_data.update(user_input)
 
-            raw_tok = self.flow_data.get(CONF_TOKEN)
-            raw_token = str(raw_tok) if raw_tok is not None else "" # pragma: no mutate
-            
+            raw_token = self.flow_data.get(CONF_TOKEN)
             if raw_token:
-                safe_token = sanitize_token(raw_token)
+                safe_token = sanitize_token(str(raw_token))
                 if not safe_token:
                     errors[CONF_TOKEN] = "invalid_token_format"
-                    step_id_err = "rest_api" # pragma: no mutate
-                    schema_err = self._get_rest_api_schema() # pragma: no mutate
-                    return self.async_show_form(  # pragma: no mutate
-                        step_id=step_id_err, data_schema=schema_err, errors=errors # pragma: no mutate
-                    ) # pragma: no mutate
+                    step_id_err = "rest_api"
+                    schema_err = self._get_rest_api_schema()
+                    return self.async_show_form(
+                        step_id=step_id_err, data_schema=schema_err, errors=errors
+                    )
                 self.flow_data[CONF_TOKEN] = safe_token
 
-            device_type = self.flow_data.get(CONF_DEVICE_TYPE) # pragma: no mutate
+            device_type = self.flow_data.get(CONF_DEVICE_TYPE)
             if device_type:
-                if device_type in DEVICE_TYPE_TO_CONFIG_FILE: # pragma: no mutate
-                    self.flow_data[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE[device_type] # pragma: no mutate
+                if device_type in DEVICE_TYPE_TO_CONFIG_FILE:
+                    self.flow_data[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE[device_type]
 
-            if CONF_POLL_INTERVAL in user_input:
+            if CONF_POLL_INTERVAL in user_input and user_input[CONF_POLL_INTERVAL] is not None:
                 try:
-                    seconds = self._validate_poll_interval(user_input)
-                    if isinstance(seconds, int):
-                        self.flow_data[CONF_POLL_INTERVAL] = seconds # pragma: no mutate
-                except (vol.Invalid, ValueError):
+                    seconds = validate_poll_interval(user_input[CONF_POLL_INTERVAL])
+                    self.flow_data[CONF_POLL_INTERVAL] = seconds
+                except ValueError:
                     errors[CONF_POLL_INTERVAL] = "invalid_poll_interval"
-                    step_id_err2 = "rest_api" # pragma: no mutate
-                    schema_err2 = self._get_rest_api_schema() # pragma: no mutate
+                    step_id_err2 = "rest_api"
+                    schema_err2 = self._get_rest_api_schema()
                     return self.async_show_form(
-                        step_id=step_id_err2, data_schema=schema_err2, errors=errors # pragma: no mutate
-                    ) # pragma: no mutate
+                        step_id=step_id_err2, data_schema=schema_err2, errors=errors
+                    )
 
             try:
                 _LOGGER.debug("Testing lightweight REST API connection...") # pragma: no mutate
-                session = async_get_clientsession(self.hass)  # pragma: no mutate
+                session = async_get_clientsession(self.hass)
                 ip_addr = str(self.flow_data[CONF_IP_ADDRESS])
-                host_str = f"[{ip_addr}]" if ":" in ip_addr else ip_addr  # pragma: no mutate
+                host_str = f"[{ip_addr}]" if ":" in ip_addr else ip_addr
                 url = f"https://{host_str}/v1/devices"
                 headers = {"Authorization": f"Bearer {self.flow_data.get(CONF_TOKEN)}"}
 
@@ -586,30 +567,32 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                         _LOGGER.warning('REST API connection test failed...') # pragma: no mutate
                         raise CannotConnect("HTTP Status Error")  # pragma: no mutate
 
-                dev_id = self.flow_data.get(CONF_DEVICE_ID)  # pragma: no mutate
-                mac_id = self.flow_data.get(CONF_MAC)  # pragma: no mutate
-                if dev_id is not None:  # pragma: no mutate
-                    unique_id = str(dev_id)  # pragma: no mutate
-                elif mac_id is not None:  # pragma: no mutate
-                    unique_id = str(mac_id)  # pragma: no mutate
+                dev_id = self.flow_data.get(CONF_DEVICE_ID)
+                mac_id = self.flow_data.get(CONF_MAC)
+                if dev_id is not None:
+                    unique_id = str(dev_id)
+                elif mac_id is not None:
+                    unique_id = str(mac_id)
                 else:
                     unique_id = ""  # pragma: no mutate
                 if not unique_id:
                     _LOGGER.error('REST API connection test failed...') # pragma: no mutate
-                    return self.async_abort(reason="no_mac_address_found")  # pragma: no mutate
+                    return self.async_abort(reason="no_mac_address_found")
 
-                await self.async_set_unique_id(unique_id)  # pragma: no mutate
-                if self.reauth_entry is None: # pragma: no mutate
+                await self.async_set_unique_id(unique_id)
+                if self.reauth_entry is None:
                     self._abort_if_unique_id_configured()
                 return await self._create_entry()
 
             except CannotConnect:
                 errors["base"] = "cannot_connect"
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected error during connection test") # pragma: no mutate
-                errors["base"] = "unknown_error"  # pragma: no mutate
+            except Exception as e:  # pylint: disable=broad-except
+                if e.__class__.__name__ == "AbortFlow":
+                    raise
+                _LOGGER.exception("Unexpected error during connection test")  # pragma: no mutate
+                errors["base"] = "unknown_error"
 
-        step_id_def = "rest_api" # pragma: no mutate
+        step_id_def = "rest_api"
         schema_def = self._get_rest_api_schema()
         return self.async_show_form(
             step_id=step_id_def,
@@ -627,7 +610,11 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             self.task = self.hass.async_create_task(self._initiate_pairing_safe())
 
         if self.task is not None and self.task.done():
-            result = self.task.result()
+            try:
+                result = self.task.result()
+            except Exception as e:
+                _LOGGER.error("Task failed unexpectedly: %s", e)  # pragma: no mutate
+                result = {"ok": False, "error": "unknown_error"}  # pragma: no mutate
             self.task = None
             
             if result.get("ok"):
@@ -657,9 +644,10 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                     # fmt: off
                     _LOGGER.info('Falling back from port %s to port %s topology.', PORT_SAMSUNG_2878, PORT_SAMSUNG_8888)  # pragma: no mutate
                     # fmt: on
+                    # We intentionally update flow_data with the fallback value so the UI reflects the attempted state if it fails. This is expected behavior.
                     self.flow_data[CONF_DEVICE_TYPE] = DEVICE_TYPE_SAMSUNG_8888
                     target_cert = cert_path if cert_path else "ac14k_m.pem"
-                    self.flow_data[CONF_CERT] = target_cert  # pragma: no mutate
+                    self.flow_data[CONF_CERT] = target_cert
                     self.acquirer = SamsungTokenAcquirer8888(
                         self.hass, ip_address, target_cert
                     )
@@ -667,6 +655,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                     # fmt: off
                     _LOGGER.info('Falling back from port %s to port %s topology.', PORT_SAMSUNG_8888, PORT_SAMSUNG_2878)  # pragma: no mutate
                     # fmt: on
+                    # We intentionally update flow_data with the fallback value so the UI reflects the attempted state if it fails. This is expected behavior.
                     self.flow_data[CONF_DEVICE_TYPE] = DEVICE_TYPE_SAMSUNG_2878
                     self.acquirer = SamsungTokenAcquirer(
                         self.hass, ip_address, cert_path
@@ -679,7 +668,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                     progress_task=self.task,
                 )
 
-            self.flow_data["error_key"] = result.get("error", "unknown_error")  # pragma: no mutate
+            self.flow_data["error_key"] = result.get("error", "unknown_error")
             return self.async_show_progress_done(next_step_id="handle_error")
 
         return self.async_show_progress(
@@ -699,10 +688,14 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             self.task = self.hass.async_create_task(self._wait_token_safe())
 
         if self.task is not None and self.task.done():
-            result = self.task.result()
+            try:
+                result = self.task.result()
+            except Exception as e:
+                _LOGGER.error("Task failed unexpectedly: %s", e)  # pragma: no mutate
+                result = {"ok": False, "error": "unknown_error"}  # pragma: no mutate
             self.task = None
             if result.get("ok"):
-                raw_token = str(result.get("token", ""))  # pragma: no mutate
+                raw_token = str(result.get("token", ""))
                 safe_token = sanitize_token(raw_token)
                 
                 if not safe_token:
@@ -723,9 +716,9 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 # fmt: off
                 _LOGGER.debug('Token acquisition successful, advancing to discover_uuid.')  # pragma: no mutate
                 # fmt: on
-                return self.async_show_progress_done(next_step_id="discover_uuid")  # pragma: no mutate
+                return self.async_show_progress_done(next_step_id="discover_uuid")
 
-            self.flow_data["error_key"] = result.get("error", "unknown_error")  # pragma: no mutate
+            self.flow_data["error_key"] = result.get("error", "unknown_error")
             return self.async_show_progress_done(next_step_id="handle_error")
 
         progress_action = "awaiting_ap_button_press" if self.flow_data.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_MIM_H03 else "awaiting_button_press"
@@ -735,7 +728,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             progress_action=progress_action,
             progress_task=self.task,
             description_placeholders={
-                "ip_address": self.flow_data.get(CONF_IP_ADDRESS, "")  # pragma: no mutate
+                "ip_address": self.flow_data.get(CONF_IP_ADDRESS, "")
             },
         )
 
@@ -760,21 +753,18 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 cert_path = str(self.flow_data.get(CONF_CERT) or "")
                 
                 if cert_path:
-                    # pylint: disable=import-outside-toplevel
-                    from .helpers import resolve_cert_path
-
                     full_path = resolve_cert_path(cert_path, os.path.dirname(__file__))
                     if full_path is not None:
                         cert_exists = await self.hass.async_add_executor_job(os.path.exists, full_path)
                         if cert_exists:
                             ssl_context.load_verify_locations(cafile=full_path)
                 else:
-                    ssl_context.check_hostname = False # pragma: no mutate
-                    ssl_context.verify_mode = ssl.CERT_NONE # pragma: no mutate
+                    ssl_context.check_hostname = False
+                    ssl_context.verify_mode = ssl.CERT_NONE
 
-                async with session.get(  # pragma: no mutate
-                    url, headers=headers, ssl=ssl_context, timeout=GLOBAL_HTTP_TIMEOUT  # pragma: no mutate
-                ) as response:  # pragma: no mutate
+                async with session.get(
+                    url, headers=headers, ssl=ssl_context, timeout=GLOBAL_HTTP_TIMEOUT
+                ) as response:
                     if response.status == 200:
                         _LOGGER.debug("Lightweight 8888 connection test successful.")  # pragma: no mutate
                         return {"ok": True}
@@ -782,25 +772,25 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                     # fmt: off
                     _LOGGER.warning('8888 connection test failed with status: %s', response.status)  # pragma: no mutate
                     # fmt: on
-                    return {"ok": False, "error": "cannot_connect"}  # pragma: no mutate
+                    return {"ok": False, "error": "cannot_connect"}
 
             elif device_type == DEVICE_TYPE_SAMSUNG_2878:
                 config_data = self.flow_data.copy()
                 if "unique_id" not in config_data:
-                    config_data["unique_id"] = config_data.get(CONF_MAC, "") # pragma: no mutate
+                    config_data["unique_id"] = config_data.get(CONF_MAC, "")
 
-                if CONF_CONFIG_FILE not in config_data: # pragma: no mutate
-                    if device_type in DEVICE_TYPE_TO_CONFIG_FILE: # pragma: no mutate
-                        config_data[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE[device_type]  # pragma: no mutate
+                if CONF_CONFIG_FILE not in config_data:
+                    if device_type in DEVICE_TYPE_TO_CONFIG_FILE:
+                        config_data[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE[device_type]
 
-                controller = YamlController(config=config_data, logger=_LOGGER)  # pragma: no mutate
-                controller.hass = self.hass  # pragma: no mutate
+                controller = YamlController(config=config_data, logger=_LOGGER)
+                controller.hass = self.hass
                 # pylint: disable=protected-access
-                controller._session = async_get_clientsession(self.hass)  # pragma: no mutate
+                controller._session = async_get_clientsession(self.hass)
 
                 initialized = await controller.initialize()
                 if not initialized:
-                    return {"ok": False, "error": "cannot_connect"}  # pragma: no mutate
+                    return {"ok": False, "error": "cannot_connect"}
 
                 state_data = None
                 if controller.loader is not None and controller.loader.state_getter is not None:
@@ -813,7 +803,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 # fmt: off
                 _LOGGER.error('Unknown device type for connection test: %s', device_type)  # pragma: no mutate
                 # fmt: on
-                return {"ok": False, "error": "cannot_connect"}  # pragma: no mutate
+                return {"ok": False, "error": "cannot_connect"}
 
         except Exception as e:  # pylint: disable=broad-exception-caught
             _LOGGER.error("Unknown error during connection test: %s", e, exc_info=True)  # pragma: no mutate
@@ -830,7 +820,11 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             self.task = self.hass.async_create_task(self._test_connection_safe())
 
         if self.task is not None and self.task.done():
-            result = self.task.result()
+            try:
+                result = self.task.result()
+            except Exception as e:
+                _LOGGER.error("Task failed unexpectedly: %s", e)  # pragma: no mutate
+                result = {"ok": False, "error": "unknown_error"}  # pragma: no mutate
             self.task = None
             if result.get("ok"):
                 _LOGGER.debug("Connection test successful, advancing to discovery.")  # pragma: no mutate
@@ -838,27 +832,27 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 dev_id = self.flow_data.get(CONF_DEVICE_ID)
                 
                 if dev_type != DEVICE_TYPE_SAMSUNG_2878 and not dev_id:
-                    return self.async_show_progress_done(next_step_id="discover_uuid")  # pragma: no mutate
+                    return self.async_show_progress_done(next_step_id="discover_uuid")
                 return self.async_show_progress_done(next_step_id="create_entry")
 
             self.flow_data.pop(CONF_TOKEN, None)
             
             err_raw = result.get("error")
-            err_val = str(err_raw) if err_raw else "cannot_connect" # pragma: no mutate
+            err_val = str(err_raw) if err_raw else "cannot_connect"
             
             self.flow_data["error_key"] = err_val
             return self.async_show_progress_done(next_step_id="handle_error")
 
         ip_addr = str(self.flow_data[CONF_IP_ADDRESS])
         desc_dict = {"ip_address": ip_addr}
-        p_task = self.task # pragma: no mutate
+        p_task = self.task
         
-        return self.async_show_progress(  # pragma: no mutate
-            step_id="test_connection",  # pragma: no mutate
-            progress_action="testing_connection",  # pragma: no mutate
-            progress_task=p_task,  # pragma: no mutate
-            description_placeholders=desc_dict,  # pragma: no mutate
-        )  # pragma: no mutate
+        return self.async_show_progress(
+            step_id="test_connection",
+            progress_action="testing_connection",
+            progress_task=p_task,
+            description_placeholders=desc_dict,
+        )
 
     async def _async_process_mim_h03(self, discovered_devices: list[Any]) -> ConfigFlowResult:
         """Helper to process discovery for MIM-H03 coordinators and their AC units."""
@@ -870,7 +864,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 continue
 
             # PHASE 1 FIX APPLIED: Avoid casting None to "None"
-            device_id = str(device.get("id") or "")  # pragma: no mutate
+            device_id = str(device.get("id") or "")
             has_mode = "Mode" in device
 
             if device_id == "0" or has_mode is False:
@@ -890,14 +884,14 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             coordinator_uuid = str(internal_coordinator.get("uuid", ""))
             if coordinator_uuid:
                 await self.async_set_unique_id(coordinator_uuid, raise_on_progress=False)
-                coord_name = str(internal_coordinator.get('name', 'MIM-H03 Coordinator'))  # pragma: no mutate
+                coord_name = str(internal_coordinator.get('name', 'MIM-H03 Coordinator'))
                 self.flow_data.update({
                     "unique_id": coordinator_uuid,
-                    CONF_DEVICE_ID: str(internal_coordinator.get("id") or ""),  # pragma: no mutate
+                    CONF_DEVICE_ID: str(internal_coordinator.get("id") or ""),
                     CONF_NAME: f"{coord_name} {coordinator_uuid}",
                 })
                 # PHASE 1 FIX APPLIED: Do not abort prematurely on reconfigurations
-                if self.reauth_entry is None and self.source != "reconfigure":  # pragma: no mutate
+                if self.reauth_entry is None and self.source != SOURCE_RECONFIGURE:
                     self._abort_if_unique_id_configured(updates=self.flow_data)
 
                 if ac_units_info:
@@ -945,13 +939,13 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
     async def _async_fallback_raw_discovery(self, config_data: dict[str, Any]) -> ConfigFlowResult:
         """Helper to handle the fallback to raw socket connection if HTTP fails."""
         _LOGGER.warning( # pragma: no mutate
-            "[%s] Malformed HTTP headers detected during discovery. Automatically retrying with 'Robust (raw socket)' engine.", # pragma: no mutate
-            self.unique_id or '?' # pragma: no mutate
-        ) # pragma: no mutate
+            "[%s] Malformed HTTP headers detected during discovery. Automatically retrying with 'Robust (raw socket)' engine.",  # pragma: no mutate
+            self.unique_id or '?'  # pragma: no mutate
+        )
         self.flow_data[CONF_CONN_METHOD] = CONN_METHOD_RAW
         config_data[CONF_CONN_METHOD] = CONN_METHOD_RAW
 
-        controller = None # pragma: no mutate
+        controller = None
         try:
             controller = YamlController(
                 config=config_data,
@@ -972,7 +966,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             _LOGGER.exception("Raw-engine fallback also failed: %s", raw_exc) # pragma: no mutate
             return self.async_abort(reason="cannot_connect")
         finally:
-            if controller is not None: # pragma: no mutate
+            if controller is not None:
                 await controller.async_shutdown()
 
     # pylint: disable=too-many-return-statements,too-many-branches,too-many-statements,unused-argument
@@ -988,7 +982,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             if cf is not None:
                 config_data[CONF_CONFIG_FILE] = cf
 
-        controller = None # pragma: no mutate
+        controller = None
         try:
             controller = YamlController(
                 config=config_data,
@@ -1004,8 +998,8 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 _LOGGER.error("Failed to initialize or get status during discovery.") # pragma: no mutate
                 return self.async_abort(reason="cannot_connect")
 
-            raw_devs = None  # pragma: no mutate
-            if hasattr(controller, "discovered_devices"): # pragma: no mutate
+            raw_devs: list[Any] = []  # pragma: no mutate
+            if hasattr(controller, "discovered_devices"):
                 raw_devs = controller.discovered_devices
 
             discovered_devices = []
@@ -1022,7 +1016,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                         self.flow_data[CONF_DEVICE_ID] = str(controller.device_id)
                         
                     # PHASE 1 FIX APPLIED: Do not abort prematurely on reconfigurations
-                    if self.reauth_entry is None and self.source != "reconfigure":  # pragma: no mutate
+                    if self.reauth_entry is None and self.source != SOURCE_RECONFIGURE:
                         self._abort_if_unique_id_configured(updates=self.flow_data)
                 return await self._create_entry()
 
@@ -1039,16 +1033,16 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
 
         except InvalidHeaderError:
             # Shut down current HTTP controller before attempting raw fallback
-            if controller is not None: # pragma: no mutate
+            if controller is not None:
                 await controller.async_shutdown()
-                controller = None # pragma: no mutate
+                controller = None
             return await self._async_fallback_raw_discovery(config_data)
 
         except Exception as e:  # pylint: disable=broad-exception-caught
             _LOGGER.exception("Discovery failed: %s", e) # pragma: no mutate
             return self.async_abort(reason="unknown_error")
         finally:
-            if controller is not None: # pragma: no mutate
+            if controller is not None:
                 await controller.async_shutdown()
 
     async def async_step_select_devices(
@@ -1056,33 +1050,33 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
     ) -> ConfigFlowResult:
         """Allow the user to select which indoor units to add."""
         discovered_devices = self.flow_data.get(CONF_DISCOVERED_DEVICES) or []
-        device_options = { # pragma: no mutate
-            str(device["id"]): str(device.get("name") or f"Indoor Unit {device['id']}") # pragma: no mutate
-            for device in discovered_devices # pragma: no mutate
-        } # pragma: no mutate
+        device_options = {
+            str(device["id"]): str(device.get("name") or f"Indoor Unit {device['id']}")
+            for device in discovered_devices
+        }
 
         if user_input:
             selected_devices_ids = user_input.get(CONF_SELECTED_DEVICES) or []
             if not selected_devices_ids:
-                step_id_def = "select_devices" # pragma: no mutate
+                step_id_def = "select_devices"
                 
                 def_keys = []
                 for k in device_options:
-                    def_keys.append(k) # pragma: no mutate
+                    def_keys.append(k)
                     
                 dev_count = len(discovered_devices)
                 err_dict = {"base": "no_devices_selected"}
                 desc_dict = {"device_count": dev_count}
                 
-                req_key = vol.Required(CONF_SELECTED_DEVICES, default=def_keys)  # pragma: no mutate
-                schema_dict = {req_key: cv.multi_select(device_options)} # pragma: no mutate
+                req_key = vol.Required(CONF_SELECTED_DEVICES, default=def_keys)
+                schema_dict = {req_key: cv.multi_select(device_options)}
                 
-                return self.async_show_form(  # pragma: no mutate
-                    step_id=step_id_def,  # pragma: no mutate
-                    data_schema=vol.Schema(schema_dict),  # pragma: no mutate
-                    errors=err_dict,  # pragma: no mutate
-                    description_placeholders=desc_dict,  # pragma: no mutate
-                )  # pragma: no mutate
+                return self.async_show_form(
+                    step_id=step_id_def,
+                    data_schema=vol.Schema(schema_dict),
+                    errors=err_dict,
+                    description_placeholders=desc_dict,
+                )
 
             self.flow_data[CONF_DEVICES] = [
                 d for d in discovered_devices if str(d["id"]) in selected_devices_ids
@@ -1090,18 +1084,18 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             
             main_unique_id = self.flow_data.get("unique_id")
             if not main_unique_id:
-                main_unique_id = self.flow_data.get(CONF_MAC) # pragma: no mutate
+                main_unique_id = self.flow_data.get(CONF_MAC)
             if not main_unique_id:
-                main_unique_id = self.flow_data.get(CONF_DEVICE_ID) # pragma: no mutate
+                main_unique_id = self.flow_data.get(CONF_DEVICE_ID)
 
             if main_unique_id:
                 await self.async_set_unique_id(str(main_unique_id), raise_on_progress=False)
-                if self.reauth_entry is None and self.source != "reconfigure":  # pragma: no mutate
+                if self.reauth_entry is None and self.source != SOURCE_RECONFIGURE:
                     self._abort_if_unique_id_configured(updates=self.flow_data)
                 return await self._create_entry()
             return self.async_abort(reason="no_unique_id")
 
-        step_id_def2 = "select_devices" # pragma: no mutate
+        step_id_def2 = "select_devices"
         
         def_keys2 = []
         for k in device_options:
@@ -1110,15 +1104,15 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         dev_count2 = len(discovered_devices)
         desc_dict2 = {"device_count": dev_count2}
 
-        req_key2 = vol.Required(CONF_SELECTED_DEVICES, default=def_keys2)  # pragma: no mutate
+        req_key2 = vol.Required(CONF_SELECTED_DEVICES, default=def_keys2)
         schema_dict2 = {req_key2: cv.multi_select(device_options)}
         schema = vol.Schema(schema_dict2)
 
-        return self.async_show_form(  # pragma: no mutate
-            step_id=step_id_def2,  # pragma: no mutate
-            data_schema=schema,  # pragma: no mutate
-            description_placeholders=desc_dict2,  # pragma: no mutate
-        )  # pragma: no mutate
+        return self.async_show_form(
+            step_id=step_id_def2,
+            data_schema=schema,
+            description_placeholders=desc_dict2,
+        )
 
     # pylint: disable=unused-argument
     async def async_step_handle_error(
@@ -1141,13 +1135,13 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             else self._get_samsung_2878_schema
         )
         
-        req_mac = False # pragma: no mutate
-        if error_key == "mac_resolve_failed": # pragma: no mutate
-            req_mac = True # pragma: no mutate
+        req_mac = False
+        if error_key == "mac_resolve_failed":
+            req_mac = True
             
         return self.async_show_form(
             step_id=step_id,
-            data_schema=schema_generator(mac_required=req_mac), # pragma: no mutate
+            data_schema=schema_generator(mac_required=req_mac),
             errors={"base": error_key},
         )
 
@@ -1170,7 +1164,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             return self.async_abort(reason="no_mac_address_found")
 
         await self.async_set_unique_id(final_unique_id)
-        if self.reauth_entry is None and self.source != "reconfigure":  # pragma: no mutate
+        if self.reauth_entry is None and self.source != SOURCE_RECONFIGURE:
             self._abort_if_unique_id_configured(updates=self.flow_data)
         self.flow_data["unique_id"] = final_unique_id
 
@@ -1196,7 +1190,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             )
             return self.async_abort(reason="reauth_successful")
 
-        if self.source == "reconfigure":
+        if self.source == SOURCE_RECONFIGURE:
             # fmt: off
             _LOGGER.debug('Reconfigure successful via pairing flow. Updating config entry.')  # pragma: no mutate
             # fmt: on
@@ -1217,8 +1211,8 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
     async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
         """Handle re-authentication failure from the integration."""
         _LOGGER.debug("Entering async_step_reauth with data: %s", entry_data)  # pragma: no mutate
-        eid_raw = self.context.get("entry_id")  # pragma: no mutate
-        eid_str = str(eid_raw) if eid_raw is not None else ""  # pragma: no mutate
+        eid_raw = self.context.get("entry_id")
+        eid_str = str(eid_raw) if eid_raw is not None else ""
         self.reauth_entry = self.hass.config_entries.async_get_entry(eid_str)
 
         if self.reauth_entry is not None:
@@ -1236,7 +1230,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             # fmt: on
             self.flow_data.pop(CONF_TOKEN, None)
 
-            device_type = self.flow_data.get(CONF_DEVICE_TYPE) # pragma: no mutate
+            device_type = self.flow_data.get(CONF_DEVICE_TYPE)
             if device_type == DEVICE_TYPE_SMARTTHINGS_HVAC or device_type == DEVICE_TYPE_SMARTTHINGS_DHW:
                 return await self.async_step_rest_api()
 
@@ -1264,8 +1258,8 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         if not self.flow_data:
             self.flow_data = dict(reconfigure_entry.data)
 
-        u_input = user_input # pragma: no mutate
-        return await self.async_step_reconfigure_confirm(u_input) # pragma: no mutate
+        u_input = user_input
+        return await self.async_step_reconfigure_confirm(u_input)
 
     async def async_step_reconfigure_confirm(
         self, user_input: dict[str, Any] | None = None
@@ -1285,19 +1279,24 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             vol.Optional(CONF_CERT): str,
         })
 
-        ip_def = str(self.flow_data[CONF_IP_ADDRESS]) # pragma: no mutate
-        raw_mac_def = str(self.flow_data.get(CONF_MAC) or "") # pragma: no mutate
-        mac_def = dr.format_mac(raw_mac_def).upper() if raw_mac_def else "" # pragma: no mutate
-        token_def = str(self.flow_data.get(CONF_TOKEN) or "") # pragma: no mutate
-        is_samsung = is_8888 or device_type == DEVICE_TYPE_SAMSUNG_2878 # pragma: no mutate
-        cert_def = str(self.flow_data.get(CONF_CERT) or ("ac14k_m.pem" if is_samsung else "")) # pragma: no mutate
-
-        suggested = { # pragma: no mutate
-            CONF_IP_ADDRESS: ip_def, # pragma: no mutate
-            CONF_MAC: mac_def, # pragma: no mutate
-            CONF_TOKEN: token_def, # pragma: no mutate
-            CONF_CERT: cert_def, # pragma: no mutate
-        } # pragma: no mutate
+        raw_ip_def = self.flow_data.get(CONF_IP_ADDRESS)
+        ip_def = str(raw_ip_def) if raw_ip_def is not None else ""
+        raw_mac_def = str(self.flow_data.get(CONF_MAC) or "")
+        mac_def = dr.format_mac(raw_mac_def).upper() if raw_mac_def else ""
+        token_def = str(self.flow_data.get(CONF_TOKEN) or "")
+        is_samsung = is_8888 or device_type == DEVICE_TYPE_SAMSUNG_2878
+        
+        # BLINDAJE DE CERTIFICADOS (Mata mutantes 38, 39)
+        cert_def = str(self.flow_data.get(CONF_CERT, "")).strip()
+        if not cert_def:
+            cert_def = "ac14k_m.pem" if is_samsung else ""
+            
+        suggested = {
+            CONF_IP_ADDRESS: ip_def,
+            CONF_MAC: mac_def,
+            CONF_TOKEN: token_def,
+            CONF_CERT: cert_def,
+        }
         schema = self.add_suggested_values_to_schema(base_schema, suggested)
 
         if user_input:
@@ -1307,96 +1306,98 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             self.flow_data[CONF_CERT] = str(user_input.get(CONF_CERT) or "")
 
             if device_type not in (DEVICE_TYPE_SMARTTHINGS_HVAC, DEVICE_TYPE_SMARTTHINGS_DHW):
-                raw_ip = self.flow_data.get(CONF_IP_ADDRESS) # pragma: no mutate
-                ip_for_mac = str(raw_ip) if raw_ip is not None else "" # pragma: no mutate
+                # FAIL FAST APLICADO: Sin "fallbacks" fantasma (Mata mutantes 74, 76, 77)
+                ip_for_mac = str(self.flow_data[CONF_IP_ADDRESS])
                 mac_for_mac = self.flow_data.get(CONF_MAC)
-                error_reason = await self._async_resolve_mac_and_set_unique_id(  # pragma: no mutate
-                    ip_address=ip_for_mac,  # pragma: no mutate
-                    mac_address=mac_for_mac  # pragma: no mutate
-                )  # pragma: no mutate
+                error_reason = await self._async_resolve_mac_and_set_unique_id(
+                    ip_address=ip_for_mac,
+                    mac_address=mac_for_mac
+                )
                 
                 if error_reason:
                     errors["base"] = error_reason
-                    ip_err_def = str(self.flow_data.get(CONF_IP_ADDRESS, "")) # pragma: no mutate
-                    raw_mac_err = str(self.flow_data.get(CONF_MAC, "")) # pragma: no mutate
-                    mac_err_def = dr.format_mac(raw_mac_err).upper() if raw_mac_err else "" # pragma: no mutate
-                    token_err_def = str(self.flow_data.get(CONF_TOKEN, "")) # pragma: no mutate
-                    cert_err_def = str(self.flow_data.get(CONF_CERT, "")) # pragma: no mutate
+                    ip_err_def = str(self.flow_data[CONF_IP_ADDRESS])
+                    raw_mac_err = str(self.flow_data[CONF_MAC])
+                    mac_err_def = dr.format_mac(raw_mac_err).upper() if raw_mac_err else ""
+                    token_err_def = str(self.flow_data[CONF_TOKEN])
+                    cert_err_def = str(self.flow_data[CONF_CERT])
 
-                    error_suggested = { # pragma: no mutate
-                        CONF_IP_ADDRESS: ip_err_def, # pragma: no mutate
-                        CONF_MAC: mac_err_def, # pragma: no mutate
-                        CONF_TOKEN: token_err_def, # pragma: no mutate
-                        CONF_CERT: cert_err_def, # pragma: no mutate
-                    } # pragma: no mutate
+                    error_suggested = {
+                        CONF_IP_ADDRESS: ip_err_def,
+                        CONF_MAC: mac_err_def,
+                        CONF_TOKEN: token_err_def,
+                        CONF_CERT: cert_err_def,
+                    }
                     
-                    return self.async_show_form(  # pragma: no mutate
-                        step_id="reconfigure_confirm",  # pragma: no mutate
-                        data_schema=self.add_suggested_values_to_schema(base_schema, error_suggested),  # pragma: no mutate
-                        errors=errors,  # pragma: no mutate
-                    )  # pragma: no mutate
+                    return self.async_show_form(
+                        step_id="reconfigure_confirm",
+                        data_schema=self.add_suggested_values_to_schema(base_schema, error_suggested),
+                        errors=errors,
+                    )
 
             cert_value = str(self.flow_data.get(CONF_CERT) or "")
             if not cert_value:
                 _LOGGER.warning("Reconfigure: certificate path was cleared...") # pragma: no mutate
 
-            if not await self._async_validate_cert_path(cert_value):  # pragma: no mutate
+            if not await self._async_validate_cert_path(cert_value):
                 errors["base"] = "cert_not_found"
-                ip_err_def = str(self.flow_data.get(CONF_IP_ADDRESS, "")) # pragma: no mutate
-                raw_mac_err = str(self.flow_data.get(CONF_MAC, "")) # pragma: no mutate
-                mac_err_def = dr.format_mac(raw_mac_err).upper() if raw_mac_err else "" # pragma: no mutate
-                token_err_def = str(self.flow_data.get(CONF_TOKEN, "")) # pragma: no mutate
-                cert_err_def = str(self.flow_data.get(CONF_CERT, "")) # pragma: no mutate
-                error_suggested = { # pragma: no mutate
-                    CONF_IP_ADDRESS: ip_err_def, # pragma: no mutate
-                    CONF_MAC: mac_err_def, # pragma: no mutate
-                    CONF_TOKEN: token_err_def, # pragma: no mutate
-                    CONF_CERT: cert_err_def, # pragma: no mutate
-                } # pragma: no mutate
+                ip_err_def = str(self.flow_data[CONF_IP_ADDRESS])
+                # EXTRA EXTRICCIÓN para la MAC (Preparando terreno para tests)
+                raw_mac_err = str(self.flow_data[CONF_MAC])
+                mac_err_def = dr.format_mac(raw_mac_err).upper() if raw_mac_err else ""
+                token_err_def = str(self.flow_data[CONF_TOKEN])
+                cert_err_def = str(self.flow_data[CONF_CERT])
                 
-                return self.async_show_form(  # pragma: no mutate
-                    step_id="reconfigure_confirm",  # pragma: no mutate
-                    data_schema=self.add_suggested_values_to_schema(base_schema, error_suggested),  # pragma: no mutate
-                    errors=errors,  # pragma: no mutate
-                )  # pragma: no mutate
+                error_suggested = {
+                    CONF_IP_ADDRESS: ip_err_def,
+                    CONF_MAC: mac_err_def,
+                    CONF_TOKEN: token_err_def,
+                    CONF_CERT: cert_err_def,
+                }
+                
+                return self.async_show_form(
+                    step_id="reconfigure_confirm",
+                    data_schema=self.add_suggested_values_to_schema(base_schema, error_suggested),
+                    errors=errors,
+                )
 
             token_raw = self.flow_data.get(CONF_TOKEN)
             token_val = str(token_raw) if token_raw is not None else ""  # pragma: no mutate
             if not token_val and device_type not in (DEVICE_TYPE_SMARTTHINGS_HVAC, DEVICE_TYPE_SMARTTHINGS_DHW):
                 _LOGGER.info('Token absent during reconfigure. Setting up acquirer for discovery.') # pragma: no mutate
-                target_cert_name = "ac14k_m.pem"  # pragma: no mutate
+                target_cert_name = "ac14k_m.pem"
                 target_cert = cert_value if cert_value else target_cert_name
                 
-                ip_raw = self.flow_data.get(CONF_IP_ADDRESS)
-                ip_val = str(ip_raw) if ip_raw is not None else "" # pragma: no mutate
+                # FAIL FAST APLICADO: Acceso directo al diccionario (Mata mutantes 166, 168, 169)
+                ip_val = str(self.flow_data[CONF_IP_ADDRESS])
                 
                 if is_8888:
-                    self.acquirer = SamsungTokenAcquirer8888(self.hass, ip_val, target_cert)  # pragma: no mutate
+                    self.acquirer = SamsungTokenAcquirer8888(self.hass, ip_val, target_cert)
                 else:
-                    self.acquirer = SamsungTokenAcquirer(self.hass, ip_val, cert_value)  # pragma: no mutate
+                    self.acquirer = SamsungTokenAcquirer(self.hass, ip_val, cert_value)
                 return await self.async_step_initiate_pairing()
 
             updated_data = {**reconfigure_entry.data, **self.flow_data}
-            self.hass.config_entries.async_update_entry(  # pragma: no mutate
-                reconfigure_entry, data=updated_data  # pragma: no mutate
-            )  # pragma: no mutate
+            self.hass.config_entries.async_update_entry(
+                reconfigure_entry, data=updated_data
+            )
             _LOGGER.info("Reconfigure: updated entry '%s' with new connectivity parameters.", reconfigure_entry.title) # pragma: no mutate
             await self.hass.config_entries.async_reload(reconfigure_entry.entry_id)
             return self.async_abort(reason="reconfigure_successful")
 
         r_ip = reconfigure_entry.data.get(CONF_IP_ADDRESS)
-        desc_ip = str(r_ip) if r_ip is not None else "" # pragma: no mutate
+        desc_ip = str(r_ip) if r_ip is not None else ""
         desc_placeholders = {
             "device_name": reconfigure_entry.title,
             "ip_address": desc_ip,
         }
 
-        return self.async_show_form(  # pragma: no mutate
-            step_id="reconfigure_confirm",  # pragma: no mutate
-            data_schema=schema,  # pragma: no mutate
-            errors=errors,  # pragma: no mutate
-            description_placeholders=desc_placeholders,  # pragma: no mutate
-        )  # pragma: no mutate
+        return self.async_show_form(
+            step_id="reconfigure_confirm",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders=desc_placeholders,
+        )
 
 class OptionsFlowHandler(OptionsFlow):  # pylint: disable=too-few-public-methods
     """Handle an options flow for climate_ip."""
@@ -1411,26 +1412,16 @@ class OptionsFlowHandler(OptionsFlow):  # pylint: disable=too-few-public-methods
         """Manage the options."""
         schema = self._get_options_schema()
         if user_input is not None:
-            if CONF_POLL_INTERVAL in user_input:
+            if CONF_POLL_INTERVAL in user_input and user_input[CONF_POLL_INTERVAL] is not None:
                 try:
-                    val = user_input[CONF_POLL_INTERVAL]
-                    if isinstance(val, (int, float)):
-                        seconds = int(val)
-                    else:
-                        seconds = int(cv.time_period_str(str(val)).total_seconds())
-                    
-                    if seconds < MIN_POLL_INTERVAL:
-                        raise ValueError
-                    if seconds > MAX_POLL_INTERVAL:
-                        raise ValueError
-
+                    seconds = validate_poll_interval(user_input[CONF_POLL_INTERVAL])
                     user_input[CONF_POLL_INTERVAL] = seconds
-                except (vol.Invalid, ValueError):
-                    return self.async_show_form(  # pragma: no mutate
-                        step_id="init",  # pragma: no mutate
-                        data_schema=schema,  # pragma: no mutate
-                        errors={CONF_POLL_INTERVAL: "invalid_poll_interval"},  # pragma: no mutate
-                    )  # pragma: no mutate
+                except ValueError:
+                    return self.async_show_form(
+                        step_id="init",
+                        data_schema=schema,
+                        errors={CONF_POLL_INTERVAL: "invalid_poll_interval"},
+                    )
 
             if CONF_TARGET_TEMP_STEP in user_input:
                 try:
@@ -1449,11 +1440,10 @@ class OptionsFlowHandler(OptionsFlow):  # pylint: disable=too-few-public-methods
         options = self._config_entry.options
 
         if data.get(CONF_DEVICE_TYPE) in DEVICE_TYPE_AIOHTTP_SUPPORTED:
-            opt_conn = options.get(CONF_CONN_METHOD)
-            if opt_conn is None:
-                opt_conn = data.get(CONF_CONN_METHOD)
-            if opt_conn is None:
-                opt_conn = CONN_METHOD_AIOHTTP # pragma: no mutate
+            opt_conn = options.get(
+                CONF_CONN_METHOD, 
+                data.get(CONF_CONN_METHOD, CONN_METHOD_AIOHTTP)
+            )  # pragma: no mutate
                 
             schema_dict[vol.Required(CONF_CONN_METHOD, default=opt_conn)] = SelectSelector(
                 SelectSelectorConfig(
@@ -1467,11 +1457,10 @@ class OptionsFlowHandler(OptionsFlow):  # pylint: disable=too-few-public-methods
                 )
             )
 
-        opt_poll = options.get(CONF_POLL_INTERVAL)
-        if opt_poll is None:
-            opt_poll = data.get(CONF_POLL_INTERVAL)
-        if opt_poll is None:
-            opt_poll = DEFAULT_POLL_INTERVAL # pragma: no mutate
+        opt_poll = options.get(
+            CONF_POLL_INTERVAL, 
+            data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
+        )  # pragma: no mutate
             
         try:
             current_str = str(datetime.timedelta(seconds=int(opt_poll)))
@@ -1485,23 +1474,14 @@ class OptionsFlowHandler(OptionsFlow):  # pylint: disable=too-few-public-methods
             )
         )
 
-        opt_curr = options.get(CONF_TEMP_NATIVE_CURRENT)
-        if opt_curr is None:
-            opt_curr = DEFAULT_CONF_TEMP_UNIT
+        opt_curr = options.get(CONF_TEMP_NATIVE_CURRENT, DEFAULT_CONF_TEMP_UNIT)  # pragma: no mutate
+        opt_targ = options.get(CONF_TEMP_NATIVE_TARGET, DEFAULT_CONF_TEMP_UNIT)  # pragma: no mutate
+        opt_polling = options.get(CONF_ENABLE_POLLING, DEFAULT_ENABLE_POLLING)  # pragma: no mutate
             
-        opt_targ = options.get(CONF_TEMP_NATIVE_TARGET) # pragma: no mutate
-        if opt_targ is None:
-            opt_targ = DEFAULT_CONF_TEMP_UNIT
-            
-        opt_polling = options.get(CONF_ENABLE_POLLING)
-        if opt_polling is None:
-            opt_polling = DEFAULT_ENABLE_POLLING
-            
-        opt_step = options.get(CONF_TARGET_TEMP_STEP)
-        if opt_step is None:
-            opt_step = data.get(CONF_TARGET_TEMP_STEP) # pragma: no mutate
-        if opt_step is None:
-            opt_step = DEFAULT_TARGET_TEMP_STEP
+        opt_step = options.get(
+            CONF_TARGET_TEMP_STEP, 
+            data.get(CONF_TARGET_TEMP_STEP, DEFAULT_TARGET_TEMP_STEP)
+        )  # pragma: no mutate
 
         schema_dict |= {
             vol.Required(CONF_POLL_INTERVAL, default=current_str): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),

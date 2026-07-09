@@ -11,18 +11,29 @@ def patch_mutmut():
         with open(main_py_path, 'r') as f:
             main_code = f.read()
         
-        target_main = "set_start_method('fork')"
-        replacement_main = "try:\n    set_start_method('fork')\nexcept RuntimeError:\n    pass"
+        target_main = 'mutmut._covered_lines = gather_coverage(PytestRunner(), list(walk_source_files()))'
+        replacement_main = 'mutmut._covered_lines = None'
         
         if target_main in main_code and replacement_main not in main_code:
             main_code = main_code.replace(target_main, replacement_main)
             with open(main_py_path, 'w') as f:
                 f.write(main_code)
-            print("✅ Parche aplicado a __main__.py (multiprocessing fix)")
+            print("✅ Parche 1 aplicado a __main__.py (multiprocessing fix)")
         else:
-            print("ℹ️ El parche en __main__.py ya estaba aplicado o no se encontró.")
+            print("ℹ️ El parche 1 en __main__.py ya estaba aplicado o no se encontró.")
 
-    # Parche 2: Evitar que se salten por completo las clases decoradas en file_mutation.py
+        target_main = "set_start_method('fork')"
+        replacement_main = 'try:\n    set_start_method("fork")\nexcept RuntimeError:\n    pass'
+        
+        if target_main in main_code and replacement_main not in main_code:
+            main_code = main_code.replace(target_main, replacement_main)
+            with open(main_py_path, 'w') as f:
+                f.write(main_code)
+            print("✅ Parche 2 aplicado a __main__.py (multiprocessing fix)")
+        else:
+            print("ℹ️ El parche 2 en __main__.py ya estaba aplicado o no se encontró.")
+
+    # Parche 3: Evitar que se salten por completo las clases decoradas en file_mutation.py
     file_mut_path = os.path.join(mutmut_dir, "file_mutation.py")
     if os.path.exists(file_mut_path):
         with open(file_mut_path, 'r') as f:
@@ -35,9 +46,9 @@ def patch_mutmut():
             file_mut_code = file_mut_code.replace(target_file_mut, replacement_file_mut)
             with open(file_mut_path, 'w') as f:
                 f.write(file_mut_code)
-            print("✅ Parche aplicado a file_mutation.py (decorators fix)")
+            print("✅ Parche 3 aplicado a file_mutation.py (decorators fix)")
         else:
-            print("ℹ️ El parche en file_mutation.py ya estaba aplicado o no se encontró.")
+            print("ℹ️ El parche 3 en file_mutation.py ya estaba aplicado o no se encontró.")
 
 if __name__ == "__main__":
     patch_mutmut()

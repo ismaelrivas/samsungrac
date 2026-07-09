@@ -9,7 +9,8 @@ import warnings
 
 import pytest
 
-
+from pathlib import Path
+sys.path.append(os.getcwd())
 
 
 # --- HIDE WARNINGS ---

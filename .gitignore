@@ -4,3 +4,15 @@ __pycache__/
 .mutmut-cache
 .coverage
 htmlcov/
+.env
+copias/
+mutants/
+*.db
+*.db-shm
+*.db-wal
+*.log
+*.log.*
+.storage/
+__pycache__/
+.cache/
+.pytest_cache/

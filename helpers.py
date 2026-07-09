@@ -450,3 +450,22 @@ async def async_get_mac_address(ip_address: str) -> str | None:
         _LOGGER.debug("Failed to resolve MAC address for %s via ARP: %s", ip_address, e)  # pragma: no mutate
 
     return None
+
+
+def validate_poll_interval(val: Any) -> int:
+    """Validate and convert poll interval to seconds."""
+    from homeassistant.helpers import config_validation as cv
+    from voluptuous.error import Invalid
+    from .const import MIN_POLL_INTERVAL, MAX_POLL_INTERVAL
+
+    try:
+        if isinstance(val, (int, float)):
+            seconds = int(val)
+        else:
+            seconds = int(cv.time_period_str(str(val)).total_seconds())
+    except Invalid as e:
+        raise ValueError(f"Invalid time format: {e}")
+        
+    if seconds < MIN_POLL_INTERVAL or seconds > MAX_POLL_INTERVAL:
+        raise ValueError(f"Interval must be between {MIN_POLL_INTERVAL} and {MAX_POLL_INTERVAL}")
+    return seconds

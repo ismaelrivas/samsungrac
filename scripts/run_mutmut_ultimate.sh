@@ -7,6 +7,7 @@ TARGET_FILE=${1:-custom_components/climate_ip/properties.py}
 
 echo "1. Limpiando TODO (incluyendo .coverage viejo y sandbox)..."
 rm -rf mutants/ .mutmut-cache .coverage custom_components/climate_ip/.coverage mutmut_processed.txt
+mkdir -p mutants/custom_components/climate_ip/tests
 
 echo "2. Iniciando mutmut run SIN archivo de cobertura en el fichero: $TARGET_FILE"
 echo "   (Mutmut correrá la suite completa para cada mutante, lo cual es más lento pero 100% seguro)."

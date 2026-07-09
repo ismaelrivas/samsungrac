@@ -58,7 +58,7 @@ async def test_successful_pairing_and_token(acquirer):
             assert config is not None
 
             # Verify writer was called with GetToken
-            from custom_components.climate_ip.token_acquirer import SamsungTokenAcquirer; print("HAS MUTANTS:", hasattr(SamsungTokenAcquirer, "xǁSamsungTokenAcquirerǁasync_initiate_pairing__mutmut_mutants")); mock_writer.write.assert_called_with(b'<Request Type="GetToken" />\r\n')
+            mock_writer.write.assert_called_with(b'<Request Type="GetToken" />\r\n')
 
             # Phase 2
             token = await acquirer.async_wait_for_token()

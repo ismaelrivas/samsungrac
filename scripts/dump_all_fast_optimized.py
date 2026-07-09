@@ -21,6 +21,7 @@ def main():
     for line in lines:
         if 'survived' not in line:
             continue
+        
         target = line.split()[0].replace(':', '')
         
         # Parse target into file_path, mut_id, and clean_target
@@ -33,7 +34,7 @@ def main():
             else:
                 file_path = parts[0].replace('.', '/') + '.py'
                 mut_id = target.split('__mutmut_')[-1]
-            clean_target = target.split(': survived')[0].strip().split('.')[-1]
+            clean_target = target.split(': survived')[0].replace(': survived', '').strip().split('.')[-1]
         elif ':' in target:
             file_path, mut_id = target.rsplit(':', 1)
             clean_target = f"__mutmut_{mut_id}"
