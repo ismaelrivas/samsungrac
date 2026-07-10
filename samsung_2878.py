@@ -178,13 +178,13 @@ class ConnectionSamsung2878(Connection):
                 _LOGGER.debug(
                     "%s Auto-linked push update callback from controller.",
                     self.log_prefix,
-                )
+                )  # pragma: no mutate
 
     def start_listening(self) -> None:
         """Start the background connection manager."""
         self._ensure_callback_linked()
         if self._manager_task is None or self._manager_task.done():
-            _LOGGER.info("%s Starting connection manager", self.log_prefix)
+            _LOGGER.info("%s Starting connection manager", self.log_prefix)  # pragma: no mutate
             self._reconnect_retries = 0
             self._manager_task = asyncio.create_task(self._connection_manager())
 
@@ -198,7 +198,7 @@ class ConnectionSamsung2878(Connection):
     async def stop_listening(self) -> None:
         """Stop the connection manager and close the connection."""
         if self._manager_task:
-            _LOGGER.info("%s Stopping connection manager", self.log_prefix)
+            _LOGGER.info("%s Stopping connection manager", self.log_prefix)  # pragma: no mutate
             self._manager_task.cancel()
             try:
                 await self._manager_task
@@ -234,7 +234,7 @@ class ConnectionSamsung2878(Connection):
                     "%s Resolving relative certificate path for 2878 connection: %s",
                     log_prefix,
                     cert_file,
-                )
+                )  # pragma: no mutate
                 cert_file = os.path.join(os.path.dirname(__file__), cert_file)
 
             raw_token, raw_ip, device_id = (
@@ -272,7 +272,7 @@ class ConnectionSamsung2878(Connection):
                 self.log_prefix,
                 stored.get("cert"),
                 stored.get("cipher_name"),
-            )
+            )  # pragma: no mutate
 
         if not self._last_successful_config and hass_config:
             pref_conn = hass_config.get("preferred_connection")
@@ -304,7 +304,7 @@ class ConnectionSamsung2878(Connection):
             _LOGGER.error(
                 "%s Missing 'connection_template' in YAML configuration",
                 self.log_prefix,
-            )
+            )  # pragma: no mutate
             return False
 
         if CONFIG_DEVICE_POWER_TEMPLATE in params_node:
@@ -315,13 +315,13 @@ class ConnectionSamsung2878(Connection):
         if not connection_base:
             # These are critical and should have been provided during setup.
             if not self._cfg.host:
-                _LOGGER.error("%s Missing 'host' parameter", self.log_prefix)
+                _LOGGER.error("%s Missing 'host' parameter", self.log_prefix)  # pragma: no mutate
                 return False
             if not self._cfg.token:
-                _LOGGER.error("%s Missing 'token' parameter", self.log_prefix)
+                _LOGGER.error("%s Missing 'token' parameter", self.log_prefix)  # pragma: no mutate
                 return False
             if not self._cfg.duid:
-                _LOGGER.error("%s Missing 'mac' parameter", self.log_prefix)
+                _LOGGER.error("%s Missing 'mac' parameter", self.log_prefix)  # pragma: no mutate
                 return False
 
         self._params.update(params_node)
@@ -383,7 +383,7 @@ class ConnectionSamsung2878(Connection):
             command = f'<Request Type="{PROTOCOL_2878_DEVICE_STATE}" DUID="{self._cfg.duid}"></Request>\n'
             _LOGGER.debug(
                 "%s Queuing post-reconnection status request", self.log_prefix
-            )
+            )  # pragma: no mutate
 
             future = asyncio.get_event_loop().create_future()
             await self._cmd_queue.put((command, future))
@@ -395,12 +395,12 @@ class ConnectionSamsung2878(Connection):
             _LOGGER.debug(
                 "%s Post-reconnection status request was processed successfully",
                 self.log_prefix,
-            )
+            )  # pragma: no mutate
 
         except TimeoutError:
             _LOGGER.warning(
                 "%s Post-reconnection status request timed out", self.log_prefix
-            )
+            )  # pragma: no mutate
             # If the future that timed out is still the pending one, clear it to unblock the manager.
             if self._pending_future and self._pending_future == future:
                 self._pending_future = None
@@ -410,14 +410,14 @@ class ConnectionSamsung2878(Connection):
                 self.log_prefix,
                 e,
                 exc_info=True,
-            )
+            )  # pragma: no mutate
 
     async def _close_connection(self) -> None:
         # Use a lock to ensure we don't close the connection multiple times concurrently
         if self._close_lock.locked():
             _LOGGER.debug(
                 "%s Connection close already in progress, waiting...", self.log_prefix
-            )
+            )  # pragma: no mutate
 
         async with self._close_lock:
             # Check if already closed to avoid redundant work and logs
@@ -428,7 +428,7 @@ class ConnectionSamsung2878(Connection):
 
             # Cancel pending read task to unblock manager
             if self._read_task and not self._read_task.done():
-                _LOGGER.debug("%s Cancelling pending read task", self.log_prefix)
+                _LOGGER.debug("%s Cancelling pending read task", self.log_prefix)  # pragma: no mutate
                 self._read_task.cancel()
                 try:
                     await self._read_task
@@ -437,7 +437,7 @@ class ConnectionSamsung2878(Connection):
             self._read_task = None
 
             if self._writer:
-                _LOGGER.debug("%s Closing connection", self.log_prefix)
+                _LOGGER.debug("%s Closing connection", self.log_prefix)  # pragma: no mutate
                 try:
                     self._writer.close()
                     try:
@@ -447,7 +447,7 @@ class ConnectionSamsung2878(Connection):
                         _LOGGER.warning(
                             "%s Timeout waiting for connection close, forcing reset",
                             self.log_prefix,
-                        )
+                        )  # pragma: no mutate
                 except (
                     ConnectionResetError,
                     ssl.SSLError,
@@ -458,7 +458,7 @@ class ConnectionSamsung2878(Connection):
                         "%s Ignoring error during connection close: %s",
                         self.log_prefix,
                         e,
-                    )
+                    )  # pragma: no mutate
             self._writer = self._reader = None
 
     async def _establish_connection_and_handshake(self) -> bool:
@@ -611,7 +611,7 @@ class ConnectionSamsung2878(Connection):
                         cipher[0],
                         verify_mode,
                         negotiated_tls,
-                    )
+                    )  # pragma: no mutate
 
                 # Memorize the successful configuration for future reconnections
                 self._last_successful_config = {
@@ -639,7 +639,7 @@ class ConnectionSamsung2878(Connection):
                     strategy_name,
                     cipher_name,
                     e,
-                )
+                )  # pragma: no mutate
                 last_error = e
                 await self._close_connection()
                 continue
@@ -649,7 +649,7 @@ class ConnectionSamsung2878(Connection):
                 "%s Could not connect to device (likely offline): %s",
                 self.log_prefix,
                 last_error,
-            )
+            )  # pragma: no mutate
             return False
 
         # If we are here, one of the attempts was successful at the socket level
@@ -669,7 +669,7 @@ class ConnectionSamsung2878(Connection):
                     _LOGGER.debug(
                         "%s Initial message was an update, calling update callback",
                         self.log_prefix,
-                    )
+                    )  # pragma: no mutate
                     self._track_task(self._update_callback(parsed_data))
 
         if not initial_msg or (
@@ -681,7 +681,7 @@ class ConnectionSamsung2878(Connection):
                 "%s Handshake failed: Did not receive expected initial message (DPLUG-1.6 or DRC-1.00 or InvalidateAccount). Got: %s",
                 self.log_prefix,
                 initial_msg,
-            )
+            )  # pragma: no mutate
             raise CannotConnect(
                 "Handshake failed: Did not receive expected initial message"
             )
@@ -690,7 +690,7 @@ class ConnectionSamsung2878(Connection):
             _LOGGER.error(
                 "%s Handshake failed: Connection initialization template is missing.",
                 self.log_prefix,
-            )
+            )  # pragma: no mutate
             raise CannotConnect(
                 "Handshake failed: Connection initialization template is missing."
             )
@@ -705,7 +705,7 @@ class ConnectionSamsung2878(Connection):
                 self.log_prefix,
                 err,
                 exc_info=True,
-            )
+            )  # pragma: no mutate
             raise CannotConnect(f"Template rendering failed: {err}") from err
         await self._write_data(auth_command)
 
@@ -718,14 +718,14 @@ class ConnectionSamsung2878(Connection):
                     _LOGGER.info(
                         "%s Device reported session collision (InvalidateAccount). Waiting for old session to timeout...",
                         self.log_prefix,
-                    )
+                    )  # pragma: no mutate
                     return False  # Trigger retry logic
 
                 if 'ErrorCode="301"' in auth_response:
                     _LOGGER.error(
                         "%s Authentication failed (ErrorCode 301). The device was likely turned off. Please ensure the device is ON before pairing",
                         self.log_prefix,
-                    )
+                    )  # pragma: no mutate
                     raise AuthError(
                         "Authentication failed: Device was turned off (301)"
                     )
@@ -739,19 +739,19 @@ class ConnectionSamsung2878(Connection):
                     self.log_prefix,
                     error_code,
                     auth_response,
-                )
+                )  # pragma: no mutate
                 raise AuthError("Authentication failed")
             raise AuthError("Authentication failed: No response from device")
 
-        _LOGGER.info("%s Connection ready", self.log_prefix)
+        _LOGGER.info("%s Connection ready", self.log_prefix)  # pragma: no mutate
         self._reconnect_delay = INITIAL_RECONNECT_DELAY
         self._reconnect_retries = 0
         self._is_ready.set()  # Signal that we are ready for commands
-        _LOGGER.debug("%s Connection is ready, _is_ready event set.", self.log_prefix)
+        _LOGGER.debug("%s Connection is ready, _is_ready event set.", self.log_prefix)  # pragma: no mutate
 
         # Stateful logging: Log when connection is re-established
         if not self._is_available:
-            _LOGGER.info("%s Connection re-established", self.log_prefix)
+            _LOGGER.info("%s Connection re-established", self.log_prefix)  # pragma: no mutate
             self._is_available = True
             self._persistent_offline_err_logged = False
             try:
@@ -765,7 +765,7 @@ class ConnectionSamsung2878(Connection):
                         f"{ISSUE_CONNECTION_FAILED}_{self._cfg.host}",
                     )
             except Exception as e:
-                _LOGGER.debug("%s Could not clear repair issue: %s", self.log_prefix, e)
+                _LOGGER.debug("%s Could not clear repair issue: %s", self.log_prefix, e)  # pragma: no mutate
 
         # Request a full status update only on reconnections, not on the very first connection.
         if self._initial_connection_done:
@@ -775,7 +775,7 @@ class ConnectionSamsung2878(Connection):
                 _LOGGER.info(
                     "%s Requesting immediate coordinator refresh after reconnection.",
                     self.log_prefix,
-                )
+                )  # pragma: no mutate
                 self._track_task(self._controller.request_refresh_callback())
 
         self._initial_connection_done = True
@@ -812,16 +812,16 @@ class ConnectionSamsung2878(Connection):
                 self.log_prefix,
                 timeout,
                 exc_info=True,
-            )
+            )  # pragma: no mutate
             return buffer.decode("utf-8", errors="ignore") if buffer else None
         except Exception as e:
-            _LOGGER.error("%s Error during read: %s", self.log_prefix, e, exc_info=True)
+            _LOGGER.error("%s Error during read: %s", self.log_prefix, e, exc_info=True)  # pragma: no mutate
             await self._close_connection()
             return None
 
     async def _write_data(self, data_str: str) -> bool:
         if not self._writer or self._writer.is_closing():
-            _LOGGER.error("%s Write failed: writer is not available", self.log_prefix)
+            _LOGGER.error("%s Write failed: writer is not available", self.log_prefix)  # pragma: no mutate
             raise CannotConnect("Connection is not available for writing")
         try:
             self._writer.write(data_str.encode("utf-8"))
@@ -831,7 +831,7 @@ class ConnectionSamsung2878(Connection):
         except (TimeoutError, OSError) as e:
             _LOGGER.error(
                 "%s Write failed: %s. Closing connection.", self.log_prefix, e
-            )
+            )  # pragma: no mutate
             await self._close_connection()
             raise CannotConnect(f"Failed to write to connection: {e}") from e
 
@@ -881,7 +881,7 @@ class ConnectionSamsung2878(Connection):
                     "%s Skipping non-XML fragment after '<?xml': %s",
                     self.log_prefix,
                     doc_part.strip(),
-                )
+                )  # pragma: no mutate
                 continue
             try:
 
@@ -924,7 +924,7 @@ class ConnectionSamsung2878(Connection):
                         _LOGGER.debug(
                             "%s Ignoring redundant 'Power On' push update",
                             self.log_prefix,
-                        )
+                        )  # pragma: no mutate
                         return False, False, None
 
                 for attr in attrs:
@@ -942,7 +942,7 @@ class ConnectionSamsung2878(Connection):
                     self.log_prefix,
                     e,
                     full_doc,
-                )
+                )  # pragma: no mutate
         return is_response, is_update, parsed_data
 
     async def _process_command_queue(self, queue_task: asyncio.Task) -> None:
@@ -958,7 +958,7 @@ class ConnectionSamsung2878(Connection):
             _LOGGER.debug(
                 "%s Command written, now waiting for response to resolve future",
                 self.log_prefix,
-            )
+            )  # pragma: no mutate
         except CannotConnect as e:
             if self._pending_future and not self._pending_future.done():
                 self._pending_future.set_exception(e)
@@ -976,14 +976,14 @@ class ConnectionSamsung2878(Connection):
             data = None
             is_cancelled = True
         except Exception as e:
-            _LOGGER.warning("%s Read task failed: %s", self.log_prefix, e)
+            _LOGGER.warning("%s Read task failed: %s", self.log_prefix, e)  # pragma: no mutate
             data = None
 
         if not data:
             if not is_cancelled:
-                _LOGGER.debug("%s Connection closed by device (EOF)", self.log_prefix)
+                _LOGGER.debug("%s Connection closed by device (EOF)", self.log_prefix)  # pragma: no mutate
             else:
-                _LOGGER.debug("%s Read task was cancelled", self.log_prefix)
+                _LOGGER.debug("%s Read task was cancelled", self.log_prefix)  # pragma: no mutate
 
             await self._close_connection()
             return None
@@ -1001,7 +1001,7 @@ class ConnectionSamsung2878(Connection):
             buffer = buffer[end_index:]
 
             xml_data = message.decode("utf-8", errors="ignore")
-            _LOGGER.debug("%s Received message: %s", self.log_prefix, xml_data.strip())
+            _LOGGER.debug("%s Received message: %s", self.log_prefix, xml_data.strip())  # pragma: no mutate
             is_response, is_update, parsed_data = await self._parse_and_update_state(
                 xml_data
             )
@@ -1045,12 +1045,12 @@ class ConnectionSamsung2878(Connection):
                     _LOGGER.debug(
                         "%s 'DeviceControl Okay' received, resolving pending command future",
                         self.log_prefix,
-                    )
+                    )  # pragma: no mutate
                 else:
                     _LOGGER.debug(
                         "%s Response/Update with data received, resolving pending command future",
                         self.log_prefix,
-                    )
+                    )  # pragma: no mutate
                 try:
                     if not self._pending_future.done():
                         self._pending_future.set_result(True)
@@ -1064,7 +1064,7 @@ class ConnectionSamsung2878(Connection):
                     "%s Calling update callback with data: %s",
                     self.log_prefix,
                     parsed_data,
-                )
+                )  # pragma: no mutate
                 self._track_task(self._update_callback(parsed_data))
             elif is_control_okay:
                 # This is just an acknowledgment. The device will send a separate <Update> push.
@@ -1073,7 +1073,7 @@ class ConnectionSamsung2878(Connection):
                 _LOGGER.debug(
                     "%s 'DeviceControl Okay' ack received. Waiting for subsequent push update.",
                     self.log_prefix,
-                )
+                )  # pragma: no mutate
 
         return buffer
 
@@ -1100,7 +1100,7 @@ class ConnectionSamsung2878(Connection):
             except Exception as e:
                 _LOGGER.debug(
                     "%s Failed to create repair issue: %s", self.log_prefix, e
-                )
+                )  # pragma: no mutate
 
     def _force_unavailability_if_needed(self, offline_type: str = "Network") -> None:
         """Force frontend unavailability if retries hit threshold."""
@@ -1111,13 +1111,13 @@ class ConnectionSamsung2878(Connection):
                         "%s AC %s is persistently offline during initial setup.",
                         self.log_prefix,
                         offline_type,
-                    )
+                    )  # pragma: no mutate
                 else:
                     _LOGGER.error(
                         "%s AC %s is persistently offline. Forcing frontend unavailability.",
                         self.log_prefix,
                         offline_type,
-                    )
+                    )  # pragma: no mutate
                     # Trigger the panic button callback to notify the coordinator immediately
                     if self._controller and hasattr(self._controller, "on_offline_callback") and self._controller.on_offline_callback:
                         self._controller.on_offline_callback("Host unreachable after multiple retry attempts.")
@@ -1125,7 +1125,7 @@ class ConnectionSamsung2878(Connection):
             else:
                 _LOGGER.debug(
                     "%s AC %s is persistently offline.", self.log_prefix, offline_type
-                )
+                )  # pragma: no mutate
 
             if hasattr(self._controller, "on_connection_failed_callback") and self._controller.on_connection_failed_callback:
                 self._controller.on_connection_failed_callback()
@@ -1136,12 +1136,12 @@ class ConnectionSamsung2878(Connection):
         if self._is_available:
             _LOGGER.info(
                 "%s Connection lost. Attempting to reconnect...", self.log_prefix
-            )
+            )  # pragma: no mutate
             self._is_available = False
         else:
             _LOGGER.debug(
                 "%s Connection is down. Attempting to reconnect...", self.log_prefix
-            )
+            )  # pragma: no mutate
 
         # Run network diagnostics on every reconnect attempt to aid troubleshooting.
         # Only attempt to open the TCP port if the ping succeeds to protect fragile ACs.
@@ -1151,7 +1151,7 @@ class ConnectionSamsung2878(Connection):
                 self._cfg.host or "", self.log_prefix
             )
         except Exception as diag_err:
-            _LOGGER.debug("%s Network diagnostic failed: %s", self.log_prefix, diag_err)
+            _LOGGER.debug("%s Network diagnostic failed: %s", self.log_prefix, diag_err)  # pragma: no mutate
 
         try:
             # If the network is reachable, attempt handshake. Otherwise, skip to retry to protect device.
@@ -1162,7 +1162,7 @@ class ConnectionSamsung2878(Connection):
                 _LOGGER.debug(
                     "%s Skipping port connection attempt because ICMP ping failed.",
                     self.log_prefix,
-                )
+                )  # pragma: no mutate
 
             # --- DUAL-SPEED BACKOFF LOGIC ---
             if not network_reachable:
@@ -1171,7 +1171,7 @@ class ConnectionSamsung2878(Connection):
                 _LOGGER.debug(
                     "%s Host unreachable. Retrying ping in 10 seconds...",
                     self.log_prefix,
-                )
+                )  # pragma: no mutate
                 self._reconnect_retries += 1
 
                 # Create a repair issue if the device is persistently offline
@@ -1189,7 +1189,7 @@ class ConnectionSamsung2878(Connection):
                     "%s Host unreachable. Retrying ping in %.1f seconds...",
                     self.log_prefix,
                     delay_to_use,
-                )
+                )  # pragma: no mutate
                 await asyncio.sleep(delay_to_use)
 
                 # Increment exponential backoff delay for the next attempt
@@ -1204,7 +1204,7 @@ class ConnectionSamsung2878(Connection):
                 _LOGGER.debug(
                     "%s Handshake returned False (or skipped). Proceeding to backoff logic.",
                     self.log_prefix,
-                )
+                )  # pragma: no mutate
                 self._reconnect_retries += 1
 
                 # Create a repair issue if the device is persistently offline
@@ -1219,7 +1219,7 @@ class ConnectionSamsung2878(Connection):
                     "%s Port connection failed. Backing off for %.1f seconds...",
                     self.log_prefix,
                     delay_with_jitter,
-                )
+                )  # pragma: no mutate
                 self._ssl_context_cache.clear()  # Force fresh SSL context on retry
                 await self._close_connection()
                 await asyncio.sleep(delay_with_jitter)
@@ -1247,7 +1247,7 @@ class ConnectionSamsung2878(Connection):
                 "%s Port connection error. Backing off for %.1f seconds...",
                 self.log_prefix,
                 delay_with_jitter,
-            )
+            )  # pragma: no mutate
             self._ssl_context_cache.clear()  # Force fresh SSL context on retry
             await self._close_connection()
             await asyncio.sleep(delay_with_jitter)
@@ -1277,7 +1277,7 @@ class ConnectionSamsung2878(Connection):
                         _LOGGER.warning(
                             "%s Reader object is missing, forcing reconnection.",
                             self.log_prefix,
-                        )
+                        )  # pragma: no mutate
                         await self._close_connection()
                         await self.handle_reconnection()
                         continue
@@ -1327,7 +1327,7 @@ class ConnectionSamsung2878(Connection):
                         self.log_prefix,
                         e,
                         exc_info=True,
-                    )
+                    )  # pragma: no mutate
                     if self._pending_future and not self._pending_future.done():
                         self._pending_future.set_exception(e)
                     self._pending_future = None
@@ -1336,7 +1336,7 @@ class ConnectionSamsung2878(Connection):
                     jitter = random.uniform(0, self._reconnect_delay * 0.2)
                     await asyncio.sleep(self._reconnect_delay + jitter)
         finally:
-            _LOGGER.debug("%s Connection manager exiting, cleaning up", self.log_prefix)
+            _LOGGER.debug("%s Connection manager exiting, cleaning up", self.log_prefix)  # pragma: no mutate
             if self._read_task and not self._read_task.done():
                 self._read_task.cancel()
             if queue_task and not queue_task.done():
@@ -1369,7 +1369,7 @@ class ConnectionSamsung2878(Connection):
             _LOGGER.debug(
                 "%s Connection manager not running during execute. Starting it now.",
                 self.log_prefix,
-            )
+            )  # pragma: no mutate
             self.start_listening()
 
         # If the connection is not ready and we haven't repeatedly failed, give it some extra margin
@@ -1379,14 +1379,14 @@ class ConnectionSamsung2878(Connection):
                 "%s Waiting up to %s seconds for background connection handshake...",
                 self.log_prefix,
                 COMMAND_TIMEOUT,
-            )
+            )  # pragma: no mutate
 
         # Fast-fail honesto: Si no estamos listos y ya hemos fallado antes, fallamos rápido para no colgar Home Assistant.
         if not self._is_ready.is_set() and self._reconnect_retries > 0:
              _LOGGER.debug(
                  "%s Connection is in retry backoff. Fast-failing command execution.",
                  self.log_prefix,
-             )
+             )  # pragma: no mutate
              raise CannotConnect("Client not ready")
 
         # Wait for the connection to be ready before proceeding.
@@ -1397,7 +1397,7 @@ class ConnectionSamsung2878(Connection):
             _LOGGER.warning(
                 "%s Timed out waiting for connection to be ready (device is likely offline).",
                 self.log_prefix,
-            )
+            )  # pragma: no mutate
             raise CannotConnect("Timeout waiting for connection") from e
 
         command = None
@@ -1414,21 +1414,21 @@ class ConnectionSamsung2878(Connection):
                 "%s Queuing async command: %s",
                 self.log_prefix,
                 mask_sensitive_data(command.strip().replace("\n", "")),
-            )
+            )  # pragma: no mutate
             future = asyncio.get_event_loop().create_future()
             await self._cmd_queue.put((command, future))
 
             try:
                 async with asyncio.timeout(COMMAND_TIMEOUT):
                     await future
-                _LOGGER.debug("%s Command executed successfully", self.log_prefix)
+                _LOGGER.debug("%s Command executed successfully", self.log_prefix)  # pragma: no mutate
 
             except TimeoutError as e:
                 _LOGGER.warning(
                     "%s Command timed out: %s",
                     self.log_prefix,
                     mask_sensitive_data(command.strip().replace("\n", "")),
-                )
+                )  # pragma: no mutate
 
                 # CRITICAL: If the command times out, we MUST clear the pending_future
                 # so the manager can accept new commands and not get stuck.
@@ -1436,7 +1436,7 @@ class ConnectionSamsung2878(Connection):
                     _LOGGER.debug(
                         "%s Command timed out. Clearing pending future to unblock manager.",
                         self.log_prefix,
-                    )
+                    )  # pragma: no mutate
                     self._pending_future = None
 
                 # CRITICAL FIX: Always force connection close on timeout.
@@ -1445,14 +1445,14 @@ class ConnectionSamsung2878(Connection):
                 _LOGGER.debug(
                     "%s Command timed out. Forcing connection close to trigger reconnect.",
                     self.log_prefix,
-                )
+                )  # pragma: no mutate
                 asyncio.create_task(self._close_connection())
 
                 raise CannotConnect("Command timed out") from e
             except Exception as e:
                 _LOGGER.error(
                     "%s Command failed with exception: %s", self.log_prefix, e
-                )
+                )  # pragma: no mutate
                 raise
 
         # Synchronously return the JSON state we just received.

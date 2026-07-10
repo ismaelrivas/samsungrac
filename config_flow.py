@@ -938,10 +938,10 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
 
     async def _async_fallback_raw_discovery(self, config_data: dict[str, Any]) -> ConfigFlowResult:
         """Helper to handle the fallback to raw socket connection if HTTP fails."""
-        _LOGGER.warning( # pragma: no mutate
+        _LOGGER.warning(
             "[%s] Malformed HTTP headers detected during discovery. Automatically retrying with 'Robust (raw socket)' engine.",  # pragma: no mutate
-            self.unique_id or '?'  # pragma: no mutate
-        )
+            self.unique_id or '?' 
+        )  # pragma: no mutate
         self.flow_data[CONF_CONN_METHOD] = CONN_METHOD_RAW
         config_data[CONF_CONN_METHOD] = CONN_METHOD_RAW
 

@@ -77,11 +77,12 @@ device:
     special: # special_mode
       type: modes
       values: 
-        'off': { value : 'Off' }
+        'none': { value : 'Off' }
         'Quiet': { value : 'Quiet' }
         'sleep': { value : 'Sleep' }
-        'smart': { value : 'Smart' }
+        'Smart': { value : 'Smart' }
         'comfort': { value : 'SoftCool' }
+        'boost': { value : 'TurboMode' }
         'wind1': { value : 'WindMode1' }
         'wind2': { value : 'WindMode2' }
         'wind3': { value : 'WindMode3' }
