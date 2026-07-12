@@ -137,7 +137,8 @@ echo ""
 # mutmut usa setup.cfg para su configuración (tests_dir, pytest_add_cli_args, etc.)
 # PYTHONPATH ya está exportado, por lo que mutmut lo hereda automáticamente.
 #PYTHONPATH="${WORKSPACE_ROOT}/mutants:${PYTHONPATH}" /workspaces/ha_data/.dev-tools/bin/python -m mutmut run || true   # "|| true" para continuar aunque haya mutantes sobrevivientes
-mutmut run
+#mutmut run
+PYTHONPATH=/workspaces/ha_data/config python -m mutmut run
 
 echo ""
 echo "📊 Resumen mutmut:"

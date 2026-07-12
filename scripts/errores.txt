@@ -1,0 +1,849 @@
+✅ Directorio de trabajo: /workspaces/ha_data/config
+✅ PYTHONPATH=/workspaces/ha_data/config
+
+🔍 Verificando importaciones...
+✅ Importaciones OK
+
+🎯 Fichero objetivo: custom_components/climate_ip/config_flow.py
+
+🧹 Limpiando artefactos anteriores...
+✅ Limpieza completa
+✅ .git anidado protegido en /tmp/climate_ip_git_backup_8140
+
+☢️  Iniciando mutmut run sobre: custom_components/climate_ip/config_flow.py
+   (La suite completa se ejecuta por cada mutante — proceso largo)
+
+⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants⠸ Generating mutants⠼ Generating mutants⠴ Generating mutants⠦ Generating mutants⠧ Generating mutants⠇ Generating mutants⠏ Generating mutants⠋ Generating mutants⠙ Generating mutants⠹ Generating mutants
+    done in 22045ms (1 files mutated, 0 ignored, 0 unmodified)
+⠙ Running stats     ⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠧ Running stats⠏ Running stats⠙ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠧ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠦ Running stats⠧ Running stats⠏ Running stats⠙ Running stats⠸ Running stats⠴ Running stats⠧ Running stats⠏ Running stats⠙ Running stats⠸ Running stats⠴ Running stats⠇ Running stats⠏ Running stats⠙ Running stats⠼ Running stats⠴ Running stats⠧ Running stats⠏ Running stats⠙ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠸ Running stats⠼ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠸ Running stats⠧ Running stats⠋ Running stats⠸ Running stats⠦ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠇ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠴ Running stats⠦ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠴ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠸ Running stats⠴ Running stats⠦ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠸ Running stats⠴ Running stats⠦ Running stats⠋ Running stats⠸ Running stats⠴ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠦ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠹ Running stats⠸ Running stats⠦ Running stats⠋ Running stats⠸ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠙ Running stats⠸ Running stats⠴ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠇ Running stats⠙ Running stats⠹ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠼ Running stats⠇ Running stats⠋ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠇ Running stats⠏ Running stats⠹ Running stats⠼ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠸ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠋ Running stats⠹ Running stats⠴ Running stats⠧ Running stats⠋ Running stats⠹ Running stats⠼ Running stats⠧ Running stats⠇ Running stats⠋ Running stats⠹ Running stats⠸ Running stats⠦ Running stats⠇ Running stats⠙ Running stats⠸ Running stats⠴ Running stats⠧ Running stats⠏ Running stats⠙ Running stats⠼ Running stats⠴ Running stats⠇ Running stats⠙ Running stats⠸ Running stats⠦ Running stats⠏ Running stats⠹ Running stats⠴ Running stats⠇ Running stats⠙ Running stats⠴ Running stats⠧ Running stats⠋ Running stats⠹ Running stats⠼ Running stats⠦ Running stats⠇ Running stats⠋ Running stats⠹ Running stats⠦ Running stats⠇ Running stats⠋ Running stats⠹ Running stats⠼ Running stats⠦ Running stats⠇ Running stats⠹ Running stats⠦ Running stats⠋ Running stats⠼ Running stats⠦ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠏ Running stats⠹ Running stats⠼ Running stats⠧ Running stats⠏ Running stats⠙ Running stats⠹ Running stats⠼ Running stats⠦ Running stats⠇ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠧ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠹ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠇ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠙ Running stats⠼ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠸ Running stats⠴ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠋ Running stats⠹ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠋ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠏ Running stats⠋ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠹ Running stats⠼ Running stats⠦ Running stats⠧ Running stats⠋ Running stats⠹ Running stats⠸ Running stats⠴ Running stats⠧ Running stats⠏ Running stats⠼ Running stats⠏ Running stats⠸ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠼ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠧ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠦ Running stats⠏ Running stats⠋ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠼ Running stats⠴ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠦ Running stats⠇ Running stats⠏ Running stats⠙ Running stats⠹ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠹ Running stats⠸ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠹ Running stats⠧ Running stats⠹ Running stats⠼ Running stats⠦ Running stats⠧ Running stats⠏ Running stats⠙ Running stats⠸ Running stats⠼ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠧ Running stats⠇ Running stats⠼ Running stats⠦ Running stats⠴ Running stats⠧ Running stats⠇ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠼ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats⠴ Running stats⠦ Running stats⠧ Running stats⠇ Running stats⠏ Running stats⠋ Running stats⠙ Running stats⠹ Running stats⠸ Running stats⠼ Running stats
+🔍 [EJECUTANDO PYTEST] sys.path[0]=/workspaces/ha_data/config/mutants
+..INFO:custom_components.climate_ip.config_flow:MAC discovered via ARP: 00:11:22:33:44:55
+.INFO:custom_components.climate_ip.config_flow:MAC discovered via ARP: 00:11:22:33:44:55
+.WARNING:custom_components.climate_ip.climate:<MagicMock name='mock.log_prefix' id='127459088289808'> Invalid temp step configured. Falling back to default.
+.WARNING:custom_components.climate_ip.climate:<MagicMock name='mock.log_prefix' id='127459101127216'> Invalid temp step configured. Falling back to default.
+...WARNING:custom_components.climate_ip.climate:[TEST] Invalid temp step configured. Falling back to default.
+.WARNING:custom_components.climate_ip.climate:<MagicMock name='mock.log_prefix' id='127459101127552'> Invalid temp step configured. Falling back to default.
+WARNING:custom_components.climate_ip.climate:[FLICKER] Requested fan mode 'low' is not available. Ignoring request.
+.....WARNING:custom_components.climate_ip.climate:<MagicMock name='mock.log_prefix' id='127459088295184'> Invalid temp step configured. Falling back to default.
+..WARNING:custom_components.climate_ip.climate:<MagicMock name='mock.log_prefix' id='127459101682592'> Invalid temp step configured. Falling back to default.
+.WARNING:custom_components.climate_ip.climate:<MagicMock name='mock.log_prefix' id='127459195100464'> Invalid temp step configured. Falling back to default.
+.WARNING:custom_components.climate_ip.climate:<MagicMock name='mock.log_prefix' id='127459101120160'> Invalid temp step configured. Falling back to default.
+.WARNING:custom_components.climate_ip.climate:<MagicMock name='mock.log_prefix' id='127459088288464'> Invalid temp step configured. Falling back to default.
+.WARNING:custom_components.climate_ip.climate:<MagicMock name='mock.log_prefix' id='127459101128896'> Invalid temp step configured. Falling back to default.
+.WARNING:custom_components.climate_ip.climate:<MagicMock name='mock.log_prefix' id='127459101117472'> Invalid temp step configured. Falling back to default.
+.WARNING:custom_components.climate_ip.climate:<MagicMock name='mock.log_prefix' id='127459101116464'> Invalid temp step configured. Falling back to default.
+.WARNING:custom_components.climate_ip.climate:<MagicMock name='mock.log_prefix' id='127459101129232'> Invalid temp step configured. Falling back to default.
+.WARNING:custom_components.climate_ip.climate:<MagicMock name='mock.log_prefix' id='127459101947424'> Invalid temp step configured. Falling back to default.
+.WARNING:custom_components.climate_ip.climate:<MagicMock name='mock.log_prefix' id='127459101938688'> Invalid temp step configured. Falling back to default.
+WARNING:custom_components.climate_ip.climate:<MagicMock name='mock.log_prefix' id='127459101938688'> set_property action called without a valid key.
+..ERROR:custom_components.climate_ip.climate:Device info missing for device unknown_device. Skipping entity creation to prevent orphan objects.
+.ERROR:custom_components.climate_ip.climate:Device info missing for device dev1. Skipping entity creation to prevent orphan objects.
+ERROR:custom_components.climate_ip.climate:No valid entities could be initialized from the provided coordinators.
+..WARNING:custom_components.climate_ip.climate:Configuration of 'climate_ip' via YAML is deprecated and will be removed in a future version. Your configuration has been automatically imported into the UI (Config Entries)
+.WARNING:custom_components.climate_ip.climate:Configuration of 'climate_ip' via YAML is deprecated and will be removed in a future version. Your configuration has been automatically imported into the UI (Config Entries)
+.WARNING:custom_components.climate_ip.climate:<MagicMock name='mock.log_prefix' id='127459101947760'> Invalid temp step configured. Falling back to default.
+.ERROR:custom_components.climate_ip.climate:Device info missing for device corrupt_device. Skipping entity creation to prevent orphan objects.
+.....INFO:custom_components.climate_ip.config_flow:Pairing initiation failed. Attempting automatic port fallback.
+INFO:custom_components.climate_ip.config_flow:Falling back from port 2878 to port 8888 topology.
+....WARNING:custom_components.climate_ip.config_flow:REST API connection test failed...
+...WARNING:custom_components.climate_ip.config_flow:Could not discover indoor units. Creating a single entry.
+...WARNING:custom_components.climate_ip.config_flow:Connection error during pairing initiation: Simulated failure
+..INFO:custom_components.climate_ip.config_flow:MAC auto-discovery failed. Requesting manual input.
+....WARNING:custom_components.climate_ip.config_flow:Reconfigure: certificate path was cleared...
+INFO:custom_components.climate_ip.config_flow:Token absent during reconfigure. Setting up acquirer for discovery.
+INFO:custom_components.climate_ip.config_flow:Successfully found working connection config, will save: <MagicMock name='mock.async_create_task().result().get()' id='127459101865168'>
+.WARNING:custom_components.climate_ip.config_flow:Reconfigure: certificate path was cleared...
+INFO:custom_components.climate_ip.config_flow:Token absent during reconfigure. Setting up acquirer for discovery.
+INFO:custom_components.climate_ip.config_flow:Successfully found working connection config, will save: <MagicMock name='mock.async_create_task().result().get()' id='127459101186704'>
+.WARNING:custom_components.climate_ip.config_flow:Reconfigure: certificate path was cleared...
+INFO:custom_components.climate_ip.config_flow:Reconfigure: updated entry 'Mock Title' with new connectivity parameters.
+.WARNING:custom_components.climate_ip.config_flow:Reconfigure: certificate path was cleared...
+INFO:custom_components.climate_ip.config_flow:Reconfigure: updated entry 'Mock Title' with new connectivity parameters.
+.WARNING:custom_components.climate_ip.config_flow:Reconfigure: certificate path was cleared...
+INFO:custom_components.climate_ip.config_flow:Token absent during reconfigure. Setting up acquirer for discovery.
+.DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:custom_components.climate_ip.config_flow:Initializing new Climate IP config flow handler.
+WARNING:custom_components.climate_ip.config_flow:Reconfigure: certificate path was cleared...
+.....INFO:custom_components.climate_ip.config_flow:MAC discovered via ARP: 11:22:33:44:55:66
+INFO:custom_components.climate_ip.config_flow:MAC discovered via ARP: 11:22:33:44:55:66
+INFO:custom_components.climate_ip.config_flow:MAC auto-discovery failed. Requesting manual input.
+.INFO:custom_components.climate_ip.config_flow:MAC discovered via ARP: aa:bb:cc:dd:ee:ff
+INFO:custom_components.climate_ip.config_flow:MAC discovered via ARP: aa:bb:cc:dd:ee:ff
+INFO:custom_components.climate_ip.config_flow:MAC discovered via ARP: aa:bb:cc:dd:ee:ff
+....... [  9%]
+.ERROR:custom_components.climate_ip.config_flow:Unexpected error during pairing: Generic Boom
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/config_flow.py", line 244, in _initiate_pairing_safe
+    successful_config = await self.acquirer.async_initiate_pairing()
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 2333, in _execute_mock_call
+    raise effect
+Exception: Generic Boom
+ERROR:custom_components.climate_ip.config_flow:Unknown error while waiting for token: Generic Boom
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/config_flow.py", line 263, in _wait_token_safe
+    token = await self.acquirer.async_wait_for_token()
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 2333, in _execute_mock_call
+    raise effect
+Exception: Generic Boom
+WARNING:custom_components.climate_ip.config_flow:Connection error during pairing initiation: Timeout
+WARNING:custom_components.climate_ip.config_flow:Token acquisition failed: Failed
+..WARNING:custom_components.climate_ip.helpers:Token rejected: contains unexpected characters. Expected alphanumeric/dash/underscore (8-128 chars). Got length=16, starts_with='malici'
+ERROR:custom_components.climate_ip.config_flow:Acquired token was rejected by sanitizer — aborting pairing. This may indicate a compromised or malformed AC response.
+.WARNING:custom_components.climate_ip.config_flow:Could not discover indoor units. Creating a single entry.
+WARNING:custom_components.climate_ip.config_flow:[?] Malformed HTTP headers detected during discovery. Automatically retrying with 'Robust (raw socket)' engine.
+WARNING:custom_components.climate_ip.config_flow:[?] Malformed HTTP headers detected during discovery. Automatically retrying with 'Robust (raw socket)' engine.
+ERROR:custom_components.climate_ip.config_flow:Failed to initialize with raw engine during discovery fallback.
+ERROR:custom_components.climate_ip.config_flow:Failed to initialize or get status during discovery.
+WARNING:custom_components.climate_ip.config_flow:[?] Malformed HTTP headers detected during discovery. Automatically retrying with 'Robust (raw socket)' engine.
+ERROR:custom_components.climate_ip.config_flow:Raw-engine fallback also failed: Fallback crash
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/config_flow.py", line 995, in async_step_discover_uuid
+    status_ok: bool = await controller.async_get_status()
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 2333, in _execute_mock_call
+    raise effect
+custom_components.climate_ip.exceptions.InvalidHeaderError: Test
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/config_flow.py", line 957, in _async_fallback_raw_discovery
+    init_fb = await controller.initialize()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 2342, in _execute_mock_call
+    raise result
+Exception: Fallback crash
+WARNING:custom_components.climate_ip.config_flow:Could not discover indoor units. Creating a single entry.
+ERROR:custom_components.climate_ip.config_flow:Discovery failed: Outer crash
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/config_flow.py", line 1021, in async_step_discover_uuid
+    return await self._create_entry()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 2333, in _execute_mock_call
+    raise effect
+Exception: Outer crash
+WARNING:custom_components.climate_ip.config_flow:Could not discover indoor units. Creating a single entry.
+..INFO:custom_components.climate_ip.config_flow:Successfully found working connection config, will save: some_config
+INFO:custom_components.climate_ip.config_flow:Pairing initiation failed. Attempting automatic port fallback.
+INFO:custom_components.climate_ip.config_flow:Falling back from port 2878 to port 8888 topology.
+INFO:custom_components.climate_ip.config_flow:Pairing initiation failed. Attempting automatic port fallback.
+INFO:custom_components.climate_ip.config_flow:Falling back from port 2878 to port 8888 topology.
+INFO:custom_components.climate_ip.config_flow:Pairing initiation failed. Attempting automatic port fallback.
+INFO:custom_components.climate_ip.config_flow:Falling back from port 8888 to port 2878 topology.
+.....ERROR:custom_components.climate_ip.config_flow:Task failed unexpectedly: Simulated crash
+.ERROR:custom_components.climate_ip.config_flow:Unknown error during connection test: 'ip_address'
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/config_flow.py", line 741, in _test_connection_safe
+    ip_address = str(self.flow_data[CONF_IP_ADDRESS])
+                     ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+KeyError: 'ip_address'
+ERROR:custom_components.climate_ip.config_flow:Unknown error during connection test: Catastrophic Core Failure
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/config_flow.py", line 745, in _test_connection_safe
+    session = async_get_clientsession(self.hass)
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 1241, in _execute_mock_call
+    raise effect
+Exception: Catastrophic Core Failure
+.....ERROR:custom_components.climate_ip.config_flow:YAML import failed: No MAC address provided.
+ERROR:custom_components.climate_ip.config_flow:YAML import failed: No MAC address provided.
+INFO:custom_components.climate_ip.config_flow:Creating new entry for 'Climate AABBCCDD' from imported YAML.
+INFO:custom_components.climate_ip.config_flow:Creating new entry for 'My Awesome AC' from imported YAML.
+....WARNING:custom_components.climate_ip.config_flow:Reconfigure: certificate path was cleared...
+INFO:custom_components.climate_ip.config_flow:Reconfigure: updated entry 'Mock Title' with new connectivity parameters.
+.ERROR:custom_components.climate_ip.config_flow:Unexpected error during connection test
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/config_flow.py", line 565, in async_step_rest_api
+    async with session.get(url, headers=headers, timeout=GLOBAL_HTTP_TIMEOUT) as response:
+               ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/aiohttp/client.py", line 1521, in __aenter__
+    self._resp: _RetType = await self._coro
+                           ^^^^^^^^^^^^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/aiohttp/client.py", line 788, in _request
+    resp = await handler(req)
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/aiohttp/client_middlewares.py", line 36, in single_middleware_handler
+    return await middleware(req, handler)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/homeassistant/helpers/aiohttp_client.py", line 72, in _ssrf_redirect_middleware
+    resp = await handler(request)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/aiohttp/client.py", line 742, in _connect_and_send_request
+    conn = await self._connector.connect(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        req, traces=traces, timeout=real_timeout
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/vscode/.local/lib/python3.14/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/aiohttp/connector.py", line 1251, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/aiohttp/connector.py", line 1574, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/aiohttp/connector.py", line 1190, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/aiohttp/connector.py", line 1221, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'MagicMock' object can't be awaited
+..ERROR:custom_components.climate_ip.config_flow:Unexpected error during connection test
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/config_flow.py", line 582, in async_step_rest_api
+    await self.async_set_unique_id(unique_id)
+  File "/home/vscode/.local/lib/python3.14/site-packages/homeassistant/config_entries.py", line 3088, in async_set_unique_id
+    self.context["unique_id"] = unique_id
+    ~~~~~~~~~~~~^^^^^^^^^^^^^
+TypeError: 'mappingproxy' object does not support item assignment
+...WARNING:custom_components.climate_ip.config_flow:Reconfigure: certificate path was cleared...
+INFO:custom_components.climate_ip.config_flow:Token absent during reconfigure. Setting up acquirer for discovery.
+.ERROR:custom_components.climate_ip.config_flow:REST API connection test failed...
+..WARNING:custom_components.climate_ip.config_flow:Reconfigure: certificate path was cleared...
+INFO:custom_components.climate_ip.config_flow:Token absent during reconfigure. Setting up acquirer for discovery.
+INFO:custom_components.climate_ip.config_flow:Successfully found working connection config, will save: <MagicMock name='mock.async_create_task().result().get()' id='127459194724640'>
+.INFO:custom_components.climate_ip.config_flow:Token absent during reconfigure. Setting up acquirer for discovery.
+INFO:custom_components.climate_ip.config_flow:Successfully found working connection config, will save: <MagicMock name='mock.async_create_task().result().get()' id='127459088301232'>
+.WARNING:custom_components.climate_ip.config_flow:REST API connection test failed...
+.ERROR:custom_components.climate_ip.config_flow:Acquired token was rejected by sanitizer — aborting pairing. This may indicate a compromised or malformed AC response.
+........ERROR:custom_components.climate_ip.config_flow:YAML import failed: Could not connect to device.
+.INFO:custom_components.climate_ip.config_flow:Creating new entry for 'Climate AABBCCDDEEFF' from imported YAML.
+...ERROR:custom_components.climate_ip.config_flow:REST API connection test failed...
+..WARNING:custom_components.climate_ip.config_flow:Reconfigure: certificate path was cleared...
+INFO:custom_components.climate_ip.config_flow:Token absent during reconfigure. Setting up acquirer for discovery.
+.WARNING:custom_components.climate_ip.config_flow:Reconfigure: certificate path was cleared...
+INFO:custom_components.climate_ip.config_flow:Token absent during reconfigure. Setting up acquirer for discovery.
+INFO:custom_components.climate_ip.config_flow:Successfully found working connection config, will save: <MagicMock name='mock.async_create_task().result().get()' id='127459194728336'>
+.WARNING:custom_components.climate_ip.config_flow:Reconfigure: certificate path was cleared...
+INFO:custom_components.climate_ip.config_flow:Reconfigure: updated entry 'Mock Title' with new connectivity parameters.
+.ERROR:custom_components.climate_ip.config_flow:Task failed unexpectedly: Fallo fatal en test_connection
+ERROR:custom_components.climate_ip.config_flow:Task failed unexpectedly: Fallo fatal en await_button
+ERROR:custom_components.climate_ip.config_flow:Task failed unexpectedly: Fallo fatal en initiate_pairing
+...WARNING:custom_components.climate_ip.config_flow:8888 connection test failed with status: 403
+.ERROR:custom_components.climate_ip.config_flow:Unknown device type for connection test: unknown_device_type_xyz
+.ERROR:custom_components.climate_ip.config_flow:REST API connection test failed...
+.ERROR:custom_components.climate_ip.config_flow:Unexpected error during connection test
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/config_flow.py", line 559, in async_step_rest_api
+    session = async_get_clientsession(self.hass)
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 1241, in _execute_mock_call
+    raise effect
+Exception: Red caída
+.......ERROR:custom_components.climate_ip.config_flow:Unexpected error during connection test
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/config_flow.py", line 582, in async_step_rest_api
+    await self.async_set_unique_id(unique_id)
+  File "/home/vscode/.local/lib/python3.14/site-packages/homeassistant/config_entries.py", line 3082, in async_set_unique_id
+    for flow in self._async_in_progress(
+                ~~~~~~~~~~~~~~~~~~~~~~~^
+        include_uninitialized=True, match_context={"unique_id": unique_id}
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/vscode/.local/lib/python3.14/site-packages/homeassistant/config_entries.py", line 3142, in _async_in_progress
+    for flw in self.hass.config_entries.flow.async_progress_by_handler(
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'config_entries'
+........INFO:custom_components.climate_ip.config_flow:Token absent during reconfigure. Setting up acquirer for discovery.
+. [ 19%]
+.INFO:custom_components.climate_ip.config_flow:Token absent during reconfigure. Setting up acquirer for discovery.
+.WARNING:custom_components.climate_ip.config_flow:Reconfigure: certificate path was cleared...
+INFO:custom_components.climate_ip.config_flow:Reconfigure: updated entry 'Living Room AC' with new connectivity parameters.
+..ERROR:custom_components.climate_ip.config_flow:Unexpected error during connection test
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/config_flow.py", line 582, in async_step_rest_api
+    await self.async_set_unique_id(unique_id)
+  File "/home/vscode/.local/lib/python3.14/site-packages/homeassistant/config_entries.py", line 3088, in async_set_unique_id
+    self.context["unique_id"] = unique_id
+    ~~~~~~~~~~~~^^^^^^^^^^^^^
+TypeError: 'mappingproxy' object does not support item assignment
+........WARNING:custom_components.climate_ip.config_flow:Reconfigure: certificate path was cleared...
+INFO:custom_components.climate_ip.config_flow:Token absent during reconfigure. Setting up acquirer for discovery.
+.ERROR:custom_components.climate_ip.config_flow:Task failed unexpectedly: Boom initiate
+ERROR:custom_components.climate_ip.config_flow:Task failed unexpectedly: Boom await
+ERROR:custom_components.climate_ip.config_flow:Task failed unexpectedly: Boom test_conn
+.ERROR:custom_components.climate_ip.config_flow:Unexpected error during connection test
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/config_flow.py", line 559, in async_step_rest_api
+    session = async_get_clientsession(self.hass)
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 1241, in _execute_mock_call
+    raise effect
+Exception: Boom
+.ERROR:custom_components.climate_ip.config_flow:REST API connection test failed...
+.....ERROR:custom_components.climate_ip.config_flow:Acquired token was rejected by sanitizer — aborting pairing. This may indicate a compromised or malformed AC response.
+..WARNING:custom_components.climate_ip.config_flow:[?] Malformed HTTP headers detected during discovery. Automatically retrying with 'Robust (raw socket)' engine.
+ERROR:custom_components.climate_ip.config_flow:Raw-engine fallback also failed: Boom
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/config_flow.py", line 950, in _async_fallback_raw_discovery
+    controller = YamlController(
+        config=config_data,
+    ...<2 lines>...
+        session=async_get_clientsession(self.hass),
+    )
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 1241, in _execute_mock_call
+    raise effect
+Exception: Boom
+.ERROR:custom_components.climate_ip.config_flow:Unknown error during connection test: 'MagicMock' object can't be awaited
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/config_flow.py", line 797, in _test_connection_safe
+    state_data = await controller.loader.state_getter.async_update_state(None, False)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'MagicMock' object can't be awaited
+.ERROR:custom_components.climate_ip.config_flow:Acquired token was rejected by sanitizer — aborting pairing. This may indicate a compromised or malformed AC response.
+...ERROR:custom_components.climate_ip.config_flow:Discovery failed: Constructor Crash
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/config_flow.py", line 987, in async_step_discover_uuid
+    controller = YamlController(
+        config=config_data,
+    ...<2 lines>...
+        session=async_get_clientsession(self.hass),
+    )
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 1241, in _execute_mock_call
+    raise effect
+Exception: Constructor Crash
+.........INFO:custom_components.climate_ip.config_flow:Pairing initiation failed. Attempting automatic port fallback.
+INFO:custom_components.climate_ip.config_flow:Falling back from port 2878 to port 8888 topology.
+...........ERROR:custom_components.climate_ip.connection_aiohttp:[192.168.1.100] [aiohttp] Authentication error (status 401). Token: test...oken
+.WARNING:custom_components.climate_ip.connection_aiohttp:[192.168.1.100] [aiohttp] Timeout/Error detected (Cannot connect to <MagicMock name='mock.host' id='127459104623984'>:<MagicMock name='mock.port' id='127459104633392'> (<MagicMock id='127459104621296'>)). The device likely violates HTTP protocol (missing Content-Length). Switching to 'Connection: close' mode for resilience.
+ERROR:custom_components.climate_ip.connection_aiohttp:[192.168.1.100] [aiohttp] Retry failed even with 'Connection: close': Cannot connect to host <MagicMock name='mock.host' id='127459104623984'>:<MagicMock name='mock.port' id='127459104633392'> ssl:<MagicMock name='mock.ssl' id='127459104630704'> [<MagicMock name='mock.strerror' id='127459104630032'>]
+...ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] aiohttp engine started without a token. This will fail.
+ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] aiohttp engine started without a token. This will fail.
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] aiohttp engine started without a token. This will fail.
+ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at /workspaces/ha_data/config/mutants/custom_components/climate_ip/cert.pem
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at /workspaces/ha_data/config/mutants/custom_components/climate_ip/cert.pem
+WARNING:custom_components.climate_ip.connection_aiohttp:[192.168.1.100] [aiohttp] Timeout/Error detected (Cannot connect to ?:? (Mocked Error)). The device likely violates HTTP protocol (missing Content-Length). Switching to 'Connection: close' mode for resilience.
+..ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+..WARNING:custom_components.climate_ip.helpers:Could not load Samsung certificate from '/workspaces/ha_data/config/mutants/custom_components/climate_ip/cert.pem': [Errno 2] No such file or directory
+ERROR:custom_components.climate_ip.connection_aiohttp:[192.168.1.100] [aiohttp] Failed to create SSL context: [Errno 2] No such file or directory.
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+WARNING:custom_components.climate_ip.connection_aiohttp:[1.1.1.1] [aiohttp] Timeout/Error detected (Cannot connect to ?:? (mock error)). The device likely violates HTTP protocol (missing Content-Length). Switching to 'Connection: close' mode for resilience.
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] aiohttp engine started without a token. This will fail.
+ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+. [ 28%]
+ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] aiohttp engine started without a token. This will fail.
+ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] aiohttp engine started without a token. This will fail.
+ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] aiohttp engine started without a token. This will fail.
+ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] aiohttp engine started without a token. This will fail.
+ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] aiohttp engine started without a token. This will fail.
+ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] aiohttp engine started without a token. This will fail.
+ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] aiohttp engine started without a token. This will fail.
+ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] aiohttp engine started without a token. This will fail.
+ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] aiohttp engine started without a token. This will fail.
+ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+WARNING:custom_components.climate_ip.connection_aiohttp:[10.0.0.1] [aiohttp] keep_alive=True but shared session is None. Falling back to a temporary local session. Ensure hass and session are passed to YamlController explicitly.
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+WARNING:custom_components.climate_ip.connection_aiohttp:[1.1.1.1] [async_execute] Embedded command found but it has no connection_template or params.
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+WARNING:custom_components.climate_ip.connection_aiohttp:[192.168.1.50] [aiohttp] keep_alive=True but shared session is None. Falling back to a temporary local session. Ensure hass and session are passed to YamlController explicitly.
+INFO:custom_components.climate_ip.connection_aiohttp:[192.168.1.50] [aiohttp] Connection successful. Status: 200. Negotiated TLS: Unknown
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+WARNING:custom_components.climate_ip.connection_aiohttp:[1.1.1.1] [aiohttp] keep_alive=True but shared session is None. Falling back to a temporary local session. Ensure hass and session are passed to YamlController explicitly.
+INFO:custom_components.climate_ip.connection_aiohttp:[1.1.1.1] [aiohttp] Connection successful. Status: 401. Negotiated TLS: Unknown
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+WARNING:custom_components.climate_ip.connection_aiohttp:[1.1.1.1] [aiohttp] keep_alive=True but shared session is None. Falling back to a temporary local session. Ensure hass and session are passed to YamlController explicitly.
+INFO:custom_components.climate_ip.connection_aiohttp:[1.1.1.1] [aiohttp] Connection successful. Status: 403. Negotiated TLS: Unknown
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+WARNING:custom_components.climate_ip.connection_aiohttp:[1.1.1.1] [aiohttp] keep_alive=True but shared session is None. Falling back to a temporary local session. Ensure hass and session are passed to YamlController explicitly.
+INFO:custom_components.climate_ip.connection_aiohttp:[1.1.1.1] [aiohttp] Connection successful. Status: 405. Negotiated TLS: Unknown
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+WARNING:custom_components.climate_ip.connection_aiohttp:<MagicMock name='mock.log_prefix' id='127459104628352'> [aiohttp] keep_alive=True but shared session is None. Falling back to a temporary local session. Ensure hass and session are passed to YamlController explicitly.
+INFO:custom_components.climate_ip.connection_aiohttp:<MagicMock name='mock.log_prefix' id='127459104628352'> [aiohttp] Connection successful and memorized. Status: 200
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+.....WARNING:custom_components.climate_ip.connection_aiohttp:[192.168.1.100] [async_execute] Embedded command found, but cannot check its condition (device_state is missing). Skipping.
+...WARNING:custom_components.climate_ip.connection_aiohttp:[192.168.1.100] [aiohttp] keep_alive=True but shared session is None. Falling back to a temporary local session. Ensure hass and session are passed to YamlController explicitly.
+ERROR:homeassistant:Error doing job: Unclosed client session (task: None)
+.WARNING:custom_components.climate_ip.connection_aiohttp:[192.168.1.100] [aiohttp] keep_alive=True but shared session is None. Falling back to a temporary local session. Ensure hass and session are passed to YamlController explicitly.
+ERROR:homeassistant:Error doing job: Unclosed client session (task: None)
+.ERROR:homeassistant:Error doing job: Unclosed client session (task: None)
+.ERROR:homeassistant:Error doing job: Unclosed client session (task: None)
+ERROR:homeassistant:Error doing job: Unclosed client session (task: None)
+.INFO:custom_components.climate_ip.connection_aiohttp:[192.168.1.100] [aiohttp] Connection successful and memorized. Status: 200
+.INFO:custom_components.climate_ip.connection_aiohttp:[192.168.1.100] [aiohttp] Connection successful and memorized. Status: 401
+..WARNING:custom_components.climate_ip.connection_aiohttp:[192.168.1.100] [aiohttp_probe] Device is unreachable (offline): Cannot connect to <MagicMock name='mock.host' id='127459101188048'>:<MagicMock name='mock.port' id='127459101186368'> (<MagicMock id='127458995545696'>)
+.ERROR:custom_components.climate_ip.connection_aiohttp:[192.168.1.100] [aiohttp_probe] Device protocol violation detected! The device accepted the connection (200 OK) but failed to send a complete response (Timeout/PayloadError: ). This indicates it does not support standard HTTP/1.1 (missing Content-Length). Switching to 'Robust (raw socket)' engine.
+.ERROR:custom_components.climate_ip.connection_aiohttp:[192.168.1.100] [aiohttp_probe] Malformed header error detected! The device does not comply with the HTTP standard. The integration will automatically switch to the 'Robust (raw socket)' connection engine.
+.WARNING:custom_components.climate_ip.connection_aiohttp:[192.168.1.100] [aiohttp_probe] Initial probe with HTTPS (mTLS) failed: Some generic error.
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/connection_aiohttp.py", line 286, in _try_connection
+    async with probe_session.request("GET", probe_url, headers=probe_headers, ssl=test_ssl_ctx, timeout=aiohttp.ClientTimeout(total=10, sock_read=5)) as response:  # type: ignore[arg-type] # pragma: no mutate
+               ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 1241, in _execute_mock_call
+    raise effect
+RuntimeError: Some generic error
+ERROR:custom_components.climate_ip.connection_aiohttp:[192.168.1.100] [aiohttp_probe] HTTPS (mTLS) connection probe failed. The device is unreachable or the certificate/token is incorrect.
+...............WARNING:custom_components.climate_ip.connection_raw:<MagicMock name='mock.log_prefix' id='127458995539648'> [RAW] Error closing embedded command: timeout
+ERROR:custom_components.climate_ip.connection_raw:<MagicMock name='mock.log_prefix' id='127458995539648'> [RAW] Error closing local client: timeout
+ERROR:custom_components.climate_ip.connection_raw:<MagicMock name='mock.log_prefix' id='127458995539648'> [RAW] Error closing shared client: timeout
+...WARNING:custom_components.climate_ip.connection_raw:[1.2.3.4] [async_execute] Embedded command failed due to connection error: emb err
+....ERROR:custom_components.climate_ip.connection_raw:<MagicMock name='mock.log_prefix' id='127459104631712'> [async_execute] Embedded command failed: Emb failed
+.. [ 38%]
+.....INFO:custom_components.climate_ip.connection_request:[NO_ID] [REQUESTS] Execute completed in 0.003 seconds (status code 200)
+.ERROR:custom_components.climate_ip.connection_request:[NO_ID] Authentication error: . Not retrying
+..........DEBUG:asyncio:Using selector: EpollSelector
+ERROR:custom_components.climate_ip.tests.test_controller_base:climate_ip: Configuration or data error while creating controller bomb_key: 'Detonated KeyError'
+ERROR:custom_components.climate_ip.tests.test_controller_base:climate_ip: Network error while initializing controller bomb_timeout: Detonated TimeoutError
+.DEBUG:asyncio:Using selector: EpollSelector
+ERROR:custom_components.climate_ip.tests.test_controller_base:Failed to initialize controller for type fail_init
+..........INFO:custom_components.climate_ip.controller_yaml:[:11:22] [Init] device_id was missing, fell back to unique_id: 00:11:22
+.......ERROR:custom_components.climate_ip.controller_yaml:[mac123] Cannot set property 'prop': controller not fully initialized
+ERROR:custom_components.climate_ip.controller_yaml:[mac123] Failed to set property 'missing_prop': property not found
+ERROR:custom_components.climate_ip.controller_yaml:[mac123] Setting property 'test_prop' with value 'val' failed
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/controller_yaml.py", line 252, in async_set_property
+    return await op.async_set_value(new_value, _device_id or self._device_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 2333, in _execute_mock_call
+    raise effect
+ValueError: Boom
+....ERROR:custom_components.climate_ip.controller_yaml_config:[Test] Missing 'status' configuration node in '/test.yaml'
+...ERROR:custom_components.climate_ip.controller_yaml_config:<StrictMock name='mock.log_prefix' id='127459104633728'> No configuration file specified. Aborting initialization.
+...INFO:custom_components.climate_ip.controller_yaml_config:<StrictMock name='mock.log_prefix' id='127459104234464'> Using 'Robust (raw socket)' connection engine (from options)
+ERROR:custom_components.climate_ip.controller_yaml_config:<StrictMock name='mock.log_prefix' id='127459104234464'> Missing 'status' configuration node in '/test_j.yaml'
+......INFO:custom_components.climate_ip.controller_yaml_config:<StrictMock name='mock.log_prefix' id='127459104235136'> Using 'samsung_2878' connection engine
+ERROR:custom_components.climate_ip.samsung_2878:[NO_ID] Missing 'connection_template' in YAML configuration
+ERROR:custom_components.climate_ip.controller_yaml_config:<StrictMock name='mock.log_prefix' id='127459104235136'> Missing 'status' configuration node in '/test_m.yaml'
+...INFO:custom_components.climate_ip.controller_yaml_config:[Test] Using 'Modern (aiohttp)' connection engine (from options)
+...ERROR:custom_components.climate_ip.controller_yaml_config:[Test] No matching connection class found for type 'test'
+ERROR:custom_components.climate_ip.controller_yaml_config:[Test] Could not create connection object
+.INFO:custom_components.climate_ip.controller_yaml_config:Clearing YAML file cache to force re-read on reload.
+INFO:custom_components.climate_ip.controller_yaml_config:Clearing YAML file cache to force re-read on reload.
+INFO:custom_components.climate_ip.controller_yaml_config:Clearing YAML file cache to force re-read on reload.
+INFO:custom_components.climate_ip.controller_yaml_config:Clearing YAML file cache to force re-read on reload.
+INFO:custom_components.climate_ip.controller_yaml_config:Clearing YAML file cache to force re-read on reload.
+INFO:custom_components.climate_ip.controller_yaml_config:Clearing YAML file cache to force re-read on reload.
+INFO:custom_components.climate_ip.controller_yaml_config:Clearing YAML file cache to force re-read on reload.
+...INFO:custom_components.climate_ip.controller_yaml_config:Clearing YAML file cache to force re-read on reload.
+WARNING:custom_components.climate_ip.controller_yaml_config:[Test] [DEPRECATED] Using obsolete 'request' (synchronous) engine. Please reconfigure this device via Integrations UI -> Reconfigure to use Modern (aiohttp) or Robust (raw socket) for better performance and stability.
+.INFO:custom_components.climate_ip.controller_yaml_config:Clearing YAML file cache to force re-read on reload.
+WARNING:custom_components.climate_ip.controller_yaml_config:[Test] [DEPRECATED] Using obsolete 'request' (synchronous) engine. Please reconfigure this device via Integrations UI -> Reconfigure to use Modern (aiohttp) or Robust (raw socket) for better performance and stability.
+.INFO:custom_components.climate_ip.controller_yaml_config:Clearing YAML file cache to force re-read on reload.
+.....INFO:custom_components.climate_ip.controller_yaml_polling:<MagicMock name='mock.log_prefix' id='127459104230768'> [Auth] Authentication failed (401). Refreshing token via OAuth2Session...
+INFO:custom_components.climate_ip.controller_yaml_polling:<MagicMock name='mock.log_prefix' id='127459104230768'> [Auth] Automatically retrieved new Access Token from SmartThings integration.
+.INFO:custom_components.climate_ip.controller_yaml_polling:<MagicMock name='mock.log_prefix' id='127459104636416'> Discovered/Confirmed device with id=12345
+.ERROR:custom_components.climate_ip.controller_yaml_polling:<MagicMock name='mock.log_prefix' id='127459195181376'> Error during sub-device selection: 0
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/controller_yaml_polling.py", line 486, in async_update_properties_from_state
+    found_device = devices_list[0]
+                   ~~~~~~~~~~~~^^^
+KeyError: 0
+ERROR:custom_components.climate_ip.controller_yaml_polling:<MagicMock name='mock.log_prefix' id='127459195181376'> FAILED to update property '<MagicMock name='mock.name' id='127459104235136'>'. Error: 'MagicMock' object can't be awaited
+ERROR:custom_components.climate_ip.controller_yaml_polling:<MagicMock name='mock.log_prefix' id='127459195181376'> FAILED to update property '<MagicMock name='mock.name' id='127459104630704'>'. Error: 'MagicMock' object can't be awaited
+... [ 48%]
+...ERROR:custom_components.climate_ip.controller_yaml_polling:test Error during sub-device selection: 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/controller_yaml_polling.py", line 466, in async_update_properties_from_state
+    cache.get(getattr(self.controller, "device_id", "XXXX"), {})
+    ^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+ERROR:custom_components.climate_ip.controller_yaml_polling:test Error during sub-device selection: 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/controller_yaml_polling.py", line 466, in async_update_properties_from_state
+    cache.get(getattr(self.controller, "device_id", "XXXX"), {})
+    ^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+...ERROR:custom_components.climate_ip.controller_yaml_polling:<MagicMock name='mock.log_prefix' id='127459104630368'> [AtomicMerge] Dry-run calculation failed: Boom
+.......ERROR:custom_components.climate_ip.controller_yaml_polling:<MagicMock name='mock.log_prefix' id='127458995540320'> Error during sub-device selection: 0
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/controller_yaml_polling.py", line 486, in async_update_properties_from_state
+    found_device = devices_list[0]
+                   ~~~~~~~~~~~~^^^
+KeyError: 0
+.ERROR:custom_components.climate_ip.controller_yaml_polling:<MagicMock name='mock.log_prefix' id='127459104631376'> Error during sub-device selection: 0
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/controller_yaml_polling.py", line 486, in async_update_properties_from_state
+    found_device = devices_list[0]
+                   ~~~~~~~~~~~~^^^
+KeyError: 0
+.INFO:custom_components.climate_ip.controller_yaml_polling:[Test] [Auth] Authentication failed (401). Refreshing token via OAuth2Session...
+INFO:custom_components.climate_ip.controller_yaml_polling:[Test] [Auth] Automatically retrieved new Access Token from SmartThings integration.
+ERROR:custom_components.climate_ip.controller_yaml_polling:[Test] Error during sub-device selection: 0
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/controller_yaml_polling.py", line 486, in async_update_properties_from_state
+    found_device = devices_list[0]
+                   ~~~~~~~~~~~~^^^
+KeyError: 0
+...ERROR:custom_components.climate_ip.controller_yaml_polling:[Test] Error during sub-device selection: 0
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/controller_yaml_polling.py", line 486, in async_update_properties_from_state
+    found_device = devices_list[0]
+                   ~~~~~~~~~~~~^^^
+KeyError: 0
+...ERROR:custom_components.climate_ip.controller_yaml_polling:[ST-Test] Error during sub-device selection: 0
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/controller_yaml_polling.py", line 486, in async_update_properties_from_state
+    found_device = devices_list[0]
+                   ~~~~~~~~~~~~^^^
+KeyError: 0
+INFO:custom_components.climate_ip.controller_yaml_polling:[ST-Test] Connection recovered after 2 failure(s). Counter reset.
+ERROR:custom_components.climate_ip.controller_yaml_polling:[ST-Test] Error during sub-device selection: 0
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/controller_yaml_polling.py", line 486, in async_update_properties_from_state
+    found_device = devices_list[0]
+                   ~~~~~~~~~~~~^^^
+KeyError: 0
+...ERROR:custom_components.climate_ip.coordinator:[NetErrTest] Network error setting properties: CannotConnect
+.ERROR:custom_components.climate_ip.controller_yaml_polling:[RecoverTest] Error during sub-device selection: 0
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/controller_yaml_polling.py", line 486, in async_update_properties_from_state
+    found_device = devices_list[0]
+                   ~~~~~~~~~~~~^^^
+KeyError: 0
+INFO:custom_components.climate_ip.controller_yaml_polling:[RecoverTest] Connection recovered after 3 failure(s). Counter reset.
+ERROR:custom_components.climate_ip.controller_yaml_polling:[RecoverTest] Error during sub-device selection: 0
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/controller_yaml_polling.py", line 486, in async_update_properties_from_state
+    found_device = devices_list[0]
+                   ~~~~~~~~~~~~^^^
+KeyError: 0
+...INFO:custom_components.climate_ip.coordinator:[TokenAsyncTest] Persisted new network token to Config Entry.
+.............WARNING:custom_components.climate_ip.coordinator:[Fallback] Malformed header error detected! Automatically switching to the 'Robust (raw socket)' connection engine. Error: Malformed headers
+..........ERROR:custom_components.climate_ip.coordinator:[ExcMsgTest] Error setting properties: Simulated unexpected failure
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/coordinator.py", line 277, in async_set_property
+    await self.controller.async_set_property(prop, val, device_id)
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 2333, in _execute_mock_call
+    raise effect
+Exception: Simulated unexpected failure
+...............WARNING:custom_components.climate_ip.connection_raw:[192.168.1.100] [async_execute] Embedded command found but it has no connection_template or params.
+..DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:custom_components.climate_ip.connection_raw:[192.168.1.100] [async_execute] Found embedded command.
+WARNING:custom_components.climate_ip.connection_raw:[192.168.1.100] [async_execute] Embedded command found, but cannot check its condition (device_state missing).
+DEBUG:custom_components.climate_ip.connection_raw:[192.168.1.100] [async_execute] Executing main command with data: {} (is_poll=False, keep_alive=True)
+DEBUG:custom_components.climate_ip.connection_raw:[192.168.1.100] [Standalone] Controller is None! Initializing local client.
+DEBUG:custom_components.climate_ip.connection_raw:[192.168.1.100] [RAW] Request completed in 0.000 seconds
+.... [ 57%]
+INFO:custom_components.climate_ip.connection_request:[NO_ID] [REQUESTS] Execute completed in 0.000 seconds (status code 200)
+.....................WARNING:custom_components.climate_ip.helpers:Token rejected: contains unexpected characters. Expected alphanumeric/dash/underscore (8-128 chars). Got length=14, starts_with='my"evi'
+.....WARNING:custom_components.climate_ip.helpers:Could not load Samsung certificate from '/nonexistent/cert.pem': [Errno 2] No such file or directory
+....WARNING:custom_components.climate_ip.helpers:Invalid entity_category value 'invalid_category' — ignoring. Valid values: ['config', 'diagnostic']
+.............INFO:custom_components.climate_ip:Starting setup for device AA:BB:CC:DD:EE:FF at 192.168.1.100 (Device Type: samsung_2878)
+INFO:custom_components.climate_ip.controller_yaml:[DDEEFF] [Init] device_id was missing, fell back to unique_id: AABBCCDDEEFF
+INFO:custom_components.climate_ip.controller_yaml_config:Clearing YAML file cache to force re-read on reload.
+.INFO:custom_components.climate_ip:Config entry migration v1 → v2 complete (schema validated).
+.ERROR:custom_components.climate_ip:Config entry version 999 is newer than the integration supports (2). Please update the integration.
+..INFO:custom_components.climate_ip.samsung_2878:[NO_ID] Starting connection manager
+INFO:custom_components.climate_ip.samsung_2878:[NO_ID] Stopping connection manager
+.INFO:custom_components.climate_ip:Config entry migration v1 → v2 complete (schema validated).
+..ERROR:custom_components.climate_ip:Migration failed: v1 payload structurally invalid - value should be a string for dictionary value @ data['token']
+.ERROR:custom_components.climate_ip:Migration failed: v1 payload structurally invalid - value should be a string for dictionary value @ data['mac']
+.INFO:custom_components.climate_ip:Starting setup for device 00:11:22:33:44:55 at 192.168.1.100 (Device Type: samsung_2878)
+.INFO:custom_components.climate_ip:Starting setup for device Unknown at 192.168.1.100 (Device Type: None)
+INFO:custom_components.climate_ip:Setting up Samsung sub-unit 'Zone A' (ID 1) with unique_id: uuid-111_1
+INFO:custom_components.climate_ip:Setting up Samsung sub-unit 'Zone B' (ID 2) with unique_id: uuid-222_2
+INFO:custom_components.climate_ip:Setting up Samsung sub-unit 'Zone C' (ID 3) with unique_id: parent_entry_mac_3
+.INFO:custom_components.climate_ip:Starting setup for device Unknown at 192.168.1.100 (Device Type: None)
+INFO:custom_components.climate_ip:Starting setup for device Unknown at 192.168.1.100 (Device Type: None)
+INFO:custom_components.climate_ip:Setting up Samsung sub-unit 'Zone A' (ID 1) with unique_id: <MagicMock name='mock.unique_id' id='127459191660160'>_1
+ERROR:custom_components.climate_ip:No coordinators could be set up for entry <MagicMock name='mock.title' id='127459191662848'>
+NoneType: None
+.INFO:custom_components.climate_ip:Starting setup for device Unknown at 192.168.1.100 (Device Type: None)
+INFO:custom_components.climate_ip:Setting up Samsung sub-unit 'Zone A' (ID 1) with unique_id: <MagicMock name='mock.unique_id' id='127459195175328'>_1
+INFO:custom_components.climate_ip:Setting up Samsung sub-unit 'Zone B' (ID 2) with unique_id: <MagicMock name='mock.unique_id' id='127459195175328'>_2
+.INFO:custom_components.climate_ip:Starting setup for device Unknown at 192.168.1.100 (Device Type: None)
+INFO:custom_components.climate_ip:Setting up Samsung sub-unit 'Zone A' (ID 1) with unique_id: parent_mac_1
+...INFO:custom_components.climate_ip:Starting setup for device Unknown at Unknown (Device Type: samsung_8888)
+INFO:custom_components.climate_ip.controller_yaml_config:[que_id] Using 'Modern (aiohttp)' connection engine (from options)
+ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+INFO:custom_components.climate_ip.connection_aiohttp:[que_id] [aiohttp] Connection successful. Status: 200. Negotiated TLS: Unknown
+INFO:custom_components.climate_ip.controller_yaml_polling:[que_id] Discovered/Confirmed device with id=0
+.INFO:custom_components.climate_ip:Starting setup for device Unknown at Unknown (Device Type: samsung_8888)
+INFO:custom_components.climate_ip.controller_yaml_config:[que_id] Using 'Modern (aiohttp)' connection engine (from options)
+ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+INFO:custom_components.climate_ip.connection_aiohttp:[que_id] [aiohttp] Connection successful. Status: 200. Negotiated TLS: Unknown
+INFO:custom_components.climate_ip.controller_yaml_polling:[que_id] Discovered/Confirmed device with id=0
+.......ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] aiohttp engine started without a token. This will fail.
+ERROR:custom_components.climate_ip.connection_aiohttp:[aiohttp_init] Certificate file not found or invalid at None
+..... [ 67%]
+DEBUG:asyncio:Using selector: EpollSelector
+ERROR:custom_components.climate_ip.properties:[TestController] Error rendering validation template for test: Jinja error
+.DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:custom_components.climate_ip.properties:[TestController] Dry-run error for test: Template boom
+....DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:custom_components.climate_ip.properties:[TestController] [GetJsonStatus] Dry-run error parsing status template: Render fail
+.DEBUG:asyncio:Using selector: EpollSelector
+ERROR:custom_components.climate_ip.properties:[TestController] [GetJsonStatus] JSON parsing error. Response: '{malformed_json: '. Error: unexpected character: line 1 column 2 (char 1)
+..DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:custom_components.climate_ip.properties:[TestController] [GetJsonStatus] No response text received.
+.....DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:custom_components.climate_ip.properties:[TestController] Sync poll yielded RetryNextAttempt. Async sleeping 1.0s (Attempt 1/5)...
+DEBUG:custom_components.climate_ip.properties:[TestController] Sync poll yielded RetryNextAttempt. Async sleeping 2.0s (Attempt 2/5)...
+DEBUG:custom_components.climate_ip.properties:[TestController] Sync poll yielded RetryNextAttempt. Async sleeping 4.0s (Attempt 3/5)...
+DEBUG:custom_components.climate_ip.properties:[TestController] Sync poll yielded RetryNextAttempt. Async sleeping 8.0s (Attempt 4/5)...
+.....DEBUG:asyncio:Using selector: EpollSelector
+WARNING:custom_components.climate_ip.properties:[TestController] Comando descartado para 'test_op': Invalid value
+...WARNING:custom_components.climate_ip.properties:[TestController] Failed to set value for test_op: connection error: Token expired
+..DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:custom_components.climate_ip.properties:[TestController] Sync command yielded RetryNextAttempt. Async sleeping 1.0s (Attempt 1/5)...
+DEBUG:custom_components.climate_ip.properties:[TestController] Sync command yielded RetryNextAttempt. Async sleeping 2.0s (Attempt 2/5)...
+DEBUG:custom_components.climate_ip.properties:[TestController] Sync command yielded RetryNextAttempt. Async sleeping 4.0s (Attempt 3/5)...
+DEBUG:custom_components.climate_ip.properties:[TestController] Sync command yielded RetryNextAttempt. Async sleeping 8.0s (Attempt 4/5)...
+..............ERROR:custom_components.climate_ip.properties:[TestController] [_resolve_async_params] No params or template found.
+........ERROR:custom_components.climate_ip.properties:[TestController] [_resolve_async_params] No params or template found.
+ERROR:custom_components.climate_ip.properties:[TestController] [async_set_value] Could not resolve command parameters.
+.........WARNING:custom_components.climate_ip.properties:[TestController] _device_state is None during set_value, falling back to status_getter.value
+.................. [ 77%]
+.........INFO:custom_components.climate_ip.samsung_2878:[NO_ID] Connection lost. Attempting to reconnect...
+....................ERROR:custom_components.climate_ip.coordinator:Authentication failed while fetching Samsung Climate <MagicMock name='mock.log_prefix' id='127459106643584'> data: Token is invalid or expired
+.WARNING:custom_components.climate_ip.coordinator:<MagicMock name='mock.log_prefix' id='127459111330752'> Malformed header error detected! Automatically switching to the 'Robust (raw socket)' connection engine. Error: Garbage
+..INFO:custom_components.climate_ip.config_flow:MAC discovered via ARP: aa:bb:cc:dd:ee:ff
+..INFO:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127459104620624'> Connection lost. Attempting to reconnect...
+...............ERROR:custom_components.climate_ip.samsung_2878:[DDEEFF] Missing 'connection_template' in YAML configuration
+....ERROR:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127458995540320'> AC Service is persistently offline. Forcing frontend unavailability.
+....ERROR:custom_components.climate_ip.samsung_2878:[DDEEFF] Write failed: writer is not available
+ERROR:custom_components.climate_ip.samsung_2878:[DDEEFF] Write failed: writer is not available
+ERROR:custom_components.climate_ip.samsung_2878:[DDEEFF] Write failed: Network drop. Closing connection.
+..ERROR:custom_components.climate_ip.samsung_2878:[DDEEFF] Error during read: Reset
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/samsung_2878.py", line 164853, in xǁConnectionSamsung2878ǁ_read_full_response__mutmut_orig
+    chunk = await self._reader.read(4096)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 2333, in _execute_mock_call
+    raise effect
+ConnectionResetError: Reset
+....INFO:custom_components.climate_ip.samsung_2878:[DDEEFF] SSL connection established. Protocol: HIGH, Cipher: AES, Verify: 2, Negotiated TLS: TLSv1.2
+INFO:custom_components.climate_ip.samsung_2878:[DDEEFF] Connection ready
+INFO:custom_components.climate_ip.samsung_2878:[DDEEFF] Connection re-established
+.INFO:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127459102135632'> SSL connection established. Protocol: HIGH, Cipher: AES, Verify: 0, Negotiated TLS: TLSv1.2
+INFO:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127459102135632'> Device reported session collision (InvalidateAccount). Waiting for old session to timeout...
+INFO:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127459102135632'> SSL connection established. Protocol: HIGH, Cipher: AES, Verify: 0, Negotiated TLS: TLSv1.2
+ERROR:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127459102135632'> Authentication failed (ErrorCode 301). The device was likely turned off. Please ensure the device is ON before pairing
+.INFO:custom_components.climate_ip.samsung_2878:[DDEEFF] SSL connection established. Protocol: HIGH, Cipher: AES, Verify: 2, Negotiated TLS: TLSv1.2
+INFO:custom_components.climate_ip.samsung_2878:[DDEEFF] Connection ready
+INFO:custom_components.climate_ip.samsung_2878:[DDEEFF] SSL connection established. Protocol: HIGH, Cipher: AES, Verify: 2, Negotiated TLS: TLSv1.2
+INFO:custom_components.climate_ip.samsung_2878:[DDEEFF] Connection ready
+.WARNING:custom_components.climate_ip.samsung_2878:[DDEEFF] Timed out waiting for connection to be ready (device is likely offline).
+.INFO:custom_components.climate_ip.samsung_2878:[DDEEFF] Connection lost. Attempting to reconnect...
+..WARNING:custom_components.climate_ip.samsung_2878:[DDEEFF] Command timed out: <Test/>
+.INFO:custom_components.climate_ip.samsung_2878:[DDEEFF] Stopping connection manager
+.ERROR:custom_components.climate_ip.samsung_2878:[NO_ID] Missing 'connection_template' in YAML configuration
+. [ 86%]
+WARNING:custom_components.climate_ip.samsung_2878:[12345] Post-reconnection status request timed out
+....INFO:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127458995551408'> SSL connection established. Protocol: HIGH, Cipher: AES, Verify: 0, Negotiated TLS: TLSv1.2
+INFO:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127458995551408'> Connection ready
+INFO:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127458995551408'> Connection re-established
+...INFO:custom_components.climate_ip.samsung_2878:[DDEEFF] Connection lost. Attempting to reconnect...
+..WARNING:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127459111036512'> Connection with 'No Certificate (Default)' / 'Cipher Suite D (Anonymous / All Supported)' failed unexpectedly: Weird network issue. Trying next.
+INFO:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127459111036512'> SSL connection established. Protocol: HIGH, Cipher: AES, Verify: 0, Negotiated TLS: TLSv1.2
+INFO:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127459111036512'> Connection ready
+INFO:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127459111036512'> Connection re-established
+INFO:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127459111036512'> Requesting immediate coordinator refresh after reconnection.
+.ERROR:custom_components.climate_ip.samsung_2878:[NO_ID] Missing 'mac' parameter
+.INFO:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127459191667552'> SSL connection established. Protocol: HIGH, Cipher: AES, Verify: 0, Negotiated TLS: TLSv1.2
+WARNING:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127459191667552'> Handshake failed: Did not receive expected initial message (DPLUG-1.6 or DRC-1.00 or InvalidateAccount). Got: GARBAGE-HEADER
+INFO:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127459191667552'> SSL connection established. Protocol: HIGH, Cipher: AES, Verify: 0, Negotiated TLS: TLSv1.2
+ERROR:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127459191667552'> Handshake failed: Connection initialization template is missing.
+INFO:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127459191667552'> SSL connection established. Protocol: HIGH, Cipher: AES, Verify: 0, Negotiated TLS: TLSv1.2
+ERROR:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127459191667552'> Authentication failed with ErrorCode Unknown. Got: <Response Status="Failed" />
+INFO:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127459191667552'> SSL connection established. Protocol: HIGH, Cipher: AES, Verify: 0, Negotiated TLS: TLSv1.2
+ERROR:custom_components.climate_ip.samsung_2878:<MagicMock name='mock.log_prefix' id='127459191667552'> Authentication failed with ErrorCode 999. Got: <Response Status="Failed" ErrorCode="999" />
+.ERROR:custom_components.climate_ip.samsung_2878:[DDEEFF] Unhandled exception in connection manager: Crash to finally
+Traceback (most recent call last):
+  File "/workspaces/ha_data/config/mutants/custom_components/climate_ip/samsung_2878.py", line 218924, in xǁConnectionSamsung2878ǁ_connection_manager__mutmut_orig
+    await self._process_command_queue(queue_task)
+  File "/usr/local/lib/python3.14/unittest/mock.py", line 2333, in _execute_mock_call
+    raise effect
+RuntimeError: Crash to finally
+..WARNING:custom_components.climate_ip.samsung_2878:[DDEEFF] Read task failed: Random crash
+...INFO:custom_components.climate_ip.samsung_2878:[DDEEFF] Starting connection manager
+.WARNING:custom_components.climate_ip.samsung_2878:[DDEEFF] Reader object is missing, forcing reconnection.
+........F
+=================================== FAILURES ===================================
+__________________ test_force_unavailability_if_needed_strict __________________
+Traceback (most recent call last):
+  File "/home/vscode/.local/lib/python3.14/site-packages/_pytest/runner.py", line 353, in from_call
+    result: TResult | None = func()
+                             ~~~~^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/_pytest/runner.py", line 245, in <lambda>
+    lambda: runtest_hook(item=item, **kwds),
+            ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/pluggy/_callers.py", line 167, in _multicall
+    raise exception
+  File "/home/vscode/.local/lib/python3.14/site-packages/pluggy/_callers.py", line 139, in _multicall
+    teardown.throw(exception)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/_pytest/logging.py", line 850, in pytest_runtest_call
+    yield
+  File "/home/vscode/.local/lib/python3.14/site-packages/pluggy/_callers.py", line 139, in _multicall
+    teardown.throw(exception)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/_pytest/capture.py", line 900, in pytest_runtest_call
+    return (yield)
+            ^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/pluggy/_callers.py", line 139, in _multicall
+    teardown.throw(exception)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/pluggy/_callers.py", line 53, in run_old_style_hookwrapper
+    return result.get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/pluggy/_result.py", line 103, in get_result
+    raise exc.with_traceback(tb)
+  File "/home/vscode/.local/lib/python3.14/site-packages/pluggy/_callers.py", line 38, in run_old_style_hookwrapper
+    res = yield
+          ^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/pluggy/_callers.py", line 139, in _multicall
+    teardown.throw(exception)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/_pytest/skipping.py", line 268, in pytest_runtest_call
+    return (yield)
+            ^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "/home/vscode/.local/lib/python3.14/site-packages/_pytest/runner.py", line 179, in pytest_runtest_call
+    item.runtest()
+    ~~~~~~~~~~~~^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/_pytest/python.py", line 1720, in runtest
+    self.ihook.pytest_pyfunc_call(pyfuncitem=self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/pluggy/_callers.py", line 167, in _multicall
+    raise exception
+  File "/home/vscode/.local/lib/python3.14/site-packages/pluggy/_callers.py", line 139, in _multicall
+    teardown.throw(exception)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/pluggy/_callers.py", line 53, in run_old_style_hookwrapper
+    return result.get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/pluggy/_result.py", line 103, in get_result
+    raise exc.with_traceback(tb)
+  File "/home/vscode/.local/lib/python3.14/site-packages/pluggy/_callers.py", line 38, in run_old_style_hookwrapper
+    res = yield
+          ^^^^^
+  File "/home/vscode/.local/lib/python3.14/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "/home/vscode/.local/lib/python3.14/site-packages/_pytest/python.py", line 166, in pytest_pyfunc_call
+    result = testfunction(**testargs)
+  File "/workspaces/ha_data/config/custom_components/climate_ip/tests/test_samsung_2878_logic.py", line 1462, in test_force_unavailability_if_needed_strict
+    assert 'and hasattr(self._controller, "on_offline_callback")' in source
+AssertionError: assert 'and hasattr(self._controller, "on_offline_callback")' in '    def _force_unavailability_if_needed(self, offline_type: str = "Network") -> None:\n        args = [offline_type]#...tattribute__(self, \'xǁConnectionSamsung2878ǁ_force_unavailability_if_needed__mutmut_mutants\'), args, kwargs, self)\n'
+=============================== warnings summary ===============================
+custom_components/climate_ip/tests/test_connection_aiohttp.py: 1 warning
+custom_components/climate_ip/tests/test_connection_request.py: 4 warnings
+custom_components/climate_ip/tests/test_controller_yaml_config.py: 1 warning
+custom_components/climate_ip/tests/test_embedded_command.py: 4 warnings
+custom_components/climate_ip/tests/test_helpers_advanced.py: 3 warnings
+custom_components/climate_ip/tests/test_samsung_2878_logic.py: 1 warning
+  /workspaces/ha_data/config/mutants/custom_components/climate_ip/helpers.py:311: DeprecationWarning: ssl.TLSVersion.TLSv1 is deprecated
+    context.minimum_version = ssl.TLSVersion.TLSv1  # pragma: no mutate
+
+custom_components/climate_ip/tests/test_connection_request.py::test_initialization
+custom_components/climate_ip/tests/test_connection_request.py::test_execute_success
+custom_components/climate_ip/tests/test_connection_request.py::test_execute_auth_error
+custom_components/climate_ip/tests/test_connection_request.py::test_execute_connection_error
+custom_components/climate_ip/tests/test_controller_yaml_config.py::test_async_initialize_frente_o
+custom_components/climate_ip/tests/test_embedded_command.py::test_request_embedded_command_is_executed[ConnectionRequest]
+custom_components/climate_ip/tests/test_embedded_command.py::test_request_embedded_command_is_executed[ConnectionRequest]
+custom_components/climate_ip/tests/test_embedded_command.py::test_request_embedded_command_skipped_when_condition_not_met[ConnectionRequest]
+custom_components/climate_ip/tests/test_embedded_command.py::test_request_embedded_command_skipped_when_condition_not_met[ConnectionRequest]
+  /workspaces/ha_data/config/mutants/custom_components/climate_ip/connection_request.py:139: DeprecationWarning: The 'request' connection method is deprecated and will be removed in a future release. Please switch the connection method for [NO_ID] to Modern (aiohttp) or Robust (raw socket).
+    warnings.warn(
+
+custom_components/climate_ip/tests/test_connection_request_tls_auto.py::test_initialization
+custom_components/climate_ip/tests/test_connection_request_tls_auto.py::test_execute_success
+custom_components/climate_ip/tests/test_connection_request_tls_auto.py::test_execute_insecure_ssl
+custom_components/climate_ip/tests/test_embedded_command.py::test_request_embedded_command_is_executed[ConnectionRequestTlsAuto]
+custom_components/climate_ip/tests/test_embedded_command.py::test_request_embedded_command_is_executed[ConnectionRequestTlsAuto]
+custom_components/climate_ip/tests/test_embedded_command.py::test_request_embedded_command_skipped_when_condition_not_met[ConnectionRequestTlsAuto]
+custom_components/climate_ip/tests/test_embedded_command.py::test_request_embedded_command_skipped_when_condition_not_met[ConnectionRequestTlsAuto]
+  /workspaces/ha_data/config/mutants/custom_components/climate_ip/connection_request_tls_auto.py:115: DeprecationWarning: The 'request_tls_auto' connection method is deprecated and will be removed in a future release.
+    warnings.warn(
+
+custom_components/climate_ip/tests/test_connection_request_tls_auto.py::test_samsung_http_adapter_init
+custom_components/climate_ip/tests/test_connection_request_tls_auto.py::test_execute_insecure_ssl
+  /workspaces/ha_data/config/mutants/custom_components/climate_ip/connection_request_tls_auto.py:58: DeprecationWarning: ssl.TLSVersion.TLSv1 is deprecated
+    ssl_context.minimum_version = ssl.TLSVersion.TLSv1
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED custom_components/climate_ip/tests/test_samsung_2878_logic.py::test_force_unavailability_if_needed_strict
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 674 passed, 32 warnings in 14.54s
+🎯 [MODULO CARGADO] -> /workspaces/ha_data/config/mutants/custom_components/climate_ip/config_flow.py
+failed to collect stats. runner returned 1
+
+✅ .git anidado restaurado
