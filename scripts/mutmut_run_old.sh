@@ -121,12 +121,21 @@ fi
 
 # Restaurar .git siempre al salir (éxito, error, o Ctrl+C)
 restore_git() {
+    trap '' INT TERM
     if [[ -d "${GIT_BACKUP}" ]]; then
         mv "${GIT_BACKUP}" custom_components/climate_ip/.git 2>/dev/null || true
         echo "✅ .git anidado restaurado"
     fi
 }
-trap restore_git EXIT ERR INT TERM
+cleanup_on_interrupt() {
+    trap '' INT TERM EXIT ERR
+    echo -e "\n\n 🛑 \033[31m[!] Abortado (SIGINT capturado en Bash).\033[0m"
+    restore_git
+    pkill -KILL -P $$ 2>/dev/null || true 
+    exit 130
+}
+trap restore_git EXIT ERR
+trap cleanup_on_interrupt INT TERM
 
 # ── 9. Ejecutar mutmut ────────────────────────────────────────────────────────
 echo ""
@@ -138,7 +147,9 @@ echo ""
 # PYTHONPATH ya está exportado, por lo que mutmut lo hereda automáticamente.
 #PYTHONPATH="${WORKSPACE_ROOT}/mutants:${PYTHONPATH}" /workspaces/ha_data/.dev-tools/bin/python -m mutmut run || true   # "|| true" para continuar aunque haya mutantes sobrevivientes
 #mutmut run
-PYTHONPATH=/workspaces/ha_data/config python -m mutmut run
+PYTHONPATH=/workspaces/ha_data/config python -m mutmut run &
+MUTMUT_PID=$!
+wait $MUTMUT_PID || true
 
 echo ""
 echo "📊 Resumen mutmut:"

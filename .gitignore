@@ -13,6 +13,9 @@ mutants/
 *.log
 *.log.*
 .storage/
-__pycache__/
 .cache/
-.pytest_cache/
+*.pkl
+*.json
+*.log
+
+ 

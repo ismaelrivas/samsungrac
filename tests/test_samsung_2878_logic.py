@@ -300,6 +300,7 @@ def test_samsung_2878_ensure_callback_linked(connection):
 
 
 
+
 @pytest.mark.asyncio
 async def test_samsung_2878_process_command_queue(connection):
     """Mata los mutantes del procesamiento de la cola de comandos sin colgar el event loop."""
@@ -329,6 +330,7 @@ async def test_samsung_2878_process_command_queue(connection):
         assert future2.exception() is not None
         assert isinstance(future2.exception(), CannotConnect)
         assert connection._pending_future is None
+
 
 @pytest.mark.asyncio
 async def test_samsung_2878_parse_redundant_power_on(connection):
@@ -408,6 +410,7 @@ def get_safe_mock_writer():
     writer.get_extra_info.return_value.cipher.return_value = ("AES", "HIGH")
     return writer
 
+
 @pytest.mark.asyncio
 async def test_write_data_logic(connection):
     """Mata los mutantes de _write_data con Mocks seguros."""
@@ -436,6 +439,7 @@ async def test_write_data_logic(connection):
         await connection._write_data("test2")
     assert connection._writer is None
 
+
 @pytest.mark.asyncio
 async def test_close_connection_logic(connection):
     """Mata los mutantes de limpieza en _close_connection."""
@@ -455,6 +459,7 @@ async def test_close_connection_logic(connection):
     assert connection._reader is None
     assert connection._read_task is None
     assert fake_read_task.cancelled() is True
+
 
 @pytest.mark.asyncio
 async def test_read_full_response(connection):
@@ -476,6 +481,7 @@ async def test_read_full_response(connection):
         assert await connection._read_full_response() is None
         mock_close.assert_called_once()
 
+
 @pytest.mark.asyncio
 async def test_establish_connection_network_refused(connection):
     """Fallo de red puro que itera los ciphers."""
@@ -490,6 +496,7 @@ async def test_establish_connection_network_refused(connection):
         
         # Tras fallar todos los ciphers, devuelve False
         assert await connection._establish_connection_and_handshake() is False
+
 
 @pytest.mark.asyncio
 async def test_process_read_queue_fragmented(connection):
@@ -515,6 +522,7 @@ async def test_process_read_queue_fragmented(connection):
         assert result == b""
         assert connection._device_status["power"] == "on"
 
+
 @pytest.mark.asyncio
 async def test_process_read_queue_resolves_future(connection):
     """DeviceControl y resolución de Future en lectura."""
@@ -530,6 +538,7 @@ async def test_process_read_queue_resolves_future(connection):
         await connection._process_read_queue(b"")
         assert pending_future.result() is True
         assert connection._pending_future is None
+
 
 @pytest.mark.asyncio
 async def test_establish_connection_success(connection):
@@ -564,6 +573,7 @@ async def test_establish_connection_success(connection):
             assert connection._is_ready.is_set()
             mock_open_conn.assert_called_once()
             mock_write.assert_called_once_with("<Auth/>\n")
+
 
 @pytest.mark.asyncio
 async def test_establish_connection_auth_failure(connection):
@@ -601,6 +611,7 @@ async def test_establish_connection_auth_failure(connection):
             mock_read_resp.side_effect = ["DPLUG-1.6\n", 'ErrorCode="301"']
             with pytest.raises(AuthError, match="Device was turned off"):
                 await connection._establish_connection_and_handshake()
+
 
 @pytest.mark.asyncio
 async def test_establish_connection_ssl_cache_and_ciphers(connection):
@@ -645,6 +656,7 @@ async def test_establish_connection_ssl_cache_and_ciphers(connection):
 # =====================================================================
 # FASE FINAL: ASYNC EXECUTE, RECONNECT LOOP Y CONNECTION MANAGER
 # =====================================================================
+
 
 @pytest.mark.asyncio
 async def test_async_execute_timeout_and_success(connection):
@@ -691,6 +703,7 @@ async def test_async_execute_timeout_and_success(connection):
     await connection.async_execute(None, None, None, None, _is_poll=True)
     assert 'Type="DeviceState"' in connection._cmd_queue.put.call_args[0][0][0]
 
+
 @pytest.mark.asyncio
 async def test_handle_reconnection_backoff(connection):
     """Mata mutantes del backoff exponencial y limpieza de repair issues."""
@@ -734,6 +747,7 @@ async def test_handle_reconnection_backoff(connection):
         assert fake_future.exception() is not None
         assert connection._pending_future is None
 
+
 @pytest.mark.asyncio
 async def test_connection_manager_loop_logic(connection):
     """Mata mutantes de las condiciones y limpiezas del loop del connection_manager sin colgarse."""
@@ -762,6 +776,7 @@ async def test_connection_manager_loop_logic(connection):
              # Verificamos que el bloque finally sí se ejecutó antes de morir
              assert fake_read_task.cancelled() is True
              mock_close.assert_called()
+
 
 @pytest.mark.asyncio
 async def test_async_execute_future_timeout(connection):
@@ -798,6 +813,7 @@ async def test_async_execute_future_timeout(connection):
 # FASE 4 (GOLPE FINAL): COBERTURA TOTAL Y BUCLES INTERNOS
 # =====================================================================
 
+
 @pytest.mark.asyncio
 async def test_samsung_2878_start_stop_listening_strict(connection):
     """Mata mutantes de start/stop y chequeos de tareas."""
@@ -828,6 +844,7 @@ def test_load_from_yaml_missing_params():
     # Falla porque le falta el DUID/mac
     assert conn.load_from_yaml({"params": {}}, None) is False
 
+
 @pytest.mark.asyncio
 async def test_post_connect_status_request_strict(connection):
     """Mata mutantes de _post_connect_status_request (Timeouts y puts)."""
@@ -855,6 +872,7 @@ async def test_post_connect_status_request_strict(connection):
     # Debe haber limpiado el future
     assert connection._pending_future is None
 
+
 @pytest.mark.asyncio
 async def test_read_full_response_variants(connection):
     """Mata los mutantes de endswith, DPLUG_NOT_IN y decode."""
@@ -866,6 +884,7 @@ async def test_read_full_response_variants(connection):
     connection._reader.read = AsyncMock(return_value=b'<FakeTag status="ok" />')
     resp = await connection._read_full_response()
     assert resp == '<FakeTag status="ok" />'
+
 
 @pytest.mark.asyncio
 async def test_parse_state_multiple_docs(connection):
@@ -884,6 +903,7 @@ async def test_parse_state_multiple_docs(connection):
     assert is_upd is True
     assert parsed["AC_FUN_POWER"] == "Off"
 
+
 @pytest.mark.asyncio
 async def test_process_read_queue_cancelled(connection):
     """Mata los mutantes de variables None y CancelledError en lectura."""
@@ -894,6 +914,7 @@ async def test_process_read_queue_cancelled(connection):
         res = await connection._process_read_queue(b"buffer")
         assert res is None # Mata data = ""
         mock_close.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_establish_connection_cipher_iteration_and_issue_clear(connection):
@@ -936,6 +957,7 @@ async def test_establish_connection_cipher_iteration_and_issue_clear(connection)
             # Verificamos que al tener éxito, borró el issue pasándole HASS explícitamente
             mock_delete.assert_called_once_with(connection._controller.hass, "climate_ip", "connection_failed_1.2.3.4")
 
+
 @pytest.mark.asyncio
 async def test_connection_manager_full_coverage(connection):
     """Mata los 52 mutantes del Connection Manager iterando el bucle completo de forma natural."""
@@ -971,6 +993,7 @@ async def test_connection_manager_full_coverage(connection):
          assert mock_cmd.call_count == 1
          assert mock_read_q.call_count == 2
 
+
 @pytest.mark.asyncio
 async def test_async_execute_defaults(connection):
     """Mata los mutantes de parámetros booleanos por defecto (_is_probe, _is_poll)."""
@@ -986,6 +1009,7 @@ async def test_async_execute_defaults(connection):
     res1, res2 = await connection.async_execute(None, None, None, None)
     assert res1 is None
     assert res2 is None
+
 
 @pytest.mark.asyncio
 async def test_handle_reconnection_success_path(connection):
@@ -1006,6 +1030,7 @@ def test_async_execute_signature(connection):
     sig = inspect.signature(connection.async_execute)
     assert sig.parameters['_is_probe'].default is False
     assert sig.parameters['_is_poll'].default is False
+
 
 @pytest.mark.asyncio
 async def test_establish_connection_callbacks_and_generic_catch(connection):
@@ -1053,6 +1078,7 @@ def test_load_from_yaml_missing_mac(connection):
         # Si mutmut cambió 'return False' por 'return True', esto fallará
         assert connection.load_from_yaml({"params": {"connection_template": "a"}}, None) is False
 
+
 @pytest.mark.asyncio
 async def test_establish_connection_deep_mutants(connection):
     """Mata mutantes en las entrañas de _establish_connection_and_handshake."""
@@ -1096,6 +1122,7 @@ async def test_establish_connection_deep_mutants(connection):
             mock_read.side_effect = ["DPLUG-1.6", '<Response Status="Failed" ErrorCode="999" />']
             with pytest.raises(AuthError, match="Authentication failed"):
                 await connection._establish_connection_and_handshake()
+
 
 @pytest.mark.asyncio
 async def test_connection_manager_queues_and_cleanup(connection):
@@ -1149,6 +1176,7 @@ class MutantTimeoutError(Exception):
 def alarm_handler(signum, frame):
     raise MutantTimeoutError("Infinite loop detected and destroyed!")
 
+
 @pytest.mark.asyncio
 async def test_read_full_response_buffer_decode(connection):
     """Mata mutantes que sobreviven en el decode() cuando hay EOF con datos en el buffer."""
@@ -1180,6 +1208,7 @@ async def test_read_full_response_buffer_decode(connection):
             else:
                 raise
 
+
 @pytest.mark.asyncio
 async def test_process_read_queue_exception(connection):
     """Mata mutantes de 'is_cancelled' dentro del catch genérico de lectura."""
@@ -1191,6 +1220,7 @@ async def test_process_read_queue_exception(connection):
         res = await connection._process_read_queue(b"")
         assert res is None
         mock_close.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_connection_manager_reconnect_continue(connection):
@@ -1212,6 +1242,7 @@ async def test_connection_manager_reconnect_continue(connection):
         # Si el mutante cambió 'continue' por 'break', el loop se habría roto tras el primer False
         # y mock_reconn solo tendría 1 llamada. Al asertar 2, matamos al mutante.
         assert mock_reconn.call_count == 2
+
 
 @pytest.mark.asyncio
 async def test_connection_manager_reconnect_continue_strict(connection):
@@ -1253,6 +1284,7 @@ def test_start_listening_strict_assignments(connection):
         # Si mutmut eliminó el create_task, esto falla
         assert connection._manager_task == "fake_task"
         mock_create.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_connection_manager_missing_reader_continue_strict(connection):
@@ -1332,6 +1364,7 @@ def test_check_and_create_repair_issue_strict(mock_issue, connection):
     assert kwargs["translation_placeholders"]["host"] == "1.2.3.4"
     assert kwargs["translation_placeholders"]["name"] == "MyAC"
 
+
 @pytest.mark.asyncio
 async def test_read_full_response_decode_errors(connection):
     """Mata mutantes de 'utf-8', 'ignore' y timeout=10.0."""
@@ -1374,6 +1407,7 @@ def test_update_configuration_from_hass_strict(connection):
     assert "/" in cert_path or "\\" in cert_path 
     assert connection._last_successful_config["cipher_name"] == "AES"
     
+
 @pytest.mark.asyncio
 async def test_process_read_queue_end_tags(connection):
     """Mata mutantes de tags ternarios (/>, </Update>, </Response>)."""
@@ -1547,6 +1581,7 @@ def test_force_unavailability_if_needed_strict(connection):
             raise
 
 #FASE 6
+
 @pytest.mark.asyncio
 async def test_read_queue_strict_xml_tags(connection):
     """Mata mutantes de tags XML (</Update>, </Response>) y .find() vs .rfind()."""
@@ -1575,6 +1610,7 @@ async def test_read_queue_strict_xml_tags(connection):
         res = await connection._process_read_queue(b"")
         assert res == b"Y</Update>"
         mock_parse.assert_called_once_with("X</Update>")
+
 
 @pytest.mark.asyncio
 async def test_parse_state_strict_dicts_and_logic(connection):
@@ -1608,6 +1644,7 @@ async def test_parse_state_strict_dicts_and_logic(connection):
     # Si mutmut cambia a "ID in attr OR VALUE in attr", intentará extraer el valor inexistente y lanzará KeyError
     is_resp, is_upd, parsed = await connection._parse_and_update_state(xml_bad_attr)
     assert parsed == {}
+
 
 
 @pytest.mark.asyncio
@@ -1653,6 +1690,7 @@ async def test_connection_manager_strict_buffer(connection):
         # LA TRAMPA: Si en la segunda iteración el buffer no conservó el b"FRAGMENT",
         # significa que Mutmut saboteó la asignación "buffer = read_buffer" a None o vacío.
         assert mock_process_read.call_args_list[1][0][0] == b"FRAGMENT"
+
 
 @pytest.mark.asyncio
 async def test_read_queue_strict_xml_tags(connection):
@@ -1714,6 +1752,7 @@ def test_samsung_2878_init_strict():
     assert conn._power_template is None
 
 
+
 @pytest.mark.asyncio
 async def test_samsung_2878_stop_listening_strict(connection):
     """Mata el mutante 'if task.done():' vs 'if not task.done():' en la limpieza de tareas."""
@@ -1732,6 +1771,7 @@ async def test_samsung_2878_stop_listening_strict(connection):
     # El original cancela SOLO las tareas NO terminadas. Si muta a 'if task.done()', se invierte.
     task_not_done.cancel.assert_called_once()
     task_done.cancel.assert_not_called()
+
 
 
 @pytest.mark.asyncio
@@ -1759,6 +1799,7 @@ async def test_parse_and_update_state_xml_strict_dicts(connection):
     assert parsed == {}
 
 
+
 @pytest.mark.asyncio
 async def test_post_connect_status_request_strict_put(connection):
     """Mata el mutante que mete un '.put(None)' en la cola de comandos."""
@@ -1783,6 +1824,7 @@ async def test_post_connect_status_request_strict_put(connection):
     assert isinstance(args, tuple)
     assert "TESTDUID" in args[0]
     assert isinstance(args[1], asyncio.Future)
+
 
 
 @pytest.mark.asyncio
@@ -1843,6 +1885,7 @@ def test_update_configuration_strict_dicts(connection):
     assert connection._params[CONF_DUID] == "STRICT_DUID"
 
 
+
 @pytest.mark.asyncio
 async def test_io_strict_timeouts_and_reads(connection):
     """Mata mutantes de asyncio.timeout(None), timeout=6.0 y read(4097)."""
@@ -1879,6 +1922,7 @@ async def test_io_strict_timeouts_and_reads(connection):
         
         # Validamos que el timeout de escritura fue exactamente 5.0
         mock_timeout.assert_called_once_with(5.0)
+
 
 
 @pytest.mark.asyncio
@@ -1932,6 +1976,7 @@ def test_check_and_create_repair_issue_strict_getattr(connection):
         except AttributeError as e:
             # Si Mutmut borró el 'None' del getattr(), esto explotará porque 'name' no existe
             pytest.fail(f"Mutante cazado (AttributeError en getattr sin default): {e}")
+
 
 @pytest.mark.asyncio
 async def test_read_full_response_strict_decoding(connection):
@@ -1997,6 +2042,7 @@ def test_update_config_and_yaml_strict_logic(connection):
         # Al pasar connection como connection_base, saltamos las validaciones iniciales
         connection.load_from_yaml({"params": {"connection_template": "dummy"}}, connection)
 
+
 @pytest.mark.asyncio
 async def test_handle_reconnection_handshake_false(connection):
     """Mata el mutante handshake_success = True en handle_reconnection."""
@@ -2014,6 +2060,7 @@ async def test_handle_reconnection_handshake_false(connection):
         # y añadiría "jitter" aleatorio al delay. Al ser False legítimamente por red caída,
         # el delay que se envía al sleep debe ser el número cerrado (sin jitter):
         mock_sleep.assert_called_once_with(10.0)
+
 
 @pytest.mark.asyncio
 async def test_process_read_queue_strict_positives(connection):
@@ -2050,6 +2097,7 @@ def test_check_repair_issue_strict_hass_fallback(connection):
         connection._check_and_create_repair_issue()
     except AttributeError:
         pytest.fail("Mutmut eliminó el fallback 'None' en getattr(self._controller, 'hass', None)")
+
 
 @pytest.mark.asyncio
 async def test_establish_connection_strict_sockets(connection):

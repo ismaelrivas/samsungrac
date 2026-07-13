@@ -76,15 +76,17 @@ if [[ -d "custom_components/climate_ip/.git" ]]; then
 fi
 
 restore_git() {
+    trap '' INT TERM
     if [[ -d "${GIT_BACKUP}" ]]; then
         mv "${GIT_BACKUP}" custom_components/climate_ip/.git 2>/dev/null || true
         echo "✅ .git anidado restaurado"
     fi
 }
 cleanup_on_interrupt() {
+    trap '' INT TERM EXIT ERR
     echo -e "\n\n 🛑 \033[31m[!] Abortado (SIGINT capturado en Bash).\033[0m"
     restore_git
-    pkill -P $$ || true 
+    pkill -KILL -P $$ 2>/dev/null || true 
     exit 130
 }
 trap restore_git EXIT ERR
@@ -97,7 +99,9 @@ echo "☢️  Iniciando mutmut run sobre: ${TARGET_FILE}"
 # Corregido: PYTHONPATH aditivo y uso de "${TARGET_FILE}" en --source
 PYTHONPATH="${WORKSPACE_ROOT}/mutants:${PYTHONPATH}" \
 /workspaces/ha_data/.dev-tools/bin/python -W "ignore:This process:DeprecationWarning" \
--m mutmut run --source "${TARGET_FILE}" --exclude-dir scripts --workers 0 "$@" || true
+-m mutmut run --source "${TARGET_FILE}" --exclude-dir scripts --workers 0 "$@" &
+MUTMUT_PID=$!
+wait $MUTMUT_PID || true
 
 ELAPSED_TIME=$(( SECONDS - START_TIME ))
 export PIPELINE_DURATION_SECONDS="${ELAPSED_TIME}"

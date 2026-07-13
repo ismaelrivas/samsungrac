@@ -760,7 +760,7 @@ class ConnectionSamsung2878(Connection):
         return True
 
     async def _read_full_response(self, timeout: float = 10.0) -> str | None:
-        if not self._reader or self._reader.at_eof(): # IRP ojo con esta
+        if not self._reader or self._reader.at_eof():
             return None
         try:
             buffer = b""  # pragma: no mutate

@@ -14,6 +14,7 @@ def test_can_import_connection_class():
 
 
 
+
 async def test_repair_issue_created_on_disconnect():
     """Test that a repair issue is created after 3 connection failures."""
     from unittest.mock import AsyncMock, MagicMock, patch
@@ -70,6 +71,7 @@ async def test_repair_issue_created_on_disconnect():
         assert kwargs["translation_key"] == "connection_failed"
         assert kwargs["translation_placeholders"]["host"] == "192.168.1.100"
         assert kwargs["translation_placeholders"]["name"] == "Test AC"
+
 
 
 
@@ -132,6 +134,7 @@ async def test_repair_issue_cleared_on_reconnect():
         mock_delete_issue.assert_called_once_with(
             mock_hass, "climate_ip", "connection_failed_192.168.1.100"
         )
+
 
 
 async def test_async_xml_parse():
@@ -213,6 +216,7 @@ def test_2878_auth_token_format():
     rendered_auth = jinja2.Template(conn._connection_init_template.template).render(**conn._params)
     assert 'Token="REAL_SECURE_TOKEN_XYZ"' in rendered_auth
     assert '__CLIMATE_IP_TOKEN__' not in rendered_auth
+
 
 
 async def test_defusedxml_billion_laughs_rejection():
