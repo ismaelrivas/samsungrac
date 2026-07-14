@@ -172,13 +172,14 @@ async def test_async_execute_fast_fail_backoff(connection):
     connection._cmd_queue.put = AsyncMock()
     
     try:
-        with pytest.raises(CannotConnect, match="Client not ready"):
-            await connection.async_execute(
-                method="GET",
-                url="test_url",
-                data="<data>",
-                headers={}
-            )
+        with patch("custom_components.climate_ip.samsung_2878.COMMAND_TIMEOUT", 0.01):
+            with pytest.raises(CannotConnect, match="Client not ready"):
+                await connection.async_execute(
+                    method="GET",
+                    url="test_url",
+                    data="<data>",
+                    headers={}
+                )
     finally:
         connection._manager_task.cancel()
 

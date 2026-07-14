@@ -671,8 +671,9 @@ async def test_async_execute_timeout_and_success(connection):
     # 1. Fallo rápido si no está listo y ya hubo reintentos
     connection._is_ready.clear()
     connection._reconnect_retries = 1
-    with pytest.raises(CannotConnect, match="Client not ready"):
-        await connection.async_execute(None, None, "<Test/>", None)
+    with patch("custom_components.climate_ip.samsung_2878.COMMAND_TIMEOUT", 0.01):
+        with pytest.raises(CannotConnect, match="Client not ready"):
+            await connection.async_execute(None, None, "<Test/>", None)
         
     # 2. Timeout esperando a que esté listo (Dispara la excepción)
     connection._reconnect_retries = 0
@@ -881,9 +882,10 @@ async def test_read_full_response_variants(connection):
     
     # Mata el mutante decoded_buffer.endswith(None) y or PROTOCOL_2878_DPLUG not in
     # Le pasamos algo que termina en /> sin ser un Update o Response clásico
-    connection._reader.read = AsyncMock(return_value=b'<FakeTag status="ok" />')
+    connection._reader.read = AsyncMock(side_effect=[b'<FakeTag status="ok" />', TimeoutError()])
     resp = await connection._read_full_response()
     assert resp == '<FakeTag status="ok" />'
+    assert connection._reader.read.call_count == 1
 
 
 @pytest.mark.asyncio

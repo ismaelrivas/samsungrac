@@ -50,24 +50,28 @@ async def test_00_read_full_response_decode_mutants(connection):
     with patch.object(connection, "_close_connection", new_callable=AsyncMock):
         res = await connection._read_full_response()
         assert res == "<Response>ok</Response>"
+        assert connection._reader.read.call_count == 1
 
     # 2. Mutant: "</Response>" in decoded_buffer and "</Update>" in decoded_buffer (was OR)
     connection._reader.read = AsyncMock(side_effect=[b"<Update>ok</Update>", b""])
     with patch.object(connection, "_close_connection", new_callable=AsyncMock):
         res = await connection._read_full_response()
         assert res == "<Update>ok</Update>"
+        assert connection._reader.read.call_count == 1
 
     # 3. Mutant: PROTOCOL_2878_DPLUG in decoded_buffer (if mutated to AND, it will fail)
     connection._reader.read = AsyncMock(side_effect=[PROTOCOL_2878_DPLUG.encode() + b"test", b""])
     with patch.object(connection, "_close_connection", new_callable=AsyncMock):
         res = await connection._read_full_response()
         assert res == PROTOCOL_2878_DPLUG + "test"
+        assert connection._reader.read.call_count == 1
 
     # 4. Mutant: decoded_buffer.endswith("/>")
     connection._reader.read = AsyncMock(side_effect=[b"<test/>", b""])
     with patch.object(connection, "_close_connection", new_callable=AsyncMock):
         res = await connection._read_full_response()
         assert res == "<test/>"
+        assert connection._reader.read.call_count == 1
 
 @pytest.mark.asyncio
 async def test_00_read_full_response_decode_errors_block(connection):
