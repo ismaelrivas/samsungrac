@@ -12,6 +12,25 @@ import pytest
 from pathlib import Path
 sys.path.append(os.getcwd())
 
+import resource
+import platform
+
+def limit_memory():
+    """
+    Collar de ahogo (Hard Limit) para evitar que mutantes con bucles
+    infinitos colapsen la RAM y el kernel (WSL OOM).
+    """
+    if platform.system() != "Windows": # resource es exclusivo de Unix/Linux
+        # Límite de 1 GB (1024 * 1024 * 1024 bytes)
+        MAX_RAM = 1024 * 1024 * 1024 
+        try:
+            resource.setrlimit(resource.RLIMIT_AS, (MAX_RAM, MAX_RAM))
+        except ValueError:
+            pass # Ignorar si el OS no lo permite
+
+# Ejecutar el límite en el momento en que pytest arranca
+limit_memory()
+
 
 # --- HIDE WARNINGS ---
 # Hide DeprecationWarnings from our own legacy connection methods
@@ -240,3 +259,31 @@ def auto_mock_network() -> Any:
         return_value=True,
     ):
         yield
+
+import asyncio
+
+@pytest.fixture(scope="function", autouse=True)
+def aggressive_asyncio_teardown():
+    """
+    Teardown ultra-agresivo para aislar mutantes asíncronos.
+    Garantiza un loop limpio por test y aniquila tareas zombis.
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    yield loop
+    
+    # Fase de purga de estado corrupto
+    pending = asyncio.all_tasks(loop)
+    for task in pending:
+        task.cancel()
+        
+    if pending:
+        try:
+            # Damos un ciclo de reloj para que las cancelaciones hagan efecto
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        except Exception:
+            pass
+            
+    loop.close()
+    asyncio.set_event_loop(None)
