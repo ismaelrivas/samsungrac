@@ -1177,3 +1177,427 @@ async def test_async_update_properties_fan_flicker_flag():
     
     # 3. Aserción de Estado Secundario: El flag DEBE activarse (Mata != FAN_MODE, = False, = None)
     assert poller.fan_modes_list_changed_pending_flicker is True
+
+# --- FRENTE 1: Refresco de Token SmartThings ---
+
+@patch("custom_components.climate_ip.controller_yaml_polling.config_entry_oauth2_flow.OAuth2Session")
+@patch("custom_components.climate_ip.controller_yaml_polling.config_entry_oauth2_flow.async_get_config_entry_implementation")
+async def test_refresh_smartthings_token_success(mock_get_impl, mock_oauth_session):
+    """Test successful refresh of SmartThings token."""
+    mock_controller = MagicMock()
+    mock_controller.hass = MagicMock()
+    mock_controller.log_prefix = "[AuthTest]"
+    
+    # 1. Mock de las config_entries
+    mock_entry = MagicMock()
+    mock_controller.hass.config_entries.async_entries.return_value = [mock_entry]
+    
+    # 2. Mock del Session y token
+    mock_session_instance = AsyncMock()
+    mock_session_instance.token = {"access_token": "nuevo_token_refrescado"}
+    mock_oauth_session.return_value = mock_session_instance
+    
+    poller = YamlStatePoller(mock_controller)
+    
+    # Ejecutamos el método
+    result = await poller._refresh_smartthings_token()
+    
+    # Aserciones estrictas
+    mock_controller.hass.config_entries.async_entries.assert_called_with("smartthings")
+    assert mock_get_impl.called
+    mock_session_instance.async_ensure_token_valid.assert_awaited_once()
+    assert result == "nuevo_token_refrescado"
+
+@patch("custom_components.climate_ip.controller_yaml_polling.config_entry_oauth2_flow.OAuth2Session")
+@patch("custom_components.climate_ip.controller_yaml_polling.config_entry_oauth2_flow.async_get_config_entry_implementation")
+async def test_refresh_smartthings_token_failure(mock_get_impl, mock_oauth_session):
+    """Test token refresh failure paths (no entries, exceptions)."""
+    mock_controller = MagicMock()
+    mock_controller.hass = MagicMock()
+    
+    # 1. Fallo: No hay config entries
+    mock_controller.hass.config_entries.async_entries.return_value = []
+    poller = YamlStatePoller(mock_controller)
+    assert await poller._refresh_smartthings_token() is None
+    
+    # 2. Fallo: Exception en el proceso OAuth
+    mock_controller.hass.config_entries.async_entries.return_value = [MagicMock()]
+    mock_get_impl.side_effect = Exception("Auth Server Down")
+    assert await poller._refresh_smartthings_token() is None
+
+    # 3. Fallo: No hay hass configurado
+    mock_controller.hass = None
+    assert await poller._refresh_smartthings_token() is None
+
+# --- FRENTE 2: Bloques de Fusión Atómica y Predicción ---
+
+async def test_evict_invalidated_pending_updates():
+    """Test that pushed updates evict stale pending commands."""
+    mock_controller = MagicMock()
+    mock_op = MagicMock()
+    mock_op.id = "hvac_mode"
+    mock_op.status_template = "{{ device_state.hvac_mode }}"
+    mock_controller.loader.operations = {"hvac_mode": mock_op}
+    
+    poller = YamlStatePoller(mock_controller)
+    # Populate pending
+    poller._pending_updates["hvac_mode"] = ("heat", 123456789.0)
+    
+    # 1. Evict via direct device key
+    poller._evict_invalidated_pending_updates({"hvac_mode": "cool"})
+    assert len(poller._pending_updates) == 0
+    
+    # 2. Evict via AC_FUN_POWER="Off"
+    poller._pending_updates["hvac_mode"] = ("heat", 123456789.0)
+    poller._evict_invalidated_pending_updates({"AC_FUN_POWER": "Off"})
+    assert len(poller._pending_updates) == 0
+
+async def test_async_merge_device_state():
+    """Test that partial state updates from push notifications merge correctly."""
+    mock_controller = MagicMock()
+    mock_controller.get_current_state_callback.return_value = MagicMock()
+    mock_getter = MagicMock()
+    mock_getter.value = {"temperature": 20.0}
+    mock_controller.loader.state_getter = mock_getter
+    
+    poller = YamlStatePoller(mock_controller)
+    
+    # Patch _calculate_structured_state and async_update_properties_from_state
+    with patch.object(poller, "_calculate_structured_state", return_value={"temp": 22.0}), \
+         patch.object(poller, "async_update_properties_from_state", new_callable=AsyncMock) as mock_update, \
+         patch.object(poller, "_build_device_state_from_hass", new_callable=AsyncMock, return_value={"temperature": 20.0}):
+        
+        result = await poller.async_merge_device_state({"temperature": 22.0}, False, False)
+        
+        assert result is True
+        mock_update.assert_awaited_once()
+        # Verify the merge
+        assert mock_getter.value == {"temperature": 22.0}
+
+async def test_async_predict_and_correct_state():
+    """Test state prediction returns expected corrections without mutating main state directly."""
+    mock_controller = MagicMock()
+    mock_controller.loader.is_fully_initialized = True
+    
+    # Setup mock current_hass_state
+    current_hass_state = MagicMock()
+    current_hass_state.hvac_mode = "cool"
+    
+    mock_getter = MagicMock()
+    mock_getter.value = {"AC_FUN_POWER": "On"}
+    mock_controller.loader.state_getter = mock_getter
+    
+    mock_op = MagicMock()
+    mock_op.id = "hvac_mode"
+    mock_op.value = "cool"
+    mock_controller.loader.operations = {"hvac_mode": mock_op}
+    mock_controller.loader.properties = {}
+    
+    poller = YamlStatePoller(mock_controller)
+    poller._get_hass_attr_for_op_id = MagicMock(return_value="hvac_mode")
+    
+    # Patch _build_device_state_from_props and async_update_properties_from_state
+    with patch.object(poller, "_build_device_state_from_props", new_callable=AsyncMock, return_value={"AC_FUN_OPMODE": "Heat"}), \
+         patch.object(poller, "async_update_properties_from_state", new_callable=AsyncMock, return_value={"hvac_mode": "heat"}):
+             
+        feature, corrections = await poller.async_predict_and_correct_state(current_hass_state, "hvac_mode", "heat")
+        
+        assert corrections == {"hvac_mode": "heat"}
+        # The mock operation should be updated locally
+        assert mock_op.value == "heat"
+
+# --- FRENTE 3: Recuperación de Errores ---
+
+@patch("custom_components.climate_ip.controller_yaml_polling.async_create_issue")
+def test_try_create_repair_issue_exception_handling(mock_create_issue):
+    """Test that _try_create_repair_issue handles exceptions silently and gracefully."""
+    mock_controller = MagicMock()
+    mock_controller.hass = MagicMock()
+    
+    # 1. Simulate an exception in the core HA component
+    mock_create_issue.side_effect = Exception("Simulated Core Drop")
+    
+    poller = YamlStatePoller(mock_controller)
+    
+    # This should not raise an exception
+    poller._try_create_repair_issue()
+    
+    # Verify the exception was swallowed and flow continued
+    assert mock_create_issue.called
+
+# --- FRENTE 4: Cierre y Apagado ---
+
+async def test_async_shutdown():
+    """Test that shutdown closes connections cleanly."""
+    mock_controller = MagicMock()
+    mock_connection = AsyncMock()
+    mock_controller.loader.connection = mock_connection
+    
+    poller = YamlStatePoller(mock_controller)
+    
+    await poller.async_shutdown()
+    
+    # The connection should have been told to close
+    mock_connection.close.assert_called_once()
+
+# --- FRENTE 5: Cobertura Extrema (Edge Cases) ---
+
+def test_update_all_connections_token():
+    """Test propagating new token to all connections."""
+    mock_controller = MagicMock()
+    
+    mock_conn1 = MagicMock()
+    mock_conn1.update_auth_token = MagicMock()
+    
+    mock_prop1 = MagicMock()
+    mock_prop1.get_connection.return_value = mock_conn1
+    
+    mock_conn2 = MagicMock() # No update_auth_token method
+    del mock_conn2.update_auth_token
+    
+    mock_prop2 = MagicMock()
+    mock_prop2.get_connection.return_value = mock_conn2
+
+    poller = YamlStatePoller(mock_controller)
+    poller._all_props = MagicMock(return_value=[mock_prop1, mock_prop2, None])
+    
+    poller._update_all_connections_token("nuevo_token")
+    mock_conn1.update_auth_token.assert_called_once_with("nuevo_token")
+
+def test_mask_sensitive_data():
+    """Test recursive masking of sensitive data."""
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    
+    payload = {
+        "uuid": "1234567890abcdef",
+        "nested": {
+            "uuid": "short", # Shouldn't be masked
+            "list_val": [{"uuid": "1234567890abcdef"}]
+        }
+    }
+    
+    masked = poller._mask_sensitive_data(payload)
+    assert masked["uuid"] == "***abcdef"
+    assert masked["nested"]["uuid"] == "short"
+    assert masked["nested"]["list_val"][0]["uuid"] == "***abcdef"
+
+async def test_async_merge_device_state_edge_cases():
+    """Test edge cases in async_merge_device_state."""
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    
+    # Empty data
+    assert await poller.async_merge_device_state({}, False, False) is False
+    
+    # No state getter
+    mock_controller.get_current_state_callback.return_value = None
+    mock_controller.loader.state_getter = None
+    assert await poller.async_merge_device_state({"k": "v"}, False, False) is False
+    
+    # State getter has no value
+    mock_controller.loader.state_getter = MagicMock(spec=[])
+    assert await poller.async_merge_device_state({"k": "v"}, False, False) is False
+    
+    # Calculate structured returns None
+    mock_controller.loader.state_getter = MagicMock()
+    mock_controller.loader.state_getter.value = {"k": "v"}
+    with patch.object(poller, "_calculate_structured_state", return_value=None):
+        assert await poller.async_merge_device_state({"k2": "v2"}, False, False) is False
+
+async def test_async_predict_and_correct_state_edge_cases():
+    """Test edge cases in async_predict_and_correct_state."""
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    poller._get_hass_attr_for_op_id = MagicMock(return_value="mock_attr")
+    
+    # Not fully initialized
+    mock_controller.loader.is_fully_initialized = False
+    f, c = await poller.async_predict_and_correct_state(MagicMock(), "k", "v")
+    assert c == {}
+    
+    # No last real state
+    mock_controller.loader.is_fully_initialized = True
+    mock_controller.loader.state_getter = MagicMock(spec=[])
+    f, c = await poller.async_predict_and_correct_state(MagicMock(), "k", "v")
+    assert c == {}
+    
+    # Property not found
+    mock_controller.loader.state_getter = MagicMock()
+    mock_controller.loader.state_getter.value = {"x": "y"}
+    mock_controller.loader.operations = {}
+    mock_controller.loader.properties = {}
+    f, c = await poller.async_predict_and_correct_state(MagicMock(), "k", "v")
+    assert c == {}
+    
+    # Future state is empty
+    mock_op = MagicMock()
+    mock_controller.loader.operations = {"k": mock_op}
+    with patch.object(poller, "_build_device_state_from_props", new_callable=AsyncMock, return_value={}):
+        f, c = await poller.async_predict_and_correct_state(MagicMock(), "k", "v")
+        assert c == {}
+
+# --- FRENTE 6: _build_device_state_from_hass ---
+
+async def test_build_device_state_from_hass_early_exits():
+    """Test early exits in _build_device_state_from_hass."""
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    
+    # 1. Not fully initialized
+    mock_controller.loader.is_fully_initialized = False
+    assert await poller._build_device_state_from_hass(MagicMock()) is None
+    
+    # 2. No state getter
+    mock_controller.loader.is_fully_initialized = True
+    mock_controller.loader.state_getter = None
+    assert await poller._build_device_state_from_hass(MagicMock()) is None
+    
+    # 3. state_getter has no value
+    mock_controller.loader.state_getter = MagicMock(spec=[])
+    assert await poller._build_device_state_from_hass(MagicMock()) == {}
+
+async def test_build_device_state_from_hass_reconstruction():
+    """Test full reconstruction in _build_device_state_from_hass."""
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    
+    mock_controller.loader.is_fully_initialized = True
+    mock_controller.loader.state_getter = MagicMock()
+    mock_controller.loader.state_getter.value = {"dev_mode": "old_dev"}
+    
+    # Setup op
+    mock_op = MagicMock()
+    mock_op.id = "hvac_mode"
+    mock_op.convert_hass_to_dev = MagicMock(return_value="new_dev")
+    
+    # Another op without ID
+    mock_op_no_id = MagicMock()
+    del mock_op_no_id.id
+    
+    # Property op
+    mock_prop = MagicMock()
+    mock_prop.id = "temperature"
+    mock_prop.convert_hass_to_dev = MagicMock(return_value=23)
+    
+    mock_controller.loader.operations = {"hvac": mock_op, "no_id": mock_op_no_id}
+    mock_controller.loader.properties = {"temp": mock_prop}
+    
+    # We mock _get_hass_attr_for_op_id
+    poller._get_hass_attr_for_op_id = MagicMock(side_effect=lambda x: x)
+    # We mock _get_cached_device_key_from_prop
+    poller._get_cached_device_key_from_prop = MagicMock(side_effect=lambda op: "dev_mode" if op == mock_op else "dev_temp")
+    
+    # Setup HASS state input
+    hass_state = MagicMock()
+    hass_state.hvac_mode = "cool"
+    hass_state.temperature = 23
+    
+    res = await poller._build_device_state_from_hass(hass_state)
+    
+    # Since dev_temp is not in reconstructed_state originally, it shouldn't be added!
+    # "dev_mode" is in reconstructed_state, so it should be modified.
+    assert res == {"dev_mode": "new_dev"}
+    mock_op.convert_hass_to_dev.assert_called_once_with("cool")
+    mock_prop.convert_hass_to_dev.assert_called_once_with(23)
+
+
+# --- FRENTE 7: async_update_state edge cases ---
+
+@patch("custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability", new_callable=AsyncMock)
+async def test_async_update_state_network_failures_thresholds(mock_reachability):
+    """Test the thresholds for consecutive network failures."""
+    from custom_components.climate_ip.exceptions import CannotConnect
+    mock_controller = MagicMock()
+    mock_controller.config = {"device_type": "some_rest"}
+    mock_controller.ip_address = "192.168.1.100"
+    poller = YamlStatePoller(mock_controller)
+    poller._try_create_repair_issue = MagicMock()
+    
+    mock_reachability.return_value = False
+    
+    # 1st failure -> Exception, issue NOT created
+    with pytest.raises(CannotConnect, match="Host unreachable"):
+        await poller.async_update_state()
+    assert poller._consecutive_connection_errors == 1
+    poller._try_create_repair_issue.assert_not_called()
+    
+    # 2nd failure -> Exception (persistently offline)
+    with pytest.raises(CannotConnect, match="persistently offline"):
+        await poller.async_update_state()
+    assert poller._consecutive_connection_errors == 2
+    poller._try_create_repair_issue.assert_not_called()
+    
+    # 3rd failure -> Exception (persistently offline) + creates issue
+    with pytest.raises(CannotConnect, match="persistently offline"):
+        await poller.async_update_state()
+    assert poller._consecutive_connection_errors == 3
+    poller._try_create_repair_issue.assert_called_once()
+    
+    # Recovery on 4th call!
+    mock_reachability.return_value = True
+    poller.controller.loader.state_getter.async_update_state = AsyncMock(return_value={"recovered": True})
+    poller.controller.loader.state_getter.value = {"recovered": True}
+    
+    with patch("custom_components.climate_ip.controller_yaml_polling.async_delete_issue") as mock_del:
+        res = await poller.async_update_state()
+        assert res == {"recovered": True}
+        assert poller._consecutive_connection_errors == 0
+        mock_del.assert_called_once()
+
+@patch("custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability", new_callable=AsyncMock)
+async def test_async_update_state_network_diagnostics_exceptions(mock_reachability):
+    """Test when reachability throws non-CannotConnect exceptions."""
+    mock_controller = MagicMock()
+    mock_controller.config = {"device_type": "some_rest"}
+    mock_controller.ip_address = "192.168.1.100"
+    poller = YamlStatePoller(mock_controller)
+    
+    # Reachability throws a ValueError
+    mock_reachability.side_effect = ValueError("Some weird DNS error")
+    
+    # The error should be swallowed and we attempt to poll anyway!
+    poller.controller.loader.state_getter.async_update_state = AsyncMock(return_value={"polled": True})
+    poller.controller.loader.state_getter.value = {"polled": True}
+    res = await poller.async_update_state()
+    assert res == {"polled": True}
+
+async def test_async_update_state_auth_refresh_exception_handling():
+    """Test AuthError refresh exception flow."""
+    from custom_components.climate_ip.exceptions import AuthError
+    mock_controller = MagicMock()
+    mock_controller.config = {"device_type": "some_rest"}
+    mock_controller.ip_address = None # Bypass network check
+    
+    poller = YamlStatePoller(mock_controller)
+    
+    # 1. async_update_state throws AuthError
+    poller.controller.loader.state_getter.async_update_state = AsyncMock(side_effect=AuthError)
+    
+    # 2. Refresh succeeds
+    poller._refresh_smartthings_token = AsyncMock(return_value=True)
+    
+    # 3. But post-refresh state fetch throws ANOTHER exception
+    # (Since we mock it statically here, it will always throw. Let's make it throw a different error)
+    poller.controller.loader.state_getter.async_update_state.side_effect = [AuthError("err"), ValueError("Post refresh crash")]
+    
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+    with pytest.raises(UpdateFailed, match="Retry after token refresh failed"):
+        await poller.async_update_state()
+
+async def test_async_update_state_auth_refresh_fails_permanently():
+    """Test AuthError where token refresh itself fails."""
+    from custom_components.climate_ip.exceptions import AuthError
+    mock_controller = MagicMock()
+    mock_controller.config = {"device_type": "some_rest"}
+    mock_controller.ip_address = None
+    
+    poller = YamlStatePoller(mock_controller)
+    
+    poller.controller.loader.state_getter.async_update_state = AsyncMock(side_effect=AuthError)
+    poller._refresh_smartthings_token = AsyncMock(return_value=False)
+    
+    from homeassistant.exceptions import ConfigEntryAuthFailed
+    with pytest.raises(ConfigEntryAuthFailed, match="Authentication failed"):
+        await poller.async_update_state()
+
