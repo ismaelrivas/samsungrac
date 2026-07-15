@@ -1116,10 +1116,12 @@ async def test_async_update_properties_loop_sequences_and_eviction_handling():
     
     prop_stale = FakeProp("stale_prop")
     prop_standard = FakeProp("standard_prop")
-
+    
+    prop_no_convert = FakeProp("no_convert_prop")
+    del prop_no_convert.convert_hass_to_dev
 
     # El orden de la lista es CRÍTICO para capturar el cortocircuito del bucle
-    all_props_list = [prop_active, prop_stale, prop_standard]
+    all_props_list = [prop_active, prop_stale, prop_no_convert, prop_standard]
     mock_controller.loader.operations = {p.id: p for p in all_props_list}
     mock_controller.loader.properties = {}
     mock_controller.loader.sensors = {}
@@ -1128,7 +1130,8 @@ async def test_async_update_properties_loop_sequences_and_eviction_handling():
     now = time.time()
     poller._pending_updates = {
         "active_prop": ("ha_active", now - 2.0),  # Activa (<15s)
-        "stale_prop": ("ha_stale", now - 20.0)   # Caducada (>15s)
+        "stale_prop": ("ha_stale", now - 20.0),   # Caducada (>15s)
+        "no_convert_prop": ("ha_no_convert", now - 2.0)
     }
 
     fake_device_state = {"power_key": "original_value"}
