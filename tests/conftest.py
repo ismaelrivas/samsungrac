@@ -21,8 +21,8 @@ def limit_memory():
     infinitos colapsen la RAM y el kernel (WSL OOM).
     """
     if platform.system() != "Windows": # resource es exclusivo de Unix/Linux
-        # Límite de 1 GB (1024 * 1024 * 1024 bytes)
-        MAX_RAM = 1024 * 1024 * 1024 
+        # Límite de 2 GB (2 * 1024 * 1024 * 1024 bytes) para evitar OOM pero dar respiro a chunks grandes
+        MAX_RAM = 2 * 1024 * 1024 * 1024 
         try:
             resource.setrlimit(resource.RLIMIT_AS, (MAX_RAM, MAX_RAM))
         except ValueError:
@@ -262,13 +262,14 @@ def auto_mock_network() -> Any:
 
 import asyncio
 
-@pytest.fixture(scope="function", autouse=True)
-def aggressive_asyncio_teardown():
+@pytest.fixture(scope="function")
+def event_loop():
     """
-    Teardown ultra-agresivo para aislar mutantes asíncronos.
-    Garantiza un loop limpio por test y aniquila tareas zombis.
+    Sobrescribe el event_loop nativo de pytest-asyncio para inyectar 
+    un teardown ultra-agresivo. Garantiza un loop limpio por test y 
+    aniquila tareas zombis sin colisionar con el plugin.
     """
-    loop = asyncio.new_event_loop()
+    loop = asyncio.get_event_loop_policy().new_event_loop()
     asyncio.set_event_loop(loop)
     
     yield loop

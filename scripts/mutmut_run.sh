@@ -97,6 +97,16 @@ echo ""
 echo "☢️  Iniciando mutmut run sobre: ${TARGET_FILE}"
 
 # Corregido: PYTHONPATH aditivo y uso de "${TARGET_FILE}" en --source
+OUTPUT_FILE="mutant_analysis.json"
+args=("$@")
+for ((i=0; i<${#args[@]}; i++)); do
+    if [[ "${args[i]}" == "--output" ]]; then
+        OUTPUT_FILE="${args[i+1]}"
+    elif [[ "${args[i]}" == --output=* ]]; then
+        OUTPUT_FILE="${args[i]#*=}"
+    fi
+done
+
 PYTHONPATH="${WORKSPACE_ROOT}/mutants:${PYTHONPATH}" \
 /workspaces/ha_data/.dev-tools/bin/python -W "ignore:This process:DeprecationWarning" \
 -m mutmut run --source "${TARGET_FILE}" --exclude-dir scripts --workers 0 "$@" &
@@ -111,8 +121,8 @@ SECONDS_REM=$(( ELAPSED_TIME % 60 ))
 echo ""
 echo "=================================================="
 echo "✅ PIPELINE COMPLETADO en ${MINUTES}m ${SECONDS_REM}s (${ELAPSED_TIME}s totales)"
-echo "   Análisis detallado     : ${WORKSPACE_ROOT}/mutant_analysis.json"
-echo "   Análisis detallado     : /home/cogollo/ha_data/config/mutant_analysis.json"
+echo "   Análisis detallado     : ${WORKSPACE_ROOT}/${OUTPUT_FILE}"
+echo "   Análisis detallado     : /home/cogollo/ha_data/config/${OUTPUT_FILE}"
 echo "   Diffs filtrados        : ${WORKSPACE_ROOT}/mutantes_filtrados.txt"
 echo "   Diffs filtrados        : /home/cogollo/ha_data/config/mutantes_filtrados.txt"
 echo "   Mutantes Raw           : ${WORKSPACE_ROOT}/mutantes.txt"
