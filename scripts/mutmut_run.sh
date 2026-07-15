@@ -69,8 +69,9 @@ echo "🧹 Limpiando artefactos anteriores..."
 echo "✅ Limpieza completa"
 
 # ── 8. Proteger el .git anidado ───────────────────────────────────────────────
-GIT_BACKUP="/tmp/climate_ip_git_backup_$$"
+GIT_BACKUP="${WORKSPACE_ROOT}/.climate_ip_git_backup"
 if [[ -d "custom_components/climate_ip/.git" ]]; then
+    rm -rf "${GIT_BACKUP}"
     mv custom_components/climate_ip/.git "${GIT_BACKUP}"
     echo "✅ .git anidado protegido en ${GIT_BACKUP}"
 fi

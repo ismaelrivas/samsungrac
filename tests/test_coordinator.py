@@ -614,6 +614,7 @@ async def test_coordinator_super_init_attributes(hass: HomeAssistant) -> None:
     assert coordinator.name == "Samsung Climate [SuperTest]"
     assert coordinator.update_interval == timedelta(seconds=33)
     assert coordinator.always_update is True
+    assert coordinator.config_entry is mock_entry
 
 async def test_coordinator_device_info_with_name_and_id(hass: HomeAssistant) -> None:
     """Test device_info parsing when both name and id are provided."""
@@ -941,6 +942,7 @@ async def test_async_set_property_raises_update_failed_on_exception_with_message
 async def test_coordinator_enforces_strict_timeout(hass: HomeAssistant) -> None:
     """Verify that the coordinator enforces a 30.0 second timeout on device polling."""
     from unittest.mock import MagicMock, patch
+    from custom_components.climate_ip.const import NETWORK_POLL_TIMEOUT
     from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 
     mock_controller = MagicMock()
@@ -956,7 +958,7 @@ async def test_coordinator_enforces_strict_timeout(hass: HomeAssistant) -> None:
         
         # Validate that it was called with the exact timeout
         mock_wait.assert_called_once()
-        assert mock_wait.call_args.kwargs.get("timeout") == 30.0, "The network timeout was altered"
+        assert mock_wait.call_args.kwargs.get("timeout") == NETWORK_POLL_TIMEOUT, "The network timeout was altered"
 
 async def test_coordinator_unwraps_hvac_enum_before_sending(hass: HomeAssistant) -> None:
     """Verify that Enums are unwrapped to their primitive values before dispatching."""

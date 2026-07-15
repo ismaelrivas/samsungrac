@@ -26,6 +26,7 @@ from .const import (
     DEFAULT_ENABLE_POLLING,
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
+    NETWORK_POLL_TIMEOUT,
 )
 from .controller import ControllerInterface
 from .exceptions import AuthError, CannotConnect, InvalidHeaderError
@@ -121,8 +122,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             _LOGGER,
             name=f"Samsung Climate {self.log_prefix}",
             update_interval=update_interval,
-            config_entry=entry,  # pragma: no mutate
-        )
+            config_entry=entry, 
+        )  # pragma: no mutate
 
         # Build comprehensive DeviceInfo
         if device_info:
@@ -178,7 +179,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     async def _async_update_data(self) -> Any:
         """Fetch the latest state from the device."""
         try:
-            await asyncio.wait_for(self.controller.async_get_status(), timeout=30.0)
+            await asyncio.wait_for(self.controller.async_get_status(), timeout=NETWORK_POLL_TIMEOUT)  # pragma: no mutate
             return self._create_device_state()
 
         except InvalidHeaderError as err:

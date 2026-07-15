@@ -146,6 +146,9 @@ MAX_CONSECUTIVE_CONNECTION_ERRORS = 3
 # Replacing scattered magic numbers (e.g., 5s, 10s, 15s) in connection scripts.
 GLOBAL_HTTP_TIMEOUT = 10
 
+# Maximum wait time for device polling over the network.
+NETWORK_POLL_TIMEOUT = 30.0
+
 # --- Property Constants ---
 PROPERTY_TYPE_MODE = "modes"
 PROPERTY_TYPE_SWITCH = "switch"
