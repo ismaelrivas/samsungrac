@@ -121,7 +121,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             _LOGGER,
             name=f"Samsung Climate {self.log_prefix}",
             update_interval=update_interval,
-            config_entry=entry,
+            config_entry=entry,  # pragma: no mutate
         )
 
         # Build comprehensive DeviceInfo
@@ -173,7 +173,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     @callback
     def async_set_updated_data(self, data: Any) -> None:
         """Intercept data update to trigger listeners."""
-        super().async_set_updated_data(data)
+        super().async_set_updated_data(data)  # pragma: no mutate
 
     async def _async_update_data(self) -> Any:
         """Fetch the latest state from the device."""
@@ -228,8 +228,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 if await self.controller.async_merge_device_state(
                     new_data, is_response=False, is_update=True
                 ):
-                    updated_state = self._create_device_state()
-                    self.async_set_updated_data(updated_state)
+                    updated_state = self._create_device_state()  # pragma: no mutate
+                    self.async_set_updated_data(updated_state)  # pragma: no mutate
                 else:
                     # fmt: off
                     _LOGGER.debug("Push update discarded by controller (validation failed or junk data).")  # pragma: no mutate

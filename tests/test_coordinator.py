@@ -1022,3 +1022,76 @@ async def test_coordinator_success_path_no_refresh(hass: HomeAssistant) -> None:
 
     # LETHAL ASSERTION: If success mutated to False or None, this will fail.
     coordinator.async_request_refresh.assert_not_awaited()
+
+async def test_async_predict_and_correct_supported(hass: HomeAssistant) -> None:
+    """Test state prediction when supported by controller."""
+    from homeassistant.components.climate import HVACMode
+    from unittest.mock import MagicMock, AsyncMock, patch
+
+    mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(
+        return_value=("fake_flags", {"temp": 24})
+    )
+    mock_controller.climate_state = MagicMock()
+    
+    mock_entry = MagicMock()
+    mock_entry.options = {}
+    mock_entry.data = {}
+    coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+    
+    with patch.object(coordinator, "async_set_updated_data") as mock_set:
+        flags, corrections = await coordinator.async_predict_and_correct(
+            {"fake": "state"}, "hvac_mode", HVACMode.HEAT
+        )
+        
+        # Verify enum unwrapped
+        mock_controller.async_predict_and_correct_state.assert_awaited_once_with(
+            {"fake": "state"}, "hvac_mode", "heat"
+        )
+        
+        # Verify coordinator pushed state
+        mock_set.assert_called_once_with(mock_controller.climate_state)
+        
+        assert flags == "fake_flags"
+        assert corrections == {"temp": 24}
+
+async def test_async_predict_and_correct_unsupported(hass: HomeAssistant) -> None:
+    """Test state prediction when not supported by controller."""
+    from homeassistant.components.climate.const import ClimateEntityFeature
+    from unittest.mock import MagicMock
+
+    mock_controller = MagicMock()
+    # Explicitly remove the method from the mock
+    del mock_controller.async_predict_and_correct_state
+    mock_controller.log_prefix = "[Test]"
+    
+    mock_entry = MagicMock()
+    mock_entry.options = {}
+    mock_entry.data = {}
+    coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+    
+    flags, corrections = await coordinator.async_predict_and_correct(
+        {"fake": "state"}, "hvac_mode", "heat"
+    )
+    
+    assert flags == ClimateEntityFeature(0)
+    assert corrections == {}
+
+async def test_coordinator_getters(hass: HomeAssistant) -> None:
+    """Test get_property and get_property_object getters."""
+    from unittest.mock import MagicMock
+
+    mock_controller = MagicMock()
+    mock_controller.get_property.return_value = "property_value"
+    mock_controller.get_property_object.return_value = {"object": "value"}
+    
+    mock_entry = MagicMock()
+    mock_entry.options = {}
+    mock_entry.data = {}
+    coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+    
+    assert coordinator.get_property("some_prop") == "property_value"
+    mock_controller.get_property.assert_called_once_with("some_prop")
+    
+    assert coordinator.get_property_object("some_obj") == {"object": "value"}
+    mock_controller.get_property_object.assert_called_once_with("some_obj")
