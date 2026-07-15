@@ -439,10 +439,10 @@ async def test_build_device_state_chaos_monkey_guards():
     # --- CASO 5: Arrays 'options' de Mode (Mata mutantes de len == 1, len > 1) ---
     setup_ops("good_sleep", 1.0)
     
-    # Longitud 0: No debe hacer nada (Mata si cambian a >= 1 -> IndexError)
+    # Longitud 0: Ahora sí debe inicializarse porque mejoramos la estructura
     mock_controller.loader.state_getter.value = {"Devices": [{"Mode": {"options": []}}]}
     res = await poller._build_device_state_from_props()
-    assert res["Devices"][0]["Mode"]["options"] == []
+    assert res["Devices"][0]["Mode"]["options"] == ["Comode_Off", "Sleep_1"]
 
     # Longitud 1: Debe hacer append (Mata si cambian len == 1 a != 1)
     mock_controller.loader.state_getter.value = {"Devices": [{"Mode": {"options": ["Eco"]}}]}
@@ -454,14 +454,40 @@ async def test_build_device_state_chaos_monkey_guards():
     res = await poller._build_device_state_from_props()
     assert res["Devices"][0]["Mode"]["options"] == ["Eco", "Sleep_1", "Extra"]
 
-    # --- CASO 6: op_value nulo (Mata 'if op_value is None: continue') ---
+    # --- CASO 6: 'preset_mode' inicialización y reescritura ---
+    setup_ops("preset_mode", "Turbo")
+    mock_controller.loader.state_getter.value = {"Devices": [{"Mode": {"options": []}}]}
+    res = await poller._build_device_state_from_props()
+    assert res["Devices"][0]["Mode"]["options"] == ["Turbo"]
+
+    mock_controller.loader.state_getter.value = {"Devices": [{"Mode": {"options": ["OldMode"]}}]}
+    res = await poller._build_device_state_from_props()
+    assert res["Devices"][0]["Mode"]["options"] == ["Turbo"]
+
+    # --- CASO 7: op_value nulo (Mata 'if op_value is None: continue') ---
     setup_ops("hvac", None)
     mock_controller.loader.state_getter.value = {"Devices": [{}]}
     res = await poller._build_device_state_from_props()
+    assert res["Devices"] == [{}]
     # No debe haber añadido "Operation" porque la propiedad era None
     assert "Operation" not in res["Devices"][0]
 
+async def test_build_device_state_early_returns():
+    """Fuerza las salidas tempranas de _build_device_state_from_props (Líneas 655, 659)."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock
 
+    mock_controller = MagicMock()
+    mock_controller.loader.state_getter = None
+    poller = YamlStatePoller(mock_controller)
+
+    # st_getter es nulo
+    assert await poller._build_device_state_from_props() is None
+
+    # state_getter.value es nulo
+    mock_controller.loader.state_getter = MagicMock()
+    mock_controller.loader.state_getter.value = None
+    assert await poller._build_device_state_from_props() == {}
 # ====================================================================================
 # FRENTE H: CORTOCIRCUITO DE RENDIMIENTO (Dirty Check)
 # ====================================================================================
@@ -2002,3 +2028,174 @@ async def test_merge_device_state_atomic_merge():
     res_succ = await poller.async_merge_device_state(updates, _is_response=False, _is_update=True)
     assert res_succ is True
 
+def test_mask_sensitive_data_primitive():
+    """L183: Retorno temprano para datos primitivos."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock
+    poller = YamlStatePoller(MagicMock())
+    assert poller._mask_sensitive_data("primitive_string") == "primitive_string"
+    assert poller._mask_sensitive_data(123) == 123
+
+async def test_update_state_delete_issue_exception():
+    """L260-261: Captura de excepción en async_delete_issue."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import AsyncMock, MagicMock, patch
+    
+    mock_controller = MagicMock()
+    mock_controller.config.get.return_value = "REST"
+    mock_controller.ip_address = "1.2.3.4"
+    mock_controller.hass = MagicMock()
+    mock_controller.loader.state_getter.async_update_state = AsyncMock(return_value={"a": 1})
+    
+    poller = YamlStatePoller(mock_controller)
+    poller._consecutive_connection_errors = 1
+    poller._build_device_state_from_hass = AsyncMock(return_value={"a": 1})
+    poller.async_update_properties_from_state = AsyncMock()
+    
+    with patch("custom_components.climate_ip.controller_yaml_polling.async_delete_issue", side_effect=Exception("Test Error")):
+        # No debe crashear
+        await poller.async_update_state()
+
+async def test_build_device_state_from_props_other_op():
+    """L760-762: Reconstrucción de estado con operaciones no mapeadas estáticamente."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock
+    
+    class MockOp:
+        def __init__(self, op_id, val):
+            self.id = op_id
+            self.value = val
+
+    mock_controller = MagicMock()
+    mock_controller.config.get.return_value = "REST"
+    mock_controller.loader.state_getter.value = {}
+    op_other = MockOp("purify", "On")
+    mock_controller.loader.operations = {"purify": op_other}
+    mock_controller.loader.properties = {}
+    mock_controller.loader.sensors = {}
+    
+    poller = YamlStatePoller(mock_controller)
+    poller._get_cached_device_key_from_prop = MagicMock(return_value="PurifierMode")
+    
+    res = await poller._build_device_state_from_props()
+    assert res["PurifierMode"] == "On"
+
+def test_get_device_key_empty_template():
+    """L933: Retorno nulo si el template_string queda vacío."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock
+    
+    poller = YamlStatePoller(MagicMock())
+    assert poller._get_device_key_from_template("") is None
+    
+    class EmptyTemplate:
+        template = ""
+    assert poller._get_device_key_from_template(EmptyTemplate()) is None
+
+async def test_update_state_full_state_none():
+    """Fuerza salidas tempranas (Líneas 347-353) cuando full_device_state es None."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import AsyncMock, MagicMock
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+    import pytest
+    
+    mock_controller = MagicMock()
+    mock_controller.config.get.return_value = "REST"
+    mock_controller.loader.state_getter.async_update_state = AsyncMock(return_value=None)
+    
+    poller = YamlStatePoller(mock_controller)
+    poller._cached_device_state = {"a": 1}
+    
+    # Caso 1: Con caché (Línea 347-352)
+    res = await poller.async_update_state()
+    assert res == {"a": 1}
+    
+    # Caso 2: Sin caché (Línea 353-355)
+    poller._cached_device_state = None
+    with pytest.raises(UpdateFailed, match="No data received and no cache available"):
+        await poller.async_update_state()
+
+async def test_update_state_discovery_non_2878():
+    """Fuerza descubrimiento de dispositivo para no-2878 (Línea 394)."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import AsyncMock, MagicMock
+    
+    mock_controller = MagicMock()
+    mock_controller.config.get.return_value = "REST"
+    mock_controller.device_id = "0"
+    mock_controller.loader.is_fully_initialized = False
+    mock_controller.loader.state_getter.async_update_state = AsyncMock(return_value={"Devices": [{"id": "123"}]})
+    mock_controller.loader._parsed_yaml_cache = {
+        "0": {"device": {"identifiers": {"path_to_devices": ["Devices"], "id": ["id"]}}}
+    }
+    
+    poller = YamlStatePoller(mock_controller)
+    poller.async_update_properties_from_state = AsyncMock()
+    
+    await poller.async_update_state()
+    assert mock_controller.device_id == "123"
+
+async def test_update_properties_full_state_none():
+    """Fuerza L459 en async_update_properties_from_state."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import AsyncMock, MagicMock
+    
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    poller._build_device_state_from_hass = AsyncMock(return_value=None)
+    
+    # current_hass_state = True, _build_device_state_from_hass devuelve None
+    res = await poller.async_update_properties_from_state(None, current_hass_state={"state": "on"})
+    assert res == {}
+
+def test_rebuild_attributes_private():
+    """Fuerza L597 en _rebuild_attributes usando _attributes."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock
+    
+    class MockCtrl:
+        def __init__(self):
+            self.name = "TestCtrl"
+            self.loader = MagicMock()
+            self._attributes = {}
+            
+    ctrl = MockCtrl()
+    poller = YamlStatePoller(ctrl)
+    poller._rebuild_attributes()
+    assert "last_sync" in ctrl._attributes
+async def test_merge_device_state_st_getter_private_value():
+    """Fuerza la línea 859-860 donde st_getter no tiene 'value' pero sí '_value'."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import AsyncMock, MagicMock
+    
+    mock_controller = MagicMock()
+    # No hasattr "value", pero sí "_value"
+    class MockGetter:
+        def __init__(self):
+            self._value = {}
+            
+    mock_controller.loader.state_getter = MockGetter()
+    poller = YamlStatePoller(mock_controller)
+    poller._build_device_state_from_props = AsyncMock(return_value={"a": 1})
+    poller._calculate_structured_state = MagicMock(return_value={"valid": True})
+    poller.async_update_properties_from_state = AsyncMock()
+
+    res = await poller.async_merge_device_state({"b": 2}, _is_response=False, _is_update=True)
+    assert res is True
+    assert mock_controller.loader.state_getter._value == {"b": 2}
+
+def test_evict_invalidated_pending_updates_none_prop():
+    """Fuerza la línea 881 donde el prop no se encuentra (None) durante el desalojo."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock
+    
+    mock_controller = MagicMock()
+    mock_controller.loader.operations = {}
+    mock_controller.loader.properties = {}
+    
+    poller = YamlStatePoller(mock_controller)
+    poller._pending_updates = {"missing_prop_id": 12345}
+    
+    # Esto pasaría y haría un 'continue' sin excepciones
+    poller._evict_invalidated_pending_updates({"some_key": "val"})
+    assert "missing_prop_id" in poller._pending_updates

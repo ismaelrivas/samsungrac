@@ -655,7 +655,7 @@ class YamlStatePoller:
             return None
 
         last_real_state = getattr(st_getter, "value", None)
-        if not last_real_state:
+        if last_real_state is None:
             return {}
 
         reconstructed_state = copy.deepcopy(last_real_state)
@@ -695,9 +695,7 @@ class YamlStatePoller:
                                 device_obj["Operation"]["power"] = "Off"
                             else:
                                 device_obj["Operation"]["power"] = "On"
-                                if "Mode" not in device_obj:
-                                    device_obj["Mode"] = {}
-                                device_obj["Mode"]["modes"] = [device_value]
+                                device_obj.setdefault("Mode", {})["modes"] = [device_value]
             elif op_id in ("temperature", ATTR_TEMPERATURE):
                 if is_2878:
                     reconstructed_state["AC_FUN_TEMPSET"] = str(device_value)
@@ -735,48 +733,25 @@ class YamlStatePoller:
                         device_obj = device_list[0]
                         if isinstance(device_obj, dict):
                             if op_id in ("fan", "fan_mode", ATTR_FAN_MODE):
-                                if "Wind" not in device_obj:
-                                    device_obj["Wind"] = {}
-                                device_obj["Wind"]["speedLevel"] = (
-                                    int(device_value)
-                                    if str(device_value).isdigit()
-                                    else device_value
+                                device_obj.setdefault("Wind", {})["speedLevel"] = (
+                                    int(device_value) if str(device_value).isdigit() else device_value
                                 )
                             elif op_id in ("fan_max",):
-                                if "Wind" not in device_obj:
-                                    device_obj["Wind"] = {}
-                                device_obj["Wind"]["maxSpeedLevel"] = (
-                                    int(device_value)
-                                    if str(device_value).isdigit()
-                                    else device_value
+                                device_obj.setdefault("Wind", {})["maxSpeedLevel"] = (
+                                    int(device_value) if str(device_value).isdigit() else device_value
                                 )
                             elif op_id in ("swing", "swing_mode", ATTR_SWING_MODE):
-                                if "Wind" not in device_obj:
-                                    device_obj["Wind"] = {}
-                                device_obj["Wind"]["direction"] = device_value
+                                device_obj.setdefault("Wind", {})["direction"] = device_value
                             elif op_id in ("preset_mode", ATTR_PRESET_MODE):
-                                if "Mode" not in device_obj:
-                                    device_obj["Mode"] = {}
-                                if "options" not in device_obj["Mode"]:
-                                    device_obj["Mode"]["options"] = [device_value]
-                                elif len(device_obj["Mode"]["options"]) > 0:
-                                    device_obj["Mode"]["options"][0] = str(device_value)
+                                options = device_obj.setdefault("Mode", {}).setdefault("options", [])
+                                if not options:
+                                    options.append("")
+                                options[0] = str(device_value)
                             elif op_id == "good_sleep":
-                                if "Mode" not in device_obj:
-                                    device_obj["Mode"] = {}
-                                if "options" not in device_obj["Mode"]:
-                                    device_obj["Mode"]["options"] = [
-                                        "Comode_Off",
-                                        f"Sleep_{int(float(device_value))}",
-                                    ]
-                                elif len(device_obj["Mode"]["options"]) > 1:
-                                    device_obj["Mode"]["options"][
-                                        1
-                                    ] = f"Sleep_{int(float(device_value))}"
-                                elif len(device_obj["Mode"]["options"]) == 1:
-                                    device_obj["Mode"]["options"].append(
-                                        f"Sleep_{int(float(device_value))}"
-                                    )
+                                options = device_obj.setdefault("Mode", {}).setdefault("options", [])
+                                if len(options) < 2:
+                                    options.extend(["Comode_Off", "Sleep_0"][len(options):])
+                                options[1] = f"Sleep_{int(float(device_value))}"
             else:
                 device_key = self._get_cached_device_key_from_prop(op)
                 if device_key:
