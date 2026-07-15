@@ -1601,3 +1601,202 @@ async def test_async_update_state_auth_refresh_fails_permanently():
     with pytest.raises(ConfigEntryAuthFailed, match="Authentication failed"):
         await poller.async_update_state()
 
+
+
+# --- FRENTE 8: async_predict_and_correct_state ---
+
+async def test_predict_and_correct_early_exits():
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    
+    # 1. state_getter = None
+    mock_controller.loader.state_getter = None
+    mock_controller.loader.is_fully_initialized = True
+    f, c = await poller.async_predict_and_correct_state(MagicMock(), "prop", "val")
+    assert f == 0 and c == {}
+    
+    # 2. is_fully_initialized = False
+    mock_controller.loader.state_getter = MagicMock()
+    mock_controller.loader.is_fully_initialized = False
+    f, c = await poller.async_predict_and_correct_state(MagicMock(), "prop", "val")
+    assert f == 0 and c == {}
+    
+    # 3. last_real_state = None
+    mock_controller.loader.is_fully_initialized = True
+    mock_controller.loader.state_getter.value = None
+    f, c = await poller.async_predict_and_correct_state(MagicMock(), "prop", "val")
+    assert f == 0 and c == {}
+    
+    # 4. prop_to_change is None
+    mock_controller.loader.state_getter.value = {"a": "b"}
+    mock_op = MagicMock()
+    mock_op.id = "some_op"
+    mock_controller.loader.operations = {"other_prop": mock_op}
+    mock_controller.loader.properties = {}
+    poller._get_hass_attr_for_op_id = MagicMock(return_value="some_attr")
+    f, c = await poller.async_predict_and_correct_state(MagicMock(), "prop", "val")
+    assert f == 0 and c == {}
+
+async def test_predict_and_correct_op_and_prop_values():
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    mock_controller.loader.state_getter.value = {"a": "b"}
+    mock_controller.loader.is_fully_initialized = True
+    
+    # Setup op with value
+    op_value = MagicMock()
+    op_value.id = "op_val"
+    op_value.value = "old"
+    
+    # Setup op with _value
+    op_uvalue = MagicMock()
+    op_uvalue.id = "op_uval"
+    del op_uvalue.value
+    op_uvalue._value = "old"
+    
+    # Setup prop with value
+    prop_value = MagicMock()
+    prop_value.id = "prop_val"
+    prop_value.value = "old"
+    
+    # Setup prop with _value
+    prop_uvalue = MagicMock()
+    prop_uvalue.id = "prop_uval"
+    del prop_uvalue.value
+    prop_uvalue._value = "old"
+    
+    mock_controller.loader.operations = {"op1": op_value, "op2": op_uvalue}
+    mock_controller.loader.properties = {"prop1": prop_value, "prop2": prop_uvalue}
+    
+    poller._get_hass_attr_for_op_id = MagicMock(side_effect=lambda x: f"hass_{x}")
+    
+    hass_state = MagicMock()
+    hass_state.hass_op_val = "new1"
+    hass_state.hass_op_uval = "new2"
+    hass_state.hass_prop_val = "new3"
+    hass_state.hass_prop_uval = "new4"
+    
+    poller._build_device_state_from_props = AsyncMock(return_value={}) # Will trigger future_state = empty early exit
+    
+    f, c = await poller.async_predict_and_correct_state(hass_state, "op1", "new1")
+    
+    assert op_value.value == "new1"
+    assert op_uvalue._value == "new2"
+    assert prop_value.value == "new3"
+    assert prop_uvalue._value == "new4"
+
+async def test_predict_and_correct_full_flow():
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    mock_controller.loader.state_getter.value = {"a": "b"}
+    mock_controller.loader.is_fully_initialized = True
+    
+    poller._pending_updates = {"target_prop": 123}
+    
+    target_op = MagicMock()
+    target_op.id = "target"
+    del target_op.value
+    target_op._value = "old"
+    
+    mock_controller.loader.operations = {"target_prop": target_op}
+    mock_controller.loader.properties = {}
+    
+    poller._get_hass_attr_for_op_id = MagicMock(return_value="hass_target")
+    hass_state = MagicMock()
+    hass_state.hass_target = "old"
+    
+    poller._build_device_state_from_props = AsyncMock(return_value={"built": "yes"})
+    poller.async_update_properties_from_state = AsyncMock(return_value={"correction": "done"})
+    
+    f, c = await poller.async_predict_and_correct_state(hass_state, "target_prop", "predicted_val")
+    
+    assert "target_prop" not in poller._pending_updates
+    assert target_op._value == "predicted_val"
+    assert c == {"correction": "done"}
+    poller.async_update_properties_from_state.assert_called_once_with({"built": "yes"}, is_prediction=True, current_hass_state=hass_state)
+
+
+# --- FRENTE 9: async_shutdown ---
+
+async def test_async_shutdown_no_connection():
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    
+    mock_controller.loader.connection = None
+    
+    # Should not throw, should just sleep and return
+    with patch("custom_components.climate_ip.controller_yaml_polling.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        await poller.async_shutdown()
+        mock_sleep.assert_called_once_with(1.0)
+
+async def test_async_shutdown_stop_listening_exception():
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    
+    conn = MagicMock()
+    conn.stop_listening = AsyncMock(side_effect=ValueError("Boom"))
+    mock_controller.loader.connection = conn
+    
+    # Bypass the others
+    del mock_controller.close_shared_client
+    del mock_controller._shared_raw_client
+    del conn.close
+    
+    with patch("custom_components.climate_ip.controller_yaml_polling.asyncio.sleep", new_callable=AsyncMock):
+        await poller.async_shutdown() # Should not raise
+    conn.stop_listening.assert_called_once()
+    assert mock_controller.loader.connection is None
+
+async def test_async_shutdown_close_shared_client():
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    
+    conn = MagicMock()
+    del conn.stop_listening
+    del conn.close
+    mock_controller.loader.connection = conn
+    
+    mock_controller.close_shared_client = AsyncMock(side_effect=ValueError("Boom"))
+    
+    with patch("custom_components.climate_ip.controller_yaml_polling.asyncio.sleep", new_callable=AsyncMock):
+        await poller.async_shutdown() # Should not raise
+    mock_controller.close_shared_client.assert_called_once()
+    assert mock_controller.loader.connection is None
+
+async def test_async_shutdown_shared_raw_client():
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    
+    conn = MagicMock()
+    del conn.stop_listening
+    del conn.close
+    mock_controller.loader.connection = conn
+    
+    del mock_controller.close_shared_client
+    
+    raw_client = MagicMock()
+    raw_client.close = AsyncMock(side_effect=ValueError("Boom"))
+    mock_controller._shared_raw_client = raw_client
+    
+    with patch("custom_components.climate_ip.controller_yaml_polling.asyncio.sleep", new_callable=AsyncMock):
+        await poller.async_shutdown() # Should not raise
+    raw_client.close.assert_called_once()
+    assert mock_controller._shared_raw_client is None
+    assert mock_controller.loader.connection is None
+
+async def test_async_shutdown_conn_close():
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    
+    conn = MagicMock()
+    del conn.stop_listening
+    conn.close = AsyncMock(side_effect=ValueError("Boom"))
+    mock_controller.loader.connection = conn
+    
+    del mock_controller.close_shared_client
+    del mock_controller._shared_raw_client
+    
+    with patch("custom_components.climate_ip.controller_yaml_polling.asyncio.sleep", new_callable=AsyncMock):
+        await poller.async_shutdown() # Should not raise
+    conn.close.assert_called_once()
+    assert mock_controller.loader.connection is None
