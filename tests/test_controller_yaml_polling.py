@@ -1400,7 +1400,7 @@ async def test_async_merge_device_state_edge_cases():
     assert await poller.async_merge_device_state({"k": "v"}, False, False) is False
     
     # Calculate structured returns None
-    mock_controller.loader.state_getter = MagicMock()
+    mock_controller.loader.state_getter = AsyncMock()
     mock_controller.loader.state_getter.value = {"k": "v"}
     with patch.object(poller, "_calculate_structured_state", return_value=None):
         assert await poller.async_merge_device_state({"k2": "v2"}, False, False) is False
@@ -1423,7 +1423,7 @@ async def test_async_predict_and_correct_state_edge_cases():
     assert c == {}
     
     # Property not found
-    mock_controller.loader.state_getter = MagicMock()
+    mock_controller.loader.state_getter = AsyncMock()
     mock_controller.loader.state_getter.value = {"x": "y"}
     mock_controller.loader.operations = {}
     mock_controller.loader.properties = {}
@@ -1463,7 +1463,7 @@ async def test_build_device_state_from_hass_reconstruction():
     poller = YamlStatePoller(mock_controller)
     
     mock_controller.loader.is_fully_initialized = True
-    mock_controller.loader.state_getter = MagicMock()
+    mock_controller.loader.state_getter = AsyncMock()
     mock_controller.loader.state_getter.value = {"dev_mode": "old_dev"}
     
     # Setup op
@@ -1616,7 +1616,7 @@ async def test_predict_and_correct_early_exits():
     assert f == 0 and c == {}
     
     # 2. is_fully_initialized = False
-    mock_controller.loader.state_getter = MagicMock()
+    mock_controller.loader.state_getter = AsyncMock()
     mock_controller.loader.is_fully_initialized = False
     f, c = await poller.async_predict_and_correct_state(MagicMock(), "prop", "val")
     assert f == 0 and c == {}
@@ -1800,3 +1800,205 @@ async def test_async_shutdown_conn_close():
         await poller.async_shutdown() # Should not raise
     conn.close.assert_called_once()
     assert mock_controller.loader.connection is None
+
+
+# --- FRENTE 10: async_update_state ---
+
+async def test_update_state_repair_issue_delete_exception():
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    mock_controller.loader.state_getter = AsyncMock()
+    mock_controller.loader.state_getter.async_update_state = AsyncMock(return_value={"a": 1})
+    mock_controller.loader.state_getter.value = {"a": 1}
+    mock_controller.loader._parsed_yaml_cache = {}
+    mock_controller.discovered_devices = [{"id": "dev1"}]
+    
+    with patch("custom_components.climate_ip.controller_yaml_polling.async_delete_issue", side_effect=Exception("Boom")):
+        res = await poller.async_update_state()
+    assert res == {"a": 1}
+
+async def test_update_state_invalid_header_error():
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    mock_controller.loader.state_getter = AsyncMock()
+    from custom_components.climate_ip.exceptions import InvalidHeaderError
+    mock_controller.loader.state_getter.async_update_state = AsyncMock(side_effect=InvalidHeaderError("Bad header"))
+    mock_controller.loader._parsed_yaml_cache = {}
+    mock_controller.discovered_devices = [{"id": "dev1"}]
+    
+    with pytest.raises(InvalidHeaderError):
+        await poller.async_update_state()
+
+async def test_update_state_api_error_cached_fallback():
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    mock_controller.loader.state_getter = AsyncMock()
+    from custom_components.climate_ip.exceptions import CannotConnect
+    mock_controller.loader.state_getter.async_update_state = AsyncMock(side_effect=CannotConnect("API Failure"))
+    mock_controller.loader.state_getter.value = {"cached": True}
+    mock_controller.loader._parsed_yaml_cache = {}
+    mock_controller.discovered_devices = [{"id": "dev1"}]
+    
+    # With cache
+    poller._cached_device_state = {"cached": True}
+    res = await poller.async_update_state()
+    assert res == {"cached": True}
+    
+    # Without cache -> raises UpdateFailed
+    poller._cached_device_state = None
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+    with pytest.raises(UpdateFailed):
+        await poller.async_update_state()
+
+async def test_update_state_discovery_fallback():
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    mock_controller.loader.connection = None
+    mock_controller.loader.state_getter = AsyncMock()
+    mock_controller.loader.state_getter.async_update_state = AsyncMock(return_value={"a": 1})
+    mock_controller.loader.state_getter.value = {"a": 1}
+    mock_controller.loader._parsed_yaml_cache = {}
+    mock_controller.loader.is_fully_initialized = False
+    mock_controller.ip_address = "1.2.3.4"
+    mock_controller.discovered_devices = [{"id": "dev1"}]
+    mock_controller.mac_address = "MAC"
+    
+    mock_controller.loader.create_connection = AsyncMock()
+    await poller.async_update_state()
+
+# --- FRENTE 11: async_update_properties_from_state ---
+
+async def test_update_props_not_initialized():
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    mock_controller.loader.is_fully_initialized = False
+    mock_controller.discovered_devices = [{"id": "dev1"}]
+    assert await poller.async_update_properties_from_state({"a": 1}) == {}
+
+async def test_update_props_null_device_state():
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    mock_controller.loader.is_fully_initialized = True
+    mock_controller.discovered_devices = [{"id": "dev1"}]
+    assert await poller.async_update_properties_from_state(None) == {}
+
+async def test_update_props_invalid_dict():
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    mock_controller.loader.is_fully_initialized = True
+    mock_controller.discovered_devices = [{"id": "dev1"}]
+    assert await poller.async_update_properties_from_state(["not", "a", "dict"]) == {}
+
+async def test_update_props_pending_update_uvalue():
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    mock_controller.loader.is_fully_initialized = True
+    mock_controller.discovered_devices = [{"id": "dev1"}]
+    
+    class DummyOp: pass
+    prop_uvalue = DummyOp()
+    prop_uvalue.id = "uprop"
+    prop_uvalue._value = "old"
+    
+    mock_controller.loader.properties = {"uprop": prop_uvalue}
+    mock_controller.loader.operations = {}
+    
+    import time
+    poller._pending_updates = {"uprop": ("new_val", time.time())}
+    
+    await poller.async_update_properties_from_state({"some": "state"})
+    assert prop_uvalue._value == "new_val"
+
+# --- FRENTE 12: _build_device_state_from_props ---
+
+async def test_build_device_state_op_not_valid():
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    
+    op_invalid = MagicMock()
+    op_invalid.is_valid = MagicMock(return_value=False)
+    
+    mock_controller.loader.operations = {"op": op_invalid}
+    mock_controller.loader.properties = {}
+    mock_controller.loader.is_fully_initialized = True
+    mock_controller.loader.state_getter.value = {"a": "b"}
+    mock_controller.discovered_devices = [{"id": "dev1"}]
+    
+    await poller.async_update_properties_from_state({"id": "dev1"})
+    op_invalid.is_valid.assert_called_once()
+
+async def test_build_device_state_uvalue_assignment():
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    
+    class DummyOp: pass
+    op_uvalue = DummyOp()
+    op_uvalue.id = "uop"
+    op_uvalue.is_valid = lambda x: True
+    op_uvalue.values = ["new", "val"]
+    op_uvalue._value = "unknown_val"
+    
+    mock_controller.loader.operations = {"op": op_uvalue}
+    mock_controller.loader.properties = {}
+    mock_controller.loader.is_fully_initialized = True
+    mock_controller.loader.state_getter.value = {"a": "b"}
+    mock_controller.discovered_devices = [{"id": "dev1"}]
+    
+    await poller.async_update_properties_from_state({"id": "dev1"})
+    assert op_uvalue._value == "new"
+
+def test_get_hass_attr_for_op_id_unmocked():
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    assert poller._get_hass_attr_for_op_id("hvac") == "hvac_mode"
+    assert poller._get_hass_attr_for_op_id("unknown_op") == "unknown_op"
+
+async def test_build_device_state_from_hass_edge_cases():
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    mock_controller.loader.is_fully_initialized = True
+    mock_controller.loader.state_getter.value = {"dev_key": "old"}
+    
+    op = MagicMock()
+    op.id = "hvac"
+    op.convert_hass_to_dev = MagicMock(return_value="dev_new")
+    
+    mock_controller.loader.operations = {"op": op}
+    mock_controller.loader.properties = {}
+    
+    poller._get_cached_device_key_from_prop = MagicMock(return_value=None)
+    
+    hass_state = MagicMock()
+    hass_state.hvac_mode = "hass_new"
+    
+    res = await poller._build_device_state_from_hass(hass_state)
+    assert res == {"dev_key": "old"} 
+
+# --- FRENTE 13: async_merge_device_state ---
+
+async def test_merge_device_state_atomic_merge():
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    
+    updates = {"c": 3}
+    
+    mock_controller.loader.properties = {}
+    mock_controller.loader.operations = {}
+    mock_controller.loader._parsed_yaml_cache = {}
+    
+    mock_controller.loader.state_getter = MagicMock()
+    mock_controller.loader.state_getter.value = {"a": 1, "b": 2}
+    
+    hass_state_mock = MagicMock()
+    mock_controller.get_current_state_callback = MagicMock(return_value=hass_state_mock)
+    
+    # 1. Validation fails
+    poller._calculate_structured_state = MagicMock(return_value=None)
+    res_fail = await poller.async_merge_device_state(updates, _is_response=False, _is_update=True)
+    assert res_fail is False
+    
+    # 2. Validation succeeds
+    poller._calculate_structured_state = MagicMock(return_value={"valid": True})
+    res_succ = await poller.async_merge_device_state(updates, _is_response=False, _is_update=True)
+    assert res_succ is True
+
