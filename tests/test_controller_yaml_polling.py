@@ -2211,6 +2211,74 @@ async def test_merge_device_state_atomic_merge():
     res_succ = await poller.async_merge_device_state(updates, _is_response=False, _is_update=True)
     assert res_succ is True
 
+async def test_merge_device_state_empty_and_overwrite():
+    """Misión Táctica 2: async_merge_device_state empty data and strict dict overwrite"""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock, AsyncMock
+    
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    
+    # 1. new_data vacío
+    assert await poller.async_merge_device_state({}, False, False) is False
+    
+    # 2. Strict Overwrite testing
+    mock_controller.get_current_state_callback = MagicMock(return_value=None)
+    
+    class MockStateGetter:
+        value = {"base_key": "base_val", "nested": {"old": 1}}
+        
+    mock_controller.loader.state_getter = MockStateGetter()
+    poller._calculate_structured_state = MagicMock(return_value={"valid": True})
+    poller.async_update_properties_from_state = AsyncMock()
+    poller._evict_invalidated_pending_updates = MagicMock()
+    
+    updates = {"new_key": "new_val", "nested": {"new": 2}}
+    
+    res = await poller.async_merge_device_state(updates, False, False)
+    assert res is True
+    
+    expected_state = {
+        "base_key": "base_val",
+        "new_key": "new_val",
+        "nested": {"new": 2}
+    }
+    
+    assert MockStateGetter.value == expected_state
+
+async def test_merge_device_state_strict_conditionals():
+    """Misión Táctica 2: async_merge_device_state strict mock conditions"""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock, AsyncMock
+    
+    mock_controller = MagicMock()
+    # Explicitly removing get_current_state_callback to force hasattr check to fail if mutated
+    del mock_controller.get_current_state_callback
+    poller = YamlStatePoller(mock_controller)
+    
+    # 1. No st_getter
+    class StrictLoader:
+        pass
+    mock_controller.loader = StrictLoader()
+    
+    assert await poller.async_merge_device_state({"a": 1}, False, False) is False
+    
+    # 2. st_getter sin value
+    class LoaderWithGetter:
+        class StateGetter:
+            pass
+        state_getter = StateGetter()
+        
+    mock_controller.loader = LoaderWithGetter()
+    assert await poller.async_merge_device_state({"a": 1}, False, False) is False
+    
+    # 3. current_hass_state is true -> uses _build_device_state_from_hass
+    mock_controller.get_current_state_callback = MagicMock(return_value="mock_hass_state")
+    poller._build_device_state_from_hass = AsyncMock(return_value=None)
+    
+    assert await poller.async_merge_device_state({"a": 1}, False, False) is False
+    poller._build_device_state_from_hass.assert_called_once_with("mock_hass_state")
+
 def test_mask_sensitive_data_primitive():
     """L183: Retorno temprano para datos primitivos."""
     from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
@@ -2262,6 +2330,158 @@ async def test_build_device_state_from_props_other_op():
     
     res = await poller._build_device_state_from_props()
     assert res["PurifierMode"] == "On"
+
+async def test_build_device_state_memory_isolation():
+    """Vector 1: Aislamiento de Memoria (Mutación de deepcopy a copy)"""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock
+    
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    
+    last_real_state = {"Mode": {"modes": ["Cool", "Heat"]}}
+    mock_controller.loader.state_getter.value = last_real_state
+    mock_controller.loader.operations = {}
+    mock_controller.loader.properties = {}
+    
+    res = await poller._build_device_state_from_props()
+    # Modificar profundamente el resultado
+    res["Mode"]["modes"][0] = "Hacked"
+    
+    # Asegurar que el estado original NO cambió
+    assert mock_controller.loader.state_getter.value["Mode"]["modes"][0] == "Cool"
+
+async def test_build_device_state_loop_control():
+    """Vector 2: Control de Bucle (Mutación de continue a break)"""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock
+    
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    
+    mock_controller.loader.state_getter.value = {}
+    
+    class MockOpNone:
+        id = "op_none"
+        value = None
+        
+    class MockOpValid:
+        id = "op_valid"
+        value = "Valid"
+        
+    mock_controller.loader.operations = {"op1": MockOpNone(), "op2": MockOpValid()}
+    mock_controller.loader.properties = {}
+    
+    poller._get_cached_device_key_from_prop = MagicMock(return_value="ValidKey")
+    mock_controller.config.get.return_value = "REST"
+    
+    res = await poller._build_device_state_from_props()
+    
+    # Si muta a break, op2 no será procesado
+    assert "ValidKey" in res
+    assert res["ValidKey"] == "Valid"
+
+async def test_build_device_state_none_fallbacks():
+    """Vector 3: None Fallbacks en Mocks (getattr y config.get)"""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE
+    from unittest.mock import MagicMock
+    
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    
+    mock_controller.loader.state_getter.value = {}
+    
+    class StrictOp:
+        value = "val"
+        # Sin atributo 'id' para forzar que se evalúe el getattr por defecto
+        
+    mock_controller.loader.operations = {"op1": StrictOp()}
+    mock_controller.loader.properties = {}
+    
+    res = await poller._build_device_state_from_props()
+    
+    # Verificar assert_called_once_with
+    mock_controller.config.get.assert_called_once_with(CONF_DEVICE_TYPE)
+
+async def test_build_device_state_nested_dicts():
+    """Vector 4: Lógica de Diccionarios Anidados (Completo)"""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock
+    
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    
+    class MockOp(object):
+        pass
+
+    op = MockOp()
+    op.id = "fan"
+    op.value = "3"
+
+    mock_controller.loader.operations = {"op1": op}
+    mock_controller.loader.properties = {}
+    mock_controller.config.get.return_value = "REST"
+    
+    # Caso 1: device_list vacío
+    mock_controller.loader.state_getter.value = {"Devices": []}
+    assert await poller._build_device_state_from_props() == {"Devices": []}
+    
+    # Caso 2: device_list no es lista
+    mock_controller.loader.state_getter.value = {"Devices": "NotAList"}
+    assert await poller._build_device_state_from_props() == {"Devices": "NotAList"}
+
+    # Caso 3: Happy path asegurando setdefault y enteros
+    mock_controller.loader.state_getter.value = {"Devices": [{}]}
+    res = await poller._build_device_state_from_props()
+    assert res == {"Devices": [{"Wind": {"speedLevel": 3}}]}
+    
+    # Caso 4: setdefault no sobreescribe si ya existe
+    mock_controller.loader.state_getter.value = {"Devices": [{"Wind": {"direction": "Up"}}]}
+    res2 = await poller._build_device_state_from_props()
+    assert res2 == {"Devices": [{"Wind": {"direction": "Up", "speedLevel": 3}}]}
+
+async def test_build_device_state_naked_dicts():
+    """Vector 4: Naked Dicts (Misión Táctica 1)"""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock
+    
+    mock_controller = MagicMock()
+    poller = YamlStatePoller(mock_controller)
+    
+    class MockOp(object):
+        pass
+
+    op_hvac = MockOp()
+    op_hvac.id = "hvac"
+    op_hvac.value = "Heat"
+
+    op_fan = MockOp()
+    op_fan.id = "fan"
+    op_fan.value = "3"
+    
+    op_preset = MockOp()
+    op_preset.id = "preset_mode"
+    op_preset.value = "Eco"
+
+    mock_controller.loader.operations = {"op1": op_hvac, "op2": op_fan, "op3": op_preset}
+    mock_controller.loader.properties = {}
+    mock_controller.config.get.return_value = "REST"
+    
+    mock_controller.loader.state_getter.value = {"Devices": [{}]}
+    
+    res = await poller._build_device_state_from_props()
+    
+    dev_obj = res["Devices"][0]
+    assert "Operation" in dev_obj
+    assert dev_obj["Operation"]["power"] == "On"
+    
+    assert "Mode" in dev_obj
+    assert dev_obj["Mode"]["modes"] == ["Heat"]
+    assert dev_obj["Mode"]["options"][0] == "Eco"
+    
+    assert "Wind" in dev_obj
+    assert dev_obj["Wind"]["speedLevel"] == 3
 
 def test_get_device_key_empty_template():
     """L933: Retorno nulo si el template_string queda vacío."""
