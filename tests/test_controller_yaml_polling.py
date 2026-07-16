@@ -3158,3 +3158,134 @@ async def test_async_shutdown_raw_client_circuit():
     
     await poller.async_shutdown()
     assert poller.controller._shared_raw_client is None
+
+# ==========================================
+# 1. DESTRUCCIÓN DE FALLBACKS (GETATTR) Y CORTOCIRCUITOS AND/OR
+# ==========================================
+
+async def test_getattr_defaults_destructively():
+    """Aniquila mutantes de getattr(..., None) destruyendo los atributos origen"""
+    poller = YamlStatePoller(MagicMock())
+    
+    # Destruir conexión para forzar el fallback de getattr en async_shutdown
+    delattr(poller.controller.loader, "connection")
+    await poller.async_shutdown()  # Si mutmut eliminó el None, lanzará AttributeError
+    
+    # Destruir state_getter para forzar salidas tempranas
+    delattr(poller.controller.loader, "state_getter")
+    assert await poller._build_device_state_from_hass(MagicMock()) is None
+    assert await poller._build_device_state_from_props() is None
+
+async def test_async_predict_and_correct_state_logic_flip():
+    """Aniquila la mutación de `not A or not B` a `not A and not B`"""
+    poller = YamlStatePoller(MagicMock())
+    
+    # Configuramos A = False, B = True. (state_getter existe, pero loader no está inicializado)
+    # Si la mutación es 'and', no cortará la ejecución y crasheará en la línea siguiente.
+    poller.controller.loader.state_getter = MagicMock()
+    poller.controller.loader.is_fully_initialized = False
+    
+    # Trampa explosiva: si el flujo avanza erróneamente, esto detonará
+    type(poller.controller.loader.state_getter).value = property(
+        lambda self: exec('raise Exception("¡Mutante OR->AND sobrevivió!")')
+    )
+    
+    feature, corrections = await poller.async_predict_and_correct_state(MagicMock(), "prop", "val")
+    assert feature == ClimateEntityFeature(0)
+    assert corrections == {}
+
+
+def test_evict_invalidated_pending_updates_strict_logic():
+    """Aniquila 'or' mutado y 'break' prematuro en los bucles de caché"""
+    poller = YamlStatePoller(MagicMock())
+    
+    prop1 = MagicMock()
+    prop2 = MagicMock()
+    poller.controller.loader.operations = {"op1": prop1, "op2": prop2}
+    poller.controller.loader.properties = {}
+    
+    # 2 operaciones pendientes
+    poller._pending_updates = {"op1": ("v", 0), "op2": ("v", 0)}
+    
+    # Prop1 no está en push_data, Prop2 sí lo está.
+    poller._get_cached_device_key_from_prop = MagicMock(side_effect=["Key1", "Key2"])
+    
+    push_data = {"Key2": "updated"}  # SOLO op2 debe ser evictado
+    
+    poller._evict_invalidated_pending_updates(push_data)
+    
+    # Si mutmut puso 'or' en `if device_key or device_key in push...`, op1 se borra (Falso positivo)
+    assert "op1" in poller._pending_updates, "Fallo lógico: Mutación 'or' evaluó true prematuramente"
+    # Si mutmut puso 'break', el bucle muere en op1 y op2 nunca se evalúa
+    assert "op2" not in poller._pending_updates, "Fallo estructural: Mutación 'break' rompió el loop"
+
+
+# ==========================================
+# 2. FRONTERAS ESTRUCTURALES Y LLAMADAS ESTRICTAS
+# ==========================================
+
+async def test_build_device_state_from_props_structural_limits():
+    """Aniquila accesos a listas vacías (>= 0), y setdefaults mal mutados"""
+    poller = YamlStatePoller(MagicMock())
+    st_getter = MagicMock()
+    # 1. Inyectar lista VACÍA. Si mutmut puso len >= 0, intentar [0] lanzará IndexError
+    st_getter.value = {"Devices": []}
+    poller.controller.loader.state_getter = st_getter
+    poller.controller.loader.is_fully_initialized = True
+    
+    # Mock de operación sin 'convert_hass_to_dev' para forzar asignación directa
+    op1 = MagicMock(id="fan_max")
+    op1.value = "10"
+    delattr(op1, "convert_hass_to_dev")
+    op2 = MagicMock(id="good_sleep")
+    op2.value = "10"
+    delattr(op2, "convert_hass_to_dev")
+    
+    poller.controller.loader.operations = {"fan_max": op1, "good_sleep": op2}
+    poller.controller.loader.properties = {}
+    poller.controller.config = {"device_type": "Other"}
+
+    res = await poller._build_device_state_from_props()
+    assert res == {"Devices": []}
+
+    # 2. Inyectar lista con dict vacío para forzar setdefault.
+    # Si mutmut cambia .setdefault("Wind", {}) a .setdefault("Wind", ), será None y lanzará TypeError
+    st_getter.value = {"Devices": [{}]}
+    
+    res = await poller._build_device_state_from_props()
+    
+    assert res["Devices"][0]["Wind"]["maxSpeedLevel"] == 10
+    # Valida len(options) <= 2 vs < 2
+    assert "Sleep_10" in res["Devices"][0]["Mode"]["options"]
+
+
+async def test_async_merge_device_state_strict_args():
+    """Aniquila mutaciones booleanas explícitas de argumentos (force_update=False)"""
+    poller = YamlStatePoller(MagicMock())
+    
+    st_getter = MagicMock()
+    st_getter.value = {"base": "data"}
+    poller.controller.loader.state_getter = st_getter
+    poller.controller.get_current_state_callback = MagicMock(return_value="mock_hass_state")
+    
+    # Usamos patch directamente en lugar de mocker para evadir problemas de plugins
+    with patch.object(poller, "async_update_properties_from_state", new_callable=AsyncMock) as mock_update_props:
+        res = await poller.async_merge_device_state({"new": "data"}, False, False)
+        assert res is True
+        
+        # Aserción destructiva: validamos todos los kwargs. Si force_update se mutó a False, falla.
+        mock_update_props.assert_called_once_with(
+            {"base": "data", "new": "data"},
+            force_update=True,
+            current_hass_state="mock_hass_state"
+        )
+
+
+def test_regex_device_state_key_cache_strict():
+    """Aniquila mutante de regex + a * en inicialización"""
+    poller = YamlStatePoller(MagicMock())
+    
+    # Si se mutó el regex ([A-Za-z0-9_]+) a (*), devolverá string vacío en lugar de None
+    # Esta aserción fuerza a la regex a pedir al menos 1 caracter.
+    result = poller._get_device_key_from_template("device_state['']")
+    assert result is None, "Fallo de Regex: Mutante cambió '+' por '*'"
