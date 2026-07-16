@@ -2397,3 +2397,129 @@ async def test_async_update_state_sniper_network_ping():
         
         res = await poller.async_update_state()
         assert res == {"state": "ping_failed_but_recovered"}
+
+async def test_async_update_state_sniper_discovery():
+    """Sniper: Valida la inicialización de estado, fallbacks de diccionario en id_map, y el filtro estricto de discovery."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import AsyncMock
+    import pytest
+
+    # Inicializamos el controlador sin device_id para forzar los fallbacks a "XXXX"
+    mock_controller = DummyController()
+    if hasattr(mock_controller, "device_id"):
+        delattr(mock_controller, "device_id")
+    mock_controller.config = {"device_type": "mim_h03"}
+    mock_controller.loader.is_fully_initialized = False
+    
+    mock_controller.loader.async_finish_initialization = AsyncMock()
+    
+    poller = YamlStatePoller(mock_controller)
+    poller.async_update_properties_from_state = AsyncMock()
+    
+    # =========================================================================
+    # FASE 1: Romper la Cadena de Diccionarios (Exterminio de None Fallbacks)
+    # =========================================================================
+    
+    # Test 1.0: Sin _parsed_yaml_cache
+    if hasattr(mock_controller.loader, "_parsed_yaml_cache"):
+        delattr(mock_controller.loader, "_parsed_yaml_cache")
+    mock_controller.loader.state_getter.async_update_state.return_value = {"root": {}}
+    mock_controller.loader.state_getter.value = {"root": {}}
+    
+    await poller.async_update_state()
+    mock_controller.loader.async_finish_initialization.assert_called_once()
+    assert getattr(mock_controller, "device_id", "") == ""
+    
+    # Test 1.1: Caché vacía
+    mock_controller.loader.async_finish_initialization.reset_mock()
+    mock_controller.loader._parsed_yaml_cache = {}
+    await poller.async_update_state()
+    mock_controller.loader.async_finish_initialization.assert_called_once()
+    assert getattr(mock_controller, "device_id", "") == ""
+    
+    # Test 1.2: Caché con clave "XXXX" pero sin 'device'
+    mock_controller.loader.async_finish_initialization.reset_mock()
+    mock_controller.loader._parsed_yaml_cache = {"XXXX": {}}
+    await poller.async_update_state()
+    mock_controller.loader.async_finish_initialization.assert_called_once()
+    assert getattr(mock_controller, "device_id", "") == ""
+    
+    # Test 1.3: Caché con 'device' pero sin 'identifiers'
+    mock_controller.loader.async_finish_initialization.reset_mock()
+    mock_controller.loader._parsed_yaml_cache = {"XXXX": {"device": {}}}
+    await poller.async_update_state()
+    mock_controller.loader.async_finish_initialization.assert_called_once()
+    assert getattr(mock_controller, "device_id", "") == ""
+
+    # Test 1.4: Caché con identifiers vacíos
+    mock_controller.loader.async_finish_initialization.reset_mock()
+    mock_controller.loader._parsed_yaml_cache = {
+        "XXXX": {
+            "device": {
+                "identifiers": {}
+            }
+        }
+    }
+    await poller.async_update_state()
+    mock_controller.loader.async_finish_initialization.assert_called_once()
+    assert getattr(mock_controller, "device_id", "") == ""
+
+    # =========================================================================
+    # FASE 2: El Filtro Radiactivo (Exterminio de Logic Condition Flips)
+    # =========================================================================
+    
+    # Inyectamos una caché YAML perfectamente válida
+    mock_controller.loader.async_finish_initialization.reset_mock()
+    mock_controller.loader._parsed_yaml_cache = {
+        "XXXX": {
+            "device": {
+                "identifiers": {
+                    "path_to_devices": ["devices"],
+                    "id": ["id"]
+                }
+            }
+        }
+    }
+    
+    # Inyectamos la lista trampa
+    mock_controller.loader.state_getter.async_update_state.return_value = {
+        "devices": [
+            {},                                   # Trampa 1
+            {"id": "0", "Mode": "Cool"},          # Trampa 2
+            {"id": "valid_1"},                    # Trampa 3
+            {"id": "target_id", "Mode": "Heat"}   # OBJETIVO VÁLIDO
+        ]
+    }
+    mock_controller.loader.state_getter.value = mock_controller.loader.state_getter.async_update_state.return_value
+    
+    await poller.async_update_state()
+    
+    # =========================================================================
+    # LA SENTENCIA FINAL (Fase 2)
+    # =========================================================================
+    # Al no tener device_id, el fallback "XXXX" permite recuperar el id_map y poblar discovered_devices.
+    # Si mutmut cambia el fallback a None, id_map será None y discovered_devices nunca se poblará.
+    assert hasattr(mock_controller, "discovered_devices")
+    assert len(mock_controller.discovered_devices) == 4
+    mock_controller.loader.async_finish_initialization.assert_called_once()
+
+    # =========================================================================
+    # FASE 3: Asignación Final y Exterminio de Logic Condition Flips
+    # =========================================================================
+    # Para poder probar que la condición seleccionó el dispositivo correcto y lo asignó,
+    # NECESITAMOS que device_id exista, pero que esté vacío.
+    mock_controller.device_id = ""
+    # Ahora la caché debe estar bajo la clave "" en lugar de "XXXX"
+    mock_controller.loader._parsed_yaml_cache = {
+        "": {
+            "device": {
+                "identifiers": {
+                    "path_to_devices": ["devices"],
+                    "id": ["id"]
+                }
+            }
+        }
+    }
+    await poller.async_update_state()
+    # Ahora sí podemos verificar que se seleccionó y asignó "target_id"
+    assert mock_controller.device_id == "target_id"

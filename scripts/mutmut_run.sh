@@ -110,7 +110,7 @@ done
 
 PYTHONPATH="${WORKSPACE_ROOT}/mutants:${PYTHONPATH}" \
 /workspaces/ha_data/.dev-tools/bin/python -W "ignore:This process:DeprecationWarning" \
--m mutmut run --source "${TARGET_FILE}" --exclude-dir scripts --workers 0 "$@" &
+-m mutmut run --source "${TARGET_FILE}" --exclude-dir scripts --chunk-size 100 --workers 7 "$@" &
 MUTMUT_PID=$!
 wait $MUTMUT_PID || true
 
