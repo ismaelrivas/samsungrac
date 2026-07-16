@@ -540,6 +540,25 @@ async def test_async_update_properties_dirty_check():
 # FRENTE I: ENRUTAMIENTO MULTI-DISPOSITIVO (Sub-device Selector)
 # ====================================================================================
 
+async def test_async_update_properties_defaults():
+    """Verify default values of is_prediction and force_update."""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    mock_controller = MagicMock()
+    mock_controller.log_prefix = "TEST"
+    mock_controller.loader.operations = {}
+    mock_controller.loader.properties = {}
+    mock_controller.loader.sensors = {}
+    poller = YamlStatePoller(mock_controller)
+    
+    # Defaults should be is_prediction=False, force_update=False
+    # If so, dirty check should trigger and return {} when state is identical.
+    fake_state = {"power": "on"}
+    poller._last_device_state = {"power": "on"}
+    
+    # No kwargs provided. If defaults are mutated to True, it bypasses dirty check and returns something else (or does work)
+    result = await poller.async_update_properties_from_state(fake_state)
+    assert result == {}
+
 async def test_async_update_properties_sub_device_routing():
     """Verifica que el poller extrae el sub-diccionario correcto en arrays de dispositivos."""
     from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
