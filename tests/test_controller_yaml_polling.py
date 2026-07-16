@@ -546,18 +546,31 @@ async def test_async_update_properties_defaults():
     mock_controller = MagicMock()
     mock_controller.log_prefix = "TEST"
     mock_controller.loader.operations = {}
-    mock_controller.loader.properties = {}
+    mock_prop = MagicMock()
+    mock_prop.id = "test"
+    mock_prop.async_update_state = AsyncMock()
+    mock_controller.loader.properties = {"test": mock_prop}
     mock_controller.loader.sensors = {}
     poller = YamlStatePoller(mock_controller)
     
-    # Defaults should be is_prediction=False, force_update=False
-    # If so, dirty check should trigger and return {} when state is identical.
-    fake_state = {"power": "on"}
-    poller._last_device_state = {"power": "on"}
+    # Test is_prediction=False default:
+    # If is_prediction=False, _last_device_state is updated when states differ.
+    # If mutated to True, the whole block is skipped and _last_device_state remains unchanged.
+    fake_state_new = {"power": "NEW"}
+    poller._last_device_state = {"power": "OLD"}
+    await poller.async_update_properties_from_state(fake_state_new)
+    assert poller._last_device_state == {"power": "NEW"}
+
+    # Test force_update=False default:
+    # If force_update=False, dirty check triggers and returns early (mock not called).
+    # If mutated to True, dirty check is bypassed and mock would be called.
+    mock_prop.async_update_state.reset_mock()
+    fake_state_same = {"power": "NEW"}
+    poller._last_device_state = {"power": "NEW"}
     
-    # No kwargs provided. If defaults are mutated to True, it bypasses dirty check and returns something else (or does work)
-    result = await poller.async_update_properties_from_state(fake_state)
+    result = await poller.async_update_properties_from_state(fake_state_same)
     assert result == {}
+    mock_prop.async_update_state.assert_not_called()
 
 async def test_async_update_properties_sub_device_routing():
     """Verifica que el poller extrae el sub-diccionario correcto en arrays de dispositivos."""
