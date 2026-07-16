@@ -2246,10 +2246,10 @@ async def test_merge_device_state_empty_and_overwrite():
     }
     
     # Check that update worked
-    assert MockStateGetter.value == expected_state
+    assert mock_controller.loader.state_getter.value == expected_state
     
     # Check deepcopy: modifying the new state should not affect the original state
-    MockStateGetter.value["Untouched"]["nested"] = "Hacked"
+    mock_controller.loader.state_getter.value["Untouched"]["nested"] = "Hacked"
     assert base_state["Untouched"]["nested"] == "A"
 
 async def test_merge_device_state_strict_conditionals():
@@ -2963,3 +2963,198 @@ async def test_async_update_state_sniper_discovery():
         # Comprobamos explícitamente que exc_info=True está en los argumentos
         kwargs = mock_logger_error.call_args[1]
         assert kwargs.get("exc_info") is True
+
+# ==========================================
+# FRENTE 1: Inicializadores, Defaults y Cortocircuitos (getattr, dicts)
+# ==========================================
+
+def test_try_create_repair_issue_missing_hass():
+    """Aniquila mutante de `getattr(self.controller, 'hass', None) -> getattr(...)`"""
+    poller = YamlStatePoller(MagicMock())
+    # Mock destructivo: borramos el atributo para forzar la evaluación del default (None)
+    delattr(poller.controller, "hass")
+    # Si mutmut eliminó el default 'None', esto lanzará AttributeError.
+    poller._try_create_repair_issue() 
+
+
+def test_update_all_connections_token_deduplication():
+    """Aniquila mutantes lógicos (and/or flip) y fallback None en get_connection"""
+    poller = YamlStatePoller(MagicMock())
+    conn_mock = MagicMock()
+    
+    # Creamos dos props que devuelven la MISMA conexión
+    prop1 = MagicMock()
+    prop1.get_connection.return_value = conn_mock
+    prop2 = MagicMock()
+    prop2.get_connection.return_value = conn_mock
+    
+    poller._all_props = MagicMock(return_value=[prop1, prop2])
+
+    poller._update_all_connections_token("new_token")
+    
+    # Aserción hiper-estricta: sólo debe llamarse 1 vez, a pesar de haber 2 propiedades (mata 'or' flip)
+    conn_mock.update_auth_token.assert_called_once_with("new_token")
+    # Asegura que el fallback a None no se ha corrompido
+    prop1.get_connection.assert_called_once_with(None)
+
+
+def test_mask_sensitive_data_boundary():
+    """Aniquila mutante de frontera (> 6 vs >= 6)"""
+    poller = YamlStatePoller(MagicMock())
+    # Longitud exacta de 6. Si el código mutado usa >= 6, la enmascarará. Originalmente es > 6 (la ignorará).
+    data = {"uuid": "123456"}
+    poller._mask_sensitive_data(data)
+    assert data["uuid"] == "123456"
+
+# ==========================================
+# FRENTE 2: Deepcopy y Lógica Estructural en State Builders
+# ==========================================
+
+async def test_build_device_state_from_hass_deepcopy_and_logic():
+    """Aniquila copy vs deepcopy y mutación 'and/or' en convert_hass_to_dev"""
+    poller = YamlStatePoller(MagicMock())
+    last_real = {"Devices": [{"id": "1", "nested": True}]}
+    poller.controller.loader.state_getter.value = last_real
+    
+    op_mock = MagicMock()
+    # Inyectamos hass_value pero borramos la función de conversión.
+    # Si la condición es 'or' en lugar de 'and', intentará evaluar y fallará.
+    delattr(op_mock, "convert_hass_to_dev")
+    poller.controller.loader.operations = {"op1": op_mock}
+    
+    poller._get_hass_attr_for_op_id = MagicMock(return_value="state")
+    hass_state_mock = MagicMock(state="some_value")
+    
+    res = await poller._build_device_state_from_hass(hass_state_mock)
+    
+    # Test mutante deepcopy vs copy
+    res["Devices"][0]["nested"] = False
+    assert last_real["Devices"][0]["nested"] is True, "Fallo estructural: deepcopy reemplazado por copy"
+
+
+async def test_build_device_state_from_props_naked_dicts():
+    """Aniquila inicializadores setdefault desnudos, límites de lista y getattr anidados"""
+    poller = YamlStatePoller(MagicMock())
+    # Estado inicial estéril
+    poller.controller.loader.state_getter.value = {"Devices": []} 
+    
+    # Mock op sin 'value' pero con '_value'
+    op_mock = MagicMock()
+    delattr(op_mock, "value")
+    op_mock._value = "24"
+    poller.controller.loader.properties = {"prop1": op_mock}
+    
+    poller._get_hass_attr_for_op_id = MagicMock(return_value="prop1")
+    # Forzamos que se inyecte en un sub-diccionario para evaluar el fallo del len(list) > 0 y setdefaults
+    poller._get_cached_device_key_from_prop = MagicMock(return_value="Devices.0.Wind.direction")
+    
+    res = await poller._build_device_state_from_props()
+    # Si mutmut alteró len(device_list) > 0 a >= 0, este test lanzará IndexError al intentar Devices[0]
+    assert res is not None
+
+# ==========================================
+# FRENTE 3: Predicción, Timeout y Aserciones de Loggers (Mocks destructivos)
+# ==========================================
+
+async def test_async_update_properties_from_state_strict_logger():
+    """Aniquila mutantes de exc_info=False, timewindow y param debug fallbacks"""
+    poller = YamlStatePoller(MagicMock())
+    
+    # Provocamos un fallo en la lógica de selección de sub-dispositivo
+    poller.controller.loader._parsed_yaml_cache = MagicMock()
+    poller.controller.loader._parsed_yaml_cache.get.side_effect = Exception("Inyección balística")
+    
+    with patch("custom_components.climate_ip.controller_yaml_polling._LOGGER.error") as mock_log:
+        await poller.async_update_properties_from_state({"Devices": [{}]})
+        
+        # Aserción destructiva: validamos que el logger se llamó con exc_info=True obligatoriamente.
+        # Mutmut sobrevive si se cambia a False porque ignoramos la validación en tests viejos.
+        assert mock_log.call_args.kwargs.get("exc_info") is True
+    
+    # Test ventana de tiempo (15.0 segundos)
+    # Si la condición es <= 15.0, procesará el evento. Si es < 15.0 lo ignorará.
+    op_mock = MagicMock(id="test_op")
+    op_mock.async_update_state = AsyncMock()
+    poller._pending_updates = {"test_op": ("val", time.time() - 15.0)}
+    poller.controller.loader.properties = {"test_op": op_mock}
+    poller._get_cached_device_key_from_prop = MagicMock(return_value=None)
+    
+    # Para la llamada interna a prop.async_update_state, nos aseguramos de que controle debug flag explícito
+    poller.controller.debug = False
+    
+    await poller.async_update_properties_from_state({"Devices": [{}]})
+    
+    # Al ser 15.0 exactos, DEBE llamar a async_update_state si la lógica es estricta (< 15.0).
+    # Porque < 15.0 es False, no hace continue, y se procesa.
+    op_mock.async_update_state.assert_called_once()
+
+
+async def test_evict_invalidated_updates_break_mutation():
+    """Aniquila la sustitución de continue por break en bucles for"""
+    poller = YamlStatePoller(MagicMock())
+    
+    poller.controller.loader.operations = {"op1": None}
+    prop_mock = MagicMock()
+    poller.controller.loader.properties = {"prop2": prop_mock}
+    
+    # Elemento inválido primero, luego uno válido.
+    poller._pending_updates = {"op1": ("val", 0), "prop2": ("val", 0)}
+    poller._get_cached_device_key_from_prop = MagicMock(return_value="ValidKey")
+    
+    # Forzamos la invalidación del segundo
+    push_data = {"ValidKey": "trigger"}
+    poller._evict_invalidated_pending_updates(push_data)
+    
+    # Si el mutante cambió el continue por un break (al evaluar if not prop:), prop2 no se procesará
+    assert "prop2" not in poller._pending_updates, "El bucle sufrió un break prematuro"
+
+
+async def test_async_update_state_consecutive_errors_logic():
+    """Aniquila flip conditions (< vs <=) y el log reason slicing"""
+    poller = YamlStatePoller(MagicMock())
+    poller.controller.loader.state_getter.async_update_state = AsyncMock(return_value={"state": "ok"})
+    
+    with patch("custom_components.climate_ip.controller_yaml_polling._LOGGER.info") as mock_log_info, \
+         patch("custom_components.climate_ip.controller_yaml_polling._LOGGER.debug") as mock_log_debug:
+        
+        # Error count = 0 (Debe evitar que se lance log.info de recovery)
+        poller._consecutive_connection_errors = 0
+        await poller.async_update_state()
+        mock_log_info.assert_not_called()
+        
+        # Forzamos fallo con exactly errors = 2 para probar fallback a caché
+        poller.controller.loader.state_getter.async_update_state.side_effect = CannotConnect("Critical: Timeout detected")
+        poller._consecutive_connection_errors = 1
+        poller._cached_device_state = {"cached": "data"}
+        
+        res = await poller.async_update_state()
+        # Si mutaron `if errors <= 2` a `< 2`, esto fallaría retornando None en lugar de caché
+        assert res == {"cached": "data"}
+        
+        # Validamos lógica de partición de string rsplit(":", maxsplit=1)
+        # Para llegar a la rama del reason, borramos el caché
+        poller._cached_device_state = None
+        poller._consecutive_connection_errors = 2
+        
+        try:
+            await poller.async_update_state()
+        except UpdateFailed:
+            pass
+            
+        call_args = mock_log_debug.call_args[0]
+        # El string de formato es [0], log_prefix es [1], errors es [2], reason es [3]
+        assert call_args[3] == "Timeout detected", "Fallo mutante en formateo de error de log"
+
+
+async def test_async_shutdown_raw_client_circuit():
+    """Aniquila flip if raw_client and hasattr() a or hasattr()"""
+    poller = YamlStatePoller(MagicMock())
+    delattr(poller.controller, "close_shared_client")
+    # Inyectamos objeto sin 'close', si usa 'or' fallará en runtime al hacer close(). 
+    # El and actúa de circuito cortador seguro.
+    class DummyClient:
+        pass
+    poller.controller._shared_raw_client = DummyClient()
+    
+    await poller.async_shutdown()
+    assert poller.controller._shared_raw_client is None

@@ -930,7 +930,7 @@ class YamlStatePoller:
 
         match = self._device_state_key_regex.search(template_string)
         if match:
-            return match.group(2) or match.group(3)
+            return match.group(2)
         return None
 
     async def async_predict_and_correct_state(
