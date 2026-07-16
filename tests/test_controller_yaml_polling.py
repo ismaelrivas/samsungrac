@@ -496,13 +496,22 @@ async def test_async_update_properties_dirty_check():
     """Aserta que la evaluación de estado idéntico bloquea la propagación a menos que se fuerce."""
     from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
     import time
-    from unittest.mock import MagicMock
+    from unittest.mock import MagicMock, AsyncMock
     
     mock_controller = MagicMock()
     mock_controller.loader.is_fully_initialized = True
     mock_controller.debug = False
-    mock_controller.debug = False
     mock_controller.loader._parsed_yaml_cache = {}
+    
+    mock_prop = MagicMock()
+    mock_prop.id = "hvac"
+    mock_prop.template = None
+    mock_prop.status_template = None
+    mock_prop.async_update_state = AsyncMock()
+    mock_controller.loader.operations = {"hvac": mock_prop}
+    mock_controller.loader.properties = {}
+    mock_controller.loader.sensors = {}
+
     poller = YamlStatePoller(mock_controller)
     
     fake_state = {"power": "on"}
@@ -512,25 +521,23 @@ async def test_async_update_properties_dirty_check():
     # NO PASAMOS los kwargs explícitamente para matar los mutantes de valores por defecto (is_prediction=True, force_update=True)
     result = await poller.async_update_properties_from_state(fake_state)
     assert result == {}
+    mock_prop.async_update_state.assert_not_called()
+    
+    # 1.5 Estado idéntico, pero con is_prediction=True (Mata el if not is_prediction)
+    # Debe pasar el cortocircuito y procesar
+    result_pred = await poller.async_update_properties_from_state(fake_state, is_prediction=True, force_update=False)
+    assert isinstance(result_pred, dict)
+    mock_prop.async_update_state.assert_called_once()
+    mock_prop.reset_mock()
     
     # 2. Estado idéntico, pero con force_update=True (Mata if no respeta force_update)
-    # Debe pasar el cortocircuito y devolver dict (aunque sea vacío si no hay correcciones)
-    from unittest.mock import AsyncMock
-    mock_prop = MagicMock()
-    mock_prop.id = "hvac"
-    mock_prop.template = None
-    mock_prop.status_template = None
-    mock_prop.async_update_state = AsyncMock()
-    mock_controller.loader.operations = {"hvac": mock_prop}
-    mock_controller.loader.properties = {}
-    mock_controller.loader.sensors = {}
-    
+    # Debe pasar el cortocircuito y procesar
     result_forced = await poller.async_update_properties_from_state(fake_state, is_prediction=False, force_update=True)
     assert isinstance(result_forced, dict)
     mock_prop.async_update_state.assert_called_once()
+    mock_prop.reset_mock()
     
     # 3. Estado idéntico, force_update=False, pero con pending_updates activas
-    mock_prop.reset_mock()
     poller._pending_updates = {"hvac": ("val", time.time())}
     result_pending = await poller.async_update_properties_from_state(fake_state, is_prediction=False, force_update=False)
     assert isinstance(result_pending, dict)
