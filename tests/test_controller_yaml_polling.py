@@ -2225,33 +2225,32 @@ async def test_merge_device_state_empty_and_overwrite():
     # 2. Strict Overwrite testing & Deepcopy verification
     mock_controller.get_current_state_callback = MagicMock(return_value=None)
     
-    original_state = {"Operation": {"power": "On"}, "base_key": "base_val"}
+    base_state = {"Untouched": {"nested": "A"}}
     
     class MockStateGetter:
-        value = original_state
+        value = base_state
         
     mock_controller.loader.state_getter = MockStateGetter()
     poller._calculate_structured_state = MagicMock(return_value={"valid": True})
     poller.async_update_properties_from_state = AsyncMock()
     poller._evict_invalidated_pending_updates = MagicMock()
     
-    updates = {"new_key": "new_val"}
+    new_data = {"NewKey": "B"}
     
-    res = await poller.async_merge_device_state(updates, False, False)
+    res = await poller.async_merge_device_state(new_data, False, False)
     assert res is True
     
     expected_state = {
-        "Operation": {"power": "On"},
-        "base_key": "base_val",
-        "new_key": "new_val"
+        "Untouched": {"nested": "A"},
+        "NewKey": "B"
     }
     
     # Check that update worked
     assert MockStateGetter.value == expected_state
     
     # Check deepcopy: modifying the new state should not affect the original state
-    MockStateGetter.value["Operation"]["power"] = "Off"
-    assert original_state["Operation"]["power"] == "On"
+    MockStateGetter.value["Untouched"]["nested"] = "Hacked"
+    assert base_state["Untouched"]["nested"] == "A"
 
 async def test_merge_device_state_strict_conditionals():
     """Misión Táctica 2: async_merge_device_state strict mock conditions"""
