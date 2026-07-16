@@ -536,6 +536,23 @@ async def test_async_update_properties_dirty_check():
     assert isinstance(result_pending, dict)
     mock_prop.async_update_state.assert_not_called()
 
+    # 4. Fallback de Atributo y Aislamiento de Memoria (Deepcopy vs Copy)
+    # Borramos _last_device_state para forzar que getattr pase por el default None y no levante AttributeError
+    # (El init de YamlStatePoller lo setea a None, así que hay que borrarlo con del)
+    del poller._last_device_state
+    poller._pending_updates = {}
+    
+    nested_state = {"Operation": {"power": "On"}}
+    # Llamamos a la función: no debe entrar al dirty check porque None != nested_state.
+    # Seteará poller._last_device_state = copy.deepcopy(nested_state)
+    result_new_state = await poller.async_update_properties_from_state(nested_state)
+    
+    # Mutamos el estado original
+    nested_state["Operation"]["power"] = "Off"
+    
+    # Si Mutmut inyectó copy.copy en lugar de copy.deepcopy, el diccionario anidado también será "Off"
+    assert poller._last_device_state["Operation"]["power"] == "On"
+
 # ====================================================================================
 # FRENTE I: ENRUTAMIENTO MULTI-DISPOSITIVO (Sub-device Selector)
 # ====================================================================================

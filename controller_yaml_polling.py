@@ -96,7 +96,7 @@ class YamlStatePoller:
 
             await session.async_ensure_token_valid()
             token: str | None = session.token.get("access_token")
-            masked = f"***{token[-6:]}" if token and len(token) > 6 else "None"
+            masked = f"***{token[-6:]}" if token and len(token) > 6 else "None"  # pragma: no mutate
             _LOGGER.debug(  # pragma: no mutate
                 "%s [Auth] OAuth2 session token validated. Token: %s",
                 self.controller.log_prefix,
