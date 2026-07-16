@@ -1311,7 +1311,8 @@ async def test_refresh_smartthings_token_success(mock_get_impl, mock_oauth_sessi
     
     # Aserciones estrictas
     mock_controller.hass.config_entries.async_entries.assert_called_with("smartthings")
-    assert mock_get_impl.called
+    mock_get_impl.assert_awaited_once_with(mock_controller.hass, mock_entry)
+    mock_oauth_session.assert_called_once_with(mock_controller.hass, mock_entry, mock_get_impl.return_value)
     mock_session_instance.async_ensure_token_valid.assert_awaited_once()
     assert result == "nuevo_token_refrescado"
 
