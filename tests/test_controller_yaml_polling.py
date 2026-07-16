@@ -1317,24 +1317,57 @@ async def test_refresh_smartthings_token_success(mock_get_impl, mock_oauth_sessi
 
 @patch("custom_components.climate_ip.controller_yaml_polling.config_entry_oauth2_flow.OAuth2Session")
 @patch("custom_components.climate_ip.controller_yaml_polling.config_entry_oauth2_flow.async_get_config_entry_implementation")
-async def test_refresh_smartthings_token_failure(mock_get_impl, mock_oauth_session):
-    """Test token refresh failure paths (no entries, exceptions)."""
-    mock_controller = MagicMock()
-    mock_controller.hass = MagicMock()
-    
-    # 1. Fallo: No hay config entries
-    mock_controller.hass.config_entries.async_entries.return_value = []
-    poller = YamlStatePoller(mock_controller)
-    assert await poller._refresh_smartthings_token() is None
-    
-    # 2. Fallo: Exception en el proceso OAuth
-    mock_controller.hass.config_entries.async_entries.return_value = [MagicMock()]
-    mock_get_impl.side_effect = Exception("Auth Server Down")
-    assert await poller._refresh_smartthings_token() is None
+@patch("custom_components.climate_ip.controller_yaml_polling._LOGGER")
+async def test_refresh_smartthings_token_sniper_failures(mock_logger, mock_get_impl, mock_oauth_session):
+    """Sniper: Test token refresh failure paths strictly checking loggers and missing attributes."""
+    # Dummy estricto para evitar MagicMocks donde testeamos hasattr/getattr
+    class DummyController:
+        def __init__(self):
+            self.log_prefix = "[AuthTest]"
+            # hass no está definido a propósito al inicio
 
-    # 3. Fallo: No hay hass configurado
+    mock_controller = DummyController()
+    poller = YamlStatePoller(mock_controller)
+
+    # 1. Fallo: No hay hass configurado (Atributo inexistente)
+    # Originalmente retorna None silenciosamente. 
+    # Si el mutant cambia el getattr default a "XXXX", pasará, fallará más abajo y lanzará un _LOGGER.error.
+    assert await poller._refresh_smartthings_token() is None
+    mock_logger.error.assert_not_called()
+    mock_logger.debug.assert_not_called()
+
+    # Le ponemos un hass mockeado para las siguientes pruebas
+    mock_controller.hass = MagicMock()
+
+    # 2. Fallo: hass es None explícitamente
     mock_controller.hass = None
     assert await poller._refresh_smartthings_token() is None
+    mock_logger.error.assert_not_called()
+    mock_logger.debug.assert_not_called()
+
+    # Restauramos hass funcional
+    mock_controller.hass = MagicMock()
+
+    # 3. Fallo: No hay config entries (Lista vacía)
+    mock_logger.reset_mock()
+    mock_controller.hass.config_entries.async_entries.return_value = []
+    assert await poller._refresh_smartthings_token() is None
+    # Debe loguear un debug informando que no hay entries, no un error
+    mock_logger.debug.assert_called_once()
+    mock_logger.error.assert_not_called()
+
+    # 4. Fallo: Exception explícita en async_ensure_token_valid()
+    mock_logger.reset_mock()
+    mock_controller.hass.config_entries.async_entries.return_value = [MagicMock()]
+    
+    mock_session_instance = AsyncMock()
+    mock_session_instance.async_ensure_token_valid.side_effect = Exception("Auth Server Down")
+    mock_oauth_session.return_value = mock_session_instance
+    
+    assert await poller._refresh_smartthings_token() is None
+    # Debe loguear un error con la excepción
+    mock_logger.error.assert_called_once()
+    mock_logger.debug.assert_not_called()
 
 # --- FRENTE 2: Bloques de Fusión Atómica y Predicción ---
 
