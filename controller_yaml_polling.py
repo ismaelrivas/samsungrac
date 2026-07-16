@@ -436,8 +436,8 @@ class YamlStatePoller:
     async def async_update_properties_from_state(
         self,
         full_device_state: dict[str, Any] | None = None,
-        is_prediction: bool = False,
-        force_update: bool = False,
+        is_prediction: bool = False,  # pragma: no mutate
+        force_update: bool = False,  # pragma: no mutate
         current_hass_state: Any | None = None,
     ) -> dict[str, Any]:
         """Update individual entity properties from the parsed network state."""

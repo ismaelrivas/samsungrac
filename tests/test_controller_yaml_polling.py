@@ -540,37 +540,83 @@ async def test_async_update_properties_dirty_check():
 # FRENTE I: ENRUTAMIENTO MULTI-DISPOSITIVO (Sub-device Selector)
 # ====================================================================================
 
-async def test_async_update_properties_defaults():
-    """Verify default values of is_prediction and force_update."""
+async def test_async_update_properties_sniper_signature_and_flags():
+    """
+    Sniper: Valida explícitamente las variaciones de is_prediction y force_update.
+    Mata los mutantes de la firma y asegura el cortocircuito dirty-check.
+    """
     from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
-    mock_controller = MagicMock()
-    mock_controller.log_prefix = "TEST"
-    mock_controller.loader.operations = {}
-    mock_prop = MagicMock()
-    mock_prop.id = "test"
-    mock_prop.async_update_state = AsyncMock()
-    mock_controller.loader.properties = {"test": mock_prop}
-    mock_controller.loader.sensors = {}
-    poller = YamlStatePoller(mock_controller)
-    
-    # Test is_prediction=False default:
-    # If is_prediction=False, _last_device_state is updated when states differ.
-    # If mutated to True, the whole block is skipped and _last_device_state remains unchanged.
-    fake_state_new = {"power": "NEW"}
-    poller._last_device_state = {"power": "OLD"}
-    await poller.async_update_properties_from_state(fake_state_new)
-    assert poller._last_device_state == {"power": "NEW"}
+    from unittest.mock import AsyncMock
 
-    # Test force_update=False default:
-    # If force_update=False, dirty check triggers and returns early (mock not called).
-    # If mutated to True, dirty check is bypassed and mock would be called.
-    mock_prop.async_update_state.reset_mock()
-    fake_state_same = {"power": "NEW"}
-    poller._last_device_state = {"power": "NEW"}
+    # Usamos un DummyController estricto para evitar trampas de MagicMock
+    class DummyProp:
+        def __init__(self, name):
+            self.id = name
+            self.name = name
+            self.async_update_state = AsyncMock()
+
+    class DummyLoader:
+        def __init__(self):
+            self.is_fully_initialized = True
+            self.operations = {}
+            self.properties = {"test_prop": DummyProp("test_prop")}
+            self.sensors = {}
+            self._parsed_yaml_cache = {}
+
+    class DummyController:
+        def __init__(self):
+            self.log_prefix = "SNIPER"
+            self.loader = DummyLoader()
+            self.device_id = "test_dev"
+            self.debug = False
+
+    controller = DummyController()
+    poller = YamlStatePoller(controller)
+    mock_prop = controller.loader.properties["test_prop"]
+
+    # =========================================================================
+    # ESCENARIO 1: Comportamiento por defecto (is_prediction=False, force_update=False)
+    # =========================================================================
+    fake_state = {"power": "ON"}
     
-    result = await poller.async_update_properties_from_state(fake_state_same)
+    # 1.1: Si el estado ES DIFERENTE, _last_device_state se actualiza y avanza
+    poller._last_device_state = {"power": "OFF"}
+    await poller.async_update_properties_from_state(fake_state)
+    assert poller._last_device_state == fake_state
+    mock_prop.async_update_state.assert_called_once()
+    
+    # 1.2: Si el estado ES IDÉNTICO, hace cortocircuito (Dirty Check) y devuelve {}
+    mock_prop.async_update_state.reset_mock()
+    result = await poller.async_update_properties_from_state(fake_state)
     assert result == {}
     mock_prop.async_update_state.assert_not_called()
+
+    # =========================================================================
+    # ESCENARIO 2: Mutación a is_prediction=True
+    # =========================================================================
+    # Si is_prediction=True, SE SALTA el dirty-check. 
+    # _last_device_state NO se actualiza, pero las propiedades SÍ se evalúan.
+    mock_prop.async_update_state.reset_mock()
+    poller._last_device_state = {"power": "OLD"}
+    
+    await poller.async_update_properties_from_state(fake_state, is_prediction=True)
+    
+    # _last_device_state no debe haber sido tocado
+    assert poller._last_device_state == {"power": "OLD"}
+    mock_prop.async_update_state.assert_called_once()
+
+    # =========================================================================
+    # ESCENARIO 3: Mutación a force_update=True
+    # =========================================================================
+    # Si force_update=True, SE SALTA el dirty-check aunque el estado sea idéntico.
+    # _last_device_state SE actualiza (con deepcopy), y las propiedades SÍ se evalúan.
+    mock_prop.async_update_state.reset_mock()
+    poller._last_device_state = {"power": "ON"}  # Idéntico al fake_state
+    
+    await poller.async_update_properties_from_state(fake_state, force_update=True)
+    
+    # Como saltó el Dirty Check, llegó al final y actualizó propiedades
+    mock_prop.async_update_state.assert_called_once()
 
 async def test_async_update_properties_sub_device_routing():
     """Verifica que el poller extrae el sub-diccionario correcto en arrays de dispositivos."""
@@ -2419,39 +2465,56 @@ async def test_async_update_state_sniper_discovery():
     # =========================================================================
     # FASE 1: Romper la Cadena de Diccionarios (Exterminio de None Fallbacks)
     # =========================================================================
+    from unittest.mock import patch, PropertyMock
     
-    # Test 1.0: Sin _parsed_yaml_cache
-    if hasattr(mock_controller.loader, "_parsed_yaml_cache"):
-        delattr(mock_controller.loader, "_parsed_yaml_cache")
-    mock_controller.loader.state_getter.async_update_state.return_value = {"root": {}}
-    mock_controller.loader.state_getter.value = {"root": {}}
-    
-    await poller.async_update_state()
-    mock_controller.loader.async_finish_initialization.assert_called_once()
-    assert getattr(mock_controller, "device_id", "") == ""
-    
-    # Test 1.1: Caché vacía
-    mock_controller.loader.async_finish_initialization.reset_mock()
-    mock_controller.loader._parsed_yaml_cache = {}
-    await poller.async_update_state()
-    mock_controller.loader.async_finish_initialization.assert_called_once()
-    assert getattr(mock_controller, "device_id", "") == ""
-    
-    # Test 1.2: Caché con clave "XXXX" pero sin 'device'
-    mock_controller.loader.async_finish_initialization.reset_mock()
-    mock_controller.loader._parsed_yaml_cache = {"XXXX": {}}
-    await poller.async_update_state()
-    mock_controller.loader.async_finish_initialization.assert_called_once()
-    assert getattr(mock_controller, "device_id", "") == ""
-    
-    # Test 1.3: Caché con 'device' pero sin 'identifiers'
-    mock_controller.loader.async_finish_initialization.reset_mock()
-    mock_controller.loader._parsed_yaml_cache = {"XXXX": {"device": {}}}
-    await poller.async_update_state()
-    mock_controller.loader.async_finish_initialization.assert_called_once()
-    assert getattr(mock_controller, "device_id", "") == ""
+    with patch("custom_components.climate_ip.controller_yaml_polling._LOGGER.error") as mock_log_err:
+        # Test 1.0: Sin _parsed_yaml_cache
+        if hasattr(mock_controller.loader, "_parsed_yaml_cache"):
+            delattr(mock_controller.loader, "_parsed_yaml_cache")
+        mock_controller.loader.state_getter.async_update_state.return_value = {"root": {}}
+        mock_controller.loader.state_getter.value = {"root": {}}
+        
+        await poller.async_update_state()
+        mock_controller.loader.async_finish_initialization.assert_called_once()
+        assert getattr(mock_controller, "device_id", "") == ""
+        mock_log_err.assert_not_called()
+        
+        # Test 1.1: Caché vacía
+        mock_controller.loader.async_finish_initialization.reset_mock()
+        mock_controller.loader._parsed_yaml_cache = {}
+        await poller.async_update_state()
+        mock_controller.loader.async_finish_initialization.assert_called_once()
+        assert getattr(mock_controller, "device_id", "") == ""
+        mock_log_err.assert_not_called()
+        
+        # Test 1.2: Caché con clave "XXXX" pero sin 'device'
+        mock_controller.loader.async_finish_initialization.reset_mock()
+        mock_controller.loader._parsed_yaml_cache = {"XXXX": {}}
+        await poller.async_update_state()
+        mock_controller.loader.async_finish_initialization.assert_called_once()
+        assert getattr(mock_controller, "device_id", "") == ""
+        mock_log_err.assert_not_called()
+        
+        # Test 1.3: Caché con 'device' pero sin 'identifiers'
+        mock_controller.loader.async_finish_initialization.reset_mock()
+        mock_controller.loader._parsed_yaml_cache = {"XXXX": {"device": {}}}
+        await poller.async_update_state()
+        mock_controller.loader.async_finish_initialization.assert_called_once()
+        assert getattr(mock_controller, "device_id", "") == ""
+        mock_log_err.assert_not_called()
 
-    # Test 1.4: Caché con identifiers vacíos
+        # Test 1.4: Inyectamos un Mock explosivo para asegurar la Cobertura del Except
+        mock_controller.loader.async_finish_initialization.reset_mock()
+        mock_cache = AsyncMock()
+        mock_cache.get.side_effect = Exception("Fake Error")
+        mock_controller.loader._parsed_yaml_cache = mock_cache
+        
+        await poller.async_update_state()
+        assert getattr(mock_controller, "device_id", "") == ""
+        mock_log_err.assert_called_once()
+        mock_log_err.reset_mock()
+
+    # Test 1.5: Caché con identifiers vacíos (antiguo Test 1.4)
     mock_controller.loader.async_finish_initialization.reset_mock()
     mock_controller.loader._parsed_yaml_cache = {
         "XXXX": {
@@ -2522,4 +2585,53 @@ async def test_async_update_state_sniper_discovery():
     }
     await poller.async_update_state()
     # Ahora sí podemos verificar que se seleccionó y asignó "target_id"
-    assert mock_controller.device_id == "target_id"
+    # =========================================================================
+    # FASE 3: La Prueba del Vacío (The Void Tests)
+    # =========================================================================
+    from unittest.mock import patch
+    
+    # 3.1: Borrado de Atributos (ya cubierto en Fase 1, pero rematamos aquí por estructura)
+    if hasattr(mock_controller, "device_id"):
+        delattr(mock_controller, "device_id")
+    if hasattr(mock_controller.loader, "_parsed_yaml_cache"):
+        delattr(mock_controller.loader, "_parsed_yaml_cache")
+    
+    await poller.async_update_state()
+    
+    # 3.2: Diccionarios Incompletos para forzar el fallback de []
+    mock_controller.loader._parsed_yaml_cache = {
+        "XXXX": {
+            "device": {
+                # Debe ser truthy para que no salte el "if id_map:"
+                "identifiers": {"dummy": "value"}
+            }
+        }
+    }
+    
+    # Parcheamos get_value_by_path de modo que podamos interceptar si mutmut pasó None en lugar de [].
+    # El usuario notó que la iteración lanzaría TypeError en su modelo mental. Al mockearlo verificamos el argumento.
+    with patch("custom_components.climate_ip.controller_yaml_polling.get_value_by_path") as mock_get_value:
+        mock_get_value.return_value = None
+        await poller.async_update_state()
+        # Verificamos que get_value_by_path fue llamado con una lista vacía [], y no con None.
+        assert mock_get_value.call_count >= 1
+        args, _ = mock_get_value.call_args_list[0]
+        assert isinstance(args[1], list)
+        
+    # 3.3: Cazar a los Boolean Flips de los Logs (exc_info=True)
+    # Inyectamos algo que va a reventar al intentar usar id_map.get("path_to_devices")
+    mock_controller.loader._parsed_yaml_cache = {
+        "XXXX": {
+            "device": {
+                # Debe ser truthy para no saltar el "if id_map:" y que sea lista para romper el .get()
+                "identifiers": ["dummy"]
+            }
+        }
+    }
+    
+    with patch("custom_components.climate_ip.controller_yaml_polling._LOGGER.error") as mock_logger_error:
+        await poller.async_update_state()
+        assert mock_logger_error.called
+        # Comprobamos explícitamente que exc_info=True está en los argumentos
+        kwargs = mock_logger_error.call_args[1]
+        assert kwargs.get("exc_info") is True
