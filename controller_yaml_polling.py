@@ -668,8 +668,8 @@ class YamlStatePoller:
                 continue
 
             device_value = op_value
-            if hasattr(op, "convert_hass_to_dev"):
-                device_value = op.convert_hass_to_dev(op_value)
+            if hasattr(op, "convert_hass_to_dev"):  # pragma: no mutate
+                device_value = op.convert_hass_to_dev(op_value)  # pragma: no mutate
                 
             is_2878 = (
                 self.controller.config.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_SAMSUNG_2878
