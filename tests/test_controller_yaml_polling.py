@@ -2241,21 +2241,48 @@ def test_evict_invalidated_pending_updates_none_prop():
 
 from custom_components.climate_ip.exceptions import CannotConnect
 from homeassistant.helpers.update_coordinator import UpdateFailed
+import pytest
+from unittest.mock import AsyncMock, patch
+
+class DummyStateGetter:
+    def __init__(self):
+        self.async_update_state = AsyncMock()
+        self.value = None
+
+class DummyLoader:
+    def __init__(self):
+        self.state_getter = DummyStateGetter()
+        self.is_fully_initialized = True
+        self._parsed_yaml_cache = {}
+        
+    async def async_finish_initialization(self):
+        pass
+
+class DummyController:
+    """Clase Python estándar para sustituir a MagicMock y forzar AttributeErrors reales en getattr."""
+    def __init__(self, **kwargs):
+        self.log_prefix = "TEST"
+        self.config = {}
+        self.loader = DummyLoader()
+        # Inyectar solo los atributos estrictamente declarados
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
 async def test_async_update_state_sniper_retries_and_cache():
-    """Sniper: Valida la lógica de reintentos, el uso de la caché, el colapso al 3º fallo y la recuperación."""
+    """Sniper: Lógica de reintentos, caché y colapso total (con aserción dura de rsplit)."""
     from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
-    from unittest.mock import MagicMock, AsyncMock, patch
     
-    mock_controller = MagicMock()
-    mock_controller.log_prefix = "TEST"
-    # Evitar el ping inicial forzando que sea un dispositivo 2878
+    mock_controller = DummyController()
     mock_controller.config = {"device_type": "samsung_2878"}
+    
+    # Excepción con ":" para probar el rsplit(":", maxsplit=1)[-1].strip() de la línea 336
+    error_msg = "ConnectionError: Timeout on host"
+    
     mock_controller.loader.state_getter.async_update_state = AsyncMock(
         side_effect=[
-            CannotConnect("Host unreachable"), # Fallo 1
-            CannotConnect("Host unreachable"), # Fallo 2
-            {"power": "recovered"} # Recuperación
+            CannotConnect(error_msg), # Fallo 1
+            CannotConnect(error_msg), # Fallo 2
+            {"power": "recovered"}    # Recuperación
         ]
     )
     mock_controller.loader.state_getter.value = {"power": "recovered"}
@@ -2266,43 +2293,41 @@ async def test_async_update_state_sniper_retries_and_cache():
     poller._consecutive_connection_errors = 0
     
     with patch.object(poller, "_try_create_repair_issue") as mock_repair:
-        # Fallo 1: Devuelve caché, suma error, no crea issue
+        # Fallo 1
         res1 = await poller.async_update_state()
         assert res1 == {"power": "cached_on"}
         assert poller._consecutive_connection_errors == 1
         mock_repair.assert_not_called()
         
-        # Fallo 2: Devuelve caché, suma error, no crea issue
+        # Fallo 2
         res2 = await poller.async_update_state()
         assert res2 == {"power": "cached_on"}
         assert poller._consecutive_connection_errors == 2
         mock_repair.assert_not_called()
         
-        # Recuperación Exitosa:
-        # El 3º intento devuelve estado real y limpia los errores
+        # Recuperación (Fallo 3 no ocurre, se reinician los contadores)
         res3 = await poller.async_update_state()
         assert res3 == {"power": "recovered"}
         assert poller._consecutive_connection_errors == 0
         mock_repair.assert_not_called()
         
-        # Fallo 3: Colapso total, crea issue y lanza UpdateFailed
-        # Preparamos un nuevo ciclo de fallos para llegar al colapso total
-        mock_controller.loader.state_getter.async_update_state.side_effect = CannotConnect("Host unreachable")
+        # Colapso total: Forzamos el límite y lanzamos excepción validando el parseo
+        mock_controller.loader.state_getter.async_update_state.side_effect = CannotConnect(error_msg)
         poller._consecutive_connection_errors = 2
-        with pytest.raises(UpdateFailed, match="Device unreachable"):
+        
+        # Validamos aserción FUERTE: ^Device unreachable: Timeout on host$
+        with pytest.raises(UpdateFailed, match="^Device unreachable: Timeout on host$"):
             await poller.async_update_state()
             
         assert poller._consecutive_connection_errors == 3
         mock_repair.assert_called_once()
 
 async def test_async_update_state_sniper_debug_and_fallbacks():
-    """Sniper: Valida validación inicial del state_getter y delegación de estado/debug."""
+    """Sniper: Validación inicial de state_getter y debug con getattr."""
     from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
-    from unittest.mock import MagicMock, AsyncMock
     
-    mock_controller = MagicMock()
-    mock_controller.log_prefix = "TEST"
-    # 1. Sin state_getter (Debe lanzar UpdateFailed inmediatamente)
+    # 1. Sin state_getter
+    mock_controller = DummyController()
     mock_controller.loader.state_getter = None
     poller = YamlStatePoller(mock_controller)
     poller.async_update_properties_from_state = AsyncMock()
@@ -2310,66 +2335,64 @@ async def test_async_update_state_sniper_debug_and_fallbacks():
     with pytest.raises(UpdateFailed, match="State getter is not initialized"):
         await poller.async_update_state()
         
-    # 2. Con state_getter, probando el paso del flag `debug` a True
-    mock_controller.loader.state_getter = MagicMock()
-    mock_controller.loader.state_getter.async_update_state = AsyncMock(return_value={"power": "on_debug"})
+    # 2. Con debug en True (probando atributo existente)
+    mock_controller = DummyController(debug=True)
+    mock_controller.config = {"device_type": "samsung_2878"}
+    mock_controller.loader.state_getter.async_update_state.return_value = {"power": "on_debug"}
     mock_controller.loader.state_getter.value = {"power": "on_debug"}
-    mock_controller.config = {"device_type": "samsung_2878"} # Bypass ping network
-    mock_controller.debug = True
+    poller = YamlStatePoller(mock_controller)
+    poller.async_update_properties_from_state = AsyncMock()
     
     res = await poller.async_update_state()
     assert res == {"power": "on_debug"}
-    # Verificamos que se pasa True como segundo argumento (debug flag)
     mock_controller.loader.state_getter.async_update_state.assert_called_once_with(None, True)
     
-    # 3. Fallback: sin el atributo debug configurado, debe asumir False por defecto
-    del mock_controller.debug
-    mock_controller.loader.state_getter.async_update_state.reset_mock()
+    # 3. Fallback: sin atributo debug configurado (DummyController lanzará AttributeError si quitan el fallback)
+    mock_controller = DummyController() # No tiene 'debug'
+    mock_controller.config = {"device_type": "samsung_2878"}
     mock_controller.loader.state_getter.async_update_state.return_value = {"power": "on_nodebug"}
     mock_controller.loader.state_getter.value = {"power": "on_nodebug"}
+    poller = YamlStatePoller(mock_controller)
+    poller.async_update_properties_from_state = AsyncMock()
     
     res2 = await poller.async_update_state()
     assert res2 == {"power": "on_nodebug"}
-    # Verificamos que se pasa False de forma predeterminada
     mock_controller.loader.state_getter.async_update_state.assert_called_once_with(None, False)
 
 async def test_async_update_state_sniper_network_ping():
-    """Sniper: Valida que los dispositivos REST fallan temprano si async_check_network_reachability falla."""
+    """Sniper: Dispositivos REST fallan temprano (burbujea CannotConnect de red)."""
     from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
-    from unittest.mock import MagicMock, AsyncMock, patch
-    import pytest
     
-    mock_controller = MagicMock()
-    mock_controller.log_prefix = "TEST"
-    mock_controller.ip_address = "192.168.1.100"
-    mock_controller.config = {"device_type": "REST"} # Dispositivo que SÍ requiere ping
+    # Asignamos ip_address expresamente, pero omitimos otros atributos para forzar getattr fallbacks.
+    mock_controller = DummyController(ip_address="192.168.1.100")
+    mock_controller.config = {"device_type": "REST"}
     
     poller = YamlStatePoller(mock_controller)
     poller.async_update_properties_from_state = AsyncMock()
-    poller._consecutive_connection_errors = 1 # Para forzar CannotConnect en el ping
+    poller._consecutive_connection_errors = 1 
     poller._cached_device_state = {"a": 1}
     
     with patch("custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability", new_callable=AsyncMock) as mock_ping:
-        # 1. El ping falla
+        # 1. Ping falla
         mock_ping.return_value = False
         
-        with pytest.raises(CannotConnect, match="Host unreachable \\(ICMP ping failed\\). Device is persistently offline."):
+        with pytest.raises(CannotConnect, match="^Host unreachable \\(ICMP ping failed\\). Device is persistently offline.$"):
             await poller.async_update_state()
             
         assert mock_ping.called
         assert poller._consecutive_connection_errors == 2
 
-        # 2. El ping falla de nuevo y sube a 3 (colapso total) -> Lanza CannotConnect (el try principal no lo atrapa porque está antes)
+        # 2. Ping falla de nuevo (colapso)
         mock_ping.reset_mock()
         with patch.object(poller, "_try_create_repair_issue") as mock_repair:
-            with pytest.raises(CannotConnect, match="Host unreachable"):
+            with pytest.raises(CannotConnect, match="^Host unreachable \\(ICMP ping failed\\). Device is persistently offline.$"):
                 await poller.async_update_state()
             assert poller._consecutive_connection_errors == 3
             mock_repair.assert_called_once()
 
-        # 3. El ping lanza excepción en la propia rutina diagnóstica, lo que se loguea y continúa a state_getter
+        # 3. Ping lanza excepción pero se captura como diagnóstico, delegando luego a state_getter
         mock_ping.side_effect = Exception("Ping error")
-        mock_controller.loader.state_getter.async_update_state = AsyncMock(return_value={"state": "ping_failed_but_recovered"})
+        mock_controller.loader.state_getter.async_update_state.return_value = {"state": "ping_failed_but_recovered"}
         mock_controller.loader.state_getter.value = {"state": "ping_failed_but_recovered"}
         
         res = await poller.async_update_state()
