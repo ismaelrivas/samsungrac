@@ -71,12 +71,25 @@ async def test_async_update_state_early_exits_and_ping():
     mock_controller.ip_address = "192.168.1.100"
     
     # Simulamos que la red no es alcanzable
-    with patch("custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability", return_value=False):
+    with patch("custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability", return_value=False) as mock_ping:
         with pytest.raises(CannotConnect, match="Host unreachable"):
             await poller.async_update_state()
+            
+        # Aserciones estrictas del pre-check (Frente de Red)
+        mock_controller.config.get.assert_called_with("device_type")
+        mock_ping.assert_called_once()
         
         # Mata mutantes en la matemática del contador (ej. += 2 en lugar de += 1)
         assert poller._consecutive_connection_errors == 1
+
+    # 3. Cortocircuito de Reachability por ip_address = None (Mata mutante and -> or)
+    mock_controller.ip_address = None
+    with patch("custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability", return_value=False) as mock_ping_none:
+        # Hacemos que state_getter falle para terminar la función, o que devuelva None
+        mock_controller.loader.state_getter.async_update_state.return_value = None
+        with pytest.raises(UpdateFailed):
+            await poller.async_update_state()
+        mock_ping_none.assert_not_called()
 
 # ====================================================================================
 # FRENTE B: TOLERANCIA A FALLOS (RequestException) Y RESCATE DE CACHÉ
@@ -119,6 +132,18 @@ async def test_async_update_state_network_failures_and_cache():
     
     # Asertamos que intentó crear el issue al llegar a 3
     poller._try_create_repair_issue.assert_called_once()
+    
+    # Validamos la resolución del Issue (Cuando la conexión se recupera)
+    poller._consecutive_connection_errors = 1
+    mock_controller.loader.state_getter.async_update_state.side_effect = None
+    mock_controller.loader.state_getter.async_update_state.return_value = {"power": "on"}
+    mock_controller.loader.state_getter.value = {"power": "on"}
+    mock_controller.ip_address = "192.168.1.100"
+    
+    with patch("custom_components.climate_ip.controller_yaml_polling.async_delete_issue") as mock_delete_issue:
+        await poller.async_update_state()
+        # Verificación estricta de que se borró el issue con los parámetros correctos
+        mock_delete_issue.assert_called_once_with(mock_controller.hass, "climate_ip", "connection_failed_192.168.1.100")
 
 # ====================================================================================
 # FRENTE C: EL HORNO DE AUTENTICACIÓN (AuthError y OAuth2)
@@ -132,6 +157,7 @@ async def test_async_update_state_auth_refresh_flow():
     mock_controller.config.get.return_value = "samsung_2878"
     mock_controller.loader.state_getter = AsyncMock()
     mock_controller.token = "OLD_TOKEN"
+    mock_controller.debug = False
     
     # Configuración de Side Effects: Falla por Auth la primera vez, tiene éxito la segunda
     mock_controller.loader.state_getter.async_update_state.side_effect = [
@@ -147,6 +173,9 @@ async def test_async_update_state_auth_refresh_flow():
     with patch.object(poller, "_refresh_smartthings_token", return_value="NEW_TOKEN_999"):
         with patch.object(poller, "_update_all_connections_token") as mock_update_dispatch:
             
+            # Simulamos que venimos de un error de conexión para asertar el reseteo
+            poller._consecutive_connection_errors = 2
+            
             result = await poller.async_update_state()
             
             # 1. Asertamos que el controlador recibió la nueva credencial
@@ -155,11 +184,26 @@ async def test_async_update_state_auth_refresh_flow():
             # 2. Asertamos que se emitió la orden de actualizar las conexiones hijas
             mock_update_dispatch.assert_called_once_with("NEW_TOKEN_999")
             
-            # 3. Asertamos que el callback del usuario se llamó
+            # 3. Asertamos que el callback del usuario se llamó (Mata mutante and -> or)
             mock_controller.on_token_refreshed.assert_called_once_with("NEW_TOKEN_999")
             
-            # 4. Asertamos que la ejecución retornó el valor exitoso tras el retry
+            # 4. Asertamos que el contador de errores se reseteó a 0 estrictamente
+            assert poller._consecutive_connection_errors == 0
+            
+            # 5. Asertamos que state_getter se llamó con los argumentos exactos (Mata debug = False -> True)
+            mock_controller.loader.state_getter.async_update_state.assert_called_with(None, False)
+            
+            # 6. Asertamos que la ejecución retornó el valor exitoso tras el retry
             assert result == {"status": "ok"}
+            
+    # Validamos que on_token_refreshed no se llama si es None (mutante AttributeError)
+    mock_controller.on_token_refreshed = None
+    mock_controller.token = "OLD_TOKEN"
+    mock_controller.loader.state_getter.async_update_state.side_effect = [AuthError("401"), {"status": "ok"}]
+    with patch.object(poller, "_refresh_smartthings_token", return_value="NEW_TOKEN_999"):
+        with patch.object(poller, "_update_all_connections_token"):
+            await poller.async_update_state()
+            # Si intenta llamar a None, lanzará TypeError y fallará el test
 
 # ====================================================================================
 # FRENTE D: AUTOPSIA DE DESCUBRIMIENTO (Device Discovery)
