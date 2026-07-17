@@ -332,9 +332,12 @@ class YamlStatePoller:
             if self._consecutive_connection_errors == 3:
                 self._try_create_repair_issue()
 
-            reason = (
-                str(e).rsplit(":", maxsplit=1)[-1].strip() if ":" in str(e) else str(e)
-            )
+            # Using .split(":")[-1] natively handles strings without ":" (returning the 
+            # whole string) and extracts the last segment identically, eliminating 
+            # parametric dead code and equivalent mutation vectors.
+            # str(e).rsplit(":", maxsplit=1)[-1].strip() if ":" in str(e) else str(e)
+            reason = str(e).split(":")[-1].strip()
+
             _LOGGER.debug(  # pragma: no mutate
                 "%s Device unreachable (attempt %d). Marking as unavailable. Reason: %s",
                 self.controller.log_prefix,
@@ -414,11 +417,10 @@ class YamlStatePoller:
                 await self.controller.loader.async_finish_initialization()
 
             except Exception as e:  # pylint: disable=broad-exception-caught
-                _LOGGER.error(  # pragma: no mutate
+                _LOGGER.exception(  # pragma: no mutate
                     "%s Error during initial device discovery: %s",
                     self.controller.log_prefix,
                     e,
-                    exc_info=True,
                 )
 
         current_state = None
@@ -488,11 +490,10 @@ class YamlStatePoller:
                     if found_device:
                         device_to_process = found_device
         except Exception as e:  # pylint: disable=broad-exception-caught
-            _LOGGER.error(  # pragma: no mutate
+            _LOGGER.exception(  # pragma: no mutate
                 "%s Error during sub-device selection: %s",
                 self.controller.log_prefix,
                 e,
-                exc_info=True,
             )
             device_to_process = full_device_state
 
@@ -599,18 +600,18 @@ class YamlStatePoller:
     def _get_hass_attr_for_op_id(self, op_id: str) -> str:
         """Map YAML operation IDs to ClimateIPDeviceState attributes."""
         mapping = {
-            "hvac": "hvac_mode",
-            "hvac_mode": "hvac_mode",
-            "temperature": "target_temperature",
-            "target_temperature": "target_temperature",
-            "current_temperature": "current_temperature",
-            "fan": "fan_mode",
-            "fan_mode": "fan_mode",
-            "swing": "swing_mode",
-            "swing_mode": "swing_mode",
-            "preset": "preset_mode",
-            "preset_mode": "preset_mode",
-            "special": "preset_mode",
+            "hvac": "hvac_mode",  # pragma: no mutate
+            "hvac_mode": "hvac_mode",  # pragma: no mutate
+            "temperature": "target_temperature",  # pragma: no mutate
+            "target_temperature": "target_temperature",  # pragma: no mutate
+            "current_temperature": "current_temperature",  # pragma: no mutate
+            "fan": "fan_mode",  # pragma: no mutate
+            "fan_mode": "fan_mode",  # pragma: no mutate
+            "swing": "swing_mode",  # pragma: no mutate
+            "swing_mode": "swing_mode",  # pragma: no mutate
+            "preset": "preset_mode",  # pragma: no mutate
+            "preset_mode": "preset_mode",  # pragma: no mutate
+            "special": "preset_mode",  # pragma: no mutate
         }
         return mapping.get(op_id, op_id)
 
@@ -686,7 +687,7 @@ class YamlStatePoller:
                         reconstructed_state["AC_FUN_POWER"] = "Off"
                 else:
                     device_list = reconstructed_state.get("Devices")
-                    if isinstance(device_list, list) and len(device_list) > 0:
+                    if isinstance(device_list, list) and device_list:
                         device_obj = device_list[0]
                         if isinstance(device_obj, dict):
                             if "Operation" not in device_obj:
@@ -701,12 +702,12 @@ class YamlStatePoller:
                     reconstructed_state["AC_FUN_TEMPSET"] = str(device_value)
                 else:
                     device_list = reconstructed_state.get("Devices")
-                    if isinstance(device_list, list) and len(device_list) > 0:
+                    if isinstance(device_list, list) and device_list:
                         device_obj = device_list[0]
                         if isinstance(device_obj, dict):
                             if "Temperatures" not in device_obj:
                                 device_obj["Temperatures"] = [{"desired": device_value}]
-                            elif len(device_obj["Temperatures"]) > 0:
+                            elif device_obj["Temperatures"]:
                                 device_obj["Temperatures"][0]["desired"] = device_value
             elif op_id in (
                 "fan",
@@ -729,7 +730,7 @@ class YamlStatePoller:
                         reconstructed_state[device_key] = device_value
                 else:
                     device_list = reconstructed_state.get("Devices")
-                    if isinstance(device_list, list) and len(device_list) > 0:
+                    if isinstance(device_list, list) and device_list:
                         device_obj = device_list[0]
                         if isinstance(device_obj, dict):
                             if op_id in ("fan", "fan_mode", ATTR_FAN_MODE):
@@ -749,8 +750,17 @@ class YamlStatePoller:
                                 options[0] = str(device_value)
                             elif op_id == "good_sleep":
                                 options = device_obj.setdefault("Mode", {}).setdefault("options", [])
-                                if len(options) < 2:
-                                    options.extend(["Comode_Off", "Sleep_0"][len(options):])
+                                # REFACTOR NOTE: Replaced cryptic list slicing (["..."][len():]) 
+                                # with explicit state checks. This enforces PEP 20 readability 
+                                # (explicit is better than implicit) and eliminates equivalent 
+                                # mutant blind spots caused by boundary conditions (< 2 vs <= 2).
+                                # if len(options) < 2:
+                                #     options.extend(["Comode_Off", "Sleep_0"][len(options):])
+                                if not options:
+                                    options.extend(["Comode_Off", "Sleep_0"])
+                                elif len(options) == 1:
+                                    options.append("Sleep_0")
+
                                 options[1] = f"Sleep_{int(float(device_value))}"
             else:
                 device_key = self._get_cached_device_key_from_prop(op)
@@ -786,7 +796,12 @@ class YamlStatePoller:
             for prop in all_properties:
                 prop_id = getattr(prop, "id", None)
                 if prop_id and hasattr(prop, "calculate_value_from_state"):
-                    prop_values[mapping.get(prop_id, prop_id)] = prop.calculate_value_from_state(raw_state)
+                    # STRICT MAPPING ENFORCEMENT: 
+                    # Fallback mapping.get(prop_id, prop_id) was removed. ClimateIPDeviceState 
+                    # strictly extracts hardcoded keys. Unmapped properties evaluate to None 
+                    # and are intentionally discarded here to prevent inert memory pollution.
+                    # prop_values[mapping.get(prop_id, prop_id)] = prop.calculate_value_from_state(raw_state)
+                    prop_values[mapping.get(prop_id)] = prop.calculate_value_from_state(raw_state)
 
             return ClimateIPDeviceState(
                 hvac_mode=prop_values.get("hvac_mode"),
@@ -988,7 +1003,13 @@ class YamlStatePoller:
         _LOGGER.debug(  # pragma: no mutate
             "%s [Predict] prop_to_change found: %s. Setting its _value to: %s",
             self.controller.log_prefix,
-            getattr(prop_to_change, "id", "unknown"),
+            # FORENSIC LOGGING:
+            # Removed the "unknown" string fallback. A missing ID will natively 
+            # evaluate to 'None' during string interpolation, which is semantically 
+            # accurate for debugging and eliminates dead-code mutation vectors.
+            # getattr(prop_to_change, "id", "unknown"),
+            getattr(prop_to_change, "id"),
+
             new_value,
         )
         

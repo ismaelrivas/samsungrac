@@ -288,3 +288,57 @@ def event_loop():
             
     loop.close()
     asyncio.set_event_loop(None)
+
+
+@pytest.fixture
+def mock_get_impl():
+    """Mock para el flujo de autenticación OAuth2."""
+    with patch("homeassistant.helpers.config_entry_oauth2_flow.async_get_config_entry_implementation") as mock:
+        yield mock
+
+@pytest.fixture
+def mock_oauth_session():
+    """Mock para la sesión OAuth2."""
+    with patch("homeassistant.helpers.config_entry_oauth2_flow.OAuth2Session") as mock:
+        yield mock
+
+
+# =====================================================================
+# FIXTURES RECUPERADOS DEL MONOLITO (YAML POLLING)
+# =====================================================================
+
+@pytest.fixture
+def mock_time():
+    """Fixture original recuperado: congela el tiempo en 100.0 para las matemáticas de TTL."""
+    with patch("custom_components.climate_ip.controller_yaml_polling.time.time", return_value=100.0) as mock:
+        yield mock
+
+@pytest.fixture
+def mock_reachability():
+    """Fixture original recuperado: intercepta la red localmente en el poller."""
+    with patch("custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability", new_callable=AsyncMock) as mock:
+        yield mock
+
+@pytest.fixture
+def mock_async_create_issue():
+    """Fixture original recuperado: evita la creación real de issues en HA."""
+    with patch("custom_components.climate_ip.controller_yaml_polling.async_create_issue") as mock:
+        yield mock
+
+@pytest.fixture
+def mock_get_impl():
+    """Fixture original recuperado: intercepta el flujo OAuth de HA."""
+    with patch("homeassistant.helpers.config_entry_oauth2_flow.async_get_config_entry_implementation", new_callable=AsyncMock) as mock:
+        yield mock
+
+@pytest.fixture
+def mock_oauth_session():
+    """Fixture original recuperado: intercepta la sesión OAuth."""
+    with patch("homeassistant.helpers.config_entry_oauth2_flow.OAuth2Session") as mock:
+        yield mock
+
+@pytest.fixture
+def mock_now():
+    """Fixture original recuperado: intercepta dt_util.now()."""
+    with patch("custom_components.climate_ip.controller_yaml_polling.dt_util.now") as mock:
+        yield mock
