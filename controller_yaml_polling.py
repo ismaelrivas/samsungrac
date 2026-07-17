@@ -336,7 +336,8 @@ class YamlStatePoller:
             # whole string) and extracts the last segment identically, eliminating 
             # parametric dead code and equivalent mutation vectors.
             # str(e).rsplit(":", maxsplit=1)[-1].strip() if ":" in str(e) else str(e)
-            reason = str(e).split(":")[-1].strip()
+            reason_parts = str(e).split(":")
+            reason = reason_parts[-1].strip() if reason_parts else str(e)
 
             _LOGGER.debug(  # pragma: no mutate
                 "%s Device unreachable (attempt %d). Marking as unavailable. Reason: %s",
@@ -915,7 +916,8 @@ class YamlStatePoller:
                 self.controller.log_prefix,
                 prop_id,
             )
-            self._pending_updates.pop(prop_id, None)
+            if prop_id in self._pending_updates:
+                del self._pending_updates[prop_id]
 
     def _get_cached_device_key_from_prop(self, prop: Any) -> str | None:
         """Extract and cache the raw JSON key mapped to a specific property from its template."""
