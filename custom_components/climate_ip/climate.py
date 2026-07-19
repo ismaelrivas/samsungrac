@@ -155,14 +155,13 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         if device_info:
             # This is a sub-device (e.g., an indoor unit of a MIM-H03).
             # Its unique_id is the UUID provided for it.
-            self._name = user_defined_name or device_info.get("name", f"Indoor Unit {device_info.get('id')}")
+            self._name = device_info.get("name") or user_defined_name or f"Indoor Unit {device_info.get("id")}"
             self._attr_unique_id = device_info.get("uuid") or f"{self._main_unique_id}_{device_info.get('id')}"
             
-            # This establishes the correct parent-child relationship in the device registry.
             self._attr_device_info = DeviceInfo(
                 identifiers={(DOMAIN, self._attr_unique_id)},
                 name=self._name,
-                via_device=(DOMAIN, self._main_unique_id),  # Link to the parent device
+                manufacturer="Samsung",
             )
         else:
             # This is a single-device entry (e.g., a standalone AC).
