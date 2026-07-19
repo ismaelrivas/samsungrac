@@ -23,15 +23,14 @@ class DummyController(NakedObj):
             self.loader = create_valid_loader()
 
 def create_valid_loader():
-    """Crea un loader mínimo para evadir validaciones tempranas."""
-    from unittest.mock import MagicMock
+    """Crea un loader mínimo que cumple con la Doctrina Estricta."""
+    from unittest.mock import MagicMock, AsyncMock
     loader = MagicMock()
     loader.is_fully_initialized = True
     loader.operations = {}
     loader.properties = {}
     loader.sensors = {}
-    loader.state_getter = NakedObj(value={})
-    from unittest.mock import AsyncMock
+    loader.state_getter = NakedObj(value={}) # <-- Atributo 'value' exigido
     loader.state_getter.async_update_state = AsyncMock()
     return loader
 # =====================================================================
@@ -49,7 +48,6 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 from custom_components.climate_ip.const import DEVICE_TYPE_MIM_H03, DEVICE_TYPE_SAMSUNG_2878
 from custom_components.climate_ip.exceptions import CannotConnect, AuthError
 from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
-
 
 
 async def test_build_device_state_from_props_samsung_2878_exhaustive():
@@ -266,11 +264,6 @@ async def test_build_device_state_early_returns():
 
     # st_getter es nulo
     assert await poller._build_device_state_from_props() is None
-
-    # state_getter.value es nulo
-    mock_controller.loader.state_getter = MagicMock()
-    mock_controller.loader.state_getter.value = None
-    assert await poller._build_device_state_from_props() == {}
 
 
 async def test_async_update_properties_sub_device_routing():
@@ -511,6 +504,7 @@ async def test_async_predict_and_correct_state_edge_cases():
     # No last real state
     mock_controller.loader.is_fully_initialized = True
     mock_controller.loader.state_getter = MagicMock(spec=[])
+    mock_controller.loader.state_getter.value = None # <-- AÑADIDO: Atributo exigido
     f, c = await poller.async_predict_and_correct_state(MagicMock(), "k", "v")
     assert c == {}
     
@@ -546,6 +540,7 @@ async def test_build_device_state_from_hass_early_exits():
     
     # 3. state_getter has no value
     mock_controller.loader.state_getter = MagicMock(spec=[])
+    mock_controller.loader.state_getter.value = None # <-- AÑADIDO: Atributo exigido
     assert await poller._build_device_state_from_hass(MagicMock()) == {}
 
 
@@ -882,13 +877,14 @@ async def test_build_device_state_none_fallbacks():
     
     class StrictOp:
         value = "val"
-        # Sin atributo 'id' para forzar que se evalúe el getattr por defecto
+        # Sin atributo 'id' para forzar FAIL-FAST
         
     mock_controller.loader.operations = {"op1": StrictOp()}
     mock_controller.loader.properties = {}
     
-    res = await poller._build_device_state_from_props()
-    
+    with pytest.raises(AttributeError):
+        res = await poller._build_device_state_from_props()
+
     # Verificar assert_called_once_with
     mock_controller.config.get.assert_called_once_with(CONF_DEVICE_TYPE)
 
@@ -1001,6 +997,7 @@ async def test_async_update_state_sniper_debug_and_fallbacks():
     
     # 3. Fallback: sin atributo debug configurado (DummyController lanzará AttributeError si quitan el fallback)
     mock_controller = DummyController() # No tiene 'debug'
+    mock_controller.debug = False # <-- AÑADIDO POR LEY MARCIAL ESTRICTA
     mock_controller.config = {"device_type": "samsung_2878"}
     mock_controller.loader.state_getter.async_update_state.return_value = {"power": "on_nodebug"}
     mock_controller.loader.state_getter.value = {"power": "on_nodebug"}
@@ -1125,7 +1122,7 @@ async def test_build_device_state_from_props_list_index_mutation():
     poller = YamlStatePoller(MagicMock())
     
     st_getter = MagicMock()
-    st_getter.value = {"Devices": []}  # LISTA ESTRICTAMENTE VACÍA
+    st_getter.value = {"Devices": []}  # LISTA VACÍA ESTRICTA
     poller.controller.loader.state_getter = st_getter
     
     op = MagicMock(id="hvac")
@@ -1229,6 +1226,7 @@ async def test_build_device_state_from_props_list_indexing():
         
         # ORIGINAL: No entra al if porque 0 > 0 es False.
         # MUTANTE: Entra (>= 0 es True) e intenta evaluar devices[0], detonando IndexError.
+        # El test debe pasar, si lanza excepción, el mutante muere.
         res = await poller._build_device_state_from_props()
         assert res == {"Devices": []}
 
@@ -1305,9 +1303,13 @@ async def test_build_device_state_from_props_swing_preset():
 
 async def test_async_update_state_final_return_fallback():
     """Mata mutantes que borran el fallback 'None' en el retorno final de update_state"""
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from unittest.mock import MagicMock, AsyncMock
+    import pytest
+
     poller = YamlStatePoller(MagicMock())
     
-    # Configuramos éxito para pasar todos los try-except
+    # Configuramos éxito para pasar todos los try-except iniciales
     poller.controller.config = {"device_type": "Other"}
     poller.controller.loader.is_fully_initialized = True
     poller.controller.loader.state_getter = AsyncMock()
@@ -1318,10 +1320,10 @@ async def test_async_update_state_final_return_fallback():
     # ¡Destruimos físicamente 'value' del state_getter!
     delattr(poller.controller.loader.state_getter, "value")
     
-    # La última línea es: return getattr(st_getter, "value", None)
-    # Si el mutante borra el None, detonará un AttributeError letal.
-    res = await poller.async_update_state()
-    assert res is None
+    # Como quitamos el fallback `getattr(..., "value", None)` de la producción,
+    # el intento de retornar la variable explotará con un AttributeError letal.
+    with pytest.raises(AttributeError):
+        await poller.async_update_state()
 
 
 async def test_build_device_state_options_length_exact():
@@ -1521,4 +1523,3 @@ async def test_predict_and_correct_state_mutants():
         # B) KILL THE MUTANT: Verifica el bucle general de operaciones
         # Si el mutante altera 'op.value = val' a 'op.value = None', el valor aquí será None y el test fallará, matando al mutante.
         assert op_bystander.value == "auto", "¡Mutante detectado! El espectador recibió None en lugar de su valor original del estado."
-

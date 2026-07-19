@@ -220,6 +220,10 @@ async def test_async_update_state_auth_refresh_exception_handling():
     mock_controller = MagicMock()
     mock_controller.config = {"device_type": "some_rest"}
     mock_controller.ip_address = None # Bypass network check
+
+    mock_controller.token = "OLD"
+    mock_controller.debug = False
+    mock_controller.loader.state_getter.value = {}
     
     poller = YamlStatePoller(mock_controller)
     
@@ -244,6 +248,10 @@ async def test_async_update_state_auth_refresh_fails_permanently():
     mock_controller = MagicMock()
     mock_controller.config = {"device_type": "some_rest"}
     mock_controller.ip_address = None
+
+    mock_controller.token = "OLD"
+    mock_controller.debug = False
+    mock_controller.loader.state_getter.value = {}
     
     poller = YamlStatePoller(mock_controller)
     
@@ -276,32 +284,30 @@ def test_update_all_connections_token_deduplication():
     prop1.get_connection.assert_called_once_with(None)
 
 
+@pytest.mark.asyncio
 async def test_auth_refresh_token_getattr_missing():
-    """Aniquila mutante de getattr(..., 'token', None) en L274 mediante destrucción"""
-    poller = YamlStatePoller(MagicMock())
+    """Valida que el refresco de token funcione cuando el token actual es explícitamente None (Tipado estricto)."""
+    mock_controller = MagicMock()
+    mock_controller.token = None   # <-- En lugar de delattr, respetamos la estructura pero vaciamos el valor
+    mock_controller.debug = False  # <-- Atributo exigido por tipado estricto
+    
+    poller = YamlStatePoller(mock_controller)
     poller.controller.config = {"device_type": "Other"}
     poller.controller.loader.is_fully_initialized = True
     
-    # Declarar explícitamente AsyncMock para que pueda ser 'awaited' sin fallar
+    # Mock de actualización de estado y la variable .value requerida al final
     poller.controller.loader.state_getter.async_update_state = AsyncMock(
-        side_effect=[AuthError(), {"state": "ok"}]
+        side_effect=[AuthError("401"), {"state": "ok"}]
     )
+    poller.controller.loader.state_getter.value = {"state": "ok"} # <-- Exigido al final de async_update_state
+    
     poller._refresh_smartthings_token = AsyncMock(return_value="NewToken")
     poller.async_update_properties_from_state = AsyncMock()
     poller._build_device_state_from_hass = AsyncMock(return_value={"raw": "data"})
-    
-    # FIX: Interceptamos la actualización de conexiones en lugar de leer el token borrado
     poller._update_all_connections_token = MagicMock()
     
-    # DESTRUCCIÓN FÍSICA: Eliminamos el token para forzar el fallback
-    if hasattr(poller.controller, "token"):
-        delattr(poller.controller, "token")
-        
-    # ORIGINAL: getattr(..., None) devuelve None. Continúa y llama a _update_all_connections_token.
-    # MUTANTE: getattr(...) sin default lanza AttributeError y aniquila al mutante en la evaluación.
-    await poller.async_update_state()
+    with patch("custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability", return_value=True):
+        await poller.async_update_state()
     
-    # Aserción: verificamos que el flujo se completó exitosamente (si mutó, jamás llega aquí)
+    # Aserción: verificamos que el flujo se completó y despachó el nuevo token
     poller._update_all_connections_token.assert_called_once_with("NewToken")
-
-

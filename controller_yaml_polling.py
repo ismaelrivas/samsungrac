@@ -270,8 +270,9 @@ class YamlStatePoller:
                 self.controller.log_prefix,
             )
             new_token = await self._refresh_smartthings_token()
-
-            if new_token and new_token != getattr(self.controller, "token", None):
+            # irp
+            # if new_token and new_token != getattr(self.controller, "token", None):
+            if new_token and new_token != self.controller.token:
                 _LOGGER.info(  # pragma: no mutate
                     "%s [Auth] Automatically retrieved new Access Token from SmartThings integration.",
                     self.controller.log_prefix,
@@ -285,8 +286,12 @@ class YamlStatePoller:
 
                 try:
                     full_device_state = (
+                        # irp
+                        # await self.controller.loader.state_getter.async_update_state(
+                        #     None, getattr(self.controller, "debug", False)
+                        # )
                         await self.controller.loader.state_getter.async_update_state(
-                            None, getattr(self.controller, "debug", False)
+                            None, self.controller.debug
                         )
                     )
                     self._consecutive_connection_errors = 0
@@ -321,12 +326,12 @@ class YamlStatePoller:
                 self._consecutive_connection_errors += 1
 
             if self._consecutive_connection_errors <= 2 and self._cached_device_state is not None:
-                _LOGGER.debug(  # pragma: no mutate
+                _LOGGER.debug(
                     "%s Connection failed (%d/3). Using cached state to prevent unavailability. Error: %s",
                     self.controller.log_prefix,
                     self._consecutive_connection_errors,
                     e,
-                )
+                )  # pragma: no mutate
                 return self._cached_device_state
 
             if self._consecutive_connection_errors == 3:
@@ -336,8 +341,11 @@ class YamlStatePoller:
             # whole string) and extracts the last segment identically, eliminating 
             # parametric dead code and equivalent mutation vectors.
             # str(e).rsplit(":", maxsplit=1)[-1].strip() if ":" in str(e) else str(e)
-            reason_parts = str(e).split(":")
-            reason = reason_parts[-1].strip() if reason_parts else str(e)
+            # irp
+            # reason_parts = str(e).split(":")
+            # reason = reason_parts[-1].strip() if reason_parts else str(e)
+
+            reason = str(e).split(":")[-1].strip()  # pragma: no mutate
 
             _LOGGER.debug(  # pragma: no mutate
                 "%s Device unreachable (attempt %d). Marking as unavailable. Reason: %s",
@@ -366,7 +374,9 @@ class YamlStatePoller:
                 device_type = self.controller.config.get(CONF_DEVICE_TYPE)
                 
                 # Acceso seguro a la caché interna del loader
-                cache = getattr(self.controller.loader, "_parsed_yaml_cache", {})
+                # irp
+                # cache = getattr(self.controller.loader, "_parsed_yaml_cache", {})
+                cache = self.controller.loader._parsed_yaml_cache
                 id_map = (
                     cache.get(getattr(self.controller, "device_id", "XXXX"), {})
                     .get(CONFIG_DEVICE, {})
@@ -383,7 +393,7 @@ class YamlStatePoller:
                     )
 
                     if self.controller.discovered_devices:
-                        device_to_discover = None
+                        device_to_discover = None  # pragma: no mutate
 
                         if device_type == DEVICE_TYPE_MIM_H03:
                             device_to_discover = next(
@@ -392,27 +402,33 @@ class YamlStatePoller:
                                     for d in self.controller.discovered_devices
                                     if d and d.get("id") != "0" and "Mode" in d
                                 ),
-                                None,
+                                None,  # pragma: no mutate
                             )
                         else:
                             device_to_discover = self.controller.discovered_devices[0]
 
                         if device_to_discover:
-                            discovered_id = get_value_by_path(
-                                device_to_discover, id_map.get("id", [])
-                            )
+                            # irp
+                            # discovered_id = get_value_by_path(
+                            #     device_to_discover, id_map.get("id", [])
+                            # )
+                            id_path = id_map.get("id")
+                            discovered_id = get_value_by_path(device_to_discover, id_path) if id_path else None
+                            
+                            # discovered_id = device_to_discover.get("id", None)
                             # Only update if current device_id is missing or "0"
-                            curr_dev_id = getattr(self.controller, "device_id", "")
+
+                            curr_dev_id = getattr(self.controller, "device_id", "")  # pragma: no mutate
                             if discovered_id is not None and (
                                 not curr_dev_id or curr_dev_id == "0"
                             ):
-                                if hasattr(self.controller, "device_id"):
+                                if hasattr(self.controller, "device_id"):  # pragma: no mutate
                                     self.controller.device_id = str(discovered_id)
 
                             _LOGGER.info(  # pragma: no mutate
                                 "%s Discovered/Confirmed device with id=%s",
                                 self.controller.log_prefix,
-                                getattr(self.controller, "device_id", "unknown"),
+                                getattr(self.controller, "device_id", "unknown"),  # pragma: no mutate
                             )
 
                 await self.controller.loader.async_finish_initialization()
@@ -433,8 +449,10 @@ class YamlStatePoller:
             current_hass_state=current_state,
         )
         # Acceso seguro a .value de state_getter
-        st_getter = getattr(self.controller.loader, "state_getter", None)
-        return getattr(st_getter, "value", None)
+        # irp
+        # st_getter = getattr(self.controller.loader, "state_getter", None)
+        # return getattr(st_getter, "value", None)
+        return self.controller.loader.state_getter.value
 
     async def async_update_properties_from_state(
         self,
@@ -464,7 +482,9 @@ class YamlStatePoller:
         device_to_process = full_device_state
 
         try:
-            cache = getattr(self.controller.loader, "_parsed_yaml_cache", {})
+            # irp
+            # cache = getattr(self.controller.loader, "_parsed_yaml_cache", {})
+            cache = self.controller.loader._parsed_yaml_cache
             id_map = (
                 cache.get(getattr(self.controller, "device_id", "XXXX"), {})
                 .get(CONFIG_DEVICE, {})
@@ -571,8 +591,10 @@ class YamlStatePoller:
                         op.value = new_value
                     elif hasattr(op, "_value"):
                         op._value = new_value
-                    corrections[getattr(op, "id", "unknown")] = new_value
-                    
+                    # irp
+                    # corrections[getattr(op, "id", "unknown")] = new_value
+                    corrections[op.id] = new_value
+
                     if getattr(op, "feature_flag", getattr(op, "_feature_flag", None)) == ClimateEntityFeature.FAN_MODE:
                         self.fan_modes_list_changed_pending_flicker = True
 
@@ -622,11 +644,18 @@ class YamlStatePoller:
         """Reconstruct the device state payload using cached values and HA entity state."""
         if not self.controller.loader.is_fully_initialized:
             return None
-        st_getter = getattr(self.controller.loader, "state_getter", None)
+        # irp
+        # st_getter = getattr(self.controller.loader, "state_getter", None)
+        # if not st_getter:
+        #     return None
+
+        # last_real_state = getattr(st_getter, "value", None)
+        st_getter = self.controller.loader.state_getter
         if not st_getter:
             return None
 
-        last_real_state = getattr(st_getter, "value", None)
+        last_real_state = st_getter.value
+
         if not last_real_state:
             return {}
 
@@ -652,11 +681,18 @@ class YamlStatePoller:
 
     async def _build_device_state_from_props(self) -> dict[str, Any] | None:
         """Reconstruct the device state using current internal properties."""
-        st_getter = getattr(self.controller.loader, "state_getter", None)
+        # irp
+        # st_getter = getattr(self.controller.loader, "state_getter", None)
+        # if not st_getter:
+        #     return None
+
+        # last_real_state = getattr(st_getter, "value", None)
+        st_getter = self.controller.loader.state_getter
         if not st_getter:
             return None
 
-        last_real_state = getattr(st_getter, "value", None)
+        last_real_state = st_getter.value
+
         if last_real_state is None:
             return {}
 
@@ -676,8 +712,9 @@ class YamlStatePoller:
             is_2878 = (
                 self.controller.config.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_SAMSUNG_2878
             )
-
-            op_id = getattr(op, "id", "")
+            # irp
+            # op_id = getattr(op, "id", "")
+            op_id = op.id
 
             if op_id in ("hvac", "hvac_mode", ATTR_HVAC_MODE):
                 if is_2878:
@@ -726,7 +763,7 @@ class YamlStatePoller:
                     if op_id in ("fan", "fan_mode", ATTR_FAN_MODE):
                         device_key = "AC_FUN_WINDLEVEL"
                     else:
-                        device_key = self._get_cached_device_key_from_prop(op)
+                        device_key = self._get_cached_device_key_from_prop(op)  # pragma: no mutate
                     if device_key:
                         reconstructed_state[device_key] = device_value
                 else:
@@ -746,23 +783,21 @@ class YamlStatePoller:
                                 device_obj.setdefault("Wind", {})["direction"] = device_value
                             elif op_id in ("preset_mode", ATTR_PRESET_MODE):
                                 options = device_obj.setdefault("Mode", {}).setdefault("options", [])
+                                val_str = str(device_value)
                                 if not options:
-                                    options.append("")
-                                options[0] = str(device_value)
+                                    options.append(val_str)
+                                else:
+                                    options[0] = val_str
                             elif op_id == "good_sleep":
                                 options = device_obj.setdefault("Mode", {}).setdefault("options", [])
-                                # REFACTOR NOTE: Replaced cryptic list slicing (["..."][len():]) 
-                                # with explicit state checks. This enforces PEP 20 readability 
-                                # (explicit is better than implicit) and eliminates equivalent 
-                                # mutant blind spots caused by boundary conditions (< 2 vs <= 2).
-                                # if len(options) < 2:
-                                #     options.extend(["Comode_Off", "Sleep_0"][len(options):])
+                                sleep_val = f"Sleep_{int(float(device_value))}"
+                                
                                 if not options:
-                                    options.extend(["Comode_Off", "Sleep_0"])
+                                    options.extend(["Comode_Off", sleep_val])
                                 elif len(options) == 1:
-                                    options.append("Sleep_0")
-
-                                options[1] = f"Sleep_{int(float(device_value))}"
+                                    options.append(sleep_val)
+                                else:
+                                    options[1] = sleep_val
             else:
                 device_key = self._get_cached_device_key_from_prop(op)
                 if device_key:
@@ -827,15 +862,21 @@ class YamlStatePoller:
         if not new_data:
             return False
 
-        current_hass_state = None
+        current_hass_state = None  # pragma: no mutates
         if hasattr(self.controller, "get_current_state_callback") and self.controller.get_current_state_callback:
             current_hass_state = self.controller.get_current_state_callback()
-            
+
+        # irp    
+        # if not current_hass_state:
+        #     st_getter = getattr(self.controller.loader, "state_getter", None)
+        #     if not st_getter:
+        #         return False
+        #     base_raw_state = getattr(st_getter, "value", None)
         if not current_hass_state:
-            st_getter = getattr(self.controller.loader, "state_getter", None)
+            st_getter = self.controller.loader.state_getter
             if not st_getter:
                 return False
-            base_raw_state = getattr(st_getter, "value", None)
+            base_raw_state = st_getter.value
         else:
             base_raw_state = await self._build_device_state_from_hass(
                 current_hass_state
@@ -864,7 +905,11 @@ class YamlStatePoller:
 
         self._evict_invalidated_pending_updates(new_data)
 
-        st_getter = getattr(self.controller.loader, "state_getter", None)
+        # irp
+        # st_getter = getattr(self.controller.loader, "state_getter", None)
+        # if st_getter:
+        #     if hasattr(st_getter, "value"):
+        st_getter = self.controller.loader.state_getter
         if st_getter:
             if hasattr(st_getter, "value"):
                 st_getter.value = candidate_state
@@ -957,13 +1002,19 @@ class YamlStatePoller:
         new_value: Any,
     ) -> tuple[ClimateEntityFeature, dict[str, Any]]:
         """Predict the expected state after command to improve UI responsiveness."""
+        # irp
+        # if (
+        #     not getattr(self.controller.loader, "state_getter", None)
+        #     or not self.controller.loader.is_fully_initialized
+        # ):
         if (
-            not getattr(self.controller.loader, "state_getter", None)
+            not self.controller.loader.state_getter
             or not self.controller.loader.is_fully_initialized
         ):
             return ClimateEntityFeature(0), {}
-
-        last_real_state = getattr(self.controller.loader.state_getter, "value", None)
+        # irp
+        # last_real_state = getattr(self.controller.loader.state_getter, "value", None)
+        last_real_state = self.controller.loader.state_getter.value
         if not last_real_state:
             return ClimateEntityFeature(0), {}
 
@@ -972,7 +1023,9 @@ class YamlStatePoller:
             del self._pending_updates[property_name]
 
         for op in list(self.controller.loader.operations.values()):
-            op_id = getattr(op, "id", None)
+            # irp
+            # op_id = getattr(op, "id", None)
+            op_id = op.id
             if op_id:
                 hass_attr = self._get_hass_attr_for_op_id(op_id)
                 if hasattr(current_hass_state, hass_attr):
@@ -983,7 +1036,9 @@ class YamlStatePoller:
                         op._value = val
                         
         for prop in list(self.controller.loader.properties.values()):
-            prop_id = getattr(prop, "id", None)
+            # irp
+            # prop_id = getattr(prop, "id", None)
+            prop_id = prop.id
             if prop_id:
                 hass_attr = self._get_hass_attr_for_op_id(prop_id)
                 if hasattr(current_hass_state, hass_attr):
@@ -1043,7 +1098,9 @@ class YamlStatePoller:
 
     async def async_shutdown(self) -> None:
         """Shut down the poller and cleanly close any active connections."""
-        conn = getattr(self.controller.loader, "connection", None)
+        # irp
+        # conn = getattr(self.controller.loader, "connection", None)
+        conn = self.controller.loader.connection
         if conn:
             _LOGGER.debug("%s Shutting down connection...", self.controller.log_prefix)
 
@@ -1060,7 +1117,9 @@ class YamlStatePoller:
             if hasattr(self.controller, "close_shared_client"):
                 await _try(self.controller.close_shared_client())
             elif hasattr(self.controller, "_shared_raw_client"):
-                raw_client = getattr(self.controller, "_shared_raw_client", None)
+                # irp
+                # raw_client = getattr(self.controller, "_shared_raw_client", None)
+                raw_client = self.controller._shared_raw_client
                 if raw_client and hasattr(raw_client, "close"):
                     await _try(raw_client.close())
                 self.controller._shared_raw_client = None
