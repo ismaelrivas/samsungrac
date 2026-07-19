@@ -111,8 +111,12 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             user_input[CONF_MAC] = mac_address.replace(":", "").upper()
             # --- END OF FIX ---
 
-        # Use the sanitized MAC or IP as unique_id. MAC is preferred.
-        unique_id = user_input.get(CONF_MAC) or user_input.get(CONF_IP_ADDRESS)
+        # Use MAC or IP + device_id as unique_id.
+        # Including device_id supports multiple indoor units (device_ids) per controller (same IP).
+        # This is required for multi-split systems like Samsung MIM-H03.
+        base_id = user_input.get(CONF_MAC) or user_input.get(CONF_IP_ADDRESS)
+        device_id = user_input.get(CONF_DEVICE_ID, )
+        unique_id = f"{base_id}_{device_id}" if device_id else base_id
         # --- END: Sanitize MAC and set unique_id ---
 
         await self.async_set_unique_id(unique_id)
@@ -262,6 +266,21 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(step_id="user", data_schema=schema)
 
+    def _get_poll_interval_default(self) -> str:
+        """Return poll interval as H:MM:SS string, handling both int and str stored values."""
+        poll = self.flow_data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
+        if isinstance(poll, str):
+            # Already a formatted string like 0:01:00, validate it can be parsed
+            try:
+                parts = poll.split(":")
+                if len(parts) == 3:
+                    seconds = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                    return str(datetime.timedelta(seconds=seconds))
+            except (ValueError, AttributeError):
+                pass
+            return str(datetime.timedelta(seconds=DEFAULT_POLL_INTERVAL))
+        return str(datetime.timedelta(seconds=int(poll)))
+
     def _get_base_samsung_schema(self, mac_required: bool = False, is_8888: bool = False) -> vol.Schema:
         """Helper to dynamically generate the shared base schema for Samsung devices."""
         raw_mac = self.flow_data.get(CONF_MAC, "")
@@ -281,7 +300,7 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(CONF_TOKEN, default=self.flow_data.get(CONF_TOKEN, "")): str,
             vol.Optional(CONF_CERT, default=self.flow_data.get(CONF_CERT, "ac14k_m.pem" if is_8888 else "")): str,
             vol.Optional(
-                CONF_POLL_INTERVAL, default=str(datetime.timedelta(seconds=self.flow_data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)))
+                CONF_POLL_INTERVAL, default=self._get_poll_interval_default()
             ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
         })
         
@@ -363,8 +382,11 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             # Standardize the name to ensure consistency
             if not self.flow_data.get(CONF_NAME):
-                mac = self.flow_data[CONF_MAC]
+                mac = self.flow_data.get(CONF_MAC) or self.flow_data.get(CONF_IP_ADDRESS, "unknown")
                 self.flow_data[CONF_NAME] = f"Samsung AC {mac}"
+
+            if not self.flow_data.get(CONF_NAME):
+                self.flow_data[CONF_NAME] = f'Samsung MIM-H03 {self.flow_data.get(CONF_IP_ADDRESS, unknown)}'
 
             if self.flow_data.get(CONF_TOKEN):
                 return await self.async_step_test_connection()
@@ -402,12 +424,19 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             
             error_reason = await self._async_resolve_mac_and_set_unique_id(ip_address, mac_address)
             if error_reason:
-                errors["base"] = error_reason
-                return self.async_show_form(
-                    step_id="samsung_8888",
-                    data_schema=self._get_samsung_8888_schema(mac_required=(error_reason == "mac_resolve_failed")),
-                    errors=errors,
-                )
+                if error_reason == "mac_resolve_failed":
+                    # MAC not resolvable (cross-subnet device). Fall back to IP as unique_id base.
+                    # This is fine since we include device_id in the unique_id anyway.
+                    _LOGGER.info("MAC resolve failed for %s, using IP as unique_id base.", ip_address)
+                    await self.async_set_unique_id(ip_address)
+                    self._abort_if_unique_id_configured()
+                else:
+                    errors["base"] = error_reason
+                    return self.async_show_form(
+                        step_id="samsung_8888",
+                        data_schema=self._get_samsung_8888_schema(mac_required=False),
+                        errors=errors,
+                    )
 
             # Validate polling interval
             if CONF_POLL_INTERVAL in user_input:
@@ -920,7 +949,7 @@ class ClimateIpConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         device_type = self.flow_data.get(CONF_DEVICE_TYPE)
 
         if device_type == DEVICE_TYPE_MIM_H03:
-            step_id = "mim_h03"
+            step_id = "samsung_8888"  # MIM-H03 uses same handler as samsung_8888
             schema = self._get_samsung_8888_schema(mac_required=False)
         elif device_type == DEVICE_TYPE_SAMSUNG_8888:
             step_id = "samsung_8888"
