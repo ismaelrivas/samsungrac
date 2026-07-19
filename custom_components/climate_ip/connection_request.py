@@ -43,6 +43,13 @@ class SamsungHTTPAdapter(HTTPAdapter):
             verify_mode=ssl.CERT_NONE
         )
 
+        # Samsung MIM-H03 does not support SNI - disable it to prevent TLS handshake failure
+        _orig_wrap = ssl_context.wrap_socket
+        def _wrap_no_sni(sock, *a, **kw):
+            kw.pop("server_hostname", None)
+            return _orig_wrap(sock, *a, **kw)
+        ssl_context.wrap_socket = _wrap_no_sni
+
         pool_kwargs["ssl_context"] = ssl_context
         
         # --- START OF FIX: Limit Pool Concurrency ---
@@ -100,6 +107,12 @@ class ConnectionRequestBase(Connection):
             self._session = requests.sessions.Session()
             self._session.verify = False 
             self._session.mount("https://", SamsungHTTPAdapter())
+            # Samsung LibSHP/1.0 cannot handle compressed responses
+            self._session.headers.update({
+                'Accept-Encoding': 'identity',
+                'User-Agent': None,
+                'Accept': None,
+            })
         
         # --- START OF FIX: Read keep_alive setting ---
         self._keep_alive = hass_config.get("keep_alive", True) if hass_config else True
@@ -556,6 +569,12 @@ class ConnectionRequestBase(Connection):
             new_session = requests.sessions.Session()
             new_session.verify = False 
             new_session.mount("https://", SamsungHTTPAdapter())
+            # Samsung LibSHP/1.0 cannot handle compressed responses
+            new_session.headers.update({
+                'Accept-Encoding': 'identity',
+                'User-Agent': None,
+                'Accept': None,
+            })
              
             # Reset adaptive flags to give connection reuse a chance in the new cycle
             self._force_close_connection = False
