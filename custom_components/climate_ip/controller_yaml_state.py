@@ -379,8 +379,11 @@ class YamlControllerStateMixin:
                         if device_to_discover:
                             discovered_id = get_value_by_path(device_to_discover, id_map.get("id", []))
                             if discovered_id is not None:
-                                self._device_id = str(discovered_id)
-                            _LOGGER.info("%s Discovered device with id=%s", self.log_prefix, self._device_id)
+                                # Only overwrite device_id if not already configured (indoor unit controllers
+                                # are created with CONF_DEVICE_ID="032001000" etc. and must not be changed).
+                                if not self._config.get(CONF_DEVICE_ID):
+                                    self._device_id = str(discovered_id)
+                            _LOGGER.info("%s Discovered coordinator id=%s, keeping device_id=%s", self.log_prefix, discovered_id, self._device_id)
 
                 # Now that _device_id is potentially assigned, finish initialization
                 await self._finish_initialization()
@@ -432,14 +435,27 @@ class YamlControllerStateMixin:
                 if devices_list:
                     _LOGGER.debug("%s Found %d devices in state. Selecting correct one.", self.log_prefix, len(devices_list))
                     
-                    # Simplified logic: Take the first valid device
-                    found_device = devices_list[0] if devices_list[0] else None
-                    # Future improvement: select the device based on self._device_id
+                    # Select the indoor unit matching CONF_DEVICE_ID (e.g. "032001000").
+                    # Discovery may overwrite self._device_id to "0" (coordinator),
+                    # so we use CONF_DEVICE_ID which holds the original indoor unit id.
+                    configured_device_id = str(self._config.get(CONF_DEVICE_ID, ""))
+                    id_keys = id_map.get("id", [])
+                    found_device = None
+                    if configured_device_id:
+                        found_device = next(
+                            (d for d in devices_list
+                             if d and str(get_value_by_path(d, id_keys)) == configured_device_id),
+                            None
+                        )
+                    if not found_device:
+                        found_device = next((d for d in devices_list if d and "Mode" in d), None)
+                    if not found_device and devices_list:
+                        found_device = devices_list[0]
                     if found_device:
-                        _LOGGER.debug("%s Success. 'device_to_process' is now the sub-device", self.log_prefix)
+                        _LOGGER.debug("%s Selected sub-device id=%s", self.log_prefix, get_value_by_path(found_device, id_keys))
                         device_to_process = found_device
                     else:
-                        _LOGGER.warning("%s 'devices_list' exists but the first element is empty or null", self.log_prefix)
+                        _LOGGER.warning("%s No valid sub-device found in devices_list", self.log_prefix)
                 else:
                     _LOGGER.warning("%s 'identifiers' exists but the path '%s' did not return a list", self.log_prefix, id_map.get("path_to_devices", []))
             else:
