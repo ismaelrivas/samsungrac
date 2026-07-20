@@ -678,6 +678,8 @@ async def test_async_finish_initialization_all_loops_exhaustive():
         assert "real_yaml_attr" in loader.properties_list
         assert "yaml_sen" in loader.sensors_list
 
+        assert loader.is_fully_initialized is True, "El loader no levantó la bandera de inicialización completa"
+
 # ====================================================================================
 # FRENTE M: LA CASCADA DE CONFIGURACIÓN PRIVADA/PÚBLICA (_config vs config)
 # ====================================================================================
@@ -851,7 +853,10 @@ async def test_async_finish_initialization_frente_p():
         prop.config_validation_type = "cv_boolean"
         
         # Soportamos el getattr de device_class
-        prop.device_class = "temperature"
+        if key == "attr1":
+            prop.device_class = "sensor"  # ¡EVITA que entre al if is_temp!
+        else:
+            prop.device_class = "temperature"
         
         if key == "attr1":
             prop.set_unit_of_measurement = MagicMock()
@@ -877,6 +882,8 @@ async def test_async_finish_initialization_frente_p():
         assert "real_sw1" in loader.operations_list
         assert "real_attr1" in loader.properties_list
         assert "sen1" in loader.sensors_list
+
+        assert loader.is_fully_initialized is True, "El loader no levantó la bandera de inicialización completa"
 
 # ====================================================================================
 # FRENTE R: CASCADAS DE CONFIGURATION HASS UNITS Y ENTRY.OPTIONS
@@ -1211,3 +1218,74 @@ async def test_async_initialize_executor_job(mock_controller) -> None:
         
         # Aserción Letal: El executor fue invocado con la función exacta y la ruta exacta
         mock_controller.hass.async_add_executor_job.assert_called_once_with(load_yaml, "dummy/test.yaml")
+
+@pytest.mark.asyncio
+async def test_async_initialize_connection_raw8888_args(mock_controller) -> None:
+    """Aniquila mutantes 113-127 (Untested) forzando y auditando la ruta ConnectionRaw8888."""
+    from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader, _LOGGER
+    from unittest.mock import patch, MagicMock
+    from custom_components.climate_ip.const import CONF_CONN_METHOD, CONF_DEVICE_TYPE, CONN_METHOD_RAW
+
+    # Inyección táctica de dependencias para RAW (usando constantes estrictas)
+    mock_controller._config = {
+        CONF_DEVICE_TYPE: "samsung_8888", 
+        CONF_CONN_METHOD: CONN_METHOD_RAW
+    }
+    mock_controller.config = mock_controller._config # Sincronizamos para el getattr anidado
+    mock_controller._session = "RAW_SESSION_OBJECT"
+    mock_controller.ip_address = "10.0.0.99"
+    mock_controller._yaml = "test_raw.yaml"
+    
+    # Inyectamos una corrutina real para simular el executor de Home Assistant
+    async def mock_async_add_executor_job(*args, **kwargs):
+        return args[0](*args[1:], **kwargs)
+    mock_controller.hass.async_add_executor_job = mock_async_add_executor_job
+
+    loader = YamlConfigLoader(mock_controller)
+    loader._parsed_yaml_cache = {}
+
+    yaml_data = {"device": {"connection": {"type": "samsung_8888_raw"}, "status": {}}}
+
+    class MockRawConn:
+        def __init__(self, *args, **kwargs):
+            self.args = args # Capturamos los argumentos del constructor
+        @staticmethod
+        def match_type(conn_type):
+            return conn_type == "samsung_8888_raw"
+        def load_from_yaml(self, node, getter):
+            return True
+
+    # Suplantamos el nombre de la clase para engañar al if conn_class.__name__ == "ConnectionRaw8888"
+    MockRawConn.__name__ = "ConnectionRaw8888"
+
+    with patch("custom_components.climate_ip.controller_yaml_config.load_yaml", return_value=yaml_data), \
+         patch("custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS", [MockRawConn]), \
+         patch("custom_components.climate_ip.controller_yaml_config.create_status_getter", return_value=MagicMock()):
+
+        await loader.async_initialize()
+
+        # Aserciones Letales de la firma del constructor
+        assert isinstance(loader.connection, MockRawConn), "El motor RAW no fue instanciado"
+        # Firma esperada: (controller_config, _LOGGER, hass, _session, ip_address)
+        assert loader.connection.args[0] == mock_controller._config
+        assert loader.connection.args[1] == _LOGGER
+        assert loader.connection.args[2] == mock_controller.hass
+        assert loader.connection.args[3] == "RAW_SESSION_OBJECT"
+        assert loader.connection.args[4] == "10.0.0.99"
+
+@pytest.mark.asyncio
+async def test_async_finish_initialization_state_flag(mock_controller) -> None:
+    """Aniquila mutantes 119-120 asertando la bandera is_fully_initialized estrictamente."""
+    from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
+    
+    loader = YamlConfigLoader(mock_controller)
+    loader.is_fully_initialized = False # Partimos de estado base
+    
+    # Proveemos lo mínimo viable para que atraviese el método sin early exits
+    loader._parsed_yaml_config = {"device": {}}
+    loader._parsed_yaml_cache = {mock_controller.device_id: loader._parsed_yaml_config}
+    
+    await loader.async_finish_initialization()
+    
+    # Aserción Letal: Si mutmut cambia = True por = False en la línea 417, esto detonará.
+    assert loader.is_fully_initialized is True, "INFRACCIÓN: La bandera de inicialización no fue levantada."

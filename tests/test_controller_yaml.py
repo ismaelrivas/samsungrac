@@ -28,6 +28,11 @@ from custom_components.climate_ip.const import (
     DEVICE_TYPE_SAMSUNG_2878,
 )
 
+from homeassistant.components.climate import (
+    ATTR_HVAC_MODE, ATTR_TEMPERATURE, ATTR_CURRENT_TEMPERATURE,
+    ATTR_FAN_MODE, ATTR_SWING_MODE, ATTR_PRESET_MODE,
+    ATTR_HVAC_MODES, ATTR_FAN_MODES, ATTR_SWING_MODES, ATTR_PRESET_MODES
+)
 
 @pytest.fixture
 def anyio_backend():
@@ -501,3 +506,107 @@ async def test_async_set_property_error_scenarios(mock_yaml_controller) -> None:
     # Escenario 4 (Mutante 15): Exception genérica -> captura silenciosa y devuelve False
     mock_op.async_set_value.side_effect = ValueError("Boom")
     assert await mock_yaml_controller.async_set_property("test_prop", "val") is False
+
+
+
+def test_yaml_controller_setters_strict_assignment(mock_yaml_controller) -> None:
+    """Aniquila los mutantes de asignación en los setters (5 mutantes)."""
+    # 1. device_id
+    mock_yaml_controller.device_id = "target_dev_id"
+    assert mock_yaml_controller._device_id == "target_dev_id"
+    assert mock_yaml_controller._config[CONF_DEVICE_ID] == "target_dev_id"
+
+    # 2. token
+    mock_yaml_controller.token = "target_token"
+    assert mock_yaml_controller._token == "target_token"
+    assert mock_yaml_controller._config[CONF_TOKEN] == "target_token"
+
+    # 3. fan_modes_list_changed_pending_flicker (delegación estricta)
+    mock_yaml_controller.fan_modes_list_changed_pending_flicker = True
+    assert mock_yaml_controller.poller.fan_modes_list_changed_pending_flicker is True
+    mock_yaml_controller.fan_modes_list_changed_pending_flicker = False
+    assert mock_yaml_controller.poller.fan_modes_list_changed_pending_flicker is False
+
+
+def test_yaml_controller_available_property(mock_yaml_controller) -> None:
+    """Aniquila los 8 mutantes de la propiedad available verificando las 3 ramas."""
+    # Escenario 1: connection es None -> Fallback a True
+    mock_yaml_controller.loader.connection = None
+    assert mock_yaml_controller.available is True
+
+    # Escenario 2: connection presente pero devuelve is_available=False
+    conn_mock = MagicMock()
+    conn_mock.get_diagnostics.return_value = {"is_available": False}
+    mock_yaml_controller.loader.connection = conn_mock
+    assert mock_yaml_controller.available is False
+
+    # Escenario 3: connection presente pero su diagnostic dict no tiene la llave (Fallback True)
+    conn_mock.get_diagnostics.return_value = {"other_key": "data"}
+    assert mock_yaml_controller.available is True
+
+
+def test_yaml_controller_sensors_property(mock_yaml_controller) -> None:
+    """Aniquila el mutante de la comprensión de listas en la propiedad sensors."""
+    mock_sensor = MagicMock()
+    # Inyectamos 1 sensor válido y definimos en la lista 1 válido y 1 "fantasma"
+    mock_yaml_controller.loader.sensors = {"valid_sensor": mock_sensor}
+    mock_yaml_controller.loader.sensors_list = ["valid_sensor", "ghost_sensor"]
+
+    # Si mutmut cambia 'in' por 'not in', la lista resultante estará vacía o romperá
+    res = mock_yaml_controller.sensors
+    assert len(res) == 1, "El filtrado de sensors incluyó elementos inválidos o mutó la lista"
+    assert res[0] is mock_sensor
+
+
+def test_yaml_controller_is_push_device_strict(mock_yaml_controller) -> None:
+    """Aniquila los mutantes lógicos evaluando el soporte nativo de push bajo Fail-Fast."""
+    import pytest
+    
+    # 1. Sin conexión -> Falla limpiamente por lógica (retorna False)
+    mock_yaml_controller.loader.connection = None
+    assert mock_yaml_controller.is_push_device is False
+
+    # 2. Doctrina Fail-Fast: Conexión corrupta/incompatible -> DEBE ESTALLAR
+    class LegacyConnection:
+        pass
+    mock_yaml_controller.loader.connection = LegacyConnection()
+    with pytest.raises(AttributeError):
+        _ = mock_yaml_controller.is_push_device
+
+    # 3. Conexión 100% compatible -> Retorna el valor
+    conn_mock = MagicMock()
+    conn_mock.is_push_supported = True
+    mock_yaml_controller.loader.connection = conn_mock
+    assert mock_yaml_controller.is_push_device is True
+
+@patch("custom_components.climate_ip.state.ClimateIPDeviceState")
+def test_yaml_controller_climate_state_mapping(mock_state_class, mock_yaml_controller) -> None:
+    """Aniquila a los 42 mutantes de la instanciación de estado mediante Caja Blanca Matemática."""
+    
+    # 1. Secuestramos get_property para devolver un string matemático exacto basado en el argumento
+    mock_yaml_controller.get_property = MagicMock(side_effect=lambda prop: f"val_{prop}")
+    
+    # 2. Secuestramos las listas de atributos
+    mock_yaml_controller._attributes = {
+        ATTR_HVAC_MODES: ["auto", "heat"],
+        ATTR_FAN_MODES: ["high", "low"],
+        ATTR_SWING_MODES: ["on", "off"],
+        ATTR_PRESET_MODES: ["eco"]
+    }
+
+    # 3. Ejecución
+    _ = mock_yaml_controller.climate_state
+
+    # 4. Aserción Letal: Cualquier mutante que inserte un 'None' o rompa la delegación morirá aquí.
+    mock_state_class.assert_called_once_with(
+        hvac_mode=f"val_{ATTR_HVAC_MODE}",
+        target_temperature=f"val_{ATTR_TEMPERATURE}",
+        current_temperature=f"val_{ATTR_CURRENT_TEMPERATURE}",
+        fan_mode=f"val_{ATTR_FAN_MODE}",
+        swing_mode=f"val_{ATTR_SWING_MODE}",
+        preset_mode=f"val_{ATTR_PRESET_MODE}",
+        hvac_modes=["auto", "heat"],
+        fan_modes=["high", "low"],
+        swing_modes=["on", "off"],
+        preset_modes=["eco"],
+    )

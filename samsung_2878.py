@@ -385,7 +385,9 @@ class ConnectionSamsung2878(Connection):
                 "%s Queuing post-reconnection status request", self.log_prefix
             )  # pragma: no mutate
 
-            future = asyncio.get_event_loop().create_future()
+            # irp
+            # future = asyncio.get_event_loop().create_future()
+            future = asyncio.get_running_loop().create_future()
             await self._cmd_queue.put((command, future))
 
             # Wait for the command to be processed
@@ -506,13 +508,13 @@ class ConnectionSamsung2878(Connection):
             pref_cipher = self._last_successful_config.get("cipher_name") # pragma: no mutate
             pref_verify = self._last_successful_config.get("verify_mode") # pragma: no mutate
 
-            matching = [  # pragma: no mutate
-                a  # pragma: no mutate
-                for a in all_attempts  # pragma: no mutate
-                if a["cert"] == pref_cert  # pragma: no mutate
-                and a.get("verify_mode") == pref_verify  # pragma: no mutate
-                and (not pref_cipher or a["cipher_config"][1] == pref_cipher)  # pragma: no mutate
-            ]  # pragma: no mutate
+            matching = [
+                a
+                for a in all_attempts
+                if a["cert"] == pref_cert
+                and a.get("verify_mode") == pref_verify
+                and (not pref_cipher or a["cipher_config"][1] == pref_cipher)
+            ]
             if matching:
                 all_attempts = matching
 
@@ -818,12 +820,14 @@ class ConnectionSamsung2878(Connection):
         if not response_xml:
             return False, False, None  # pragma: no mutate
 
-        if not (
-            hasattr(self, "_controller")
-            and self._controller
-            and getattr(self._controller, "hass", None)
-        ):
-            raise RuntimeError(  # pragma: no mutate
+        # irp
+        # if not (
+        #     hasattr(self, "_controller")
+        #     and self._controller
+        #     and getattr(self._controller, "hass", None)
+        # ):
+        if not (self._controller and self._controller.hass):
+            raise RuntimeError(
                 "Home Assistant instance is required for parsing XML securely"  # pragma: no mutate
             )  # pragma: no mutate
 
@@ -1314,12 +1318,19 @@ class ConnectionSamsung2878(Connection):
                     await asyncio.sleep(self._reconnect_delay + jitter)
         finally:
             _LOGGER.debug("%s Connection manager exiting, cleaning up", self.log_prefix)  # pragma: no mutate
-            if self._read_task and not self._read_task.done():
-                self._read_task.cancel()
-            if queue_task and not queue_task.done():
-                queue_task.cancel()
+            # irp
+            # if self._read_task and not self._read_task.done():
+            #     self._read_task.cancel()
+            # if queue_task and not queue_task.done():
+            #     queue_task.cancel()
+            for task in (self._read_task, queue_task):
+                if task and not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
             await self._close_connection()
-
     def execute(
         self, template: Any, value: Any, device_state: Any, device_id: str | None = None
     ) -> Any:
@@ -1392,7 +1403,10 @@ class ConnectionSamsung2878(Connection):
                 self.log_prefix,
                 mask_sensitive_data(command.strip().replace("\n", "")),
             )  # pragma: no mutate
-            future = asyncio.get_event_loop().create_future()
+
+            # irp
+            # future = asyncio.get_event_loop().create_future()
+            future = asyncio.get_running_loop().create_future()
             await self._cmd_queue.put((command, future))
 
             try:

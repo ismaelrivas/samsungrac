@@ -134,6 +134,9 @@ device:
       status_template: '{{ device_state.AC_FUN_TEMPSET | float }}'
       connection_template: '<Request Type="DeviceControl"><Control CommandID="AC_FUN_TEMPSET" DUID="{{duid}}"><Attr ID="AC_FUN_TEMPSET" Value="{{value | float}}" /></Control></Request>'
   attributes:
+    sleep_timer:
+      type: number
+      status_template: '{{ (device_state.get("AC_FUN_SLEEP", 0) | float(0)) * 0.5 }}'
     current_temperature:
       type: temperature
       status_template: '{{ device_state.AC_FUN_TEMPNOW | float }}'
@@ -155,6 +158,14 @@ device:
       # Validation
       validation_template: '{% if "AC_ADD2_USEDPOWER" in device_state %}valid{% endif %}'
   sensors:
+    sleep_timer:
+      type: number
+      name: "Sleep Timer"
+      status_template: '{{ (device_state.get("AC_FUN_SLEEP", 0) | float(0)) * 0.5 }}'
+      device_class: "duration"
+      unit_of_measurement: "h"
+      state_class: "measurement"
+      validation_template: '{% if "AC_FUN_SLEEP" in device_state %}valid{% endif %}'
     used_power:
       type: number
       name: "Electrical Consumption"

@@ -148,7 +148,9 @@ class YamlConfigLoader:
             )  # pragma: no mutate
             return False
 
-        ac = yaml_device.get(CONFIG_DEVICE, {}) if yaml_device else {}  # pragma: no mutate
+        # irp
+        # ac = yaml_device.get(CONFIG_DEVICE, {}) if yaml_device else {}  # pragma: no mutate
+        ac = yaml_device[CONFIG_DEVICE]
 
         connection_node = ac.get(CONFIG_DEVICE_CONNECTION, {}).copy()
         
@@ -243,15 +245,15 @@ class YamlConfigLoader:
                 if self.connection and self.connection.load_from_yaml(connection_node, None):
                     break
 
-        if not self.connection:
+        if self.connection is None:
             _LOGGER.error(  # pragma: no mutate
                 "%s No matching connection class found for type '%s'",  # pragma: no mutate
                 self.controller.log_prefix,  # pragma: no mutate
                 conn_type_str,  # pragma: no mutate
             )  # pragma: no mutate
-
-        if self.connection is None:
-            _LOGGER.error("%s Could not create connection object", self.controller.log_prefix)  # pragma: no mutate
+        # irp
+        # if self.connection is None:
+        #     _LOGGER.error("%s Could not create connection object", self.controller.log_prefix)  # pragma: no mutate
             return False
 
         _LOGGER.debug(  # pragma: no mutate
@@ -283,7 +285,7 @@ class YamlConfigLoader:
 
     async def async_finish_initialization(self) -> None:
         """Complete controller initialization once device_id has been discovered."""
-        if self.is_fully_initialized or not self._parsed_yaml_config:  # pragma: no mutate
+        if self.is_fully_initialized or not self._parsed_yaml_config:
             return
 
         dev_id = getattr(self.controller, "device_id", "")  # pragma: no mutate
@@ -300,12 +302,13 @@ class YamlConfigLoader:
             op = create_property(
                 op_key, nodes[op_key], self.connection, self.controller, self.state_getter
             )
-            if op is not None: # pragma: no mutate
-                op_id = getattr(op, "id", op_key) # pragma: no mutate
-                self.operations[op_id] = op # pragma: no mutate
-                if op_id not in self.operations_list: # pragma: no mutate
-                    self.operations_list.append(op_id) # pragma: no mutate
-                self.service_schema_map[vol.Optional(op_id)] = getattr(op, "config_validation_type", cv.string) # pragma: no mutate
+            if op is not None:
+                op_id = getattr(op, "id", op_key)
+                self.operations[op_id] = op
+                # irp He comentado las dos líneas siguientes
+                # if op_id not in self.operations_list:
+                #     self.operations_list.append(op_id)
+                self.service_schema_map[vol.Optional(op_id)] = getattr(op, "config_validation_type", cv.string)
 
         nodes = ac.get(CONFIG_DEVICE_SWITCHES, {})
         for op_key in nodes.keys():
@@ -352,9 +355,9 @@ class YamlConfigLoader:
         native_current_unit = DEFAULT_CONF_TEMP_UNIT  # pragma: no mutate
         native_target_unit = DEFAULT_CONF_TEMP_UNIT  # pragma: no mutate
 
-        controller_config = getattr(self.controller, "_config", getattr(self.controller, "config", {}))  # pragma: no mutate
+        controller_config = getattr(self.controller, "_config", getattr(self.controller, "config", {}))
         entry_id = controller_config.get("entry_id")
-        if getattr(self.controller, "hass", None) and entry_id:  # pragma: no mutate
+        if getattr(self.controller, "hass", None) and entry_id:
             entry = self.controller.hass.config_entries.async_get_entry(entry_id)  # pragma: no mutate
             if entry:
                 native_current_unit = entry.options.get(
@@ -382,25 +385,25 @@ class YamlConfigLoader:
 
             if is_temp:
                 if hasattr(prop_instance, "set_hass_unit") and hasattr(prop_instance, "set_device_unit"):
-                    _LOGGER.debug(  # pragma: no mutate
-                        "%s Applying dual units to property '%s'. Display: %s",  # pragma: no mutate
-                        self.controller.log_prefix,  # pragma: no mutate
-                        getattr(prop_instance, "id", "unknown"),  # pragma: no mutate
-                        configured_unit,  # pragma: no mutate
+                    _LOGGER.debug(
+                        "%s Applying dual units to property '%s'. Display: %s",
+                        self.controller.log_prefix,
+                        getattr(prop_instance, "id", "unknown"),
+                        configured_unit,
                     )  # pragma: no mutate
                     prop_instance.set_hass_unit(configured_unit)
-                    if getattr(prop_instance, "id", "") == ATTR_TEMPERATURE: # pragma: no mutate
+                    if getattr(prop_instance, "id", None) == ATTR_TEMPERATURE:
                         prop_instance.set_device_unit(native_target_unit)
                     else:
                         prop_instance.set_device_unit(native_current_unit)
                 elif hasattr(prop_instance, "set_unit_of_measurement"):
-                    _LOGGER.debug(  # pragma: no mutate
-                        "%s Applying configured unit '%s' to property '%s'",  # pragma: no mutate
-                        self.controller.log_prefix,  # pragma: no mutate
-                        configured_unit,  # pragma: no mutate
-                        getattr(prop_instance, "id", "unknown"),  # pragma: no mutate
+                    _LOGGER.debug(
+                        "%s Applying configured unit '%s' to property '%s'",
+                        self.controller.log_prefix,
+                        configured_unit,
+                        getattr(prop_instance, "id", "unknown"),
                     )  # pragma: no mutate
-                    prop_instance.set_unit_of_measurement(configured_unit)  # pragma: no mutate
+                    prop_instance.set_unit_of_measurement(configured_unit)
 
         for op in self.operations.values():
             apply_unit(op)

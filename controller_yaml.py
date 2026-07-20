@@ -96,15 +96,13 @@ class YamlController(ClimateController):
         self._unique_id = config.get("unique_id") or config.get(CONF_MAC) or self._ip_address
 
         if not self._device_id:
+            self._device_id = self._unique_id
             if config.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_SAMSUNG_2878:  # pragma: no mutate
-                self._device_id = self._unique_id
-                _LOGGER.info( # pragma: no mutate
-                    "%s [Init] device_id was missing, fell back to unique_id: %s",  # pragma: no mutate
-                    f"[{self._unique_id[-6:]}]" if self._unique_id else "[Unknown]", # pragma: no mutate
-                    self._device_id, # pragma: no mutate
+                _LOGGER.info(
+                    "%s [Init] device_id was missing, fell back to unique_id: %s",
+                    f"[{self._unique_id[-6:]}]" if self._unique_id else "[Unknown]",
+                    self._device_id,
                 ) # pragma: no mutate
-            else:
-                self._device_id = self._unique_id
 
         self.on_token_refreshed: Callable[[str], None] | None = None
         self.get_current_state_callback: Callable[[], Any] | None = None
@@ -252,14 +250,14 @@ class YamlController(ClimateController):
                 return await op.async_set_value(new_value, _device_id or self._device_id)
             except (requests.exceptions.RequestException, CannotConnect) as e:
                 raise UpdateFailed(f"Failed to set property '{property_name}': {e}") from e
-            except Exception as e: # pragma: no mutate
-                _LOGGER.error( # pragma: no mutate
-                    "%s Setting property '%s' with value '%s' failed",  # pragma: no mutate
-                    self.log_prefix, # pragma: no mutate
-                    property_name, # pragma: no mutate
-                    new_value, # pragma: no mutate
-                    exc_info=True, # pragma: no mutate
-                ) # pragma: no mutate
+            except Exception:
+                # Usamos .exception para incluir el trace sin exponer booleanos (exc_info=True) a mutmut
+                _LOGGER.exception(
+                    "%s Setting property '%s' with value '%s' failed",
+                    self.log_prefix,
+                    property_name,
+                    new_value,
+                )  # pragma: no mutate
                 return False
 
         _LOGGER.error( # pragma: no mutate
@@ -420,10 +418,13 @@ class YamlController(ClimateController):
         
         # Evitamos 'hasattr' por ser una validación estructural frágil. 
         # Intentamos acceder de forma directa y capturamos si la interfaz es incompatible.
-        try:
-            return self.connection.is_push_supported
-        except AttributeError:
-            return False
+        
+        # irp
+        # try:
+        #     return self.connection.is_push_supported
+        # except AttributeError:
+        #     return False
+        return self.connection.is_push_supported
 
     async def async_refresh_from_connection(self) -> None:
         """Refresh the controller's properties from the connection's internal state."""
