@@ -203,6 +203,9 @@
       }
     },
     "sensor": {
+      "sleep_timer": {
+        "name": "Ausschalt-Timer"
+      },
       "outdoor_temperature": {
         "name": "Außentemperatur"
       },

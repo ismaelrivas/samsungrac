@@ -204,6 +204,9 @@
       }
     },
     "sensor": {
+      "sleep_timer": {
+        "name": "Sleep Timer"
+      },
       "outdoor_temperature": {
         "name": "Outdoor Temperature"
       },

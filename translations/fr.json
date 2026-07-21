@@ -203,6 +203,9 @@
       }
     },
     "sensor": {
+      "sleep_timer": {
+        "name": "Minuterie de Veille"
+      },
       "outdoor_temperature": {
         "name": "Température Extérieure"
       },

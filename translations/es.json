@@ -203,6 +203,9 @@
       }
     },
     "sensor": {
+      "sleep_timer": {
+        "name": "Temporizador Sleep"
+      },
       "outdoor_temperature": {
         "name": "Temperatura Exterior"
       },

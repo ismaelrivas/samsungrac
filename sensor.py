@@ -47,13 +47,13 @@ async def async_setup_entry(
                 icon = getattr(sensor_prop, "icon", None)
                 if not icon and not device_class:
                     icon = "mdi:eye"
-
+                yaml_name = getattr(sensor_prop, "name", None)  # Explicit name from YAML (can be empty)
                 # Build a modern SensorEntityDescription from the YAML property.
                 # Instantiated in the platform, not inside the entity class.
                 description = SensorEntityDescription(
                     key=sensor_prop.id,
                     translation_key=sensor_prop.id,
-                    name=None,  # Delegated fully to HA translations (en.json/es.json)
+                    name=yaml_name,
                     device_class=device_class,
                     native_unit_of_measurement=getattr(sensor_prop, "unit_of_measurement", None),
                     state_class=getattr(sensor_prop, "state_class", None),
