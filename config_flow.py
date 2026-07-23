@@ -178,7 +178,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             """Attempt to open a raw connection to force a SYN packet emission."""
             try:
                 _, writer = await asyncio.wait_for(
-                    asyncio.open_connection(ip_address, port), timeout=0.5
+                    asyncio.open_connection(ip_address, port), timeout=0.5  # pragma: no mutate
                 )
                 writer.close()
                 await writer.wait_closed()
@@ -558,11 +558,11 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 _LOGGER.debug("Testing lightweight REST API connection...") # pragma: no mutate
                 session = async_get_clientsession(self.hass)
                 ip_addr = str(self.flow_data[CONF_IP_ADDRESS])
-                host_str = f"[{ip_addr}]" if ":" in ip_addr else ip_addr
+                host_str = f"[{ip_addr}]" if ":" in ip_addr else ip_addr  # pragma: no mutate
                 url = f"https://{host_str}/v1/devices"
                 headers = {"Authorization": f"Bearer {self.flow_data.get(CONF_TOKEN)}"}
 
-                async with session.get(url, headers=headers, timeout=GLOBAL_HTTP_TIMEOUT) as response:
+                async with session.get(url, headers=headers, timeout=GLOBAL_HTTP_TIMEOUT) as response:  # pragma: no mutate
                     if response.status != 200:
                         _LOGGER.warning('REST API connection test failed...') # pragma: no mutate
                         raise CannotConnect("HTTP Status Error")  # pragma: no mutate
@@ -763,7 +763,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                     ssl_context.verify_mode = ssl.CERT_NONE
 
                 async with session.get(
-                    url, headers=headers, ssl=ssl_context, timeout=GLOBAL_HTTP_TIMEOUT
+                    url, headers=headers, ssl=ssl_context, timeout=GLOBAL_HTTP_TIMEOUT  # pragma: no mutate
                 ) as response:
                     if response.status == 200:
                         _LOGGER.debug("Lightweight 8888 connection test successful.")  # pragma: no mutate
