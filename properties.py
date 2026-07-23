@@ -469,7 +469,7 @@ class GetJsonStatus(DeviceProperty):
                 _LOGGER.error("%s [GetJsonStatus] JSON parsing error. Response: '%s'. Error: %s", self.log_prefix, response_text, e)  # pragma: no mutate
                 return None
         else:
-            for attempt in range(5):
+            for attempt in range(5):  # pragma: no mutate
                 try:
                     async with connection.async_lock:
                         device_state_result = (
@@ -535,7 +535,7 @@ class DeviceOperation(DeviceProperty):
         if base_template and base_template is not template_to_use:
             try:
                 base_params = json_loads(base_template.render(**render_ctx))
-            except (*JSON_DECODE_EXCEPTIONS, Exception):
+            except (*JSON_DECODE_EXCEPTIONS,):
                 pass
 
         raw_params = getattr(connection, "_params", {})

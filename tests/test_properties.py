@@ -15,6 +15,7 @@ from custom_components.climate_ip.const import (
     CONFIG_TYPE,
     STATUS_GETTER_JSON,
     PROPERTY_TYPE_SWITCH,
+    PROPERTY_TYPE_MODE,
 )
 from custom_components.climate_ip.properties import (
     DeviceProperty,
@@ -37,9 +38,13 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.const import UnitOfTemperature, STATE_UNKNOWN, STATE_ON, STATE_OFF
 from homeassistant.components.climate.const import (
     ATTR_FAN_MODE,
+    ATTR_FAN_MODES,
     ATTR_HVAC_MODE,
+    ATTR_HVAC_MODES,
     ATTR_PRESET_MODE,
+    ATTR_PRESET_MODES,
     ATTR_SWING_MODE,
+    ATTR_SWING_MODES,
 )
 
 
@@ -377,6 +382,7 @@ async def test_getjsonstatus_async_update_sync_retry(mock_connection, mock_contr
             await g.async_update_state(None, False)
             
         assert mock_sleep.call_count == 4 # Attempt 1 to 4 trigger sleep, 5th throws CannotConnect
+        assert mock_controller.hass.async_add_executor_job.call_count == 5
 
 async def test_getjsonstatus_async_update_success(mock_connection, mock_controller):
     """Test successful async update sets value and attributes."""
@@ -1805,3 +1811,324 @@ async def test_temperatureoperation_remaining_mutants():
     op._status_template = Template("{{ device_state.val }}")
     v = op.calculate_value_from_state({"val": "77"})
     assert v == 25.0
+
+
+# ====================================================================================
+# ANIQUILACION DE MUTANTES: Strict Specs, Missing Attributes, Match & State Attributes
+# ====================================================================================
+
+async def test_device_operation_match_value():
+    """Kill mutant line 631: DeviceOperation.match_value returns False."""
+    conn = MagicMock()
+    ctrl = MagicMock()
+    op = DeviceOperation("test_op", conn, ctrl)
+    assert op.match_value("on") is False
+    assert op.match_value(123) is False
+
+
+async def test_basic_device_operation_match_value():
+    """Kill mutant line 739: BasicDeviceOperation.match_value checks values_ha_to_dev_map."""
+    conn = MagicMock()
+    ctrl = MagicMock()
+    op = BasicDeviceOperation("test_bdo", conn, ctrl)
+    op._values_ha_to_dev_map = {"cool": "1", "heat": "2"}
+    assert op.match_value("cool") is True
+    assert op.match_value("heat") is True
+    assert op.match_value("dry") is False
+
+
+async def test_mode_operation_match_type():
+    """Kill mutant line 798: ModeOperation.match_type checks PROPERTY_TYPE_MODE."""
+    assert ModeOperation.match_type(PROPERTY_TYPE_MODE) is True
+    assert ModeOperation.match_type("switch") is False
+    assert ModeOperation.match_type("number") is False
+
+
+async def test_mode_operation_state_attributes_matrix():
+    """Kill mutants lines 803-813: ModeOperation.state_attributes for all attribute types."""
+    conn = MagicMock()
+    ctrl = MagicMock()
+
+    # 1. ATTR_HVAC_MODE
+    op_hvac = ModeOperation(ATTR_HVAC_MODE, conn, ctrl)
+    op_hvac.value = "cool"
+    op_hvac._values = ["off", "cool", "heat"]
+    attrs_hvac = op_hvac.state_attributes
+    assert attrs_hvac == {
+        ATTR_HVAC_MODE: "cool",
+        ATTR_HVAC_MODES: ["off", "cool", "heat"],
+    }
+
+    # 2. ATTR_FAN_MODE
+    op_fan = ModeOperation(ATTR_FAN_MODE, conn, ctrl)
+    op_fan.value = "auto"
+    op_fan._values = ["auto", "low", "high"]
+    attrs_fan = op_fan.state_attributes
+    assert attrs_fan == {
+        ATTR_FAN_MODE: "auto",
+        ATTR_FAN_MODES: ["auto", "low", "high"],
+    }
+
+    # 3. ATTR_PRESET_MODE
+    op_preset = ModeOperation(ATTR_PRESET_MODE, conn, ctrl)
+    op_preset.value = "eco"
+    op_preset._values = ["eco", "boost"]
+    attrs_preset = op_preset.state_attributes
+    assert attrs_preset == {
+        ATTR_PRESET_MODE: "eco",
+        ATTR_PRESET_MODES: ["eco", "boost"],
+    }
+
+    # 4. ATTR_SWING_MODE
+    op_swing = ModeOperation(ATTR_SWING_MODE, conn, ctrl)
+    op_swing.value = "off"
+    op_swing._values = ["off", "vertical"]
+    attrs_swing = op_swing.state_attributes
+    assert attrs_swing == {
+        ATTR_SWING_MODE: "off",
+        ATTR_SWING_MODES: ["off", "vertical"],
+    }
+
+    # 5. Custom mode name
+    op_custom = ModeOperation("my_special", conn, ctrl)
+    op_custom.value = "val1"
+    op_custom._values = ["val1", "val2"]
+    attrs_custom = op_custom.state_attributes
+    assert attrs_custom == {
+        "my_special_mode": "val1",
+        "my_special_modes": ["val1", "val2"],
+    }
+
+
+async def test_create_property_and_status_getter_none_returns():
+    """Kill None Fallback mutants in create_property and create_status_getter."""
+    conn = MagicMock()
+    ctrl = MagicMock()
+
+    # Missing CONFIG_TYPE
+    assert create_property("test", {}, conn, ctrl) is None
+    assert create_status_getter("test", {}, conn, ctrl) is None
+
+    # Mismatched CONFIG_TYPE
+    assert create_property("test", {CONFIG_TYPE: "non_existent_type"}, conn, ctrl) is None
+    assert create_status_getter("test", {CONFIG_TYPE: "non_existent_type"}, conn, ctrl) is None
+
+
+async def test_get_json_status_load_from_yaml_existing_template():
+    """Kill mutant line 378: load_from_yaml does not overwrite existing _connection_template."""
+    conn = MagicMock(is_async_native=True, _connection_template=Template("inherited"))
+    ctrl = MagicMock()
+    g = GetJsonStatus("test", conn, ctrl)
+    existing_tmpl = Template("pre_existing")
+    g._connection_template = existing_tmpl
+
+    res = g.load_from_yaml({"type": STATUS_GETTER_JSON})
+    assert res is True
+    assert g._connection_template is existing_tmpl
+
+
+async def test_get_json_status_load_from_yaml_default_template():
+    """Kill mutant line 380: load_from_yaml creates default template when connection lacks one."""
+    conn = MagicMock(spec=["is_async_native", "create_updated"])
+    conn.is_async_native = True
+    conn.create_updated.return_value = conn
+    ctrl = MagicMock()
+    g = GetJsonStatus("test", conn, ctrl)
+    g._connection_template = None
+
+    res = g.load_from_yaml({"type": STATUS_GETTER_JSON})
+    assert res is True
+    assert g._connection_template is not None
+    assert g._connection_template.render() == '{ "method": "GET", "url": "/devices" }'
+
+
+async def test_get_json_status_async_update_missing_params_attr():
+    """Kill mutant line 429: getattr(connection, '_params', {}). Use spec to ensure AttributeError on missing attr."""
+    conn = MagicMock(spec=["is_async_native", "async_execute"])
+    conn.is_async_native = True
+    conn.async_execute = AsyncMock(return_value=('{"status": "ok"}', None))
+    ctrl = MagicMock()
+    ctrl.device_id = None
+    ctrl.log_prefix = "TEST"
+
+    g = GetJsonStatus("test", conn, ctrl)
+    g._connection_template = Template('{"method": "GET"}')
+
+    res = await g.async_update_state(None, False)
+    assert res == {"status": "ok"}
+
+
+async def test_device_operation_resolve_async_params_missing_attr():
+    """Kill mutant line 534: getattr(connection, '_connection_template', None). Use spec for connection."""
+    conn = MagicMock(spec=["_params"])
+    conn._params = {"method": "POST", "url": "/api"}
+    ctrl = MagicMock()
+    ctrl.log_prefix = "TEST"
+
+    op = DeviceOperation("test", conn, ctrl)
+    op._connection_template = None
+
+    params = op._resolve_async_params(conn, "val")
+    assert params == {"method": "POST", "url": "/api"}
+
+
+async def test_device_operation_resolve_async_params_condition_flip():
+    """Kill mutant line 535: base_template and base_template is not template_to_use."""
+    conn = MagicMock(spec=["_params"])
+    conn._params = {"method": "GET"}
+    ctrl = MagicMock()
+    ctrl.log_prefix = "TEST"
+
+    op = DeviceOperation("test", conn, ctrl)
+    op._connection_template = Template('{"method": "POST", "url": "/set"}')
+
+    # When base_template is None (because conn has no _connection_template), base_params remains {}
+    params = op._resolve_async_params(conn, "val")
+    assert params == {"method": "POST", "url": "/set"}
+
+
+async def test_device_operation_async_set_value_missing_cfg_and_duid():
+    """Kill mutants lines 572, 574: getattr fallback for config and duid using strict spec."""
+    # 1. Connection without _cfg or config
+    conn = MagicMock(spec=["is_async_native", "_params", "async_execute"])
+    conn.is_async_native = True
+    conn.async_execute = AsyncMock(return_value=("ok", None))
+    ctrl = MagicMock()
+    ctrl.device_id = None
+    ctrl.log_prefix = "TEST"
+
+    op = DeviceOperation("test", conn, ctrl)
+    op._connection_template = Template('{"method": "POST", "url": "/cmd"}')
+    res = await op.async_set_value("val", device_id=None)
+    assert res is True
+
+    # 2. Connection with config lacking duid attribute
+    cfg_mock = MagicMock(spec=["token"])  # No 'duid' attribute
+    conn2 = MagicMock(spec=["is_async_native", "_params", "config", "async_execute"])
+    conn2.is_async_native = True
+    conn2.config = cfg_mock
+    conn2.async_execute = AsyncMock(return_value=("ok", None))
+
+    op2 = DeviceOperation("test", conn2, ctrl)
+    op2._connection_template = Template('{"method": "POST", "url": "/cmd"}')
+    res2 = await op2.async_set_value("val", device_id=None)
+    assert res2 is True
+
+
+async def test_get_json_status_load_from_yaml_inherits_connection_template():
+    """Kill mutant line 380: conn_tmpl = getattr(self._connection, '_connection_template', None)."""
+    custom_tmpl = Template('{"method": "POST", "url": "/inherited_endpoint"}')
+    conn = MagicMock(is_async_native=True, _connection_template=custom_tmpl)
+    conn.create_updated.return_value = conn
+    ctrl = MagicMock()
+    g = GetJsonStatus("test", conn, ctrl)
+    g._connection_template = None  # Crucial: template must be None so it inherits conn_tmpl!
+
+    res = g.load_from_yaml({"type": STATUS_GETTER_JSON})
+    assert res is True
+    assert g._connection_template is custom_tmpl
+    assert g._connection_template.render() == '{"method": "POST", "url": "/inherited_endpoint"}'
+
+
+async def test_device_property_calculate_value_from_state_valid():
+    """Kill mutant line 321: calculate_value_from_state returns rendered value."""
+    conn = MagicMock()
+    ctrl = MagicMock()
+    prop = DeviceProperty("test_prop", conn, ctrl)
+    prop._status_template = Template("{{ device_state.power }}")
+
+    val = prop.calculate_value_from_state({"power": "on"})
+    assert val == "on"
+    assert val is not None
+    assert val != STATE_UNKNOWN
+
+
+async def test_get_json_status_async_update_params_copy():
+    """Kill mutant line 429: render_context includes copy of connection._params."""
+    conn = MagicMock(spec=["is_async_native", "_params", "async_execute"])
+    conn.is_async_native = True
+    conn._params = {"api_key": "secret123"}
+    conn.async_execute = AsyncMock(return_value=('{"result": "ok"}', None))
+    ctrl = MagicMock()
+    ctrl.device_id = None
+    ctrl.log_prefix = "TEST"
+
+    g = GetJsonStatus("test", conn, ctrl)
+    g._connection_template = Template('{"method": "GET", "url": "/test/{{ api_key }}"}')
+
+    res = await g.async_update_state(None, False)
+    assert res == {"result": "ok"}
+    conn.async_execute.assert_called_once_with("GET", "/test/secret123", None, None, _is_poll=True)
+
+
+async def test_device_operation_async_set_value_conversions_and_fallbacks():
+    """Kill mutants 551, 556, 563, 577, 612 in async_set_value."""
+    # 1. Test convert_hass_to_dev payload conversion (line 551) and _resolve_async_params return (line 577)
+    conn = MagicMock(spec=["is_async_native", "_params", "async_execute"])
+    conn.is_async_native = True
+    conn._params = {"method": "POST"}
+    conn.async_execute = AsyncMock(return_value=("ok", None))
+    ctrl = MagicMock()
+    ctrl.device_state = {"temp": 22}
+    ctrl.device_id = "dev1"
+    ctrl.log_prefix = "TEST"
+
+    bop = BasicDeviceOperation("test_bop", conn, ctrl)
+    bop._values_ha_to_dev_map = {"cool": "COOL_DEV"}
+    bop._connection_template = Template('{"method": "POST", "json": {"mode": "{{ value }}"}}')
+
+    res = await bop.async_set_value("cool")
+    assert res is True
+    conn.async_execute.assert_called_once_with("POST", None, '{"mode":"COOL_DEV"}', None, device_state={"temp": 22})
+
+    # 2. Test value-specific connection map (line 556)
+    special_conn = MagicMock(spec=["is_async_native", "_params", "async_execute"])
+    special_conn.is_async_native = True
+    special_conn._params = {"method": "POST"}
+    special_conn.async_execute = AsyncMock(return_value=("ok", None))
+
+    bop._value_connections_map["heat"] = special_conn
+    bop._values_ha_to_dev_map["heat"] = "HEAT_DEV"
+
+    res_heat = await bop.async_set_value("heat")
+    assert res_heat is True
+    special_conn.async_execute.assert_called_once_with("POST", None, '{"mode":"HEAT_DEV"}', None, device_state={"temp": 22})
+
+    # 3. Test _device_state and status_getter fallbacks when controller.device_state is None (line 563)
+    conn2 = MagicMock(spec=["is_async_native", "_params", "async_execute"])
+    conn2.is_async_native = True
+    conn2._params = {"method": "POST"}
+    conn2.async_execute = AsyncMock(return_value=("ok", None))
+
+    ctrl_no_state = MagicMock(spec=["log_prefix", "device_id"])
+    ctrl_no_state.device_id = "dev2"
+    ctrl_no_state.log_prefix = "TEST"
+
+    sg_mock = MagicMock(value={"sg_key": "sg_val"})
+    op_fallback = DeviceOperation("test_fb", conn2, ctrl_no_state, status_getter=sg_mock)
+    op_fallback._device_state = None
+    op_fallback._connection_template = Template('{"method": "POST"}')
+
+    res_fb = await op_fallback.async_set_value("val")
+    assert res_fb is True
+    conn2.async_execute.assert_called_once_with("POST", None, None, None, device_state={"sg_key": "sg_val"})
+
+    # 4. Test sync execution passing device_id (line 612)
+    sync_conn = MagicMock(spec=["is_async_native", "_lock", "execute"])
+    sync_conn.is_async_native = False
+    sync_conn._lock = AsyncMock()
+
+    op_sync = DeviceOperation("test_sync", sync_conn, ctrl_no_state)
+    op_sync._connection_template = Template("tmpl")
+
+    async def _mock_add_job(fn, *args):
+        fn(*args)
+
+    ctrl_no_state.hass = MagicMock()
+    ctrl_no_state.hass.async_add_executor_job = AsyncMock(side_effect=_mock_add_job)
+
+    res_sync = await op_sync.async_set_value("val", device_id="sync_dev_99")
+    assert res_sync is True
+    sync_conn.execute.assert_called_once_with(op_sync.connection_template, "val", None, "sync_dev_99")
+
+
