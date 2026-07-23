@@ -2501,6 +2501,7 @@ async def test_async_step_handle_error_mutants(hass: HomeAssistant) -> None:
         
         # Kill mutmut 3, 5
         assert res2["errors"]["base"] == "unknown_error"
+        assert res2["errors"]["base"] is not None
         
         # Kill mutmut 24, 26, 29
         assert res2["data_schema"] == "mocked_schema_8888"

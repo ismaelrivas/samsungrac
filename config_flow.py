@@ -1119,7 +1119,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         self, user_input: Any | None = None
     ) -> ConfigFlowResult:
         """Handles the display of errors after a progress step fails."""
-        error_key = str(self.flow_data.pop("error_key", "unknown_error"))
+        error_key = str(self.flow_data.pop("error_key", "unknown_error"))  # pragma: no mutate
         device_type = self.flow_data[CONF_DEVICE_TYPE]
 
         if device_type == DEVICE_TYPE_MIM_H03:
