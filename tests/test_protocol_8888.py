@@ -29,9 +29,13 @@ def mock_writer():
     return writer
 
 @pytest.fixture
-def client():
-    """Create a Samsung8888Client instance."""
-    return Samsung8888Client("192.168.1.100")
+async def client():
+    """Create a Samsung8888Client instance with guaranteed async teardown."""
+    c = Samsung8888Client("192.168.1.100")
+    try:
+        yield c
+    finally:
+        await c.close()
 
 @pytest.fixture
 def anyio_backend():
@@ -54,8 +58,10 @@ async def test_connect_success(mock_create_ssl, client, mock_reader, mock_writer
         mock_create_ssl.assert_called_once_with(ciphers="ALL:@SECLEVEL=0", verify_mode=ssl.CERT_NONE)
         mock_open.assert_called_once_with("192.168.1.100", 8888, ssl=mock_ctx)
         
-        assert client._reader == mock_reader
-        assert client._writer == mock_writer
+        assert client._reader is mock_reader
+        assert client._writer is mock_writer
+        assert client._reader is not None
+        assert client._writer is not None
 
 
 async def test_connect_failure(client):
@@ -87,6 +93,7 @@ async def test_request_success_and_payload_structure(client, mock_reader, mock_w
 
             assert response == '{"result": "ok"}'
             assert error is None
+            mock_reader.readexactly.assert_called_with(16)
 
             # Mutant Killer: Byte-for-byte exact payload assertion
             mock_writer.write.assert_called_once()
@@ -210,8 +217,10 @@ async def test_request_timeout_reading_headers(client, mock_reader, mock_writer)
             ]
             mock_reader._waiter = None
 
-            with pytest.raises(CannotConnect, match="Timeout reading headers"):
+            with pytest.raises(CannotConnect) as exc_info:
                 await client.request("GET", "/test")
+            assert str(exc_info.value) == "Timeout reading headers"
+            assert exc_info.value.__cause__ is not None
 
 
 @pytest.mark.parametrize("malformed_header", [
@@ -229,12 +238,12 @@ async def test_request_malformed_headers(client, mock_reader, mock_writer, malfo
                 b"\r\n",
             ]
             mock_reader.read.return_value = b"" # EOF para el fallback
+            mock_reader.readexactly.return_value = b""
             mock_reader._waiter = None
             
-            try:
-                await client.request("GET", "/test")
-            except (CannotConnect, ValueError):
-                pass
+            resp, err = await client.request("GET", "/test")
+            assert resp == ""
+            assert err is None
 
 async def test_close_handles_task_exceptions(client, mock_writer):
     """Kills the return_exceptions=True mutant in close()."""
@@ -277,4 +286,558 @@ async def test_create_ssl_context_options(mock_create_ssl, client):
     # Verificamos que se acumularon los bits (OR) y no se sobrescribieron (=)
     expected_options = getattr(ssl, "OP_NO_TICKET", 0) | getattr(ssl, "OP_NO_COMPRESSION", 0)
     assert ctx.options == expected_options
+
+
+def test_init_attributes():
+    """Kills __init__ None / empty string / fallback mutants."""
+    client1 = Samsung8888Client("192.168.1.100")
+    assert client1.host == "192.168.1.100"
+    assert client1.port == 8888
+    assert client1.cert_path is None
+    assert client1.log_prefix == "[192.168.1.100]"
+    assert client1._ssl_context is None
+    assert client1._reader is None
+    assert client1._writer is None
+    assert isinstance(client1._active_tasks, set)
+    assert client1._active_tasks == set()
+
+    client2 = Samsung8888Client("10.0.0.1", port=8889, cert_path="/c.pem", log_prefix="[Custom]")
+    assert client2.host == "10.0.0.1"
+    assert client2.port == 8889
+    assert client2.cert_path == "/c.pem"
+    assert client2.log_prefix == "[Custom]"
+
+
+async def test_connect_already_connected(client, mock_writer):
+    """Test connect does nothing if _writer already exists."""
+    client._writer = mock_writer
+    with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context") as mock_ssl:
+        await client.connect()
+        mock_ssl.assert_not_called()
+        assert client._writer == mock_writer
+
+
+@patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context")
+async def test_create_ssl_context_with_cert_path(mock_create_ssl, client):
+    """Test loading cert chain when cert_path is supplied."""
+    client.cert_path = "/path/to/cert.pem"
+    mock_ctx = MagicMock(spec=ssl.SSLContext)
+    mock_create_ssl.return_value = mock_ctx
+
+    with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
+        ctx = await client._create_ssl_context()
+        assert ctx == mock_ctx
+        mock_to_thread.assert_called_once_with(mock_ctx.load_cert_chain, "/path/to/cert.pem")
+
+
+@patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context")
+async def test_create_ssl_context_cert_error_handled(mock_create_ssl, client):
+    """Test loading cert chain error is safely caught and logged."""
+    client.cert_path = "/invalid/cert.pem"
+    mock_ctx = MagicMock(spec=ssl.SSLContext)
+    mock_create_ssl.return_value = mock_ctx
+
+    with patch("asyncio.to_thread", side_effect=ssl.SSLError("Invalid cert")):
+        ctx = await client._create_ssl_context()
+        assert ctx == mock_ctx
+
+
+async def test_connect_timeout(client):
+    """Test timeout error during connect raises CannotConnect with exact string."""
+    with patch("asyncio.open_connection", side_effect=TimeoutError("Connection timed out")):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            with pytest.raises(CannotConnect) as exc_info:
+                await client.connect()
+            assert str(exc_info.value) == "Connection timed out to 192.168.1.100:8888"
+            assert exc_info.value.__cause__ is not None
+
+
+async def test_close_without_writer(client, mock_reader):
+    """Test close cleans up reader when writer is None."""
+    client._reader = mock_reader
+    client._writer = None
+    await client.close()
+    assert client._reader is None
+    assert client._writer is None
+
+
+async def test_close_wait_closed_timeout(client, mock_writer):
+    """Test timeout waiting for socket close forces abort and verifies timeout context."""
+    client._writer = mock_writer
+    mock_writer.wait_closed.side_effect = TimeoutError("Timeout waiting close")
+    mock_transport = MagicMock()
+    mock_writer.transport = mock_transport
+
+    mock_timeout_ctx = MagicMock()
+    mock_timeout_ctx.__aenter__ = AsyncMock()
+    mock_timeout_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("custom_components.climate_ip.protocol_8888.asyncio.timeout", return_value=mock_timeout_ctx) as mock_timeout:
+        await client.close()
+        mock_timeout.assert_called_once_with(2.0)
+        mock_transport.abort.assert_called_once()
+        assert client._writer is None
+        assert client._reader is None
+
+
+async def test_close_wait_closed_exception(client, mock_writer):
+    """Test exception waiting for socket close forces abort."""
+    client._writer = mock_writer
+    mock_writer.wait_closed.side_effect = OSError("Socket error")
+    mock_transport = MagicMock()
+    mock_writer.transport = mock_transport
+
+    await client.close()
+    mock_transport.abort.assert_called_once()
+    assert client._writer is None
+    assert client._reader is None
+
+
+async def test_close_writer_close_exception(client, mock_writer):
+    """Test error closing writer is safely handled."""
+    client._writer = mock_writer
+    mock_writer.close.side_effect = OSError("Close error")
+
+    await client.close()
+    assert client._writer is None
+    assert client._reader is None
+
+
+async def test_track_task(client):
+    """Test background task tracking and completion discard."""
+    async def sample_coro():
+        await asyncio.sleep(0.001)
+        return "done"
+
+    task = client._track_task(sample_coro())
+    assert task in client._active_tasks
+    assert any(cb[0] == client._active_tasks.discard for cb in getattr(task, "_callbacks", [])), "Discard callback not registered!"
+    res = await task
+    assert res == "done"
+    assert task not in client._active_tasks
+
+
+async def test_request_close_before_retry(client, mock_reader, mock_writer):
+    """Test that close is called before retry on connection reset."""
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            mock_reader.readline.side_effect = [
+                b"HTTP/1.1 200 OK\r\n",
+                b"Content-Length: 2\r\n",
+                b"\r\n",
+            ]
+            mock_reader.readexactly.return_value = b"{}"
+            mock_reader._waiter = None
+
+            response, error = await client.request("GET", "/test")
+            assert response == "{}"
+            assert error is None
+
+
+async def test_request_no_writer_after_connect(client):
+    """Test request raises CannotConnect if connect leaves writer as None."""
+    with patch.object(client, "connect", new_callable=AsyncMock):
+        with pytest.raises(CannotConnect, match="No connection established"):
+            await client.request("GET", "/test")
+
+
+async def test_request_payload_no_body(client, mock_reader, mock_writer):
+    """Test GET request without body formats Content-Length: 0 exact payload."""
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            mock_reader.readline.side_effect = [
+                b"HTTP/1.1 200 OK\r\n",
+                b"Content-Length: 0\r\n",
+                b"\r\n",
+            ]
+            mock_reader._waiter = None
+
+            response, error = await client.request("GET", "/api/status")
+
+            assert response == ""
+            assert error is None
+            mock_writer.write.assert_called_once()
+            expected_payload = (
+                b"GET /api/status HTTP/1.1\r\n"
+                b"Host: 192.168.1.100:8888\r\n"
+                b"Connection: keep-alive\r\n"
+                b"Content-Length: 0\r\n\r\n"
+            )
+            assert mock_writer.write.call_args[0][0] == expected_payload
+
+
+async def test_request_timeout_sending_drain(client, mock_reader, mock_writer):
+    """Test TimeoutError during writer.drain raises CannotConnect."""
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            mock_writer.drain.side_effect = TimeoutError("Drain timeout")
+            mock_reader._waiter = None
+
+            with pytest.raises(CannotConnect) as exc_info:
+                await client.request("POST", "/test", body={"a": 1})
+            assert str(exc_info.value) == "Timeout sending request or reading status line"
+            assert exc_info.value.__cause__ is not None
+
+
+async def test_request_empty_status_line_retries(client, mock_reader, mock_writer):
+    """Test empty status line triggers ConnectionResetError and retry."""
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            mock_reader.readline.side_effect = [b"", b""]
+            mock_reader._waiter = None
+
+            with pytest.raises(CannotConnect) as exc_info:
+                await client.request("GET", "/test")
+            assert str(exc_info.value) == "Unstable connection"
+            assert str(exc_info.value.__cause__) == "Remote closure"
+
+
+async def test_request_invalid_status_line_format(client, mock_reader, mock_writer):
+    """Test malformed status line raises CannotConnect."""
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            mock_reader.readline.side_effect = [b"INVALID_STATUS_LINE\r\n"]
+            mock_reader._waiter = None
+
+            with pytest.raises(CannotConnect, match="Invalid status format: 'INVALID_STATUS_LINE'"):
+                await client.request("GET", "/test")
+
+
+async def test_request_content_length_zero_no_read(client, mock_reader, mock_writer):
+    """Test explicitly Content-Length: 0 skips reading body."""
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            mock_reader.readline.side_effect = [
+                b"HTTP/1.1 200 OK\r\n",
+                b"content-length: 0\r\n",
+                b"\r\n",
+            ]
+            mock_reader._waiter = None
+
+            response, error = await client.request("GET", "/test")
+            assert response == ""
+            assert error is None
+            mock_reader.readexactly.assert_not_called()
+            mock_reader.read.assert_not_called()
+
+
+async def test_request_content_length_timeout_body(client, mock_reader, mock_writer):
+    """Test timeout during body readexactly raises CannotConnect."""
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            mock_reader.readline.side_effect = [
+                b"HTTP/1.1 200 OK\r\n",
+                b"Content-Length: 10\r\n",
+                b"\r\n",
+            ]
+            mock_reader.readexactly.side_effect = TimeoutError("Body timeout")
+            mock_reader._waiter = None
+
+            with pytest.raises(CannotConnect) as exc_info:
+                await client.request("GET", "/test")
+            assert str(exc_info.value) == "Timeout reading response body"
+            assert exc_info.value.__cause__ is not None
+
+
+async def test_request_content_length_exception_body(client, mock_reader, mock_writer):
+    """Test non-timeout exception during body readexactly yields empty string."""
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            mock_reader.readline.side_effect = [
+                b"HTTP/1.1 200 OK\r\n",
+                b"Content-Length: 10\r\n",
+                b"\r\n",
+            ]
+            mock_reader.readexactly.side_effect = asyncio.IncompleteReadError(b"partial", 10)
+            mock_reader._waiter = None
+
+            response, error = await client.request("GET", "/test")
+            assert response == ""
+            assert error is None
+
+
+async def test_request_status_204_no_content(client, mock_reader, mock_writer):
+    """Test HTTP 204 response returns empty string response and None error."""
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            mock_reader.readline.side_effect = [
+                b"HTTP/1.1 204 No Content\r\n",
+                b"Content-Length: 0\r\n",
+                b"\r\n",
+            ]
+            mock_reader._waiter = None
+
+            response, error = await client.request("POST", "/test")
+            assert response == ""
+            assert error is None
+
+
+async def test_request_status_201_created(client, mock_reader, mock_writer):
+    """Test status code non-200/204 returns error string."""
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            mock_reader.readline.side_effect = [
+                b"HTTP/1.1 201 Created\r\n",
+                b"Content-Length: 6\r\n",
+                b"\r\n",
+            ]
+            mock_reader.readexactly.return_value = b"body201"
+            mock_reader._waiter = None
+
+            response, error = await client.request("POST", "/test")
+            assert response is None
+            assert error == "HTTP 201: body201"
+
+
+async def test_request_retry_on_broken_pipe_success(client, mock_reader, mock_writer):
+    """Test BrokenPipeError triggers retry and succeeds on 2nd attempt."""
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            mock_reader.readline.side_effect = [
+                BrokenPipeError("Pipe broken"),
+                b"HTTP/1.1 200 OK\r\n",
+                b"Content-Length: 2\r\n",
+                b"\r\n",
+            ]
+            mock_reader.readexactly.return_value = b"{}"
+            mock_reader._waiter = None
+
+            response, error = await client.request("GET", "/test")
+            assert response == "{}"
+            assert error is None
+
+
+async def test_request_cancelled_error(client, mock_reader, mock_writer):
+    """Test asyncio.CancelledError closes socket and re-raises."""
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            mock_reader.readline.side_effect = asyncio.CancelledError()
+            mock_reader._waiter = None
+
+            with patch.object(client, "close", new_callable=AsyncMock) as mock_close:
+                with pytest.raises(asyncio.CancelledError):
+                    await client.request("GET", "/test")
+                mock_close.assert_called_once()
+
+
+async def test_request_ssl_exception(client, mock_reader, mock_writer):
+    """Test SSL exception converted to CannotConnect with Error SSL prefix."""
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            mock_reader.readline.side_effect = ssl.SSLError("SSL verification failed")
+            mock_reader._waiter = None
+
+            with pytest.raises(CannotConnect, match=r"Error SSL:.*SSL verification failed"):
+                await client.request("GET", "/test")
+
+
+async def test_request_unexpected_exception(client, mock_reader, mock_writer):
+    """Test generic exception is re-raised directly (fail-fast, not masked as CannotConnect)."""
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            mock_reader.readline.side_effect = RuntimeError("Unknown error")
+            mock_reader._waiter = None
+
+            with pytest.raises(RuntimeError, match="Unknown error"):
+                await client.request("GET", "/test")
+
+
+async def test_canonical_timeout_mocking(client, mock_reader, mock_writer):
+    """Kills timeout mutants by enforcing canonical asyncio.timeout mock pattern."""
+    mock_timeout_ctx = MagicMock()
+    mock_timeout_ctx.__aenter__ = AsyncMock()
+    mock_timeout_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            with patch("custom_components.climate_ip.protocol_8888.asyncio.timeout", return_value=mock_timeout_ctx) as mock_timeout:
+                mock_reader.readline.side_effect = [
+                    b"HTTP/1.1 200 OK\r\n",
+                    b"Content-Length: 2\r\n",
+                    b"\r\n",
+                ]
+                mock_reader.readexactly.return_value = b"{}"
+                mock_reader._waiter = None
+
+                await client.request("POST", "/test", body={"x": 1})
+
+                from unittest.mock import call
+                assert mock_timeout.call_args_list == [call(10.0), call(5.0), call(10.0), call(5.0), call(5.0), call(10.0)]
+
+
+@patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context")
+async def test_create_ssl_context_options_exception(mock_create_ssl, client):
+    """Test exception when setting options is safely ignored."""
+    mock_ctx = MagicMock(spec=ssl.SSLContext)
+    type(mock_ctx).options = property(fget=MagicMock(side_effect=AttributeError("No options attribute")))
+    mock_create_ssl.return_value = mock_ctx
+    ctx = await client._create_ssl_context()
+    assert ctx == mock_ctx
+
+
+async def test_request_fallback_raw_json_incremental_chunks(client, mock_reader, mock_writer):
+    """Test fallback raw reader handling whitespace and incomplete JSON chunks."""
+    mock_timeout_ctx = MagicMock()
+    mock_timeout_ctx.__aenter__ = AsyncMock()
+    mock_timeout_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            with patch("custom_components.climate_ip.protocol_8888.asyncio.timeout", return_value=mock_timeout_ctx) as mock_timeout:
+                mock_reader.readline.side_effect = [
+                    b"HTTP/1.1 200 OK\r\n",
+                    b"\r\n",
+                ]
+                mock_reader.read.side_effect = [
+                    b"   \r\n",
+                    b'{"key":',
+                    b' "val"}',
+                    b"",
+                ]
+                mock_reader._waiter = None
+
+                response, error = await client.request("GET", "/test")
+                
+                assert response == '{"key": "val"}'
+                assert error is None
+                
+                # Mutant Killer: Assert the exact fallback timeout threshold was used
+                from unittest.mock import call
+                assert call(5.0) in mock_timeout.call_args_list, "Fallback timeout mutation detected!"
+
+
+async def test_track_task_callback_registered(client):
+    """Kills task.add_done_callback(None) mutant."""
+    mock_task = MagicMock()
+    with patch("asyncio.create_task", return_value=mock_task):
+        res_task = client._track_task(MagicMock())
+        assert res_task == mock_task
+        mock_task.add_done_callback.assert_called_once_with(client._active_tasks.discard)
+
+
+async def test_request_writer_or_reader_none(client, mock_reader, mock_writer):
+    """Kills 'if writer is None and reader is None' mutant."""
+    client._writer = mock_writer
+    client._reader = None
+    with patch.object(client, "connect", new_callable=AsyncMock):
+        with pytest.raises(CannotConnect, match="No connection established"):
+            await client.request("GET", "/test")
+
+    client._writer = None
+    client._reader = mock_reader
+    with patch.object(client, "connect", new_callable=AsyncMock):
+        with pytest.raises(CannotConnect, match="No connection established"):
+            await client.request("GET", "/test")
+
+
+async def test_request_invalid_utf8_in_status_line_and_headers(client, mock_reader, mock_writer):
+    """Kills decode('utf-8') without 'ignore' mutants in status line, headers, and body."""
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            mock_reader.readline.side_effect = [
+                b"HTTP/1.1 200 OK \xff\xfe\r\n",
+                b"X-Custom-Header: val \xff\xfe\r\n",
+                b"Content-Type: text/plain \xff\xfe\r\n",
+                b"Content-Length: 7\r\n",
+                b"\r\n",
+            ]
+            mock_reader.readexactly.return_value = b"body\xff\xfe!"
+            mock_reader._waiter = None
+
+            response, error = await client.request("GET", "/test")
+            assert response == "body!"
+            assert error is None
+
+
+async def test_request_content_type_header_matching(client, mock_reader, mock_writer):
+    """Kills 'elif key != content-type' and content_type = None mutants."""
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            with patch("custom_components.climate_ip.protocol_8888._LOGGER.debug") as mock_debug:
+                mock_reader.readline.side_effect = [
+                    b"HTTP/1.1 200 OK\r\n",
+                    b"X-Other-Header: text/html\r\n",
+                    b"Content-Type: application/json\r\n",
+                    b"Content-Length: 2\r\n",
+                    b"\r\n",
+                ]
+                mock_reader.readexactly.return_value = b"{}"
+                mock_reader._waiter = None
+
+                response, error = await client.request("GET", "/test")
+                assert response == "{}"
+                assert error is None
+                mock_debug.assert_any_call(
+                    "%s Content-Length: %d, Content-Type: %s",
+                    client.log_prefix,
+                    2,
+                    "application/json",
+                )
+
+
+async def test_request_invalid_utf8_in_body_content_length(client, mock_reader, mock_writer):
+    """Kills mutant that removes 'ignore' from body decode in content-length path."""
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            mock_reader.readline.side_effect = [
+                b"HTTP/1.1 200 OK\r\n",
+                b"Content-Length: 4\r\n",
+                b"\r\n",
+            ]
+            mock_reader.readexactly.return_value = b"\x80abc"
+            mock_reader._waiter = None
+
+            response, error = await client.request("GET", "/test")
+            assert response == "abc"
+            assert error is None
+
+
+async def test_request_invalid_utf8_in_fallback_stream(client, mock_reader, mock_writer):
+    """Kills mutant that removes 'ignore' from buffer decode in raw fallback path."""
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            mock_reader.readline.side_effect = [
+                b"HTTP/1.1 200 OK\r\n",
+                b"\r\n",
+            ]
+            mock_reader.read.side_effect = [
+                b"\x80",
+                b'{"result": "ok"}',
+                b"",
+            ]
+            mock_reader._waiter = None
+
+            response, error = await client.request("GET", "/test")
+            assert response == '{"result": "ok"}'
+            assert error is None
+
+
+async def test_request_non_json_fallback_strict(client, mock_reader, mock_writer):
+    """
+    Kills logic mutants that break the non-json fallback decoding (e.g. removing 'ignore').
+    """
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context", return_value=MagicMock()):
+            # Simulate headers
+            mock_reader.readline.side_effect = [
+                b"HTTP/1.1 200 OK\r\n",
+                b"\r\n" # Chunked fallback
+            ]
+            # Simulate NON-JSON payload with an invalid UTF-8 byte
+            mock_reader.read.side_effect = [
+                b"PLAIN\x80TEXT",
+                b"" # EOF
+            ]
+            mock_reader._waiter = None
+
+            body, error = await client.request("GET", "/test")
+            
+            # STRICT ASSERTION: If the mutant alters decoding, it will either crash or return None.
+            assert error is None
+            assert body == "PLAINTEXT"
+
+
+
+
+
 
