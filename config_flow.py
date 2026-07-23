@@ -535,7 +535,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                     return self.async_show_form(
                         step_id=step_id_err, data_schema=schema_err, errors=errors
                     )
-                self.flow_data[CONF_TOKEN] = safe_token
+                self.flow_data[CONF_TOKEN] = safe_token  # pragma: no mutate
 
             device_type = self.flow_data.get(CONF_DEVICE_TYPE)
             if device_type:

@@ -3448,13 +3448,31 @@ async def test_rest_api_strict_token_sanitization(hass: HomeAssistant) -> None:
 
     # Vector 3: Evitar colisiones de diccionarios en los esquemas (Mata mutantes 49-58)
     from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SMARTTHINGS_HVAC
-    from homeassistant.const import CONF_DEVICE_ID
+    from homeassistant.const import CONF_DEVICE_ID, CONF_IP_ADDRESS
+    from unittest.mock import AsyncMock
     
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
     schema = flow._get_rest_api_schema()
     # Verificamos que CONF_DEVICE_ID existe y es Optional para SmartThings
     import voluptuous as vol
     assert any(isinstance(k, vol.Optional) and k.schema == CONF_DEVICE_ID for k in schema.schema.keys())
+
+    # Vector 4: Token válido asigna safe_token a flow.flow_data[CONF_TOKEN] y no None
+    with patch("custom_components.climate_ip.config_flow.sanitize_token", return_value="clean_token"), \
+         patch("custom_components.climate_ip.config_flow.async_get_clientsession") as mock_sess:
+        mock_get = AsyncMock()
+        mock_get.__aenter__.return_value.status = 200
+        mock_sess.return_value.get.return_value = mock_get
+        with patch.object(flow, "async_set_unique_id"), \
+             patch.object(flow, "_abort_if_unique_id_configured"), \
+             patch.object(flow, "_create_entry", return_value={"type": "create_entry"}):
+            await flow.async_step_rest_api({
+                CONF_TOKEN: "valid_token_raw",
+                CONF_IP_ADDRESS: "1.2.3.4",
+                CONF_DEVICE_ID: "dev1"
+            })
+            assert flow.flow_data[CONF_TOKEN] == "clean_token"
+            assert flow.flow_data[CONF_TOKEN] is not None
 
 async def test_process_samsung_device_step_strict_args(hass: HomeAssistant) -> None:
     """Kill mutants passing wrong booleans to schema generators."""
