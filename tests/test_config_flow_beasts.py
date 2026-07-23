@@ -577,9 +577,13 @@ async def test_test_connection_safe_strict_timeout(hass: HomeAssistant) -> None:
         
         await flow._test_connection_safe()
         
-        # Aserción letal: Extraemos los kwargs de la llamada HTTP y validamos el timeout
-        call_kwargs = mock_sess.return_value.get.call_args.kwargs
-        assert call_kwargs.get("timeout") == GLOBAL_HTTP_TIMEOUT
+        # 🔥 KILL SHOT: Aserción estricta de kwargs de red y argumento posicional de URL
+        assert mock_sess.return_value.get.called
+        call = mock_sess.return_value.get.call_args
+        assert len(call.args) == 1, "session.get debe recibir la URL como primer argumento posicional"
+        assert call.args[0] == "https://1.1.1.1:8888/api/test" or "1.1.1.1" in call.args[0]
+        assert "timeout" in call.kwargs, "Falta el timeout en la llamada de red HTTP"
+        assert call.kwargs["timeout"] == GLOBAL_HTTP_TIMEOUT
 
 def test_get_smartthings_token_empty_string(hass: HomeAssistant) -> None:
     """Mata M12: Verifica que devuelve '' cuando tok es None y no 'XXXX'."""

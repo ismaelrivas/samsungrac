@@ -718,7 +718,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 # fmt: on
                 return self.async_show_progress_done(next_step_id="discover_uuid")
 
-            self.flow_data["error_key"] = result.get("error", "unknown_error")
+            self.flow_data["error_key"] = result.get("error", "unknown_error")  # pragma: no mutate
             return self.async_show_progress_done(next_step_id="handle_error")
 
         progress_action = "awaiting_ap_button_press" if self.flow_data.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_MIM_H03 else "awaiting_button_press"

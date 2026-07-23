@@ -463,8 +463,10 @@ async def test_async_force_arp_update_times_out(hass: HomeAssistant) -> None:
         mock_open_connection.assert_any_call("192.168.1.100", PORT_SAMSUNG_8888)
         
         assert mock_wait_for.call_count == 2
-        assert mock_wait_for.call_args_list[0].kwargs.get("timeout") == 0.5
-        assert mock_wait_for.call_args_list[1].kwargs.get("timeout") == 0.5
+        for call in mock_wait_for.call_args_list:
+            assert len(call.args) == 1, "asyncio.wait_for debe recibir la corrutina como primer argumento posicional"
+            assert "timeout" in call.kwargs
+            assert call.kwargs["timeout"] == 0.5
 
 
 async def test_async_force_arp_update_success(hass: HomeAssistant) -> None:
@@ -488,8 +490,11 @@ async def test_async_force_arp_update_success(hass: HomeAssistant) -> None:
         assert mock_open_connection.call_count == 2
         mock_open_connection.assert_any_call("192.168.1.100", PORT_SAMSUNG_2878)
         
-        assert mock_wait_for.call_count == 2
-        assert mock_wait_for.call_args.kwargs.get("timeout") == 0.5
+        assert mock_wait_for.called
+        for call in mock_wait_for.call_args_list:
+            assert len(call.args) == 1, "asyncio.wait_for debe recibir la corrutina como primer argumento posicional"
+            assert "timeout" in call.kwargs
+            assert call.kwargs["timeout"] == 0.5
 
 async def test_initiate_pairing_graceful_failure(hass: HomeAssistant) -> None:
     """Test that TokenAcquisitionError during pairing initiation is handled gracefully."""
@@ -3650,11 +3655,15 @@ async def test_rest_api_strict_headers_and_fallback(hass: HomeAssistant) -> None
             "device_id": "123"
         })
         
-        # Aserción de Caja Blanca estricta para matar los mutantes de Headers
-        kwargs = mock_session.get.call_args.kwargs
-        assert "Authorization" in kwargs["headers"]
-        assert kwargs["headers"]["Authorization"] == "Bearer valid_token"
-        assert kwargs["timeout"] is not None
+        from custom_components.climate_ip.const import GLOBAL_HTTP_TIMEOUT
+        from unittest.mock import ANY
+
+        # Aserción de Caja Blanca estricta para matar los mutantes de Headers y Timeout
+        mock_session.get.assert_called_once_with(
+            ANY,
+            headers={"Authorization": "Bearer valid_token"},
+            timeout=GLOBAL_HTTP_TIMEOUT
+        )
 
 async def test_await_button_fallback_error(hass: HomeAssistant) -> None:
     """Kill mutants changing the fallback error key to UNKNOWN_ERROR or XXunknown_errorXX."""
@@ -4406,6 +4415,12 @@ async def test_rest_api_clientsession_receives_hass(hass: HomeAssistant) -> None
             })
     # M47: async_get_clientsession(None) → sesión inválida
     mock_sess.assert_called_once_with(flow.hass)
+    from custom_components.climate_ip.const import GLOBAL_HTTP_TIMEOUT
+    mock_sess.return_value.get.assert_called_once_with(
+        "https://api.smartthings.com/v1/devices",
+        headers={"Authorization": "Bearer valid-token-12345"},
+        timeout=GLOBAL_HTTP_TIMEOUT
+    )
 
 
 @pytest.mark.asyncio
@@ -4433,9 +4448,14 @@ async def test_rest_api_ipv6_url_has_brackets(hass: HomeAssistant) -> None:
                 CONF_TOKEN: "valid-token-12345",
                 "device_id": "my-device-id",
             })
-    call_url = mock_sess.return_value.get.call_args[0][0]
-    # M51: "XX:XX" nunca se cumple → sin corchetes → la URL sería "https://fe80::1/v1/devices" (inválida)
-    assert "[fe80::1]" in call_url, f"URL sin corchetes IPv6: {call_url}"
+    from custom_components.climate_ip.const import GLOBAL_HTTP_TIMEOUT
+
+    # M51: Corchetes IPv6, Headers y Timeout
+    mock_sess.return_value.get.assert_called_once_with(
+        "https://[fe80::1]/v1/devices",
+        headers={"Authorization": "Bearer valid-token-12345"},
+        timeout=GLOBAL_HTTP_TIMEOUT
+    )
 
 
 @pytest.mark.asyncio

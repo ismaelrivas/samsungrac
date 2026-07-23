@@ -21,3 +21,4 @@ mutants/
  
 .codebase-memory/
 mutantes*.txt
+tests/.codebase-memory/graph.db.zst
