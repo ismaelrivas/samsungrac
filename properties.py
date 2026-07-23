@@ -291,7 +291,7 @@ class DeviceProperty:
             try:
                 self._state_class = SensorStateClass(raw_state_class)
             except ValueError as e:
-                # Falla Rápido Estricto: Un YAML corrupto debe abortar la carga.
+                # Strict Fail-Fast: Corrupt YAML must abort loading.
                 raise ValueError(f"Invalid state_class '{raw_state_class}' in YAML") from e
         elif self._device_class in (
             "carbon_monoxide",
@@ -411,9 +411,7 @@ class GetJsonStatus(DeviceProperty):
         if hasattr(self.get_connection(None), "set_controller_ref"):  # pragma: no mutate
             self.get_connection(None).set_controller_ref(self._controller)  # pragma: no mutate
 
-        # El mutante mutmut_1 cambia la inicialización a "", lo cual es indetectable 
-        # porque la variable SIEMPRE es sobreescrita antes de usarse, o el método retorna temprano.
-        # Quitamos la asignación inicial para matar el código muerto.
+        # Declare local variable type annotation.
         device_state_result: dict[str, Any] | None
         connection = self.get_connection(None)
 
@@ -546,11 +544,11 @@ class DeviceOperation(DeviceProperty):
     async def async_set_value(self, v: Any, device_id: str | None = None) -> bool:
         """Set device property value asynchronously."""
         
-        # SANEAMIENTO FRONTAL: Validamos el payload antes de tocar la red
+        # FRONTEND SANITIZATION: Validate payload before hitting the network
         try:
             dev_value = self.convert_hass_to_dev(v)
         except ValueError as e:
-            _LOGGER.warning("%s Comando descartado para '%s': %s", self.log_prefix, self.id, e)  # pragma: no mutate
+            _LOGGER.warning("%s Command discarded for '%s': %s", self.log_prefix, self.id, e)  # pragma: no mutate
             return False
 
         connection = self.get_connection(v)
@@ -573,7 +571,7 @@ class DeviceOperation(DeviceProperty):
                 ):
                     duid_for_render = getattr(cfg, "duid", None)
 
-                # Ya tenemos dev_value calculado y validado arriba
+                # dev_value is already calculated and validated above
                 params = self._resolve_async_params(connection, dev_value, duid_for_render)
 
                 if params is None:
@@ -607,7 +605,7 @@ class DeviceOperation(DeviceProperty):
                         await self._controller.hass.async_add_executor_job(
                             connection.execute,
                             self.connection_template,
-                            dev_value,  # Usamos el valor saneado aquí también
+                            dev_value,  # Use sanitized value here as well
                             current_full_state,
                             device_id,
                         )
@@ -905,15 +903,15 @@ class BasicNumericOperation(DeviceOperation):
 
     def convert_hass_to_dev(self, ha_value: Any) -> Any:
         """Convert HASS state value to the device's expected value, clamped to min/max."""
-        # Si no hay límites, pasamos el valor crudo directamente.
+        # If no bounds set, pass raw value directly.
         if self._min is None and self._max is None:
             return ha_value
 
         try:
-            # Saneamiento estricto: forzamos el casting a float para la aritmética.
+            # Strict sanitization: force float cast for arithmetic.
             v = float(ha_value)
         except (ValueError, TypeError):
-            # Si HA inyecta 'unknown' o 'unavailable', esquivamos la evaluación matemática.
+            # If HA passes 'unknown' or 'unavailable', bypass math calculation.
             return ha_value
 
         if self._min is not None and v < self._min:
@@ -984,7 +982,7 @@ class TemperatureOperation(BasicNumericOperation):
                 unit = self._unit_template.render(device_state=device_state)
                 device_unit = UNIT_MAP.get(unit, device_unit)
             except Exception as e:  # pylint: disable=broad-exception-caught
-                _LOGGER.debug("Error rendering unit template: %s", e)
+                _LOGGER.debug("Error rendering unit template: %s", e)  # pragma: no mutate
 
         v = STATE_UNKNOWN
         if self.status_template is not None and device_state is not None:
@@ -1042,13 +1040,13 @@ class TemperatureOperation(BasicNumericOperation):
     def convert_hass_to_dev(self, ha_value: Any) -> float:
         """Convert HASS temperature to device unit, clamped to min/max."""
         try:
-            # Saneamiento estricto obligatorio.
+            # Mandatory strict sanitization.
             v = float(ha_value)
         except (ValueError, TypeError) as e:
-            # Falla Rápida: Denegamos transaccionalmente fijar una temperatura a "unknown".
-            # Esto será capturado por el try/except de async_set_value de forma segura.
+            # Fail-Fast: Reject setting temperature to "unknown".
+            # Caught safely by try/except block in async_set_value.
             raise ValueError(
-                f"Payload inválido: No se puede establecer la temperatura a '{ha_value}'"
+                f"Invalid payload: Cannot set temperature to '{ha_value}'"
             ) from e
 
         if self._min is not None:
