@@ -435,10 +435,16 @@ async def test_write_data_logic(connection):
 
     # 3. Flujo Feliz
     connection._writer = get_safe_mock_writer()
-    result = await connection._write_data("<Request/>")
-    assert result is True
-    connection._writer.write.assert_called_once_with(b"<Request/>")
-    connection._writer.drain.assert_awaited_once()
+    with patch("custom_components.climate_ip.samsung_2878.asyncio.timeout") as mock_timeout:
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock()
+        mock_ctx.__aexit__ = AsyncMock()
+        mock_timeout.return_value = mock_ctx
+        result = await connection._write_data("<Request/>")
+        assert result is True
+        connection._writer.write.assert_called_once_with(b"<Request/>")
+        connection._writer.drain.assert_awaited_once()
+        mock_timeout.assert_called_once_with(5.0)
 
     # 4. Fallo de Red (TimeoutError / OSError)
     connection._writer = get_safe_mock_writer()
@@ -1126,8 +1132,8 @@ async def test_connection_manager_queues_and_cleanup(connection):
     with patch("asyncio.wait", side_effect=mock_wait), \
          patch.object(connection, "_process_command_queue", new_callable=AsyncMock) as mock_cmd:
         
-        # Al procesar el comando forzamos un RuntimeError para romper el loop
-        mock_cmd.side_effect = RuntimeError("Crash to finally")
+        # Al procesar el comando forzamos un OSError para romper el loop
+        mock_cmd.side_effect = OSError("Crash to finally")
         
         call_count = 0
         def mock_create_task(coro):

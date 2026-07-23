@@ -103,7 +103,6 @@ async def test_00_read_full_response_decode_timeout_block(connection):
         assert res == "partial_data"
 
 
-
 @pytest.mark.asyncio
 async def test_00_async_execute_fast_fail_backoff(connection):
     """Mata el mutante 'if self._is_ready.is_set()' en async_execute ANTES de que cuelgue tests de integración."""
@@ -121,3 +120,47 @@ async def test_00_async_execute_fast_fail_backoff(connection):
 
     with pytest.raises(CannotConnect):
         await connection.async_execute(None, None, None, None)
+
+
+def test_00_socket_timeout_value(connection):
+    """Mata mutante en linea 107 (self._socket_timeout = float(GLOBAL_HTTP_TIMEOUT) + 10.0)."""
+    from custom_components.climate_ip.samsung_2878 import GLOBAL_HTTP_TIMEOUT
+    assert connection._socket_timeout == float(GLOBAL_HTTP_TIMEOUT) + 10.0
+
+
+def test_00_load_from_yaml_dict_get_default(connection):
+    """Mata mutante en linea 298 (params_node = node.get(..., {}))."""
+    res = connection.load_from_yaml({"other_key": 123}, None)
+    assert res is False
+
+
+@pytest.mark.asyncio
+async def test_00_connection_manager_read_task_creation(connection):
+    """Mata mutante ID 11 en linea 1268: self._read_task = asyncio.create_task(reader.read(8192)) -> None.
+
+    Estrategia: Mockeamos asyncio.create_task para devolver un mock_task sin crear
+    tareas reales (evita lingering tasks). Mockeamos asyncio.wait para lanzar
+    CancelledError y salir del while True en la primera iteración.
+    Si el mutante reemplaza la línea con None, self._reader.read nunca se invoca
+    (la coroutine nunca se crea) y la aserción falla.
+    """
+    connection._writer = MagicMock()
+    connection._writer.is_closing.return_value = False
+    connection._reader = MagicMock()
+    connection._reader.read = AsyncMock(return_value=b"data")
+
+    mock_task = AsyncMock()
+    mock_task.done.return_value = False
+    mock_task.cancel = MagicMock()
+
+    with patch("custom_components.climate_ip.samsung_2878.asyncio.create_task", return_value=mock_task), \
+         patch("custom_components.climate_ip.samsung_2878.asyncio.wait", side_effect=asyncio.CancelledError()), \
+         patch("custom_components.climate_ip.samsung_2878.asyncio.sleep", new_callable=AsyncMock), \
+         patch.object(connection, "_close_connection", new_callable=AsyncMock):
+        try:
+            await connection._connection_manager()
+        except asyncio.CancelledError:
+            pass
+
+    # Si el mutante pone `self._read_task = None`, reader.read(8192) nunca se invoca → falla aquí
+    connection._reader.read.assert_called_with(8192)

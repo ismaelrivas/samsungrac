@@ -793,7 +793,7 @@ class ConnectionSamsung2878(Connection):
                 exc_info=True,
             )  # pragma: no mutate
             return buffer.decode("utf-8", errors="ignore") if buffer else None
-        except Exception as e:
+        except (TimeoutError, OSError) as e:
             _LOGGER.error("%s Error during read: %s", self.log_prefix, e, exc_info=True)  # pragma: no mutate
             await self._close_connection()
             return None
@@ -1302,7 +1302,7 @@ class ConnectionSamsung2878(Connection):
                     #         continue  # pragma: no mutate
                     #     task.cancel()
 
-                except Exception as e:
+                except (TimeoutError, OSError) as e:
                     _LOGGER.error(
                         "%s Unhandled exception in connection manager: %s",
                         self.log_prefix,

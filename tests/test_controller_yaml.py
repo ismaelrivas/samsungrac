@@ -610,3 +610,162 @@ def test_yaml_controller_climate_state_mapping(mock_state_class, mock_yaml_contr
         swing_modes=["on", "off"],
         preset_modes=["eco"],
     )
+
+
+def test_yaml_controller_unique_id_property(mock_yaml_controller) -> None:
+    """Aniquila mutantes en la propiedad unique_id probando todas las combinaciones."""
+    # 1. Sub-dispositivo con unique_id simple -> Sufijo _device_id
+    mock_yaml_controller._unique_id = "mac_123"
+    mock_yaml_controller._device_id = "sub_1"
+    assert mock_yaml_controller.unique_id == "mac_123_sub_1"
+
+    # 2. Sub-dispositivo que ya incluye _device_id en unique_id -> No duplica
+    mock_yaml_controller._unique_id = "mac_123_sub_1"
+    mock_yaml_controller._device_id = "sub_1"
+    assert mock_yaml_controller.unique_id == "mac_123_sub_1"
+
+    # 3. Dispositivo principal con device_id "0" -> Mantiene unique_id original
+    mock_yaml_controller._unique_id = "mac_123"
+    mock_yaml_controller._device_id = "0"
+    assert mock_yaml_controller.unique_id == "mac_123"
+
+    # 4. device_id es None -> Devuelve unique_id
+    mock_yaml_controller._unique_id = "mac_123"
+    mock_yaml_controller._device_id = None
+    assert mock_yaml_controller.unique_id == "mac_123"
+
+    # 5. unique_id es None -> Devuelve None
+    mock_yaml_controller._unique_id = None
+    mock_yaml_controller._device_id = "sub_1"
+    assert mock_yaml_controller.unique_id is None
+
+
+def test_yaml_controller_delegated_properties(mock_yaml_controller) -> None:
+    """Aniquila mutantes en las propiedades delegadas simples."""
+    # name
+    mock_yaml_controller.loader.name = "Test AC Name"
+    assert mock_yaml_controller.name == "Test AC Name"
+
+    # config
+    assert mock_yaml_controller.config is mock_yaml_controller._config
+
+    # ip_address
+    mock_yaml_controller._ip_address = "192.168.1.50"
+    assert mock_yaml_controller.ip_address == "192.168.1.50"
+
+    # debug
+    mock_yaml_controller._debug = True
+    assert mock_yaml_controller.debug is True
+
+    # poll
+    mock_yaml_controller.loader.poll = True
+    assert mock_yaml_controller.poll is True
+
+    # id
+    mock_yaml_controller._unique_id = "uid_999"
+    assert mock_yaml_controller.id == "uid_999"
+
+    # state_attributes
+    mock_yaml_controller._attributes = {"controller": "uid_999", "attr_1": 10}
+    assert mock_yaml_controller.state_attributes == {"controller": "uid_999", "attr_1": 10}
+
+    # temperature_unit
+    assert mock_yaml_controller.temperature_unit == "°C"
+
+    # service_schema_map
+    mock_yaml_controller.loader.service_schema_map = {"schema_key": "schema_val"}
+    assert mock_yaml_controller.service_schema_map == {"schema_key": "schema_val"}
+
+    # operations
+    mock_yaml_controller.loader.operations_list = ["op_power", "op_temp"]
+    assert mock_yaml_controller.operations == ["op_power", "op_temp"]
+
+    # attributes
+    mock_yaml_controller.loader.properties_list = ["attr_curr_temp"]
+    assert mock_yaml_controller.attributes == ["attr_curr_temp"]
+
+
+def test_yaml_controller_last_poll_data(mock_yaml_controller) -> None:
+    """Aniquila mutantes en last_poll_data."""
+    # Sin state_getter -> None
+    mock_yaml_controller.loader.state_getter = None
+    assert mock_yaml_controller.last_poll_data is None
+
+    # Con state_getter -> Devuelve value
+    mock_state_getter = MagicMock()
+    mock_state_getter.value = {"raw_temp": 25}
+    mock_yaml_controller.loader.state_getter = mock_state_getter
+    assert mock_yaml_controller.last_poll_data == {"raw_temp": 25}
+
+
+def test_yaml_controller_connection_diagnostics(mock_yaml_controller) -> None:
+    """Aniquila mutantes en connection_diagnostics."""
+    # Sin conexión -> Dict vacío
+    mock_yaml_controller.loader.connection = None
+    assert mock_yaml_controller.connection_diagnostics == {}
+
+    # Con conexión -> Devuelve diagnostics
+    mock_conn = MagicMock()
+    mock_conn.get_diagnostics.return_value = {"latency_ms": 12, "connected": True}
+    mock_yaml_controller.loader.connection = mock_conn
+    assert mock_yaml_controller.connection_diagnostics == {"latency_ms": 12, "connected": True}
+
+
+def test_yaml_controller_device_state(mock_yaml_controller) -> None:
+    """Aniquila mutantes en device_state comprobando la jerarquía poller -> loader -> dict vacío."""
+    # 1. Poller tiene _last_device_state -> Devuelve estado de poller
+    mock_yaml_controller.poller._last_device_state = {"poller_key": "val1"}
+    assert mock_yaml_controller.device_state == {"poller_key": "val1"}
+
+    # 2. Poller _last_device_state es None, loader tiene state_getter -> Devuelve loader value
+    mock_yaml_controller.poller._last_device_state = None
+    mock_state_getter = MagicMock()
+    mock_state_getter.value = {"loader_key": "val2"}
+    mock_yaml_controller.loader.state_getter = mock_state_getter
+    assert mock_yaml_controller.device_state == {"loader_key": "val2"}
+
+    # 3. Ninguno tiene datos -> Devuelve dict vacío
+    mock_yaml_controller.loader.state_getter = None
+    assert mock_yaml_controller.device_state == {}
+
+
+@pytest.mark.asyncio
+async def test_yaml_controller_async_delegates_and_noop(mock_yaml_controller) -> None:
+    """Aniquila mutantes en async_get_status, async_update_state, async_shutdown, y async_refresh_from_connection."""
+    # async_get_status
+    mock_yaml_controller.poller.async_get_status = AsyncMock(return_value={"status": "ok"})
+    assert await mock_yaml_controller.async_get_status() == {"status": "ok"}
+    mock_yaml_controller.poller.async_get_status.assert_called_once()
+
+    # async_update_state
+    mock_yaml_controller.poller.async_update_state = AsyncMock(return_value={"state": "active"})
+    assert await mock_yaml_controller.async_update_state() == {"state": "active"}
+    mock_yaml_controller.poller.async_update_state.assert_called_once()
+
+    # async_shutdown
+    mock_yaml_controller.poller.async_shutdown = AsyncMock()
+    await mock_yaml_controller.async_shutdown()
+    mock_yaml_controller.poller.async_shutdown.assert_called_once()
+
+    # async_refresh_from_connection (no-op)
+    res = await mock_yaml_controller.async_refresh_from_connection()
+    assert res is None
+
+
+def test_platform_schema_validation() -> None:
+    """Aniquila mutantes en la definición de PLATFORM_SCHEMA."""
+    from homeassistant.const import CONF_PLATFORM
+    from custom_components.climate_ip.controller_yaml import PLATFORM_SCHEMA
+
+    valid_config = {
+        CONF_PLATFORM: "climate_ip",
+        CONF_CONFIG_FILE: "device.yaml",
+        CONF_IP_ADDRESS: "192.168.1.10",
+        CONF_TOKEN: "abc",
+        CONF_DEVICE_ID: "dev1",
+    }
+    validated = PLATFORM_SCHEMA(valid_config)
+    assert validated[CONF_CONFIG_FILE] == "device.yaml"
+    assert validated[CONF_IP_ADDRESS] == "192.168.1.10"
+    assert validated[CONF_TOKEN] == "abc"
+    assert validated[CONF_DEVICE_ID] == "dev1"
