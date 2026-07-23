@@ -63,7 +63,7 @@ SUPPORTED_FEATURES_MAP: Final[dict[str, ClimateEntityFeature]] = {
     ATTR_PRESET_MODE: ClimateEntityFeature.PRESET_MODE,
 }
 
-# MAPA ESTRICTO PARA PREDICCIONES OPTIMISTAS (Elimina el vector de ataque hasattr dinámico)
+# Strict map for optimistic predictions (removes dynamic hasattr attack vector)
 ALLOWED_OPTIMISTIC_CORRECTIONS: Final[dict[str, str]] = {
     const.ATTR_TEMPERATURE: "_attr_target_temperature",
     ATTR_HVAC_MODE: "_attr_hvac_mode",
@@ -144,7 +144,7 @@ async def async_setup_entry(
                 (d for d in entry.data.get(CONF_DEVICES, []) if d.get("id") == device_id),
                 None,
             )
-            # PROTECCIÓN DE LA FACTORÍA: Evitar creación de entidades zombies si la config está corrupta
+            # Factory protection: Prevent creation of zombie entities if config is corrupted
             if not device_info:
                 _LOGGER.error("Device info missing for device %s. Skipping entity creation to prevent orphan objects.", device_id) # pragma: no mutate
                 continue
@@ -237,7 +237,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             )
         )
 
-        # PARSEO DEFENSIVO DEL STEP DE TEMPERATURA
+        # Defensive parsing of temperature step
         try:
             step: float = float(configured_step)
         except (ValueError, TypeError):
