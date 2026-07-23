@@ -385,8 +385,6 @@ class ConnectionSamsung2878(Connection):
                 "%s Queuing post-reconnection status request", self.log_prefix
             )  # pragma: no mutate
 
-            # irp
-            # future = asyncio.get_event_loop().create_future()
             future = asyncio.get_running_loop().create_future()
             await self._cmd_queue.put((command, future))
 
@@ -762,7 +760,7 @@ class ConnectionSamsung2878(Connection):
         return True
 
     async def _read_full_response(self, timeout: float = 10.0) -> str | None:
-        if not self._reader or self._reader.at_eof(): # IRP ojo con esta
+        if not self._reader or self._reader.at_eof():
             return None
         try:
             buffer = b""  # pragma: no mutate
@@ -820,12 +818,6 @@ class ConnectionSamsung2878(Connection):
         if not response_xml:
             return False, False, None  # pragma: no mutate
 
-        # irp
-        # if not (
-        #     hasattr(self, "_controller")
-        #     and self._controller
-        #     and getattr(self._controller, "hass", None)
-        # ):
         if not (self._controller and self._controller.hass):
             raise RuntimeError(
                 "Home Assistant instance is required for parsing XML securely"  # pragma: no mutate
@@ -1318,11 +1310,6 @@ class ConnectionSamsung2878(Connection):
                     await asyncio.sleep(self._reconnect_delay + jitter)
         finally:
             _LOGGER.debug("%s Connection manager exiting, cleaning up", self.log_prefix)  # pragma: no mutate
-            # irp
-            # if self._read_task and not self._read_task.done():
-            #     self._read_task.cancel()
-            # if queue_task and not queue_task.done():
-            #     queue_task.cancel()
             for task in (self._read_task, queue_task):
                 if task and not task.done():
                     task.cancel()
@@ -1369,7 +1356,7 @@ class ConnectionSamsung2878(Connection):
                 COMMAND_TIMEOUT,
             )  # pragma: no mutate
 
-        # Fast-fail honesto: Si no estamos listos y ya hemos fallado antes, fallamos rápido para no colgar Home Assistant.
+        # Fast-fail: If not ready and already failed, fail fast to prevent hanging Home Assistant.
         if not self._is_ready.is_set() and self._reconnect_retries > 0:
              _LOGGER.debug(
                  "%s Connection is in retry backoff. Fast-failing command execution.",
@@ -1404,8 +1391,6 @@ class ConnectionSamsung2878(Connection):
                 mask_sensitive_data(command.strip().replace("\n", "")),
             )  # pragma: no mutate
 
-            # irp
-            # future = asyncio.get_event_loop().create_future()
             future = asyncio.get_running_loop().create_future()
             await self._cmd_queue.put((command, future))
 
