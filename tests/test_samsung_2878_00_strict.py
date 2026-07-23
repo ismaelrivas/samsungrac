@@ -18,7 +18,7 @@ async def test_00_io_strict_timeouts_and_reads(connection):
 
     mock_timeout_ctx = MagicMock()
     mock_timeout_ctx.__aenter__ = AsyncMock()
-    mock_timeout_ctx.__aexit__ = AsyncMock()
+    mock_timeout_ctx.__aexit__ = AsyncMock(return_value=False)
 
     with patch("custom_components.climate_ip.samsung_2878.asyncio.timeout", return_value=mock_timeout_ctx) as mock_timeout, \
          patch.object(connection, "_close_connection", new_callable=AsyncMock):
@@ -164,3 +164,49 @@ async def test_00_connection_manager_read_task_creation(connection):
 
     # Si el mutante pone `self._read_task = None`, reader.read(8192) nunca se invoca → falla aquí
     connection._reader.read.assert_called_with(8192)
+
+
+@pytest.mark.asyncio
+async def test_async_execute_ready_but_with_past_retries(connection):
+    """
+    Kills the mutant at line 1360: 'if not self._is_ready.is_set() and...'
+    Tests that a valid command IS executed even if _reconnect_retries > 0, 
+    as long as the connection IS ready.
+    """
+    connection._ensure_callback_linked = MagicMock()
+    connection.start_listening = MagicMock()
+    connection._manager_task = MagicMock()
+    connection._manager_task.done.return_value = False
+
+    # 1. Configuramos el estado: LA CONEXIÓN ESTÁ LISTA.
+    connection._is_ready.set()
+    
+    # 2. Configuramos el estado: Hubo errores en el pasado (retries > 0).
+    connection._reconnect_retries = 3
+    
+    # 3. Mocks para evitar la red real
+    async def mock_put(item):
+        cmd, future = item
+        if not future.done():
+            future.set_result("ok")
+
+    connection._cmd_queue = MagicMock()
+    connection._cmd_queue.put = AsyncMock(side_effect=mock_put)
+    
+    # Como el comando debe ejecutarse (no caer en el fast-fail), evitamos que se quede colgado en await future
+    mock_timeout_ctx = MagicMock()
+    mock_timeout_ctx.__aenter__ = AsyncMock()
+    mock_timeout_ctx.__aexit__ = AsyncMock(return_value=False)
+    with patch("custom_components.climate_ip.samsung_2878.asyncio.timeout", return_value=mock_timeout_ctx):
+        # Ejecutamos el método. 
+        # Si el mutante (if self._is_ready.is_set() and ...) está vivo, entrará al if,
+        # lanzará CannotConnect y el test fallará, matando al mutante.
+        try:
+            await connection.async_execute("cmd", "url", "<test/>", None)
+        except Exception as e:
+            # El RuntimeError("CannotConnect") del mutante hará fallar el test aquí
+            assert type(e).__name__ != "CannotConnect", "The mutant survived and aborted a valid command!"
+        
+        # Comprobamos que el comando sí entró a la cola (es decir, el if no lo bloqueó)
+        connection._cmd_queue.put.assert_awaited_once()
+

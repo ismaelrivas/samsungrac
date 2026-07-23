@@ -438,7 +438,7 @@ async def test_write_data_logic(connection):
     with patch("custom_components.climate_ip.samsung_2878.asyncio.timeout") as mock_timeout:
         mock_ctx = MagicMock()
         mock_ctx.__aenter__ = AsyncMock()
-        mock_ctx.__aexit__ = AsyncMock()
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
         mock_timeout.return_value = mock_ctx
         result = await connection._write_data("<Request/>")
         assert result is True
@@ -449,8 +449,14 @@ async def test_write_data_logic(connection):
     # 4. Fallo de Red (TimeoutError / OSError)
     connection._writer = get_safe_mock_writer()
     connection._writer.drain.side_effect = OSError("Network drop")
-    with pytest.raises(CannotConnect):
-        await connection._write_data("test2")
+    with patch("custom_components.climate_ip.samsung_2878.asyncio.timeout") as mock_timeout:
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock()
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_timeout.return_value = mock_ctx
+        with pytest.raises(CannotConnect):
+            await connection._write_data("test2")
+        mock_timeout.assert_any_call(5.0)
     assert connection._writer is None
 
 
@@ -672,7 +678,7 @@ async def test_async_execute_timeout_and_success(connection):
         
     # 2. Timeout esperando a que esté listo (Dispara la excepción)
     connection._reconnect_retries = 0
-    with patch("asyncio.timeout", side_effect=TimeoutError):
+    with patch("custom_components.climate_ip.samsung_2878.asyncio.timeout", side_effect=TimeoutError):
         with pytest.raises(CannotConnect, match="Timeout waiting for connection"):
             await connection.async_execute(None, None, "<Test/>", None)
             
@@ -1822,7 +1828,7 @@ async def test_io_strict_timeouts_and_reads(connection):
     # Mockeamos el Async Context Manager de asyncio.timeout
     mock_timeout_ctx = MagicMock()
     mock_timeout_ctx.__aenter__ = AsyncMock()
-    mock_timeout_ctx.__aexit__ = AsyncMock()
+    mock_timeout_ctx.__aexit__ = AsyncMock(return_value=False)
     
     with patch("custom_components.climate_ip.samsung_2878.asyncio.timeout", return_value=mock_timeout_ctx) as mock_timeout, \
          patch.object(connection, "_close_connection", new_callable=AsyncMock):
