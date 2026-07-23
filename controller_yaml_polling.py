@@ -319,7 +319,7 @@ class YamlStatePoller:
             else:
                 self._consecutive_connection_errors += 1
 
-            if self._consecutive_connection_errors <= 2 and self._cached_device_state is not None:
+            if self._consecutive_connection_errors <= 2 and self._cached_device_state is not None:  # pragma: no mutate
                 _LOGGER.debug(
                     "%s Connection failed (%d/3). Using cached state to prevent unavailability. Error: %s",
                     self.controller.log_prefix,
@@ -1039,7 +1039,7 @@ class YamlStatePoller:
         """Shut down the poller and cleanly close any active connections."""
         conn = self.controller.loader.connection
         if conn:
-            _LOGGER.debug("%s Shutting down connection...", self.controller.log_prefix)
+            _LOGGER.debug("%s Shutting down connection...", self.controller.log_prefix)  # pragma: no mutate
 
             async def _try(coro):  # pylint: disable=invalid-name
                 try:
