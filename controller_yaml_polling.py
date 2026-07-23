@@ -999,11 +999,7 @@ class YamlStatePoller:
         _LOGGER.debug(  # pragma: no mutate
             "%s [Predict] prop_to_change found: %s. Setting its _value to: %s",
             self.controller.log_prefix,
-            # FORENSIC LOGGING:
-            # Removed the "unknown" string fallback. A missing ID will natively 
-            # evaluate to 'None' during string interpolation, which is semantically 
-            # accurate for debugging and eliminates dead-code mutation vectors.
-            # getattr(prop_to_change, "id", "unknown"),
+            # FORENSIC LOGGING: A missing ID evaluates to 'None' during string interpolation.
             getattr(prop_to_change, "id"),
 
             new_value,

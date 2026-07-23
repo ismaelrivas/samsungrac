@@ -1286,7 +1286,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         token_def = str(self.flow_data.get(CONF_TOKEN) or "")
         is_samsung = is_8888 or device_type == DEVICE_TYPE_SAMSUNG_2878
         
-        # CERTIFICATE HARDENING (Kills mutants 38, 39)
+        # CERTIFICATE HARDENING
         cert_def = str(self.flow_data.get(CONF_CERT, "")).strip()
         if not cert_def:
             cert_def = "ac14k_m.pem" if is_samsung else ""
@@ -1306,7 +1306,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             self.flow_data[CONF_CERT] = str(user_input.get(CONF_CERT) or "")
 
             if device_type not in (DEVICE_TYPE_SMARTTHINGS_HVAC, DEVICE_TYPE_SMARTTHINGS_DHW):
-                # FAIL FAST APPLIED: No phantom fallbacks (Kills mutants 74, 76, 77)
+                # FAIL FAST APPLIED: No phantom fallbacks
                 ip_for_mac = str(self.flow_data[CONF_IP_ADDRESS])
                 mac_for_mac = self.flow_data.get(CONF_MAC)
                 error_reason = await self._async_resolve_mac_and_set_unique_id(
@@ -1368,7 +1368,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 target_cert_name = "ac14k_m.pem"
                 target_cert = cert_value if cert_value else target_cert_name
                 
-                # FAIL FAST APPLIED: Direct dictionary access (Kills mutants 166, 168, 169)
+                # FAIL FAST APPLIED: Direct dictionary access
                 ip_val = str(self.flow_data[CONF_IP_ADDRESS])
                 
                 if is_8888:

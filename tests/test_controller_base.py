@@ -182,8 +182,9 @@ async def test_create_controller_initialization_failure(caplog) -> None:
         [InitFailsController],
     ):
         with caplog.at_level(logging.ERROR):
-            controller = await create_controller("fail_init", {}, logger)
-            assert controller is None
+            from custom_components.climate_ip.controller import ControllerInitializationError
+            with pytest.raises(ControllerInitializationError):
+                await create_controller("fail_init", {}, logger)
             assert "Failed to initialize controller for type fail_init" in caplog.text
 
 
