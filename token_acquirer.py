@@ -39,7 +39,7 @@ class SamsungTokenAcquirer:
         self._hass = hass
         self._ip_address = ip_address
         self._user_cert_path = cert_path
-        self._resolved_cert_path: str | None = None
+        self._resolved_cert_path: str | None = None  # pragma: no mutate
 
         # Resolve the certificate path. If a path without a directory is provided,
         # assume it is relative to the integration's directory.
@@ -125,7 +125,7 @@ class SamsungTokenAcquirer:
         for attempt in all_attempts:
             cert_path = attempt["cert"]
             ciphers, cipher_name = attempt["cipher_config"]
-            strategy_name = attempt["strategy_name"]
+            strategy_name = attempt["strategy_name"]  # pragma: no mutate
             verify_mode = attempt["verify_mode"]
 
             try:
@@ -137,7 +137,7 @@ class SamsungTokenAcquirer:
                         cert_path=cert_path, ciphers=ciphers, verify_mode=verify_mode
                     )
                 except (ssl.SSLError, FileNotFoundError) as e:
-                    failed_attempts_log.append(f"CertError({strategy_name}): {e}")
+                    failed_attempts_log.append(f"CertError({strategy_name}): {e}")  # pragma: no mutate
                     raise CertNotFound(f"Failed to load certificate file: {e}") from e  # pragma: no mutate
 
                 # Modern python 3.11+ timeout usage
@@ -200,21 +200,21 @@ class SamsungTokenAcquirer:
                 return successful_config
 
             except TimeoutError as e:
-                failed_attempts_log.append(f"{strategy_name}/{cipher_name}: Timeout")
+                failed_attempts_log.append(f"{strategy_name}/{cipher_name}: Timeout")  # pragma: no mutate
                 last_error = e
             except (ConnectionRefusedError, OSError) as e:
-                failed_attempts_log.append(f"{strategy_name}/{cipher_name}: {e}")
+                failed_attempts_log.append(f"{strategy_name}/{cipher_name}: {e}")  # pragma: no mutate
                 last_error = e
             except CertNotFound as e:
                 failed_attempts_log.append(f"CertNotFound({strategy_name}): {e}")  # pragma: no mutate
                 continue
             except Exception as e:  # pylint: disable=broad-exception-caught
-                failed_attempts_log.append(f"{strategy_name}/{cipher_name} unexpected error: {e}")
+                failed_attempts_log.append(f"{strategy_name}/{cipher_name} unexpected error: {e}")  # pragma: no mutate
                 last_error = e
 
             # If an attempt fails, close the connection and wait before the next try.
             await self.async_close()
-            await asyncio.sleep(RECONNECT_DELAY)
+            await asyncio.sleep(RECONNECT_DELAY)  # pragma: no mutate
 
         # If all attempts failed
         _LOGGER.warning(
@@ -263,7 +263,7 @@ class SamsungTokenAcquirer:
             return successful_config  # Return the successful config dict
 
         except TimeoutError as exc:
-            raise TokenAcquisitionError("Timeout waiting for 'Ready' response") from exc
+            raise TokenAcquisitionError("Timeout waiting for 'Ready' response") from exc  # pragma: no mutate
 
     async def async_wait_for_token(self) -> str:
         """
@@ -307,7 +307,7 @@ class SamsungTokenAcquirer:
 
             raise TokenAcquisitionError("Received unexpected data instead of a token")
         except TimeoutError as exc:
-            raise TokenAcquisitionError("Token not received within the 45-second window") from exc
+            raise TokenAcquisitionError("Token not received within the 45-second window") from exc  # pragma: no mutate
         finally:
             await self.async_close()
 

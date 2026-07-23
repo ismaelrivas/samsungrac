@@ -1,6 +1,6 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
 """Tests for SamsungTokenAcquirer (2878 pairing)."""
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, call
 import asyncio
 import ssl
 import pytest
@@ -30,26 +30,23 @@ def acquirer(mock_hass):
     return acq
 
 def test_initialization(mock_hass):
-    """Test that the acquirer initializes state variables correctly.
+    """Test that the acquirer initializes state variables correctly."""
+    acq_no_cert = SamsungTokenAcquirer(mock_hass, "192.168.1.100", cert_path=None)
+    assert acq_no_cert._hass is mock_hass
+    assert acq_no_cert._hass is not None
+    assert acq_no_cert._ip_address == "192.168.1.100"
+    assert len(acq_no_cert._ip_address) > 0
+    assert acq_no_cert._user_cert_path is None
+    assert acq_no_cert._resolved_cert_path is None
+    assert acq_no_cert._resolved_cert_path != ""
+    assert acq_no_cert._reader is None
+    assert acq_no_cert._writer is None
 
-    Each assertion targets a specific mutation:
-    - `is mock_hass` kills the None Fallback on self._hass = hass
-    - `== "192.168.1.100"` kills the Empty String Fallback on self._ip_address
-    - `is None` kills mutations on default assignments
-    """
-    acquirer = SamsungTokenAcquirer(mock_hass, "192.168.1.100", cert_path=None)
-    # Identity check: mutating `hass` to `None` will fail this
-    assert acquirer._hass is mock_hass
-    assert acquirer._hass is not None
-    # Value check: mutating `ip_address` to "" will fail this
-    assert acquirer._ip_address == "192.168.1.100"
-    assert len(acquirer._ip_address) > 0
-    # Verify cert_path propagation
-    assert acquirer._user_cert_path is None
-    assert acquirer._resolved_cert_path is None
-    # Verify stream handles start as None
-    assert acquirer._reader is None
-    assert acquirer._writer is None
+    acq_cert = SamsungTokenAcquirer(mock_hass, "192.168.1.100", cert_path="/path/to/my_cert.pem")
+    assert acq_cert._user_cert_path == "/path/to/my_cert.pem"
+    assert acq_cert._user_cert_path is not None
+    assert acq_cert._resolved_cert_path == "/path/to/my_cert.pem"
+    assert acq_cert._resolved_cert_path != ""
 
 async def test_init_state_propagates_to_connect(mock_hass):
     """Test that __init__ state variables are correctly used by _connect.
@@ -242,17 +239,27 @@ async def test_successful_pairing_and_token(acquirer):
         b'<Update Type="Authenticate" Status="Success" Token="11112222-3333-4444-5555-666677778888"/>',
     ]
 
+    mock_timeout_ctx = MagicMock()
+    mock_timeout_ctx.__aenter__ = AsyncMock()
+    mock_timeout_ctx.__aexit__ = AsyncMock(return_value=False)
+
     with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
         with patch(
             "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
             return_value=MagicMock(),
         ):
-            config = await acquirer.async_initiate_pairing()
-            assert config is not None
-            mock_writer.write.assert_called_with(b'<Request Type="GetToken" />\r\n')
-            
-            token = await acquirer.async_wait_for_token()
-            assert token == "11112222-3333-4444-5555-666677778888"
+            with patch(
+                "custom_components.climate_ip.token_acquirer.asyncio.timeout",
+                return_value=mock_timeout_ctx,
+            ) as mock_timeout:
+                config = await acquirer.async_initiate_pairing()
+                assert config == {"cert": None, "verify_mode": ssl.CERT_NONE}
+                mock_writer.write.assert_called_with(b'<Request Type="GetToken" />\r\n')
+                
+                token = await acquirer.async_wait_for_token()
+                assert token == "11112222-3333-4444-5555-666677778888"
+                assert mock_reader.read.call_args_list == [call(4096), call(4096), call(4096)]
+                assert mock_timeout.call_args_list == [call(15.0), call(15.0), call(15.0), call(45.0)]
 
 async def test_wait_for_token_timeout(acquirer):
     """Test timeout in async_wait_for_token."""
@@ -364,10 +371,7 @@ async def test_initiate_pairing_invalidate_account(acquirer):
 
     with patch.object(acquirer, "_connect", return_value={"cert": None, "verify_mode": 0}):
         config = await acquirer.async_initiate_pairing()
-        # If Mutmut corrupts "InvalidateAccount" to "XXInvalidateAccountXX",
-        # the `in` check fails, is_valid_resp becomes False, and
-        # TokenAcquisitionError("Did not receive 'Ready'") is raised.
-        # This assertion catches that.
+        mock_reader.read.assert_called_once_with(4096)
         assert config is not None
         assert config.get("verify_mode") == 0
 
@@ -416,6 +420,7 @@ async def test_close_swallows_errors():
 
 async def test_connect_user_cert(acquirer):
     """Test that _connect tries user cert and returns correct config."""
+    acquirer._user_cert_path = "/tmp/user_cert.pem"
     acquirer._resolved_cert_path = "/tmp/user_cert.pem"
     
     mock_reader = AsyncMock()
@@ -434,9 +439,8 @@ async def test_connect_user_cert(acquirer):
             assert first_call_kwargs["ciphers"] == "HIGH:!DH:!aNULL:@SECLEVEL=0"
             assert first_call_kwargs["verify_mode"] == ssl.CERT_REQUIRED
             
-            assert config is not None
-            assert config.get("cert") == acquirer._user_cert_path
-            assert config.get("verify_mode") == ssl.CERT_REQUIRED
+            assert config == {"cert": "/tmp/user_cert.pem", "verify_mode": ssl.CERT_REQUIRED}
+            assert config["cert"] is not None
 
 async def test_connect_default_cert_fallback(acquirer):
     """Test that _connect falls back to default cert if first strategies fail."""
