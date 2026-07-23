@@ -67,9 +67,9 @@ def test_try_create_repair_issue_flow(mock_async_create_issue):
     assert mock_async_create_issue.called
     assert mock_async_create_issue.call_count == 1
     
-    # Call without hass object (should return early)
+    # Call without hass object (tests 3rd arg default 'None' of getattr)
     mock_async_create_issue.reset_mock()
-    mock_controller.hass = None
+    poller.controller = MagicMock(spec=[])
     poller._try_create_repair_issue()
     assert not mock_async_create_issue.called
 
@@ -96,7 +96,7 @@ async def test_async_update_state_early_exits_and_ping():
             
         # Aserciones estrictas del pre-check (Frente de Red)
         mock_controller.config.get.assert_called_with("device_type")
-        mock_ping.assert_called_once()
+        mock_ping.assert_called_once_with("192.168.1.100", mock_controller.log_prefix)
         
         # Mata mutantes en la matemática del contador (ej. += 2 en lugar de += 1)
         assert poller._consecutive_connection_errors == 1
@@ -464,7 +464,7 @@ async def test_async_update_state_sniper_network_ping():
         with pytest.raises(CannotConnect, match="^Host unreachable \\(ICMP ping failed\\). Device is persistently offline.$"):
             await poller.async_update_state()
             
-        assert mock_ping.called
+        mock_ping.assert_called_once_with("192.168.1.100", mock_controller.log_prefix)
         assert poller._consecutive_connection_errors == 2
 
         # 2. Ping falla de nuevo (colapso)
@@ -484,13 +484,12 @@ async def test_async_update_state_sniper_network_ping():
         assert res == {"state": "ping_failed_but_recovered"}
 
 
-def test_try_create_repair_issue_missing_hass():
+@patch("custom_components.climate_ip.controller_yaml_polling.async_create_issue")
+def test_try_create_repair_issue_missing_hass(mock_create_issue):
     """Aniquila mutante de `getattr(self.controller, 'hass', None) -> getattr(...)`"""
-    poller = YamlStatePoller(MagicMock())
-    # Mock destructivo: borramos el atributo para forzar la evaluación del default (None)
-    delattr(poller.controller, "hass")
-    # Si mutmut eliminó el default 'None', esto lanzará AttributeError.
-    poller._try_create_repair_issue() 
+    poller = YamlStatePoller(MagicMock(spec=[]))
+    poller._try_create_repair_issue()
+    mock_create_issue.assert_not_called() 
 
 
 async def test_async_shutdown_raw_client_circuit():

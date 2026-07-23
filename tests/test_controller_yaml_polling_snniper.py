@@ -525,6 +525,7 @@ async def test_update_properties_private_value_pending():
     # Si mutmut alteró las sentencias hasattr('_value') o la asignación, '_value' seguirá siendo "old_val"
     assert prop_private._value == "NEW_DATA"
 
+@pytest.mark.asyncio
 async def test_async_update_state_boundary_cache_fallback():
     """Aniquila M71 (<= mutado a <) y M72 (is not None mutado a is None)."""
     mock_controller = DummyController()
@@ -551,6 +552,7 @@ async def test_async_update_state_boundary_cache_fallback():
     assert res == {"status": "saved_by_the_bell"}
     assert poller._consecutive_connection_errors == 2
 
+@pytest.mark.asyncio
 async def test_async_update_state_mutant_split_index():
     """Aniquila M75 y M77 (split(None) y split(":")[+1])."""
     mock_controller = DummyController()
@@ -580,6 +582,7 @@ async def test_async_update_state_mutant_split_index():
     assert "Unreachable Host" in error_msg
     assert "Network" not in error_msg
 
+@pytest.mark.asyncio
 async def test_mutant_71_boundary_less_than_two():
     """Mata el mutante que cambia <= 2 por < 2."""
     mock_controller = DummyController()
@@ -603,6 +606,7 @@ async def test_mutant_71_boundary_less_than_two():
         # Si el mutante (< 2) actúa, evaluará False, ignorará la caché y lanzará UpdateFailed.
         pytest.fail("Mutante M71 (< 2) detectado: La caché fue ignorada en la frontera exacta.")
 
+@pytest.mark.asyncio
 async def test_mutant_74_75_split_logic():
     """Mata los mutantes de split(None) y split(':')[+1]."""
     mock_controller = DummyController()
@@ -621,26 +625,4 @@ async def test_mutant_74_75_split_logic():
         await poller.async_update_state()
         
     # Producción original sacará estrictamente el último elemento después de los dos puntos.
-    # El Mutante de (None) escupirá el string completo. El mutante [+1] escupirá "Segment2".
-    assert str(exc_info.value) == "Device unreachable: Segment3", "Mutantes M74/M75 detectados en el formateo del log."
-
-async def test_mutant_74_75_split_logic():
-    """Mata los mutantes de split(None) y split(':')[+1]."""
-    mock_controller = DummyController()
-    mock_controller.ip_address = None  # APAGAMOS EL PRE-CHEQUEO DE RED
-    poller = YamlStatePoller(mock_controller)
-    
-    async def mock_update_state(*args, **kwargs):
-        # 3 Segmentos. SIN espacios.
-        raise CannotConnect("Segment1:Segment2:Segment3")
-        
-    poller.controller.loader.state_getter = NakedObj(async_update_state=mock_update_state)
-    poller._consecutive_connection_errors = 3
-    poller._cached_device_state = None
-    
-    with pytest.raises(UpdateFailed) as exc_info:
-        await poller.async_update_state()
-        
-    # Producción original sacará estrictamente el último elemento después de los dos puntos.
-    # El Mutante de (None) escupirá el string completo. El mutante [+1] escupirá "Segment2".
     assert str(exc_info.value) == "Device unreachable: Segment3", "Mutantes M74/M75 detectados en el formateo del log."

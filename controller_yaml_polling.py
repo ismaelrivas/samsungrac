@@ -72,7 +72,7 @@ class YamlStatePoller:
     async def _refresh_smartthings_token(self) -> str | None:
         """Attempt to refresh an expired SmartThings token using the official HA integration."""
         try:
-            # Saneamiento de la dependencia de Home Assistant
+            # Home Assistant dependency check
             if not getattr(self.controller, "hass", None):
                 return None
                 
@@ -270,8 +270,6 @@ class YamlStatePoller:
                 self.controller.log_prefix,
             )
             new_token = await self._refresh_smartthings_token()
-            # irp
-            # if new_token and new_token != getattr(self.controller, "token", None):
             if new_token and new_token != self.controller.token:
                 _LOGGER.info(  # pragma: no mutate
                     "%s [Auth] Automatically retrieved new Access Token from SmartThings integration.",
@@ -286,10 +284,6 @@ class YamlStatePoller:
 
                 try:
                     full_device_state = (
-                        # irp
-                        # await self.controller.loader.state_getter.async_update_state(
-                        #     None, getattr(self.controller, "debug", False)
-                        # )
                         await self.controller.loader.state_getter.async_update_state(
                             None, self.controller.debug
                         )
@@ -337,14 +331,6 @@ class YamlStatePoller:
             if self._consecutive_connection_errors == 3:
                 self._try_create_repair_issue()
 
-            # Using .split(":")[-1] natively handles strings without ":" (returning the 
-            # whole string) and extracts the last segment identically, eliminating 
-            # parametric dead code and equivalent mutation vectors.
-            # str(e).rsplit(":", maxsplit=1)[-1].strip() if ":" in str(e) else str(e)
-            # irp
-            # reason_parts = str(e).split(":")
-            # reason = reason_parts[-1].strip() if reason_parts else str(e)
-
             reason = str(e).split(":")[-1].strip()  # pragma: no mutate
 
             _LOGGER.debug(  # pragma: no mutate
@@ -373,9 +359,7 @@ class YamlStatePoller:
             try:
                 device_type = self.controller.config.get(CONF_DEVICE_TYPE)
                 
-                # Acceso seguro a la caché interna del loader
-                # irp
-                # cache = getattr(self.controller.loader, "_parsed_yaml_cache", {})
+                # Safe access to loader's internal cache
                 cache = self.controller.loader._parsed_yaml_cache
                 id_map = (
                     cache.get(getattr(self.controller, "device_id", "XXXX"), {})
@@ -408,10 +392,6 @@ class YamlStatePoller:
                             device_to_discover = self.controller.discovered_devices[0]
 
                         if device_to_discover:
-                            # irp
-                            # discovered_id = get_value_by_path(
-                            #     device_to_discover, id_map.get("id", [])
-                            # )
                             id_path = id_map.get("id")
                             discovered_id = get_value_by_path(device_to_discover, id_path) if id_path else None
                             
@@ -448,10 +428,7 @@ class YamlStatePoller:
             full_device_state,
             current_hass_state=current_state,
         )
-        # Acceso seguro a .value de state_getter
-        # irp
-        # st_getter = getattr(self.controller.loader, "state_getter", None)
-        # return getattr(st_getter, "value", None)
+        # Safe access to state_getter .value
         return self.controller.loader.state_getter.value
 
     async def async_update_properties_from_state(
@@ -482,8 +459,6 @@ class YamlStatePoller:
         device_to_process = full_device_state
 
         try:
-            # irp
-            # cache = getattr(self.controller.loader, "_parsed_yaml_cache", {})
             cache = self.controller.loader._parsed_yaml_cache
             id_map = (
                 cache.get(getattr(self.controller, "device_id", "XXXX"), {})
@@ -577,8 +552,8 @@ class YamlStatePoller:
             
             op_value = getattr(op, "value", getattr(op, "_value", None))
             
-            # EL BLINDAJE CONTRA LA DEGRADACIÓN A "UNKNOWN"
-            # Verificamos que 'values' exista y NO esté vacío antes de evaluar
+            # GUARD AGAINST DEGRADATION TO "UNKNOWN"
+            # Verify that 'values' exists and is NOT empty before evaluating
             op_values = getattr(op, "values", None)
             if (
                 op_values
@@ -591,8 +566,6 @@ class YamlStatePoller:
                         op.value = new_value
                     elif hasattr(op, "_value"):
                         op._value = new_value
-                    # irp
-                    # corrections[getattr(op, "id", "unknown")] = new_value
                     corrections[op.id] = new_value
 
                     if getattr(op, "feature_flag", getattr(op, "_feature_flag", None)) == ClimateEntityFeature.FAN_MODE:
@@ -614,7 +587,7 @@ class YamlStatePoller:
             "%Y-%m-%d %H:%M:%S"
         )
         
-        # Setter respetuoso
+        # Respectful setter
         if hasattr(self.controller, "update_state_attributes"):
             self.controller.update_state_attributes(new_attrs)
         elif hasattr(self.controller, "_attributes"):
@@ -644,12 +617,6 @@ class YamlStatePoller:
         """Reconstruct the device state payload using cached values and HA entity state."""
         if not self.controller.loader.is_fully_initialized:
             return None
-        # irp
-        # st_getter = getattr(self.controller.loader, "state_getter", None)
-        # if not st_getter:
-        #     return None
-
-        # last_real_state = getattr(st_getter, "value", None)
         st_getter = self.controller.loader.state_getter
         if not st_getter:
             return None
@@ -681,12 +648,6 @@ class YamlStatePoller:
 
     async def _build_device_state_from_props(self) -> dict[str, Any] | None:
         """Reconstruct the device state using current internal properties."""
-        # irp
-        # st_getter = getattr(self.controller.loader, "state_getter", None)
-        # if not st_getter:
-        #     return None
-
-        # last_real_state = getattr(st_getter, "value", None)
         st_getter = self.controller.loader.state_getter
         if not st_getter:
             return None
@@ -712,8 +673,6 @@ class YamlStatePoller:
             is_2878 = (
                 self.controller.config.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_SAMSUNG_2878
             )
-            # irp
-            # op_id = getattr(op, "id", "")
             op_id = op.id
 
             if op_id in ("hvac", "hvac_mode", ATTR_HVAC_MODE):
@@ -862,16 +821,10 @@ class YamlStatePoller:
         if not new_data:
             return False
 
-        current_hass_state = None  # pragma: no mutates
+        current_hass_state = None  # pragma: no mutate
         if hasattr(self.controller, "get_current_state_callback") and self.controller.get_current_state_callback:
             current_hass_state = self.controller.get_current_state_callback()
 
-        # irp    
-        # if not current_hass_state:
-        #     st_getter = getattr(self.controller.loader, "state_getter", None)
-        #     if not st_getter:
-        #         return False
-        #     base_raw_state = getattr(st_getter, "value", None)
         if not current_hass_state:
             st_getter = self.controller.loader.state_getter
             if not st_getter:
@@ -905,10 +858,6 @@ class YamlStatePoller:
 
         self._evict_invalidated_pending_updates(new_data)
 
-        # irp
-        # st_getter = getattr(self.controller.loader, "state_getter", None)
-        # if st_getter:
-        #     if hasattr(st_getter, "value"):
         st_getter = self.controller.loader.state_getter
         if st_getter:
             if hasattr(st_getter, "value"):
@@ -1002,18 +951,12 @@ class YamlStatePoller:
         new_value: Any,
     ) -> tuple[ClimateEntityFeature, dict[str, Any]]:
         """Predict the expected state after command to improve UI responsiveness."""
-        # irp
-        # if (
-        #     not getattr(self.controller.loader, "state_getter", None)
-        #     or not self.controller.loader.is_fully_initialized
-        # ):
         if (
             not self.controller.loader.state_getter
             or not self.controller.loader.is_fully_initialized
         ):
             return ClimateEntityFeature(0), {}
-        # irp
-        # last_real_state = getattr(self.controller.loader.state_getter, "value", None)
+
         last_real_state = self.controller.loader.state_getter.value
         if not last_real_state:
             return ClimateEntityFeature(0), {}
@@ -1023,8 +966,6 @@ class YamlStatePoller:
             del self._pending_updates[property_name]
 
         for op in list(self.controller.loader.operations.values()):
-            # irp
-            # op_id = getattr(op, "id", None)
             op_id = op.id
             if op_id:
                 hass_attr = self._get_hass_attr_for_op_id(op_id)
@@ -1036,8 +977,6 @@ class YamlStatePoller:
                         op._value = val
                         
         for prop in list(self.controller.loader.properties.values()):
-            # irp
-            # prop_id = getattr(prop, "id", None)
             prop_id = prop.id
             if prop_id:
                 hass_attr = self._get_hass_attr_for_op_id(prop_id)
@@ -1098,8 +1037,6 @@ class YamlStatePoller:
 
     async def async_shutdown(self) -> None:
         """Shut down the poller and cleanly close any active connections."""
-        # irp
-        # conn = getattr(self.controller.loader, "connection", None)
         conn = self.controller.loader.connection
         if conn:
             _LOGGER.debug("%s Shutting down connection...", self.controller.log_prefix)
@@ -1113,12 +1050,10 @@ class YamlStatePoller:
             if hasattr(conn, "stop_listening"):
                 await _try(conn.stop_listening())
 
-            # Cierre delegado a la fachada para no invadir variables protegidas
+            # Delegated shutdown to facade to avoid accessing protected variables
             if hasattr(self.controller, "close_shared_client"):
                 await _try(self.controller.close_shared_client())
             elif hasattr(self.controller, "_shared_raw_client"):
-                # irp
-                # raw_client = getattr(self.controller, "_shared_raw_client", None)
                 raw_client = self.controller._shared_raw_client
                 if raw_client and hasattr(raw_client, "close"):
                     await _try(raw_client.close())
