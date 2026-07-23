@@ -767,3 +767,152 @@ async def test_async_setup_entry_partial_corruption_kills_mutant_16():
     
     assert len(entities_created) == 1, "The 'break' mutant survived by aborting the entire loop!"
     assert entities_created[0].entity_description.key == "samsung_ac_valid_device"
+
+
+# ============================================================
+# SIEGE TESTS: Annihilate 22 Survivors in climate.py
+# ============================================================
+
+# --- available property (5 mutants: lines 298-300) ---
+
+def test_climate_available_no_coordinator(base_climate_entity: ClimateIP) -> None:
+    """Kill mutants 1-3 in available: returns False when coordinator is None."""
+    base_climate_entity.coordinator = None
+    assert base_climate_entity.available is False
+
+
+def test_climate_available_last_update_failed(base_climate_entity: ClimateIP) -> None:
+    """Kill mutants in available: returns False when last_update_success is False."""
+    base_climate_entity.coordinator.last_update_success = False
+    base_climate_entity.coordinator.data = MagicMock()
+    assert base_climate_entity.available is False
+
+
+def test_climate_available_data_none(base_climate_entity: ClimateIP) -> None:
+    """Kill mutants in available: returns False when data is None."""
+    base_climate_entity.coordinator.last_update_success = True
+    base_climate_entity.coordinator.data = None
+    assert base_climate_entity.available is False
+
+
+def test_climate_available_success(base_climate_entity: ClimateIP) -> None:
+    """Kill mutants in available: returns True when coordinator, last_update_success and data are valid."""
+    base_climate_entity.coordinator.last_update_success = True
+    base_climate_entity.coordinator.data = MagicMock()
+    assert base_climate_entity.available is True
+
+
+# --- supported_features property (3 mutants: lines 316-317) ---
+
+def test_climate_supported_features_swing_continue_and_bitwise(base_climate_entity: ClimateIP) -> None:
+    """Kill mutants 9-11 in supported_features.
+    
+    1. Mutant 9 changes 'continue' to 'break' when ATTR_SWING_MODE is in ops but swing_modes is empty.
+       If 'break' is executed, ATTR_PRESET_MODE (which comes after SWING_MODE in SUPPORTED_FEATURES_MAP)
+       would be skipped.
+    2. Mutants 10 & 11 change '|=' to '&='.
+    """
+    from homeassistant.components.climate import ClimateEntityFeature
+
+    base_climate_entity.coordinator.operations = [
+        HA_ATTR_TEMPERATURE,
+        ATTR_SWING_MODE,
+        ATTR_PRESET_MODE,
+    ]
+    base_climate_entity._attr_swing_modes = []  # Empty swing_modes forces 'continue'
+    
+    features = base_climate_entity.supported_features
+    
+    # Must include TARGET_TEMPERATURE and PRESET_MODE, but NOT SWING_MODE
+    assert ClimateEntityFeature.TARGET_TEMPERATURE in features
+    assert ClimateEntityFeature.PRESET_MODE in features
+    assert ClimateEntityFeature.SWING_MODE not in features
+
+
+
+# --- extra_state_attributes property (2 mutants: lines 411, 419) ---
+
+def test_climate_extra_state_attributes_filtering(base_climate_entity: ClimateIP) -> None:
+    """Kill mutants 1 & 2 in extra_state_attributes.
+    
+    Mutant 1 replaces core_attrs set with None (causes TypeError on iteration).
+    Mutant 2 changes 'if k not in core_attrs' to 'if k in core_attrs'.
+    """
+    base_climate_entity.coordinator.state_attributes = {
+        HA_ATTR_TEMPERATURE: 22.0,
+        ATTR_HVAC_MODE: HVACMode.COOL,
+        "custom_attribute_1": "value1",
+        "custom_attribute_2": 42,
+    }
+    
+    extra_attrs = base_climate_entity.extra_state_attributes
+    
+    # Must only contain non-core attributes
+    assert extra_attrs == {
+        "custom_attribute_1": "value1",
+        "custom_attribute_2": 42,
+    }
+
+
+# --- min_temp property (6 mutants: lines 452-458) ---
+
+def test_climate_min_temp_from_coordinator_property(base_climate_entity: ClimateIP) -> None:
+    """Kill mutants 1, 3, 5 in min_temp when coordinator property object is valid."""
+    from homeassistant.components.climate.const import ATTR_MIN_TEMP
+    mock_prop = MagicMock()
+    mock_prop.value = "17.5"
+    base_climate_entity.coordinator.get_property_object.side_effect = (
+        lambda key: mock_prop if key == ATTR_MIN_TEMP else None
+    )
+    
+    assert base_climate_entity.min_temp == 17.5
+
+
+def test_climate_min_temp_fallback_on_none_prop(base_climate_entity: ClimateIP) -> None:
+    """Kill mutants 2, 4, 6 in min_temp when get_property_object returns None."""
+    from custom_components.climate_ip.const import DEFAULT_CLIMATE_IP_TEMP_MIN
+    base_climate_entity.coordinator.get_property_object.return_value = None
+    
+    assert base_climate_entity.min_temp == float(DEFAULT_CLIMATE_IP_TEMP_MIN)
+
+
+def test_climate_min_temp_fallback_on_invalid_value(base_climate_entity: ClimateIP) -> None:
+    """Kill mutants when min_t_prop.value is None or invalid string (TypeError/ValueError)."""
+    from custom_components.climate_ip.const import DEFAULT_CLIMATE_IP_TEMP_MIN
+    mock_prop = MagicMock()
+    mock_prop.value = "invalid_number"
+    base_climate_entity.coordinator.get_property_object.return_value = mock_prop
+    
+    assert base_climate_entity.min_temp == float(DEFAULT_CLIMATE_IP_TEMP_MIN)
+
+
+# --- max_temp property (6 mutants: lines 463-469) ---
+
+def test_climate_max_temp_from_coordinator_property(base_climate_entity: ClimateIP) -> None:
+    """Kill mutants 1, 3, 5 in max_temp when coordinator property object is valid."""
+    from homeassistant.components.climate.const import ATTR_MAX_TEMP
+    mock_prop = MagicMock()
+    mock_prop.value = "31.0"
+    base_climate_entity.coordinator.get_property_object.side_effect = (
+        lambda key: mock_prop if key == ATTR_MAX_TEMP else None
+    )
+    
+    assert base_climate_entity.max_temp == 31.0
+
+
+def test_climate_max_temp_fallback_on_none_prop(base_climate_entity: ClimateIP) -> None:
+    """Kill mutants 2, 4, 6 in max_temp when get_property_object returns None."""
+    from custom_components.climate_ip.const import DEFAULT_CLIMATE_IP_TEMP_MAX
+    base_climate_entity.coordinator.get_property_object.return_value = None
+    
+    assert base_climate_entity.max_temp == float(DEFAULT_CLIMATE_IP_TEMP_MAX)
+
+
+def test_climate_max_temp_fallback_on_invalid_value(base_climate_entity: ClimateIP) -> None:
+    """Kill mutants when max_t_prop.value is None or invalid string (TypeError/ValueError)."""
+    from custom_components.climate_ip.const import DEFAULT_CLIMATE_IP_TEMP_MAX
+    mock_prop = MagicMock()
+    mock_prop.value = "invalid_number"
+    base_climate_entity.coordinator.get_property_object.return_value = mock_prop
+    
+    assert base_climate_entity.max_temp == float(DEFAULT_CLIMATE_IP_TEMP_MAX)
