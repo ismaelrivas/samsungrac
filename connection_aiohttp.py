@@ -10,7 +10,7 @@ import asyncio
 import copy
 import inspect
 import logging
-import os
+from pathlib import Path
 import ssl
 from dataclasses import dataclass, field
 from typing import Any, cast
@@ -97,7 +97,7 @@ class ConnectionAiohttp8888(Connection):
             _LOGGER.error(err_msg)  # pragma: no mutate
 
         # Check if cert is missing
-        if not self._cert_path or not os.path.exists(self._cert_path):
+        if not self._cert_path or not Path(self._cert_path).exists():
             # Only error if we are NOT in insecure mode (SmartThings/Emulator uses insecure_ssl=True)
             if not config.get("insecure_ssl", False):
                 err_msg = "[aiohttp_init] Certificate file not found or invalid at %s"  # pragma: no mutate
@@ -136,7 +136,7 @@ class ConnectionAiohttp8888(Connection):
         """Resolve the full path to the certificate file."""
         from .helpers import resolve_cert_path
 
-        return resolve_cert_path(cert_file, os.path.dirname(__file__), self._hass)  # pragma: no mutate
+        return resolve_cert_path(cert_file, str(Path(__file__).parent), self._hass)  # pragma: no mutate
 
     async def _create_ssl_context(self) -> ssl.SSLContext | None:
         """
@@ -148,7 +148,7 @@ class ConnectionAiohttp8888(Connection):
         """
         # Read insecure_ssl. It comes from 'config' passed to __init__.
         insecure_ssl = self._config.get("insecure_ssl", False)  # pragma: no mutate
-        has_cert = self._cert_path and os.path.exists(self._cert_path)  # pragma: no mutate
+        has_cert = self._cert_path and Path(self._cert_path).exists()  # pragma: no mutate
 
         if not has_cert and not insecure_ssl:
             # Standard Secure Cloud Connection

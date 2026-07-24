@@ -3,6 +3,7 @@
 
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
 import homeassistant.helpers.config_validation as cv
@@ -91,7 +92,7 @@ class YamlConfigLoader:
         """Perform initial YAML configuration loading and set up the base connection."""
         file = getattr(self.controller, "_yaml", None)
         if file is not None and file.find("\\") == -1 and file.find("/") == -1:
-            file = os.path.join(os.path.dirname(__file__), file)
+            file = str(Path(__file__).parent / file)
         _LOGGER.debug("%s Loading configuration file: %s", self.controller.log_prefix, file)  # pragma: no mutate
 
         if file is None:

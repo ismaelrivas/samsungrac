@@ -5,7 +5,7 @@ import asyncio
 import copy
 import inspect
 import logging
-import os
+from pathlib import Path
 import time
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlparse
@@ -133,8 +133,8 @@ class ConnectionRaw8888(Connection):
 
         self._host: str | None = ip_address or cast(str | None, config.get(CONF_IP_ADDRESS))  # pragma: no mutate
         cert_file = config.get(CONF_CERT)
-        if cert_file and not os.path.dirname(cert_file):
-            cert_file = os.path.join(os.path.dirname(__file__), cert_file)
+        if cert_file and not ("/" in cert_file or "\\" in cert_file):
+            cert_file = str(Path(__file__).parent / cert_file)
         self._cert = cert_file
         self._controller: "ClimateController | None" = None  # Initialize controller reference
         self._client: Samsung8888Client | None = None

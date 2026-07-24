@@ -16,7 +16,7 @@ frequent TLS renegotiation.
 import asyncio
 import copy
 import logging
-import os
+from pathlib import Path
 import re
 import ssl
 import time
@@ -218,7 +218,7 @@ class ConnectionRequestBase(Connection):
             cert_file = hass_config.get(CONF_CERT, None)
             if cert_file is not None:
                 if cert_file.find("\\") == -1 and cert_file.find("/") == -1:
-                    cert_file = os.path.join(os.path.dirname(__file__), cert_file)
+                    cert_file = str(Path(__file__).parent / cert_file)
 
             self._params[CONF_CERT] = cert_file
 

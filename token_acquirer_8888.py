@@ -3,7 +3,7 @@
 
 import asyncio
 import logging
-import os
+from pathlib import Path
 import re
 import ssl
 from typing import Any
@@ -32,8 +32,8 @@ class SamsungTokenAcquirer8888:
         self._ac_ip = ac_ip
 
         # Resolve the certificate path.
-        if cert_path and not os.path.dirname(cert_path):
-            self._cert_path = os.path.join(os.path.dirname(__file__), cert_path)
+        if cert_path and not ("/" in cert_path or "\\" in cert_path):
+            self._cert_path = str(Path(__file__).parent / cert_path)
         else:
             self._cert_path = cert_path
         _LOGGER.debug("Final resolved certificate path for token acquirer: %s", self._cert_path)  # pragma: no mutate

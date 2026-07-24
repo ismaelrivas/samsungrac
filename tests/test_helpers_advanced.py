@@ -198,6 +198,95 @@ class TestResolveCertPath:
 
         assert resolve_cert_path(None, "/base/dir") is None
 
+    def test_resolve_cert_path_with_hass_slash(self):
+        """Test resolve_cert_path with hass for a path containing slashes."""
+        from unittest.mock import MagicMock
+        from custom_components.climate_ip.helpers import resolve_cert_path
+
+        mock_hass = MagicMock()
+        mock_hass.config.path.return_value = "/ha/config/my_cert.pem"
+
+        res = resolve_cert_path("subdir/my_cert.pem", "/base/dir", hass=mock_hass)
+        assert res == "/ha/config/my_cert.pem"
+        mock_hass.config.path.assert_called_once_with("subdir/my_cert.pem")
+
+    def test_resolve_cert_path_with_hass_filename_only(self):
+        """Test resolve_cert_path with hass for filename only."""
+        from pathlib import Path
+        from unittest.mock import MagicMock
+        from custom_components.climate_ip.helpers import resolve_cert_path
+        import custom_components.climate_ip.helpers as helpers
+
+        mock_hass = MagicMock()
+        res = resolve_cert_path("ac14k_m.pem", "/base/dir", hass=mock_hass)
+        assert res == str(Path(helpers.__file__).parent / "ac14k_m.pem")
+
+    def test_resolve_cert_path_hass_attribute_error(self):
+        """Test resolve_cert_path when hass raises AttributeError."""
+        from unittest.mock import PropertyMock, patch
+        from custom_components.climate_ip.helpers import resolve_cert_path
+
+        class FaultyHass:
+            @property
+            def config(self):
+                raise AttributeError("No config")
+
+        from pathlib import Path
+        res = resolve_cert_path("subdir/my_cert.pem", "/base/dir", hass=FaultyHass())
+        assert res == str(Path("subdir/my_cert.pem"))
+
+    def test_resolve_cert_path_no_base_dir(self):
+        """Test resolve_cert_path when base_dir is empty."""
+        from pathlib import Path
+        from custom_components.climate_ip.helpers import resolve_cert_path
+        import custom_components.climate_ip.helpers as helpers
+
+        res = resolve_cert_path("ac14k_m.pem", base_dir="")
+        assert res == str(Path(helpers.__file__).parent / "ac14k_m.pem")
+
+
+class TestValidatePollInterval:
+    """Tests for validate_poll_interval helper function."""
+
+    def test_validate_poll_interval_int(self):
+        from custom_components.climate_ip.helpers import validate_poll_interval
+
+        assert validate_poll_interval(60) == 60
+
+    def test_validate_poll_interval_float(self):
+        from custom_components.climate_ip.helpers import validate_poll_interval
+
+        assert validate_poll_interval(60.0) == 60
+
+    def test_validate_poll_interval_str(self):
+        from custom_components.climate_ip.helpers import validate_poll_interval
+
+        assert validate_poll_interval("00:01:00") == 60
+
+    def test_validate_poll_interval_invalid_str(self):
+        import pytest
+        from custom_components.climate_ip.helpers import validate_poll_interval
+
+        with pytest.raises(ValueError, match="Invalid time format"):
+            validate_poll_interval("invalid_time_string")
+
+    def test_validate_poll_interval_boundary(self):
+        from custom_components.climate_ip.helpers import validate_poll_interval
+        from custom_components.climate_ip.const import MIN_POLL_INTERVAL, MAX_POLL_INTERVAL
+
+        assert validate_poll_interval(MIN_POLL_INTERVAL) == MIN_POLL_INTERVAL
+        assert validate_poll_interval(MAX_POLL_INTERVAL) == MAX_POLL_INTERVAL
+
+    def test_validate_poll_interval_out_of_range(self):
+        import pytest
+        from custom_components.climate_ip.helpers import validate_poll_interval
+
+        with pytest.raises(ValueError, match="Interval must be between"):
+            validate_poll_interval(4)
+
+        with pytest.raises(ValueError, match="Interval must be between"):
+            validate_poll_interval(21601)
+
 def test_token_sanitization() -> None:
     """Validate token sanitization against injection."""
     from custom_components.climate_ip.helpers import sanitize_token

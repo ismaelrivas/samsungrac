@@ -4,6 +4,7 @@
 import asyncio
 import logging
 import os
+from pathlib import Path
 import random
 import re
 import socket
@@ -222,8 +223,8 @@ class ConnectionSamsung2878(Connection):
 
             duid = re.sub(":", "", mac) if (mac := hass_config.get(CONF_MAC)) else None
 
-            if (cert_file := hass_config.get(CONF_CERT) or "") and not os.path.dirname(
-                cert_file
+            if (cert_file := hass_config.get(CONF_CERT) or "") and not (
+                "/" in cert_file or "\\" in cert_file
             ):
                 log_prefix = (
                     f"[{duid[-6:]}]"
@@ -235,7 +236,7 @@ class ConnectionSamsung2878(Connection):
                     log_prefix,
                     cert_file,
                 )  # pragma: no mutate
-                cert_file = os.path.join(os.path.dirname(__file__), cert_file)
+                cert_file = str(Path(__file__).parent / cert_file)
 
             raw_token, raw_ip, device_id = (
                 hass_config.get(CONF_TOKEN),
@@ -283,8 +284,8 @@ class ConnectionSamsung2878(Connection):
             # Resolve relative path in preferred config if needed, to match the runtime behavior
             pref_cert = self._last_successful_config.get("cert")
             if pref_cert and not os.path.dirname(pref_cert):
-                self._last_successful_config["cert"] = os.path.join(
-                    os.path.dirname(__file__), pref_cert
+                self._last_successful_config["cert"] = str(
+                    Path(os.path.dirname(__file__)) / pref_cert
                 )
 
     def load_from_yaml(self, node: dict[str, Any] | None, connection_base: Any) -> bool:
@@ -357,9 +358,9 @@ class ConnectionSamsung2878(Connection):
                 and self._last_successful_config["cert"]
             ):
                 # Expose only the filename, not the full path, for privacy/security
-                safe_config["cert_filename"] = os.path.basename(
+                safe_config["cert_filename"] = Path(
                     self._last_successful_config["cert"]
-                )
+                ).name
             if "cipher_name" in self._last_successful_config:
                 safe_config["cipher_name"] = self._last_successful_config["cipher_name"]
             diag["last_successful_config"] = safe_config
@@ -477,8 +478,8 @@ class ConnectionSamsung2878(Connection):
         # For No-Cert strategies, we prioritize Suite D (allows Anonymous) because !aNULL (A/B/C) forces server auth.
         no_cert_ciphers = [suite_d, suite_a, suite_b, suite_c]  # pragma: no mutate
 
-        default_cert_path = os.path.join(
-            os.path.dirname(__file__), DEFAULT_CONF_CERT_FILE
+        default_cert_path = str(
+            Path(__file__).parent / DEFAULT_CONF_CERT_FILE
         )
         strategies = (
             [

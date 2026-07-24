@@ -3,7 +3,7 @@
 
 import asyncio
 import logging
-import os
+from pathlib import Path
 import re
 import ssl
 from typing import Any
@@ -44,9 +44,9 @@ class SamsungTokenAcquirer:
         # Resolve the certificate path. If a path without a directory is provided,
         # assume it is relative to the integration's directory.
         if cert_path:
-            if not os.path.dirname(cert_path):
-                self._resolved_cert_path = os.path.join(
-                    os.path.dirname(__file__), cert_path
+            if not ("/" in cert_path or "\\" in cert_path):
+                self._resolved_cert_path = str(
+                    Path(__file__).parent / cert_path
                 )
             else:
                 # The path is absolute or contains directory components, use it as is.
@@ -80,7 +80,7 @@ class SamsungTokenAcquirer:
 
         # Define certificate strategies based on user input
         resolved_user_cert = self._resolved_cert_path
-        default_cert_path = os.path.join(os.path.dirname(__file__), "ac14k_m.pem")
+        default_cert_path = str(Path(__file__).parent / "ac14k_m.pem")
 
         strategies: list[dict[str, Any]] = []
         if resolved_user_cert:
@@ -187,7 +187,7 @@ class SamsungTokenAcquirer:
                 if cert_path == resolved_user_cert:
                     successful_config["cert"] = self._user_cert_path
                 elif cert_path == default_cert_path:
-                    successful_config["cert"] = os.path.basename(default_cert_path)
+                    successful_config["cert"] = Path(default_cert_path).name
 
                 if failed_attempts_log:
                     _LOGGER.debug("Previous failed connection attempts: %s", failed_attempts_log)  # pragma: no mutate

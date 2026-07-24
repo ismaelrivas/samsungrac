@@ -7,6 +7,7 @@ import asyncio
 import datetime
 import logging
 import os
+from pathlib import Path
 import ssl
 from typing import Any, Self
 
@@ -58,6 +59,7 @@ from .const import (
     CONN_METHOD_AIOHTTP,
     CONN_METHOD_RAW,
     CONN_METHOD_REQUESTS,
+    DEFAULT_CONF_CERT_FILE,
     DEFAULT_CONF_TEMP_UNIT,
     DEFAULT_ENABLE_POLLING,
     DEFAULT_POLL_INTERVAL,
@@ -226,7 +228,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             return True
 
         path_to_check = resolve_cert_path(
-            user_cert_path, os.path.dirname(__file__), self.hass
+            user_cert_path, str(Path(__file__).parent), self.hass
         )
         if path_to_check is None:
             return True
@@ -337,7 +339,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         schema_dict[vol.Optional(CONF_NAME, default=str(self.flow_data.get(CONF_NAME, "")))] = str
         schema_dict[vol.Optional(CONF_TOKEN, default=str(self.flow_data.get(CONF_TOKEN, "")))] = str
         
-        cert_default = "ac14k_m.pem"
+        cert_default = DEFAULT_CONF_CERT_FILE
         schema_dict[vol.Optional(CONF_CERT, default=str(self.flow_data.get(CONF_CERT, cert_default)))] = str
         
         schema_dict[vol.Optional(CONF_POLL_INTERVAL, default=interval_str)] = TextSelector(
@@ -1289,7 +1291,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         # CERTIFICATE HARDENING
         cert_def = str(self.flow_data.get(CONF_CERT, "")).strip()
         if not cert_def:
-            cert_def = "ac14k_m.pem" if is_samsung else ""
+            cert_def = DEFAULT_CONF_CERT_FILE if is_samsung else ""
             
         suggested = {
             CONF_IP_ADDRESS: ip_def,
