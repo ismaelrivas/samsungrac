@@ -409,7 +409,15 @@ def mask_sensitive_data(data: Any) -> Any:
         data = re.sub(
             r'(DeviceToken["\'\s]*[:=]+["\'\s]*)([^"\'\s}]+)', r"\1***", data
         )  # pragma: no mutate
-        data = re.sub(r'(DUID=")([^"]+)(")', r"\1***\3", data)  # pragma: no mutate
+
+        def _mask_duid_match(m: re.Match[str]) -> str:
+            val = m.group(2)
+            masked = ("***" + val[-6:]) if len(val) > 6 else "***"
+            return f"{m.group(1)}{masked}{m.group(3)}"
+
+        data = re.sub(
+            r'(DUID=")([^"]+)(")', _mask_duid_match, data, flags=re.IGNORECASE
+        )  # pragma: no mutate
         return data
     return data
 

@@ -45,12 +45,12 @@ def _get_mac_threat_patterns(entry: "ClimateIPConfigEntry") -> set[str]:
     """Extract MAC address and DUID variants to build threat patterns for substring redaction."""
     patterns: set[str] = set()
 
-    # Retrieve explicit MAC configuration values
-    raw_mac = entry.data.get(CONF_MAC) or entry.data.get("mac")  # pragma: no mutate
+    # Retrieve explicit MAC configuration values securely
+    raw_mac = entry.data.get(CONF_MAC, entry.data.get("mac"))
     candidates: list[str] = []
 
-    if isinstance(raw_mac, str) and raw_mac.strip():  # pragma: no mutate
-        candidates.append(raw_mac.strip())
+    if isinstance(raw_mac, str):
+        candidates.append(raw_mac)
 
     # Also inspect title and unique_id for embedded MAC patterns
     for item in (entry.title, entry.unique_id):
@@ -65,10 +65,10 @@ def _get_mac_threat_patterns(entry: "ClimateIPConfigEntry") -> set[str]:
             formatted_colon = ":".join(clean[i : i + 2] for i in range(0, 12, 2))
             formatted_dash = "-".join(
                 clean[i : i + 2] for i in range(0, 12, 2)
-            )  # pragma: no mutate
+            )
             patterns.add(formatted_colon)
-            patterns.add(formatted_dash)  # pragma: no mutate
-        elif len(candidate) > 5:  # pragma: no mutate
+            patterns.add(formatted_dash)
+        elif len(candidate) > 5:
             patterns.add(candidate)
 
     return {p for p in patterns if p}
@@ -82,7 +82,7 @@ def _deep_redact_substrings(val: Any, threat_patterns: set[str]) -> Any:
     # Sort patterns by length descending so longer MAC formats are replaced first
     sorted_patterns = sorted(
         threat_patterns, key=len, reverse=True
-    )  # pragma: no mutate
+    )
 
     if isinstance(val, str):
         result = val

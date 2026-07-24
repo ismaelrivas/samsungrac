@@ -295,11 +295,17 @@ class TestValidatePollInterval:
 
 
 def test_token_sanitization() -> None:
-    """Validate token sanitization against injection."""
+    """Validate token sanitization against injection and length bounds."""
     from custom_components.climate_ip.helpers import sanitize_token
 
+    assert sanitize_token(None) is None
+    assert sanitize_token("") is None
     assert sanitize_token('my"evil{{token') is None
-    assert sanitize_token("abcd1234") == "abcd1234"
+    assert sanitize_token("abcd123") is None  # length 7 (too short)
+    assert sanitize_token("abcd1234") == "abcd1234"  # length 8 (min)
+    assert sanitize_token("a" * 128) == "a" * 128  # length 128 (max)
+    assert sanitize_token("a" * 129) is None  # length 129 (too long)
+
 
 
 class TestSafeXmlToDict:
@@ -538,12 +544,40 @@ async def test_async_get_mac_address_windows(mock_system, mock_exec):
     )
 
 
-# --- mask_sensitive_data (Añadido para cazar al Mutante 29) ---
+# --- mask_sensitive_data (Añadido para cazar al Mutante 29 y string DUID mutants) ---
 def test_mask_sensitive_data_list():
     """Test explicit list processing to kill Mutant 29."""
     data = [{"token": "12345678"}]
     # If mutmut cambia 'item' a 'None', devolverá [None] y este assert fallará
     assert mask_sensitive_data(data) == [{"token": "***345678"}]
+
+
+def test_mask_sensitive_data_strings():
+    """Test masking of sensitive string payloads containing DUID, Token, and DeviceToken to kill all DUID mutants."""
+    # 1. Long DUID (> 6 chars): "1234567890" (len 10 -> masked ***567890)
+    str_duid_long = 'DUID="1234567890"'
+    assert mask_sensitive_data(str_duid_long) == 'DUID="***567890"'
+
+    # 2. Short DUID (<= 6 chars): "123456" (len 6 -> masked ***)
+    str_duid_short = 'DUID="123456"'
+    assert mask_sensitive_data(str_duid_short) == 'DUID="***"'
+
+    # 3. Boundary case DUID (7 chars): "1234567" (len 7 > 6 -> masked ***234567)
+    str_duid_boundary = 'DUID="1234567"'
+    assert mask_sensitive_data(str_duid_boundary) == 'DUID="***234567"'
+
+    # 4. Case-insensitive DUID match: lowercase duid="1234567890"
+    str_duid_lower = 'duid="1234567890"'
+    assert mask_sensitive_data(str_duid_lower) == 'duid="***567890"'
+
+    # 5. Token regex: Token="36-char-uuid-format-string-goes-here"
+    str_token = 'Token="12345678-1234-1234-1234-123456789012"'
+    assert mask_sensitive_data(str_token) == 'Token="***"'
+
+    # 6. DeviceToken regex: DeviceToken="secret123"
+    str_device_token = 'DeviceToken="secret123"'
+    assert mask_sensitive_data(str_device_token) == 'DeviceToken="***"'
+
 
 
 # --- async_check_network_reachability (Actualizado) ---

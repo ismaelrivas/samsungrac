@@ -151,13 +151,14 @@ def test_00_load_from_yaml_dict_get_default(connection):
 
 @pytest.mark.asyncio
 async def test_00_connection_manager_read_task_creation(connection):
-    """Kills mutant ID 11 en linea 1268: self._read_task = asyncio.create_task(reader.read(8192)) -> None.
+    """Kills mutant ID 11: self._read_task = asyncio.create_task(reader.read(8192)) -> None.
 
-    Estrategia: Mock asyncio.create_task para devolver un mock_task sin crear
-    tareas reales (evita lingering tasks). Mock asyncio.wait para lanzar
-    CancelledError y salir del while True en la primera iteración.
-    If mutant reemplaza la línea con None, self._reader.read nunca se invoca
-    (la coroutine nunca se crea) y la aserción falla.
+    Strategy: Mock asyncio.create_task to return a mock_task without creating
+    real tasks (avoids lingering tasks). Mock asyncio.wait to raise
+    CancelledError and exit the while True loop on the first iteration.
+    If mutant replaces the line with None, self._reader.read is never invoked
+    (the coroutine is never created) and the assertion fails.
+    Wrapped in asyncio.wait_for to fail-fast instead of relying on OS guillotine.
     """
     connection._writer = MagicMock()
     connection._writer.is_closing.return_value = False
@@ -184,7 +185,9 @@ async def test_00_connection_manager_read_task_creation(connection):
         patch.object(connection, "_close_connection", new_callable=AsyncMock),
     ):
         try:
-            await connection._connection_manager()
+            await asyncio.wait_for(connection._connection_manager(), timeout=1.0)
+        except TimeoutError:
+            pytest.fail("_connection_manager deadlocked! Mutant detected (read_task=None).")
         except asyncio.CancelledError:
             pass
 
@@ -227,16 +230,66 @@ async def test_async_execute_ready_but_with_past_retries(connection):
         "custom_components.climate_ip.samsung_2878.asyncio.timeout",
         return_value=mock_timeout_ctx,
     ):
-        # Ejecutamos el método.
-        # If mutant (if self._is_ready.is_set() and ...) está vivo, entrará al if,
-        # lanzará CannotConnect y el test fallará, matando al mutante.
-        try:
-            await connection.async_execute("cmd", "url", "<test/>", None)
-        except Exception as e:
-            # El RuntimeError("CannotConnect") del mutante hará fallar el test aquí
-            assert type(e).__name__ != "CannotConnect", (
-                "The mutant survived and aborted a valid command!"
-            )
+        await connection.async_execute("cmd", "url", "<test/>", None)
 
-        # We verify que el comando sí entró a la cola (es decir, el if no lo bloqueó)
-        connection._cmd_queue.put.assert_awaited_once()
+    # THE KILL SHOT: If mutant 7 flips condition (if self._is_ready.is_set() and retries > 0),
+    # CannotConnect is raised instantly (failing the test), and put is never awaited.
+    connection._cmd_queue.put.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_00_connection_manager_failfast_queue_mutants(connection):
+    """Kills mutants 17, 18, 19, 28 targeting queue_task creation and dispatch in _connection_manager.
+
+    Strategy: Set up a real asyncio.Queue with a pre-loaded command+future.
+    Run _connection_manager wrapped in asyncio.wait_for(timeout=1.0).
+    Assert that _process_command_queue was actually called, which only happens
+    if queue_task is properly created (kills 17/18/19) and properly dispatched
+    when done (kills 28).
+    """
+    connection._writer = MagicMock()
+    connection._writer.is_closing.return_value = False
+    connection._reader = MagicMock()
+    connection._cmd_queue = asyncio.Queue()
+
+    # Pre-load a command into the queue
+    cmd_future = asyncio.Future()
+    await connection._cmd_queue.put(("<TestCmd/>", cmd_future))
+
+    # Reader returns data then CancelledError to break the loop
+    connection._reader.read = AsyncMock(side_effect=[b"<Response>OK</Response>", asyncio.CancelledError()])
+
+    with (
+        patch.object(
+            connection, "_process_command_queue", new_callable=AsyncMock
+        ) as mock_cmd,
+        patch.object(
+            connection, "_process_read_queue", new_callable=AsyncMock
+        ) as mock_read_q,
+        patch(
+            "custom_components.climate_ip.samsung_2878.asyncio.sleep",
+            new_callable=AsyncMock,
+        ),
+        patch.object(connection, "_close_connection", new_callable=AsyncMock),
+    ):
+        # _process_read_queue returns buffer then raises CancelledError to exit loop
+        mock_read_q.side_effect = [b"", asyncio.CancelledError()]
+
+        try:
+            await asyncio.wait_for(connection._connection_manager(), timeout=1.0)
+        except TimeoutError:
+            pytest.fail(
+                "_connection_manager deadlocked! Mutant broke queue_task creation or dispatch."
+            )
+        except asyncio.CancelledError:
+            pass
+
+        # THE KILL SHOT: If mutants 17/18 flip the condition, queue_task is never created.
+        # If mutant 19 sets queue_task=None, it's never appended to tasks.
+        # If mutant 28 flips 'in done' to 'not in done', _process_command_queue is
+        # called with a pending (not done) task, or never called at all.
+        # In all cases, this assertion fails:
+        assert mock_cmd.call_count >= 1, (
+            "_process_command_queue was never called! "
+            "Mutant survived: queue_task was not created or not dispatched."
+        )

@@ -67,6 +67,7 @@ INITIAL_RECONNECT_DELAY = 5
 MAX_RECONNECT_DELAY = 300
 RECONNECT_FACTOR = 2
 COMMAND_TIMEOUT = 20.0
+WRITE_TIMEOUT = 5.0  # pragma: no mutate
 MAX_RECONNECT_RETRIES = 5
 
 
@@ -871,7 +872,7 @@ class ConnectionSamsung2878(Connection):
             raise CannotConnect("Connection is not available for writing")
         try:
             self._writer.write(data_str.encode("utf-8"))
-            async with asyncio.timeout(5.0):
+            async with asyncio.timeout(WRITE_TIMEOUT):
                 await self._writer.drain()
             return True
         except (TimeoutError, OSError) as e:
@@ -1051,7 +1052,9 @@ class ConnectionSamsung2878(Connection):
 
             xml_data = message.decode("utf-8", errors="ignore")
             _LOGGER.debug(
-                "%s Received message: %s", self.log_prefix, xml_data.strip()
+                "%s Received message: %s",
+                self.log_prefix,
+                mask_sensitive_data(xml_data.strip()),
             )  # pragma: no mutate
             is_response, is_update, parsed_data = await self._parse_and_update_state(
                 xml_data
@@ -1376,6 +1379,7 @@ class ConnectionSamsung2878(Connection):
                         read_buffer = await self._process_read_queue(buffer)
                         if read_buffer is None:  # Connection closed
                             buffer = b""  # pragma: no mutate  # Reset buffer to prevent NoneType error on next iteration
+                            await asyncio.sleep(0.05)  # Yield to event loop to prevent starvation on rapid reconnect cycles
                             continue
                         buffer = read_buffer
 
@@ -1403,6 +1407,14 @@ class ConnectionSamsung2878(Connection):
                     await self._close_connection()
                     jitter = random.uniform(0, self._reconnect_delay * 0.2)
                     await asyncio.sleep(self._reconnect_delay + jitter)
+                except Exception as e:  # pylint: disable=broad-exception-caught
+                    _LOGGER.error(
+                        "%s Unexpected exception in connection manager: %s",
+                        self.log_prefix,
+                        e,
+                        exc_info=True,
+                    )  # pragma: no mutate
+                    await asyncio.sleep(0.05)  # Yield to event loop to prevent starvation on unexpected errors
         finally:
             _LOGGER.debug(
                 "%s Connection manager exiting, cleaning up", self.log_prefix

@@ -298,3 +298,46 @@ async def test_diagnostics_mac_fallback_keys(mock_hass, mock_entry):
     }
     result = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
     assert result["entry"]["data"]["info"] == "Some text with spaces"
+
+
+async def test_diagnostics_boundary_length_5(mock_hass):
+    """Test 5-character boundary: string of length 5 is NOT redacted when len(candidate) > 5."""
+    entry = MagicMock()
+    entry.data = {CONF_MAC: "12345"}
+    entry.options = {"test_key": "ID is 12345"}
+    entry.unique_id = "test_unique_id"
+    entry.title = "Test AC"
+    entry.domain = DOMAIN
+    entry.runtime_data = None
+
+    result = await async_get_config_entry_diagnostics(mock_hass, entry)
+    assert result["entry"]["options"]["test_key"] == "ID is 12345"
+
+
+async def test_diagnostics_strict_dash_format(mock_hass):
+    """Test strict dash-formatted MAC redaction."""
+    entry = MagicMock()
+    entry.data = {CONF_MAC: "AABBCCDDEEFF"}
+    entry.options = {"mac_field": "My mac is AA-BB-CC-DD-EE-FF"}
+    entry.unique_id = "test_unique_id"
+    entry.title = "Test AC"
+    entry.domain = DOMAIN
+    entry.runtime_data = None
+
+    result = await async_get_config_entry_diagnostics(mock_hass, entry)
+    assert result["entry"]["options"]["mac_field"] == "My mac is **REDACTED**"
+
+
+async def test_diagnostics_isolated_mac_fallback_key(mock_hass):
+    """Test isolated fallback to 'mac' key in entry.data when CONF_MAC, title, and unique_id are not set."""
+    entry = MagicMock()
+    entry.data = {"mac": "11:22:33:44:55:66"}
+    entry.options = {"info": "MAC is 11:22:33:44:55:66"}
+    entry.unique_id = None
+    entry.title = None
+    entry.domain = DOMAIN
+    entry.runtime_data = None
+
+    result = await async_get_config_entry_diagnostics(mock_hass, entry)
+    assert result["entry"]["options"]["info"] == "MAC is **REDACTED**"
+
