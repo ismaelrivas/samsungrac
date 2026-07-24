@@ -24,13 +24,13 @@ TO_REDACT: set[str] = {
     "password",
     "uuid",
     "duid",
-    "DUID",           # Samsung uses uppercase in some protocol responses
+    "DUID",  # Samsung uses uppercase in some protocol responses
     "Authorization",
     "DeviceToken",
     "access_token",
     "refresh_token",
     "serial_number",  # Future-proofing: Samsung REST API may expose this
-    "serialNumber",   # Samsung camelCase variant
+    "serialNumber",  # Samsung camelCase variant
 }
 
 
@@ -60,9 +60,13 @@ async def async_get_config_entry_diagnostics(
         if entry_data.data:
             diagnostics_data["coordinator_data"] = asdict(entry_data.data)
         if hasattr(entry_data.controller, "state_attributes"):
-            diagnostics_data["controller_state"] = entry_data.controller.state_attributes
+            diagnostics_data["controller_state"] = (
+                entry_data.controller.state_attributes
+            )
         if hasattr(entry_data.controller, "last_poll_data"):
-            diagnostics_data["last_poll_response"] = entry_data.controller.last_poll_data
+            diagnostics_data["last_poll_response"] = (
+                entry_data.controller.last_poll_data
+            )
         # FIXED C0301: Line split to stay under 100 chars
         if hasattr(entry_data.controller, "connection_diagnostics"):
             diagnostics_data["connection_diagnostics"] = (
@@ -77,9 +81,13 @@ async def async_get_config_entry_diagnostics(
                 coordinator_diag: dict[str, Any] = {}
 
                 if hasattr(coordinator.controller, "state_attributes"):
-                    coordinator_diag["controller_state"] = coordinator.controller.state_attributes
+                    coordinator_diag["controller_state"] = (
+                        coordinator.controller.state_attributes
+                    )
                 if hasattr(coordinator.controller, "last_poll_data"):
-                    coordinator_diag["last_poll_response"] = coordinator.controller.last_poll_data
+                    coordinator_diag["last_poll_response"] = (
+                        coordinator.controller.last_poll_data
+                    )
                 # FIXED C0301: Line split to stay under 100 chars
                 if hasattr(coordinator.controller, "connection_diagnostics"):
                     coordinator_diag["connection_diagnostics"] = (

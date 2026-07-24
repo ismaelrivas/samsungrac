@@ -1,4 +1,3 @@
-import sys
 from mutmut.file_mutation import mutate_file_contents
 with open('/workspaces/ha_data/config/custom_components/climate_ip/connection_raw.py') as f:
     code = f.read()

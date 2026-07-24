@@ -1,5 +1,6 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
 """Tests for the ClimateIP climate entity."""
+
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
@@ -49,13 +50,14 @@ def base_climate_entity(hass: HomeAssistant) -> ClimateIP:
     return entity
 
 
-
 async def test_turn_on_dry_helper(base_climate_entity: ClimateIP) -> None:
     """Test that turn_on and turn_off use the DRY helper _async_set_climate_mode."""
     base_climate_entity.coordinator.operations = [ATTR_POWER]
 
     # Patch the helper function we want to verify is called
-    with patch.object(base_climate_entity, "_async_set_climate_mode", new_callable=AsyncMock) as mock_helper:
+    with patch.object(
+        base_climate_entity, "_async_set_climate_mode", new_callable=AsyncMock
+    ) as mock_helper:
         # Test turn on
         await base_climate_entity.async_turn_on()
         mock_helper.assert_awaited_once_with(ATTR_POWER, STATE_ON, None)
@@ -89,9 +91,9 @@ async def test_optimistic_turn_off(base_climate_entity: ClimateIP) -> None:
 
 def test_no_flicker_feature_method() -> None:
     """async_flicker_feature antipattern must be fully removed from ClimateIP."""
-    assert not hasattr(
-        ClimateIP, "async_flicker_feature"
-    ), "async_flicker_feature was not removed from ClimateIP — remove the no-op method"
+    assert not hasattr(ClimateIP, "async_flicker_feature"), (
+        "async_flicker_feature was not removed from ClimateIP — remove the no-op method"
+    )
 
 
 def test_no_stale_supported_features_annotation() -> None:
@@ -105,9 +107,9 @@ def test_no_stale_supported_features_annotation() -> None:
         if klass is object:
             break
         annotations.update(vars(klass).get("__annotations__", {}))
-    assert (
-        "_supported_features" not in annotations
-    ), "_supported_features stale annotation is still present in ClimateIP or a parent class"
+    assert "_supported_features" not in annotations, (
+        "_supported_features stale annotation is still present in ClimateIP or a parent class"
+    )
 
 
 def test_climate_translation_key_and_device_info(hass: HomeAssistant) -> None:
@@ -123,7 +125,9 @@ def test_climate_translation_key_and_device_info(hass: HomeAssistant) -> None:
         key="samsung_ac",
         translation_key="samsung_ac",
     )
-    climate = ClimateIP(coordinator=mock_coordinator, description=description, config={})
+    climate = ClimateIP(
+        coordinator=mock_coordinator, description=description, config={}
+    )
     climate.hass = hass
 
     # Test Translation Key comes from description
@@ -178,25 +182,32 @@ async def test_auto_mode_correction_revert(base_climate_entity: ClimateIP) -> No
     mock_write.assert_called()
 
 
-
-
 async def test_climate_init_options_priority_and_halves(hass: HomeAssistant) -> None:
     """Verify that entry options have priority and configure step=0.5."""
     mock_coordinator = MagicMock()
     # Inject options (Priority 1) with 0.5
     mock_coordinator.entry.options = {CONF_TARGET_TEMP_STEP: 0.5}
-    
+
     # Inject config (Priority 2 and 3) with different values to verify they are ignored
     config = {CONF_TARGET_TEMP_STEP: 1.0, CONF_TEMP_STEP: 2.0}
     description = ClimateIPEntityDescription(key="samsung_ac")
 
-    entity = ClimateIP(coordinator=mock_coordinator, description=description, config=config)
+    entity = ClimateIP(
+        coordinator=mock_coordinator, description=description, config=config
+    )
 
     # Lethal Assertions
-    assert entity.target_temperature_step == 0.5, "Entry options priority was not respected"
-    assert entity.precision == PRECISION_HALVES, "Precision was not adjusted to half degrees"
+    assert entity.target_temperature_step == 0.5, (
+        "Entry options priority was not respected"
+    )
+    assert entity.precision == PRECISION_HALVES, (
+        "Precision was not adjusted to half degrees"
+    )
 
-async def test_climate_init_config_priority_and_integer_cast(hass: HomeAssistant) -> None:
+
+async def test_climate_init_config_priority_and_integer_cast(
+    hass: HomeAssistant,
+) -> None:
     """Verify that without options, it reads config directly, and that floats representing integers are cast to int."""
     mock_coordinator = MagicMock()
     mock_coordinator.entry = None  # Force the branch where there is no entry or options
@@ -205,12 +216,17 @@ async def test_climate_init_config_priority_and_integer_cast(hass: HomeAssistant
     config = {CONF_TARGET_TEMP_STEP: 2.0, CONF_TEMP_STEP: 3.0}
     description = ClimateIPEntityDescription(key="samsung_ac")
 
-    entity = ClimateIP(coordinator=mock_coordinator, description=description, config=config)
+    entity = ClimateIP(
+        coordinator=mock_coordinator, description=description, config=config
+    )
 
     # Lethal Assertions: Must be 2, and MUST be of type int (not float 2.0)
     assert entity.target_temperature_step == 2, "Config priority was not respected"
-    assert isinstance(entity.target_temperature_step, int), "Integer cast failed (1.0 vs 1)"
+    assert isinstance(entity.target_temperature_step, int), (
+        "Integer cast failed (1.0 vs 1)"
+    )
     assert entity.precision == PRECISION_WHOLE, "Integer precision is incorrect"
+
 
 async def test_climate_init_legacy_config_priority(hass: HomeAssistant) -> None:
     """Verify fallback to the legacy CONF_TEMP_STEP key."""
@@ -221,11 +237,16 @@ async def test_climate_init_legacy_config_priority(hass: HomeAssistant) -> None:
     config = {CONF_TEMP_STEP: 0.1}
     description = ClimateIPEntityDescription(key="samsung_ac")
 
-    entity = ClimateIP(coordinator=mock_coordinator, description=description, config=config)
+    entity = ClimateIP(
+        coordinator=mock_coordinator, description=description, config=config
+    )
 
     # Lethal Assertion
-    assert entity.target_temperature_step == 0.1, "Legacy temp_step key was not respected"
+    assert entity.target_temperature_step == 0.1, (
+        "Legacy temp_step key was not respected"
+    )
     assert entity.precision == PRECISION_TENTHS, "Precision was not adjusted to tenths"
+
 
 async def test_climate_main_unique_id_fallback(hass: HomeAssistant) -> None:
     """Verify that _main_unique_id uses the provided value or falls back safely to the coordinator's unique_id."""
@@ -234,30 +255,50 @@ async def test_climate_main_unique_id_fallback(hass: HomeAssistant) -> None:
     description = ClimateIPEntityDescription(key="samsung_ac")
 
     # Case 1: main_unique_id is provided explicitly
-    entity_explicit = ClimateIP(coordinator=mock_coordinator, description=description, config={}, main_unique_id="explicit_id_456")
-    assert entity_explicit._main_unique_id == "explicit_id_456", "Explicit main_unique_id was not respected"
+    entity_explicit = ClimateIP(
+        coordinator=mock_coordinator,
+        description=description,
+        config={},
+        main_unique_id="explicit_id_456",
+    )
+    assert entity_explicit._main_unique_id == "explicit_id_456", (
+        "Explicit main_unique_id was not respected"
+    )
 
     # Case 2: Not provided (None), must perform fallback
-    entity_fallback = ClimateIP(coordinator=mock_coordinator, description=description, config={}, main_unique_id=None)
-    assert entity_fallback._main_unique_id == "coord_id_123", "Fallback to coordinator.unique_id failed"
-    assert entity_fallback.unique_id == "coord_id_123", "The unique_id property does not match the coordinator"
+    entity_fallback = ClimateIP(
+        coordinator=mock_coordinator,
+        description=description,
+        config={},
+        main_unique_id=None,
+    )
+    assert entity_fallback._main_unique_id == "coord_id_123", (
+        "Fallback to coordinator.unique_id failed"
+    )
+    assert entity_fallback.unique_id == "coord_id_123", (
+        "The unique_id property does not match the coordinator"
+    )
+
+
 async def test_climate_optimistic_side_effects(base_climate_entity: ClimateIP) -> None:
     """Verify that _apply_optimistic_corrections applies side effects correctly."""
     base_climate_entity.coordinator.unique_id = "coord_side_effects"
-    
+
     # Simulate that when turning on, the device also corrects the fan_mode to "auto"
     base_climate_entity.coordinator.async_predict_and_correct = AsyncMock(
         return_value=({}, {"fan_mode": "auto"})
     )
-    
+
     # Initial state
     base_climate_entity._attr_fan_mode = "low"
-    
+
     with patch.object(base_climate_entity, "async_write_ha_state"):
         await base_climate_entity.async_set_hvac_mode(HVACMode.COOL)
-        
+
     # Lethal Assertion for Mutant 1 and 10: The side effect MUST be applied
-    assert base_climate_entity.fan_mode == "auto", "Optimistic corrections were not applied"
+    assert base_climate_entity.fan_mode == "auto", (
+        "Optimistic corrections were not applied"
+    )
 
     # Lethal Assertion for Mutants 2-5 and 15-20: Exact arguments AND await execution MUST be present
     base_climate_entity.coordinator.async_predict_and_correct.assert_awaited_once_with(
@@ -267,6 +308,7 @@ async def test_climate_optimistic_side_effects(base_climate_entity: ClimateIP) -
         "hvac_mode", HVACMode.COOL, {"fan_mode": "auto"}
     )
 
+
 async def test_climate_init_precision_whole(hass: HomeAssistant) -> None:
     """Verify that a step > 0.5 (like 1.0) explicitly assigns PRECISION_WHOLE."""
     mock_coordinator = MagicMock()
@@ -275,15 +317,20 @@ async def test_climate_init_precision_whole(hass: HomeAssistant) -> None:
     config = {CONF_TARGET_TEMP_STEP: 1.0}
     description = ClimateIPEntityDescription(key="samsung_ac")
 
-    entity = ClimateIP(coordinator=mock_coordinator, description=description, config=config)
+    entity = ClimateIP(
+        coordinator=mock_coordinator, description=description, config=config
+    )
 
     assert entity.target_temperature_step == 1.0, "Step was not configured to 1.0"
-    assert entity.precision == PRECISION_WHOLE, "Step 1.0 did not assign PRECISION_WHOLE"
+    assert entity.precision == PRECISION_WHOLE, (
+        "Step 1.0 did not assign PRECISION_WHOLE"
+    )
+
 
 async def test_climate_sync_data_full(base_climate_entity: ClimateIP) -> None:
     """Verify that _sync_data_from_coordinator correctly copies all properties when state is present."""
     base_climate_entity.coordinator.unique_id = "test_sync_full"
-    
+
     mock_state = MagicMock()
     mock_state.hvac_mode = HVACMode.HEAT
     mock_state.target_temperature = 25.0
@@ -295,29 +342,48 @@ async def test_climate_sync_data_full(base_climate_entity: ClimateIP) -> None:
     mock_state.fan_modes = ["high", "low"]
     mock_state.swing_modes = ["vertical", "horizontal"]
     mock_state.preset_modes = ["boost", "eco"]
-    
+
     base_climate_entity.coordinator.data = mock_state
-    
+
     # Entity __init__ calls _sync_data_from_coordinator, but let's call it explicitly to be sure
     base_climate_entity._sync_data_from_coordinator()
 
     # Lethal Assertions for Mutants 2, 11, 12
-    assert base_climate_entity.hvac_mode == HVACMode.HEAT, "hvac_mode was not synchronized"
-    assert base_climate_entity.target_temperature == 25.0, "target_temperature was not synchronized"
-    assert base_climate_entity.current_temperature == 22.0, "current_temperature was not synchronized"
+    assert base_climate_entity.hvac_mode == HVACMode.HEAT, (
+        "hvac_mode was not synchronized"
+    )
+    assert base_climate_entity.target_temperature == 25.0, (
+        "target_temperature was not synchronized"
+    )
+    assert base_climate_entity.current_temperature == 22.0, (
+        "current_temperature was not synchronized"
+    )
     assert base_climate_entity.fan_mode == "high", "fan_mode was not synchronized"
-    assert base_climate_entity.swing_mode == "vertical", "swing_mode was not synchronized"
-    assert base_climate_entity.preset_mode == "boost", "preset_mode was not synchronized"
-    assert base_climate_entity.hvac_modes == [HVACMode.HEAT, HVACMode.OFF], "hvac_modes was not synchronized"
-    assert base_climate_entity.fan_modes == ["high", "low"], "fan_modes was not synchronized"
-    assert base_climate_entity.swing_modes == ["vertical", "horizontal"], "swing_modes was not synchronized"
-    assert base_climate_entity.preset_modes == ["boost", "eco"], "preset_modes was not synchronized"
+    assert base_climate_entity.swing_mode == "vertical", (
+        "swing_mode was not synchronized"
+    )
+    assert base_climate_entity.preset_mode == "boost", (
+        "preset_mode was not synchronized"
+    )
+    assert base_climate_entity.hvac_modes == [HVACMode.HEAT, HVACMode.OFF], (
+        "hvac_modes was not synchronized"
+    )
+    assert base_climate_entity.fan_modes == ["high", "low"], (
+        "fan_modes was not synchronized"
+    )
+    assert base_climate_entity.swing_modes == ["vertical", "horizontal"], (
+        "swing_modes was not synchronized"
+    )
+    assert base_climate_entity.preset_modes == ["boost", "eco"], (
+        "preset_modes was not synchronized"
+    )
+
 
 async def test_climate_sync_data_none(base_climate_entity: ClimateIP) -> None:
     """Verify that _sync_data_from_coordinator falls back correctly when state is None."""
     base_climate_entity.coordinator.unique_id = "test_sync_none"
     base_climate_entity.coordinator.data = None
-    
+
     # Force initial values to non-None/non-empty to test the reset
     base_climate_entity._attr_hvac_mode = "dummy"
     base_climate_entity._attr_target_temperature = 99.0
@@ -329,14 +395,18 @@ async def test_climate_sync_data_none(base_climate_entity: ClimateIP) -> None:
     base_climate_entity._attr_fan_modes = ["dummy"]
     base_climate_entity._attr_swing_modes = ["dummy"]
     base_climate_entity._attr_preset_modes = ["dummy"]
-    
+
     # Trigger the fallback block
     base_climate_entity._sync_data_from_coordinator()
 
     # Lethal Assertions for Mutants 13-19: Must be strictly None or []
     assert base_climate_entity.hvac_mode is None, "hvac_mode did not reset to None"
-    assert base_climate_entity.target_temperature is None, "target_temperature did not reset to None"
-    assert base_climate_entity.current_temperature is None, "current_temperature did not reset to None"
+    assert base_climate_entity.target_temperature is None, (
+        "target_temperature did not reset to None"
+    )
+    assert base_climate_entity.current_temperature is None, (
+        "current_temperature did not reset to None"
+    )
     assert base_climate_entity.fan_mode is None, "fan_mode did not reset to None"
     assert base_climate_entity.swing_mode is None, "swing_mode did not reset to None"
     assert base_climate_entity.preset_mode is None, "preset_mode did not reset to None"
@@ -345,42 +415,60 @@ async def test_climate_sync_data_none(base_climate_entity: ClimateIP) -> None:
     assert base_climate_entity.swing_modes == [], "swing_modes did not reset to []"
     assert base_climate_entity.preset_modes == [], "preset_modes did not reset to []"
 
-async def test_public_async_set_hvac_mode_behavior(base_climate_entity: ClimateIP) -> None:
+
+async def test_public_async_set_hvac_mode_behavior(
+    base_climate_entity: ClimateIP,
+) -> None:
     """Verify local state change and network output of the HVAC delegator."""
     # Simulate that the async predictor does not require additional corrections
-    base_climate_entity.coordinator.async_predict_and_correct = AsyncMock(return_value=({}, {}))
-    
+    base_climate_entity.coordinator.async_predict_and_correct = AsyncMock(
+        return_value=({}, {})
+    )
+
     # Establish an initial state
     base_climate_entity._attr_hvac_mode = HVACMode.OFF
-    
+
     # Execute the public API just as Home Assistant would
     await base_climate_entity.async_set_hvac_mode(HVACMode.COOL)
-    
+
     # LETHAL ASSERTIONS (Mutants 7 and 8)
     # 1. Verify that the local string ("_attr_hvac_mode") was applied correctly:
-    assert base_climate_entity._attr_hvac_mode == HVACMode.COOL, "Local state was not updated (leak in local_attr variable)"
-    
-    # 2. Verify that the network output uses the appropriate constant and correct values:
-    base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(ATTR_HVAC_MODE, HVACMode.COOL, {})
+    assert base_climate_entity._attr_hvac_mode == HVACMode.COOL, (
+        "Local state was not updated (leak in local_attr variable)"
+    )
 
-async def test_public_async_set_fan_mode_behavior(base_climate_entity: ClimateIP) -> None:
+    # 2. Verify that the network output uses the appropriate constant and correct values:
+    base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(
+        ATTR_HVAC_MODE, HVACMode.COOL, {}
+    )
+
+
+async def test_public_async_set_fan_mode_behavior(
+    base_climate_entity: ClimateIP,
+) -> None:
     """Verify local state change and network output of the Fan delegator."""
     # Simulate that the async predictor does not require additional corrections
-    base_climate_entity.coordinator.async_predict_and_correct = AsyncMock(return_value=({}, {}))
-    
+    base_climate_entity.coordinator.async_predict_and_correct = AsyncMock(
+        return_value=({}, {})
+    )
+
     # Prerequisite: The mode must exist in available options or the function's guard will abort
     base_climate_entity._attr_fan_modes = ["low", "high"]
     base_climate_entity._attr_fan_mode = "low"
-    
+
     # Execute the public API
     await base_climate_entity.async_set_fan_mode("high")
-    
+
     # LETHAL ASSERTIONS (Mutant 2)
     # 1. Check state update
-    assert base_climate_entity._attr_fan_mode == "high", "Local fan state was not updated."
-    
+    assert base_climate_entity._attr_fan_mode == "high", (
+        "Local fan state was not updated."
+    )
+
     # 2. Rigorously check the async signature towards the coordinator
-    base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(ATTR_FAN_MODE, "high", {})
+    base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(
+        ATTR_FAN_MODE, "high", {}
+    )
 
 
 # ============================================================
@@ -389,7 +477,10 @@ async def test_public_async_set_fan_mode_behavior(base_climate_entity: ClimateIP
 
 # --- async_set_temperature (11 mutants) ---
 
-async def test_async_set_temperature_with_valid_temp_kills_mutants(base_climate_entity: ClimateIP) -> None:
+
+async def test_async_set_temperature_with_valid_temp_kills_mutants(
+    base_climate_entity: ClimateIP,
+) -> None:
     """Kill mutants 1-11 in async_set_temperature.
 
     Mutants alter: kwargs lookup key, the 'is not None' guard, and all three
@@ -406,7 +497,9 @@ async def test_async_set_temperature_with_valid_temp_kills_mutants(base_climate_
     assert base_climate_entity._attr_target_temperature == 21.0
 
 
-async def test_async_set_temperature_no_temp_kwarg_is_noop(base_climate_entity: ClimateIP) -> None:
+async def test_async_set_temperature_no_temp_kwarg_is_noop(
+    base_climate_entity: ClimateIP,
+) -> None:
     """Kill mutant 3 (is None inversion): when no temperature is passed the
     helper must NOT be called at all."""
     # Called with a keyword that is NOT ATTR_TEMPERATURE → no-op
@@ -417,7 +510,10 @@ async def test_async_set_temperature_no_temp_kwarg_is_noop(base_climate_entity: 
 
 # --- async_set_swing_mode (8 mutants) ---
 
-async def test_async_set_swing_mode_strict_args_kills_mutants(base_climate_entity: ClimateIP) -> None:
+
+async def test_async_set_swing_mode_strict_args_kills_mutants(
+    base_climate_entity: ClimateIP,
+) -> None:
     """Kill mutants 1-8 in async_set_swing_mode.
 
     Every mutant swaps one of the three positional arguments passed to
@@ -437,7 +533,10 @@ async def test_async_set_swing_mode_strict_args_kills_mutants(base_climate_entit
 
 # --- async_set_preset_mode (8 mutants) ---
 
-async def test_async_set_preset_mode_strict_args_kills_mutants(base_climate_entity: ClimateIP) -> None:
+
+async def test_async_set_preset_mode_strict_args_kills_mutants(
+    base_climate_entity: ClimateIP,
+) -> None:
     """Kill mutants 1-8 in async_set_preset_mode.
 
     Same pattern as swing: every mutant swaps one positional argument.
@@ -453,7 +552,10 @@ async def test_async_set_preset_mode_strict_args_kills_mutants(base_climate_enti
 
 # --- async_service_set_property (4 mutants) ---
 
-async def test_async_service_set_property_valid_key_kills_mutants(base_climate_entity: ClimateIP) -> None:
+
+async def test_async_service_set_property_valid_key_kills_mutants(
+    base_climate_entity: ClimateIP,
+) -> None:
     """Kill mutants 1-4 in async_service_set_property.
 
     Mutants alter the literal 'key' string used in kwargs.get(), replace it
@@ -463,11 +565,15 @@ async def test_async_service_set_property_valid_key_kills_mutants(base_climate_e
     await base_climate_entity.async_service_set_property(key="beep", value="on")
 
     # Both downstream calls must fire with the exact extracted values
-    base_climate_entity.coordinator.async_set_property.assert_awaited_once_with("beep", "on", {})
+    base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(
+        "beep", "on", {}
+    )
     base_climate_entity.coordinator.async_request_refresh.assert_awaited_once()
 
 
-async def test_async_service_set_property_missing_key_is_noop(base_climate_entity: ClimateIP) -> None:
+async def test_async_service_set_property_missing_key_is_noop(
+    base_climate_entity: ClimateIP,
+) -> None:
     """Complementary guard: when key is absent (None) the function must abort
     before calling coordinator. Kills any mutant that removes the 'if not key' guard."""
     await base_climate_entity.async_service_set_property(value="on")  # no 'key' kwarg
@@ -477,6 +583,7 @@ async def test_async_service_set_property_missing_key_is_noop(base_climate_entit
 
 
 # --- async_setup_entry — multi-device path (mutants 1-38) ---
+
 
 async def test_async_setup_entry_multi_device_kills_mutants() -> None:
     """Kill mutants 1-38 in async_setup_entry (multi-device branch).
@@ -513,7 +620,9 @@ async def test_async_setup_entry_multi_device_kills_mutants() -> None:
     coordinator_1, desc_1, data_1, device_info_1, uid_1 = c1_args
     assert coordinator_1 is mock_coord_1, "Coordinator mismatch for dev1 (mutant 1/23)"
     assert desc_1.key == "samsung_ac", "Key mismatch for dev1 (mutant 16/18)"
-    assert desc_1.translation_key == "samsung_ac", "translation_key mismatch (mutant 17/20/21)"
+    assert desc_1.translation_key == "samsung_ac", (
+        "translation_key mismatch (mutant 17/20/21)"
+    )
     assert data_1 == dict(entry.data), "Data dict mismatch (mutant 25/33)"
     assert device_info_1 == {"id": "dev1", "ip": "192.168.0.10"}, (
         "device_info mismatch — device lookup filter is broken (mutants 3-14)"
@@ -544,9 +653,7 @@ async def test_async_setup_entry_multi_device_skips_unmatched_device_info() -> N
     return a truthy value or to skip the id-equality filter.
     """
     entry = MagicMock()
-    entry.data = {
-        CONF_DEVICES: [{"id": "known_device", "ip": "10.0.0.1"}]
-    }
+    entry.data = {CONF_DEVICES: [{"id": "known_device", "ip": "10.0.0.1"}]}
     entry.unique_id = "siege_uid"
     entry.runtime_data = {
         "known_device": MagicMock(),
@@ -564,6 +671,7 @@ async def test_async_setup_entry_multi_device_skips_unmatched_device_info() -> N
 
 
 # --- async_setup_entry: CONF_DEVICES fallback boundary (mutants 8 and 10) ---
+
 
 async def test_async_setup_entry_multi_device_missing_conf_fallback() -> None:
     """Kill mutants 8 and 10 in async_setup_entry.
@@ -600,6 +708,7 @@ async def test_async_setup_entry_multi_device_missing_conf_fallback() -> None:
 
 # --- async_setup_entry — single-device path (mutants 39-59) ---
 
+
 async def test_async_setup_entry_single_device_kills_mutants() -> None:
     """Kill mutants 39-59 in async_setup_entry (single-device fallback branch).
 
@@ -620,13 +729,19 @@ async def test_async_setup_entry_single_device_kills_mutants() -> None:
     assert mock_climate_class.call_count == 1
 
     coordinator, desc, data, device_info, uid = mock_climate_class.call_args.args
-    assert coordinator is mock_coord, "Coordinator must be runtime_data directly (mutant 39)"
-    assert desc.key == "samsung_ac", "key must be literal 'samsung_ac' (mutants 41/43/45/46)"
+    assert coordinator is mock_coord, (
+        "Coordinator must be runtime_data directly (mutant 39)"
+    )
+    assert desc.key == "samsung_ac", (
+        "key must be literal 'samsung_ac' (mutants 41/43/45/46)"
+    )
     assert desc.translation_key == "samsung_ac", (
         "translation_key must be 'samsung_ac' (mutants 42/44/47/48)"
     )
     assert data == dict(entry.data), "data must be a fresh dict copy (mutants 52/59)"
-    assert device_info is None, "device_info must be None for single-device (mutant 26 analog)"
+    assert device_info is None, (
+        "device_info must be None for single-device (mutant 26 analog)"
+    )
     assert uid == "single_uid_abc", "uid must come from entry.unique_id (mutants 53)"
 
     # async_add_entities must receive a single-element list (mutants 49-58)
@@ -636,6 +751,7 @@ async def test_async_setup_entry_single_device_kills_mutants() -> None:
 
 
 # --- async_setup_platform (32 mutants) ---
+
 
 async def test_async_setup_platform_fresh_install_kills_mutants(
     hass: "HomeAssistant",
@@ -664,9 +780,7 @@ async def test_async_setup_platform_fresh_install_kills_mutants(
     hass.config_entries.async_entries.return_value = []
     hass.async_create_task = MagicMock()
 
-    with patch(
-        "homeassistant.helpers.issue_registry.async_create_issue"
-    ) as mock_issue:
+    with patch("homeassistant.helpers.issue_registry.async_create_issue") as mock_issue:
         await async_setup_platform(hass, config, MagicMock())
 
     # -- Issue creation: all 8 kwargs must be exact (mutants 1-20) --
@@ -725,12 +839,15 @@ async def test_async_set_property_strict_args(base_climate_entity: ClimateIP):
     """
     # Inyectamos valores específicos para evitar falsos positivos con defaults
     await base_climate_entity.async_set_property("power_mode", "turbo")
-    
+
     # Asertamos la firma exacta hacia el coordinador
-    base_climate_entity.coordinator.async_set_property.assert_called_once_with("power_mode", "turbo")
-    
+    base_climate_entity.coordinator.async_set_property.assert_called_once_with(
+        "power_mode", "turbo"
+    )
+
     # Asertamos la actualización síncrona en el core de HA
     base_climate_entity.async_write_ha_state.assert_called_once()
+
 
 async def test_async_setup_entry_partial_corruption_kills_mutant_16():
     """
@@ -741,20 +858,16 @@ async def test_async_setup_entry_partial_corruption_kills_mutant_16():
     mock_hass = MagicMock()  # Instantiated locally to avoid missing fixture errors
     mock_add_entities = MagicMock()
     mock_entry = MagicMock()
-    
-    # We inject TWO devices into the coordinator. 
+
+    # We inject TWO devices into the coordinator.
     # Order is vital: the corrupt one goes first so the mutant's 'break' aborts execution.
     mock_entry.runtime_data = {
         "corrupt_device": MagicMock(),
-        "valid_device": MagicMock()
+        "valid_device": MagicMock(),
     }
-    
+
     # In the configuration, we ONLY provide info for the valid one.
-    mock_entry.data = {
-        "devices": [
-            {"id": "valid_device", "name": "Living Room AC"}
-        ]
-    }
+    mock_entry.data = {"devices": [{"id": "valid_device", "name": "Living Room AC"}]}
     mock_entry.unique_id = "main_entry_123"
 
     await async_setup_entry(mock_hass, mock_entry, mock_add_entities)
@@ -764,8 +877,10 @@ async def test_async_setup_entry_partial_corruption_kills_mutant_16():
     # If the code uses 'break' (the mutant), the loop dies at the corrupt one and 0 are added.
     mock_add_entities.assert_called_once()
     entities_created = mock_add_entities.call_args[0][0]
-    
-    assert len(entities_created) == 1, "The 'break' mutant survived by aborting the entire loop!"
+
+    assert len(entities_created) == 1, (
+        "The 'break' mutant survived by aborting the entire loop!"
+    )
     assert entities_created[0].entity_description.key == "samsung_ac"
 
 
@@ -774,6 +889,7 @@ async def test_async_setup_entry_partial_corruption_kills_mutant_16():
 # ============================================================
 
 # --- available property (5 mutants: lines 298-300) ---
+
 
 def test_climate_available_no_coordinator(base_climate_entity: ClimateIP) -> None:
     """Kill mutants 1-3 in available: returns False when coordinator is None."""
@@ -804,9 +920,12 @@ def test_climate_available_success(base_climate_entity: ClimateIP) -> None:
 
 # --- supported_features property (3 mutants: lines 316-317) ---
 
-def test_climate_supported_features_swing_continue_and_bitwise(base_climate_entity: ClimateIP) -> None:
+
+def test_climate_supported_features_swing_continue_and_bitwise(
+    base_climate_entity: ClimateIP,
+) -> None:
     """Kill mutants 9-11 in supported_features.
-    
+
     1. Mutant 9 changes 'continue' to 'break' when ATTR_SWING_MODE is in ops but swing_modes is empty.
        If 'break' is executed, ATTR_PRESET_MODE (which comes after SWING_MODE in SUPPORTED_FEATURES_MAP)
        would be skipped.
@@ -820,21 +939,23 @@ def test_climate_supported_features_swing_continue_and_bitwise(base_climate_enti
         ATTR_PRESET_MODE,
     ]
     base_climate_entity._attr_swing_modes = []  # Empty swing_modes forces 'continue'
-    
+
     features = base_climate_entity.supported_features
-    
+
     # Must include TARGET_TEMPERATURE and PRESET_MODE, but NOT SWING_MODE
     assert ClimateEntityFeature.TARGET_TEMPERATURE in features
     assert ClimateEntityFeature.PRESET_MODE in features
     assert ClimateEntityFeature.SWING_MODE not in features
 
 
-
 # --- extra_state_attributes property (2 mutants: lines 411, 419) ---
 
-def test_climate_extra_state_attributes_filtering(base_climate_entity: ClimateIP) -> None:
+
+def test_climate_extra_state_attributes_filtering(
+    base_climate_entity: ClimateIP,
+) -> None:
     """Kill mutants 1 & 2 in extra_state_attributes.
-    
+
     Mutant 1 replaces core_attrs set with None (causes TypeError on iteration).
     Mutant 2 changes 'if k not in core_attrs' to 'if k in core_attrs'.
     """
@@ -844,9 +965,9 @@ def test_climate_extra_state_attributes_filtering(base_climate_entity: ClimateIP
         "custom_attribute_1": "value1",
         "custom_attribute_2": 42,
     }
-    
+
     extra_attrs = base_climate_entity.extra_state_attributes
-    
+
     # Must only contain non-core attributes
     assert extra_attrs == {
         "custom_attribute_1": "value1",
@@ -856,63 +977,79 @@ def test_climate_extra_state_attributes_filtering(base_climate_entity: ClimateIP
 
 # --- min_temp property (6 mutants: lines 452-458) ---
 
-def test_climate_min_temp_from_coordinator_property(base_climate_entity: ClimateIP) -> None:
+
+def test_climate_min_temp_from_coordinator_property(
+    base_climate_entity: ClimateIP,
+) -> None:
     """Kill mutants 1, 3, 5 in min_temp when coordinator property object is valid."""
     from homeassistant.components.climate.const import ATTR_MIN_TEMP
+
     mock_prop = MagicMock()
     mock_prop.value = "17.5"
-    base_climate_entity.coordinator.get_property_object.side_effect = (
-        lambda key: mock_prop if key == ATTR_MIN_TEMP else None
+    base_climate_entity.coordinator.get_property_object.side_effect = lambda key: (
+        mock_prop if key == ATTR_MIN_TEMP else None
     )
-    
+
     assert base_climate_entity.min_temp == 17.5
 
 
 def test_climate_min_temp_fallback_on_none_prop(base_climate_entity: ClimateIP) -> None:
     """Kill mutants 2, 4, 6 in min_temp when get_property_object returns None."""
     from custom_components.climate_ip.const import DEFAULT_CLIMATE_IP_TEMP_MIN
+
     base_climate_entity.coordinator.get_property_object.return_value = None
-    
+
     assert base_climate_entity.min_temp == float(DEFAULT_CLIMATE_IP_TEMP_MIN)
 
 
-def test_climate_min_temp_fallback_on_invalid_value(base_climate_entity: ClimateIP) -> None:
+def test_climate_min_temp_fallback_on_invalid_value(
+    base_climate_entity: ClimateIP,
+) -> None:
     """Kill mutants when min_t_prop.value is None or invalid string (TypeError/ValueError)."""
     from custom_components.climate_ip.const import DEFAULT_CLIMATE_IP_TEMP_MIN
+
     mock_prop = MagicMock()
     mock_prop.value = "invalid_number"
     base_climate_entity.coordinator.get_property_object.return_value = mock_prop
-    
+
     assert base_climate_entity.min_temp == float(DEFAULT_CLIMATE_IP_TEMP_MIN)
 
 
 # --- max_temp property (6 mutants: lines 463-469) ---
 
-def test_climate_max_temp_from_coordinator_property(base_climate_entity: ClimateIP) -> None:
+
+def test_climate_max_temp_from_coordinator_property(
+    base_climate_entity: ClimateIP,
+) -> None:
     """Kill mutants 1, 3, 5 in max_temp when coordinator property object is valid."""
     from homeassistant.components.climate.const import ATTR_MAX_TEMP
+
     mock_prop = MagicMock()
     mock_prop.value = "31.0"
-    base_climate_entity.coordinator.get_property_object.side_effect = (
-        lambda key: mock_prop if key == ATTR_MAX_TEMP else None
+    base_climate_entity.coordinator.get_property_object.side_effect = lambda key: (
+        mock_prop if key == ATTR_MAX_TEMP else None
     )
-    
+
     assert base_climate_entity.max_temp == 31.0
 
 
 def test_climate_max_temp_fallback_on_none_prop(base_climate_entity: ClimateIP) -> None:
     """Kill mutants 2, 4, 6 in max_temp when get_property_object returns None."""
     from custom_components.climate_ip.const import DEFAULT_CLIMATE_IP_TEMP_MAX
+
     base_climate_entity.coordinator.get_property_object.return_value = None
-    
+
     assert base_climate_entity.max_temp == float(DEFAULT_CLIMATE_IP_TEMP_MAX)
 
 
-def test_climate_max_temp_fallback_on_invalid_value(base_climate_entity: ClimateIP) -> None:
+def test_climate_max_temp_fallback_on_invalid_value(
+    base_climate_entity: ClimateIP,
+) -> None:
     """Kill mutants when max_t_prop.value is None or invalid string (TypeError/ValueError)."""
     from custom_components.climate_ip.const import DEFAULT_CLIMATE_IP_TEMP_MAX
+
     mock_prop = MagicMock()
     mock_prop.value = "invalid_number"
     base_climate_entity.coordinator.get_property_object.return_value = mock_prop
-    
+
     assert base_climate_entity.max_temp == float(DEFAULT_CLIMATE_IP_TEMP_MAX)

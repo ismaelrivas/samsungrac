@@ -1,5 +1,4 @@
 import re
-import os
 
 analysis_file = "/home/cogollo/ha_data/config/mutant_analysis.md"
 target_file = "/home/cogollo/ha_data/config/custom_components/climate_ip/config_flow.py"
@@ -25,7 +24,7 @@ patched = 0
 new_lines = []
 for line in config_lines:
     original_stripped = line.strip().split("# pragma: no mutate")[0].strip()
-    if original_stripped in lines_to_pragma and not "# pragma: no mutate" in line:
+    if original_stripped in lines_to_pragma and "# pragma: no mutate" not in line:
         line = line.rstrip("\n") + "  # pragma: no mutate\n"
         patched += 1
     new_lines.append(line)

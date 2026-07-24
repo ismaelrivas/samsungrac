@@ -1,5 +1,4 @@
 import re
-import os
 
 test_file = "/workspaces/ha_data/config/custom_components/climate_ip/tests/test_controller_yaml_config.py"
 

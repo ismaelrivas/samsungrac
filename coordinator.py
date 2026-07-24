@@ -49,28 +49,35 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         """Initialize the data coordinator."""
         self.controller = controller
         self.entry = entry
-        #self._entity = None  # Reference to the ClimateIP entity
+        # self._entity = None  # Reference to the ClimateIP entity
 
         # Inject callbacks into the controller to avoid circular dependencies.
 
         def _save_new_token(new_token: str) -> None:
             """Callback to save the renewed token from the network layer."""
+
             @callback
             def _update_token() -> None:
                 new_data = dict(self.entry.data)
                 new_data["token"] = new_token
                 self.hass.config_entries.async_update_entry(self.entry, data=new_data)
-                _LOGGER.info("%s Persisted new network token to Config Entry.", self.log_prefix)  # pragma: no mutate
+                _LOGGER.info(
+                    "%s Persisted new network token to Config Entry.", self.log_prefix
+                )  # pragma: no mutate
 
             try:
                 running_loop = asyncio.get_running_loop()
             except RuntimeError:
                 running_loop = None
 
-            if running_loop is not None and running_loop is getattr(self.hass, "loop", None):
+            if running_loop is not None and running_loop is getattr(
+                self.hass, "loop", None
+            ):
                 _update_token()
             else:
-                if hasattr(self.hass, "loop") and hasattr(self.hass.loop, "call_soon_threadsafe"):
+                if hasattr(self.hass, "loop") and hasattr(
+                    self.hass.loop, "call_soon_threadsafe"
+                ):
                     self.hass.loop.call_soon_threadsafe(_update_token)
                 _update_token()
 
@@ -87,23 +94,32 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
         def _save_ssl_config(ssl_config: dict[str, Any]) -> None:
             """Callback to save SSL configuration to the config entry."""
+
             @callback
             def _update_ssl() -> None:
                 current_data = dict(self.entry.data)
                 if current_data.get("_ssl_config_2878") != ssl_config:
                     current_data["_ssl_config_2878"] = ssl_config
-                    self.hass.config_entries.async_update_entry(self.entry, data=current_data)
-                    _LOGGER.info("%s Persisted SSL config to ConfigEntry data.", self.log_prefix)  # pragma: no mutate
+                    self.hass.config_entries.async_update_entry(
+                        self.entry, data=current_data
+                    )
+                    _LOGGER.info(
+                        "%s Persisted SSL config to ConfigEntry data.", self.log_prefix
+                    )  # pragma: no mutate
 
             try:
                 running_loop = asyncio.get_running_loop()
             except RuntimeError:
                 running_loop = None
 
-            if running_loop is not None and running_loop is getattr(self.hass, "loop", None):
+            if running_loop is not None and running_loop is getattr(
+                self.hass, "loop", None
+            ):
                 _update_ssl()
             else:
-                if hasattr(self.hass, "loop") and hasattr(self.hass.loop, "call_soon_threadsafe"):
+                if hasattr(self.hass, "loop") and hasattr(
+                    self.hass.loop, "call_soon_threadsafe"
+                ):
                     self.hass.loop.call_soon_threadsafe(_update_ssl)
                 _update_ssl()
 
@@ -124,17 +140,22 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
         def _handle_persistent_offline(reason: str) -> None:
             """Callback for the network layer to force UI unavailability immediately."""
-            _LOGGER.debug("%s Network layer declared device offline. Forcing UpdateFailed.", self.log_prefix)  # pragma: no mutate
+            _LOGGER.debug(
+                "%s Network layer declared device offline. Forcing UpdateFailed.",
+                self.log_prefix,
+            )  # pragma: no mutate
             self.async_set_update_error(UpdateFailed(f"Device offline: {reason}"))
 
         self.controller.on_offline_callback = _handle_persistent_offline
 
         # Determine the update interval from options → data → default.
         enable_polling = entry.options.get(
-            CONF_ENABLE_POLLING, entry.data.get(CONF_ENABLE_POLLING, DEFAULT_ENABLE_POLLING)
+            CONF_ENABLE_POLLING,
+            entry.data.get(CONF_ENABLE_POLLING, DEFAULT_ENABLE_POLLING),
         )
         poll_interval_seconds = entry.options.get(
-            CONF_POLL_INTERVAL, entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
+            CONF_POLL_INTERVAL,
+            entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
         )
         update_interval = (
             timedelta(seconds=poll_interval_seconds)
@@ -150,7 +171,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             _LOGGER,
             name=f"Samsung Climate {self.log_prefix}",
             update_interval=update_interval,
-            config_entry=entry, 
+            config_entry=entry,
         )  # pragma: no mutate
 
         # Build comprehensive DeviceInfo
@@ -188,8 +209,6 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 connections=conns,
             )
 
-
-
     # def register_entity(self, entity: Any) -> None:
     #     """Register the climate entity instance."""
     #     self._entity = entity
@@ -207,7 +226,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     async def _async_update_data(self) -> Any:
         """Fetch the latest state from the device."""
         try:
-            await asyncio.wait_for(self.controller.async_get_status(), timeout=NETWORK_POLL_TIMEOUT)  # pragma: no mutate
+            await asyncio.wait_for(
+                self.controller.async_get_status(), timeout=NETWORK_POLL_TIMEOUT
+            )  # pragma: no mutate
             return self._create_device_state()
 
         except InvalidHeaderError as err:
@@ -222,23 +243,34 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             # fmt: on
 
         except (AuthError, ConfigEntryAuthFailed) as err:
-            raise ConfigEntryAuthFailed(f"Authentication failed: {err}") from err  # pragma: no mutate
+            raise ConfigEntryAuthFailed(
+                f"Authentication failed: {err}"
+            ) from err  # pragma: no mutate
 
         except UpdateFailed:
             # If a lower layer already raised a clean UpdateFailed, pass it through
             raise  # pragma: no mutate
 
-        except (CannotConnect, ConnectionRefusedError, asyncio.TimeoutError, OSError) as err:
+        except (
+            CannotConnect,
+            ConnectionRefusedError,
+            asyncio.TimeoutError,
+            OSError,
+        ) as err:
             # fmt: off
             _LOGGER.debug("%s Network error during state update: %s", self.log_prefix, err)  # pragma: no mutate
             # fmt: on
-            raise UpdateFailed(f"Network error during update: {err}") from err  # pragma: no mutate
+            raise UpdateFailed(
+                f"Network error during update: {err}"
+            ) from err  # pragma: no mutate
 
         except (ValueError, TypeError, KeyError) as err:
             # fmt: off
             _LOGGER.error("%s Data parsing error during update: %s", self.log_prefix, err, exc_info=True)  # pragma: no mutate
             # fmt: on
-            raise UpdateFailed(f"Data parsing error: {err}") from err  # pragma: no mutate
+            raise UpdateFailed(
+                f"Data parsing error: {err}"
+            ) from err  # pragma: no mutate
 
         except Exception as err:  # pylint: disable=import-outside-toplevel,broad-exception-caught
             # fmt: off
@@ -246,7 +278,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             # fmt: on
             raise UpdateFailed(f"Fatal error: {err}") from err  # pragma: no mutate
 
-    async def async_handle_push_update(self, new_data: dict[str, Any] | None = None) -> None:
+    async def async_handle_push_update(
+        self, new_data: dict[str, Any] | None = None
+    ) -> None:
         """Handle a state update received via push from the connection."""
         try:
             # fmt: off
@@ -317,14 +351,18 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             _LOGGER.error("%s Network error setting properties: %s", self.log_prefix, type(err).__name__)  # pragma: no mutate
             # fmt: on
             await self.async_request_refresh()
-            raise UpdateFailed(f"Network error setting property {property_name}: {err}") from err  # pragma: no mutate
+            raise UpdateFailed(
+                f"Network error setting property {property_name}: {err}"
+            ) from err  # pragma: no mutate
 
         except (ValueError, TypeError, KeyError) as err:
             # fmt: off
             _LOGGER.error("%s Data error setting properties: %s", self.log_prefix, err, exc_info=True)  # pragma: no mutate
             # fmt: on
             await self.async_request_refresh()
-            raise UpdateFailed(f"Data error setting property {property_name}: {err}") from err  # pragma: no mutate
+            raise UpdateFailed(
+                f"Data error setting property {property_name}: {err}"
+            ) from err  # pragma: no mutate
 
         except Exception as err:  # pylint: disable=import-outside-toplevel,broad-exception-caught
             # fmt: off
@@ -332,7 +370,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             # fmt: on
             # Revert state on failure
             await self.async_request_refresh()
-            raise UpdateFailed(f"Failed to set property {property_name}: {err}") from err  # pragma: no mutate
+            raise UpdateFailed(
+                f"Failed to set property {property_name}: {err}"
+            ) from err  # pragma: no mutate
 
     async def async_predict_and_correct(
         self,
@@ -344,7 +384,10 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         if hasattr(self.controller, "async_predict_and_correct_state"):
             if isinstance(new_value, HVACMode):
                 new_value = new_value.value
-            changed_flags, corrections = await self.controller.async_predict_and_correct_state(
+            (
+                changed_flags,
+                corrections,
+            ) = await self.controller.async_predict_and_correct_state(
                 current_state, property_name, new_value
             )
 
@@ -354,7 +397,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             self.async_set_updated_data(predicted_state)
 
             return changed_flags, corrections
-        _LOGGER.debug("%s Controller does not support state prediction", self.log_prefix)  # pragma: no mutate
+        _LOGGER.debug(
+            "%s Controller does not support state prediction", self.log_prefix
+        )  # pragma: no mutate
         return ClimateEntityFeature(0), {}
 
     @property
@@ -410,8 +455,12 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
         Called when the config entry is unloaded.
         """
-        _LOGGER.debug("%s Shutting down coordinator", self.log_prefix)  # pragma: no mutate
+        _LOGGER.debug(
+            "%s Shutting down coordinator", self.log_prefix
+        )  # pragma: no mutate
         if self.controller:
             await self.controller.async_shutdown()
 
-        _LOGGER.debug("%s Coordinator shutdown complete", self.log_prefix)  # pragma: no mutate
+        _LOGGER.debug(
+            "%s Coordinator shutdown complete", self.log_prefix
+        )  # pragma: no mutate

@@ -43,13 +43,9 @@ class Connection:
         even when HA launches multiple entity updates concurrently.
         """
         # Try to resolve host and port from _params first, then _config.
-        host: str | None = (
-            self._params.get("host")
-            or self._config.get("host")
-        )
-        port: str | int = (
-            self._params.get("port")
-            or self._config.get("port", "default")
+        host: str | None = self._params.get("host") or self._config.get("host")
+        port: str | int = self._params.get("port") or self._config.get(
+            "port", "default"
         )
 
         if not host:
@@ -87,7 +83,10 @@ class Connection:
 
         Override in subclasses to provide specific connection details.
         """
-        return {"type": self.__class__.__name__, "status": "not_implemented_in_base_class"}
+        return {
+            "type": self.__class__.__name__,
+            "status": "not_implemented_in_base_class",
+        }
 
     def execute(
         self, template: Any, value: Any, device_state: Any, device_id: str | None = None

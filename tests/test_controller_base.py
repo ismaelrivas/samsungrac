@@ -2,14 +2,11 @@
 
 import logging
 import pytest
-from typing import Any
 from unittest.mock import patch
-import inspect
 
 from custom_components.climate_ip.controller import (
     ClimateController,
     create_controller,
-    ControllerInterface,
 )
 
 
@@ -84,6 +81,7 @@ class DummyController(ClimateController):
     @property
     def temperature_unit(self) -> str:
         from homeassistant.const import UnitOfTemperature
+
         return UnitOfTemperature.CELSIUS
 
     @property
@@ -106,10 +104,13 @@ class DummyController(ClimateController):
 @pytest.mark.parametrize(
     "unique_id, expected_prefix",
     [
-        ("12345", "[12345]"),      # <--- CORREGIDO: El slicing devuelve la cadena entera si es corta
-        ("123456", "[123456]"),    
-        ("1234567", "[234567]"),   
-        (None, "[myName]"),        # <--- CORREGIDO: Actualizado al nombre que realmente corta
+        (
+            "12345",
+            "[12345]",
+        ),  # <--- CORREGIDO: El slicing devuelve la cadena entera si es corta
+        ("123456", "[123456]"),
+        ("1234567", "[234567]"),
+        (None, "[myName]"),  # <--- CORREGIDO: Actualizado al nombre que realmente corta
     ],
 )
 def test_controller_log_prefix_truncation(unique_id, expected_prefix) -> None:
@@ -151,7 +152,10 @@ async def test_create_controller_resilience_exceptions(caplog) -> None:
         with caplog.at_level(logging.ERROR):
             controller = await create_controller("bomb_key", {}, logger)
             assert controller is None
-            assert "Configuration or data error while creating controller bomb_key" in caplog.text
+            assert (
+                "Configuration or data error while creating controller bomb_key"
+                in caplog.text
+            )
             assert "Detonated KeyError" in caplog.text
 
         caplog.clear()
@@ -160,7 +164,10 @@ async def test_create_controller_resilience_exceptions(caplog) -> None:
         with caplog.at_level(logging.ERROR):
             controller = await create_controller("bomb_timeout", {}, logger)
             assert controller is None
-            assert "Network error while initializing controller bomb_timeout" in caplog.text
+            assert (
+                "Network error while initializing controller bomb_timeout"
+                in caplog.text
+            )
             assert "Detonated TimeoutError" in caplog.text
 
 
@@ -182,7 +189,10 @@ async def test_create_controller_initialization_failure(caplog) -> None:
         [InitFailsController],
     ):
         with caplog.at_level(logging.ERROR):
-            from custom_components.climate_ip.controller import ControllerInitializationError
+            from custom_components.climate_ip.controller import (
+                ControllerInitializationError,
+            )
+
             with pytest.raises(ControllerInitializationError):
                 await create_controller("fail_init", {}, logger)
             assert "Failed to initialize controller for type fail_init" in caplog.text
@@ -201,12 +211,14 @@ def test_controller_base_init_state() -> None:
 def test_register_controller_kills_mutants() -> None:
     """Test register_controller securely without mutating global state permanently."""
     from custom_components.climate_ip.controller import register_controller
-    
+
     class FakeController(DummyController):
         pass
-    
+
     # Parcheamos la lista con una nueva lista vacía aislada
-    with patch("custom_components.climate_ip.controller.CLIMATE_CONTROLLERS", []) as mock_list:
+    with patch(
+        "custom_components.climate_ip.controller.CLIMATE_CONTROLLERS", []
+    ) as mock_list:
         register_controller(FakeController)
 
         assert mock_list[-1] is FakeController
@@ -231,6 +243,4 @@ async def test_create_controller_success_kills_mutants() -> None:
         controller = await create_controller("success_mutant", config, logger)
         assert controller is not None
         assert controller._saved_config is config  # Kills config=None mutant
-        assert controller._logger is logger        # Kills logger=None mutant
-
-
+        assert controller._logger is logger  # Kills logger=None mutant

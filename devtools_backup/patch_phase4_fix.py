@@ -1,4 +1,3 @@
-import re
 
 with open('custom_components/climate_ip/tests/test_connection_raw.py', 'r') as f:
     content = f.read()

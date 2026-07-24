@@ -1,4 +1,3 @@
-import os
 
 test_file = "custom_components/climate_ip/tests/test_config_flow.py"
 with open(test_file, "a") as f:

@@ -1,5 +1,3 @@
-import sys
-import difflib
 import ast
 
 source = open('mutants/custom_components/climate_ip/connection_raw.py').read()

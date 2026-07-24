@@ -28,6 +28,7 @@ import defusedxml.ElementTree as ET
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.entity import EntityCategory
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ _LOGGER = logging.getLogger(__name__)
 RE_MAC_ADDRESS = re.compile(r"([0-9a-f]{2}[:-]){5}([0-9a-f]{2})")
 
 # Precompiled regex for a safe Samsung DeviceToken: alphanumeric, dash, underscore (8-128 chars)
-_SAFE_TOKEN_RE = re.compile(r'^[a-zA-Z0-9_\-]{8,128}$')
+_SAFE_TOKEN_RE = re.compile(r"^[a-zA-Z0-9_\-]{8,128}$")
 
 
 def sanitize_token(token: str | None) -> str | None:
@@ -101,13 +102,18 @@ def safe_xml_to_dict(xml_string: str) -> dict[str, Any]:
         root = ET.fromstring(xml_string.strip())
         return {root.tag: _element_to_dict(root)}
     except (ET_types.ParseError, AttributeError, TypeError) as exc:
-        _LOGGER.debug("safe_xml_to_dict: failed to parse XML response: %s", exc)  # pragma: no mutate
+        _LOGGER.debug(
+            "safe_xml_to_dict: failed to parse XML response: %s", exc
+        )  # pragma: no mutate
         return {}
     except ValueError as exc:
         from defusedxml.common import DefusedXmlException  # pylint: disable=import-outside-toplevel
+
         if isinstance(exc, DefusedXmlException):
             raise  # pragma: no mutate
-        _LOGGER.debug("safe_xml_to_dict: failed to parse XML response: %s", exc)  # pragma: no mutate
+        _LOGGER.debug(
+            "safe_xml_to_dict: failed to parse XML response: %s", exc
+        )  # pragma: no mutate
         return {}
 
 
@@ -134,9 +140,13 @@ def tolerant_header_parsing():
             if _HEADER_PATCH_ORIGINAL_RESPONSE:
                 _HEADER_PATCH_ORIGINAL_RESPONSE(headers)
         except HeaderParsingError as e:
-            _LOGGER.debug("Suppressed urllib3 HeaderParsingError: %s", e)  # pragma: no mutate
+            _LOGGER.debug(
+                "Suppressed urllib3 HeaderParsingError: %s", e
+            )  # pragma: no mutate
 
-    def _patched_parse_headers(fp: Any, _class: Any = http.client.HTTPMessage) -> Any:  # pragma: no mutate
+    def _patched_parse_headers(
+        fp: Any, _class: Any = http.client.HTTPMessage
+    ) -> Any:  # pragma: no mutate
         headers = []  # pragma: no mutate
         while True:  # pragma: no mutate
             line = fp.readline(65536 + 1)  # pragma: no mutate
@@ -150,13 +160,17 @@ def tolerant_header_parsing():
 
             headers.append(line)  # pragma: no mutate
             if len(headers) > 100:  # pragma: no mutate
-                raise http.client.HTTPException("got more than 100 headers")  # pragma: no mutate
+                raise http.client.HTTPException(
+                    "got more than 100 headers"
+                )  # pragma: no mutate
             if line in (b"\r\n", b"\n", b""):  # pragma: no mutate
                 break  # pragma: no mutate
 
         clean_fp = BytesIO(b"".join(headers))  # pragma: no mutate
         if _HEADER_PATCH_ORIGINAL_PARSE_HEADERS:  # pragma: no mutate
-            return _HEADER_PATCH_ORIGINAL_PARSE_HEADERS(clean_fp, _class)  # pragma: no mutate
+            return _HEADER_PATCH_ORIGINAL_PARSE_HEADERS(
+                clean_fp, _class
+            )  # pragma: no mutate
         return None  # pragma: no mutate
 
     with _header_patch_lock:
@@ -174,9 +188,15 @@ def tolerant_header_parsing():
         with _header_patch_lock:
             _HEADER_PATCH_REFCOUNT -= 1
             if _HEADER_PATCH_REFCOUNT == 0:
-                response_util.assert_header_parsing = _HEADER_PATCH_ORIGINAL_RESPONSE  # pragma: no mutate
-                connection_mod.assert_header_parsing = _HEADER_PATCH_ORIGINAL_CONNECTION  # pragma: no mutate
-                http.client.parse_headers = _HEADER_PATCH_ORIGINAL_PARSE_HEADERS  # pragma: no mutate
+                response_util.assert_header_parsing = (
+                    _HEADER_PATCH_ORIGINAL_RESPONSE  # pragma: no mutate
+                )
+                connection_mod.assert_header_parsing = (
+                    _HEADER_PATCH_ORIGINAL_CONNECTION  # pragma: no mutate
+                )
+                http.client.parse_headers = (
+                    _HEADER_PATCH_ORIGINAL_PARSE_HEADERS  # pragma: no mutate
+                )
                 _HEADER_PATCH_ORIGINAL_RESPONSE = None  # pragma: no mutate
                 _HEADER_PATCH_ORIGINAL_CONNECTION = None  # pragma: no mutate
                 _HEADER_PATCH_ORIGINAL_PARSE_HEADERS = None  # pragma: no mutate
@@ -211,7 +231,9 @@ def get_value_by_path(data: dict[str, Any], path: list[str]) -> Any | None:
     return current
 
 
-def resolve_cert_path(cert_path: str | None, base_dir: str = "", hass: "HomeAssistant | None" = None) -> str | None:
+def resolve_cert_path(
+    cert_path: str | None, base_dir: str = "", hass: "HomeAssistant | None" = None
+) -> str | None:
     """Safely resolve certificate path using pathlib and Home Assistant dual-resolution rules."""
     if not cert_path:
         return None
@@ -230,7 +252,11 @@ def resolve_cert_path(cert_path: str | None, base_dir: str = "", hass: "HomeAssi
         except AttributeError:
             pass
 
-    return str(Path(base_dir) / cert_path) if base_dir else str(Path(__file__).parent / cert_path)
+    return (
+        str(Path(base_dir) / cert_path)
+        if base_dir
+        else str(Path(__file__).parent / cert_path)
+    )
 
 
 def stream_wrapper(
@@ -267,7 +293,8 @@ def format_placeholders(
         }
     if isinstance(data, list):
         return [
-            format_placeholders(item, token, ip_address, device_id, mac) for item in data
+            format_placeholders(item, token, ip_address, device_id, mac)
+            for item in data
         ]
     if isinstance(data, str):
         return stream_wrapper(data, token, ip_address, device_id, mac)
@@ -292,9 +319,11 @@ def create_samsung_ssl_context(
     is_server: bool = False,  # pragma: no mutate
 ) -> ssl.SSLContext:
     """Creates the standardized SSL context for Samsung devices."""
-    
-    protocol = ssl.PROTOCOL_TLS_SERVER if is_server else ssl.PROTOCOL_TLS_CLIENT  # pragma: no mutate
-    
+
+    protocol = (
+        ssl.PROTOCOL_TLS_SERVER if is_server else ssl.PROTOCOL_TLS_CLIENT
+    )  # pragma: no mutate
+
     context = ssl.SSLContext(protocol)  # pragma: no mutate
     context.set_ciphers(ciphers)
 
@@ -321,7 +350,9 @@ def create_samsung_ssl_context(
             context.load_verify_locations(cafile=cert_path)
             context.load_cert_chain(cert_path)  # pragma: no mutate
         except (ssl.SSLError, OSError, FileNotFoundError) as e:
-            _LOGGER.warning("Could not load Samsung certificate from '%s': %s", cert_path, e)  # pragma: no mutate
+            _LOGGER.warning(
+                "Could not load Samsung certificate from '%s': %s", cert_path, e
+            )  # pragma: no mutate
             raise  # pragma: no mutate
 
     return context
@@ -338,7 +369,7 @@ async def async_create_samsung_ssl_context(
     func = functools.partial(  # pragma: no mutate
         create_samsung_ssl_context,  # pragma: no mutate
         cert_path=cert_path,  # pragma: no mutate
-        ciphers=ciphers,      # pragma: no mutate
+        ciphers=ciphers,  # pragma: no mutate
         verify_mode=verify_mode,  # pragma: no mutate
         is_server=is_server,  # pragma: no mutate
     )  # pragma: no mutate
@@ -348,8 +379,14 @@ async def async_create_samsung_ssl_context(
 def mask_sensitive_data(data: Any) -> Any:
     """Recursively mask sensitive data in a dictionary or list."""
     sensitive_keys = [
-        "uuid", "Authorization", "token", "mac", 
-        "device_id", "unique_id", "DeviceToken", "DUID",
+        "uuid",
+        "Authorization",
+        "token",
+        "mac",
+        "device_id",
+        "unique_id",
+        "DeviceToken",
+        "DUID",
     ]
 
     if isinstance(data, dict):
@@ -366,8 +403,12 @@ def mask_sensitive_data(data: Any) -> Any:
     if isinstance(data, list):
         return [mask_sensitive_data(item) for item in data]
     if isinstance(data, str):
-        data = re.sub(r'(Token=")([a-fA-F0-9-]{36})(")', r"\1***\3", data)  # pragma: no mutate
-        data = re.sub(r'(DeviceToken["\'\s]*[:=]+["\'\s]*)([^"\'\s}]+)', r"\1***", data)  # pragma: no mutate
+        data = re.sub(
+            r'(Token=")([a-fA-F0-9-]{36})(")', r"\1***\3", data
+        )  # pragma: no mutate
+        data = re.sub(
+            r'(DeviceToken["\'\s]*[:=]+["\'\s]*)([^"\'\s}]+)', r"\1***", data
+        )  # pragma: no mutate
         data = re.sub(r'(DUID=")([^"]+)(")', r"\1***\3", data)  # pragma: no mutate
         return data
     return data
@@ -387,15 +428,23 @@ except ImportError:
     ICMPSocketError = None  # type: ignore[assignment, misc]
 
 
-async def async_check_network_reachability(host: str, log_prefix: str = "") -> bool: # pragma: no mutate
+async def async_check_network_reachability(
+    host: str, log_prefix: str = ""
+) -> bool:  # pragma: no mutate
     """Check if the device is reachable on the network using native icmplib."""
     if not _ICMPLIB_AVAILABLE or async_ping is None:
-        _LOGGER.debug("%s icmplib not available, skipping ICMP reachability check.", log_prefix)  # pragma: no mutate
+        _LOGGER.debug(
+            "%s icmplib not available, skipping ICMP reachability check.", log_prefix
+        )  # pragma: no mutate
         return True
 
     try:
         host_obj = await async_ping(  # pragma: no mutate
-            address=host, count=1, timeout=0.5, interval=0.2, privileged=False  # pragma: no mutate
+            address=host,
+            count=1,
+            timeout=0.5,
+            interval=0.2,
+            privileged=False,  # pragma: no mutate
         )  # pragma: no mutate
 
         if host_obj.is_alive:
@@ -416,7 +465,9 @@ async def async_check_network_reachability(host: str, log_prefix: str = "") -> b
         return False
 
     except (IcmpNameLookupError, ICMPSocketError) as err:  # type: ignore[misc]
-        _LOGGER.debug("%s Network diagnostic error for %s: %s", log_prefix, host, err)  # pragma: no mutate
+        _LOGGER.debug(
+            "%s Network diagnostic error for %s: %s", log_prefix, host, err
+        )  # pragma: no mutate
         return False
     except OSError as e:
         _LOGGER.debug(  # pragma: no mutate
@@ -449,9 +500,13 @@ async def async_get_mac_address(ip_address: str) -> str | None:
             return match.group(0)
 
     except FileNotFoundError:
-        _LOGGER.debug("ARP command not found. Cannot resolve MAC for %s.", ip_address)  # pragma: no mutate
+        _LOGGER.debug(
+            "ARP command not found. Cannot resolve MAC for %s.", ip_address
+        )  # pragma: no mutate
     except (OSError, UnicodeDecodeError, asyncio.TimeoutError) as e:
-        _LOGGER.debug("Failed to resolve MAC address for %s via ARP: %s", ip_address, e)  # pragma: no mutate
+        _LOGGER.debug(
+            "Failed to resolve MAC address for %s via ARP: %s", ip_address, e
+        )  # pragma: no mutate
 
     return None
 
@@ -469,7 +524,9 @@ def validate_poll_interval(val: Any) -> int:
             seconds = int(cv.time_period_str(str(val)).total_seconds())
     except Invalid as e:
         raise ValueError(f"Invalid time format: {e}")
-        
+
     if seconds < MIN_POLL_INTERVAL or seconds > MAX_POLL_INTERVAL:
-        raise ValueError(f"Interval must be between {MIN_POLL_INTERVAL} and {MAX_POLL_INTERVAL}")
+        raise ValueError(
+            f"Interval must be between {MIN_POLL_INTERVAL} and {MAX_POLL_INTERVAL}"
+        )
     return seconds

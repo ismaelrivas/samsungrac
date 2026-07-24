@@ -1,4 +1,3 @@
-import re
 
 target_file = "/home/cogollo/ha_data/config/custom_components/climate_ip/config_flow.py"
 

@@ -1,5 +1,6 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
 """Tests for ConnectionRaw8888 keep-alive logic."""
+
 # pylint: disable=import-outside-toplevel,protected-access,redefined-outer-name
 from unittest.mock import AsyncMock, MagicMock
 
@@ -15,7 +16,6 @@ def mock_client():
     client.request = AsyncMock(return_value=('{"result": "ok"}', None))
     client.close = AsyncMock()
     return client
-
 
 
 async def test_periodic_reset_logic(mock_client):
@@ -36,7 +36,6 @@ async def test_periodic_reset_logic(mock_client):
     mock_client.close.assert_called_once()
 
 
-
 async def test_no_reset_on_command(mock_client):
     """Test that connection is NOT closed on command if keep_alive is False."""
     config = {"keep_alive": False, "ip_address": "1.2.3.4", "token": "mock_token"}
@@ -49,7 +48,6 @@ async def test_no_reset_on_command(mock_client):
 
     # Verify close() was NOT called
     mock_client.close.assert_not_called()
-
 
 
 async def test_no_reset_if_keep_alive_true(mock_client):

@@ -1,4 +1,3 @@
-import sys
 import difflib
 import ast
 

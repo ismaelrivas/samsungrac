@@ -1,5 +1,4 @@
 import glob
-import re
 
 files_to_update = glob.glob("custom_components/climate_ip/*.py") + glob.glob("custom_components/climate_ip/tests/*.py")
 disable_str = "# pylint: disable="

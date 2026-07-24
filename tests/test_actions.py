@@ -1,5 +1,6 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
 """Test native Home Assistant actions from actions.yaml."""
+
 # pylint: disable=import-outside-toplevel
 from unittest.mock import AsyncMock, MagicMock
 
@@ -25,17 +26,25 @@ async def test_set_property_action(hass: HomeAssistant) -> None:
     mock_coordinator.poll = True
     mock_coordinator.temperature_unit = "°C"
     mock_coordinator.data = MagicMock(
-        hvac_mode="cool", target_temperature=22.0, current_temperature=None,
-        fan_mode="auto", swing_mode=None, preset_mode=None,
-        hvac_modes=["cool", "heat"], fan_modes=["auto", "low"],
-        swing_modes=[], preset_modes=[],
+        hvac_mode="cool",
+        target_temperature=22.0,
+        current_temperature=None,
+        fan_mode="auto",
+        swing_mode=None,
+        preset_mode=None,
+        hvac_modes=["cool", "heat"],
+        fan_modes=["auto", "low"],
+        swing_modes=[],
+        preset_modes=[],
     )
     mock_coordinator.device_info = MagicMock()
     mock_coordinator.async_set_property = AsyncMock()
     mock_coordinator.register_entity = MagicMock()
     mock_coordinator.coordinator = None
 
-    description = ClimateIPEntityDescription(key="samsung_ac", translation_key="samsung_ac")
+    description = ClimateIPEntityDescription(
+        key="samsung_ac", translation_key="samsung_ac"
+    )
     config = {"name": "Test AC", "temp_step": 1.0}
     entity = ClimateIP(mock_coordinator, description, config)
     entity.hass = hass
@@ -53,6 +62,7 @@ async def test_set_property_action(hass: HomeAssistant) -> None:
 
     # The first call to async_execute is usually for polling or setup,
     # but here we are testing the actual command execution
+
 
 async def test_native_service_registry(hass: HomeAssistant) -> None:
     """Verify that no deprecated manual service registration exists."""

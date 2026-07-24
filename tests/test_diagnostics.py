@@ -12,7 +12,6 @@ from custom_components.climate_ip.diagnostics import (
     TO_REDACT,
     async_get_config_entry_diagnostics,
 )
-from homeassistant.core import HomeAssistant
 
 
 @dataclass
@@ -80,9 +79,9 @@ async def test_diagnostics_all_sensitive_keys_redacted(mock_hass, mock_entry):
     entry_data = result["entry"]["data"]
 
     for key in TO_REDACT:
-        assert (
-            entry_data[key] == "**REDACTED**"
-        ), f"Key '{key}' in TO_REDACT was not redacted!"
+        assert entry_data[key] == "**REDACTED**", (
+            f"Key '{key}' in TO_REDACT was not redacted!"
+        )
 
 
 async def test_diagnostics_single_coordinator(mock_hass, mock_entry):
@@ -173,7 +172,10 @@ async def test_recursive_redaction(mock_hass, mock_entry):
                 "safe_key": "safe_value",
             }
         },
-        "list_of_dicts": [{"mac": "AA:BB:CC", "other": "info"}, {"refresh_token": "refresh_123"}],
+        "list_of_dicts": [
+            {"mac": "AA:BB:CC", "other": "info"},
+            {"refresh_token": "refresh_123"},
+        ],
     }
     mock_entry.runtime_data = None
 

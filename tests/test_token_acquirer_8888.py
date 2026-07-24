@@ -1,9 +1,7 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
 """Tests for the Samsung 8888 token acquirer."""
 
-import asyncio
 import json
-import os
 import ssl
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
@@ -71,7 +69,9 @@ def make_mock_timeout_cm():
     """Construct canonical AsyncMock context manager for asyncio.timeout."""
     ctx = MagicMock()
     ctx.__aenter__ = AsyncMock()
-    ctx.__aexit__ = AsyncMock(return_value=False)  # CRITICAL: Do NOT swallow inner exceptions!
+    ctx.__aexit__ = AsyncMock(
+        return_value=False
+    )  # CRITICAL: Do NOT swallow inner exceptions!
     return ctx
 
 
@@ -92,6 +92,7 @@ def acquirer(mock_hass):
 
 # --- Initialization Tests ---
 
+
 def test_init_attributes(mock_hass):
     """Test acquirer initialization attributes and certificate resolution paths."""
     acquirer_rel = SamsungTokenAcquirer8888(mock_hass, "192.168.1.50", "ac14k_m.pem")
@@ -105,7 +106,9 @@ def test_init_attributes(mock_hass):
     assert acquirer_rel._cert_path.endswith("custom_components/climate_ip/ac14k_m.pem")
 
     # Absolute cert path
-    acquirer_abs = SamsungTokenAcquirer8888(mock_hass, "192.168.1.50", "/etc/ssl/cert.pem")
+    acquirer_abs = SamsungTokenAcquirer8888(
+        mock_hass, "192.168.1.50", "/etc/ssl/cert.pem"
+    )
     assert acquirer_abs._cert_path == "/etc/ssl/cert.pem"
 
     # Empty cert path
@@ -115,17 +118,19 @@ def test_init_attributes(mock_hass):
 
 # --- Server Lifecycle Tests (_start_listener_server & async_close) ---
 
+
 async def test_start_listener_server_success(acquirer):
     """Test custom TCP server starting successfully."""
     mock_ssl_ctx = MagicMock()
     mock_server = AsyncMock()
 
-    with patch(
-        "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
-        return_value=mock_ssl_ctx,
-    ) as mock_create_ssl, patch(
-        "asyncio.start_server", return_value=mock_server
-    ) as mock_start_server:
+    with (
+        patch(
+            "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
+            return_value=mock_ssl_ctx,
+        ) as mock_create_ssl,
+        patch("asyncio.start_server", return_value=mock_server) as mock_start_server,
+    ):
         result = await acquirer._start_listener_server()
 
         assert result is True
@@ -148,10 +153,13 @@ async def test_start_listener_server_fallback_bind_ip(mock_hass):
     mock_ssl_ctx = MagicMock()
     mock_server = AsyncMock()
 
-    with patch(
-        "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
-        return_value=mock_ssl_ctx,
-    ), patch("asyncio.start_server", return_value=mock_server) as mock_start_server:
+    with (
+        patch(
+            "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
+            return_value=mock_ssl_ctx,
+        ),
+        patch("asyncio.start_server", return_value=mock_server) as mock_start_server,
+    ):
         result = await acquirer_no_ip._start_listener_server()
 
         assert result is True
@@ -160,11 +168,16 @@ async def test_start_listener_server_fallback_bind_ip(mock_hass):
 
 async def test_start_listener_server_bind_oserror(acquirer):
     """Test handling OSError when binding to listener port."""
-    with patch(
-        "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
-        return_value=MagicMock(),
-    ), patch("asyncio.start_server", side_effect=OSError("Address already in use")):
-        with pytest.raises(TokenAcquisitionError, match="Cannot bind to 192.168.1.100:8889"):
+    with (
+        patch(
+            "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
+            return_value=MagicMock(),
+        ),
+        patch("asyncio.start_server", side_effect=OSError("Address already in use")),
+    ):
+        with pytest.raises(
+            TokenAcquisitionError, match="Cannot bind to 192.168.1.100:8889"
+        ):
             await acquirer._start_listener_server()
 
 
@@ -196,23 +209,28 @@ async def test_async_close(acquirer):
 
 # --- Pairing Initiation Tests (async_initiate_pairing) ---
 
+
 async def test_initiate_pairing_success(acquirer):
     """Test a successful pairing initiation with exact raw HTTP socket checks."""
     mock_timeout_ctx = make_mock_timeout_cm()
     mock_ssl_ctx = MagicMock()
 
-    with patch(
-        "custom_components.climate_ip.token_acquirer_8888.SamsungTokenAcquirer8888._start_listener_server",
-        return_value=True,
-    ), patch("asyncio.open_connection") as mock_open_connection, patch(
-        "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
-        return_value=mock_ssl_ctx,
-    ) as mock_create_ssl, patch(
-        "asyncio.timeout", return_value=mock_timeout_ctx
-    ) as mock_timeout:
-
+    with (
+        patch(
+            "custom_components.climate_ip.token_acquirer_8888.SamsungTokenAcquirer8888._start_listener_server",
+            return_value=True,
+        ),
+        patch("asyncio.open_connection") as mock_open_connection,
+        patch(
+            "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
+            return_value=mock_ssl_ctx,
+        ) as mock_create_ssl,
+        patch("asyncio.timeout", return_value=mock_timeout_ctx) as mock_timeout,
+    ):
         # Split response into multiple chunks to test response_data += chunk
-        mock_reader = MockStreamReader([b"HTTP/1.1 200 ", b"OK\r\nConnection: close\r\n\r\nOK"])
+        mock_reader = MockStreamReader(
+            [b"HTTP/1.1 200 ", b"OK\r\nConnection: close\r\n\r\nOK"]
+        )
         mock_writer = MockStreamWriter()
         mock_open_connection.return_value = (mock_reader, mock_writer)
 
@@ -257,20 +275,25 @@ async def test_initiate_pairing_http_failure(acquirer):
     """Test pairing initiation when AC returns non-200 HTTP status."""
     mock_timeout_ctx = make_mock_timeout_cm()
 
-    with patch(
-        "custom_components.climate_ip.token_acquirer_8888.SamsungTokenAcquirer8888._start_listener_server",
-        return_value=True,
-    ), patch("asyncio.open_connection") as mock_open_connection, patch(
-        "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
-        return_value=MagicMock(),
-    ), patch(
-        "asyncio.timeout", return_value=mock_timeout_ctx
+    with (
+        patch(
+            "custom_components.climate_ip.token_acquirer_8888.SamsungTokenAcquirer8888._start_listener_server",
+            return_value=True,
+        ),
+        patch("asyncio.open_connection") as mock_open_connection,
+        patch(
+            "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
+            return_value=MagicMock(),
+        ),
+        patch("asyncio.timeout", return_value=mock_timeout_ctx),
     ):
         mock_reader = MockStreamReader([b"HTTP/1.1 403 Forbidden\r\n\r\n"])
         mock_writer = MockStreamWriter()
         mock_open_connection.return_value = (mock_reader, mock_writer)
 
-        with pytest.raises(TokenAcquisitionError, match="AC responded with non-200 status"):
+        with pytest.raises(
+            TokenAcquisitionError, match="AC responded with non-200 status"
+        ):
             await acquirer.async_initiate_pairing()
 
 
@@ -278,14 +301,17 @@ async def test_initiate_pairing_empty_response(acquirer):
     """Test pairing initiation when AC returns empty response."""
     mock_timeout_ctx = make_mock_timeout_cm()
 
-    with patch(
-        "custom_components.climate_ip.token_acquirer_8888.SamsungTokenAcquirer8888._start_listener_server",
-        return_value=True,
-    ), patch("asyncio.open_connection") as mock_open_connection, patch(
-        "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
-        return_value=MagicMock(),
-    ), patch(
-        "asyncio.timeout", return_value=mock_timeout_ctx
+    with (
+        patch(
+            "custom_components.climate_ip.token_acquirer_8888.SamsungTokenAcquirer8888._start_listener_server",
+            return_value=True,
+        ),
+        patch("asyncio.open_connection") as mock_open_connection,
+        patch(
+            "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
+            return_value=MagicMock(),
+        ),
+        patch("asyncio.timeout", return_value=mock_timeout_ctx),
     ):
         mock_reader = MockStreamReader([b""])
         mock_writer = MockStreamWriter()
@@ -299,18 +325,24 @@ async def test_initiate_pairing_connection_error(acquirer):
     """Test pairing initiation when AC is unreachable."""
     mock_timeout_ctx = make_mock_timeout_cm()
 
-    with patch(
-        "custom_components.climate_ip.token_acquirer_8888.SamsungTokenAcquirer8888._start_listener_server",
-        return_value=True,
-    ), patch("asyncio.open_connection", side_effect=ConnectionError("Connection refused")), patch(
-        "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
-        return_value=MagicMock(),
-    ), patch(
-        "asyncio.timeout", return_value=mock_timeout_ctx
-    ), patch.object(
-        acquirer, "async_close", new_callable=AsyncMock
-    ) as mock_close:
-        with pytest.raises(CannotConnect, match="Failed to connect to AC via raw socket"):
+    with (
+        patch(
+            "custom_components.climate_ip.token_acquirer_8888.SamsungTokenAcquirer8888._start_listener_server",
+            return_value=True,
+        ),
+        patch(
+            "asyncio.open_connection", side_effect=ConnectionError("Connection refused")
+        ),
+        patch(
+            "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
+            return_value=MagicMock(),
+        ),
+        patch("asyncio.timeout", return_value=mock_timeout_ctx),
+        patch.object(acquirer, "async_close", new_callable=AsyncMock) as mock_close,
+    ):
+        with pytest.raises(
+            CannotConnect, match="Failed to connect to AC via raw socket"
+        ):
             await acquirer.async_initiate_pairing()
         mock_close.assert_called_once()
 
@@ -319,23 +351,31 @@ async def test_initiate_pairing_unexpected_exception(acquirer):
     """Test pairing initiation encountering unexpected generic exception."""
     mock_timeout_ctx = make_mock_timeout_cm()
 
-    with patch(
-        "custom_components.climate_ip.token_acquirer_8888.SamsungTokenAcquirer8888._start_listener_server",
-        return_value=True,
-    ), patch("asyncio.open_connection", side_effect=RuntimeError("Unexpected socket crash")), patch(
-        "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
-        return_value=MagicMock(),
-    ), patch(
-        "asyncio.timeout", return_value=mock_timeout_ctx
-    ), patch.object(
-        acquirer, "async_close", new_callable=AsyncMock
-    ) as mock_close:
-        with pytest.raises(TokenAcquisitionError, match="Unexpected error during pairing request"):
+    with (
+        patch(
+            "custom_components.climate_ip.token_acquirer_8888.SamsungTokenAcquirer8888._start_listener_server",
+            return_value=True,
+        ),
+        patch(
+            "asyncio.open_connection",
+            side_effect=RuntimeError("Unexpected socket crash"),
+        ),
+        patch(
+            "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
+            return_value=MagicMock(),
+        ),
+        patch("asyncio.timeout", return_value=mock_timeout_ctx),
+        patch.object(acquirer, "async_close", new_callable=AsyncMock) as mock_close,
+    ):
+        with pytest.raises(
+            TokenAcquisitionError, match="Unexpected error during pairing request"
+        ):
             await acquirer.async_initiate_pairing()
         mock_close.assert_called_once()
 
 
 # --- Token Waiting Tests (async_wait_for_token) ---
+
 
 async def test_wait_for_token_success(acquirer):
     """Test successfully waiting for and receiving a token."""
@@ -347,9 +387,10 @@ async def test_wait_for_token_success(acquirer):
 
     acquirer._token_received_event.wait = mock_wait
 
-    with patch("asyncio.timeout", return_value=mock_timeout_ctx) as mock_timeout, patch.object(
-        acquirer, "async_close", new_callable=AsyncMock
-    ) as mock_close:
+    with (
+        patch("asyncio.timeout", return_value=mock_timeout_ctx) as mock_timeout,
+        patch.object(acquirer, "async_close", new_callable=AsyncMock) as mock_close,
+    ):
         token = await acquirer.async_wait_for_token()
         assert token == "new_secret_token"
         assert mock_timeout.call_args_list == [call(60.0)]
@@ -366,10 +407,13 @@ async def test_wait_for_token_event_set_no_token(acquirer):
 
     acquirer._token_received_event.wait = mock_wait
 
-    with patch("asyncio.timeout", return_value=mock_timeout_ctx), patch.object(
-        acquirer, "async_close", new_callable=AsyncMock
-    ) as mock_close:
-        with pytest.raises(TokenAcquisitionError, match="Event was set but no token was stored"):
+    with (
+        patch("asyncio.timeout", return_value=mock_timeout_ctx),
+        patch.object(acquirer, "async_close", new_callable=AsyncMock) as mock_close,
+    ):
+        with pytest.raises(
+            TokenAcquisitionError, match="Event was set but no token was stored"
+        ):
             await acquirer.async_wait_for_token()
         mock_close.assert_called_once()
 
@@ -383,15 +427,17 @@ async def test_wait_for_token_timeout(acquirer):
 
     acquirer._token_received_event.wait = mock_wait
 
-    with patch("asyncio.timeout", return_value=mock_timeout_ctx), patch.object(
-        acquirer, "async_close", new_callable=AsyncMock
-    ) as mock_close:
+    with (
+        patch("asyncio.timeout", return_value=mock_timeout_ctx),
+        patch.object(acquirer, "async_close", new_callable=AsyncMock) as mock_close,
+    ):
         with pytest.raises(TokenAcquisitionError, match="Timed out waiting for the AC"):
             await acquirer.async_wait_for_token()
         mock_close.assert_called_once()
 
 
 # --- Client Handler Tests (_handle_client) ---
+
 
 async def test_handle_client_chunk_accumulation_and_regex(acquirer):
     """Test TCP client handler accumulating multiple data chunks and extracting token via regex."""
@@ -432,13 +478,16 @@ async def test_handle_client_empty_data(acquirer):
 async def test_handle_client_json_fallback_parsed(acquirer):
     """Test TCP client handler using Strategy 2 (JSON parsing) when Regex fails."""
     mock_timeout_ctx = make_mock_timeout_cm()
-    payload = b"HEADER_PREFIX\r\n\r\n{\"DeviceToken\": \"strategy2_json_token\"}"
+    payload = b'HEADER_PREFIX\r\n\r\n{"DeviceToken": "strategy2_json_token"}'
     mock_reader = MockStreamReader([payload])
     mock_writer = MockStreamWriter()
 
-    with patch("asyncio.timeout", return_value=mock_timeout_ctx), patch(
-        "custom_components.climate_ip.token_acquirer_8888.DEVICE_TOKEN_RE"
-    ) as mock_re:
+    with (
+        patch("asyncio.timeout", return_value=mock_timeout_ctx),
+        patch(
+            "custom_components.climate_ip.token_acquirer_8888.DEVICE_TOKEN_RE"
+        ) as mock_re,
+    ):
         mock_re.search.return_value = None
         await acquirer._handle_client(mock_reader, mock_writer)
 
@@ -450,13 +499,16 @@ async def test_handle_client_json_fallback_parsed(acquirer):
 async def test_handle_client_json_fallback_rfind_check(acquirer):
     """Test Strategy 2 find('{') vs rfind('{') by placing nested '{' inside JSON string value."""
     mock_timeout_ctx = make_mock_timeout_cm()
-    payload = b"HEADER {\"DeviceToken\": \"val{ue\"}"
+    payload = b'HEADER {"DeviceToken": "val{ue"}'
     mock_reader = MockStreamReader([payload])
     mock_writer = MockStreamWriter()
 
-    with patch("asyncio.timeout", return_value=mock_timeout_ctx), patch(
-        "custom_components.climate_ip.token_acquirer_8888.DEVICE_TOKEN_RE"
-    ) as mock_re:
+    with (
+        patch("asyncio.timeout", return_value=mock_timeout_ctx),
+        patch(
+            "custom_components.climate_ip.token_acquirer_8888.DEVICE_TOKEN_RE"
+        ) as mock_re,
+    ):
         mock_re.search.return_value = None
         await acquirer._handle_client(mock_reader, mock_writer)
 
@@ -467,13 +519,16 @@ async def test_handle_client_json_fallback_rfind_check(acquirer):
 async def test_handle_client_json_fallback_index_1(acquirer):
     """Test Strategy 2 when JSON starts at index 1 to kill json_start != +1 mutant."""
     mock_timeout_ctx = make_mock_timeout_cm()
-    payload = b" {\"DeviceToken\": \"index1_json_token\"}"
+    payload = b' {"DeviceToken": "index1_json_token"}'
     mock_reader = MockStreamReader([payload])
     mock_writer = MockStreamWriter()
 
-    with patch("asyncio.timeout", return_value=mock_timeout_ctx), patch(
-        "custom_components.climate_ip.token_acquirer_8888.DEVICE_TOKEN_RE"
-    ) as mock_re:
+    with (
+        patch("asyncio.timeout", return_value=mock_timeout_ctx),
+        patch(
+            "custom_components.climate_ip.token_acquirer_8888.DEVICE_TOKEN_RE"
+        ) as mock_re,
+    ):
         mock_re.search.return_value = None
         await acquirer._handle_client(mock_reader, mock_writer)
 
@@ -488,9 +543,12 @@ async def test_handle_client_json_fallback_invalid_json(acquirer):
     mock_reader = MockStreamReader([payload])
     mock_writer = MockStreamWriter()
 
-    with patch("asyncio.timeout", return_value=mock_timeout_ctx), patch(
-        "custom_components.climate_ip.token_acquirer_8888.DEVICE_TOKEN_RE"
-    ) as mock_re:
+    with (
+        patch("asyncio.timeout", return_value=mock_timeout_ctx),
+        patch(
+            "custom_components.climate_ip.token_acquirer_8888.DEVICE_TOKEN_RE"
+        ) as mock_re,
+    ):
         mock_re.search.return_value = None
         await acquirer._handle_client(mock_reader, mock_writer)
 

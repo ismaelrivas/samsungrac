@@ -16,7 +16,8 @@ from custom_components.climate_ip.const import (
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TOKEN
 
-from .conftest_emulator import emulator_8888  # pylint: disable=unused-import
+pytest_plugins = ("custom_components.climate_ip.tests.conftest_emulator",)
+
 
 @pytest.fixture
 def mock_config_entry(emulator_8888):
@@ -42,9 +43,11 @@ def mock_config_entry(emulator_8888):
 
 
 @patch("homeassistant.helpers.frame.report_usage", return_value=None)
-
 async def test_integration_setup(
-    _mock_report_usage, hass, emulator_8888, mock_config_entry  # pylint: disable=unused-argument
+    _mock_report_usage,
+    hass,
+    emulator_8888,
+    mock_config_entry,  # pylint: disable=unused-argument
 ):
     """Test full integration setup against the emulator."""
 
@@ -59,17 +62,25 @@ async def test_integration_setup(
 
     # Allow custom sockets for emulator integration
     import pytest_socket
+
     pytest_socket.enable_socket()
 
     # 1. Setup the integration
     import aiohttp
 
-
     real_session = aiohttp.ClientSession()
     from custom_components.climate_ip import async_setup_entry
 
-    with patch("custom_components.climate_ip.async_get_clientsession", return_value=real_session), \
-         patch("homeassistant.helpers.aiohttp_client.async_get_clientsession", return_value=real_session):
+    with (
+        patch(
+            "custom_components.climate_ip.async_get_clientsession",
+            return_value=real_session,
+        ),
+        patch(
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+            return_value=real_session,
+        ),
+    ):
         assert await async_setup_entry(hass, mock_config_entry)
 
     # 2. Verify coordinator exists and received data from emulator
@@ -81,13 +92,16 @@ async def test_integration_setup(
     assert coordinator is not None
     controller = coordinator.controller
     hvac_mode = controller.get_property("hvac_mode")
-    assert hvac_mode is not None, "HVAC mode property should be populated from emulator state"
+    assert hvac_mode is not None, (
+        "HVAC mode property should be populated from emulator state"
+    )
     await real_session.close()
 
 
 @patch("homeassistant.helpers.frame.report_usage", return_value=None)
-
-async def test_control_device(_mock_report_usage, hass, emulator_8888, mock_config_entry):
+async def test_control_device(
+    _mock_report_usage, hass, emulator_8888, mock_config_entry
+):
     """Test controlling the device via integration actions."""
 
     # Initialize hass.data since we are using a MagicMock for hass
@@ -101,6 +115,7 @@ async def test_control_device(_mock_report_usage, hass, emulator_8888, mock_conf
 
     # Allow custom sockets for emulator integration
     import pytest_socket
+
     pytest_socket.enable_socket()
 
     # 1. Setup the integration
@@ -109,8 +124,16 @@ async def test_control_device(_mock_report_usage, hass, emulator_8888, mock_conf
     real_session = aiohttp.ClientSession()
     from custom_components.climate_ip import async_setup_entry
 
-    with patch("custom_components.climate_ip.async_get_clientsession", return_value=real_session), \
-         patch("homeassistant.helpers.aiohttp_client.async_get_clientsession", return_value=real_session):
+    with (
+        patch(
+            "custom_components.climate_ip.async_get_clientsession",
+            return_value=real_session,
+        ),
+        patch(
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+            return_value=real_session,
+        ),
+    ):
         assert await async_setup_entry(hass, mock_config_entry)
 
     coordinator = mock_config_entry.runtime_data

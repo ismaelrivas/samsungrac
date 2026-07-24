@@ -32,6 +32,7 @@ SSL_OPTIMIZATIONS: Final = {
 HEADER_PATTERN = re.compile(r"^(?P<key>[^:]+):\s*(?P<value>.+)$", re.IGNORECASE)
 STATUS_PATTERN = re.compile(r"^HTTP/\d\.\d\s+(?P<code>\d+)", re.IGNORECASE)
 
+
 class ProtocolError(Exception):
     """Raised for protocol-level errors in the 8888 communication layer."""
 
@@ -117,7 +118,7 @@ class Samsung8888Client:
             if applied_opts:
                 _LOGGER.debug(  # pragma: no mutate
                     "%s SSL Optimizations enabled: %s",  # pragma: no mutate
-                    self.log_prefix,    # pragma: no mutate
+                    self.log_prefix,  # pragma: no mutate
                     ", ".join(applied_opts),  # pragma: no mutate
                 )  # pragma: no mutate
         except Exception:  # pylint: disable=import-outside-toplevel,broad-exception-caught
@@ -135,15 +136,19 @@ class Samsung8888Client:
                     e,  # pragma: no mutate
                 )  # pragma: no mutate
 
-        max_ver = get_tls_version_name(getattr(ctx, "maximum_version", 0))  # pragma: no mutate
-        min_ver = get_tls_version_name(getattr(ctx, "minimum_version", 0))  # pragma: no mutate
+        max_ver = get_tls_version_name(
+            getattr(ctx, "maximum_version", 0)
+        )  # pragma: no mutate
+        min_ver = get_tls_version_name(
+            getattr(ctx, "minimum_version", 0)
+        )  # pragma: no mutate
         _LOGGER.debug(  # pragma: no mutate
             "%s [protocol_8888] SSLContext configured. Min: %s, Max: %s",  # pragma: no mutate
             self.log_prefix,  # pragma: no mutate
             min_ver,  # pragma: no mutate
             max_ver,  # pragma: no mutate
         )  # pragma: no mutate
-        
+
         return ctx
 
     async def connect(self) -> None:
@@ -155,12 +160,19 @@ class Samsung8888Client:
         try:
             # Modern Python 3.11+ timeout context manager
             async with asyncio.timeout(10.0):
-                self._reader, self._writer = await asyncio.open_connection(  # pragma: no mutate
-                    self.host, self.port, ssl=self._ssl_context  # pragma: no mutate
+                (
+                    self._reader,
+                    self._writer,
+                ) = await asyncio.open_connection(  # pragma: no mutate
+                    self.host,
+                    self.port,
+                    ssl=self._ssl_context,  # pragma: no mutate
                 )  # pragma: no mutate
             try:
                 ssl_obj = self._writer.get_extra_info("ssl_object")  # pragma: no mutate
-                negotiated_tls = ssl_obj.version() if ssl_obj else "Unknown"  # pragma: no mutate
+                negotiated_tls = (
+                    ssl_obj.version() if ssl_obj else "Unknown"
+                )  # pragma: no mutate
                 _LOGGER.debug(  # pragma: no mutate
                     "%s [Samsung8888Client] Connected successfully. Negotiated TLS: %s",  # pragma: no mutate
                     self.log_prefix,  # pragma: no mutate
@@ -169,18 +181,23 @@ class Samsung8888Client:
             except Exception:  # pylint: disable=import-outside-toplevel,broad-exception-caught
                 pass
         except TimeoutError as exc:
-            raise CannotConnect(f"Connection timed out to {self.host}:{self.port}") from exc
+            raise CannotConnect(
+                f"Connection timed out to {self.host}:{self.port}"
+            ) from exc
         except Exception as exc:  # pylint: disable=import-outside-toplevel,broad-exception-caught
             raise CannotConnect(f"Connection error: {exc}") from exc
 
     async def close(self) -> None:
         """Close and clean up the socket writer and cancel pending tasks (Step 3.1)."""
         _LOGGER.debug(  # pragma: no mutate
-            "%s [Samsung8888Client] Closing and cleaning up resources...", self.log_prefix  # pragma: no mutate
+            "%s [Samsung8888Client] Closing and cleaning up resources...",
+            self.log_prefix,  # pragma: no mutate
         )  # pragma: no mutate
 
         # 1. Cancel all tracked background tasks aggressively
-        tasks_to_cancel = [t for t in self._active_tasks if not t.done()]  # pragma: no mutate
+        tasks_to_cancel = [
+            t for t in self._active_tasks if not t.done()
+        ]  # pragma: no mutate
         for task in tasks_to_cancel:
             task.cancel()
 
@@ -211,7 +228,8 @@ class Samsung8888Client:
                         self._writer.transport.abort()
                 except Exception as e:  # pylint: disable=import-outside-toplevel,broad-exception-caught
                     _LOGGER.warning(  # pragma: no mutate
-                        "%s [Samsung8888Client] Error during wait_closed, " "forcing abort: %s",  # pragma: no mutate
+                        "%s [Samsung8888Client] Error during wait_closed, "
+                        "forcing abort: %s",  # pragma: no mutate
                         self.log_prefix,  # pragma: no mutate
                         e,  # pragma: no mutate
                     )  # pragma: no mutate
@@ -261,7 +279,9 @@ class Samsung8888Client:
 
                     payload = json_dumps(body) if body else ""
                     req.append(
-                        f"Content-Length: {len(payload)}" if payload else "Content-Length: 0"
+                        f"Content-Length: {len(payload)}"
+                        if payload
+                        else "Content-Length: 0"
                     )
 
                     request_str = "\r\n".join(req) + "\r\n\r\n" + (payload or "")
@@ -284,8 +304,10 @@ class Samsung8888Client:
                     decoded_status = status_line.decode("utf-8", "ignore").strip()
                     status_match = STATUS_PATTERN.match(decoded_status)
                     if not status_match:
-                        raise CannotConnect(f"Invalid status format: {decoded_status!r}")
-                    
+                        raise CannotConnect(
+                            f"Invalid status format: {decoded_status!r}"
+                        )
+
                     status_code = int(status_match.group("code"))
                     # -------------------------------------------------
 
@@ -299,20 +321,22 @@ class Samsung8888Client:
                                 line = await reader.readline()
                         except TimeoutError as exc:
                             await self.close()
-                            raise CannotConnect("Timeout reading headers") from exc  # pragma: no mutate
+                            raise CannotConnect(
+                                "Timeout reading headers"
+                            ) from exc  # pragma: no mutate
 
                         if not line or line == b"\r\n":
                             break
-                        
+
                         line_str = line.decode("utf-8", "ignore").strip()
                         headers_received.append(line_str)
-                        
+
                         # --- REFACTOR: Parseo blindado de cabeceras ---
                         match = HEADER_PATTERN.match(line_str)
                         if match:
                             key = match.group("key").lower()
                             val = match.group("value")
-                            
+
                             if key == "content-length":
                                 try:
                                     content_length = int(val)
@@ -331,7 +355,9 @@ class Samsung8888Client:
                             resp_body = chunk.decode("utf-8", "ignore")
                         except TimeoutError as exc:
                             await self.close()
-                            raise CannotConnect("Timeout reading response body") from exc  # pragma: no mutate
+                            raise CannotConnect(
+                                "Timeout reading response body"
+                            ) from exc  # pragma: no mutate
                         except Exception:  # pylint: disable=import-outside-toplevel,broad-exception-caught
                             resp_body = ""
                     elif content_length == 0 and "content-length" in [
@@ -352,7 +378,9 @@ class Samsung8888Client:
                                         break  # Connection closed.
 
                                     buffer += chunk
-                                    resp_body_candidate = buffer.decode("utf-8", "ignore").lstrip()
+                                    resp_body_candidate = buffer.decode(
+                                        "utf-8", "ignore"
+                                    ).lstrip()
 
                                     if not resp_body_candidate:
                                         continue
@@ -387,7 +415,9 @@ class Samsung8888Client:
                     )  # pragma: no mutate
 
                     # Compact and mask the body for logging.
-                    log_body = resp_body.replace("\r", "").replace("\n", "")  # pragma: no mutate
+                    log_body = resp_body.replace("\r", "").replace(
+                        "\n", ""
+                    )  # pragma: no mutate
                     try:  # pragma: no mutate
                         json_obj = json_loads(resp_body)  # pragma: no mutate
                         masked_obj = mask_sensitive_data(json_obj)  # pragma: no mutate
@@ -426,7 +456,7 @@ class Samsung8888Client:
                     raise
                 except asyncio.CancelledError:
                     _LOGGER.debug(  # pragma: no mutate
-                        "%s [RAW] Request was cancelled by coordinator timeout. Closing socket.", # pragma: no mutate
+                        "%s [RAW] Request was cancelled by coordinator timeout. Closing socket.",  # pragma: no mutate
                         self.log_prefix,  # pragma: no mutate
                     )  # pragma: no mutate
                     await self.close()

@@ -1,4 +1,3 @@
-import re
 
 def main():
     with open("tests/test_config_flow.py", "r") as f:

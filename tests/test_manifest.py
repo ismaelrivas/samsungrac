@@ -1,5 +1,6 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
 """Test the manifest.json file for correctness."""
+
 import json
 import os
 
@@ -21,13 +22,19 @@ def test_manifest_validation():
     assert isinstance(manifest["codeowners"], list)
 
     # Verify documentation URL points to the real repository
-    assert "github.com/ismaelrivas" in manifest["documentation"] or "github.com/rtp-p" in manifest["documentation"]
+    assert (
+        "github.com/ismaelrivas" in manifest["documentation"]
+        or "github.com/rtp-p" in manifest["documentation"]
+    )
 
     # Verify codeowners attribution
-    assert "@ismaelrivas" in manifest["codeowners"] or "@rtp-p" in manifest["codeowners"]
+    assert (
+        "@ismaelrivas" in manifest["codeowners"] or "@rtp-p" in manifest["codeowners"]
+    )
 
     # Requirements validation
     assert "requirements" in manifest
+
 
 def test_translation_files_coherent():
     """All translation files must have the same leaf keys as strings.json to avoid UI blanks."""

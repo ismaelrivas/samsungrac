@@ -89,14 +89,18 @@ class SamsungHTTPAdapter(HTTPAdapter):
         )
 
     def cert_verify(
-        self, conn: Any, url: str, verify: bool | str, cert: str | tuple[str, str] | None
+        self,
+        conn: Any,
+        url: str,
+        verify: bool | str,
+        cert: str | tuple[str, str] | None,
     ) -> None:
         """Override default certification verification."""
         # Intentionally empty to bypass default requests verification
         # as it is handled by the custom SSL context in the pool manager.
 
 
-class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplevel,too-many-instance-attributes
+class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-toplevel,too-many-instance-attributes
     """Base class for connection engines using the requests library."""
 
     def __init__(
@@ -110,7 +114,9 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
         self._hass = hass
         self._params: dict[str, Any] = {"timeout": 30}
         self._max_retries = 3
-        self._embedded_command: "ConnectionRequestBase | None" = None  # An optional nested command.
+        self._embedded_command: "ConnectionRequestBase | None" = (
+            None  # An optional nested command.
+        )
         self._controller: Any = None  # Will be set by the property that creates this.
         self._parent: "ConnectionRequestBase | None" = (
             None  # Reference to parent connection for upward propagation
@@ -211,14 +217,17 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
         physical device, regardless of how many entity instances share the IP.
         """
         async with self.async_lock:
-            return await asyncio.to_thread(self.execute, template, value, device_state, device_id)
-
+            return await asyncio.to_thread(
+                self.execute, template, value, device_state, device_id
+            )
 
     def get_diagnostics(self) -> dict[str, Any]:
         """Return diagnostic information about the requests connection."""
         # Assuming _insecure_ssl and _socket_timeout are attributes that would be set
         # or derived from the session/adapter configuration.
-        insecure_ssl = not self._session.verify if hasattr(self._session, "verify") else True
+        insecure_ssl = (
+            not self._session.verify if hasattr(self._session, "verify") else True
+        )
         socket_timeout = self._params.get("timeout", None)
         force_close = getattr(self, "_force_close_connection", False)
 
@@ -241,7 +250,9 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
         fallback_id = None
         if hasattr(self, "config") and isinstance(self.config, dict):
             fallback_id = (
-                self.config.get("mac") or self.config.get("unique_id") or self.config.get("name")
+                self.config.get("mac")
+                or self.config.get("unique_id")
+                or self.config.get("name")
             )
 
         if fallback_id:
@@ -253,7 +264,9 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
         """Updates the session and propagates it to all children."""
         self._session = session
         _LOGGER.debug(
-            "%s [Session Propagation] Updated session to ID: %s", self.log_prefix, id(session)
+            "%s [Session Propagation] Updated session to ID: %s",
+            self.log_prefix,
+            id(session),
         )
 
         # Propagate to children
@@ -264,7 +277,8 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
         """Entry point for updates triggered by internal reset."""
         if self._parent:
             _LOGGER.debug(
-                "%s [Session Propagation] Delegating session update to parent.", self.log_prefix
+                "%s [Session Propagation] Delegating session update to parent.",
+                self.log_prefix,
             )
             self._parent._update_session(session)  # pylint: disable=import-outside-toplevel,protected-access
         else:
@@ -273,7 +287,8 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
     async def close(self) -> None:
         """Async wrapper for closing the connection resources."""
         _LOGGER.debug(
-            "%s [ConnectionRequest] Closing connection resources (Async)...", self.log_prefix
+            "%s [ConnectionRequest] Closing connection resources (Async)...",
+            self.log_prefix,
         )
         # Modern Python 3.9+ syntax for offloading sync blocking tasks
         await asyncio.to_thread(self._close_sync)
@@ -283,25 +298,35 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
         self._is_closing = True
         # Only the root connection (no parent) should close the shared session and emit logs.
         if not getattr(self, "_parent", None):
-            _LOGGER.debug("%s [ConnectionRequest] _close_sync: Cleanup started.", self.log_prefix)
+            _LOGGER.debug(
+                "%s [ConnectionRequest] _close_sync: Cleanup started.", self.log_prefix
+            )
             if hasattr(self, "_session") and self._session:
                 try:
                     self._session.close()
-                    _LOGGER.debug("%s [ConnectionRequest] Session closed.", self.log_prefix)
+                    _LOGGER.debug(
+                        "%s [ConnectionRequest] Session closed.", self.log_prefix
+                    )
                 except Exception as e:  # pylint: disable=import-outside-toplevel,broad-exception-caught
                     _LOGGER.debug(
-                        "%s [ConnectionRequest] Error closing session: %s", self.log_prefix, e
+                        "%s [ConnectionRequest] Error closing session: %s",
+                        self.log_prefix,
+                        e,
                     )
 
     @contextlib.contextmanager
     def _borrow_session(self) -> Generator[requests.Session, None, None]:
         """Yields the persistent session without closing it on exit."""
-        _LOGGER.debug("%s [Debug] Borrowing session ID: %s", self.log_prefix, id(self._session))
+        _LOGGER.debug(
+            "%s [Debug] Borrowing session ID: %s", self.log_prefix, id(self._session)
+        )
         if self._session and self._session.adapters:
             adapter = self._session.get_adapter("https://")
             if hasattr(adapter, "poolmanager"):
                 _LOGGER.debug(
-                    "%s [Debug] PoolManager ID: %s", self.log_prefix, id(adapter.poolmanager)
+                    "%s [Debug] PoolManager ID: %s",
+                    self.log_prefix,
+                    id(adapter.poolmanager),
                 )
 
         yield self._session
@@ -316,7 +341,9 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
         """Return the condition template for execution."""
         return self._condition_template
 
-    def update_configuration_from_hass(self, hass_config: dict[str, Any] | None) -> None:
+    def update_configuration_from_hass(
+        self, hass_config: dict[str, Any] | None
+    ) -> None:
         """Update connection parameters from Home Assistant configuration."""
         if hass_config is not None:
             cert_file = hass_config.get(CONF_CERT, None)
@@ -346,10 +373,13 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
                 if self._embedded_command:
                     self._children.append(self._embedded_command)
                     _LOGGER.debug(
-                        "%s [Session Propagation] Registered child connection.", self.log_prefix
+                        "%s [Session Propagation] Registered child connection.",
+                        self.log_prefix,
                     )
             if CONFIG_DEVICE_CONDITION_TEMPLATE in node:
-                self._condition_template = Template(node[CONFIG_DEVICE_CONDITION_TEMPLATE])
+                self._condition_template = Template(
+                    node[CONFIG_DEVICE_CONDITION_TEMPLATE]
+                )
 
         return True
 
@@ -375,7 +405,11 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
 
         token = self._controller.token if self._controller else None
         ip_address = self._controller.ip_address if self._controller else None
-        mac = getattr(self._controller, "config", {}).get("mac") if self._controller else None
+        mac = (
+            getattr(self._controller, "config", {}).get("mac")
+            if self._controller
+            else None
+        )
 
         params = self._params.copy()
         if template is not None:
@@ -384,7 +418,9 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
                 params.update(json_loads(rendered_template))
             except Exception as exc:
                 _LOGGER.error(
-                    "%s Error rendering template or parsing JSON: %s", self.log_prefix, exc
+                    "%s Error rendering template or parsing JSON: %s",
+                    self.log_prefix,
+                    exc,
                 )
                 raise ValueError(f"Template rendering failed: {exc}") from exc
 
@@ -450,8 +486,13 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
                             del request_params["verify"]
 
                         current_timeout = request_params.get("timeout", 30)
-                        if attempt == 0 and not getattr(self, "_force_close_connection", False):
-                            if isinstance(current_timeout, (int, float)) and current_timeout > 12:
+                        if attempt == 0 and not getattr(
+                            self, "_force_close_connection", False
+                        ):
+                            if (
+                                isinstance(current_timeout, (int, float))
+                                and current_timeout > 12
+                            ):
                                 _LOGGER.debug(
                                     "%s [Optimization] Capping timeout to 10s for first "
                                     "attempt to allow retry within window.",
@@ -467,7 +508,9 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
                             raw_conn = getattr(resp.raw, "_connection", None)
                             sock = getattr(raw_conn, "sock", None) if raw_conn else None
                             negotiated_tls = (
-                                sock.version() if sock and hasattr(sock, "version") else "Unknown"
+                                sock.version()
+                                if sock and hasattr(sock, "version")
+                                else "Unknown"
                             )
                             _LOGGER.debug(
                                 "%s [ConnectionRequest] Request successful. Negotiated TLS: %s",
@@ -520,7 +563,9 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
 
                         # Use DEBUG level for successful command execution to avoid log spam.
                         _LOGGER.debug(
-                            "%s Command successful with code: %s", self.log_prefix, resp.status_code
+                            "%s Command successful with code: %s",
+                            self.log_prefix,
+                            resp.status_code,
                         )
                         if not resp.text or not resp.text.strip():
                             _LOGGER.debug(
@@ -542,7 +587,8 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
                             # we don't hang for 10 seconds again.
                             if (
                                 not resp.headers.get("Content-Length")
-                                and not resp.headers.get("Transfer-Encoding") == "chunked"
+                                and not resp.headers.get("Transfer-Encoding")
+                                == "chunked"
                             ):
                                 if not getattr(self, "_force_close_connection", False):
                                     _LOGGER.warning(
@@ -556,7 +602,10 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
                                     self._keep_alive_broken = True
 
                             return (json_data, True, resp.status_code)
-                        except (requests.exceptions.JSONDecodeError, *JSON_DECODE_EXCEPTIONS):
+                        except (
+                            requests.exceptions.JSONDecodeError,
+                            *JSON_DECODE_EXCEPTIONS,
+                        ):
                             # Treat non-JSON success response as a trigger to poll
                             # If the response is successful (2xx) but not valid JSON
                             # (e.g., just "OK"), it's a successful command acknowledgment.
@@ -569,7 +618,10 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
                             )
                             return (None, True, resp.status_code)
 
-                    except (*JSON_DECODE_EXCEPTIONS, requests.exceptions.JSONDecodeError) as e:
+                    except (
+                        *JSON_DECODE_EXCEPTIONS,
+                        requests.exceptions.JSONDecodeError,
+                    ) as e:
                         _LOGGER.warning(
                             "%s Parsing response json failed! Not retrying. Error: %s",
                             self.log_prefix,
@@ -580,7 +632,9 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
                     except requests.exceptions.HTTPError as e:
                         if e.response.status_code in (401, 403):
                             _LOGGER.error(
-                                "%s Authentication error: %s. Not retrying", self.log_prefix, e
+                                "%s Authentication error: %s. Not retrying",
+                                self.log_prefix,
+                                e,
                             )
                             raise AuthError(
                                 f"Authentication failed with status {e.response.status_code}"
@@ -596,7 +650,9 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
                                 self.log_prefix,
                                 e.response.status_code,
                             )
-                            raise RetryNextAttempt(f"Server error {e.response.status_code}") from e
+                            raise RetryNextAttempt(
+                                f"Server error {e.response.status_code}"
+                            ) from e
 
                         # Enhanced error logging
                         _LOGGER.error(
@@ -605,7 +661,9 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
                             e,
                             getattr(e.response, "text", "No Body"),
                         )
-                        raise CannotConnect(f"HTTP error {e.response.status_code}") from e
+                        raise CannotConnect(
+                            f"HTTP error {e.response.status_code}"
+                        ) from e
 
                     except requests.exceptions.ReadTimeout as e:
                         # --- ADAPTIVE RECOVERY ---
@@ -709,7 +767,9 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
                             e,
                             exc_info=True,
                         )
-                        raise CannotConnect(f"An unexpected network error occurred: {e}") from e
+                        raise CannotConnect(
+                            f"An unexpected network error occurred: {e}"
+                        ) from e
 
         # Fallback return to satisfy static analysis
         return (None, False, 0)
@@ -734,7 +794,9 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
         if is_poll_request:
             _LOGGER.debug("%s Received poll request.", self.log_prefix)
         else:
-            _LOGGER.debug("%s Received command request with value: %s", self.log_prefix, value)
+            _LOGGER.debug(
+                "%s Received command request with value: %s", self.log_prefix, value
+            )
 
         # Periodic Reset Logic (Legacy)
         if is_poll_request and not self._keep_alive:
@@ -761,7 +823,9 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
             # Propagate the new session to self and children (delegating to parent if exists)
             self._update_session_from_reset(new_session)
 
-            _LOGGER.debug("%s [Legacy|Periodic Reset] New session created.", self.log_prefix)
+            _LOGGER.debug(
+                "%s [Legacy|Periodic Reset] New session created.", self.log_prefix
+            )
 
         if self.embedded_command:
             _LOGGER.debug("%s Executing embedded command...", self.log_prefix)
@@ -772,7 +836,9 @@ class ConnectionRequestBase(Connection): # pylint: disable=import-outside-toplev
             self.embedded_command.execute(template, value, device_state, device_id)
 
         if not self.check_execute_condition(device_state):
-            _LOGGER.debug("%s Execute condition not met, skipping command", self.log_prefix)
+            _LOGGER.debug(
+                "%s Execute condition not met, skipping command", self.log_prefix
+            )
             return {}
 
         # Timing measurement for sync execute
@@ -905,7 +971,9 @@ class ConnectionRequestPrint(ConnectionRequestBase):  # pylint: disable=import-o
         """Return True if this connection type matches 'request_print'."""
         return type_str == CONNECTION_TYPE_REQUEST_PRINT
 
-    def create_updated(self, yaml_node: dict[str, Any] | None) -> "ConnectionRequestPrint":
+    def create_updated(
+        self, yaml_node: dict[str, Any] | None
+    ) -> "ConnectionRequestPrint":
         c = ConnectionRequestPrint(None, _LOGGER, session=self._session)
         c.load_from_yaml(yaml_node, self)
         return c

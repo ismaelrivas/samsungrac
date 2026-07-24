@@ -1,5 +1,6 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
 """Simplified tests for atomic push update isolation."""
+
 # pylint: disable=import-outside-toplevel
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -21,10 +22,14 @@ async def test_valid_push_update_commits():
     mock_entry.options = {}
     mock_entry.data = {}
 
-    with patch("custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__", return_value=None):
+    with patch(
+        "custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__",
+        return_value=None,
+    ):
         from custom_components.climate_ip.coordinator import (
             SamsungClimateCoordinator,
         )
+
         coordinator = SamsungClimateCoordinator(mock_hass, mock_controller, mock_entry)
         coordinator.async_set_updated_data = MagicMock()
         coordinator._create_device_state = MagicMock(return_value="new_state")
@@ -33,6 +38,7 @@ async def test_valid_push_update_commits():
 
         mock_controller.async_merge_device_state.assert_called_once()
         coordinator.async_set_updated_data.assert_called_once_with("new_state")
+
 
 @pytest.mark.asyncio
 async def test_junk_push_update_ignored():
@@ -46,10 +52,14 @@ async def test_junk_push_update_ignored():
     mock_entry.options = {}
     mock_entry.data = {}
 
-    with patch("custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__", return_value=None):
+    with patch(
+        "custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__",
+        return_value=None,
+    ):
         from custom_components.climate_ip.coordinator import (
             SamsungClimateCoordinator,
         )
+
         coordinator = SamsungClimateCoordinator(mock_hass, mock_controller, mock_entry)
         coordinator.async_set_updated_data = MagicMock()
 
@@ -57,6 +67,7 @@ async def test_junk_push_update_ignored():
 
         mock_controller.async_merge_device_state.assert_called_once()
         coordinator.async_set_updated_data.assert_not_called()
+
 
 @pytest.mark.asyncio
 async def test_dry_run_logic_isolation():
@@ -80,7 +91,9 @@ async def test_dry_run_logic_isolation():
     poller = YamlStatePoller(mock_controller)
     raw_state = {"power": "on"}
 
-    with patch("custom_components.climate_ip.controller_yaml_polling.ClimateIPDeviceState") as MockState:
+    with patch(
+        "custom_components.climate_ip.controller_yaml_polling.ClimateIPDeviceState"
+    ) as MockState:
         res = poller._calculate_structured_state(raw_state)
 
         assert res == MockState.return_value

@@ -32,9 +32,12 @@ TOKEN_RE = re.compile(r'Token="([a-fA-F0-9-]{36})"')
 
 class SamsungTokenAcquirer:
     """Manages the phased token acquisition process."""
-# pylint: disable=no-else-raise,too-many-branches,too-many-locals,too-many-statements
 
-    def __init__(self, hass: Any, ip_address: str, cert_path: str | None = None) -> None:
+    # pylint: disable=no-else-raise,too-many-branches,too-many-locals,too-many-statements
+
+    def __init__(
+        self, hass: Any, ip_address: str, cert_path: str | None = None
+    ) -> None:
         """Initialize the acquirer."""
         self._hass = hass
         self._ip_address = ip_address
@@ -45,9 +48,7 @@ class SamsungTokenAcquirer:
         # assume it is relative to the integration's directory.
         if cert_path:
             if not ("/" in cert_path or "\\" in cert_path):
-                self._resolved_cert_path = str(
-                    Path(__file__).parent / cert_path
-                )
+                self._resolved_cert_path = str(Path(__file__).parent / cert_path)
             else:
                 # The path is absolute or contains directory components, use it as is.
                 self._resolved_cert_path = cert_path
@@ -105,7 +106,9 @@ class SamsungTokenAcquirer:
             # If no user certificate, the only possible verification mode is CERT_NONE.
             strategies.append({"cert": None, "name": "No Certificate (Default)"})
             # As a fallback, try with the integration's default certificate.
-            strategies.append({"cert": default_cert_path, "name": "Default Certificate (Fallback)"})
+            strategies.append(
+                {"cert": default_cert_path, "name": "Default Certificate (Fallback)"}
+            )
         # pragma: no mutate end
 
         # Build a list of all possible connection attempts
@@ -137,8 +140,12 @@ class SamsungTokenAcquirer:
                         cert_path=cert_path, ciphers=ciphers, verify_mode=verify_mode
                     )
                 except (ssl.SSLError, FileNotFoundError) as e:
-                    failed_attempts_log.append(f"CertError({strategy_name}): {e}")  # pragma: no mutate
-                    raise CertNotFound(f"Failed to load certificate file: {e}") from e  # pragma: no mutate
+                    failed_attempts_log.append(
+                        f"CertError({strategy_name}): {e}"
+                    )  # pragma: no mutate
+                    raise CertNotFound(
+                        f"Failed to load certificate file: {e}"
+                    ) from e  # pragma: no mutate
 
                 # Modern python 3.11+ timeout usage
                 async with asyncio.timeout(CONNECTION_TIMEOUT):
@@ -183,14 +190,19 @@ class SamsungTokenAcquirer:
                 # pragma: no mutate end
 
                 # --- Return Logic ---
-                successful_config: dict[str, Any] = {"cert": None, "verify_mode": verify_mode}
+                successful_config: dict[str, Any] = {
+                    "cert": None,
+                    "verify_mode": verify_mode,
+                }
                 if cert_path == resolved_user_cert:
                     successful_config["cert"] = self._user_cert_path
                 elif cert_path == default_cert_path:
                     successful_config["cert"] = Path(default_cert_path).name
 
                 if failed_attempts_log:
-                    _LOGGER.debug("Previous failed connection attempts: %s", failed_attempts_log)  # pragma: no mutate
+                    _LOGGER.debug(
+                        "Previous failed connection attempts: %s", failed_attempts_log
+                    )  # pragma: no mutate
 
                 _LOGGER.info(
                     "Successful connection config found: cert='%s', verify_mode=%s",
@@ -200,16 +212,24 @@ class SamsungTokenAcquirer:
                 return successful_config
 
             except TimeoutError as e:
-                failed_attempts_log.append(f"{strategy_name}/{cipher_name}: Timeout")  # pragma: no mutate
+                failed_attempts_log.append(
+                    f"{strategy_name}/{cipher_name}: Timeout"
+                )  # pragma: no mutate
                 last_error = e
             except (ConnectionRefusedError, OSError) as e:
-                failed_attempts_log.append(f"{strategy_name}/{cipher_name}: {e}")  # pragma: no mutate
+                failed_attempts_log.append(
+                    f"{strategy_name}/{cipher_name}: {e}"
+                )  # pragma: no mutate
                 last_error = e
             except CertNotFound as e:
-                failed_attempts_log.append(f"CertNotFound({strategy_name}): {e}")  # pragma: no mutate
+                failed_attempts_log.append(
+                    f"CertNotFound({strategy_name}): {e}"
+                )  # pragma: no mutate
                 continue
             except Exception as e:  # pylint: disable=broad-exception-caught
-                failed_attempts_log.append(f"{strategy_name}/{cipher_name} unexpected error: {e}")  # pragma: no mutate
+                failed_attempts_log.append(
+                    f"{strategy_name}/{cipher_name} unexpected error: {e}"
+                )  # pragma: no mutate
                 last_error = e
 
             # If an attempt fails, close the connection and wait before the next try.
@@ -237,7 +257,9 @@ class SamsungTokenAcquirer:
             raise TokenAcquisitionError("Connection failed, writer not available.")
 
         request_msg = b'<Request Type="GetToken" />\r\n'
-        _LOGGER.debug("Sending GetToken request: %s", request_msg.decode("utf-8").strip())  # pragma: no mutate
+        _LOGGER.debug(
+            "Sending GetToken request: %s", request_msg.decode("utf-8").strip()
+        )  # pragma: no mutate
         self._writer.write(request_msg)
         await self._writer.drain()
 
@@ -249,7 +271,9 @@ class SamsungTokenAcquirer:
                 data = await self._reader.read(NETWORK_BUFFER_SIZE)
 
             decoded_data = data.decode(**STREAM_DECODE_KWARGS)
-            _LOGGER.debug("Received response for GetToken: %s", decoded_data.strip())  # pragma: no mutate
+            _LOGGER.debug(
+                "Received response for GetToken: %s", decoded_data.strip()
+            )  # pragma: no mutate
 
             # FIXED C0301: Split long condition for readability
             is_valid_resp = (
@@ -257,20 +281,28 @@ class SamsungTokenAcquirer:
                 or "InvalidateAccount" in decoded_data
             )
             if not is_valid_resp:
-                raise TokenAcquisitionError("Did not receive 'Ready' status from AC unit")
+                raise TokenAcquisitionError(
+                    "Did not receive 'Ready' status from AC unit"
+                )
 
-            _LOGGER.info("AC unit is 'Ready'. Pairing initiated successfully.")  # pragma: no mutate
+            _LOGGER.info(
+                "AC unit is 'Ready'. Pairing initiated successfully."
+            )  # pragma: no mutate
             return successful_config  # Return the successful config dict
 
         except TimeoutError as exc:
-            raise TokenAcquisitionError("Timeout waiting for 'Ready' response") from exc  # pragma: no mutate
+            raise TokenAcquisitionError(
+                "Timeout waiting for 'Ready' response"
+            ) from exc  # pragma: no mutate
 
     async def async_wait_for_token(self) -> str:
         """
         Phase 2: Waits for the user to press the power button and retrieves the token.
         """
         if not self._reader:
-            raise TokenAcquisitionError("Connection not established. Run initiate_pairing first")
+            raise TokenAcquisitionError(
+                "Connection not established. Run initiate_pairing first"
+            )
 
         _LOGGER.info("Now listening for the token...")  # pragma: no mutate
         try:
@@ -286,10 +318,17 @@ class SamsungTokenAcquirer:
                 mask_sensitive_data(decoded_buffer),
             )  # pragma: no mutate
 
-            if 'Status="Fail"' in decoded_buffer and 'Type="Authenticate"' in decoded_buffer:
+            if (
+                'Status="Fail"' in decoded_buffer
+                and 'Type="Authenticate"' in decoded_buffer
+            ):
                 error_code_match = ERROR_CODE_RE.search(decoded_buffer)
-                error_code = error_code_match.group(1) if error_code_match else "Unknown"
-                _LOGGER.error("Authentication failed with ErrorCode: %s", error_code)  # pragma: no mutate
+                error_code = (
+                    error_code_match.group(1) if error_code_match else "Unknown"
+                )
+                _LOGGER.error(
+                    "Authentication failed with ErrorCode: %s", error_code
+                )  # pragma: no mutate
                 if error_code == "301":
                     raise AuthTurnedOffError(
                         "Authentication failed: The device was likely turned off "
@@ -307,7 +346,9 @@ class SamsungTokenAcquirer:
 
             raise TokenAcquisitionError("Received unexpected data instead of a token")
         except TimeoutError as exc:
-            raise TokenAcquisitionError("Token not received within the 45-second window") from exc  # pragma: no mutate
+            raise TokenAcquisitionError(
+                "Token not received within the 45-second window"
+            ) from exc  # pragma: no mutate
         finally:
             await self.async_close()
 
@@ -319,4 +360,6 @@ class SamsungTokenAcquirer:
             try:
                 await self._writer.wait_closed()
             except (ssl.SSLError, ConnectionResetError, asyncio.CancelledError):
-                _LOGGER.debug("Ignoring non-critical error during connection close.")  # pragma: no mutate
+                _LOGGER.debug(
+                    "Ignoring non-critical error during connection close."
+                )  # pragma: no mutate

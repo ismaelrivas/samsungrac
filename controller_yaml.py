@@ -7,7 +7,6 @@ if TYPE_CHECKING:
     from .state import ClimateIPDeviceState
 
 import logging
-import time
 
 import aiohttp
 import homeassistant.helpers.config_validation as cv
@@ -26,7 +25,6 @@ from homeassistant.components.climate import (
     ClimateEntityFeature,
 )
 from homeassistant.const import (
-    ATTR_NAME,
     ATTR_TEMPERATURE,
     CONF_IP_ADDRESS,
     CONF_MAC,
@@ -50,7 +48,7 @@ from .const import (
 from .controller import ClimateController, register_controller
 
 # pylint: disable=unused-import
-from .controller_yaml_config import YamlConfigLoader, clear_yaml_cache
+from .controller_yaml_config import YamlConfigLoader
 from .controller_yaml_polling import YamlStatePoller
 from .exceptions import CannotConnect
 from .properties import DeviceProperty
@@ -64,6 +62,7 @@ CONST_MAX_GET_STATUS_RETRIES = 4
 @register_controller
 class YamlController(ClimateController):
     """YAML-based controller mapped as a clean Facade pattern over composition."""
+
     # pylint: disable=import-outside-toplevel,protected-access,too-many-instance-attributes,too-many-public-methods,unused-import,wrong-import-position
 
     def __init__(
@@ -93,20 +92,26 @@ class YamlController(ClimateController):
 
         self._device_id = config.get(CONF_DEVICE_ID)
         self._token = config.get(CONF_TOKEN)
-        self._unique_id = config.get("unique_id") or config.get(CONF_MAC) or self._ip_address
+        self._unique_id = (
+            config.get("unique_id") or config.get(CONF_MAC) or self._ip_address
+        )
 
         if not self._device_id:
             self._device_id = self._unique_id
-            if config.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_SAMSUNG_2878:  # pragma: no mutate
+            if (
+                config.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_SAMSUNG_2878
+            ):  # pragma: no mutate
                 _LOGGER.info(
                     "%s [Init] device_id was missing, fell back to unique_id: %s",
                     f"[{self._unique_id[-6:]}]" if self._unique_id else "[Unknown]",
                     self._device_id,
-                ) # pragma: no mutate
+                )  # pragma: no mutate
 
         self.on_token_refreshed: Callable[[str], None] | None = None
         self.get_current_state_callback: Callable[[], Any] | None = None
-        self.on_push_update_callback: Callable[[dict[str, Any] | None], Any] | None = None
+        self.on_push_update_callback: Callable[[dict[str, Any] | None], Any] | None = (
+            None
+        )
         self.on_ssl_config_updated: Callable[[dict[str, Any]], None] | None = None
         self.request_refresh_callback: Callable[[], Any] | None = None
         self.on_connection_failed_callback: Callable[[], None] | None = None
@@ -114,7 +119,7 @@ class YamlController(ClimateController):
         self.discovered_devices: list[Any] | None = None
         self._debug = config.get("debug", False)
         self._attributes: dict[str, Any] = {"controller": self.id}
-        
+
         # We explicitly rely on the loader's connection object, so we do not use self._connection.
         self._shared_raw_client = None
 
@@ -228,11 +233,11 @@ class YamlController(ClimateController):
     ) -> bool:
         """Asynchronously set a property on the device."""
         if not self.loader.is_fully_initialized:
-            _LOGGER.error( # pragma: no mutate
+            _LOGGER.error(  # pragma: no mutate
                 "%s Cannot set property '%s': controller not fully initialized",  # pragma: no mutate
-                self.log_prefix, # pragma: no mutate
-                property_name, # pragma: no mutate
-            ) # pragma: no mutate
+                self.log_prefix,  # pragma: no mutate
+                property_name,  # pragma: no mutate
+            )  # pragma: no mutate
             return False
 
         op = self.loader.operations.get(property_name)
@@ -241,15 +246,19 @@ class YamlController(ClimateController):
                 # Register the pending update in the poller dispatcher
                 # pylint: disable=protected-access
                 self.poller.register_pending_update(property_name, new_value)
-                _LOGGER.debug( # pragma: no mutate
+                _LOGGER.debug(  # pragma: no mutate
                     "%s Registered pending update for '%s': %s",  # pragma: no mutate
-                    self.log_prefix, # pragma: no mutate
-                    property_name, # pragma: no mutate
-                    new_value, # pragma: no mutate
-                ) # pragma: no mutate
-                return await op.async_set_value(new_value, _device_id or self._device_id)
+                    self.log_prefix,  # pragma: no mutate
+                    property_name,  # pragma: no mutate
+                    new_value,  # pragma: no mutate
+                )  # pragma: no mutate
+                return await op.async_set_value(
+                    new_value, _device_id or self._device_id
+                )
             except (requests.exceptions.RequestException, CannotConnect) as e:
-                raise UpdateFailed(f"Failed to set property '{property_name}': {e}") from e
+                raise UpdateFailed(
+                    f"Failed to set property '{property_name}': {e}"
+                ) from e
             except Exception:
                 # Usamos .exception para incluir el trace sin exponer booleanos (exc_info=True) a mutmut
                 _LOGGER.exception(
@@ -260,11 +269,11 @@ class YamlController(ClimateController):
                 )  # pragma: no mutate
                 return False
 
-        _LOGGER.error( # pragma: no mutate
-            "%s Failed to set property '%s': property not found", # pragma: no mutate
-            self.log_prefix, # pragma: no mutate
-            property_name, # pragma: no mutate
-        ) # pragma: no mutate
+        _LOGGER.error(  # pragma: no mutate
+            "%s Failed to set property '%s': property not found",  # pragma: no mutate
+            self.log_prefix,  # pragma: no mutate
+            property_name,  # pragma: no mutate
+        )  # pragma: no mutate
         return False
 
     def get_property(self, property_name: str) -> Any:
@@ -285,7 +294,9 @@ class YamlController(ClimateController):
         if property_name in self.loader.sensors:
             return self.loader.sensors[property_name]
 
-        _LOGGER.debug("%s Property object '%s' not found", self.log_prefix, property_name)  # pragma: no mutate
+        _LOGGER.debug(
+            "%s Property object '%s' not found", self.log_prefix, property_name
+        )  # pragma: no mutate
         return None
 
     def get_property_all_values(self, property_name: str) -> list[str] | None:
@@ -294,11 +305,11 @@ class YamlController(ClimateController):
         if prop and prop.all_values:
             return prop.all_values
 
-        _LOGGER.debug( # pragma: no mutate
+        _LOGGER.debug(  # pragma: no mutate
             "%s Cannot get values for '%s': not an operation or missing all_values",  # pragma: no mutate
-            self.log_prefix, # pragma: no mutate
-            property_name, # pragma: no mutate
-        ) # pragma: no mutate
+            self.log_prefix,  # pragma: no mutate
+            property_name,  # pragma: no mutate
+        )  # pragma: no mutate
         return None
 
     @property
@@ -331,7 +342,9 @@ class YamlController(ClimateController):
         """Return a list of all defined sensor property objects."""
         # FIXED C0301: Line split to stay under 100 chars
         return [
-            self.loader.sensors[n] for n in self.loader.sensors_list if n in self.loader.sensors
+            self.loader.sensors[n]
+            for n in self.loader.sensors_list
+            if n in self.loader.sensors
         ]
 
     @property
@@ -375,7 +388,9 @@ class YamlController(ClimateController):
                 preset_modes=self.state_attributes.get(ATTR_PRESET_MODES, []),
             )
         except (ValueError, TypeError) as err:
-            _LOGGER.error("%s Error coercing typed ClimateIPDeviceState: %s", self.log_prefix, err)  # pragma: no mutate
+            _LOGGER.error(
+                "%s Error coercing typed ClimateIPDeviceState: %s", self.log_prefix, err
+            )  # pragma: no mutate
             raise
 
     async def async_get_status(self) -> dict[str, Any] | None:
@@ -392,7 +407,9 @@ class YamlController(ClimateController):
         """Merge incoming push updates or responses into the memory state.
         Returns True if committed.
         """
-        return await self.poller.async_merge_device_state(new_data, is_response, is_update)
+        return await self.poller.async_merge_device_state(
+            new_data, is_response, is_update
+        )
 
     async def async_predict_and_correct_state(
         self, current_hass_state: Any, property_name: str, new_value: Any
@@ -410,15 +427,15 @@ class YamlController(ClimateController):
     @property
     def is_push_device(self) -> bool:
         """Return True if the device uses push-based updates.
-        
+
         Strictly interfaces with the initialized network engine.
         """
         if self.connection is None:
             return False
-        
-        # Evitamos 'hasattr' por ser una validación estructural frágil. 
+
+        # Evitamos 'hasattr' por ser una validación estructural frágil.
         # Intentamos acceder de forma directa y capturamos si la interfaz es incompatible.
-        
+
         # irp
         # try:
         #     return self.connection.is_push_supported
@@ -439,7 +456,11 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_IP_ADDRESS): cv.string,
         vol.Optional(CONF_TOKEN): cv.string,
         vol.Optional(CONF_DEVICE_ID): cv.string,
-        vol.Optional(CONF_TEMP_NATIVE_CURRENT, default=DEFAULT_CONF_TEMP_UNIT): cv.string,
-        vol.Optional(CONF_TEMP_NATIVE_TARGET, default=DEFAULT_CONF_TEMP_UNIT): cv.string,
+        vol.Optional(
+            CONF_TEMP_NATIVE_CURRENT, default=DEFAULT_CONF_TEMP_UNIT
+        ): cv.string,
+        vol.Optional(
+            CONF_TEMP_NATIVE_TARGET, default=DEFAULT_CONF_TEMP_UNIT
+        ): cv.string,
     }
 )

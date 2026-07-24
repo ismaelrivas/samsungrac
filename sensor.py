@@ -31,7 +31,8 @@ async def async_setup_entry(
     entities_to_add: list[ClimateIpSensor] = []
     coordinators: list[SamsungClimateCoordinator] = (
         list(coordinator_data.values())
-        if isinstance(coordinator_data, dict) else [coordinator_data]
+        if isinstance(coordinator_data, dict)
+        else [coordinator_data]
     )
 
     for coordinator in coordinators:
@@ -47,7 +48,9 @@ async def async_setup_entry(
                 icon = getattr(sensor_prop, "icon", None)
                 if not icon and not device_class:
                     icon = "mdi:eye"
-                yaml_name = getattr(sensor_prop, "name", None)  # Explicit name from YAML (can be empty)
+                yaml_name = getattr(
+                    sensor_prop, "name", None
+                )  # Explicit name from YAML (can be empty)
                 # Build a modern SensorEntityDescription from the YAML property.
                 # Instantiated in the platform, not inside the entity class.
                 description = SensorEntityDescription(
@@ -55,17 +58,27 @@ async def async_setup_entry(
                     translation_key=sensor_prop.id,
                     name=yaml_name,
                     device_class=device_class,
-                    native_unit_of_measurement=getattr(sensor_prop, "unit_of_measurement", None),
+                    native_unit_of_measurement=getattr(
+                        sensor_prop, "unit_of_measurement", None
+                    ),
                     state_class=getattr(sensor_prop, "state_class", None),
                     entity_category=parsed_category,
                     icon=icon,
                 )
 
-                entities_to_add.append(ClimateIpSensor(coordinator, description, sensor_prop))
+                entities_to_add.append(
+                    ClimateIpSensor(coordinator, description, sensor_prop)
+                )
 
     if entities_to_add:
-        msg = "%s Adding %d YAML-defined sensors to Home Assistant."  # pragma: no mutate
-        _LOGGER.info(msg, coordinators[0].log_prefix if coordinators else "[ClimateIP]", len(entities_to_add))  # pragma: no mutate
+        msg = (
+            "%s Adding %d YAML-defined sensors to Home Assistant."  # pragma: no mutate
+        )
+        _LOGGER.info(
+            msg,
+            coordinators[0].log_prefix if coordinators else "[ClimateIP]",
+            len(entities_to_add),
+        )  # pragma: no mutate
         async_add_entities(entities_to_add)
 
 
@@ -121,7 +134,9 @@ class ClimateIpSensor(CoordinatorEntity[SamsungClimateCoordinator], SensorEntity
         else:
             self._attr_native_value = None
             msg = "%s Marking sensor '%s' as unavailable because it is no longer valid."  # pragma: no mutate
-            _LOGGER.debug(msg, self.log_prefix, self.entity_description.key)  # pragma: no mutate
+            _LOGGER.debug(
+                msg, self.log_prefix, self.entity_description.key
+            )  # pragma: no mutate
             self.async_write_ha_state()
 
     def _update_state(self) -> None:
@@ -143,4 +158,6 @@ class ClimateIpSensor(CoordinatorEntity[SamsungClimateCoordinator], SensorEntity
             except (ValueError, TypeError):
                 self._attr_native_value = None
                 msg = "%s Could not parse sensor value for %s: %s"  # pragma: no mutate
-                _LOGGER.warning(msg, self.log_prefix, self.entity_description.key, value)  # pragma: no mutate
+                _LOGGER.warning(
+                    msg, self.log_prefix, self.entity_description.key, value
+                )  # pragma: no mutate

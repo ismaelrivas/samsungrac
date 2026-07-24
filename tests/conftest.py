@@ -7,26 +7,28 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 import warnings
 
+import asyncio
 import pytest
 
-from pathlib import Path
 sys.path.append(os.getcwd())
 
 import resource
 import platform
+
 
 def limit_memory():
     """
     Collar de ahogo (Hard Limit) para evitar que mutantes con bucles
     infinitos colapsen la RAM y el kernel (WSL OOM).
     """
-    if platform.system() != "Windows": # resource es exclusivo de Unix/Linux
+    if platform.system() != "Windows":  # resource es exclusivo de Unix/Linux
         # Límite de 2 GB (2 * 1024 * 1024 * 1024 bytes) para evitar OOM pero dar respiro a chunks grandes
-        MAX_RAM = 2 * 1024 * 1024 * 1024 
+        MAX_RAM = 2 * 1024 * 1024 * 1024
         try:
             resource.setrlimit(resource.RLIMIT_AS, (MAX_RAM, MAX_RAM))
         except ValueError:
-            pass # Ignorar si el OS no lo permite
+            pass  # Ignorar si el OS no lo permite
+
 
 # Ejecutar el límite en el momento en que pytest arranca
 limit_memory()
@@ -38,7 +40,6 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 # Hide RuntimeWarnings from unawaited AsyncMocks during tests
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 # ---------------------
-
 
 
 # Ensure we can import the component
@@ -188,7 +189,10 @@ def hass():
     async def mock_flow_async_init(domain, context=None, data=None):  # pylint: disable=import-outside-toplevel,redefined-outer-name,unused-argument
         """Mock config entry flow init."""
         if data and "mac" in data:
-            return {"type": "create_entry", "data": {"mac": data["mac"].replace(":", "").upper()}}
+            return {
+                "type": "create_entry",
+                "data": {"mac": data["mac"].replace(":", "").upper()},
+            }
         return {"type": "create_entry"}
 
     async def mock_options_async_init(entry_id):  # pylint: disable=import-outside-toplevel,unused-argument
@@ -217,7 +221,9 @@ def hass():
 @pytest.fixture
 def mock_setup_entry():
     """Mock setting up a config entry."""
-    with patch("custom_components.climate_ip.async_setup_entry", return_value=True) as mock_setup:
+    with patch(
+        "custom_components.climate_ip.async_setup_entry", return_value=True
+    ) as mock_setup:
         yield mock_setup
 
 
@@ -226,7 +232,10 @@ def mock_acquirer():
     """Mock the SamsungTokenAcquirer."""
     with patch("custom_components.climate_ip.config_flow.SamsungTokenAcquirer") as mock:
         instance = mock.return_value
-        instance.async_initiate_pairing.return_value = {"cert": "fake_cert.pem", "verify_mode": 0}
+        instance.async_initiate_pairing.return_value = {
+            "cert": "fake_cert.pem",
+            "verify_mode": 0,
+        }
         instance.async_wait_for_token.return_value = "fake_token"
         yield mock
 
@@ -234,9 +243,14 @@ def mock_acquirer():
 @pytest.fixture
 def mock_acquirer_8888():
     """Mock the SamsungTokenAcquirer8888."""
-    with patch("custom_components.climate_ip.config_flow.SamsungTokenAcquirer8888") as mock:
+    with patch(
+        "custom_components.climate_ip.config_flow.SamsungTokenAcquirer8888"
+    ) as mock:
         instance = mock.return_value
-        instance.async_initiate_pairing.return_value = {"cert": "fake_cert.pem", "verify_mode": 0}
+        instance.async_initiate_pairing.return_value = {
+            "cert": "fake_cert.pem",
+            "verify_mode": 0,
+        }
         instance.async_wait_for_token.return_value = "fake_token"
         yield mock
 
@@ -245,47 +259,50 @@ def mock_acquirer_8888():
 def auto_mock_network() -> Any:
     """Mock network reachability to avoid real pings during tests."""
     # We must patch the method at every destination where it is explicitly imported
-    with patch(
-        "custom_components.climate_ip.helpers.async_check_network_reachability",
-        new_callable=AsyncMock,
-        return_value=True,
-    ), patch(
-        "custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability",
-        new_callable=AsyncMock,
-        return_value=True,
-    ), patch(
-        "custom_components.climate_ip.samsung_2878.async_check_network_reachability",
-        new_callable=AsyncMock,
-        return_value=True,
+    with (
+        patch(
+            "custom_components.climate_ip.helpers.async_check_network_reachability",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        patch(
+            "custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        patch(
+            "custom_components.climate_ip.samsung_2878.async_check_network_reachability",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
     ):
         yield
 
-import asyncio
 
 @pytest.fixture(scope="function")
 def event_loop():
     """
-    Sobrescribe el event_loop nativo de pytest-asyncio para inyectar 
-    un teardown ultra-agresivo. Garantiza un loop limpio por test y 
+    Sobrescribe el event_loop nativo de pytest-asyncio para inyectar
+    un teardown ultra-agresivo. Garantiza un loop limpio por test y
     aniquila tareas zombis sin colisionar con el plugin.
     """
     loop = asyncio.get_event_loop_policy().new_event_loop()
     asyncio.set_event_loop(loop)
-    
+
     yield loop
-    
+
     # Fase de purga de estado corrupto
     pending = asyncio.all_tasks(loop)
     for task in pending:
         task.cancel()
-        
+
     if pending:
         try:
             # Damos un ciclo de reloj para que las cancelaciones hagan efecto
             loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
         except Exception:
             pass
-            
+
     loop.close()
     asyncio.set_event_loop(None)
 
@@ -293,8 +310,11 @@ def event_loop():
 @pytest.fixture
 def mock_get_impl():
     """Mock para el flujo de autenticación OAuth2."""
-    with patch("homeassistant.helpers.config_entry_oauth2_flow.async_get_config_entry_implementation") as mock:
+    with patch(
+        "homeassistant.helpers.config_entry_oauth2_flow.async_get_config_entry_implementation"
+    ) as mock:
         yield mock
+
 
 @pytest.fixture
 def mock_oauth_session():
@@ -307,38 +327,40 @@ def mock_oauth_session():
 # FIXTURES RECUPERADOS DEL MONOLITO (YAML POLLING)
 # =====================================================================
 
+
 @pytest.fixture
 def mock_time():
     """Fixture original recuperado: congela el tiempo en 100.0 para las matemáticas de TTL."""
-    with patch("custom_components.climate_ip.controller_yaml_polling.time.time", return_value=100.0) as mock:
+    with patch(
+        "custom_components.climate_ip.controller_yaml_polling.time.time",
+        return_value=100.0,
+    ) as mock:
         yield mock
+
 
 @pytest.fixture
 def mock_reachability():
     """Fixture original recuperado: intercepta la red localmente en el poller."""
-    with patch("custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability", new_callable=AsyncMock) as mock:
+    with patch(
+        "custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability",
+        new_callable=AsyncMock,
+    ) as mock:
         yield mock
+
 
 @pytest.fixture
 def mock_async_create_issue():
     """Fixture original recuperado: evita la creación real de issues en HA."""
-    with patch("custom_components.climate_ip.controller_yaml_polling.async_create_issue") as mock:
+    with patch(
+        "custom_components.climate_ip.controller_yaml_polling.async_create_issue"
+    ) as mock:
         yield mock
 
-@pytest.fixture
-def mock_get_impl():
-    """Fixture original recuperado: intercepta el flujo OAuth de HA."""
-    with patch("homeassistant.helpers.config_entry_oauth2_flow.async_get_config_entry_implementation", new_callable=AsyncMock) as mock:
-        yield mock
-
-@pytest.fixture
-def mock_oauth_session():
-    """Fixture original recuperado: intercepta la sesión OAuth."""
-    with patch("homeassistant.helpers.config_entry_oauth2_flow.OAuth2Session") as mock:
-        yield mock
 
 @pytest.fixture
 def mock_now():
     """Fixture original recuperado: intercepta dt_util.now()."""
-    with patch("custom_components.climate_ip.controller_yaml_polling.dt_util.now") as mock:
+    with patch(
+        "custom_components.climate_ip.controller_yaml_polling.dt_util.now"
+    ) as mock:
         yield mock

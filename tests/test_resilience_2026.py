@@ -17,6 +17,7 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 def mock_config_entry():
     return MockConfigEntry(domain="climate_ip", data={})
 
+
 @pytest.fixture
 def mock_controller():
     controller = MagicMock()
@@ -25,11 +26,11 @@ def mock_controller():
     controller.port = 2878
     return controller
 
+
 @pytest.fixture
 def coordinator(hass, mock_controller, mock_config_entry):
     coord = SamsungClimateCoordinator(hass, mock_controller, mock_config_entry)
     return coord
-
 
 
 #
@@ -40,13 +41,15 @@ async def test_connection_timeout_recovery(hass, coordinator):
     # The poller catches the exception and returns cached data, so async_get_status doesn't raise anything.
     # We simulate the poller returning a valid cached state here.
     coordinator.controller.async_get_status.side_effect = [
-        {"power": "On"}, # Strike 1: returns cached state
+        {"power": "On"},  # Strike 1: returns cached state
         None,  # Second poll: returns None
     ]
 
     # 1. Transient Error — Platinum integrations must preserve state, not mark unavailable
     await coordinator.async_refresh()
-    assert coordinator.last_update_success, "Strike 1: state must be preserved on first timeout"
+    assert coordinator.last_update_success, (
+        "Strike 1: state must be preserved on first timeout"
+    )
 
     # 2. Network Recovery — coordinator.data must be a ClimateIPDeviceState, not a raw dict
     coordinator.controller.climate_state = MagicMock(spec=ClimateIPDeviceState)
@@ -56,6 +59,7 @@ async def test_connection_timeout_recovery(hass, coordinator):
         "coordinator.data must be ClimateIPDeviceState after recovery, not a raw dict"
     )
     assert coordinator.controller.async_get_status.call_count == 2
+
 
 #
 # Scenario 2: Sudden Token Change (Auth Failed)
@@ -67,10 +71,13 @@ async def test_auth_failure_triggers_reauth(hass, coordinator):
     with patch(
         "custom_components.climate_ip.coordinator.SamsungClimateCoordinator._async_update_data"
     ) as mock_update_data:
-        mock_update_data.side_effect = ConfigEntryAuthFailed("Token is invalid or expired")
+        mock_update_data.side_effect = ConfigEntryAuthFailed(
+            "Token is invalid or expired"
+        )
 
         await coordinator.async_refresh()
         assert not coordinator.last_update_success
+
 
 #
 # Scenario 3: Port Rotation and Fallback (2878 -> 8888)
@@ -85,7 +92,7 @@ async def test_switch_connection_engine_on_error(hass, coordinator):
             await coordinator._async_update_data()
         except UpdateFailed as err:
             assert "Switching" in str(err)
-            
+
             expected_options = dict(coordinator.entry.options)
             expected_options[CONF_CONN_METHOD] = CONN_METHOD_RAW
             mock_update_entry.assert_called_once_with(
@@ -93,6 +100,7 @@ async def test_switch_connection_engine_on_error(hass, coordinator):
             )
             return
         pytest.fail("UpdateFailed exception was not raised")
+
 
 #
 # Scenario 4: Canceled Prediction (Prediction Engine Revert)
@@ -103,9 +111,13 @@ async def test_predict_and_correct_reverts_state_on_failure(hass, coordinator):
     mock_climate_entity.hvac_mode = HVACMode.OFF
     mock_climate_entity.coordinator = coordinator
     mock_climate_entity.async_write_ha_state = MagicMock()
-    coordinator.controller.async_set_property = AsyncMock(side_effect=Exception("API Error"))
+    coordinator.controller.async_set_property = AsyncMock(
+        side_effect=Exception("API Error")
+    )
 
-    mock_climate_entity.async_set_hvac_mode = AsyncMock(side_effect=Exception("API Error"))
+    mock_climate_entity.async_set_hvac_mode = AsyncMock(
+        side_effect=Exception("API Error")
+    )
 
     try:
         await mock_climate_entity.async_set_hvac_mode(HVACMode.COOL)
@@ -113,6 +125,7 @@ async def test_predict_and_correct_reverts_state_on_failure(hass, coordinator):
         pass
 
     assert mock_climate_entity.hvac_mode == HVACMode.OFF
+
 
 #
 # Scenario 5: ARP Fallback and Dynamic MAC Address Re-resolution
@@ -127,7 +140,9 @@ async def test_arp_resolution_dynamically_updates_host(hass):
     ip_address = "192.168.1.15"
     mac_address = "AA:BB:CC:DD:EE:FF"
 
-    with patch("custom_components.climate_ip.config_flow.async_get_mac_address") as mock_get_mac:
+    with patch(
+        "custom_components.climate_ip.config_flow.async_get_mac_address"
+    ) as mock_get_mac:
         mock_get_mac.side_effect = [None, mac_address]
 
         with patch.object(flow, "_async_force_arp_update") as mock_force_arp:

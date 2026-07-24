@@ -19,7 +19,6 @@ from homeassistant.components.climate import (
 from homeassistant.const import (
     ATTR_NAME,
     ATTR_TEMPERATURE,
-    CONF_TOKEN,
     STATE_UNKNOWN,
 )
 from homeassistant.exceptions import ConfigEntryAuthFailed
@@ -75,7 +74,7 @@ class YamlStatePoller:
             # Home Assistant dependency check
             if not getattr(self.controller, "hass", None):
                 return None
-                
+
             entries = self.controller.hass.config_entries.async_entries("smartthings")
             if not entries:
                 _LOGGER.debug(  # pragma: no mutate
@@ -96,7 +95,9 @@ class YamlStatePoller:
 
             await session.async_ensure_token_valid()
             token: str | None = session.token.get("access_token")
-            masked = f"***{token[-6:]}" if token and len(token) > 6 else "None"  # pragma: no mutate
+            masked = (
+                f"***{token[-6:]}" if token and len(token) > 6 else "None"
+            )  # pragma: no mutate
             _LOGGER.debug(  # pragma: no mutate
                 "%s [Auth] OAuth2 session token validated. Token: %s",
                 self.controller.log_prefix,
@@ -134,7 +135,8 @@ class YamlStatePoller:
                 translation_key="connection_failed",  # pragma: no mutate
                 translation_placeholders={  # pragma: no mutate
                     "host": self.controller.ip_address,  # pragma: no mutate
-                    "name": getattr(self.controller, "name", None) or self.controller.ip_address,  # pragma: no mutate
+                    "name": getattr(self.controller, "name", None)
+                    or self.controller.ip_address,  # pragma: no mutate
                 },  # pragma: no mutate
             )
         except Exception as e:  # pylint: disable=broad-exception-caught
@@ -203,13 +205,14 @@ class YamlStatePoller:
     async def async_update_state(self) -> dict[str, Any] | None:
         """Fetch the actual state from the device over the network."""
         if not self.controller.loader.state_getter:
-            raise UpdateFailed("State getter is not initialized, cannot update state.")  # pragma: no mutate
+            raise UpdateFailed(
+                "State getter is not initialized, cannot update state."
+            )  # pragma: no mutate
 
         # Pre-check network reachability for non-2878 devices (REST/8888)
-        if (
-            self.controller.config.get(CONF_DEVICE_TYPE) != DEVICE_TYPE_SAMSUNG_2878
-            and getattr(self.controller, "ip_address", None)
-        ):
+        if self.controller.config.get(
+            CONF_DEVICE_TYPE
+        ) != DEVICE_TYPE_SAMSUNG_2878 and getattr(self.controller, "ip_address", None):
             try:
                 network_reachable = await async_check_network_reachability(
                     self.controller.ip_address, self.controller.log_prefix
@@ -222,7 +225,9 @@ class YamlStatePoller:
                         raise CannotConnect(
                             "Host unreachable (ICMP ping failed). Device is persistently offline."  # pragma: no mutate
                         )
-                    raise CannotConnect("Host unreachable (ICMP ping failed).")  # pragma: no mutate
+                    raise CannotConnect(
+                        "Host unreachable (ICMP ping failed)."
+                    )  # pragma: no mutate
             except Exception as diag_err:  # pylint: disable=broad-exception-caught
                 if isinstance(diag_err, CannotConnect):
                     raise
@@ -279,7 +284,10 @@ class YamlStatePoller:
                     self.controller.token = new_token
                 self._update_all_connections_token(new_token)
 
-                if hasattr(self.controller, "on_token_refreshed") and self.controller.on_token_refreshed:
+                if (
+                    hasattr(self.controller, "on_token_refreshed")
+                    and self.controller.on_token_refreshed
+                ):
                     self.controller.on_token_refreshed(new_token)
 
                 try:
@@ -289,9 +297,7 @@ class YamlStatePoller:
                         )
                     )
                     self._consecutive_connection_errors = 0
-                except (
-                    Exception
-                ) as retry_exc:  # pylint: disable=broad-exception-caught,bad-exception-cause
+                except Exception as retry_exc:  # pylint: disable=broad-exception-caught,bad-exception-cause
                     raise UpdateFailed(
                         f"Retry after token refresh failed: {retry_exc}"  # pragma: no mutate
                     ) from retry_exc
@@ -319,7 +325,10 @@ class YamlStatePoller:
             else:
                 self._consecutive_connection_errors += 1
 
-            if self._consecutive_connection_errors <= 2 and self._cached_device_state is not None:  # pragma: no mutate
+            if (
+                self._consecutive_connection_errors <= 2
+                and self._cached_device_state is not None
+            ):  # pragma: no mutate
                 _LOGGER.debug(
                     "%s Connection failed (%d/3). Using cached state to prevent unavailability. Error: %s",
                     self.controller.log_prefix,
@@ -339,7 +348,9 @@ class YamlStatePoller:
                 self._consecutive_connection_errors,
                 reason,
             )
-            raise UpdateFailed(f"Device unreachable: {reason}") from e  # pragma: no mutate
+            raise UpdateFailed(
+                f"Device unreachable: {reason}"
+            ) from e  # pragma: no mutate
 
         if full_device_state is None:
             if self._cached_device_state:
@@ -358,7 +369,7 @@ class YamlStatePoller:
         if not self.controller.loader.is_fully_initialized:
             try:
                 device_type = self.controller.config.get(CONF_DEVICE_TYPE)
-                
+
                 # Safe access to loader's internal cache
                 cache = self.controller.loader._parsed_yaml_cache
                 id_map = (
@@ -393,22 +404,32 @@ class YamlStatePoller:
 
                         if device_to_discover:
                             id_path = id_map.get("id")
-                            discovered_id = get_value_by_path(device_to_discover, id_path) if id_path else None
-                            
+                            discovered_id = (
+                                get_value_by_path(device_to_discover, id_path)
+                                if id_path
+                                else None
+                            )
+
                             # discovered_id = device_to_discover.get("id", None)
                             # Only update if current device_id is missing or "0"
 
-                            curr_dev_id = getattr(self.controller, "device_id", "")  # pragma: no mutate
+                            curr_dev_id = getattr(
+                                self.controller, "device_id", ""
+                            )  # pragma: no mutate
                             if discovered_id is not None and (
                                 not curr_dev_id or curr_dev_id == "0"
                             ):
-                                if hasattr(self.controller, "device_id"):  # pragma: no mutate
+                                if hasattr(
+                                    self.controller, "device_id"
+                                ):  # pragma: no mutate
                                     self.controller.device_id = str(discovered_id)
 
                             _LOGGER.info(  # pragma: no mutate
                                 "%s Discovered/Confirmed device with id=%s",
                                 self.controller.log_prefix,
-                                getattr(self.controller, "device_id", "unknown"),  # pragma: no mutate
+                                getattr(
+                                    self.controller, "device_id", "unknown"
+                                ),  # pragma: no mutate
                             )
 
                 await self.controller.loader.async_finish_initialization()
@@ -421,7 +442,10 @@ class YamlStatePoller:
                 )
 
         current_state = None
-        if hasattr(self.controller, "get_current_state_callback") and self.controller.get_current_state_callback:
+        if (
+            hasattr(self.controller, "get_current_state_callback")
+            and self.controller.get_current_state_callback
+        ):
             current_state = self.controller.get_current_state_callback()
 
         await self.async_update_properties_from_state(
@@ -533,7 +557,9 @@ class YamlStatePoller:
                     del self._pending_updates[prop.id]
 
                 if hasattr(prop, "async_update_state"):
-                    await prop.async_update_state(device_to_process, getattr(self.controller, "debug", False))
+                    await prop.async_update_state(
+                        device_to_process, getattr(self.controller, "debug", False)
+                    )
             except Exception as e:  # pylint: disable=broad-exception-caught
                 _LOGGER.error(  # pragma: no mutate
                     "%s FAILED to update property '%s'. Error: %s",
@@ -549,17 +575,13 @@ class YamlStatePoller:
         for _, op in list(self.controller.loader.operations.items()):
             if hasattr(op, "is_valid") and not op.is_valid(device_to_process):
                 continue
-            
+
             op_value = getattr(op, "value", getattr(op, "_value", None))
-            
+
             # GUARD AGAINST DEGRADATION TO "UNKNOWN"
             # Verify that 'values' exists and is NOT empty before evaluating
             op_values = getattr(op, "values", None)
-            if (
-                op_values
-                and op_value is not None
-                and op_value != STATE_UNKNOWN
-            ):
+            if op_values and op_value is not None and op_value != STATE_UNKNOWN:
                 if op_value not in op_values:
                     new_value = op_values[0] if op_values else STATE_UNKNOWN
                     if hasattr(op, "value"):
@@ -568,7 +590,10 @@ class YamlStatePoller:
                         op._value = new_value
                     corrections[op.id] = new_value
 
-                    if getattr(op, "feature_flag", getattr(op, "_feature_flag", None)) == ClimateEntityFeature.FAN_MODE:
+                    if (
+                        getattr(op, "feature_flag", getattr(op, "_feature_flag", None))
+                        == ClimateEntityFeature.FAN_MODE
+                    ):
                         self.fan_modes_list_changed_pending_flicker = True
 
         self._rebuild_attributes()
@@ -583,10 +608,8 @@ class YamlStatePoller:
         for prop in all_properties:
             if hasattr(prop, "state_attributes"):
                 new_attrs.update(prop.state_attributes)
-        new_attrs["last_sync"] = dt_util.now().strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-        
+        new_attrs["last_sync"] = dt_util.now().strftime("%Y-%m-%d %H:%M:%S")
+
         # Respectful setter
         if hasattr(self.controller, "update_state_attributes"):
             self.controller.update_state_attributes(new_attrs)
@@ -635,7 +658,7 @@ class YamlStatePoller:
             op_id = getattr(op, "id", None)
             if not op_id:
                 continue
-                
+
             hass_attr = self._get_hass_attr_for_op_id(op_id)
             hass_value = getattr(hass_state, hass_attr, None)
             if hass_value is not None and hasattr(op, "convert_hass_to_dev"):
@@ -669,7 +692,7 @@ class YamlStatePoller:
             device_value = op_value
             if hasattr(op, "convert_hass_to_dev"):  # pragma: no mutate
                 device_value = op.convert_hass_to_dev(op_value)  # pragma: no mutate
-                
+
             is_2878 = (
                 self.controller.config.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_SAMSUNG_2878
             )
@@ -693,7 +716,9 @@ class YamlStatePoller:
                                 device_obj["Operation"]["power"] = "Off"
                             else:
                                 device_obj["Operation"]["power"] = "On"
-                                device_obj.setdefault("Mode", {})["modes"] = [device_value]
+                                device_obj.setdefault("Mode", {})["modes"] = [
+                                    device_value
+                                ]
             elif op_id in ("temperature", ATTR_TEMPERATURE):
                 if is_2878:
                     reconstructed_state["AC_FUN_TEMPSET"] = str(device_value)
@@ -722,7 +747,9 @@ class YamlStatePoller:
                     if op_id in ("fan", "fan_mode", ATTR_FAN_MODE):
                         device_key = "AC_FUN_WINDLEVEL"
                     else:
-                        device_key = self._get_cached_device_key_from_prop(op)  # pragma: no mutate
+                        device_key = self._get_cached_device_key_from_prop(
+                            op
+                        )  # pragma: no mutate
                     if device_key:
                         reconstructed_state[device_key] = device_value
                 else:
@@ -732,25 +759,35 @@ class YamlStatePoller:
                         if isinstance(device_obj, dict):
                             if op_id in ("fan", "fan_mode", ATTR_FAN_MODE):
                                 device_obj.setdefault("Wind", {})["speedLevel"] = (
-                                    int(device_value) if str(device_value).isdigit() else device_value
+                                    int(device_value)
+                                    if str(device_value).isdigit()
+                                    else device_value
                                 )
                             elif op_id in ("fan_max",):
                                 device_obj.setdefault("Wind", {})["maxSpeedLevel"] = (
-                                    int(device_value) if str(device_value).isdigit() else device_value
+                                    int(device_value)
+                                    if str(device_value).isdigit()
+                                    else device_value
                                 )
                             elif op_id in ("swing", "swing_mode", ATTR_SWING_MODE):
-                                device_obj.setdefault("Wind", {})["direction"] = device_value
+                                device_obj.setdefault("Wind", {})["direction"] = (
+                                    device_value
+                                )
                             elif op_id in ("preset_mode", ATTR_PRESET_MODE):
-                                options = device_obj.setdefault("Mode", {}).setdefault("options", [])
+                                options = device_obj.setdefault("Mode", {}).setdefault(
+                                    "options", []
+                                )
                                 val_str = str(device_value)
                                 if not options:
                                     options.append(val_str)
                                 else:
                                     options[0] = val_str
                             elif op_id == "good_sleep":
-                                options = device_obj.setdefault("Mode", {}).setdefault("options", [])
+                                options = device_obj.setdefault("Mode", {}).setdefault(
+                                    "options", []
+                                )
                                 sleep_val = f"Sleep_{int(float(device_value))}"
-                                
+
                                 if not options:
                                     options.extend(["Comode_Off", sleep_val])
                                 elif len(options) == 1:
@@ -786,17 +823,19 @@ class YamlStatePoller:
                 + list(self.controller.loader.properties.values())
                 + list(self.controller.loader.sensors.values())
             )
-            
+
             prop_values = {}
             for prop in all_properties:
                 prop_id = getattr(prop, "id", None)
                 if prop_id and hasattr(prop, "calculate_value_from_state"):
-                    # STRICT MAPPING ENFORCEMENT: 
-                    # Fallback mapping.get(prop_id, prop_id) was removed. ClimateIPDeviceState 
-                    # strictly extracts hardcoded keys. Unmapped properties evaluate to None 
+                    # STRICT MAPPING ENFORCEMENT:
+                    # Fallback mapping.get(prop_id, prop_id) was removed. ClimateIPDeviceState
+                    # strictly extracts hardcoded keys. Unmapped properties evaluate to None
                     # and are intentionally discarded here to prevent inert memory pollution.
                     # prop_values[mapping.get(prop_id, prop_id)] = prop.calculate_value_from_state(raw_state)
-                    prop_values[mapping.get(prop_id)] = prop.calculate_value_from_state(raw_state)
+                    prop_values[mapping.get(prop_id)] = prop.calculate_value_from_state(
+                        raw_state
+                    )
 
             return ClimateIPDeviceState(
                 hvac_mode=prop_values.get("hvac_mode"),
@@ -822,7 +861,10 @@ class YamlStatePoller:
             return False
 
         current_hass_state = None  # pragma: no mutate
-        if hasattr(self.controller, "get_current_state_callback") and self.controller.get_current_state_callback:
+        if (
+            hasattr(self.controller, "get_current_state_callback")
+            and self.controller.get_current_state_callback
+        ):
             current_hass_state = self.controller.get_current_state_callback()
 
         if not current_hass_state:
@@ -918,7 +960,7 @@ class YamlStatePoller:
         prop_id = getattr(prop, "id", None)
         if not prop_id:
             return None
-            
+
         if prop_id in self._prop_template_key_cache:
             return self._prop_template_key_cache[prop_id]
 
@@ -975,7 +1017,7 @@ class YamlStatePoller:
                         op.value = val
                     elif hasattr(op, "_value"):
                         op._value = val
-                        
+
         for prop in list(self.controller.loader.properties.values()):
             prop_id = prop.id
             if prop_id:
@@ -1001,10 +1043,9 @@ class YamlStatePoller:
             self.controller.log_prefix,
             # FORENSIC LOGGING: A missing ID evaluates to 'None' during string interpolation.
             getattr(prop_to_change, "id"),
-
             new_value,
         )
-        
+
         if hasattr(prop_to_change, "value"):
             prop_to_change.value = new_value
         elif hasattr(prop_to_change, "_value"):
@@ -1035,7 +1076,9 @@ class YamlStatePoller:
         """Shut down the poller and cleanly close any active connections."""
         conn = self.controller.loader.connection
         if conn:
-            _LOGGER.debug("%s Shutting down connection...", self.controller.log_prefix)  # pragma: no mutate
+            _LOGGER.debug(
+                "%s Shutting down connection...", self.controller.log_prefix
+            )  # pragma: no mutate
 
             async def _try(coro):  # pylint: disable=invalid-name
                 try:
@@ -1057,7 +1100,7 @@ class YamlStatePoller:
 
             if hasattr(conn, "close"):
                 await _try(conn.close())
-                
+
             self.controller.loader.connection = None
 
         await asyncio.sleep(1.0)

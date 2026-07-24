@@ -29,6 +29,7 @@ from custom_components.climate_ip.helpers import (
     ICMPSocketError,
 )
 
+
 class TestTolerantHeaderParsing:
     """Tests for the urllib3 monkey-patch context manager."""
 
@@ -40,11 +41,13 @@ class TestTolerantHeaderParsing:
 
         with tolerant_header_parsing():
             patched = response_util.assert_header_parsing
-            assert patched is not original, "assert_header_parsing should be patched inside context"
+            assert patched is not original, (
+                "assert_header_parsing should be patched inside context"
+            )
 
-        assert (
-            response_util.assert_header_parsing is original
-        ), "assert_header_parsing should be restored after context"
+        assert response_util.assert_header_parsing is original, (
+            "assert_header_parsing should be restored after context"
+        )
 
     def test_patch_restored_after_context(self):
         """Verify that the original function is restored after the context exits."""
@@ -69,9 +72,9 @@ class TestTolerantHeaderParsing:
         with pytest.raises(ValueError), tolerant_header_parsing():
             raise ValueError("Simulated error")
 
-        assert (
-            response_util.assert_header_parsing is original
-        ), "assert_header_parsing should be restored even after an exception"
+        assert response_util.assert_header_parsing is original, (
+            "assert_header_parsing should be restored even after an exception"
+        )
 
     def test_header_parsing_error_suppressed(self):
         """Verify that HeaderParsingError is caught and logged, not raised."""
@@ -120,9 +123,9 @@ class TestTolerantHeaderParsing:
             t.join()
 
         assert len(errors) == 0, f"Errors in threads: {errors}"
-        assert (
-            response_util.assert_header_parsing is original
-        ), "Original function should be restored after all threads complete"
+        assert response_util.assert_header_parsing is original, (
+            "Original function should be restored after all threads complete"
+        )
 
 
 class TestFindKeyInData:
@@ -223,7 +226,6 @@ class TestResolveCertPath:
 
     def test_resolve_cert_path_hass_attribute_error(self):
         """Test resolve_cert_path when hass raises AttributeError."""
-        from unittest.mock import PropertyMock, patch
         from custom_components.climate_ip.helpers import resolve_cert_path
 
         class FaultyHass:
@@ -232,6 +234,7 @@ class TestResolveCertPath:
                 raise AttributeError("No config")
 
         from pathlib import Path
+
         res = resolve_cert_path("subdir/my_cert.pem", "/base/dir", hass=FaultyHass())
         assert res == str(Path("subdir/my_cert.pem"))
 
@@ -272,7 +275,10 @@ class TestValidatePollInterval:
 
     def test_validate_poll_interval_boundary(self):
         from custom_components.climate_ip.helpers import validate_poll_interval
-        from custom_components.climate_ip.const import MIN_POLL_INTERVAL, MAX_POLL_INTERVAL
+        from custom_components.climate_ip.const import (
+            MIN_POLL_INTERVAL,
+            MAX_POLL_INTERVAL,
+        )
 
         assert validate_poll_interval(MIN_POLL_INTERVAL) == MIN_POLL_INTERVAL
         assert validate_poll_interval(MAX_POLL_INTERVAL) == MAX_POLL_INTERVAL
@@ -287,9 +293,11 @@ class TestValidatePollInterval:
         with pytest.raises(ValueError, match="Interval must be between"):
             validate_poll_interval(21601)
 
+
 def test_token_sanitization() -> None:
     """Validate token sanitization against injection."""
     from custom_components.climate_ip.helpers import sanitize_token
+
     assert sanitize_token('my"evil{{token') is None
     assert sanitize_token("abcd1234") == "abcd1234"
 
@@ -318,6 +326,7 @@ class TestSafeXmlToDict:
     def test_safe_xml_to_dict_security_propagates(self):
         """DefusedXml security exceptions must propagate, not be swallowed."""
         from defusedxml import EntitiesForbidden
+
         # Billion laughs payload
         malicious = '<!DOCTYPE b [ <!ENTITY a "x"> <!ENTITY b "&a;&a;"> ]><S>&b;</S>'
         with pytest.raises(EntitiesForbidden):
@@ -330,6 +339,7 @@ class TestCreateSamsungSslContext:
     def test_ssl_context_bad_cert_raises(self):
         """A non-existent cert path must raise, not silently fail."""
         import ssl
+
         # This will fail during context.load_cert_chain / load_verify_locations
         with pytest.raises((ssl.SSLError, OSError, FileNotFoundError)):
             create_samsung_ssl_context(cert_path="/nonexistent/cert.pem")
@@ -337,11 +347,13 @@ class TestCreateSamsungSslContext:
     def test_ssl_context_standard_ciphers(self):
         """Test that default context uses secure high-level ciphers."""
         import ssl
+
         ctx = create_samsung_ssl_context()
         assert ctx.verify_mode == ssl.CERT_NONE  # default for Samsung devices
         # Check that TLS 1.3 is NOT enabled as maximum (Samsung bug)
         if hasattr(ssl, "TLSVersion"):
             assert ctx.maximum_version == ssl.TLSVersion.TLSv1_2
+
 
 def test_safe_xml_to_dict_list_conversion():
     """Kills mutmut 6, 7, 8: Ensures identical sibling tags become lists."""
@@ -349,11 +361,13 @@ def test_safe_xml_to_dict_list_conversion():
     result = safe_xml_to_dict(xml_string)
     assert result == {"root": {"item": ["1", "2"]}}
 
+
 def test_safe_xml_to_dict_text_with_attributes():
     """Kills mutmut 9, 10, 12, 13, 14: Ensures elements with attrs and text use '#text'."""
     xml_string = '<root id="5">hello</root>'
     result = safe_xml_to_dict(xml_string)
     assert result == {"root": {"@id": "5", "#text": "hello"}}
+
 
 # --- parse_entity_category ---
 def test_parse_entity_category():
@@ -376,8 +390,12 @@ def test_get_value_by_path():
 # --- stream_wrapper ---
 def test_stream_wrapper():
     template = "Token:__CLIMATE_IP_TOKEN__, Host:__CLIMATE_IP_HOST__, Mac:__CLIMATE_IP_MAC__, ID:__DEVICE_ID__"
-    result = stream_wrapper(template, "my_token", "192.168.1.10", "dev_123", "00:11:22:33:44:55")
-    assert result == "Token:my_token, Host:192.168.1.10, Mac:00:11:22:33:44:55, ID:dev_123"
+    result = stream_wrapper(
+        template, "my_token", "192.168.1.10", "dev_123", "00:11:22:33:44:55"
+    )
+    assert (
+        result == "Token:my_token, Host:192.168.1.10, Mac:00:11:22:33:44:55, ID:dev_123"
+    )
 
     # Test partial replacements
     partial = stream_wrapper("Token:__CLIMATE_IP_TOKEN__", None, None, None)
@@ -387,11 +405,13 @@ def test_stream_wrapper():
 # --- get_tls_version_name ---
 def test_get_tls_version_name():
     assert get_tls_version_name(0) == "Unknown"
-    
+
     # Test valid TLS version
     if hasattr(ssl, "TLSVersion") and hasattr(ssl.TLSVersion, "TLSv1_2"):
-        assert get_tls_version_name(ssl.TLSVersion.TLSv1_2) == ssl.TLSVersion.TLSv1_2.name
-        
+        assert (
+            get_tls_version_name(ssl.TLSVersion.TLSv1_2) == ssl.TLSVersion.TLSv1_2.name
+        )
+
     # Test fallback to string representation for invalid types
     assert get_tls_version_name(9999) == "9999"
 
@@ -404,21 +424,22 @@ async def test_async_create_samsung_ssl_context():
     assert context.check_hostname is False
     assert context.verify_mode == ssl.CERT_NONE
 
+
 # --- format_placeholders ---
 def test_format_placeholders():
     data = {
         "key1": "Host:__CLIMATE_IP_HOST__",
         "key2": [
-            "Token:__CLIMATE_IP_TOKEN__", 
+            "Token:__CLIMATE_IP_TOKEN__",
             {"nested": "ID:__DEVICE_ID__"},
             "Mac:__CLIMATE_IP_MAC__",
-            "Host:__CLIMATE_IP_HOST__" 
+            "Host:__CLIMATE_IP_HOST__",
         ],
         "key3": 42,
-        "key4": "Mac:__CLIMATE_IP_MAC__"
+        "key4": "Mac:__CLIMATE_IP_MAC__",
     }
     result = format_placeholders(data, "tok", "1.1.1.1", "dev_id", "11:22:33:44:55:66")
-    
+
     assert result["key1"] == "Host:1.1.1.1"
     assert result["key2"][0] == "Token:tok"
     assert result["key2"][1]["nested"] == "ID:dev_id"
@@ -427,28 +448,29 @@ def test_format_placeholders():
     assert result["key3"] == 42
     assert result["key4"] == "Mac:11:22:33:44:55:66"
 
+
 # --- mask_sensitive_data ---
 def test_mask_sensitive_data():
     raw_data = {
-        "Authorization": "Bearer 123", 
-        "unique_id": "uid_12345",      
-        "DeviceToken": "dtok_123",     
-        "DUID": "duid_12",             
-        "device_id": "12345678",        
-        "uuid": "1234567",              
-        "token": "123456",              
-        "mac": "AABBCCDDEEFF",         
+        "Authorization": "Bearer 123",
+        "unique_id": "uid_12345",
+        "DeviceToken": "dtok_123",
+        "DUID": "duid_12",
+        "device_id": "12345678",
+        "uuid": "1234567",
+        "token": "123456",
+        "mac": "AABBCCDDEEFF",
         "nested_limits": {
-            "mac": "1234567",         
-            "device_id": "123456",    
-            "token": "12345",         
-            "uuid": "1234",           
-            "DUID": "123"             
+            "mac": "1234567",
+            "device_id": "123456",
+            "token": "12345",
+            "uuid": "1234",
+            "DUID": "123",
         },
-        "normal_key": "visible"
+        "normal_key": "visible",
     }
     masked = mask_sensitive_data(raw_data)
-    
+
     assert masked["Authorization"] == "***er 123"
     assert masked["unique_id"] == "***_12345"
     assert masked["DeviceToken"] == "***ok_123"
@@ -471,41 +493,50 @@ def test_mask_sensitive_data():
 async def test_async_get_mac_address(mock_exec):
     mock_proc = AsyncMock()
     # Cambiamos la MAC a una con LETRAS para cazar el mutante '.lower()' a '.upper()'
-    mock_proc.communicate.return_value = (b"Address HWtype 1A:2B:3C:4D:5E:6F C eth0", b"")
+    mock_proc.communicate.return_value = (
+        b"Address HWtype 1A:2B:3C:4D:5E:6F C eth0",
+        b"",
+    )
     mock_exec.return_value = mock_proc
 
     mac = await async_get_mac_address("192.168.1.10")
     assert mac == "1a:2b:3c:4d:5e:6f"
-    
+
     # Matamos los mutantes que quitan los argumentos o los cambian a None
     mock_exec.assert_called_with(
-        "arp", "-n", "192.168.1.10", 
-        stdout=asyncio.subprocess.PIPE, 
-        stderr=asyncio.subprocess.DEVNULL
+        "arp",
+        "-n",
+        "192.168.1.10",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
     )
 
     mock_proc.communicate.return_value = (b"No entries", b"")
     assert await async_get_mac_address("192.168.1.11") is None
+
 
 @pytest.mark.asyncio
 @patch("asyncio.create_subprocess_exec")
 @patch("platform.system")
 async def test_async_get_mac_address_windows(mock_system, mock_exec):
     mock_system.return_value = "Windows"  # Forzamos la entrada al IF
-    
+
     mock_proc = AsyncMock()
     mock_proc.communicate.return_value = (b"1A-2B-3C-4D-5E-6F", b"")
     mock_exec.return_value = mock_proc
 
     mac = await async_get_mac_address("192.168.1.10")
     assert mac == "1a-2b-3c-4d-5e-6f"
-    
+
     # Validamos que los argumentos del SO sean puramente los de Windows
     mock_exec.assert_called_with(
-        "arp", "-a", "192.168.1.10", 
-        stdout=asyncio.subprocess.PIPE, 
-        stderr=asyncio.subprocess.DEVNULL
+        "arp",
+        "-a",
+        "192.168.1.10",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
     )
+
 
 # --- mask_sensitive_data (Añadido para cazar al Mutante 29) ---
 def test_mask_sensitive_data_list():
@@ -524,7 +555,7 @@ async def test_async_check_network_reachability(mock_ping):
     mock_host.avg_rtt = 10
     mock_ping.return_value = mock_host
     assert await async_check_network_reachability("192.168.1.100") is True
-    
+
     mock_ping.assert_called_with(
         address="192.168.1.100", count=1, timeout=0.5, interval=0.2, privileged=False
     )
@@ -546,11 +577,12 @@ async def test_async_check_network_reachability(mock_ping):
 async def test_async_check_network_reachability_no_library():
     """Test fallback logic when icmplib is missing or fails to load."""
     import custom_components.climate_ip.helpers as helpers_module
+
     original_ping = helpers_module.async_ping
-    
+
     # Simulamos que la librería no está instalada en el sistema
     helpers_module.async_ping = None
-    
+
     try:
         # Esto debería usar la vía de escape y devolver True
         assert await async_check_network_reachability("192.168.1.100") is True

@@ -1,5 +1,6 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
 """Tests for optimized ARP discovery logic in config flow."""
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -13,6 +14,7 @@ def hass_mock():
     hass = MagicMock()
     return hass
 
+
 @pytest.mark.asyncio
 async def test_resolve_mac_skips_arp_if_in_cache(hass_mock):
     """Test that _async_resolve_mac_and_set_unique_id skips force_arp if MAC is already found."""
@@ -20,10 +22,18 @@ async def test_resolve_mac_skips_arp_if_in_cache(hass_mock):
     flow.hass = hass_mock
     flow.flow_data = {}
 
-    with patch("custom_components.climate_ip.config_flow.async_get_mac_address", new_callable=AsyncMock) as mock_get_mac, \
-         patch.object(flow, "_async_force_arp_update", new_callable=AsyncMock) as mock_force_arp, \
-         patch.object(flow, "async_set_unique_id", new_callable=AsyncMock) as mock_set_id:
-
+    with (
+        patch(
+            "custom_components.climate_ip.config_flow.async_get_mac_address",
+            new_callable=AsyncMock,
+        ) as mock_get_mac,
+        patch.object(
+            flow, "_async_force_arp_update", new_callable=AsyncMock
+        ) as mock_force_arp,
+        patch.object(
+            flow, "async_set_unique_id", new_callable=AsyncMock
+        ) as mock_set_id,
+    ):
         # Simulate MAC found on first attempt
         mock_get_mac.return_value = "00:11:22:33:44:55"
 
@@ -38,6 +48,7 @@ async def test_resolve_mac_skips_arp_if_in_cache(hass_mock):
         mock_get_mac.assert_called_once_with("1.1.1.1")
         mock_set_id.assert_called_once()
 
+
 @pytest.mark.asyncio
 async def test_resolve_mac_forces_arp_if_not_in_cache(hass_mock):
     """Test that _async_resolve_mac_and_set_unique_id forces ARP if initial attempt fails."""
@@ -45,10 +56,18 @@ async def test_resolve_mac_forces_arp_if_not_in_cache(hass_mock):
     flow.hass = hass_mock
     flow.flow_data = {}
 
-    with patch("custom_components.climate_ip.config_flow.async_get_mac_address", new_callable=AsyncMock) as mock_get_mac, \
-         patch.object(flow, "_async_force_arp_update", new_callable=AsyncMock) as mock_force_arp, \
-         patch.object(flow, "async_set_unique_id", new_callable=AsyncMock) as mock_set_id:
-
+    with (
+        patch(
+            "custom_components.climate_ip.config_flow.async_get_mac_address",
+            new_callable=AsyncMock,
+        ) as mock_get_mac,
+        patch.object(
+            flow, "_async_force_arp_update", new_callable=AsyncMock
+        ) as mock_force_arp,
+        patch.object(
+            flow, "async_set_unique_id", new_callable=AsyncMock
+        ) as mock_set_id,
+    ):
         # Simulate MAC NOT found on first attempt, but found on second attempt
         mock_get_mac.side_effect = [None, "00:11:22:33:44:55"]
 

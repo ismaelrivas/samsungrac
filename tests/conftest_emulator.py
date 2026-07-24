@@ -1,5 +1,6 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
 """Emulator fixtures for Climate IP integration integration tests."""
+
 # pylint: disable=import-outside-toplevel
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
@@ -25,7 +26,13 @@ INITIAL_DEVICE_STATE = {
             "Mode": {
                 "modes": ["Auto", "Cool", "Dry", "Wind"],
                 "supportedModes": ["Auto", "Cool", "Dry", "Wind"],
-                "options": ["Comode_Off", "Sleep_0", "Autoclean_Off", "Spi_Off", "Volume_100"],
+                "options": [
+                    "Comode_Off",
+                    "Sleep_0",
+                    "Autoclean_Off",
+                    "Spi_Off",
+                    "Volume_100",
+                ],
             },
             "Temperatures": [
                 {
@@ -45,8 +52,7 @@ INITIAL_DEVICE_STATE = {
 
 
 class EmulatorHandler(BaseHTTPRequestHandler):
-    """Simulates the Samsung AC 8888 API.
-    """
+    """Simulates the Samsung AC 8888 API."""
 
     protocol_version = "HTTP/1.1"
 
@@ -60,7 +66,9 @@ class EmulatorHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))
-            self.send_header("Connection", "close")  # Prevent keep-alive to allow clean shutdown
+            self.send_header(
+                "Connection", "close"
+            )  # Prevent keep-alive to allow clean shutdown
             self.end_headers()
             self.wfile.write(data)
         else:
@@ -104,7 +112,9 @@ class EmulatorHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Connection", "close")  # Prevent keep-alive to allow clean shutdown
+        self.send_header(
+            "Connection", "close"
+        )  # Prevent keep-alive to allow clean shutdown
         self.end_headers()
         self.wfile.write(data)
 
@@ -128,6 +138,7 @@ def emulator_8888():
     Returns an object with methods to access state and command history.
     """
     import pytest_socket
+
     pytest_socket.enable_socket()
 
     # Find a free port

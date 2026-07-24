@@ -10,11 +10,14 @@ CLIMATE_CONTROLLERS: list[type["ClimateController"]] = []
 
 _T = TypeVar("_T")
 
+
 class ControllerError(Exception):
     """Base exception for controller errors."""
 
+
 class ControllerInitializationError(ControllerError):
     """Raised when controller fails to initialize."""
+
 
 @runtime_checkable
 class ControllerInterface(Protocol):
@@ -26,11 +29,15 @@ class ControllerInterface(Protocol):
     def unique_id(self) -> str | None: ...
     @property
     def is_push_device(self) -> bool: ...
-    
+
     async def async_get_status(self) -> dict[str, Any] | None: ...
-    async def async_set_property(self, property_name: str, new_value: Any, device_id: str | None = None) -> bool: ...
+    async def async_set_property(
+        self, property_name: str, new_value: Any, device_id: str | None = None
+    ) -> bool: ...
     async def async_shutdown(self) -> None: ...
-    async def async_merge_device_state(self, data: dict[str, Any], is_response: bool = False, is_update: bool = False) -> bool: ...
+    async def async_merge_device_state(
+        self, data: dict[str, Any], is_response: bool = False, is_update: bool = False
+    ) -> bool: ...
 
     # Contratos de Callbacks
     def on_ssl_config_updated(self, ssl_config: dict[str, Any]) -> None: ...
@@ -42,6 +49,7 @@ class ControllerInterface(Protocol):
 
 class ClimateController(ABC, Generic[_T]):
     """Abstract base class for a device controller. Enforcement through ABC."""
+
     # pylint: disable=import-outside-toplevel,too-many-public-methods,useless-return
 
     def __init__(self, config: dict[str, Any], logger: logging.Logger) -> None:
@@ -186,7 +194,9 @@ class ClimateController(ABC, Generic[_T]):
         pass
 
 
-def register_controller(controller: type["ClimateController"]) -> type["ClimateController"]:
+def register_controller(
+    controller: type["ClimateController"],
+) -> type["ClimateController"]:
     """A decorator to register a controller class."""
     CLIMATE_CONTROLLERS.append(controller)
     return controller
@@ -202,11 +212,15 @@ async def create_controller(
                 controller = controller_class(config, logger)
                 if await controller.initialize():
                     return controller
-                
+
                 # Halt execution explicitly if matched but initialization fails
-                logger.error("Failed to initialize controller for type %s", controller_type)  # pragma: no mutate
-                raise ControllerInitializationError(f"Initialization failed for {controller_type}")
-                
+                logger.error(
+                    "Failed to initialize controller for type %s", controller_type
+                )  # pragma: no mutate
+                raise ControllerInitializationError(
+                    f"Initialization failed for {controller_type}"
+                )
+
             except (ValueError, TypeError, KeyError) as e:
                 logger.error(
                     "climate_ip: Configuration or data error while creating controller %s: %s",  # pragma: no mutate
@@ -222,5 +236,7 @@ async def create_controller(
                 )
                 return None
 
-    logger.error("Controller for type %s not found", controller_type)  # pragma: no mutate
+    logger.error(
+        "Controller for type %s not found", controller_type
+    )  # pragma: no mutate
     return None

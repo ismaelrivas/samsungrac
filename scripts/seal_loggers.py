@@ -1,4 +1,3 @@
-import os
 
 target_file = "/home/cogollo/ha_data/config/custom_components/climate_ip/config_flow.py"
 
@@ -34,7 +33,7 @@ for line in lines:
         # If parens balance goes to 0 or below, the statement is complete
         if logger_parens <= 0 and code_part.strip().endswith(')'):
              in_logger = False
-        elif logger_parens <= 0 and not "(" in code_part and not ")" in code_part:
+        elif logger_parens <= 0 and "(" not in code_part and ")" not in code_part:
              # Just in case it's a single line logger without parenthesis (unlikely but safe)
              pass
 

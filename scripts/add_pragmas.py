@@ -13,7 +13,6 @@ def process_file(file_path: Path) -> None:
 
     # Control de estado del bloque LOGGER
     in_logger_block = False
-    logger_start_idx = -1
     open_parentheses = 0
     had_pragma_in_block = False
 
@@ -26,7 +25,7 @@ def process_file(file_path: Path) -> None:
         if not in_logger_block:
             if "_LOGGER." in line:
                 in_logger_block = True
-                logger_start_idx = len(modified_lines)
+                len(modified_lines)
                 had_pragma_in_block = bool(re.search(pragma_pattern, line))
 
                 # Balance de paréntesis inicial
@@ -93,7 +92,7 @@ def process_file(file_path: Path) -> None:
         )
     else:
         print(f"[SIN CAMBIOS] {file_path}")
-        print(f"    -> Pragmas añadidos: 0")
+        print("    -> Pragmas añadidos: 0")
         print(
             f"    -> Total de pragmas finales: {already_had_count}\n"
         )

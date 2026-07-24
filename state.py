@@ -51,7 +51,9 @@ class ClimateIPDeviceState:  # pylint: disable=import-outside-toplevel,too-many-
             coerced_hvac_modes = []
             for mode in self.hvac_modes:
                 coerced_hvac_modes.append(
-                    HVACMode(str(mode).lower()) if not isinstance(mode, HVACMode) else mode
+                    HVACMode(str(mode).lower())
+                    if not isinstance(mode, HVACMode)
+                    else mode
                 )
             self.hvac_modes = coerced_hvac_modes
 

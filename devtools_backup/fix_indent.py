@@ -1,4 +1,3 @@
-import re
 
 with open("custom_components/climate_ip/coordinator.py", "r") as f:
     lines = f.readlines()

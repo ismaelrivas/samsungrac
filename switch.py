@@ -20,7 +20,9 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(  # pylint: disable=import-outside-toplevel,too-many-branches,too-many-locals
-    _hass: HomeAssistant, entry: ClimateIPConfigEntry, async_add_entities: AddEntitiesCallback
+    _hass: HomeAssistant,
+    entry: ClimateIPConfigEntry,
+    async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Samsung Climate IP switches."""
 
@@ -28,7 +30,8 @@ async def async_setup_entry(  # pylint: disable=import-outside-toplevel,too-many
 
     coordinators: list[SamsungClimateCoordinator] = (
         list(coordinator_data.values())
-        if isinstance(coordinator_data, dict) else [coordinator_data]
+        if isinstance(coordinator_data, dict)
+        else [coordinator_data]
     )
 
     entities: list[SamsungClimateSwitch] = []
@@ -64,7 +67,9 @@ async def async_setup_entry(  # pylint: disable=import-outside-toplevel,too-many
                 if not op.is_valid(raw_device_state):
                     continue
 
-                parsed_category = parse_entity_category(getattr(op, "entity_category", None))
+                parsed_category = parse_entity_category(
+                    getattr(op, "entity_category", None)
+                )
 
                 device_class = getattr(op, "device_class", None)
                 icon = getattr(op, "icon", None)
@@ -89,6 +94,7 @@ async def async_setup_entry(  # pylint: disable=import-outside-toplevel,too-many
 
 class SamsungClimateSwitch(CoordinatorEntity[SamsungClimateCoordinator], SwitchEntity):
     """Representation of a Samsung Climate IP Switch."""
+
     # pylint: disable=import-outside-toplevel,abstract-method
 
     _attr_is_on: bool | None
@@ -130,7 +136,9 @@ class SamsungClimateSwitch(CoordinatorEntity[SamsungClimateCoordinator], SwitchE
         """Turn the entity off."""
         msg = "Turning off %s"  # pragma: no mutate
         _LOGGER.debug(msg, self.name)  # pragma: no mutate
-        if await self._controller.async_set_property(self.entity_description.key, "off"):
+        if await self._controller.async_set_property(
+            self.entity_description.key, "off"
+        ):
             self._attr_is_on = False
             self.async_write_ha_state()
             await self.coordinator.async_request_refresh()

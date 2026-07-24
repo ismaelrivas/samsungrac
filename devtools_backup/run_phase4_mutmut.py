@@ -1,5 +1,3 @@
-import subprocess
-import re
 
 with open('fast_mutmut_show.py', 'r') as f:
     lines = f.read()

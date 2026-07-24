@@ -13,8 +13,6 @@ def test_can_import_connection_class():
     assert ConnectionSamsung2878 is not None
 
 
-
-
 async def test_repair_issue_created_on_disconnect():
     """Test that a repair issue is created after 3 connection failures."""
     from unittest.mock import AsyncMock, MagicMock, patch
@@ -24,7 +22,12 @@ async def test_repair_issue_created_on_disconnect():
     mock_hass = MagicMock()
     mock_controller = MagicMock()
     mock_controller.hass = mock_hass
-    config = {"host": "192.168.1.100", "port": 2878, "cert": "dummy.pem", "duid": "12345"}
+    config = {
+        "host": "192.168.1.100",
+        "port": 2878,
+        "cert": "dummy.pem",
+        "duid": "12345",
+    }
     logger = MagicMock()
 
     conn = ConnectionSamsung2878(config, logger)
@@ -33,17 +36,22 @@ async def test_repair_issue_created_on_disconnect():
     conn._cfg.name = "Test AC"
     conn._controller = mock_controller
 
-    with patch(
-        "custom_components.climate_ip.samsung_2878.async_create_issue"
-    ) as mock_create_issue, patch(
-        "custom_components.climate_ip.samsung_2878.asyncio.sleep", new_callable=AsyncMock
-    ), patch(
-        "custom_components.climate_ip.helpers.async_check_network_reachability",
-        new_callable=AsyncMock,
-    ) as mock_ping, patch.object(
-        conn, "_establish_connection_and_handshake", new_callable=AsyncMock
-    ) as mock_handshake:
-
+    with (
+        patch(
+            "custom_components.climate_ip.samsung_2878.async_create_issue"
+        ) as mock_create_issue,
+        patch(
+            "custom_components.climate_ip.samsung_2878.asyncio.sleep",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "custom_components.climate_ip.helpers.async_check_network_reachability",
+            new_callable=AsyncMock,
+        ) as mock_ping,
+        patch.object(
+            conn, "_establish_connection_and_handshake", new_callable=AsyncMock
+        ) as mock_handshake,
+    ):
         mock_ping.return_value = True
 
         mock_handshake.return_value = False
@@ -73,8 +81,6 @@ async def test_repair_issue_created_on_disconnect():
         assert kwargs["translation_placeholders"]["name"] == "Test AC"
 
 
-
-
 async def test_repair_issue_cleared_on_reconnect():
     """Test that a repair issue is deleted upon successful connection."""
     from unittest.mock import AsyncMock, MagicMock, patch
@@ -84,7 +90,12 @@ async def test_repair_issue_cleared_on_reconnect():
     mock_hass = MagicMock()
     mock_controller = MagicMock()
     mock_controller.hass = mock_hass
-    config = {"host": "192.168.1.100", "port": 2878, "cert": "dummy.pem", "duid": "12345"}
+    config = {
+        "host": "192.168.1.100",
+        "port": 2878,
+        "cert": "dummy.pem",
+        "duid": "12345",
+    }
     logger = MagicMock()
 
     conn = ConnectionSamsung2878(config, logger)
@@ -93,12 +104,14 @@ async def test_repair_issue_cleared_on_reconnect():
     conn._controller = mock_controller
     conn._is_available = False
 
-    with patch(
-        "custom_components.climate_ip.samsung_2878.async_delete_issue"
-    ) as mock_delete_issue, patch.object(
-        conn, "_establish_connection_and_handshake", new_callable=AsyncMock
-    ) as mock_handshake:
-
+    with (
+        patch(
+            "custom_components.climate_ip.samsung_2878.async_delete_issue"
+        ) as mock_delete_issue,
+        patch.object(
+            conn, "_establish_connection_and_handshake", new_callable=AsyncMock
+        ) as mock_handshake,
+    ):
         # Mock _post_connect_status_request to avoid hanging
         with patch.object(conn, "_post_connect_status_request", new_callable=AsyncMock):
             mock_handshake.return_value = True
@@ -112,7 +125,9 @@ async def test_repair_issue_cleared_on_reconnect():
 
     # However, the delete happens inside `_establish_connection_and_handshake` which is huge.
     # Better test just that block of logic by simulating the successful connection
-    with patch("custom_components.climate_ip.samsung_2878.async_delete_issue") as mock_delete_issue:
+    with patch(
+        "custom_components.climate_ip.samsung_2878.async_delete_issue"
+    ) as mock_delete_issue:
         # Manually trigger what happens after a successful connect
         conn._is_available = False
 
@@ -126,7 +141,9 @@ async def test_repair_issue_cleared_on_reconnect():
                 )
 
                 async_delete_issue(
-                    conn._controller.hass, "climate_ip", f"connection_failed_{conn._cfg.host}"
+                    conn._controller.hass,
+                    "climate_ip",
+                    f"connection_failed_{conn._cfg.host}",
                 )
             except Exception:
                 pass
@@ -136,14 +153,18 @@ async def test_repair_issue_cleared_on_reconnect():
         )
 
 
-
 async def test_async_xml_parse():
     """Test that XML parsing is offloaded to the executor/thread pool."""
     from unittest.mock import AsyncMock, MagicMock, patch
 
     from custom_components.climate_ip.helpers import safe_xml_to_dict
 
-    config = {"host": "192.168.1.100", "port": 2878, "cert": "dummy.pem", "duid": "12345"}
+    config = {
+        "host": "192.168.1.100",
+        "port": 2878,
+        "cert": "dummy.pem",
+        "duid": "12345",
+    }
     logger = MagicMock()
     conn = ConnectionSamsung2878(config, logger)
 
@@ -152,14 +173,19 @@ async def test_async_xml_parse():
 
     # Test case 1: With hass (uses async_add_executor_job)
     mock_hass = MagicMock()
-    mock_hass.async_add_executor_job = AsyncMock(side_effect=mock_async_add_executor_job)
+    mock_hass.async_add_executor_job = AsyncMock(
+        side_effect=mock_async_add_executor_job
+    )
     mock_controller = MagicMock()
     mock_controller.hass = mock_hass
     conn._controller = mock_controller
 
     large_xml = '<?xml version="1.0" encoding="utf-8" ?><Response Type="DeviceState" DUID="12345"><Device></Device></Response>'
 
-    with patch("custom_components.climate_ip.samsung_2878.safe_xml_to_dict", side_effect=safe_xml_to_dict) as mock_parse:
+    with patch(
+        "custom_components.climate_ip.samsung_2878.safe_xml_to_dict",
+        side_effect=safe_xml_to_dict,
+    ) as mock_parse:
         await conn._parse_and_update_state(large_xml)
         mock_hass.async_add_executor_job.assert_called_once()
         # The first argument should be safe_xml_to_dict (the mock)
@@ -168,7 +194,10 @@ async def test_async_xml_parse():
 
     # Test case 2: Without hass (should raise RuntimeError)
     conn._controller = None
-    with pytest.raises(RuntimeError, match="Home Assistant instance is required for parsing XML securely"):
+    with pytest.raises(
+        RuntimeError,
+        match="Home Assistant instance is required for parsing XML securely",
+    ):
         await conn._parse_and_update_state(large_xml)
 
 
@@ -184,7 +213,7 @@ def test_2878_auth_token_format():
         CONF_IP_ADDRESS: "192.168.1.100",
         "port": 2878,
         CONF_TOKEN: "REAL_SECURE_TOKEN_XYZ",
-        "mac": "11:22:33:44:55:66"
+        "mac": "11:22:33:44:55:66",
     }
     logger = MagicMock()
 
@@ -199,7 +228,7 @@ def test_2878_auth_token_format():
         "params": {
             "connection_template": '<Request Type="AuthToken"><User Token="{{token}}" /></Request>',
             "host": "__CLIMATE_IP_HOST__",
-            "token": "__CLIMATE_IP_TOKEN__"
+            "token": "__CLIMATE_IP_TOKEN__",
         }
     }
 
@@ -213,10 +242,12 @@ def test_2878_auth_token_format():
 
     # 4. Assert that rendering the init template produces a valid payload
     import jinja2
-    rendered_auth = jinja2.Template(conn._connection_init_template.template).render(**conn._params)
-    assert 'Token="REAL_SECURE_TOKEN_XYZ"' in rendered_auth
-    assert '__CLIMATE_IP_TOKEN__' not in rendered_auth
 
+    rendered_auth = jinja2.Template(conn._connection_init_template.template).render(
+        **conn._params
+    )
+    assert 'Token="REAL_SECURE_TOKEN_XYZ"' in rendered_auth
+    assert "__CLIMATE_IP_TOKEN__" not in rendered_auth
 
 
 async def test_defusedxml_billion_laughs_rejection():
@@ -242,6 +273,7 @@ async def test_defusedxml_billion_laughs_rejection():
     with pytest.raises(EntitiesForbidden):
         safe_xml_to_dict(billion_laughs)
 
+
 def test_connection_config_mutants():
     """Kill mutants in ConnectionConfig."""
     from custom_components.climate_ip.samsung_2878 import ConnectionConfig
@@ -251,7 +283,7 @@ def test_connection_config_mutants():
         port=2878,
         token="my_token",
         cert="my_cert.pem",
-        duid="my_duid"
+        duid="my_duid",
     )
 
     assert cfg.host == "192.168.1.100"

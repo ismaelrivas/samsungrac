@@ -19,12 +19,10 @@ import logging
 from pathlib import Path
 import re
 import ssl
-import time
 import warnings
 from typing import Any
 
 from homeassistant.util.json import json_loads, JSON_DECODE_EXCEPTIONS
-from homeassistant.helpers.json import json_dumps
 
 import requests  # type: ignore[import-untyped]
 from jinja2 import Template
@@ -64,7 +62,15 @@ class SamsungHTTPAdapter(HTTPAdapter):
 def _mask_request_params(params: dict[str, Any], _log_prefix: str) -> dict[str, Any]:
     """Return a copy of request params with sensitive data masked for logging."""
     masked_params = copy.deepcopy(params)
-    sensitive_keys = ["token", "DeviceToken", "Authorization", "mac", "unique_id", "uuid", "DUID"]
+    sensitive_keys = [
+        "token",
+        "DeviceToken",
+        "Authorization",
+        "mac",
+        "unique_id",
+        "uuid",
+        "DUID",
+    ]
 
     headers = masked_params.get("headers")
     if isinstance(headers, dict):
@@ -134,7 +140,9 @@ class ConnectionRequestBase(Connection):
         fallback_id = None
         if hasattr(self, "config") and isinstance(self.config, dict):
             fallback_id = (
-                self.config.get("mac") or self.config.get("unique_id") or self.config.get("name")
+                self.config.get("mac")
+                or self.config.get("unique_id")
+                or self.config.get("name")
             )
 
         if fallback_id:
@@ -146,7 +154,10 @@ class ConnectionRequestBase(Connection):
         """Updates the Authorization header with a new token."""
         if self._params and "headers" in self._params:
             self._params["headers"]["authorization"] = f"Bearer {token}"
-            _LOGGER.info("%s [Auth] Updated Authorization header with new token.", self.log_prefix)
+            _LOGGER.info(
+                "%s [Auth] Updated Authorization header with new token.",
+                self.log_prefix,
+            )
 
     async def close(self) -> None:
         """Async wrapper for closing resources. Standardized to not use custom thread pools."""
@@ -200,7 +211,9 @@ class ConnectionRequestBase(Connection):
         physical device, regardless of how many entity instances share the IP.
         """
         async with self.async_lock:
-            return await asyncio.to_thread(self.execute, template, value, device_state, device_id)
+            return await asyncio.to_thread(
+                self.execute, template, value, device_state, device_id
+            )
 
     @property
     def embedded_command(self) -> "ConnectionRequestBase | None":
@@ -212,7 +225,9 @@ class ConnectionRequestBase(Connection):
         """Return the condition template for execution."""
         return self._condition_template
 
-    def update_configuration_from_hass(self, hass_config: dict[str, Any] | None) -> None:
+    def update_configuration_from_hass(
+        self, hass_config: dict[str, Any] | None
+    ) -> None:
         """Update connection parameters from Home Assistant configuration."""
         if hass_config is not None:
             cert_file = hass_config.get(CONF_CERT, None)
@@ -239,13 +254,19 @@ class ConnectionRequestBase(Connection):
             self._debug = node.get("debug", self._debug)
             if CONFIG_DEVICE_CONNECTION in node:
                 # FIXED E1128: Assignment is now from a method defined in this base class
-                self._embedded_command = self.create_updated(node[CONFIG_DEVICE_CONNECTION])
+                self._embedded_command = self.create_updated(
+                    node[CONFIG_DEVICE_CONNECTION]
+                )
             if CONFIG_DEVICE_CONDITION_TEMPLATE in node:
-                self._condition_template = Template(node[CONFIG_DEVICE_CONDITION_TEMPLATE])
+                self._condition_template = Template(
+                    node[CONFIG_DEVICE_CONDITION_TEMPLATE]
+                )
 
         return True
 
-    def create_updated(self, yaml_node: dict[str, Any] | None) -> "ConnectionRequestBase":
+    def create_updated(
+        self, yaml_node: dict[str, Any] | None
+    ) -> "ConnectionRequestBase":
         """
         FIX for Pylint E1128: Implement create_updated in base class.
         Creates a copy of this connection object updated from a YAML node.
@@ -282,6 +303,7 @@ class ConnectionRequestBase(Connection):
         )
 
         # pylint: disable=import-outside-toplevel,too-many-statements
+
     def execute_internal(
         self,
         template: Template | None,
@@ -293,15 +315,23 @@ class ConnectionRequestBase(Connection):
 
         token = self._controller.token if self._controller else None
         ip_address = self._controller.ip_address if self._controller else None
-        mac = getattr(self._controller, "config", {}).get("mac") if self._controller else None
+        mac = (
+            getattr(self._controller, "config", {}).get("mac")
+            if self._controller
+            else None
+        )
 
         params = self._params.copy()
         if template is not None:
             try:
-                params.update(json_loads(template.render(value=value, device_id=device_id)))
+                params.update(
+                    json_loads(template.render(value=value, device_id=device_id))
+                )
             except Exception as exc:
                 _LOGGER.error(
-                    "%s Error rendering template or parsing JSON: %s", self.log_prefix, exc
+                    "%s Error rendering template or parsing JSON: %s",
+                    self.log_prefix,
+                    exc,
                 )
                 raise ValueError(f"Template rendering failed: {exc}") from exc
 
@@ -329,13 +359,17 @@ class ConnectionRequestBase(Connection):
                         resp.raise_for_status()
 
                         _LOGGER.debug(
-                            "%s Command successful: %s", self.log_prefix, resp.status_code
+                            "%s Command successful: %s",
+                            self.log_prefix,
+                            resp.status_code,
                         )
                         return (json_loads(resp.content), True, resp.status_code)
 
                 except (*JSON_DECODE_EXCEPTIONS,) as e:
                     _LOGGER.warning(
-                        "%s Failed to parse JSON response: %s", self.log_prefix, resp.text
+                        "%s Failed to parse JSON response: %s",
+                        self.log_prefix,
+                        resp.text,
                     )
                     raise ValueError("Failed to parse JSON response") from e
 
@@ -343,24 +377,33 @@ class ConnectionRequestBase(Connection):
                     if e.response.status_code in (401, 403):
                         _LOGGER.debug("%s Auth error: %s", self.log_prefix, e)
                         raise AuthError(f"Auth failed: {e.response.status_code}") from e
-                    if 500 <= e.response.status_code < 600 and attempt < self._max_retries - 1:
+                    if (
+                        500 <= e.response.status_code < 600
+                        and attempt < self._max_retries - 1
+                    ):
                         _LOGGER.debug(
                             "%s Server error (%s). Delegating retry to async loop.",
                             self.log_prefix,
                             e.response.status_code,
                         )
-                        raise RetryNextAttempt(f"Server error {e.response.status_code}") from e
+                        raise RetryNextAttempt(
+                            f"Server error {e.response.status_code}"
+                        ) from e
                     raise CannotConnect(f"HTTP error {e.response.status_code}") from e
 
                 except requests.exceptions.Timeout as e:
                     if attempt < self._max_retries - 1:
-                        _LOGGER.warning("%s Timeout, delegating retry...", self.log_prefix)
+                        _LOGGER.warning(
+                            "%s Timeout, delegating retry...", self.log_prefix
+                        )
                         raise RetryNextAttempt("Request timed out") from e
                     raise CannotConnect("Request timed out") from e
 
                 except requests.exceptions.ConnectionError as e:
                     if attempt < self._max_retries - 1:
-                        _LOGGER.warning("%s Connection error, delegating retry...", self.log_prefix)
+                        _LOGGER.warning(
+                            "%s Connection error, delegating retry...", self.log_prefix
+                        )
                         raise RetryNextAttempt("Connection error") from e
                     raise CannotConnect("Failed to establish a connection") from e
 

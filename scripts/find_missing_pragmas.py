@@ -1,5 +1,4 @@
 import os
-import ast
 
 def check_file(filepath):
     with open(filepath, 'r', encoding='utf-8') as f:
@@ -9,7 +8,6 @@ def check_file(filepath):
     
     # Simple line-by-line check. If a line contains _LOGGER and doesn't contain pragma
     in_logger = False
-    logger_lines = []
     
     for i, line in enumerate(lines):
         line_stripped = line.strip()

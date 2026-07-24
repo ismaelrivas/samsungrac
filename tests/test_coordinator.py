@@ -41,7 +41,6 @@ async def test_token_auto_recovery_smartthings(hass: HomeAssistant) -> None:
     with patch.object(
         poller, "_refresh_smartthings_token", return_value="new_fresh_token_123"
     ) as mock_refresh:
-
         # Trigger an update
         await poller.async_update_state()
 
@@ -90,12 +89,14 @@ async def test_coordinator_transient_failure(hass: HomeAssistant) -> None:
 
 async def test_flicker_removed(hass: HomeAssistant) -> None:  # pylint: disable=unused-argument
     """Test that the UI flicker antipattern has been removed."""
-    assert not hasattr(
-        SamsungClimateCoordinator, "_async_flicker_ui"
-    ), "_async_flicker_ui antipattern should be removed from SamsungClimateCoordinator"
+    assert not hasattr(SamsungClimateCoordinator, "_async_flicker_ui"), (
+        "_async_flicker_ui antipattern should be removed from SamsungClimateCoordinator"
+    )
 
 
-async def test_coordinator_strike_1_and_2_return_stale_data(hass: HomeAssistant) -> None:
+async def test_coordinator_strike_1_and_2_return_stale_data(
+    hass: HomeAssistant,
+) -> None:
     """Verify that strike 1 and 2 return last known data instead of failing.
 
     This ensures the entities don't transition to 'unavailable' on transient skips.
@@ -112,9 +113,14 @@ async def test_coordinator_strike_1_and_2_return_stale_data(hass: HomeAssistant)
     # 2. Second poll fails (Strike 1)
     # 3. Third poll fails (Strike 2)
     from custom_components.climate_ip.exceptions import CannotConnect
+
     mock_state_getter = MagicMock()
     mock_state_getter.async_update_state = AsyncMock(
-        side_effect=[{"power": "on"}, CannotConnect("Timeout"), CannotConnect("Connection refused")]
+        side_effect=[
+            {"power": "on"},
+            CannotConnect("Timeout"),
+            CannotConnect("Connection refused"),
+        ]
     )
     mock_controller.loader.state_getter = mock_state_getter
     mock_controller.poller = YamlStatePoller(mock_controller)
@@ -147,7 +153,9 @@ async def test_auth_error_raises_config_entry_auth_failed(hass: HomeAssistant) -
 
     mock_controller = MagicMock()
     mock_controller.log_prefix = "[AuthTest]"
-    mock_controller.async_get_status = AsyncMock(side_effect=AuthError("401 Unauthorized"))
+    mock_controller.async_get_status = AsyncMock(
+        side_effect=AuthError("401 Unauthorized")
+    )
     mock_controller.climate_state = MagicMock()
 
     mock_entry = MagicMock()
@@ -187,7 +195,9 @@ async def test_push_update_triggers_entity_refresh(hass: HomeAssistant) -> None:
     assert len(listener_called) == 1
 
 
-async def test_coordinator_handles_503_transient_smartthings(hass: HomeAssistant) -> None:
+async def test_coordinator_handles_503_transient_smartthings(
+    hass: HomeAssistant,
+) -> None:
     """Test that 503/Timeout transient errors in SmartThings don't drop the entity state."""
     mock_controller = MagicMock()
     mock_controller.log_prefix = "[ST-Test]"
@@ -209,13 +219,14 @@ async def test_coordinator_handles_503_transient_smartthings(hass: HomeAssistant
     # 3. Failure: TimeoutError (Strike 2) -> Returns cached data
     # 4. Success (Recovery) -> Returns new climate_state
     from custom_components.climate_ip.exceptions import CannotConnect
+
     mock_state_getter = MagicMock()
     mock_state_getter.async_update_state = AsyncMock(
         side_effect=[
-            {"status": "ok"}, # Success
+            {"status": "ok"},  # Success
             CannotConnect("503 Service Unavailable"),
             CannotConnect("503 Service Unavailable"),
-            {"status": "ok_recovered"}  # Success recovery
+            {"status": "ok_recovered"},  # Success recovery
         ]
     )
     mock_controller.loader.state_getter = mock_state_getter
@@ -316,22 +327,25 @@ async def test_optimistic_refresh_on_network_error(hass: HomeAssistant) -> None:
     # Even on exception the coordinator must refresh to reconcile the real state
     coordinator.async_request_refresh.assert_awaited_once()
 
+
 async def test_coordinator_timeout_recovery(hass: HomeAssistant) -> None:
     """Test that the coordinator effectively recovers from TimeoutErrors."""
     from homeassistant.helpers.update_coordinator import UpdateFailed
+
     mock_controller = MagicMock()
     mock_controller.log_prefix = "[RecoverTest]"
     mock_controller.name = "Test AC"
 
     from custom_components.climate_ip.exceptions import CannotConnect
+
     mock_state_getter = MagicMock()
     mock_state_getter.async_update_state = AsyncMock(
         side_effect=[
-            {"power": "on"}, # Initial success to populate cache
+            {"power": "on"},  # Initial success to populate cache
             CannotConnect("Timeout first"),
             CannotConnect("Timeout second"),
             CannotConnect("Timeout third"),
-            {"power": "on"}
+            {"power": "on"},
         ]
     )
     mock_controller.loader = MagicMock()
@@ -347,13 +361,13 @@ async def test_coordinator_timeout_recovery(hass: HomeAssistant) -> None:
     coordinator.data = MagicMock()
     coordinator.data.power = "off"
 
-    res0 = await coordinator._async_update_data() # Success
+    res0 = await coordinator._async_update_data()  # Success
     assert res0 is mock_controller.climate_state
 
-    res1 = await coordinator._async_update_data() # Strike 1
+    res1 = await coordinator._async_update_data()  # Strike 1
     assert res1 is mock_controller.climate_state
 
-    res2 = await coordinator._async_update_data() # Strike 2
+    res2 = await coordinator._async_update_data()  # Strike 2
     assert res2 is mock_controller.climate_state
 
     with pytest.raises(UpdateFailed):
@@ -423,7 +437,7 @@ async def test_corrections_are_dispatched_to_controller(hass: HomeAssistant) -> 
 
 async def test_save_new_token_updates_config_entry(hass: HomeAssistant) -> None:
     """Verify that the _save_new_token callback properly updates the ConfigEntry.
-    
+
     This ensures we do not hit a TypeError if entry.data is null, and that the
     mock_update_entry is called correctly with the new token.
     """
@@ -433,19 +447,22 @@ async def test_save_new_token_updates_config_entry(hass: HomeAssistant) -> None:
     mock_entry.data = {"host": "192.168.1.10", "token": "old_token"}
     mock_entry.options = {}
 
-    coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+    SamsungClimateCoordinator(hass, mock_controller, mock_entry)
 
-    with patch.object(hass.config_entries, "async_update_entry") as mock_update_entry, \
-         patch("custom_components.climate_ip.coordinator._LOGGER.info") as mock_info:
+    with (
+        patch.object(hass.config_entries, "async_update_entry") as mock_update_entry,
+        patch("custom_components.climate_ip.coordinator._LOGGER.info") as mock_info,
+    ):
         # Trigger the callback injected into the controller
         mock_controller.on_token_refreshed("new_token_2878")
 
         # Rigorous assertion of the final state (kills the null initialization mutant)
         mock_update_entry.assert_called_once_with(
-            mock_entry,
-            data={"host": "192.168.1.10", "token": "new_token_2878"}
+            mock_entry, data={"host": "192.168.1.10", "token": "new_token_2878"}
         )
-        mock_info.assert_called_once_with("%s Persisted new network token to Config Entry.", "[TokenTest]")
+        mock_info.assert_called_once_with(
+            "%s Persisted new network token to Config Entry.", "[TokenTest]"
+        )
 
 
 async def test_save_new_token_async_flow(hass: HomeAssistant) -> None:
@@ -462,7 +479,7 @@ async def test_save_new_token_async_flow(hass: HomeAssistant) -> None:
     task_error = None
 
     with patch.object(hass.config_entries, "async_update_entry") as mock_update_entry:
-        
+
         async def network_task_emit():
             nonlocal task_executed, task_error
             try:
@@ -476,22 +493,21 @@ async def test_save_new_token_async_flow(hass: HomeAssistant) -> None:
         # Emits the event asynchronously by scheduling it natively as an asyncio task
         # avoiding hass.async_create_task since it evaluates to a MagicMock in this suite
         task = asyncio.create_task(network_task_emit())
-        
+
         # Yield control to the event loop
         await hass.async_block_till_done()
-        
+
         # Alternatively, ensure the task itself is fully complete
         await task
 
     if task_error:
         raise RuntimeError(f"Background task failed: {task_error}") from task_error
-    
+
     if not task_executed:
         raise RuntimeError("Background task was NEVER executed by the event loop!")
 
     mock_update_entry.assert_called_once_with(
-        mock_entry,
-        data={"host": "192.168.1.10", "token": "new_token_async"}
+        mock_entry, data={"host": "192.168.1.10", "token": "new_token_async"}
     )
 
 
@@ -501,16 +517,18 @@ async def test_coordinator_injected_callbacks(hass: HomeAssistant) -> None:
     mock_entry = MagicMock()
     mock_entry.data = {}
     mock_entry.options = {}
-    
+
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
-    
+
     # Check get_current_state_callback
     assert mock_controller.get_current_state_callback is not None
     coordinator.data = {"test_state": "active"}
     assert mock_controller.get_current_state_callback() == {"test_state": "active"}
-    
+
     # Check on_push_update_callback
-    assert mock_controller.on_push_update_callback == coordinator.async_handle_push_update
+    assert (
+        mock_controller.on_push_update_callback == coordinator.async_handle_push_update
+    )
 
     # Check request_refresh_callback
     assert mock_controller.request_refresh_callback is not None
@@ -531,25 +549,26 @@ async def test_offline_callback_forces_update_error(hass: HomeAssistant) -> None
     """Test that the offline callback correctly triggers an update error."""
     mock_controller = MagicMock()
     mock_controller.log_prefix = "[OfflineTest]"
-    
+
     mock_entry = MagicMock()
     mock_entry.data = {}
     mock_entry.options = {}
-    
+
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
-    
+
     assert mock_controller.on_offline_callback is not None
-    
-    with patch("custom_components.climate_ip.coordinator._LOGGER.debug") as mock_debug, \
-         patch.object(coordinator, "async_set_update_error") as mock_set_error:
-         
+
+    with (
+        patch("custom_components.climate_ip.coordinator._LOGGER.debug") as mock_debug,
+        patch.object(coordinator, "async_set_update_error") as mock_set_error,
+    ):
         mock_controller.on_offline_callback("Ping failed")
-        
+
         mock_debug.assert_called_once_with(
-            "%s Network layer declared device offline. Forcing UpdateFailed.", 
-            "[OfflineTest]"
+            "%s Network layer declared device offline. Forcing UpdateFailed.",
+            "[OfflineTest]",
         )
-        
+
         mock_set_error.assert_called_once()
         error_arg = mock_set_error.call_args[0][0]
         assert isinstance(error_arg, UpdateFailed)
@@ -564,184 +583,204 @@ async def test_save_ssl_config_updates_entry(hass: HomeAssistant) -> None:
     mock_entry.data = {"host": "192.168.1.10"}
     mock_entry.options = {}
 
-    coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+    SamsungClimateCoordinator(hass, mock_controller, mock_entry)
 
-    with patch.object(hass.config_entries, "async_update_entry") as mock_update_entry, \
-         patch("custom_components.climate_ip.coordinator._LOGGER.info") as mock_info:
-        
+    with (
+        patch.object(hass.config_entries, "async_update_entry") as mock_update_entry,
+        patch("custom_components.climate_ip.coordinator._LOGGER.info") as mock_info,
+    ):
         # Call the injected callback
         mock_controller.on_ssl_config_updated({"cert": "new_cert"})
 
         # Verify entry was updated
         mock_update_entry.assert_called_once_with(
             mock_entry,
-            data={"host": "192.168.1.10", "_ssl_config_2878": {"cert": "new_cert"}}
+            data={"host": "192.168.1.10", "_ssl_config_2878": {"cert": "new_cert"}},
         )
-        mock_info.assert_called_once_with("%s Persisted SSL config to ConfigEntry data.", "[SSLTest]")
+        mock_info.assert_called_once_with(
+            "%s Persisted SSL config to ConfigEntry data.", "[SSLTest]"
+        )
 
     # Second call with same config shouldn't trigger update
     with patch.object(hass.config_entries, "async_update_entry") as mock_update_entry_2:
-        mock_entry.data = {"host": "192.168.1.10", "_ssl_config_2878": {"cert": "new_cert"}}
+        mock_entry.data = {
+            "host": "192.168.1.10",
+            "_ssl_config_2878": {"cert": "new_cert"},
+        }
         mock_controller.on_ssl_config_updated({"cert": "new_cert"})
         mock_update_entry_2.assert_not_called()
 
 
-async def test_coordinator_update_interval_enable_polling_options(hass: HomeAssistant) -> None:
+async def test_coordinator_update_interval_enable_polling_options(
+    hass: HomeAssistant,
+) -> None:
     """Test update_interval logic with enable_polling in options."""
     mock_controller = MagicMock()
     mock_controller.poll = True
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {"enable_polling": False, "poll_interval": 10}
     mock_entry.data = {"enable_polling": True, "poll_interval": 20}
-    
+
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
     assert coordinator.update_interval is None
+
 
 async def test_coordinator_super_init_attributes(hass: HomeAssistant) -> None:
     """Test that coordinator correctly passes parameters to super().__init__."""
     mock_controller = MagicMock()
     mock_controller.log_prefix = "[SuperTest]"
     mock_controller.poll = True
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {"enable_polling": True, "poll_interval": 33}
     mock_entry.data = {}
-    
+
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
     from datetime import timedelta
-    
+
     assert coordinator.name == "Samsung Climate [SuperTest]"
     assert coordinator.update_interval == timedelta(seconds=33)
     assert coordinator.always_update is True
     assert coordinator.config_entry is mock_entry
 
+
 async def test_coordinator_device_info_with_name_and_id(hass: HomeAssistant) -> None:
     """Test device_info parsing when both name and id are provided."""
     mock_controller = MagicMock()
     mock_controller.unique_id = "test_sub_device_1"
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {}
     mock_entry.data = {}
-    
+
     device_info = {"id": "1", "name": "Living Room AC"}
-    
+
     coordinator = SamsungClimateCoordinator(
         hass, mock_controller, mock_entry, device_info=device_info
     )
     assert coordinator.device_info["name"] == "ID 1 (Living Room AC)"
 
+
 async def test_coordinator_device_info_without_name(hass: HomeAssistant) -> None:
     """Test device_info parsing when name is missing."""
     mock_controller = MagicMock()
     mock_controller.unique_id = "test_sub_device_2"
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {}
     mock_entry.data = {}
-    
+
     device_info = {"id": "2"}
-    
+
     coordinator = SamsungClimateCoordinator(
         hass, mock_controller, mock_entry, device_info=device_info
     )
     assert coordinator.device_info["name"] == "ID 2 (Unknown Unit)"
 
+
 async def test_coordinator_device_info_without_id(hass: HomeAssistant) -> None:
     """Test device_info parsing when id is missing."""
     mock_controller = MagicMock()
     mock_controller.unique_id = "test_sub_device_3"
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {}
     mock_entry.data = {}
-    
+
     device_info = {"name": "Only Name AC"}
-    
+
     coordinator = SamsungClimateCoordinator(
         hass, mock_controller, mock_entry, device_info=device_info
     )
     assert coordinator.device_info["name"] == "Only Name AC"
 
+
 async def test_coordinator_device_info_redundant_name(hass: HomeAssistant) -> None:
     """Test device_info parsing when name already includes the ID."""
     mock_controller = MagicMock()
     mock_controller.unique_id = "test_sub_device_4"
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {}
     mock_entry.data = {}
-    
+
     device_info = {"id": "1", "name": "ID 1 (Living Room)"}
-    
+
     coordinator = SamsungClimateCoordinator(
         hass, mock_controller, mock_entry, device_info=device_info
     )
     # Shouldn't wrap it again with ID 1
     assert coordinator.device_info["name"] == "ID 1 (Living Room)"
 
+
 async def test_coordinator_device_info_complete_attributes(hass: HomeAssistant) -> None:
     """Test all attributes of device_info for a sub-device."""
     mock_controller = MagicMock()
     mock_controller.unique_id = "test_sub_device_5"
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {}
     mock_entry.data = {}
-    
+
     device_info = {"id": "1", "name": "Test AC"}
-    
+
     from custom_components.climate_ip.const import DOMAIN
-    
+
     coordinator = SamsungClimateCoordinator(
-        hass, mock_controller, mock_entry, device_info=device_info, parent_unique_id="parent_mac_123"
+        hass,
+        mock_controller,
+        mock_entry,
+        device_info=device_info,
+        parent_unique_id="parent_mac_123",
     )
-    
+
     assert coordinator.device_info["name"] == "ID 1 (Test AC)"
     assert coordinator.device_info["identifiers"] == {(DOMAIN, "test_sub_device_5")}
     assert coordinator.device_info["manufacturer"] == "Samsung"
     assert coordinator.device_info["via_device"] == (DOMAIN, "parent_mac_123")
 
+
 async def test_coordinator_standalone_device_info(hass: HomeAssistant) -> None:
     """Test device_info parsing for a standalone device (no sub-devices)."""
     mock_controller = MagicMock()
     mock_controller.unique_id = "standalone_ac_123"
-    
+
     from homeassistant.const import CONF_MAC
     from custom_components.climate_ip.const import CONF_NAME, DOMAIN
     import homeassistant.helpers.device_registry as dr
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {}
-    mock_entry.data = {
-        CONF_MAC: "00:11:22:33:44:55",
-        CONF_NAME: "My Awesome AC"
-    }
-    
+    mock_entry.data = {CONF_MAC: "00:11:22:33:44:55", CONF_NAME: "My Awesome AC"}
+
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
-    
+
     assert coordinator.device_info is not None
     assert coordinator.device_info["identifiers"] == {(DOMAIN, "standalone_ac_123")}
     assert coordinator.device_info["name"] == "My Awesome AC"
     assert coordinator.device_info["manufacturer"] == "Samsung"
-    assert coordinator.device_info["connections"] == {(dr.CONNECTION_NETWORK_MAC, "00:11:22:33:44:55")}
+    assert coordinator.device_info["connections"] == {
+        (dr.CONNECTION_NETWORK_MAC, "00:11:22:33:44:55")
+    }
 
-async def test_coordinator_standalone_device_info_no_mac_no_name(hass: HomeAssistant) -> None:
+
+async def test_coordinator_standalone_device_info_no_mac_no_name(
+    hass: HomeAssistant,
+) -> None:
     """Test device_info fallback logic when MAC and Name are missing."""
     mock_controller = MagicMock()
     mock_controller.unique_id = "standalone_ac_456"
-    
-    from custom_components.climate_ip.const import DOMAIN
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {}
     mock_entry.data = {}
-    
+
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
-    
+
     assert coordinator.device_info["name"] == "Samsung AC standalone_ac_456"
     assert coordinator.device_info["connections"] == set()
+
 
 async def test_fallback_to_raw_engine_on_http_header_error(hass: HomeAssistant) -> None:
     """Verify async_update_entry is called before raising UpdateFailed on header errors."""
@@ -754,7 +793,7 @@ async def test_fallback_to_raw_engine_on_http_header_error(hass: HomeAssistant) 
     mock_controller = MagicMock()
     mock_controller.log_prefix = "[Fallback]"
     mock_controller.name = "Test AC"
-    
+
     # Simulate current ConfigEntry with pre-existing option
     mock_entry = MagicMock()
     mock_entry.options = {"existing_opt": "value"}
@@ -762,13 +801,16 @@ async def test_fallback_to_raw_engine_on_http_header_error(hass: HomeAssistant) 
 
     # Force the specific error that triggers HTTP header fallback
     mock_state_getter = MagicMock()
-    mock_state_getter.async_update_state = AsyncMock(side_effect=InvalidHeaderError("Malformed headers"))
+    mock_state_getter.async_update_state = AsyncMock(
+        side_effect=InvalidHeaderError("Malformed headers")
+    )
     mock_controller.loader.state_getter = mock_state_getter
     mock_controller.poller = YamlStatePoller(mock_controller)
     mock_controller.async_get_status = mock_controller.poller.async_update_state
 
     # Import SamsungClimateCoordinator here as assumed at the top of the file
     from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
+
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
 
     with patch.object(hass.config_entries, "async_update_entry") as mock_update_entry:
@@ -779,127 +821,155 @@ async def test_fallback_to_raw_engine_on_http_header_error(hass: HomeAssistant) 
         # THIS ASSERTION KILLS MUTANT 24
         # Verify that before aborting, it modified config to use RAW
         mock_update_entry.assert_called_once_with(
-            mock_entry, 
-            options={"existing_opt": "value", CONF_CONN_METHOD: CONN_METHOD_RAW}
+            mock_entry,
+            options={"existing_opt": "value", CONF_CONN_METHOD: CONN_METHOD_RAW},
         )
+
+
 async def test_coordinator_initialization_logging(hass: HomeAssistant) -> None:
     """Test that coordinator logs its initialization with the correct parameters."""
     mock_controller = MagicMock()
     mock_controller.log_prefix = "[InitLogTest]"
     mock_controller.poll = True
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {"enable_polling": True, "poll_interval": 25}
     mock_entry.data = {}
-    
+
     from datetime import timedelta
+
     expected_interval = timedelta(seconds=25)
-    
+
     with patch("custom_components.climate_ip.coordinator._LOGGER.debug") as mock_debug:
-        coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
-        
+        SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+
         mock_debug.assert_any_call(
             "%s Initializing coordinator with update interval: %s",
             "[InitLogTest]",
             expected_interval,
         )
-async def test_coordinator_update_interval_enable_polling_data(hass: HomeAssistant) -> None:
+
+
+async def test_coordinator_update_interval_enable_polling_data(
+    hass: HomeAssistant,
+) -> None:
     """Test update_interval logic with enable_polling in data."""
     mock_controller = MagicMock()
     mock_controller.poll = True
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {}
     mock_entry.data = {"enable_polling": True, "poll_interval": 42}
-    
+
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
     from datetime import timedelta
+
     assert coordinator.update_interval == timedelta(seconds=42)
 
-async def test_coordinator_update_interval_enable_polling_default(hass: HomeAssistant) -> None:
+
+async def test_coordinator_update_interval_enable_polling_default(
+    hass: HomeAssistant,
+) -> None:
     """Test update_interval logic with enable_polling default."""
     mock_controller = MagicMock()
     mock_controller.poll = True
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {}
     mock_entry.data = {}
-    
+
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
     from datetime import timedelta
+
     assert coordinator.update_interval == timedelta(seconds=60)
 
-async def test_coordinator_update_interval_poll_interval_options(hass: HomeAssistant) -> None:
+
+async def test_coordinator_update_interval_poll_interval_options(
+    hass: HomeAssistant,
+) -> None:
     """Test that poll_interval is pulled from options."""
     mock_controller = MagicMock()
     mock_controller.poll = True
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {"enable_polling": True, "poll_interval": 15}
     mock_entry.data = {"enable_polling": True, "poll_interval": 20}
-    
+
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
     from datetime import timedelta
+
     assert coordinator.update_interval == timedelta(seconds=15)
 
-async def test_coordinator_update_interval_poll_interval_data(hass: HomeAssistant) -> None:
+
+async def test_coordinator_update_interval_poll_interval_data(
+    hass: HomeAssistant,
+) -> None:
     """Test that poll_interval is pulled from data when options is missing it."""
     mock_controller = MagicMock()
     mock_controller.poll = True
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {"enable_polling": True}
     mock_entry.data = {"enable_polling": True, "poll_interval": 42}
-    
+
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
     from datetime import timedelta
+
     assert coordinator.update_interval == timedelta(seconds=42)
 
-async def test_coordinator_update_interval_poll_interval_default(hass: HomeAssistant) -> None:
+
+async def test_coordinator_update_interval_poll_interval_default(
+    hass: HomeAssistant,
+) -> None:
     """Test that poll_interval falls back to default."""
     mock_controller = MagicMock()
     mock_controller.poll = True
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {"enable_polling": True}
     mock_entry.data = {"enable_polling": True}
-    
+
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
     from datetime import timedelta
+
     assert coordinator.update_interval == timedelta(seconds=60)
+
 
 async def test_coordinator_update_interval_no_poll(hass: HomeAssistant) -> None:
     """Test that update_interval is None when controller.poll is False."""
     mock_controller = MagicMock()
     mock_controller.poll = False
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {"enable_polling": True, "poll_interval": 15}
     mock_entry.data = {}
-    
+
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
     assert coordinator.update_interval is None
 
 
-async def test_coordinator_update_interval_enable_polling_data_false(hass: HomeAssistant) -> None:
+async def test_coordinator_update_interval_enable_polling_data_false(
+    hass: HomeAssistant,
+) -> None:
     """Verify that enable_polling=False in data is respected and doesn't fall back to default."""
     from custom_components.climate_ip.const import CONF_ENABLE_POLLING
 
     mock_controller = MagicMock()
     mock_controller.poll = True
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {}
     # Assume DEFAULT_ENABLE_POLLING is True. Force the key to False in data.
     mock_entry.data = {CONF_ENABLE_POLLING: False, "poll_interval": 42}
-    
+
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
-    
+
     # Original code will read False and turn off polling (update_interval = None).
     # Mutant will read the 'None' key, fall back to default (True) and assign a timedelta of 42s.
     assert coordinator.update_interval is None, (
         "The coordinator ignored CONF_ENABLE_POLLING from entry.data or fell back to the default value"
     )
+
 
 async def test_async_set_property_passes_device_id(hass: HomeAssistant) -> None:
     """Verify that async_set_property passes the specific device_id to the controller."""
@@ -915,17 +985,26 @@ async def test_async_set_property_passes_device_id(hass: HomeAssistant) -> None:
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
     coordinator.data = mock_controller.climate_state
 
-    await coordinator.async_set_property("hvac_mode", "dry", device_id="child_device_123")
+    await coordinator.async_set_property(
+        "hvac_mode", "dry", device_id="child_device_123"
+    )
 
-    mock_controller.async_set_property.assert_awaited_once_with("hvac_mode", "dry", "child_device_123")
+    mock_controller.async_set_property.assert_awaited_once_with(
+        "hvac_mode", "dry", "child_device_123"
+    )
 
-async def test_async_set_property_raises_update_failed_on_exception_with_message(hass: HomeAssistant) -> None:
+
+async def test_async_set_property_raises_update_failed_on_exception_with_message(
+    hass: HomeAssistant,
+) -> None:
     """Verify that a generic exception during async_set_property raises UpdateFailed with the correct message."""
     from homeassistant.helpers.update_coordinator import UpdateFailed
 
     mock_controller = MagicMock()
     mock_controller.log_prefix = "[ExcMsgTest]"
-    mock_controller.async_set_property = AsyncMock(side_effect=Exception("Simulated unexpected failure"))
+    mock_controller.async_set_property = AsyncMock(
+        side_effect=Exception("Simulated unexpected failure")
+    )
     mock_controller.climate_state = MagicMock(hvac_mode="cool")
 
     mock_entry = MagicMock()
@@ -936,8 +1015,12 @@ async def test_async_set_property_raises_update_failed_on_exception_with_message
     coordinator.data = mock_controller.climate_state
     coordinator.async_request_refresh = AsyncMock()
 
-    with pytest.raises(UpdateFailed, match="Failed to set property hvac_mode: Simulated unexpected failure"):
+    with pytest.raises(
+        UpdateFailed,
+        match="Failed to set property hvac_mode: Simulated unexpected failure",
+    ):
         await coordinator.async_set_property("hvac_mode", "dry")
+
 
 async def test_coordinator_enforces_strict_timeout(hass: HomeAssistant) -> None:
     """Verify that the coordinator enforces a 30.0 second timeout on device polling."""
@@ -953,14 +1036,21 @@ async def test_coordinator_enforces_strict_timeout(hass: HomeAssistant) -> None:
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
 
     # Intercept asyncio.wait_for directly in the coordinator module
-    with patch("custom_components.climate_ip.coordinator.asyncio.wait_for") as mock_wait:
+    with patch(
+        "custom_components.climate_ip.coordinator.asyncio.wait_for"
+    ) as mock_wait:
         await coordinator._async_update_data()
-        
+
         # Validate that it was called with the exact timeout
         mock_wait.assert_called_once()
-        assert mock_wait.call_args.kwargs.get("timeout") == NETWORK_POLL_TIMEOUT, "The network timeout was altered"
+        assert mock_wait.call_args.kwargs.get("timeout") == NETWORK_POLL_TIMEOUT, (
+            "The network timeout was altered"
+        )
 
-async def test_coordinator_unwraps_hvac_enum_before_sending(hass: HomeAssistant) -> None:
+
+async def test_coordinator_unwraps_hvac_enum_before_sending(
+    hass: HomeAssistant,
+) -> None:
     """Verify that Enums are unwrapped to their primitive values before dispatching."""
     from homeassistant.components.climate import HVACMode
     from unittest.mock import MagicMock, AsyncMock
@@ -968,7 +1058,7 @@ async def test_coordinator_unwraps_hvac_enum_before_sending(hass: HomeAssistant)
 
     mock_controller = MagicMock()
     mock_controller.async_set_property = AsyncMock(return_value=True)
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {}
     mock_entry.data = {}
@@ -979,9 +1069,14 @@ async def test_coordinator_unwraps_hvac_enum_before_sending(hass: HomeAssistant)
     await coordinator.async_set_property("hvac_mode", HVACMode.COOL)
 
     # The controller MUST receive the primitive (string), not the Enum
-    mock_controller.async_set_property.assert_awaited_once_with("hvac_mode", "cool", None)
+    mock_controller.async_set_property.assert_awaited_once_with(
+        "hvac_mode", "cool", None
+    )
 
-async def test_coordinator_requests_refresh_on_partial_failure(hass: HomeAssistant) -> None:
+
+async def test_coordinator_requests_refresh_on_partial_failure(
+    hass: HomeAssistant,
+) -> None:
     """Verify that a partial command failure triggers a state refresh to revert UI."""
     from unittest.mock import MagicMock, AsyncMock
     from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
@@ -989,7 +1084,7 @@ async def test_coordinator_requests_refresh_on_partial_failure(hass: HomeAssista
     mock_controller = MagicMock()
     # Simulate that sending the command fails
     mock_controller.async_set_property = AsyncMock(return_value=False)
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {}
     mock_entry.data = {}
@@ -1003,6 +1098,7 @@ async def test_coordinator_requests_refresh_on_partial_failure(hass: HomeAssista
     # Upon failure, success becomes False and must force a refresh
     coordinator.async_request_refresh.assert_awaited_once()
 
+
 async def test_coordinator_success_path_no_refresh(hass: HomeAssistant) -> None:
     """Verify that a successful command execution does NOT trigger a state refresh."""
     from unittest.mock import MagicMock, AsyncMock
@@ -1011,7 +1107,7 @@ async def test_coordinator_success_path_no_refresh(hass: HomeAssistant) -> None:
     mock_controller = MagicMock()
     # Simulate that the command SUCCEEDS (returns True)
     mock_controller.async_set_property = AsyncMock(return_value=True)
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {}
     mock_entry.data = {}
@@ -1025,6 +1121,7 @@ async def test_coordinator_success_path_no_refresh(hass: HomeAssistant) -> None:
     # LETHAL ASSERTION: If success mutated to False or None, this will fail.
     coordinator.async_request_refresh.assert_not_awaited()
 
+
 async def test_async_predict_and_correct_supported(hass: HomeAssistant) -> None:
     """Test state prediction when supported by controller."""
     from homeassistant.components.climate import HVACMode
@@ -1035,27 +1132,28 @@ async def test_async_predict_and_correct_supported(hass: HomeAssistant) -> None:
         return_value=("fake_flags", {"temp": 24})
     )
     mock_controller.climate_state = MagicMock()
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {}
     mock_entry.data = {}
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
-    
+
     with patch.object(coordinator, "async_set_updated_data") as mock_set:
         flags, corrections = await coordinator.async_predict_and_correct(
             {"fake": "state"}, "hvac_mode", HVACMode.HEAT
         )
-        
+
         # Verify enum unwrapped
         mock_controller.async_predict_and_correct_state.assert_awaited_once_with(
             {"fake": "state"}, "hvac_mode", "heat"
         )
-        
+
         # Verify coordinator pushed state
         mock_set.assert_called_once_with(mock_controller.climate_state)
-        
+
         assert flags == "fake_flags"
         assert corrections == {"temp": 24}
+
 
 async def test_async_predict_and_correct_unsupported(hass: HomeAssistant) -> None:
     """Test state prediction when not supported by controller."""
@@ -1066,18 +1164,19 @@ async def test_async_predict_and_correct_unsupported(hass: HomeAssistant) -> Non
     # Explicitly remove the method from the mock
     del mock_controller.async_predict_and_correct_state
     mock_controller.log_prefix = "[Test]"
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {}
     mock_entry.data = {}
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
-    
+
     flags, corrections = await coordinator.async_predict_and_correct(
         {"fake": "state"}, "hvac_mode", "heat"
     )
-    
+
     assert flags == ClimateEntityFeature(0)
     assert corrections == {}
+
 
 async def test_coordinator_getters(hass: HomeAssistant) -> None:
     """Test get_property and get_property_object getters."""
@@ -1086,14 +1185,14 @@ async def test_coordinator_getters(hass: HomeAssistant) -> None:
     mock_controller = MagicMock()
     mock_controller.get_property.return_value = "property_value"
     mock_controller.get_property_object.return_value = {"object": "value"}
-    
+
     mock_entry = MagicMock()
     mock_entry.options = {}
     mock_entry.data = {}
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
-    
+
     assert coordinator.get_property("some_prop") == "property_value"
     mock_controller.get_property.assert_called_once_with("some_prop")
-    
+
     assert coordinator.get_property_object("some_obj") == {"object": "value"}
     mock_controller.get_property_object.assert_called_once_with("some_obj")

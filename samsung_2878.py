@@ -185,7 +185,9 @@ class ConnectionSamsung2878(Connection):
         """Start the background connection manager."""
         self._ensure_callback_linked()
         if self._manager_task is None or self._manager_task.done():
-            _LOGGER.info("%s Starting connection manager", self.log_prefix)  # pragma: no mutate
+            _LOGGER.info(
+                "%s Starting connection manager", self.log_prefix
+            )  # pragma: no mutate
             self._reconnect_retries = 0
             self._manager_task = asyncio.create_task(self._connection_manager())
 
@@ -199,7 +201,9 @@ class ConnectionSamsung2878(Connection):
     async def stop_listening(self) -> None:
         """Stop the connection manager and close the connection."""
         if self._manager_task:
-            _LOGGER.info("%s Stopping connection manager", self.log_prefix)  # pragma: no mutate
+            _LOGGER.info(
+                "%s Stopping connection manager", self.log_prefix
+            )  # pragma: no mutate
             self._manager_task.cancel()
             try:
                 await self._manager_task
@@ -316,13 +320,19 @@ class ConnectionSamsung2878(Connection):
         if not connection_base:
             # These are critical and should have been provided during setup.
             if not self._cfg.host:
-                _LOGGER.error("%s Missing 'host' parameter", self.log_prefix)  # pragma: no mutate
+                _LOGGER.error(
+                    "%s Missing 'host' parameter", self.log_prefix
+                )  # pragma: no mutate
                 return False
             if not self._cfg.token:
-                _LOGGER.error("%s Missing 'token' parameter", self.log_prefix)  # pragma: no mutate
+                _LOGGER.error(
+                    "%s Missing 'token' parameter", self.log_prefix
+                )  # pragma: no mutate
                 return False
             if not self._cfg.duid:
-                _LOGGER.error("%s Missing 'mac' parameter", self.log_prefix)  # pragma: no mutate
+                _LOGGER.error(
+                    "%s Missing 'mac' parameter", self.log_prefix
+                )  # pragma: no mutate
                 return False
 
         self._params.update(params_node)
@@ -429,7 +439,9 @@ class ConnectionSamsung2878(Connection):
 
             # Cancel pending read task to unblock manager
             if self._read_task and not self._read_task.done():
-                _LOGGER.debug("%s Cancelling pending read task", self.log_prefix)  # pragma: no mutate
+                _LOGGER.debug(
+                    "%s Cancelling pending read task", self.log_prefix
+                )  # pragma: no mutate
                 self._read_task.cancel()
                 try:
                     await self._read_task
@@ -438,7 +450,9 @@ class ConnectionSamsung2878(Connection):
             self._read_task = None  # pragma: no mutate
 
             if self._writer:
-                _LOGGER.debug("%s Closing connection", self.log_prefix)  # pragma: no mutate
+                _LOGGER.debug(
+                    "%s Closing connection", self.log_prefix
+                )  # pragma: no mutate
                 try:
                     self._writer.close()
                     try:
@@ -469,28 +483,58 @@ class ConnectionSamsung2878(Connection):
 
         # Define the cipher suites.
         # Note: We will reorder these dynamically based on the strategy.
-        suite_a = ("HIGH:!DH:!aNULL:@SECLEVEL=0", "Cipher Suite A (High Security No-DH)")  # pragma: no mutate
-        suite_b = ("ALL:!DH:!aNULL:@SECLEVEL=0", "Cipher Suite B (Legacy RSA - No DH)")  # pragma: no mutate
-        suite_c = ("ALL:!aNULL:@SECLEVEL=0", "Cipher Suite C (Legacy Allow Weak DH)")  # pragma: no mutate
-        suite_d = ("ALL:@SECLEVEL=0", "Cipher Suite D (Anonymous / All Supported)")  # pragma: no mutate
+        suite_a = (
+            "HIGH:!DH:!aNULL:@SECLEVEL=0",
+            "Cipher Suite A (High Security No-DH)",
+        )  # pragma: no mutate
+        suite_b = (
+            "ALL:!DH:!aNULL:@SECLEVEL=0",
+            "Cipher Suite B (Legacy RSA - No DH)",
+        )  # pragma: no mutate
+        suite_c = (
+            "ALL:!aNULL:@SECLEVEL=0",
+            "Cipher Suite C (Legacy Allow Weak DH)",
+        )  # pragma: no mutate
+        suite_d = (
+            "ALL:@SECLEVEL=0",
+            "Cipher Suite D (Anonymous / All Supported)",
+        )  # pragma: no mutate
 
         default_ciphers = [suite_a, suite_b, suite_c, suite_d]  # pragma: no mutate
         # For No-Cert strategies, we prioritize Suite D (allows Anonymous) because !aNULL (A/B/C) forces server auth.
         no_cert_ciphers = [suite_d, suite_a, suite_b, suite_c]  # pragma: no mutate
 
-        default_cert_path = str(
-            Path(__file__).parent / DEFAULT_CONF_CERT_FILE
-        )
+        default_cert_path = str(Path(__file__).parent / DEFAULT_CONF_CERT_FILE)
         strategies = (
             [
-                { "cert": user_cert, "name": "User Cert (Strict Verify)", "verify_mode": ssl.CERT_REQUIRED,},  # pragma: no mutate
-                { "cert": user_cert, "name": "User Cert (No Verify)", "verify_mode": ssl.CERT_NONE,},  # pragma: no mutate
-                { "cert": None, "name": "No Certificate (Fallback)", "verify_mode": ssl.CERT_NONE,},  # pragma: no mutate
+                {
+                    "cert": user_cert,
+                    "name": "User Cert (Strict Verify)",
+                    "verify_mode": ssl.CERT_REQUIRED,
+                },  # pragma: no mutate
+                {
+                    "cert": user_cert,
+                    "name": "User Cert (No Verify)",
+                    "verify_mode": ssl.CERT_NONE,
+                },  # pragma: no mutate
+                {
+                    "cert": None,
+                    "name": "No Certificate (Fallback)",
+                    "verify_mode": ssl.CERT_NONE,
+                },  # pragma: no mutate
             ]
             if (user_cert := cfg.cert)
             else [
-                { "cert": None, "name": "No Certificate (Default)", "verify_mode": ssl.CERT_NONE,},  # pragma: no mutate
-                { "cert": default_cert_path, "name": "Default Certificate (Fallback)", "verify_mode": ssl.CERT_NONE,},  # pragma: no mutate
+                {
+                    "cert": None,
+                    "name": "No Certificate (Default)",
+                    "verify_mode": ssl.CERT_NONE,
+                },  # pragma: no mutate
+                {
+                    "cert": default_cert_path,
+                    "name": "Default Certificate (Fallback)",
+                    "verify_mode": ssl.CERT_NONE,
+                },  # pragma: no mutate
             ]
         )
 
@@ -504,8 +548,12 @@ class ConnectionSamsung2878(Connection):
 
         if self._last_successful_config:
             pref_cert = self._last_successful_config.get("cert")  # pragma: no mutate
-            pref_cipher = self._last_successful_config.get("cipher_name") # pragma: no mutate
-            pref_verify = self._last_successful_config.get("verify_mode") # pragma: no mutate
+            pref_cipher = self._last_successful_config.get(
+                "cipher_name"
+            )  # pragma: no mutate
+            pref_verify = self._last_successful_config.get(
+                "verify_mode"
+            )  # pragma: no mutate
 
             matching = [
                 a
@@ -599,7 +647,10 @@ class ConnectionSamsung2878(Connection):
                 }
 
                 # Persist to ConfigEntry data so it survives HA restarts
-                if hasattr(self._controller, "on_ssl_config_updated") and self._controller.on_ssl_config_updated:
+                if (
+                    hasattr(self._controller, "on_ssl_config_updated")
+                    and self._controller.on_ssl_config_updated
+                ):
                     self._controller.on_ssl_config_updated(self._last_successful_config)
 
                 connection_successful = True
@@ -635,7 +686,9 @@ class ConnectionSamsung2878(Connection):
         if (
             not initial_msg
         ):  # Read initial message if not already read during plain TCP check
-            initial_msg = await self._read_full_response(timeout=self._socket_timeout)  # pragma: no mutate
+            initial_msg = await self._read_full_response(
+                timeout=self._socket_timeout
+            )  # pragma: no mutate
 
         if initial_msg:
             # Attempt to parse the initial message to see if it's an update or response
@@ -684,7 +737,9 @@ class ConnectionSamsung2878(Connection):
                 err,
                 exc_info=True,
             )  # pragma: no mutate
-            raise CannotConnect(f"Template rendering failed: {err}") from err  # pragma: no mutate
+            raise CannotConnect(
+                f"Template rendering failed: {err}"
+            ) from err  # pragma: no mutate
         await self._write_data(auth_command)
 
         auth_response = await self._read_full_response(timeout=self._socket_timeout)
@@ -725,11 +780,15 @@ class ConnectionSamsung2878(Connection):
         self._reconnect_delay = INITIAL_RECONNECT_DELAY
         self._reconnect_retries = 0
         self._is_ready.set()  # Signal that we are ready for commands
-        _LOGGER.debug("%s Connection is ready, _is_ready event set.", self.log_prefix)  # pragma: no mutate
+        _LOGGER.debug(
+            "%s Connection is ready, _is_ready event set.", self.log_prefix
+        )  # pragma: no mutate
 
         # Stateful logging: Log when connection is re-established
         if not self._is_available:
-            _LOGGER.info("%s Connection re-established", self.log_prefix)  # pragma: no mutate
+            _LOGGER.info(
+                "%s Connection re-established", self.log_prefix
+            )  # pragma: no mutate
             self._is_available = True
             self._persistent_offline_err_logged = False
             try:
@@ -743,13 +802,18 @@ class ConnectionSamsung2878(Connection):
                         f"{ISSUE_CONNECTION_FAILED}_{self._cfg.host}",
                     )
             except Exception as e:
-                _LOGGER.debug("%s Could not clear repair issue: %s", self.log_prefix, e)  # pragma: no mutate
+                _LOGGER.debug(
+                    "%s Could not clear repair issue: %s", self.log_prefix, e
+                )  # pragma: no mutate
 
         # Request a full status update only on reconnections, not on the very first connection.
         if self._initial_connection_done:
             self._track_task(self._post_connect_status_request())
             # Proactively refresh HA state after reconnection
-            if hasattr(self._controller, "request_refresh_callback") and self._controller.request_refresh_callback:
+            if (
+                hasattr(self._controller, "request_refresh_callback")
+                and self._controller.request_refresh_callback
+            ):
                 _LOGGER.info(
                     "%s Requesting immediate coordinator refresh after reconnection.",
                     self.log_prefix,
@@ -793,13 +857,17 @@ class ConnectionSamsung2878(Connection):
             )  # pragma: no mutate
             return buffer.decode("utf-8", errors="ignore") if buffer else None
         except (TimeoutError, OSError) as e:
-            _LOGGER.error("%s Error during read: %s", self.log_prefix, e, exc_info=True)  # pragma: no mutate
+            _LOGGER.error(
+                "%s Error during read: %s", self.log_prefix, e, exc_info=True
+            )  # pragma: no mutate
             await self._close_connection()
             return None
 
     async def _write_data(self, data_str: str) -> bool:
         if not self._writer or self._writer.is_closing():
-            _LOGGER.error("%s Write failed: writer is not available", self.log_prefix)  # pragma: no mutate
+            _LOGGER.error(
+                "%s Write failed: writer is not available", self.log_prefix
+            )  # pragma: no mutate
             raise CannotConnect("Connection is not available for writing")
         try:
             self._writer.write(data_str.encode("utf-8"))
@@ -858,7 +926,6 @@ class ConnectionSamsung2878(Connection):
                 )  # pragma: no mutate
                 continue
             try:
-
                 # Derivar a Home Assistant executor para no congelar Asyncio (CPU-bound obj)
                 data = await self._controller.hass.async_add_executor_job(
                     safe_xml_to_dict, full_doc
@@ -950,21 +1017,29 @@ class ConnectionSamsung2878(Connection):
             data = None
             is_cancelled = True
         except Exception as e:
-            _LOGGER.warning("%s Read task failed: %s", self.log_prefix, e)  # pragma: no mutate
+            _LOGGER.warning(
+                "%s Read task failed: %s", self.log_prefix, e
+            )  # pragma: no mutate
             data = None
 
         if not data:
             if not is_cancelled:
-                _LOGGER.debug("%s Connection closed by device (EOF)", self.log_prefix)  # pragma: no mutate
+                _LOGGER.debug(
+                    "%s Connection closed by device (EOF)", self.log_prefix
+                )  # pragma: no mutate
             else:
-                _LOGGER.debug("%s Read task was cancelled", self.log_prefix)  # pragma: no mutate
+                _LOGGER.debug(
+                    "%s Read task was cancelled", self.log_prefix
+                )  # pragma: no mutate
 
             await self._close_connection()
             return None
 
         buffer += data
         # Process buffer to find full XML messages.
-        while b"</Response>" in buffer or b"</Update>" in buffer or b"/>" in buffer: # pragma: no mutate
+        while (
+            b"</Response>" in buffer or b"</Update>" in buffer or b"/>" in buffer
+        ):  # pragma: no mutate
             end_tag = (
                 b"</Response>"
                 if b"</Response>" in buffer
@@ -975,7 +1050,9 @@ class ConnectionSamsung2878(Connection):
             buffer = buffer[end_index:]
 
             xml_data = message.decode("utf-8", errors="ignore")
-            _LOGGER.debug("%s Received message: %s", self.log_prefix, xml_data.strip())  # pragma: no mutate
+            _LOGGER.debug(
+                "%s Received message: %s", self.log_prefix, xml_data.strip()
+            )  # pragma: no mutate
             is_response, is_update, parsed_data = await self._parse_and_update_state(
                 xml_data
             )
@@ -1076,7 +1153,9 @@ class ConnectionSamsung2878(Connection):
                     "%s Failed to create repair issue: %s", self.log_prefix, e
                 )  # pragma: no mutate
 
-    def _force_unavailability_if_needed(self, offline_type: str = "Network") -> None:  # pragma: no mutate
+    def _force_unavailability_if_needed(
+        self, offline_type: str = "Network"
+    ) -> None:  # pragma: no mutate
         """Force frontend unavailability if retries hit threshold."""
         if self._reconnect_retries == 2:
             if not getattr(self, "_persistent_offline_err_logged", False):
@@ -1093,15 +1172,24 @@ class ConnectionSamsung2878(Connection):
                         offline_type,
                     )  # pragma: no mutate
                     # Trigger the panic button callback to notify the coordinator immediately
-                    if self._controller and hasattr(self._controller, "on_offline_callback") and self._controller.on_offline_callback:
-                        self._controller.on_offline_callback("Host unreachable after multiple retry attempts.")
+                    if (
+                        self._controller
+                        and hasattr(self._controller, "on_offline_callback")
+                        and self._controller.on_offline_callback
+                    ):
+                        self._controller.on_offline_callback(
+                            "Host unreachable after multiple retry attempts."
+                        )
                 self._persistent_offline_err_logged = True
             else:
                 _LOGGER.debug(
                     "%s AC %s is persistently offline.", self.log_prefix, offline_type
                 )  # pragma: no mutate
 
-            if hasattr(self._controller, "on_connection_failed_callback") and self._controller.on_connection_failed_callback:
+            if (
+                hasattr(self._controller, "on_connection_failed_callback")
+                and self._controller.on_connection_failed_callback
+            ):
                 self._controller.on_connection_failed_callback()
 
     async def handle_reconnection(self) -> bool:
@@ -1125,7 +1213,9 @@ class ConnectionSamsung2878(Connection):
                 self._cfg.host or "", self.log_prefix
             )
         except Exception as diag_err:
-            _LOGGER.debug("%s Network diagnostic failed: %s", self.log_prefix, diag_err)  # pragma: no mutate
+            _LOGGER.debug(
+                "%s Network diagnostic failed: %s", self.log_prefix, diag_err
+            )  # pragma: no mutate
 
         try:
             # If the network is reachable, attempt handshake. Otherwise, skip to retry to protect device.
@@ -1211,7 +1301,9 @@ class ConnectionSamsung2878(Connection):
             # If reconnection fails, fail any pending command
             if self._pending_future and not self._pending_future.done():
                 self._pending_future.set_exception(
-                    CannotConnect(f"Connection lost and reconnect failed: {e}")  # pragma: no mutate
+                    CannotConnect(
+                        f"Connection lost and reconnect failed: {e}"
+                    )  # pragma: no mutate
                 )
                 self._pending_future = None  # pragma: no mutate
 
@@ -1276,7 +1368,9 @@ class ConnectionSamsung2878(Connection):
                     # --- Process completed tasks ---
                     if queue_task and queue_task in done:
                         await self._process_command_queue(queue_task)
-                        queue_task = None  # pragma: no mutate  # Reset to pick up next command
+                        queue_task = (
+                            None  # pragma: no mutate  # Reset to pick up next command
+                        )
 
                     if self._read_task in done:
                         read_buffer = await self._process_read_queue(buffer)
@@ -1310,7 +1404,9 @@ class ConnectionSamsung2878(Connection):
                     jitter = random.uniform(0, self._reconnect_delay * 0.2)
                     await asyncio.sleep(self._reconnect_delay + jitter)
         finally:
-            _LOGGER.debug("%s Connection manager exiting, cleaning up", self.log_prefix)  # pragma: no mutate
+            _LOGGER.debug(
+                "%s Connection manager exiting, cleaning up", self.log_prefix
+            )  # pragma: no mutate
             for task in (self._read_task, queue_task):
                 if task and not task.done():
                     task.cancel()
@@ -1319,6 +1415,7 @@ class ConnectionSamsung2878(Connection):
                     except asyncio.CancelledError:
                         pass
             await self._close_connection()
+
     def execute(
         self, template: Any, value: Any, device_state: Any, device_id: str | None = None
     ) -> Any:
@@ -1359,11 +1456,11 @@ class ConnectionSamsung2878(Connection):
 
         # Fast-fail: If not ready and already failed, fail fast to prevent hanging Home Assistant.
         if not self._is_ready.is_set() and self._reconnect_retries > 0:
-             _LOGGER.debug(
-                 "%s Connection is in retry backoff. Fast-failing command execution.",
-                 self.log_prefix,
-             )  # pragma: no mutate
-             raise CannotConnect("Client not ready")
+            _LOGGER.debug(
+                "%s Connection is in retry backoff. Fast-failing command execution.",
+                self.log_prefix,
+            )  # pragma: no mutate
+            raise CannotConnect("Client not ready")
 
         # Wait for the connection to be ready before proceeding.
         try:
@@ -1398,7 +1495,9 @@ class ConnectionSamsung2878(Connection):
             try:
                 async with asyncio.timeout(COMMAND_TIMEOUT):
                     await future
-                _LOGGER.debug("%s Command executed successfully", self.log_prefix)  # pragma: no mutate
+                _LOGGER.debug(
+                    "%s Command executed successfully", self.log_prefix
+                )  # pragma: no mutate
 
             except TimeoutError as e:
                 _LOGGER.warning(

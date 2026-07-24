@@ -74,7 +74,8 @@ DEVICE_TYPE_TO_CONFIG_FILE = {
 
 # Reverse map for inferring device type during YAML import.
 CONFIG_FILE_TO_DEVICE_TYPE = {
-    filename: device_type for device_type, filename in DEVICE_TYPE_TO_CONFIG_FILE.items()
+    filename: device_type
+    for device_type, filename in DEVICE_TYPE_TO_CONFIG_FILE.items()
 }
 
 # --- Legacy Constants for YAML Import ---

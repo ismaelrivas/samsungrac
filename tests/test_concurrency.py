@@ -12,6 +12,7 @@ from custom_components.climate_ip.connection import Connection
 
 _LOGGER = logging.getLogger(__name__)
 
+
 class MockConnection(Connection):
     # pylint: disable=import-outside-toplevel,abstract-method,arguments-differ
     """Mock connection to test locking."""
@@ -33,7 +34,7 @@ class MockConnection(Connection):
         url: str | None = None,
         data: str | None = None,
         headers: dict[str, str] | None = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> tuple[str, dict[str, str]]:
         """Mock execution with simulated delay and concurrency check."""
         async with self._lock:
@@ -53,6 +54,7 @@ class MockConnection(Connection):
             self.is_executing = False
             return "ok", {}
 
+
 @pytest.mark.asyncio
 async def test_lock_serialization():
     """Verify that multiple concurrent async_execute calls are serialized."""
@@ -65,7 +67,7 @@ async def test_lock_serialization():
     results = await asyncio.gather(
         conn.async_execute(data="cmd1"),
         conn.async_execute(data="cmd2"),
-        conn.async_execute(data="cmd3")
+        conn.async_execute(data="cmd3"),
     )
     end_time = time.perf_counter()
 
@@ -78,7 +80,8 @@ async def test_lock_serialization():
     # Check that execution times are separated by at least 0.1s
     times = sorted(conn.execution_times)
     for i in range(1, len(times)):
-        assert times[i] - times[i-1] >= 0.1
+        assert times[i] - times[i - 1] >= 0.1
+
 
 async def test_lock_with_manual_entry():
     """Verify serialization even when manually using the lock."""
@@ -99,7 +102,7 @@ async def test_lock_with_manual_entry():
     results = await asyncio.gather(
         conn.async_execute(data="cmd1"),
         manual_locked_task(),
-        conn.async_execute(data="cmd2")
+        conn.async_execute(data="cmd2"),
     )
 
     assert len(results) == 3

@@ -1,5 +1,6 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
 """Tests for ConnectionRequestTlsAuto."""
+
 # pylint: disable=import-outside-toplevel,protected-access,redefined-outer-name
 import logging
 from unittest.mock import ANY, MagicMock, patch
@@ -74,7 +75,9 @@ def test_execute_success(connection_config, mock_logger):
 def test_execute_insecure_ssl(connection_config, mock_logger):
     """Test request execution with insecure_ssl=True."""
     with patch("os.path.exists", return_value=True):
-        conn = ConnectionRequestTlsAuto(connection_config, mock_logger, insecure_ssl=True)
+        conn = ConnectionRequestTlsAuto(
+            connection_config, mock_logger, insecure_ssl=True
+        )
 
         with patch("requests.sessions.Session") as mock_session_cls:
             mock_session = mock_session_cls.return_value

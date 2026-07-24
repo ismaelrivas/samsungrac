@@ -89,7 +89,9 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_CONTROLLER, default=DEFAULT_CONF_CONTROLLER): cv.string,
         vol.Optional(const.CONF_DEBUG, default=False): cv.boolean,
         vol.Optional(CONFIG_DEVICE_POLL, default=""): cv.string,
-        vol.Optional(CONFIG_DEVICE_UPDATE_DELAY, default=DEFAULT_UPDATE_DELAY): cv.positive_float,
+        vol.Optional(
+            CONFIG_DEVICE_UPDATE_DELAY, default=DEFAULT_UPDATE_DELAY
+        ): cv.positive_float,
         vol.Optional(CONF_DEVICE_ID): cv.string,
         vol.Optional(CONF_TEMP_STEP, default=1.0): vol.Coerce(float),
     }
@@ -122,7 +124,9 @@ async def async_setup_platform(
     # Anti-loop guard: skip if this entry was already imported from YAML
     current_entries = _hass.config_entries.async_entries(DOMAIN)
     if any(entry.source == SOURCE_IMPORT for entry in current_entries):
-        _LOGGER.debug("YAML setup suppressed: Entry already imported previously.")  # pragma: no mutate
+        _LOGGER.debug(
+            "YAML setup suppressed: Entry already imported previously."
+        )  # pragma: no mutate
         return
 
     _hass.async_create_task(
@@ -146,30 +150,51 @@ async def async_setup_entry(
         entities: list[ClimateIP] = []
         for device_id, coordinator in coordinators.items():
             device_info = next(
-                (d for d in entry.data.get(CONF_DEVICES, []) if d.get("id") == device_id),
+                (
+                    d
+                    for d in entry.data.get(CONF_DEVICES, [])
+                    if d.get("id") == device_id
+                ),
                 None,
             )
             # Factory protection: Prevent creation of zombie entities if config is corrupted
             if not device_info:
-                _LOGGER.error("Device info missing for device %s. Skipping entity creation to prevent orphan objects.", device_id) # pragma: no mutate
+                _LOGGER.error(
+                    "Device info missing for device %s. Skipping entity creation to prevent orphan objects.",
+                    device_id,
+                )  # pragma: no mutate
                 continue
 
             entities.append(
                 ClimateIP(
-                    coordinator, CLIMATE_ENTITY_DESCRIPTION, dict(entry.data), device_info, entry.unique_id
+                    coordinator,
+                    CLIMATE_ENTITY_DESCRIPTION,
+                    dict(entry.data),
+                    device_info,
+                    entry.unique_id,
                 )
             )
-        
+
         if not entities:
-            _LOGGER.error("No valid entities could be initialized from the provided coordinators.") # pragma: no mutate
+            _LOGGER.error(
+                "No valid entities could be initialized from the provided coordinators."
+            )  # pragma: no mutate
             return
-            
+
         async_add_entities(entities, update_before_add=True)
     else:
         # Fallback for single-device setups.
         coordinator = coordinators
         async_add_entities(
-            [ClimateIP(coordinator, CLIMATE_ENTITY_DESCRIPTION, dict(entry.data), None, entry.unique_id)]
+            [
+                ClimateIP(
+                    coordinator,
+                    CLIMATE_ENTITY_DESCRIPTION,
+                    dict(entry.data),
+                    None,
+                    entry.unique_id,
+                )
+            ]
         )
 
 
@@ -228,17 +253,17 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
         configured_step = options_dict.get(
             CONF_TARGET_TEMP_STEP,
-            self._config.get(
-                CONF_TARGET_TEMP_STEP,
-                self._config.get(CONF_TEMP_STEP)
-            )
+            self._config.get(CONF_TARGET_TEMP_STEP, self._config.get(CONF_TEMP_STEP)),
         )
 
         # Defensive parsing of temperature step
         try:
             step: float = float(configured_step)
         except (ValueError, TypeError):
-            _LOGGER.warning("%s Invalid temp step configured. Falling back to default.", self.log_prefix) # pragma: no mutate
+            _LOGGER.warning(
+                "%s Invalid temp step configured. Falling back to default.",
+                self.log_prefix,
+            )  # pragma: no mutate
             step = float(DEFAULT_TARGET_TEMP_STEP)
 
         self._attr_target_temperature_step = int(step) if step == int(step) else step
@@ -294,7 +319,9 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         """Return True if entity is available based on coordinator truth."""
         if not self.coordinator:
             return False
-        return self.coordinator.last_update_success and (self.coordinator.data is not None)
+        return self.coordinator.last_update_success and (
+            self.coordinator.data is not None
+        )
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -322,14 +349,20 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         """Apply predicted corrections strictly using ALLOWED_OPTIMISTIC_CORRECTIONS map."""
         if not corrections:
             return
-        
-        _LOGGER.debug("%s Applying optimistic corrections: %s", self.log_prefix, corrections)  # pragma: no mutate
-        
+
+        _LOGGER.debug(
+            "%s Applying optimistic corrections: %s", self.log_prefix, corrections
+        )  # pragma: no mutate
+
         for prop, value in corrections.items():
             if target_attr := ALLOWED_OPTIMISTIC_CORRECTIONS.get(prop):
                 setattr(self, target_attr, value)
             else:
-                _LOGGER.debug("%s Ignoring unmapped optimistic correction for property: %s", self.log_prefix, prop)  # pragma: no mutate
+                _LOGGER.debug(
+                    "%s Ignoring unmapped optimistic correction for property: %s",
+                    self.log_prefix,
+                    prop,
+                )  # pragma: no mutate
 
     async def _async_set_climate_mode(
         self, attr_name: str, mode_value: Any, local_attr: str | None
@@ -340,7 +373,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         )
         if local_attr and hasattr(self, local_attr):
             setattr(self, local_attr, mode_value)
-            
+
         self._apply_optimistic_corrections(corrections)
         self.async_write_ha_state()
         await self.coordinator.async_set_property(attr_name, mode_value, corrections)
@@ -368,15 +401,21 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
     async def async_set_swing_mode(self, swing_mode: str) -> None:
         """Set new target swing operation."""
-        await self._async_set_climate_mode(ATTR_SWING_MODE, swing_mode, "_attr_swing_mode")
+        await self._async_set_climate_mode(
+            ATTR_SWING_MODE, swing_mode, "_attr_swing_mode"
+        )
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set new target preset mode."""
-        await self._async_set_climate_mode(ATTR_PRESET_MODE, preset_mode, "_attr_preset_mode")
+        await self._async_set_climate_mode(
+            ATTR_PRESET_MODE, preset_mode, "_attr_preset_mode"
+        )
 
     async def async_set_property(self, key: str, value: Any) -> None:
         """Set a custom property on the device."""
-        _LOGGER.debug("%s Setting property %s to %s", self.log_prefix, key, value)  # pragma: no mutate
+        _LOGGER.debug(
+            "%s Setting property %s to %s", self.log_prefix, key, value
+        )  # pragma: no mutate
         await self.coordinator.async_set_property(key, value)
         self.async_write_ha_state()
 
@@ -395,10 +434,14 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         value: Any | None = kwargs.get("value")
 
         if not key:
-            _LOGGER.warning("%s set_property action called without a valid key.", self.log_prefix)  # pragma: no mutate
+            _LOGGER.warning(
+                "%s set_property action called without a valid key.", self.log_prefix
+            )  # pragma: no mutate
             return
 
-        _LOGGER.debug("%s Action set_property called: %s = %s", self.log_prefix, key, value)  # pragma: no mutate
+        _LOGGER.debug(
+            "%s Action set_property called: %s = %s", self.log_prefix, key, value
+        )  # pragma: no mutate
         await self.coordinator.async_set_property(key, value, {})
         await self.coordinator.async_request_refresh()
 
@@ -413,7 +456,11 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             ATTR_SWING_MODE,
             ATTR_PRESET_MODE,
         }
-        return {k: v for k, v in self.coordinator.state_attributes.items() if k not in core_attrs}
+        return {
+            k: v
+            for k, v in self.coordinator.state_attributes.items()
+            if k not in core_attrs
+        }
 
     @property
     def temperature_unit(self) -> str:
@@ -424,7 +471,10 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
     def hvac_modes(self) -> list[HVACMode]:
         """Return the list of available hvac operation modes."""
         modes: list[HVACMode] = self._attr_hvac_modes
-        if ClimateEntityFeature.TURN_OFF in self.supported_features and HVACMode.OFF not in modes:
+        if (
+            ClimateEntityFeature.TURN_OFF in self.supported_features
+            and HVACMode.OFF not in modes
+        ):
             return modes + [HVACMode.OFF]
         return modes
 

@@ -1,4 +1,3 @@
-import os
 
 with open("/workspaces/ha_data/config/custom_components/climate_ip/tests/test_controller_yaml_config.py", "a") as f:
     f.write("""

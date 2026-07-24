@@ -4,6 +4,7 @@
 Each test verifies that the engine imports and applies format_placeholders from helpers.py to
 resolve placeholders like __CLIMATE_IP_HOST__ and __CLIMATE_IP_TOKEN__ before network access.
 """
+
 # pylint: disable=import-outside-toplevel
 from __future__ import annotations
 
@@ -38,19 +39,26 @@ def _assert_fully_resolved(resolved: dict) -> None:
     assert MOCK_TOKEN in headers, f"Token not in headers: {headers}"
     assert MOCK_HOST in json_payload, f"Host not in json payload: {json_payload}"
     assert "__CLIMATE_IP_HOST__" not in url, f"Placeholder still in URL: {url}"
-    assert "__CLIMATE_IP_TOKEN__" not in headers, f"Placeholder still in headers: {headers}"
-    assert "__CLIMATE_IP_HOST__" not in json_payload, f"Placeholder still in payload: {json_payload}"
+    assert "__CLIMATE_IP_TOKEN__" not in headers, (
+        f"Placeholder still in headers: {headers}"
+    )
+    assert "__CLIMATE_IP_HOST__" not in json_payload, (
+        f"Placeholder still in payload: {json_payload}"
+    )
 
 
 def test_format_placeholders_resolves_params():
     """Core helper: format_placeholders correctly substitutes all placeholder tokens."""
-    resolved = format_placeholders(make_params(), MOCK_TOKEN, MOCK_HOST, "device_0", MOCK_MAC)
+    resolved = format_placeholders(
+        make_params(), MOCK_TOKEN, MOCK_HOST, "device_0", MOCK_MAC
+    )
     _assert_fully_resolved(resolved)
 
 
 def test_connection_request_uses_format_placeholders():
     """ConnectionRequest imports and uses format_placeholders for placeholder substitution."""
     import custom_components.climate_ip.connection_request as mod
+
     assert mod.format_placeholders is format_placeholders, (
         "ConnectionRequest must use the canonical helpers.format_placeholders"
     )
@@ -63,6 +71,7 @@ def test_connection_request_uses_format_placeholders():
 def test_connection_request_tls_auto_uses_format_placeholders():
     """ConnectionRequestTlsAuto imports and uses format_placeholders for placeholder substitution."""
     import custom_components.climate_ip.connection_request_tls_auto as mod
+
     assert mod.format_placeholders is format_placeholders, (
         "ConnectionRequestTlsAuto must use the canonical helpers.format_placeholders"
     )
@@ -74,6 +83,7 @@ def test_connection_request_tls_auto_uses_format_placeholders():
 def test_connection_aiohttp_uses_format_placeholders():
     """ConnectionAiohttp8888 imports and uses format_placeholders for placeholder substitution."""
     import custom_components.climate_ip.connection_aiohttp as mod
+
     assert mod.format_placeholders is format_placeholders, (
         "ConnectionAiohttp8888 must use the canonical helpers.format_placeholders"
     )
@@ -85,6 +95,7 @@ def test_connection_aiohttp_uses_format_placeholders():
 def test_connection_raw_uses_format_placeholders():
     """ConnectionRaw8888 imports and uses format_placeholders for placeholder substitution."""
     import custom_components.climate_ip.connection_raw as mod
+
     assert mod.format_placeholders is format_placeholders, (
         "ConnectionRaw8888 must use the canonical helpers.format_placeholders"
     )

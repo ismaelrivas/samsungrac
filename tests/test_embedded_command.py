@@ -41,7 +41,9 @@ def anyio_backend():
 def _make_connection(connection_config):
     """Create a ConnectionRaw8888 with mocked filesystem."""
     with patch("os.path.exists", return_value=True):
-        return ConnectionRaw8888(connection_config, MagicMock(), MagicMock(), None, None)
+        return ConnectionRaw8888(
+            connection_config, MagicMock(), MagicMock(), None, None
+        )
 
 
 def _mock_client():
@@ -50,7 +52,6 @@ def _mock_client():
     client.request.return_value = ('{"result": "ok"}', None)
     client.close = AsyncMock()
     return client
-
 
 
 async def test_embedded_command_with_params_is_executed(connection_config):
@@ -112,7 +113,6 @@ async def test_embedded_command_with_params_is_executed(connection_config):
         )
 
 
-
 async def test_embedded_command_skipped_when_condition_not_met(connection_config):
     """Embedded command should NOT be executed when its condition evaluates to 0."""
     conn = _make_connection(connection_config)
@@ -154,7 +154,6 @@ async def test_embedded_command_skipped_when_condition_not_met(connection_config
 
         # Embedded command should NOT have been called
         embedded.async_execute.assert_not_called()
-
 
 
 async def test_embedded_command_with_connection_template_still_works(connection_config):
@@ -199,7 +198,6 @@ async def test_embedded_command_with_connection_template_still_works(connection_
             headers={"Authorization": "Bearer mock_token"},
             device_state=device_state,
         )
-
 
 
 async def test_embedded_command_no_params_no_template_logs_warning(connection_config):
@@ -248,16 +246,20 @@ async def test_embedded_command_uses_its_own_headers_and_method(connection_confi
         "json": {"Operation": {"power": "On"}},
         "url": "https://192.168.1.100:8888/embedded",
         "method": "POST",
-        "headers": {"X-Custom-Auth": "Secret"}
+        "headers": {"X-Custom-Auth": "Secret"},
     }
     embedded._connection_template = None
     from jinja2 import Template
+
     embedded.condition_template = Template("1")
     conn._embedded_command = embedded
     device_state = MagicMock()
 
     mock_client = _mock_client()
-    with patch("custom_components.climate_ip.connection_raw.Samsung8888Client", return_value=mock_client):
+    with patch(
+        "custom_components.climate_ip.connection_raw.Samsung8888Client",
+        return_value=mock_client,
+    ):
         embedded.async_execute = AsyncMock(return_value=('{"result": "ok"}', None))
         await conn.async_execute(
             method="PUT",
@@ -276,7 +278,9 @@ async def test_embedded_command_uses_its_own_headers_and_method(connection_confi
         )
 
 
-async def test_embedded_command_skipped_when_device_state_missing(connection_config, caplog):
+async def test_embedded_command_skipped_when_device_state_missing(
+    connection_config, caplog
+):
     """Test warning is logged when device_state is missing."""
     conn = _make_connection(connection_config)
     embedded = _make_connection(connection_config)
@@ -285,15 +289,18 @@ async def test_embedded_command_skipped_when_device_state_missing(connection_con
 
     # Mock client to prevent real execution if it bypasses condition
     mock_client = _mock_client()
-    with patch("custom_components.climate_ip.connection_raw.Samsung8888Client", return_value=mock_client):
+    with patch(
+        "custom_components.climate_ip.connection_raw.Samsung8888Client",
+        return_value=mock_client,
+    ):
         await conn.async_execute(
             method="PUT",
             url="https://192.168.1.100:8888/main",
-            data='{}',
+            data="{}",
             headers={},
-            device_state=None, # Missing device state
+            device_state=None,  # Missing device state
         )
-    
+
     assert "cannot check its condition" in caplog.text
     assert any(record.levelname == "WARNING" for record in caplog.records)
 
@@ -338,7 +345,6 @@ def _mock_aiohttp_response():
     return mock_ctx
 
 
-
 async def test_aiohttp_embedded_command_with_params_is_executed():
     """Regression test for aiohttp: embedded commands with _params (no template)
     must be executed, not skipped.
@@ -367,7 +373,9 @@ async def test_aiohttp_embedded_command_with_params_is_executed():
     embedded.async_execute = AsyncMock(return_value=('{"result": "ok"}', None))
 
     # Mock _try_connection to skip the probe
-    with patch.object(conn, "_try_connection", new_callable=AsyncMock, return_value=None):
+    with patch.object(
+        conn, "_try_connection", new_callable=AsyncMock, return_value=None
+    ):
         await conn.async_execute(
             method="PUT",
             url="https://192.168.1.100:8888/devices/0/mode",
@@ -383,7 +391,6 @@ async def test_aiohttp_embedded_command_with_params_is_executed():
         headers={"Authorization": "Bearer test_token"},
         device_state=device_state,
     )
-
 
 
 async def test_aiohttp_embedded_command_skipped_when_condition_not_met():
@@ -411,7 +418,9 @@ async def test_aiohttp_embedded_command_skipped_when_condition_not_met():
     conn._session.request.return_value = _mock_aiohttp_response()
     embedded.async_execute = AsyncMock()
 
-    with patch.object(conn, "_try_connection", new_callable=AsyncMock, return_value=None):
+    with patch.object(
+        conn, "_try_connection", new_callable=AsyncMock, return_value=None
+    ):
         await conn.async_execute(
             method="PUT",
             url="https://192.168.1.100:8888/devices/0/mode",
@@ -421,7 +430,6 @@ async def test_aiohttp_embedded_command_skipped_when_condition_not_met():
         )
 
     embedded.async_execute.assert_not_called()
-
 
 
 async def test_aiohttp_embedded_command_with_template_still_works():
@@ -444,7 +452,9 @@ async def test_aiohttp_embedded_command_with_template_still_works():
     conn._session.request.return_value = _mock_aiohttp_response()
     embedded.async_execute = AsyncMock(return_value=('{"result": "ok"}', None))
 
-    with patch.object(conn, "_try_connection", new_callable=AsyncMock, return_value=None):
+    with patch.object(
+        conn, "_try_connection", new_callable=AsyncMock, return_value=None
+    ):
         await conn.async_execute(
             method="PUT",
             url="https://192.168.1.100:8888/devices/0/mode",
@@ -480,7 +490,9 @@ def _make_request_connection(cls):
 
 
 @pytest.mark.skip_legacy
-@pytest.mark.parametrize("connection_class", [ConnectionRequest, ConnectionRequestTlsAuto])
+@pytest.mark.parametrize(
+    "connection_class", [ConnectionRequest, ConnectionRequestTlsAuto]
+)
 def test_request_embedded_command_is_executed(connection_class):
     """Verifies that request engines execute their embedded commands by delegating
     the execute() call down to the child.
@@ -497,7 +509,9 @@ def test_request_embedded_command_is_executed(connection_class):
 
     device_state = MagicMock()
 
-    with patch.object(conn, "execute_internal", return_value=('{"result": "ok"}', True, 200)):
+    with patch.object(
+        conn, "execute_internal", return_value=('{"result": "ok"}', True, 200)
+    ):
         conn.execute(
             template=None,
             value='{"modes": ["Cool"]}',
@@ -505,11 +519,15 @@ def test_request_embedded_command_is_executed(connection_class):
         )
 
     # The request engines delegate the exact same arguments down to the embedded command
-    embedded.execute.assert_called_once_with(None, '{"modes": ["Cool"]}', device_state, None)
+    embedded.execute.assert_called_once_with(
+        None, '{"modes": ["Cool"]}', device_state, None
+    )
 
 
 @pytest.mark.skip_legacy
-@pytest.mark.parametrize("connection_class", [ConnectionRequest, ConnectionRequestTlsAuto])
+@pytest.mark.parametrize(
+    "connection_class", [ConnectionRequest, ConnectionRequestTlsAuto]
+)
 def test_request_embedded_command_skipped_when_condition_not_met(connection_class):
     """Verifies that if the main command condition is not met, the embedded command
     IS STILL executed first (as per current code logic in line 550 of connection_request),
@@ -528,7 +546,9 @@ def test_request_embedded_command_skipped_when_condition_not_met(connection_clas
 
     device_state = MagicMock()
 
-    with patch.object(conn, "execute_internal", return_value=('{"result": "ok"}', True, 200)):
+    with patch.object(
+        conn, "execute_internal", return_value=('{"result": "ok"}', True, 200)
+    ):
         result = conn.execute(
             template=None,
             value='{"modes": ["Cool"]}',

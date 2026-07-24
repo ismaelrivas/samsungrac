@@ -1,19 +1,24 @@
 """Test config flow isolated steps to kill mutants."""
+
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 from homeassistant.data_entry_flow import FlowResultType
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 from custom_components.climate_ip.const import (
-    CONF_DEVICE_TYPE, DEVICE_TYPE_SAMSUNG_2878, DEVICE_TYPE_SAMSUNG_8888, CONF_DEVICE_ID
+    CONF_DEVICE_TYPE,
+    DEVICE_TYPE_SAMSUNG_2878,
+    DEVICE_TYPE_SAMSUNG_8888,
+    CONF_DEVICE_ID,
 )
-from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC
+from homeassistant.const import CONF_IP_ADDRESS
 import ssl
+
 
 @pytest.mark.asyncio
 async def test_samsung_device_type_routing_mutants():
     """Mata Mutantes 2 y 9: Verifica que el ruteo pasa el flag is_8888 estricto."""
     flow = ClimateIpConfigFlow()
-    
+
     with patch.object(flow, "_async_process_samsung_device_step") as mock_process:
         await flow.async_step_samsung_2878({"dummy": "data"})
         # Mata el Mutante 2 (is_8888=None) y 9 (is_8888=True en vez de False)
@@ -29,17 +34,19 @@ async def test_samsung_device_type_routing_mutants():
             step_id="samsung_8888", is_8888=True, user_input={"dummy": "data"}
         )
 
+
 @pytest.mark.asyncio
 async def test_reconfigure_arguments_mutants():
     """Mata Mutantes 5 y 6: Verifica que user_input no se convierte en None."""
     flow = ClimateIpConfigFlow()
     flow._get_reconfigure_entry = MagicMock(return_value=MagicMock(data={}))
-    
+
     with patch.object(flow, "async_step_reconfigure_confirm") as mock_confirm:
         test_input = {CONF_IP_ADDRESS: "1.1.1.1"}
         await flow.async_step_reconfigure(test_input)
         # Si el mutante cambia u_input = None, esta aserción reventará
         mock_confirm.assert_called_once_with(test_input)
+
 
 @pytest.mark.asyncio
 async def test_connection_safe_ssl_mutant(hass):
@@ -48,89 +55,107 @@ async def test_connection_safe_ssl_mutant(hass):
     flow.hass = hass
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888,
-        CONF_IP_ADDRESS: "192.168.1.100"
+        CONF_IP_ADDRESS: "192.168.1.100",
     }
-    
-    with patch("custom_components.climate_ip.config_flow.ssl.create_default_context") as mock_ssl, \
-         patch("custom_components.climate_ip.config_flow.async_get_clientsession") as mock_session:
-        
+
+    with (
+        patch(
+            "custom_components.climate_ip.config_flow.ssl.create_default_context"
+        ) as mock_ssl,
+        patch(
+            "custom_components.climate_ip.config_flow.async_get_clientsession"
+        ) as mock_session,
+    ):
         mock_context = MagicMock()
         mock_ssl.return_value = mock_context
-        
+
         mock_get = AsyncMock()
         mock_get.__aenter__.return_value.status = 200
         mock_session.return_value.get.return_value = mock_get
-        
+
         await flow._test_connection_safe()
-        
+
         # Mata M41: Si es None en vez de False, esto falla
         assert mock_context.check_hostname is False
         assert mock_context.verify_mode == ssl.CERT_NONE
+
 
 @pytest.mark.asyncio
 async def test_test_connection_fallbacks_and_progress():
     """Mata Mutantes 47, 48, 60, 63, 67."""
     flow = ClimateIpConfigFlow()
-    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878, CONF_IP_ADDRESS: "1.1.1.1"}
-    
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
+        CONF_IP_ADDRESS: "1.1.1.1",
+    }
+
     # 1. Matar M60, M63, M67 (Tareas de progreso a None)
     flow.task = MagicMock()
-    flow.task.done.return_value = False # Simulamos que la tarea está pendiente
-    
+    flow.task.done.return_value = False  # Simulamos que la tarea está pendiente
+
     result = await flow.async_step_test_connection()
     assert result["type"] == FlowResultType.SHOW_PROGRESS
     # Si el mutante anula p_task, esto falla
-    assert result["progress_task"] is flow.task 
+    assert result["progress_task"] is flow.task
 
     # 2. Matar M47, M48 (Fallback de error)
     flow.task.done.return_value = True
     # Simulamos error sin "error" key para forzar el fallback "cannot_connect"
-    flow.task.result.return_value = {"ok": False} 
-    
+    flow.task.result.return_value = {"ok": False}
+
     result_done = await flow.async_step_test_connection()
     assert result_done["type"] == FlowResultType.SHOW_PROGRESS_DONE
     assert result_done["step_id"] == "handle_error"
     # Si el mutante usa "XXcannot_connectXX", esto falla
     assert flow.flow_data["error_key"] == "cannot_connect"
 
+
 @pytest.mark.asyncio
 async def test_await_button_fallbacks():
     """Mata Mutantes 29, 31, 34, 89, 91, 92."""
     flow = ClimateIpConfigFlow()
     # Sin IP configurada para forzar el fallback en description_placeholders
-    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888} 
-    
+    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888}
+
     # 1. Matar M89, M91, M92 (Fallback de IP a "")
     flow.task = MagicMock()
     flow.task.done.return_value = False
     result = await flow.async_step_await_button()
-    assert result["description_placeholders"]["ip_address"] == "" # Si mutmut puso "XXXX", falla
-    
+    assert (
+        result["description_placeholders"]["ip_address"] == ""
+    )  # Si mutmut puso "XXXX", falla
+
     # 2. Matar M29, 31, 34 (Fallback de Token a "")
     flow.task.done.return_value = True
     # Devolvemos ok: True pero sin token en el diccionario
-    flow.task.result.return_value = {"ok": True} 
-    
-    with patch("custom_components.climate_ip.config_flow.sanitize_token", return_value=False):
-        result_done = await flow.async_step_await_button()
+    flow.task.result.return_value = {"ok": True}
+
+    with patch(
+        "custom_components.climate_ip.config_flow.sanitize_token", return_value=False
+    ):
+        await flow.async_step_await_button()
         assert flow.flow_data["error_key"] == "token_acquisition_failed"
         # Esto mata indirectamente a los mutantes del token porque validamos el flujo exacto
+
 
 @pytest.mark.asyncio
 async def test_mim_h03_discovery_fallbacks():
     """Mata Mutantes 11 y 92 en _async_process_mim_h03."""
     flow = ClimateIpConfigFlow()
-    flow.reauth_entry = MagicMock() # Evitar chequeos de abort
-    
+    flow.reauth_entry = MagicMock()  # Evitar chequeos de abort
+
     # Pasamos un dispositivo sin "id" y sin "Mode" para forzar que sea coordinador y el fallback a ""
-    discovered = [{"uuid": "test_uuid"}] 
-    
-    with patch.object(flow, "async_set_unique_id"), \
-         patch.object(flow, "_create_entry", return_value={"type": "create_entry"}):
+    discovered = [{"uuid": "test_uuid"}]
+
+    with (
+        patch.object(flow, "async_set_unique_id"),
+        patch.object(flow, "_create_entry", return_value={"type": "create_entry"}),
+    ):
         await flow._async_process_mim_h03(discovered)
-        
+
         # Mata M11 y M92: Si el mutante inyectó "XXXX" en el or "", esto falla
         assert flow.flow_data[CONF_DEVICE_ID] == ""
+
 
 @pytest.mark.asyncio
 async def test_fallback_raw_discovery_controller_mutant(hass):
@@ -138,36 +163,52 @@ async def test_fallback_raw_discovery_controller_mutant(hass):
     flow = ClimateIpConfigFlow()
     flow.hass = hass
     flow.flow_data = {}
-    
+
     # Forzamos una excepción en la inicialización de YamlController
-    with patch("custom_components.climate_ip.config_flow.YamlController", side_effect=Exception("Boom")):
+    with patch(
+        "custom_components.climate_ip.config_flow.YamlController",
+        side_effect=Exception("Boom"),
+    ):
         result = await flow._async_fallback_raw_discovery({})
-        
-        # Debe atrapar la excepción y abortar graciosamente. 
-        # Si el mutante 8 puso controller="", el bloque finally hará "".async_shutdown() 
+
+        # Debe atrapar la excepción y abortar graciosamente.
+        # Si el mutante 8 puso controller="", el bloque finally hará "".async_shutdown()
         # lanzando AttributeError y fallando este test con un error no controlado.
         assert result["type"] == FlowResultType.ABORT
         assert result["reason"] == "cannot_connect"
+
 
 @pytest.mark.asyncio
 async def test_connection_safe_unique_id_empty_fallback():
     """Mata Mutantes 73-77: unique_id fallback a ''."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
-    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878, CONF_IP_ADDRESS: "1.1.1.1"} # Sin MAC ni UUID
-    
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
+        CONF_IP_ADDRESS: "1.1.1.1",
+    }  # Sin MAC ni UUID
+
     with patch("custom_components.climate_ip.config_flow.YamlController") as mock_yaml:
         mock_ctrl = mock_yaml.return_value
         mock_ctrl.initialize = AsyncMock(return_value=True)
         mock_ctrl.async_get_status = AsyncMock(return_value=True)
-        
+
         await flow._test_connection_safe()
         args, kwargs = mock_yaml.call_args
         # Si el mutante puso None o "XXXX", esto falla
-        assert kwargs["config"]["unique_id"] == "" 
+        assert kwargs["config"]["unique_id"] == ""
         # M77: Verificar que se inyectó el config_file
-        from custom_components.climate_ip.const import CONF_CONFIG_FILE, DEVICE_TYPE_TO_CONFIG_FILE
-        assert kwargs["config"].get(CONF_CONFIG_FILE) == DEVICE_TYPE_TO_CONFIG_FILE[DEVICE_TYPE_SAMSUNG_2878]
+        from custom_components.climate_ip.const import (
+            CONF_CONFIG_FILE,
+            DEVICE_TYPE_TO_CONFIG_FILE,
+        )
+
+        assert (
+            kwargs["config"].get(CONF_CONFIG_FILE)
+            == DEVICE_TYPE_TO_CONFIG_FILE[DEVICE_TYPE_SAMSUNG_2878]
+        )
+
+
 @pytest.mark.asyncio
 async def test_await_button_token_missing_fallback():
     """Mata Mutantes 29, 31, 34: raw_token = get('token', '')."""
@@ -175,8 +216,8 @@ async def test_await_button_token_missing_fallback():
     flow.task = MagicMock()
     flow.task.done.return_value = True
     # Devolvemos un dicccionario SIN "token"
-    flow.task.result.return_value = {"ok": True} 
-    
+    flow.task.result.return_value = {"ok": True}
+
     with patch("custom_components.climate_ip.config_flow.sanitize_token") as mock_san:
         mock_san.return_value = False
         await flow.async_step_await_button()
@@ -187,8 +228,10 @@ async def test_await_button_token_missing_fallback():
 @pytest.mark.asyncio
 async def test_select_devices_error_schema_default_keys():
     """Mata Mutantes 23, 35, 37, 39: def_keys y schema al enviar selección vacía."""
-    from custom_components.climate_ip.const import CONF_DISCOVERED_DEVICES, CONF_SELECTED_DEVICES
-    import voluptuous as vol
+    from custom_components.climate_ip.const import (
+        CONF_DISCOVERED_DEVICES,
+        CONF_SELECTED_DEVICES,
+    )
 
     flow = ClimateIpConfigFlow()
     flow.flow_data = {
@@ -217,7 +260,9 @@ async def test_select_devices_error_schema_default_keys():
 
     # M35/M37: default debe ser la lista de IDs reales, no None
     default_val = sel_key.default()
-    assert default_val == ["dev1", "dev2"], f"Expected ['dev1', 'dev2'], got {default_val}"
+    assert default_val == ["dev1", "dev2"], (
+        f"Expected ['dev1', 'dev2'], got {default_val}"
+    )
 
     # M23: verificar que los valores de default son los IDs, no None
     assert None not in default_val
@@ -225,14 +270,17 @@ async def test_select_devices_error_schema_default_keys():
     # M39: verificar que las opciones del selector son las correctas (no None)
     selector = schema.schema[sel_key]
     assert hasattr(selector, "options"), "El selector debe tener opciones"
-    assert selector.options is not None, "El mutante asignó None a las opciones del selector"
+    assert selector.options is not None, (
+        "El mutante asignó None a las opciones del selector"
+    )
 
 
 @pytest.mark.asyncio
 async def test_select_devices_unique_id_from_device_id():
     """Mata Mutantes 62, 63: tercer nivel del fallback de unique_id (CONF_DEVICE_ID)."""
     from custom_components.climate_ip.const import (
-        CONF_DISCOVERED_DEVICES, CONF_SELECTED_DEVICES, CONF_DEVICES
+        CONF_DISCOVERED_DEVICES,
+        CONF_SELECTED_DEVICES,
     )
 
     flow = ClimateIpConfigFlow()
@@ -242,9 +290,10 @@ async def test_select_devices_unique_id_from_device_id():
         # Sin "unique_id" ni CONF_MAC — fuerza el tercer nivel de fallback
     }
 
-    with patch.object(flow, "async_set_unique_id") as mock_set_uid, \
-         patch.object(flow, "_create_entry", return_value={"type": "create_entry"}):
-
+    with (
+        patch.object(flow, "async_set_unique_id") as mock_set_uid,
+        patch.object(flow, "_create_entry", return_value={"type": "create_entry"}),
+    ):
         await flow.async_step_select_devices(
             user_input={CONF_SELECTED_DEVICES: ["dev_abc"]}
         )
@@ -257,8 +306,6 @@ async def test_select_devices_unique_id_from_device_id():
 @pytest.mark.asyncio
 async def test_discover_uuid_controller_init_none_is_correct_start():
     """Mata Mutante 15: controller = None al inicio (no controller = '')."""
-    from custom_components.climate_ip.const import CONF_CONFIG_FILE
-    from custom_components.climate_ip.exceptions import CannotConnect
 
     flow = ClimateIpConfigFlow()
     flow.flow_data = {
@@ -267,9 +314,12 @@ async def test_discover_uuid_controller_init_none_is_correct_start():
     }
     flow.hass = MagicMock()
 
-    with patch("custom_components.climate_ip.config_flow.YamlController", side_effect=Exception("Constructor Crash")):
+    with patch(
+        "custom_components.climate_ip.config_flow.YamlController",
+        side_effect=Exception("Constructor Crash"),
+    ):
         result = await flow.async_step_discover_uuid()
-        # Si el mutante puso controller="" en vez de None, 
+        # Si el mutante puso controller="" en vez de None,
         # al hacer if controller is not None en el finally, intentará "".async_shutdown()
         # y explotará con AttributeError en lugar de retornar el FlowResult.
         assert result["type"] == FlowResultType.ABORT
@@ -288,8 +338,16 @@ async def test_discover_uuid_hasattr_exact_attribute_name():
     # unique_id del flow es solo-lectura; lo que importa aquí es el del mock_ctrl
 
     with patch("custom_components.climate_ip.config_flow.YamlController") as mock_yaml:
-        mock_ctrl = MagicMock(spec=["initialize", "async_get_status", "async_shutdown",
-                                     "discovered_devices", "unique_id", "device_id"])
+        mock_ctrl = MagicMock(
+            spec=[
+                "initialize",
+                "async_get_status",
+                "async_shutdown",
+                "discovered_devices",
+                "unique_id",
+                "device_id",
+            ]
+        )
         mock_ctrl.initialize = AsyncMock(return_value=True)
         mock_ctrl.async_get_status = AsyncMock(return_value=True)
         mock_ctrl.async_shutdown = AsyncMock()
@@ -299,8 +357,11 @@ async def test_discover_uuid_hasattr_exact_attribute_name():
         mock_ctrl.device_id = "1"
         mock_yaml.return_value = mock_ctrl
 
-        with patch.object(flow, "_async_process_samsung_8888_discovery",
-                          return_value={"type": "create_entry"}) as mock_proc:
+        with patch.object(
+            flow,
+            "_async_process_samsung_8888_discovery",
+            return_value={"type": "create_entry"},
+        ) as mock_proc:
             await flow.async_step_discover_uuid()
             # M39/M40: si el hasattr busca "XXdiscovered_devicesXX" o "DISCOVERED_DEVICES",
             # raw_devs quedará None y mock_proc recibirá [] en vez de la lista real.
@@ -329,12 +390,15 @@ async def test_discover_uuid_invalid_header_controller_shutdown():
         mock_ctrl.async_shutdown = AsyncMock()
         mock_yaml.return_value = mock_ctrl
 
-        with patch.object(flow, "_async_fallback_raw_discovery",
-                          return_value={"type": "abort", "reason": "cannot_connect"}) as mock_fallback:
+        with patch.object(
+            flow,
+            "_async_fallback_raw_discovery",
+            return_value={"type": "abort", "reason": "cannot_connect"},
+        ) as mock_fallback:
             # Creamos un mock parent para rastrear el orden
             manager = MagicMock()
-            manager.attach_mock(mock_ctrl.async_shutdown, 'shutdown')
-            manager.attach_mock(mock_fallback, 'fallback')
+            manager.attach_mock(mock_ctrl.async_shutdown, "shutdown")
+            manager.attach_mock(mock_fallback, "fallback")
 
             await flow.async_step_discover_uuid()
 
@@ -343,6 +407,7 @@ async def test_discover_uuid_invalid_header_controller_shutdown():
             # el fallback se llama, y luego el finally hace el shutdown.
             # El orden sería [fallback, shutdown]. El código correcto es [shutdown, fallback, shutdown(opcional)].
             expected_calls = [manager.mock_calls[0], manager.mock_calls[1]]
-            assert expected_calls[0][0] == 'shutdown', "Shutdown debe llamarse antes del fallback"
-            assert expected_calls[1][0] == 'fallback'
-
+            assert expected_calls[0][0] == "shutdown", (
+                "Shutdown debe llamarse antes del fallback"
+            )
+            assert expected_calls[1][0] == "fallback"

@@ -131,12 +131,16 @@ class ConnectionRaw8888(Connection):
         # Marking session as used for Pylint
         _ = session  # pragma: no mutate
 
-        self._host: str | None = ip_address or cast(str | None, config.get(CONF_IP_ADDRESS))  # pragma: no mutate
+        self._host: str | None = ip_address or cast(
+            str | None, config.get(CONF_IP_ADDRESS)
+        )  # pragma: no mutate
         cert_file = config.get(CONF_CERT)
         if cert_file and not ("/" in cert_file or "\\" in cert_file):
             cert_file = str(Path(__file__).parent / cert_file)
         self._cert = cert_file
-        self._controller: "ClimateController | None" = None  # Initialize controller reference
+        self._controller: "ClimateController | None" = (
+            None  # Initialize controller reference
+        )
         self._client: Samsung8888Client | None = None
         self._params: dict[str, Any] = {}
         self._connection_template: Template | None = None
@@ -145,7 +149,7 @@ class ConnectionRaw8888(Connection):
         self.condition_template: Template | None = None
         self._embedded_command: ConnectionRaw8888 | None = None
         self._keep_alive = config.get("keep_alive", True)
-        
+
         # Estado interno de la conexión nativa
         self._is_connected: bool = False
         self._reconnect_retries: int = 0
@@ -164,7 +168,9 @@ class ConnectionRaw8888(Connection):
             # pylint: disable=import-outside-toplevel,protected-access
             if self._controller._shared_raw_client is None:  # type: ignore[attr-defined]
                 if not self._host:
-                    raise CannotConnect("Host/IP address not provided for RAW connection")  # pragma: no mutate
+                    raise CannotConnect(
+                        "Host/IP address not provided for RAW connection"
+                    )  # pragma: no mutate
 
                 # --- Dynamic Port Detection ---
                 port = 8888  # Default for legacy devices
@@ -200,7 +206,9 @@ class ConnectionRaw8888(Connection):
             _LOGGER.debug('%s [Standalone] Controller is None! Initializing local client.', self.log_prefix)  # pragma: no mutate
             # fmt: on
             if not self._host:
-                raise CannotConnect("Host/IP address not provided for RAW connection")  # pragma: no mutate
+                raise CannotConnect(
+                    "Host/IP address not provided for RAW connection"
+                )  # pragma: no mutate
 
             # --- Dynamic Port Detection (Standalone) ---
             port = 8888
@@ -249,7 +257,9 @@ class ConnectionRaw8888(Connection):
         device_id: str | None = None,
     ) -> None:
         """Not implemented for async connections."""
-        raise NotImplementedError("This connection is async-native. Use async_execute.")  # pragma: no mutate
+        raise NotImplementedError(
+            "This connection is async-native. Use async_execute."
+        )  # pragma: no mutate
 
     async def async_execute(
         self,
@@ -262,7 +272,7 @@ class ConnectionRaw8888(Connection):
         _is_poll: bool = False,  # pragma: no mutate
     ) -> tuple[str | None, dict[str, Any] | None]:
         """Execute a command (including embedded commands) over raw sockets."""
-        
+
         # 1. Erradicación del hasattr defensivo
         host = self._host or self._config.get(CONF_IP_ADDRESS, "")
         mac = self._config.get(CONF_MAC, "")
@@ -281,7 +291,9 @@ class ConnectionRaw8888(Connection):
 
         # --- Embedded command handling ---
         if self._embedded_command:
-            _LOGGER.debug("%s [async_execute] Found embedded command.", self.log_prefix)  # pragma: no mutate
+            _LOGGER.debug(
+                "%s [async_execute] Found embedded command.", self.log_prefix
+            )  # pragma: no mutate
             try:
                 if device_state is not None:
                     if not self._embedded_command.check_execute_condition(device_state):
@@ -296,7 +308,9 @@ class ConnectionRaw8888(Connection):
                         embedded_params = self._embedded_command._params
                         if embedded_template:
                             if hasattr(embedded_template, "async_render"):
-                                embedded_params_str = await embedded_template.async_render()
+                                embedded_params_str = (
+                                    await embedded_template.async_render()
+                                )
                             else:
                                 embedded_params_str = embedded_template.render()
                             embedded_params = json_loads(embedded_params_str)
@@ -324,7 +338,7 @@ class ConnectionRaw8888(Connection):
                                 if json_payload is not None
                                 else None
                             )
-                            
+
                             # Resolve the URL: prefer the embedded command's own URL, fall back to the main one
                             embedded_url = embedded_params.get("url", url)
                             embedded_method = embedded_params.get("method", method)
@@ -354,7 +368,9 @@ class ConnectionRaw8888(Connection):
                 # fmt: on
                 raise  # pragma: no mutate
             except (asyncio.TimeoutError, OSError, ValueError, TypeError) as e:
-                _LOGGER.error("%s [async_execute] Embedded command failed: %s", self.log_prefix, e)  # pragma: no mutate
+                _LOGGER.error(
+                    "%s [async_execute] Embedded command failed: %s", self.log_prefix, e
+                )  # pragma: no mutate
                 raise  # pragma: no mutate
 
         # --- Timing measurement for main request ---
@@ -398,13 +414,15 @@ class ConnectionRaw8888(Connection):
             body = None
 
         req_headers = headers.copy() if headers else {}
-        req_headers = format_placeholders(
-            req_headers, current_token, host, dev_id, mac
-        )
+        req_headers = format_placeholders(req_headers, current_token, host, dev_id, mac)
 
         if not current_token:
-            _LOGGER.error("%s [RAW] No token available! The request will fail.", self.log_prefix)  # pragma: no mutate
-            raise AuthError("Token not configured for the raw engine")  # pragma: no mutate
+            _LOGGER.error(
+                "%s [RAW] No token available! The request will fail.", self.log_prefix
+            )  # pragma: no mutate
+            raise AuthError(
+                "Token not configured for the raw engine"
+            )  # pragma: no mutate
 
         req_headers.setdefault("Authorization", f"Bearer {current_token}")
         req_headers.setdefault("Content-Type", "application/json")
@@ -416,10 +434,14 @@ class ConnectionRaw8888(Connection):
                 resp, err = await client.request(method, path, body, req_headers)
             if err:
                 # --- Proper Error Handling ---
-                _LOGGER.error("%s API Error: %s", self.log_prefix, err)  # pragma: no mutate
+                _LOGGER.error(
+                    "%s API Error: %s", self.log_prefix, err
+                )  # pragma: no mutate
                 raise CannotConnect(f"API Error: {err}")  # pragma: no mutate
             elapsed = time.perf_counter() - start_time  # pragma: no mutate
-            _LOGGER.debug("%s [RAW] Request completed in %.3f seconds", self.log_prefix, elapsed)  # pragma: no mutate
+            _LOGGER.debug(
+                "%s [RAW] Request completed in %.3f seconds", self.log_prefix, elapsed
+            )  # pragma: no mutate
             return resp, None
         except AuthError as exc:
             # pylint: disable=import-outside-toplevel,bad-exception-cause
@@ -431,7 +453,9 @@ class ConnectionRaw8888(Connection):
                 msg = "Connection refused (device unreachable or offline)"  # pragma: no mutate
             elif "timed out" in err_str or "etimedout" in err_str:  # pragma: no mutate
                 msg = "Connection timed out"  # pragma: no mutate
-            elif "name or service not known" in err_str or "nodename" in err_str:  # pragma: no mutate
+            elif (
+                "name or service not known" in err_str or "nodename" in err_str
+            ):  # pragma: no mutate
                 msg = "Host not found (DNS error)"  # pragma: no mutate
             else:
                 msg = f"Connection error: {e}"
@@ -450,25 +474,35 @@ class ConnectionRaw8888(Connection):
         Close the connection and release resources.
         This is called when the integration is unloaded or the connection method changes.
         """
-        _LOGGER.debug("%s [RAW] Closing connection resources...", self.log_prefix)  # pragma: no mutate
+        _LOGGER.debug(
+            "%s [RAW] Closing connection resources...", self.log_prefix
+        )  # pragma: no mutate
 
         # 1. Close internal embedded command (if any)
         if self._embedded_command:
             try:
-                _LOGGER.debug("%s [RAW] Closing embedded command...", self.log_prefix)  # pragma: no mutate
+                _LOGGER.debug(
+                    "%s [RAW] Closing embedded command...", self.log_prefix
+                )  # pragma: no mutate
                 await self._embedded_command.close()
             except (asyncio.TimeoutError, OSError) as e:
-                _LOGGER.warning("%s [RAW] Error closing embedded command: %s", self.log_prefix, e)  # pragma: no mutate
+                _LOGGER.warning(
+                    "%s [RAW] Error closing embedded command: %s", self.log_prefix, e
+                )  # pragma: no mutate
 
         # 2. Close the local client if it exists
         if self._client:
-            _LOGGER.debug("%s [RAW] Closing local client...", self.log_prefix)  # pragma: no mutate
+            _LOGGER.debug(
+                "%s [RAW] Closing local client...", self.log_prefix
+            )  # pragma: no mutate
             try:
                 # FIX: client.close() is an async routine, it must be awaited!
                 # Wait_closed logic is safely handled inside client.close() natively.
                 await self._client.close()
             except (asyncio.TimeoutError, OSError) as e:
-                _LOGGER.error("%s [RAW] Error closing local client: %s", self.log_prefix, e)  # pragma: no mutate
+                _LOGGER.error(
+                    "%s [RAW] Error closing local client: %s", self.log_prefix, e
+                )  # pragma: no mutate
             finally:
                 self._client = None
 
@@ -476,12 +510,18 @@ class ConnectionRaw8888(Connection):
         if self._controller and self._controller._shared_raw_client:
             shared_client = self._controller._shared_raw_client  # pylint: disable=import-outside-toplevel,protected-access
             if shared_client:
-                _LOGGER.debug("%s [RAW] Closing shared client...", self.log_prefix)  # pragma: no mutate
+                _LOGGER.debug(
+                    "%s [RAW] Closing shared client...", self.log_prefix
+                )  # pragma: no mutate
                 try:
                     await shared_client.close()
                 except (asyncio.TimeoutError, OSError) as e:
-                    _LOGGER.error("%s [RAW] Error closing shared client: %s", self.log_prefix, e)  # pragma: no mutate
+                    _LOGGER.error(
+                        "%s [RAW] Error closing shared client: %s", self.log_prefix, e
+                    )  # pragma: no mutate
                 finally:
                     self._controller._shared_raw_client = None  # pylint: disable=import-outside-toplevel,protected-access
 
-        _LOGGER.debug("%s [RAW] Connection resources closed.", self.log_prefix)  # pragma: no mutate
+        _LOGGER.debug(
+            "%s [RAW] Connection resources closed.", self.log_prefix
+        )  # pragma: no mutate

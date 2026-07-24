@@ -1,6 +1,10 @@
 """Tests para herencia_cobertura_source.py — validación de Coverage Inheritance."""
+
 import pytest
-from herencia_cobertura_source import validar_herencia_cobertura, funcion_sincrona_simple
+from herencia_cobertura_source import (
+    validar_herencia_cobertura,
+    funcion_sincrona_simple,
+)
 
 
 @pytest.mark.asyncio

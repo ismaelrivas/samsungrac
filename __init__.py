@@ -18,9 +18,9 @@ from .const import (
     CONF_DEVICE_TYPE,
     CONF_DEVICES,
     DEVICE_TYPE_TO_CONFIG_FILE,
-    DOMAIN,
 )
-from .controller_yaml import YamlController, clear_yaml_cache
+from .controller_yaml import YamlController
+from .controller_yaml_config import clear_yaml_cache
 from .coordinator import SamsungClimateCoordinator
 
 # Import connection classes to ensure they register themselves via decorators
@@ -48,11 +48,14 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) 
 
     if entry.version == 1:
         # v1 → v2: Validating schema to ensure integrity.
-        v2_schema = vol.Schema({
-            vol.Required("ip_address"): cv.string,
-            vol.Optional("token"): cv.string,
-            vol.Optional("mac"): cv.string,
-        }, extra=vol.ALLOW_EXTRA)
+        v2_schema = vol.Schema(
+            {
+                vol.Required("ip_address"): cv.string,
+                vol.Optional("token"): cv.string,
+                vol.Optional("mac"): cv.string,
+            },
+            extra=vol.ALLOW_EXTRA,
+        )
 
         try:
             v2_schema(dict(entry.data))
@@ -78,7 +81,6 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) 
 
 
 async def async_setup(_hass: HomeAssistant, _typing_config: dict[str, Any]) -> bool:
-
     """Set up the Climate IP component."""
     # Custom reload action removed as per HA Core standards.
     # Users should use the native UI reload feature for Config Entries.
@@ -96,7 +98,7 @@ async def async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -> bool: # pylint: disable=import-outside-toplevel,too-many-locals,too-many-branches,too-many-statements
+async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -> bool:  # pylint: disable=import-outside-toplevel,too-many-locals,too-many-branches,too-many-statements
     """Set up Samsung Climate IP from a config entry."""
 
     # Merge options into runtime_config at startup so settings from the OptionsFlow
@@ -118,7 +120,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
     # fmt: on
 
     devices_config = runtime_config.get(CONF_DEVICES)
-    _LOGGER.debug("Climate IP setup. devices_config: %s", devices_config)  # pragma: no mutate
+    _LOGGER.debug(
+        "Climate IP setup. devices_config: %s", devices_config
+    )  # pragma: no mutate
     if devices_config:
         coordinators: dict[str, SamsungClimateCoordinator] = {}
         for device_info in devices_config:
@@ -129,7 +133,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
             # MIM-H03 Wifi-kit (ID 0) is a management controller, not a climate device.
             # We skip it to avoid template errors and incorrect entity registration.
             if device_id == "0":
-                _LOGGER.debug("Skipping Wifi-kit management device (ID 0)")  # pragma: no mutate
+                _LOGGER.debug(
+                    "Skipping Wifi-kit management device (ID 0)"
+                )  # pragma: no mutate
                 continue
 
             device_config_data = runtime_config.copy()
@@ -138,7 +144,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
             # Ensure unique_id is truly unique by appending device_id if uuid is missing
             # or if it matches the parent UUID to avoid registry collisions.
             base_unique_id = device_uuid or entry.unique_id
-            if base_unique_id and device_id and f"_{device_id}" not in str(base_unique_id):
+            if (
+                base_unique_id
+                and device_id
+                and f"_{device_id}" not in str(base_unique_id)
+            ):
                 device_config_data["unique_id"] = f"{base_unique_id}_{device_id}"
             else:
                 device_config_data["unique_id"] = base_unique_id
@@ -161,7 +171,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
             # The coordinator is initialized with discovery info to ensure correct naming
             # and parent-child relationship (via_device) in the HA registry.
             coordinator = SamsungClimateCoordinator(
-                hass, controller, entry, device_info=device_info, parent_unique_id=entry.unique_id
+                hass,
+                controller,
+                entry,
+                device_info=device_info,
+                parent_unique_id=entry.unique_id,
             )
 
             # Wait for the first refresh to complete before setting up platforms.
@@ -174,7 +188,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
                 # fmt: off
                 _LOGGER.error("%s Initial connection to Climate IP failed: %s", controller.log_prefix, ex)  # pragma: no mutate
                 # fmt: on
-                raise ConfigEntryNotReady(f"Device unreachable during startup: {ex}") from ex  # pragma: no mutate
+                raise ConfigEntryNotReady(
+                    f"Device unreachable during startup: {ex}"
+                ) from ex  # pragma: no mutate
 
             if device_id:
                 coordinators[device_id] = coordinator
@@ -212,7 +228,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
             # fmt: off
             _LOGGER.debug("%s Initial connection to Climate IP failed: %s", controller.log_prefix, ex)  # pragma: no mutate
             # fmt: on
-            raise ConfigEntryNotReady(f"Device unreachable during startup: {ex}") from ex  # pragma: no mutate
+            raise ConfigEntryNotReady(
+                f"Device unreachable during startup: {ex}"
+            ) from ex  # pragma: no mutate
 
         # Store coordinator in runtime_data
         entry.runtime_data = single_coordinator
@@ -235,7 +253,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -
     # Stop background tasks BEFORE unloading platforms to prevent asymmetric cleanup.
     entry_data = entry.runtime_data
     if entry_data:
-        _LOGGER.debug("Shutting down background connection tasks for entry %s", entry.entry_id)  # pragma: no mutate
+        _LOGGER.debug(
+            "Shutting down background connection tasks for entry %s", entry.entry_id
+        )  # pragma: no mutate
         if isinstance(entry_data, dict):  # Multiple devices
             for coordinator in entry_data.values():
                 await coordinator.async_shutdown()

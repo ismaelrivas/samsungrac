@@ -24,7 +24,8 @@ class SamsungTokenAcquirer8888:
     """Manages the token acquisition process for modern Samsung ACs using asyncio.
     Uses a raw TCP server to handle malformed HTTP headers from some AC units.
     """
-# pylint: disable=f-string-without-interpolation,line-too-long,too-many-branches,too-many-instance-attributes,too-many-locals,too-many-statements,unused-variable
+
+    # pylint: disable=f-string-without-interpolation,line-too-long,too-many-branches,too-many-instance-attributes,too-many-locals,too-many-statements,unused-variable
 
     def __init__(self, hass: Any, ac_ip: str, cert_path: str) -> None:
         """Initialize the acquirer."""
@@ -36,7 +37,9 @@ class SamsungTokenAcquirer8888:
             self._cert_path = str(Path(__file__).parent / cert_path)
         else:
             self._cert_path = cert_path
-        _LOGGER.debug("Final resolved certificate path for token acquirer: %s", self._cert_path)  # pragma: no mutate
+        _LOGGER.debug(
+            "Final resolved certificate path for token acquirer: %s", self._cert_path
+        )  # pragma: no mutate
 
         self._listener_ip: str = hass.config.api.local_ip
         self._listener_port: int = 8889
@@ -52,7 +55,9 @@ class SamsungTokenAcquirer8888:
     ) -> None:
         """Handle incoming connection from the AC."""
         addr = writer.get_extra_info("peername")  # pragma: no mutate
-        _LOGGER.debug("Token listener accepted connection from %s", addr)  # pragma: no mutate
+        _LOGGER.debug(
+            "Token listener accepted connection from %s", addr
+        )  # pragma: no mutate
 
         try:
             # Read data with a timeout
@@ -71,19 +76,24 @@ class SamsungTokenAcquirer8888:
 
                         # Check if we have enough data to stop reading
                         # We stop if we see the closing brace of the JSON or the specific token key
-                        decoded_check = data.decode("utf-8", errors="ignore")  # pragma: no mutate
+                        decoded_check = data.decode(
+                            "utf-8", errors="ignore"
+                        )  # pragma: no mutate
                         if "DeviceToken" in decoded_check and "}" in decoded_check:
                             break
             except TimeoutError:
                 pass  # Break out cleanly if we hit the limit
 
             if not data:
-                _LOGGER.debug("Token listener received empty data.")  # pragma: no mutate
+                _LOGGER.debug(
+                    "Token listener received empty data."
+                )  # pragma: no mutate
                 return
 
             decoded_data = data.decode("utf-8", errors="ignore")  # pragma: no mutate
             _LOGGER.debug(  # pragma: no mutate
-                "Token listener received raw data:\n%s", mask_sensitive_data(decoded_data)
+                "Token listener received raw data:\n%s",
+                mask_sensitive_data(decoded_data),
             )
 
             token: str | None = None  # pragma: no mutate
@@ -93,7 +103,9 @@ class SamsungTokenAcquirer8888:
             match = DEVICE_TOKEN_RE.search(decoded_data)
             if match:
                 token = match.group(1).strip('"')
-                _LOGGER.info("Token successfully extracted via Regex.")  # pragma: no mutate
+                _LOGGER.info(
+                    "Token successfully extracted via Regex."
+                )  # pragma: no mutate
             else:
                 # STRATEGY 2: Try finding JSON body if regex fails
                 json_start = decoded_data.find("{")
@@ -103,13 +115,17 @@ class SamsungTokenAcquirer8888:
                         json_data = json_loads(json_candidate)
                         token = json_data.get("DeviceToken")
                         if token:
-                            _LOGGER.info("Token successfully extracted via JSON parsing.")  # pragma: no mutate
+                            _LOGGER.info(
+                                "Token successfully extracted via JSON parsing."
+                            )  # pragma: no mutate
                     # Specific exceptions instead of a broad catch-all
                     except (*JSON_DECODE_EXCEPTIONS, ValueError):
                         pass
 
             if token:
-                _LOGGER.info("Token successfully received from AC unit.")  # pragma: no mutate
+                _LOGGER.info(
+                    "Token successfully received from AC unit."
+                )  # pragma: no mutate
                 self._received_token = token
                 self._token_received_event.set()
 
@@ -125,7 +141,9 @@ class SamsungTokenAcquirer8888:
                 writer.write(response.encode("utf-8"))
                 await writer.drain()
             else:
-                _LOGGER.warning("Connection received but no token could be extracted.")  # pragma: no mutate
+                _LOGGER.warning(
+                    "Connection received but no token could be extracted."
+                )  # pragma: no mutate
                 # Send 400 Bad Request
                 response = (
                     "HTTP/1.1 400 Bad Request\r\n"
@@ -141,7 +159,9 @@ class SamsungTokenAcquirer8888:
         except Exception as e:  # pylint: disable=broad-exception-caught
             # This is the main server loop for a client, so catching broad exceptions
             # here is acceptable to prevent a single bad client from crashing the listener.
-            _LOGGER.error("Error handling AC connection: %s", e, exc_info=True)  # pragma: no mutate
+            _LOGGER.error(
+                "Error handling AC connection: %s", e, exc_info=True
+            )  # pragma: no mutate
         finally:
             _LOGGER.debug("Closing connection from %s", addr)  # pragma: no mutate
             writer.close()
@@ -157,7 +177,9 @@ class SamsungTokenAcquirer8888:
             from .helpers import async_create_samsung_ssl_context
 
             ssl_context = await async_create_samsung_ssl_context(
-                cert_path=self._cert_path, ciphers="HIGH:!aNULL:!MD5:@SECLEVEL=0", is_server=True
+                cert_path=self._cert_path,
+                ciphers="HIGH:!aNULL:!MD5:@SECLEVEL=0",
+                is_server=True,
             )
 
             # Start the server securely on the HA interface rather than 0.0.0.0 uniformly
@@ -186,7 +208,9 @@ class SamsungTokenAcquirer8888:
         except TokenAcquisitionError:
             raise
         except Exception as e:  # pylint: disable=broad-exception-caught
-            _LOGGER.error("Failed to start listener server: %s", e, exc_info=True)  # pragma: no mutate
+            _LOGGER.error(
+                "Failed to start listener server: %s", e, exc_info=True
+            )  # pragma: no mutate
             return False
 
     async def async_initiate_pairing(self) -> None:
@@ -194,13 +218,16 @@ class SamsungTokenAcquirer8888:
         Phase 1: Starts the local server and sends the initial token request to the AC.
         """
         if not await self._start_listener_server():
-            raise TokenAcquisitionError("Failed to start the local listener server")  # pragma: no mutate
+            raise TokenAcquisitionError(
+                "Failed to start the local listener server"
+            )  # pragma: no mutate
 
-        url = f"https://{self._ac_ip}:{self._ac_port}/devicetoken/request"
         headers = {"Host": f"{self._listener_ip}:{self._listener_port}"}
         payload = {"DeviceToken": "xxxxxxxxxxx"}
 
-        _LOGGER.info("Requesting token from AC at %s:%s", self._ac_ip, self._ac_port)  # pragma: no mutate
+        _LOGGER.info(
+            "Requesting token from AC at %s:%s", self._ac_ip, self._ac_port
+        )  # pragma: no mutate
 
         # Setup Client SSL Context
         # pylint: disable=import-outside-toplevel
@@ -230,12 +257,12 @@ class SamsungTokenAcquirer8888:
                 # Build HTTP request manually (raw socket does not have an HTTP client layer)
                 body = json_dumps(payload)
                 request_lines = [
-                    f"POST /devicetoken/request HTTP/1.1",
+                    "POST /devicetoken/request HTTP/1.1",
                     f"Host: {headers['Host']}",
-                    f"Content-Type: application/json",
+                    "Content-Type: application/json",
                     f"Content-Length: {len(body)}",
-                    f"Connection: close",
-                    f"",
+                    "Connection: close",
+                    "",
                     f"{body}",
                 ]
                 request_data = "\r\n".join(request_lines)
@@ -255,27 +282,41 @@ class SamsungTokenAcquirer8888:
                 await writer.wait_closed()
 
             # Parse the response leniently: we only check for a 200 OK status line
-            decoded_resp = response_data.decode("utf-8", errors="ignore")  # pragma: no mutate
-            _LOGGER.debug("AC responded to pairing request with:\n%s", decoded_resp[:200])  # pragma: no mutate
+            decoded_resp = response_data.decode(
+                "utf-8", errors="ignore"
+            )  # pragma: no mutate
+            _LOGGER.debug(
+                "AC responded to pairing request with:\n%s", decoded_resp[:200]
+            )  # pragma: no mutate
 
             # Only verify that the response looks like a 200 OK (lenient: malformed headers accepted)
             if "200 OK" in decoded_resp:
-                _LOGGER.info("Token request accepted by AC (200 OK via raw socket)")  # pragma: no mutate
+                _LOGGER.info(
+                    "Token request accepted by AC (200 OK via raw socket)"
+                )  # pragma: no mutate
             else:
-                first_line = decoded_resp.split("\r\n")[0] if decoded_resp else "<empty response>"
+                first_line = (
+                    decoded_resp.split("\r\n")[0]
+                    if decoded_resp
+                    else "<empty response>"
+                )
                 raise TokenAcquisitionError(  # pragma: no mutate
                     f"AC responded with non-200 status or malformed response: {first_line}"
                 )
 
         except (asyncio.TimeoutError, ConnectionError, OSError) as e:
             await self.async_close()
-            raise CannotConnect(f"Failed to connect to AC via raw socket: {e}") from e  # pragma: no mutate
+            raise CannotConnect(
+                f"Failed to connect to AC via raw socket: {e}"
+            ) from e  # pragma: no mutate
         except TokenAcquisitionError:
             await self.async_close()
             raise
         except Exception as e:  # pylint: disable=broad-exception-caught
             await self.async_close()
-            raise TokenAcquisitionError(f"Unexpected error during pairing request: {e}") from e  # pragma: no mutate
+            raise TokenAcquisitionError(
+                f"Unexpected error during pairing request: {e}"
+            ) from e  # pragma: no mutate
 
     async def async_wait_for_token(self) -> str:
         """
@@ -287,16 +328,22 @@ class SamsungTokenAcquirer8888:
 
             if self._received_token:
                 return self._received_token
-            raise TokenAcquisitionError("Event was set but no token was stored")  # pragma: no mutate
+            raise TokenAcquisitionError(
+                "Event was set but no token was stored"
+            )  # pragma: no mutate
         except TimeoutError as exc:
-            raise TokenAcquisitionError("Timed out waiting for the AC to send the token") from exc  # pragma: no mutate
+            raise TokenAcquisitionError(
+                "Timed out waiting for the AC to send the token"
+            ) from exc  # pragma: no mutate
         finally:
             await self.async_close()
 
     async def async_close(self) -> None:
         """Shuts down the listener server."""
         if self._server:
-            _LOGGER.info("Shutting down async token listener server")  # pragma: no mutate
+            _LOGGER.info(
+                "Shutting down async token listener server"
+            )  # pragma: no mutate
             self._server.close()
             await self._server.wait_closed()
             self._server = None
