@@ -1,37 +1,26 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
-"""Tests for the diagnostics allowlist redaction (H-09).
+"""Tests for the diagnostics support in climate_ip."""
 
-Since SamsungClimateCoordinator is imported lazily inside the function,
-we test the allowlist logic by calling the function with a mocked hass/entry
-that returns a plain dict (not a SamsungClimateCoordinator), which exercises
-the redaction path without needing the coordinator import.
-"""
-# pylint: disable=import-outside-toplevel,redefined-outer-name
-
+from dataclasses import dataclass
 from unittest.mock import MagicMock
 
 import pytest
 
 from custom_components.climate_ip.const import DOMAIN
+from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 from custom_components.climate_ip.diagnostics import (
     TO_REDACT,
     async_get_config_entry_diagnostics,
 )
-
-# Inject legacy keys that these tests expect to be redacted
-TO_REDACT.update({"cert", "api_secret", "password"})
 from homeassistant.core import HomeAssistant
 
-# The SAFE_KEYS set from diagnostics.py — used to validate test coverage
-EXPECTED_SAFE_KEYS = {
-    "device_type",
-    "port",
-    "name",
-    "poll_interval",
-    "conn_method",
-    "temp_native_current",
-    "temp_native_target",
-}
+
+@dataclass
+class DummyCoordinatorData:
+    """Dummy dataclass for testing asdict conversion."""
+
+    power: str = "on"
+    target_temperature: float = 22.0
 
 
 @pytest.fixture
@@ -39,7 +28,6 @@ def mock_entry():
     """Create a mock config entry with both safe and sensitive keys."""
     entry = MagicMock()
     entry.data = {
-        # Safe keys (should be visible)
         "device_type": "samsung_8888",
         "ip_address": "192.168.1.100",
         "port": 8888,
@@ -48,7 +36,6 @@ def mock_entry():
         "conn_method": "raw",
         "temp_native_current": "C",
         "temp_native_target": "C",
-        # Sensitive keys (should be redacted)
         "token": "super_secret_token_12345",
         "mac": "AA:BB:CC:DD:EE:FF",
         "cert": "/path/to/private/cert.pem",
@@ -56,145 +43,128 @@ def mock_entry():
     entry.options = {"poll_interval": 30}
     entry.unique_id = "test_unique_id"
     entry.entry_id = "test_entry_id"
+    entry.domain = DOMAIN
+    entry.title = "Test AC"
     return entry
 
 
 @pytest.fixture
 def mock_hass(mock_entry):
-    """Create a mock hass that returns a plain string (not a coordinator).
-
-    This causes diagnostics to skip both the isinstance(SamsungClimateCoordinator)
-    and isinstance(dict) branches, exercising only the redaction logic.
-    """
+    """Create a mock hass instance."""
     hass = MagicMock()
     mock_entry.runtime_data = "not_a_coordinator"
     hass.data = {DOMAIN: {mock_entry.entry_id: "not_a_coordinator"}}
     return hass
 
 
-@pytest.fixture
-def anyio_backend():
-    """Use asyncio as the anyio backend."""
-    return "asyncio"
-
-
-
-async def test_safe_keys_are_visible(mock_hass, mock_entry):
-    """Test that allowlisted keys appear unredacted in diagnostics."""
-    result = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
-    entry_data = result["entry"]["data"]
-
-    for key in EXPECTED_SAFE_KEYS:
-        if key in mock_entry.data:
-            assert (
-                entry_data[key] == mock_entry.data[key]
-            ), f"Safe key '{key}' should be visible but got: {entry_data[key]}"
-
-
-
-async def test_sensitive_keys_are_redacted(mock_hass, mock_entry):
-    """Test that non-allowlisted keys are redacted."""
-    result = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
-    entry_data = result["entry"]["data"]
-
-    # After mask_sensitive_data(), the redacted values may be further masked.
-    # The key assertion is that the original sensitive values are NOT present.
-    assert entry_data["token"] != "super_secret_token_12345"
-    assert entry_data["mac"] != "AA:BB:CC:DD:EE:FF"
-    assert entry_data["cert"] != "/path/to/private/cert.pem"
-
-
-
-async def test_options_and_unique_id_present(mock_hass, mock_entry):
-    """Test that options and unique_id are included in diagnostics."""
+async def test_diagnostics_entry_fields(mock_hass, mock_entry):
+    """Test entry fields are correctly extracted in diagnostics payload."""
     result = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
 
-    # Note: unique_id may be partially masked by mask_sensitive_data() helper
-    assert result["entry"]["unique_id"] is not None
-    assert result["entry"]["options"] is not None
+    assert "entry" in result
+    entry_dict = result["entry"]
+    assert entry_dict["domain"] == DOMAIN
+    assert entry_dict["title"] == "Test AC"
+    assert entry_dict["unique_id"] == "**REDACTED**"
+    assert entry_dict["options"] == {"poll_interval": 30}
+    assert entry_dict["data"]["device_type"] == "samsung_8888"
 
 
-
-async def test_unknown_future_keys_are_redacted(mock_hass, mock_entry):
-    """Test that any new key added in the future is automatically redacted."""
-    mock_entry.data["api_secret"] = "new_sensitive_key"
-    mock_entry.data["password"] = "hunter2"
+async def test_diagnostics_all_sensitive_keys_redacted(mock_hass, mock_entry):
+    """Test every sensitive key defined in TO_REDACT is properly redacted."""
+    # Populate entry.data with every key from TO_REDACT
+    for key in TO_REDACT:
+        mock_entry.data[key] = f"sensitive_value_for_{key}"
 
     result = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
     entry_data = result["entry"]["data"]
 
-    assert entry_data["api_secret"] == "**REDACTED**"
-    assert entry_data["password"] == "**REDACTED**"
+    for key in TO_REDACT:
+        assert (
+            entry_data[key] == "**REDACTED**"
+        ), f"Key '{key}' in TO_REDACT was not redacted!"
 
 
-async def test_sensitive_keys_are_redacted_explicit(hass: HomeAssistant) -> None:
-    """Test that explicitly defined sensitive keys are redacted."""
-    mock_entry = MagicMock()
-    mock_entry.entry_id = "test_123"
-    mock_entry.domain = "climate_ip"
-    mock_entry.title = "Test AC"
-    mock_entry.unique_id = "AABBCCDDEEFF"
+async def test_diagnostics_single_coordinator(mock_hass, mock_entry):
+    """Test single coordinator diagnostics extraction."""
+    mock_coordinator = MagicMock(spec=SamsungClimateCoordinator)
+    mock_coordinator.data = DummyCoordinatorData(power="on", target_temperature=24.0)
 
-    # Populate data with sensitive keys known to be in TO_REDACT
-    mock_entry.data = {
-        "ip_address": "192.168.1.100",
-        "mac": "AA:BB:CC:DD:EE:FF",
-        "token": "super_secret_token_12345",
-        "password": "my_secret_password",
+    mock_controller = MagicMock()
+    mock_controller.state_attributes = {"power": "on", "mode": "cool"}
+    mock_controller.last_poll_data = {"raw_status": "ok"}
+    mock_controller.connection_diagnostics = {"ping_ms": 12}
+    mock_coordinator.controller = mock_controller
+
+    mock_entry.runtime_data = mock_coordinator
+
+    result = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+
+    assert "coordinator_data" in result
+    assert result["coordinator_data"] == {"power": "on", "target_temperature": 24.0}
+    assert result["controller_state"] == {"power": "on", "mode": "cool"}
+    assert result["last_poll_response"] == {"raw_status": "ok"}
+    assert result["connection_diagnostics"] == {"ping_ms": 12}
+
+
+async def test_diagnostics_single_coordinator_no_optional_attrs(mock_hass, mock_entry):
+    """Test single coordinator when optional attributes and data are absent."""
+    mock_coordinator = MagicMock(spec=SamsungClimateCoordinator)
+    mock_coordinator.data = None
+    mock_coordinator.controller = object()  # Bare object without optional attributes
+
+    mock_entry.runtime_data = mock_coordinator
+
+    result = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+
+    assert "coordinator_data" not in result
+    assert "controller_state" not in result
+    assert "last_poll_response" not in result
+    assert "connection_diagnostics" not in result
+
+
+async def test_diagnostics_multi_coordinator(mock_hass, mock_entry):
+    """Test multi-device dict of coordinators diagnostics extraction."""
+    coord1 = MagicMock(spec=SamsungClimateCoordinator)
+    coord1.data = DummyCoordinatorData(power="on", target_temperature=21.0)
+    coord1.controller = MagicMock()
+    coord1.controller.state_attributes = {"device": "ac_1"}
+    coord1.controller.last_poll_data = {"status_1": 1}
+    coord1.controller.connection_diagnostics = {"latency": 5}
+
+    coord2 = MagicMock(spec=SamsungClimateCoordinator)
+    coord2.data = None
+    coord2.controller = object()
+
+    mock_entry.runtime_data = {
+        "dev_1": coord1,
+        "dev_2": coord2,
+        "dev_3": "non_coordinator_object",
     }
-    mock_entry.options = {}
 
-    # Mock the coordinator data to be empty for this test
-    mock_entry.runtime_data = None
-    hass.data = {"climate_ip": {}}
+    result = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
 
-    result = await async_get_config_entry_diagnostics(hass, mock_entry)
-    entry_data = result["entry"]["data"]
+    assert "coordinators" in result
+    coordinators_dict = result["coordinators"]
+    assert "dev_1" in coordinators_dict
+    assert "dev_2" in coordinators_dict
+    assert "dev_3" not in coordinators_dict
 
-    # Verify that keys in TO_REDACT are replaced with **REDACTED**
-    assert entry_data["token"] == "**REDACTED**"
-    assert entry_data["mac"] == "**REDACTED**"
-    assert entry_data["password"] == "**REDACTED**"
-    assert entry_data["ip_address"] == "**REDACTED**"
+    dev1_diag = coordinators_dict["dev_1"]
+    assert dev1_diag["coordinator_data"] == {"power": "on", "target_temperature": 21.0}
+    assert dev1_diag["controller_state"] == {"device": "ac_1"}
+    assert dev1_diag["last_poll_response"] == {"status_1": 1}
+    assert dev1_diag["connection_diagnostics"] == {"latency": 5}
 
-    # Verify non-sensitive data remains intact
-    assert result["entry"]["domain"] == "climate_ip"
-
-
-async def test_non_sensitive_keys_are_kept(hass: HomeAssistant) -> None:
-    """Test that non-sensitive keys are not modified."""
-    mock_entry = MagicMock()
-    mock_entry.entry_id = "test_123"
-    mock_entry.domain = "climate_ip"
-    mock_entry.title = "Test AC"
-    mock_entry.unique_id = "AABBCCDDEEFF"
-
-    mock_entry.data = {"device_type": "samsung_8888", "poll_interval": 60}
-    mock_entry.options = {}
-
-    mock_entry.runtime_data = None
-    hass.data = {"climate_ip": {}}
-
-    result = await async_get_config_entry_diagnostics(hass, mock_entry)
-    entry_data = result["entry"]["data"]
-
-    # These keys are not in TO_REDACT, so they should be left intact
-    assert entry_data["device_type"] == "samsung_8888"
-    assert entry_data["poll_interval"] == 60
+    dev2_diag = coordinators_dict["dev_2"]
+    assert "coordinator_data" not in dev2_diag
+    assert "controller_state" not in dev2_diag
+    assert "last_poll_response" not in dev2_diag
+    assert "connection_diagnostics" not in dev2_diag
 
 
-async def test_recursive_redaction(hass: HomeAssistant) -> None:
+async def test_recursive_redaction(mock_hass, mock_entry):
     """Test that sensitive keys are redacted recursively in nested structures."""
-    mock_entry = MagicMock()
-    mock_entry.entry_id = "test_123"
-    mock_entry.domain = "climate_ip"
-    mock_entry.title = "Test AC"
-    mock_entry.unique_id = "AABBCCDDEEFF"
-
-    mock_entry.data = {}
-    mock_entry.options = {}
-
-    # Create a nested structure with sensitive keys deeply embedded directly inside entry data
     mock_entry.data = {
         "level1": {
             "level2": {
@@ -205,18 +175,14 @@ async def test_recursive_redaction(hass: HomeAssistant) -> None:
         },
         "list_of_dicts": [{"mac": "AA:BB:CC", "other": "info"}, {"refresh_token": "refresh_123"}],
     }
-
     mock_entry.runtime_data = None
-    hass.data = {"climate_ip": {}}
 
-    result = await async_get_config_entry_diagnostics(hass, mock_entry)
+    result = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
 
-    # Assert redactions happened inside the nested structure
     diag_data = result["entry"]["data"]
     assert diag_data["level1"]["level2"]["token"] == "**REDACTED**"
     assert diag_data["level1"]["level2"]["access_token"] == "**REDACTED**"
     assert diag_data["level1"]["level2"]["safe_key"] == "safe_value"
-
     assert diag_data["list_of_dicts"][0]["mac"] == "**REDACTED**"
     assert diag_data["list_of_dicts"][0]["other"] == "info"
     assert diag_data["list_of_dicts"][1]["refresh_token"] == "**REDACTED**"
