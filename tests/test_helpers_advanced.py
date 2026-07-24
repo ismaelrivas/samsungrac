@@ -307,7 +307,6 @@ def test_token_sanitization() -> None:
     assert sanitize_token("a" * 129) is None  # length 129 (too long)
 
 
-
 class TestSafeXmlToDict:
     """Tests for the secured XML to dict converter."""
 
@@ -577,7 +576,6 @@ def test_mask_sensitive_data_strings():
     # 6. DeviceToken regex: DeviceToken="secret123"
     str_device_token = 'DeviceToken="secret123"'
     assert mask_sensitive_data(str_device_token) == 'DeviceToken="***"'
-
 
 
 # --- async_check_network_reachability (Actualizado) ---

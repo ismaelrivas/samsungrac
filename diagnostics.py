@@ -63,9 +63,7 @@ def _get_mac_threat_patterns(entry: "ClimateIPConfigEntry") -> set[str]:
         if len(clean) == 12:
             patterns.add(clean)
             formatted_colon = ":".join(clean[i : i + 2] for i in range(0, 12, 2))
-            formatted_dash = "-".join(
-                clean[i : i + 2] for i in range(0, 12, 2)
-            )
+            formatted_dash = "-".join(clean[i : i + 2] for i in range(0, 12, 2))
             patterns.add(formatted_colon)
             patterns.add(formatted_dash)
         elif len(candidate) > 5:
@@ -80,9 +78,7 @@ def _deep_redact_substrings(val: Any, threat_patterns: set[str]) -> Any:
         return val
 
     # Sort patterns by length descending so longer MAC formats are replaced first
-    sorted_patterns = sorted(
-        threat_patterns, key=len, reverse=True
-    )
+    sorted_patterns = sorted(threat_patterns, key=len, reverse=True)
 
     if isinstance(val, str):
         result = val

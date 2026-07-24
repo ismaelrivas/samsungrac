@@ -1087,7 +1087,7 @@ async def test_connection_manager_full_coverage(connection):
     with (
         patch.object(
             connection, "_process_command_queue", new_callable=AsyncMock
-        ) as mock_cmd,
+        ),
         patch.object(
             connection, "_process_read_queue", new_callable=AsyncMock
         ) as mock_read_q,
@@ -1103,7 +1103,9 @@ async def test_connection_manager_full_coverage(connection):
             except asyncio.CancelledError:
                 pass
             except TimeoutError:
-                pytest.fail("_connection_manager deadlocked! Mutant broke task creation/dispatch.")
+                pytest.fail(
+                    "_connection_manager deadlocked! Mutant broke task creation/dispatch."
+                )
 
         # The loop processed the read queue at least once before CancelledError killed it
         assert mock_read_q.call_count >= 1
@@ -1335,11 +1337,15 @@ async def test_connection_manager_queues_and_cleanup(connection):
             # y reventamos el segundo sleep (el de recuperación tras el error)
             with patch("asyncio.sleep", side_effect=[None, asyncio.CancelledError()]):
                 try:
-                    await asyncio.wait_for(connection._connection_manager(), timeout=2.0)
+                    await asyncio.wait_for(
+                        connection._connection_manager(), timeout=2.0
+                    )
                 except asyncio.CancelledError:
                     pass
                 except TimeoutError:
-                    pytest.fail("_connection_manager deadlocked! Mutant broke queue/read task lifecycle.")
+                    pytest.fail(
+                        "_connection_manager deadlocked! Mutant broke queue/read task lifecycle."
+                    )
 
             # MATA MUTANTES DEL FINALLY: Valida que task.cancel() se llamó en ambas tareas
             # irp
@@ -1859,7 +1865,9 @@ async def test_connection_manager_strict_buffer(connection):
         except asyncio.CancelledError:
             pass
         except TimeoutError:
-            pytest.fail("_connection_manager deadlocked! Mutant sabotaged buffer processing.")
+            pytest.fail(
+                "_connection_manager deadlocked! Mutant sabotaged buffer processing."
+            )
 
         # LA TRAMPA: Si en la segunda iteración el buffer no conservó el b"FRAGMENT",
         # significa que Mutmut saboteó la asignación "buffer = read_buffer" a None o vacío.

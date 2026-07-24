@@ -247,7 +247,9 @@ async def test_connection_manager_critical_survivors(connection):
             try:
                 await asyncio.wait_for(connection._connection_manager(), timeout=1.0)
             except TimeoutError:
-                pytest.fail("_connection_manager deadlocked! Mutant broke read/queue task lifecycle.")
+                pytest.fail(
+                    "_connection_manager deadlocked! Mutant broke read/queue task lifecycle."
+                )
             except asyncio.CancelledError:
                 pass  # The manager cancelled itself as expected
 

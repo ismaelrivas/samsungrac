@@ -340,4 +340,3 @@ async def test_diagnostics_isolated_mac_fallback_key(mock_hass):
 
     result = await async_get_config_entry_diagnostics(mock_hass, entry)
     assert result["entry"]["options"]["info"] == "MAC is **REDACTED**"
-

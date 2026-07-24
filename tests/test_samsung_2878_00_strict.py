@@ -187,7 +187,9 @@ async def test_00_connection_manager_read_task_creation(connection):
         try:
             await asyncio.wait_for(connection._connection_manager(), timeout=1.0)
         except TimeoutError:
-            pytest.fail("_connection_manager deadlocked! Mutant detected (read_task=None).")
+            pytest.fail(
+                "_connection_manager deadlocked! Mutant detected (read_task=None)."
+            )
         except asyncio.CancelledError:
             pass
 
@@ -257,7 +259,9 @@ async def test_00_connection_manager_failfast_queue_mutants(connection):
     await connection._cmd_queue.put(("<TestCmd/>", cmd_future))
 
     # Reader returns data then CancelledError to break the loop
-    connection._reader.read = AsyncMock(side_effect=[b"<Response>OK</Response>", asyncio.CancelledError()])
+    connection._reader.read = AsyncMock(
+        side_effect=[b"<Response>OK</Response>", asyncio.CancelledError()]
+    )
 
     with (
         patch.object(

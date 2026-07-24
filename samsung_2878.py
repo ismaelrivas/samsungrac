@@ -1379,7 +1379,9 @@ class ConnectionSamsung2878(Connection):
                         read_buffer = await self._process_read_queue(buffer)
                         if read_buffer is None:  # Connection closed
                             buffer = b""  # pragma: no mutate  # Reset buffer to prevent NoneType error on next iteration
-                            await asyncio.sleep(0.05)  # Yield to event loop to prevent starvation on rapid reconnect cycles
+                            await asyncio.sleep(
+                                0.05
+                            )  # Yield to event loop to prevent starvation on rapid reconnect cycles
                             continue
                         buffer = read_buffer
 
@@ -1414,7 +1416,9 @@ class ConnectionSamsung2878(Connection):
                         e,
                         exc_info=True,
                     )  # pragma: no mutate
-                    await asyncio.sleep(0.05)  # Yield to event loop to prevent starvation on unexpected errors
+                    await asyncio.sleep(
+                        0.05
+                    )  # Yield to event loop to prevent starvation on unexpected errors
         finally:
             _LOGGER.debug(
                 "%s Connection manager exiting, cleaning up", self.log_prefix
