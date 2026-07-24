@@ -6,6 +6,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from homeassistant.const import CONF_MAC
+
 from custom_components.climate_ip.const import DOMAIN
 from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 from custom_components.climate_ip.diagnostics import (
@@ -164,19 +166,23 @@ async def test_diagnostics_multi_coordinator(mock_hass, mock_entry):
 
 async def test_recursive_redaction(mock_hass, mock_entry):
     """Test that sensitive keys are redacted recursively in nested structures."""
-    mock_entry.data = {
-        "level1": {
-            "level2": {
-                "token": "super_secret_token",
-                "access_token": "oauth_token_123",
-                "safe_key": "safe_value",
-            }
-        },
-        "list_of_dicts": [
-            {"mac": "AA:BB:CC", "other": "info"},
-            {"refresh_token": "refresh_123"},
-        ],
-    }
+    mock_entry.data.update(
+        {
+            "level1": {
+                "level2": {
+                    "token": "super_secret_token",
+                    "access_token": "oauth_token_123",
+                    "safe_key": "safe_value",
+                }
+            },
+            "list_of_dicts": [
+                {"mac": "AA:BB:CC", "other": "info"},
+                {"refresh_token": "refresh_123"},
+            ],
+            "a_tuple": ("112233445566", "safe_val", "192.168.1.100"),
+        }
+    )
+    mock_entry.title = "112233445566"
     mock_entry.runtime_data = None
 
     result = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
@@ -188,3 +194,107 @@ async def test_recursive_redaction(mock_hass, mock_entry):
     assert diag_data["list_of_dicts"][0]["mac"] == "**REDACTED**"
     assert diag_data["list_of_dicts"][0]["other"] == "info"
     assert diag_data["list_of_dicts"][1]["refresh_token"] == "**REDACTED**"
+    assert diag_data["a_tuple"] == ("**REDACTED**", "safe_val", "192.168.1.100")
+
+
+async def test_deep_substring_redaction_mac_and_duid(mock_hass, mock_entry):
+    """Test that embedded MAC address and DUID substrings are redacted from compound string fields."""
+    mock_entry.data.update(
+        {
+            "device_type": "samsung_8888",
+            "mac": "AA:11:22:33:44:55",
+            "name": "Samsung AC AA1122334455",
+        }
+    )
+    mock_entry.title = "Samsung AC AA:11:22:33:44:55"
+    mock_entry.unique_id = "device_AA1122334455"
+    mock_entry.runtime_data = None
+
+    result = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+
+    entry_dict = result["entry"]
+    assert entry_dict["title"] == "Samsung AC **REDACTED**"
+    assert entry_dict["unique_id"] == "**REDACTED**"
+    assert entry_dict["data"]["name"] == "Samsung AC **REDACTED**"
+    assert entry_dict["data"]["mac"] == "**REDACTED**"
+
+
+async def test_deep_substring_redaction_sort_order(mock_hass, mock_entry):
+    """Test that longer threat patterns are redacted before shorter ones."""
+    # Add a short pattern and a long pattern where short is a substring of long
+    mock_entry.data.update({"mac": "112233"})
+    mock_entry.title = "112233445566"
+    mock_entry.unique_id = "test_unique"
+    mock_entry.options = {"test_string": "Here is my 112233445566 and my 112233"}
+    mock_entry.runtime_data = None
+
+    result = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+
+    # If not sorted by length descending, "SHORT" might be replaced first in "SHORTSHORT",
+    # yielding "**REDACTED****REDACTED**" instead of just "**REDACTED**".
+    assert (
+        result["entry"]["options"]["test_string"]
+        == "Here is my **REDACTED** and my **REDACTED**"
+    )
+
+
+async def test_diagnostics_deep_redaction_formats_and_case(mock_hass, mock_entry):
+    """Test case-insensitivity, dash format, and DUID redaction."""
+    mock_entry.data = {
+        CONF_MAC: "aa:bb:cc:dd:ee:ff",
+        "custom_info": {
+            "colon_upper": "Device is AA:BB:CC:DD:EE:FF",
+            "dash_upper": "Dash AA-BB-CC-DD-EE-FF",
+            "duid_mixed": "ID is AAbbCCddEEff",
+        },
+    }
+    mock_entry.title = "Test AC"
+    mock_entry.unique_id = "test_unique_id"
+    mock_entry.runtime_data = None
+
+    result = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+
+    custom_info = result["entry"]["data"]["custom_info"]
+    assert custom_info["colon_upper"] == "Device is **REDACTED**"
+    assert custom_info["dash_upper"] == "Dash **REDACTED**"
+    assert custom_info["duid_mixed"] == "ID is **REDACTED**"
+
+
+async def test_diagnostics_deep_redaction_lists(mock_hass, mock_entry):
+    """Test deep redaction traverses list structures."""
+    mock_entry.data = {
+        CONF_MAC: "aa:bb:cc:dd:ee:ff",
+        "history": ["MAC is aa:bb:cc:dd:ee:ff", "Normal Event"],
+    }
+    mock_entry.title = "Test AC"
+    mock_entry.unique_id = "test_unique_id"
+    mock_entry.runtime_data = None
+
+    result = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+
+    history = result["entry"]["data"]["history"]
+    assert history[0] == "MAC is **REDACTED**"
+    assert history[1] == "Normal Event"
+
+
+async def test_diagnostics_mac_fallback_keys(mock_hass, mock_entry):
+    """Test fallback to 'mac' key when CONF_MAC is missing and handling of whitespace MAC."""
+    # Setup 1: CONF_MAC missing, but "mac" key present
+    mock_entry.data = {
+        "mac": "11:22:33:44:55:66",
+        "info": "Device 11:22:33:44:55:66",
+    }
+    mock_entry.title = "Test AC"
+    mock_entry.unique_id = "test_unique_id"
+    mock_entry.runtime_data = None
+
+    result = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+    assert result["entry"]["data"]["info"] == "Device **REDACTED**"
+
+    # Setup 2: CONF_MAC is pure whitespace
+    mock_entry.data = {
+        CONF_MAC: "   ",
+        "info": "Some text with spaces",
+    }
+    result = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+    assert result["entry"]["data"]["info"] == "Some text with spaces"

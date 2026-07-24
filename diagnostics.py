@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+import re
 from typing import Any, TYPE_CHECKING
 
 from homeassistant.components.diagnostics import async_redact_data
+from homeassistant.const import CONF_MAC
 from homeassistant.core import HomeAssistant
 
 if TYPE_CHECKING:
@@ -33,6 +35,74 @@ TO_REDACT: set[str] = {
     "serialNumber",  # Samsung camelCase variant
 }
 
+# Regex to detect 12-char hex DUID or 17-char colon/dash MAC addresses
+RE_MAC_DUID = re.compile(
+    r"\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b|\b[0-9A-Fa-f]{12}\b"
+)
+
+
+def _get_mac_threat_patterns(entry: "ClimateIPConfigEntry") -> set[str]:
+    """Extract MAC address and DUID variants to build threat patterns for substring redaction."""
+    patterns: set[str] = set()
+
+    # Retrieve explicit MAC configuration values
+    raw_mac = entry.data.get(CONF_MAC) or entry.data.get("mac")  # pragma: no mutate
+    candidates: list[str] = []
+
+    if isinstance(raw_mac, str) and raw_mac.strip():  # pragma: no mutate
+        candidates.append(raw_mac.strip())
+
+    # Also inspect title and unique_id for embedded MAC patterns
+    for item in (entry.title, entry.unique_id):
+        if isinstance(item, str):
+            for match in RE_MAC_DUID.findall(item):
+                candidates.append(match)
+
+    for candidate in candidates:
+        clean = candidate.replace(":", "").replace("-", "").strip()
+        if len(clean) == 12:
+            patterns.add(clean)
+            formatted_colon = ":".join(clean[i : i + 2] for i in range(0, 12, 2))
+            formatted_dash = "-".join(
+                clean[i : i + 2] for i in range(0, 12, 2)
+            )  # pragma: no mutate
+            patterns.add(formatted_colon)
+            patterns.add(formatted_dash)  # pragma: no mutate
+        elif len(candidate) > 5:  # pragma: no mutate
+            patterns.add(candidate)
+
+    return {p for p in patterns if p}
+
+
+def _deep_redact_substrings(val: Any, threat_patterns: set[str]) -> Any:
+    """Recursively traverse data structures and redact threat patterns embedded in strings."""
+    if not threat_patterns:
+        return val
+
+    # Sort patterns by length descending so longer MAC formats are replaced first
+    sorted_patterns = sorted(
+        threat_patterns, key=len, reverse=True
+    )  # pragma: no mutate
+
+    if isinstance(val, str):
+        result = val
+        for pattern in sorted_patterns:
+            result = re.sub(
+                re.escape(pattern), "**REDACTED**", result, flags=re.IGNORECASE
+            )
+        return result
+
+    if isinstance(val, dict):
+        return {k: _deep_redact_substrings(v, threat_patterns) for k, v in val.items()}
+
+    if isinstance(val, list):
+        return [_deep_redact_substrings(v, threat_patterns) for v in val]
+
+    if isinstance(val, tuple):
+        return tuple(_deep_redact_substrings(v, threat_patterns) for v in val)
+
+    return val
+
 
 async def async_get_config_entry_diagnostics(
     _hass: HomeAssistant, entry: "ClimateIPConfigEntry"
@@ -43,9 +113,6 @@ async def async_get_config_entry_diagnostics(
     entry_data = entry.runtime_data
 
     # Filter the entry data to only include relevant information for this integration.
-    # We don't pre-filter entry.data with a hardcoded allowlist anymore;
-    # instead, we rely on async_redact_data to deep-clean the entire dictionary,
-    # ensuring no unexpected PII leaks if new fields are added in the future.
     filtered_entry_data: dict[str, Any] = {
         "data": dict(entry.data),
         "options": dict(entry.options),
@@ -67,7 +134,6 @@ async def async_get_config_entry_diagnostics(
             diagnostics_data["last_poll_response"] = (
                 entry_data.controller.last_poll_data
             )
-        # FIXED C0301: Line split to stay under 100 chars
         if hasattr(entry_data.controller, "connection_diagnostics"):
             diagnostics_data["connection_diagnostics"] = (
                 entry_data.controller.connection_diagnostics
@@ -88,7 +154,6 @@ async def async_get_config_entry_diagnostics(
                     coordinator_diag["last_poll_response"] = (
                         coordinator.controller.last_poll_data
                     )
-                # FIXED C0301: Line split to stay under 100 chars
                 if hasattr(coordinator.controller, "connection_diagnostics"):
                     coordinator_diag["connection_diagnostics"] = (
                         coordinator.controller.connection_diagnostics
@@ -101,4 +166,8 @@ async def async_get_config_entry_diagnostics(
 
     # Apply Home Assistant's native async_redact_data to recursively clean
     # the entire diagnostic tree (including nested YAML dictionaries or raw responses).
-    return async_redact_data(diagnostics_data, TO_REDACT)
+    redacted_data = async_redact_data(diagnostics_data, TO_REDACT)
+
+    # Apply deep substring walker to redact embedded MAC / DUID patterns from strings
+    threat_patterns = _get_mac_threat_patterns(entry)
+    return _deep_redact_substrings(redacted_data, threat_patterns)
