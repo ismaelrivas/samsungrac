@@ -9,7 +9,7 @@ import aiohttp
 import pytest
 
 from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
-from custom_components.climate_ip.const import CONF_CERT
+from custom_components.climate_ip.const import CONF_CERT, CONFIG_DEVICE_CONNECTION_PARAMS
 from custom_components.climate_ip.exceptions import AuthError, CannotConnect
 from homeassistant.const import CONF_TOKEN
 
@@ -306,6 +306,9 @@ async def test_get_session_args():
         
         # Verify strict arguments to kill limit/timeout mutants
         mock_connector.assert_called_with(keepalive_timeout=75, limit=1)
+        _, session_kwargs = mock_session.call_args
+        assert session_kwargs["timeout"].total == 30
+        assert session_kwargs["timeout"].connect == 10
         
         # Verify ssl context passes through
         config["use_http"] = False
@@ -1757,3 +1760,126 @@ async def test_async_execute_skips_optimization_on_mismatch(mock_session, mock_l
         res2, _ = await conn.async_execute("GET", "/other", None, {})
         assert res2 == "REQ_OK", "El mutante activó la optimización erróneamente para URL distinta"
         mock_req.assert_called_with("GET", "/other", None, {}, _is_poll=False)
+
+
+# ====================================================================================
+# UNTESTED MUTANTS ANNIHILATION
+# ====================================================================================
+
+def test_match_type_annihilation():
+    """Kill mutant 1 in match_type (type_str == CONNECTION_TYPE_AIOHTTP_8888)."""
+    assert ConnectionAiohttp8888.match_type("samsung_8888_aiohttp") is True
+    assert ConnectionAiohttp8888.match_type("other_connection_type") is False
+
+
+def test_load_from_yaml_annihilation(mock_logger, mock_hass, mock_session):
+    """Kill mutants 1, 2, 3, 4, 5 in load_from_yaml."""
+    conn = ConnectionAiohttp8888(
+        {"keep_alive": True, CONF_TOKEN: "tok"},
+        mock_logger, mock_hass, mock_session, "192.168.1.100"
+    )
+    # 1. node is None -> returns True, _keep_alive unchanged
+    res_none = conn.load_from_yaml(None, None)
+    assert res_none is True
+    assert conn._keep_alive is True
+
+    # 2. node is empty dict -> returns True, _keep_alive unchanged
+    res_empty = conn.load_from_yaml({}, None)
+    assert res_empty is True
+    assert conn._keep_alive is True
+
+    # 3. node has "keep_alive": False -> returns True, _keep_alive becomes False
+    res_false = conn.load_from_yaml({"keep_alive": False}, None)
+    assert res_false is True
+    assert conn._keep_alive is False
+
+    # 4. node has "keep_alive": True -> returns True, _keep_alive becomes True
+    res_true = conn.load_from_yaml({"keep_alive": True}, None)
+    assert res_true is True
+    assert conn._keep_alive is True
+
+
+def test_is_async_native_and_is_push_supported(mock_logger, mock_hass, mock_session):
+    """Kill mutants in is_async_native and is_push_supported properties."""
+    conn = ConnectionAiohttp8888(
+        {CONF_TOKEN: "tok"}, mock_logger, mock_hass, mock_session, "192.168.1.100"
+    )
+    assert conn.is_async_native is True
+    assert conn.is_push_supported is False
+
+
+@pytest.mark.asyncio
+async def test_try_connection_absolute_url_probe(mock_logger, mock_hass, mock_session):
+    """Kill mutants at lines 272 and 274 in _try_connection for absolute URL probe."""
+    conn = ConnectionAiohttp8888(
+        {CONF_TOKEN: "tok", "use_http": True},
+        mock_logger, mock_hass, mock_session, "192.168.1.100"
+    )
+    conn._params = {"url": "http://192.168.1.100:8888/custom_devices"}
+
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.text.return_value = '{"probe": "ok"}'
+    mock_context = AsyncMock()
+    mock_context.__aenter__.return_value = mock_response
+    mock_session.request.return_value = mock_context
+
+    result = await conn._try_connection()
+
+    assert result == '{"probe": "ok"}'
+    mock_session.request.assert_called_once()
+    args, kwargs = mock_session.request.call_args
+    assert args[0] == "GET"
+    assert args[1] == "http://192.168.1.100:8888/custom_devices"
+
+
+@pytest.mark.asyncio
+async def test_async_execute_embedded_template_sync_render(mock_session, mock_logger, mock_hass):
+    """Kill mutant at line 668 in async_execute where render() is called synchronously."""
+    conn = ConnectionAiohttp8888(
+        config={"token": "tok"}, logger=mock_logger, hass=mock_hass, session=mock_session, ip_address="1.1.1.1"
+    )
+
+    embed_cmd = ConnectionAiohttp8888(
+        config={"token": "tok"}, logger=mock_logger, hass=mock_hass, session=mock_session, ip_address="1.1.1.1"
+    )
+
+    class SyncTemplate:
+        def render(self):
+            return '{"method": "POST", "url": "/sync_embed", "json": {"a": 1}}'
+
+    embed_cmd._connection_template = SyncTemplate()
+    embed_cmd.check_execute_condition = MagicMock(return_value=True)
+    embed_cmd.async_execute = AsyncMock()
+
+    conn._embedded_command = embed_cmd
+    conn._shared_state.initialized = True
+
+    mock_response = AsyncMock(status=200, headers={})
+    mock_response.text.return_value = "{}"
+    mock_context = AsyncMock()
+    mock_context.__aenter__.return_value = mock_response
+    mock_session.request.return_value = mock_context
+
+    await conn.async_execute("GET", "/main", None, {}, device_state={"state": "on"})
+
+    embed_cmd.async_execute.assert_called_once()
+    call_kwargs = embed_cmd.async_execute.call_args[1]
+    assert call_kwargs["method"] == "POST"
+    assert call_kwargs["url"] == "/sync_embed"
+    assert call_kwargs["data"] == '{"a":1}'
+
+
+def test_create_updated_dict_get_default_none(mock_logger, mock_hass, mock_session):
+    """Kill PRUNED mutants at line 204 for Dict get default None in create_updated."""
+    conn = ConnectionAiohttp8888(
+        config={"token": "tok"}, logger=mock_logger, hass=mock_hass, session=mock_session, ip_address="1.1.1.1"
+    )
+    conn._params = {"existing": "val"}
+
+    new_conn = conn.create_updated({
+        CONFIG_DEVICE_CONNECTION_PARAMS: {"new_param": "new_val"}
+    })
+
+    assert new_conn._params == {"existing": "val", "new_param": "new_val"}
+
