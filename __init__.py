@@ -6,8 +6,6 @@ from typing import Any
 import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
 
-import importlib
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_MAC, Platform
 from homeassistant.core import HomeAssistant
