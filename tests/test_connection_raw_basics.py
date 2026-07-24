@@ -12,7 +12,7 @@ from custom_components.climate_ip.exceptions import CannotConnect
 from custom_components.climate_ip.protocol_8888 import (
     CannotConnect as LibConnError,
 )
-from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
+from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 
 
 @pytest.fixture
@@ -751,4 +751,40 @@ async def test_async_execute_defaults(mock_logger):
         # With _is_probe=False, this should raise CannotConnect
         with pytest.raises(CannotConnect):
             await conn.async_execute("GET", "/test", None, None)
+
+
+async def test_log_prefix(connection_config, mock_logger, mock_hass):
+    """Test log_prefix property across all conditional branches."""
+    with patch("os.path.exists", return_value=True):
+        # 1. Controller with unique_id set
+        conn1 = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
+        mock_controller = MagicMock()
+        mock_controller.unique_id = "ctrl_unique_123"
+        mock_controller.log_prefix = "[CTRL_LOG_PREFIX]"
+        conn1.set_controller_ref(mock_controller)
+        assert conn1.log_prefix == "[CTRL_LOG_PREFIX]"
+
+        # 2. MAC configured with 16-character DUID string (8 octets: 11:22:33:44:55:66:77:88)
+        # duid becomes "1122334455667788" (16 chars), duid[-6:] yields "667788" while duid[+6:] yields "334455667788"
+        config_mac = {CONF_MAC: "11:22:33:44:55:66:77:88"}
+        conn_mac = ConnectionRaw8888(config_mac, mock_logger, mock_hass, None, None)
+        assert conn_mac.log_prefix == "[667788]"
+
+        # 3. Host configured, no MAC, no controller
+        config_host = {CONF_IP_ADDRESS: "192.168.1.100"}
+        conn_host = ConnectionRaw8888(config_host, mock_logger, mock_hass, None, None)
+        assert conn_host.log_prefix == "[192.168.1.100]"
+
+        # 4. Fallback no MAC, no host, no controller
+        conn_none = ConnectionRaw8888({}, mock_logger, mock_hass, None, None)
+        assert conn_none.log_prefix == "[NO_IP]"
+
+
+async def test_is_push_supported(connection_config, mock_logger, mock_hass):
+    """Test is_push_supported property returns False strictly."""
+    with patch("os.path.exists", return_value=True):
+        conn = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
+        assert conn.is_push_supported is False
+        assert type(conn.is_push_supported) is bool
+
 
