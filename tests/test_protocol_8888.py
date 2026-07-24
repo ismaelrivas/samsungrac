@@ -275,7 +275,7 @@ async def test_request_timeout_reading_headers(client, mock_reader, mock_writer)
 async def test_request_malformed_headers(
     client, mock_reader, mock_writer, malformed_header
 ):
-    """Mata a los mutantes de parseo inyectando basura en las cabeceras."""
+    """Verify mutant kill parsing mutant by injecting malformed header data."""
     with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
         with patch(
             "custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context",
@@ -304,7 +304,7 @@ async def test_close_handles_task_exceptions(client, mock_writer):
 
     client._track_task(failing_task())
 
-    # Si return_exceptions=False (el mutante), esto lanzará la excepción y fallará el test.
+    # If return_exceptions=False, exception will be raised to fail test.
     await client.close()
     assert len(client._active_tasks) == 0
 

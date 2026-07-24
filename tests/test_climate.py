@@ -834,18 +834,18 @@ async def test_async_setup_platform_already_imported_skips_task(
 @pytest.mark.asyncio
 async def test_async_set_property_strict_args(base_climate_entity: ClimateIP):
     """
-    Aniquila mutantes 1-4 en async_set_property.
+    Kills mutants 1-4 en async_set_property.
     Asegura la delegación exacta de clave/valor al coordinador y la escritura de estado.
     """
-    # Inyectamos valores específicos para evitar falsos positivos con defaults
+    # Inject valores específicos para evitar falsos positivos con defaults
     await base_climate_entity.async_set_property("power_mode", "turbo")
 
-    # Asertamos la firma exacta hacia el coordinador
+    # We assert la firma exacta hacia el coordinador
     base_climate_entity.coordinator.async_set_property.assert_called_once_with(
         "power_mode", "turbo"
     )
 
-    # Asertamos la actualización síncrona en el core de HA
+    # We assert la actualización síncrona en el core de HA
     base_climate_entity.async_write_ha_state.assert_called_once()
 
 

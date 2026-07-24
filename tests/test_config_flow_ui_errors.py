@@ -23,13 +23,13 @@ from custom_components.climate_ip.const import (
 )
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 
-# Importamos nuestra "lupa" de la fase 1
+# Import schema validator helper
 from .test_config_flow_schemas import get_schema_marker
 
 
 @pytest.mark.asyncio
 async def test_handle_error_mac_required_mutants():
-    """Mata Mutantes 25-31 y 38: Verifica el booleano req_mac_err y la regeneración del esquema."""
+    """Kills mutants 25-31 y 38: Verifica el booleano req_mac_err y la regeneración del esquema."""
     flow = ClimateIpConfigFlow()
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
@@ -41,7 +41,7 @@ async def test_handle_error_mac_required_mutants():
     mac_key, _ = get_schema_marker(result["data_schema"], CONF_MAC)
     assert isinstance(
         mac_key, vol.Required
-    )  # Si el mutante inyecta False o cambia el string, esto falla
+    )  # If mutant inyecta False o cambia el string, esto falla
 
     # 2. Si el error es cualquier otro, la MAC debe ser opcional
     flow.flow_data["error_key"] = "cannot_connect"
@@ -52,7 +52,7 @@ async def test_handle_error_mac_required_mutants():
 
 @pytest.mark.asyncio
 async def test_process_samsung_device_step_error_flags():
-    """Mata Mutantes 40, 48, 97, 98, 105: Banderas req_mac_err = False en errores intermedios."""
+    """Kills mutants 40, 48, 97, 98, 105: Banderas req_mac_err = False en errores intermedios."""
     flow = ClimateIpConfigFlow()
     flow.flow_data = {CONF_IP_ADDRESS: "1.1.1.1"}
 
@@ -62,9 +62,7 @@ async def test_process_samsung_device_step_error_flags():
             "samsung_2878", False, {CONF_POLL_INTERVAL: "invalid"}
         )
         mac_key, _ = get_schema_marker(result["data_schema"], CONF_MAC)
-        assert isinstance(
-            mac_key, vol.Optional
-        )  # Si el mutante anula req_mac_err, fallará
+        assert isinstance(mac_key, vol.Optional)  # If mutant anula req_mac_err, fallará
 
     # Error por certificado no encontrado
     flow.flow_data = {
@@ -85,7 +83,7 @@ async def test_process_samsung_device_step_error_flags():
 
 @pytest.mark.asyncio
 async def test_select_devices_parsing_and_fallbacks():
-    """Mata Mutantes 10, 11, 12, 23, 35, 37, 39, 59, 60, 62, 63, 70."""
+    """Kills mutants 10, 11, 12, 23, 35, 37, 39, 59, 60, 62, 63, 70."""
     flow = ClimateIpConfigFlow()
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03,
@@ -96,7 +94,7 @@ async def test_select_devices_parsing_and_fallbacks():
         ],  # Dispositivo 1 sin nombre
     }
 
-    # 1. Mutantes de parseo de nombres (M10-M12) y esquemas por defecto (M23, M35-M39)
+    # 1. Name parsing mutants (M10-M12) y default schemas (M23, M35-M39)
     result = await flow.async_step_select_devices()
     schema = result["data_schema"]
     sel_key, _ = get_schema_marker(schema, CONF_SELECTED_DEVICES)
@@ -132,7 +130,7 @@ async def test_select_devices_parsing_and_fallbacks():
 
 @pytest.mark.asyncio
 async def test_options_init_error_mutants(hass):
-    """Mata Mutantes 9, 10, 12, 13, 15, 16 en el flujo de opciones."""
+    """Kills mutants 9, 10, 12, 13, 15, 16 en el flujo de opciones."""
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     entry = MockConfigEntry(domain=DOMAIN, data={})
@@ -141,7 +139,7 @@ async def test_options_init_error_mutants(hass):
     flow = OptionsFlowHandler(entry)
     flow.hass = hass
 
-    # Pasamos intervalo inválido. Debe retornar form con step_id "init" y el error exacto
+    # Pass intervalo inválido. Debe retornar form con step_id "init" y el error exacto
     result = await flow.async_step_init({CONF_POLL_INTERVAL: "invalid"})
     assert result["step_id"] == "init"  # Mutantes 15, 16 inyectan "XXinitXX" o "INIT"
     assert result["errors"] == {CONF_POLL_INTERVAL: "invalid_poll_interval"}
@@ -150,7 +148,7 @@ async def test_options_init_error_mutants(hass):
 
 @pytest.mark.asyncio
 async def test_initiate_pairing_and_discover_uuid_mutants():
-    """Mata Mutantes 15, 39, 40, 62, 95, 97, 100, 101."""
+    """Kills mutants 15, 39, 40, 62, 95, 97, 100, 101."""
     # 1. Fallback de pairing (M95-M101 y M62)
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
@@ -169,7 +167,7 @@ async def test_initiate_pairing_and_discover_uuid_mutants():
     await flow.async_step_initiate_pairing()
     assert (
         flow.flow_data["error_key"] == "unknown_error"
-    )  # Si el mutante inyecta "XXXX", falla
+    )  # If mutant inyecta "XXXX", falla
 
     # 2. Reseteamos para probar M62 (asignación del certificado en fallback)
     flow.flow_data.pop("error_key", None)
@@ -197,7 +195,7 @@ async def test_initiate_pairing_and_discover_uuid_mutants():
         mock_ctrl.initialize = AsyncMock(return_value=True)
         mock_ctrl.async_get_status = AsyncMock(return_value=True)
         mock_ctrl.async_shutdown = AsyncMock()
-        # Mockeamos dispositivos descubiertos
+        # Mock dispositivos descubiertos
         mock_ctrl.discovered_devices = [{"id": "1", "uuid": "uuid1"}]
 
         with patch.object(flow, "_async_process_samsung_8888_discovery") as mock_proc:
@@ -221,14 +219,14 @@ async def test_initiate_pairing_and_discover_uuid_mutants():
         mock_ctrl.async_shutdown = AsyncMock()
 
         await flow.async_step_discover_uuid()
-        # Si el mutante cambió "if controller is not None:" a "is None", esto no se llamará y fallará
+        # If mutant cambió "if controller is not None:" a "is None", esto no se llamará y fallará
         mock_ctrl.async_shutdown.assert_called_once()
         mock_fallback.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_handle_error_req_mac_is_false_not_none():
-    """Mata Mutante 25: req_mac = False (no None) para errores distintos de mac_resolve_failed."""
+    """Kills mutant 25: req_mac = False (no None) para errores distintos de mac_resolve_failed."""
     flow = ClimateIpConfigFlow()
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
@@ -244,7 +242,7 @@ async def test_handle_error_req_mac_is_false_not_none():
 
 
 def test_options_schema_temp_target_from_options():
-    """Mata Mutantes 71, 72: opt_targ = options.get(CONF_TEMP_NATIVE_TARGET)."""
+    """Kills mutants 71, 72: opt_targ = options.get(CONF_TEMP_NATIVE_TARGET)."""
     from custom_components.climate_ip.const import CONF_TEMP_NATIVE_TARGET
     from unittest.mock import MagicMock
     from homeassistant.const import UnitOfTemperature
@@ -270,7 +268,7 @@ def test_options_schema_temp_target_from_options():
 
 
 def test_options_schema_temp_target_fallback_to_default():
-    """Mata Mutante 72: cuando options está vacío, usa DEFAULT_CONF_TEMP_UNIT."""
+    """Kills mutant 72: cuando options está vacío, usa DEFAULT_CONF_TEMP_UNIT."""
     from custom_components.climate_ip.const import (
         CONF_TEMP_NATIVE_TARGET,
         DEFAULT_CONF_TEMP_UNIT,
@@ -295,11 +293,11 @@ def test_options_schema_temp_target_fallback_to_default():
 
 
 def test_options_schema_temp_step_from_data():
-    """Mata Mutantes 82, 83: opt_step = data.get(CONF_TARGET_TEMP_STEP) como segundo nivel."""
+    """Kills mutants 82, 83: opt_step = data.get(CONF_TARGET_TEMP_STEP) as secondary fallback."""
     from custom_components.climate_ip.const import CONF_TARGET_TEMP_STEP
 
     mock_entry = MagicMock()
-    # options no tiene el step, pero data sí — activa el segundo nivel de fallback
+    # options missing step but data contains it — triggers secondary fallback
     mock_entry.options = {}
     mock_entry.data = {CONF_TARGET_TEMP_STEP: 0.5}
 
@@ -319,7 +317,7 @@ def test_options_schema_temp_step_from_data():
 
 
 def test_options_schema_temp_step_data_fallback_default():
-    """Mata Mutantes 82, 83 (variante): cuando ni options ni data tienen el step."""
+    """Kills mutants 82, 83 (variante): cuando ni options ni data tienen el step."""
     from custom_components.climate_ip.const import (
         CONF_TARGET_TEMP_STEP,
         DEFAULT_TARGET_TEMP_STEP,
@@ -344,12 +342,12 @@ def test_options_schema_temp_step_data_fallback_default():
 
 @pytest.mark.asyncio
 async def test_mim_h03_device_id_str_fallback():
-    """Mata Mutante 11: device_id = str(device.get('id') or '') — no str(None) ni 'XXXX'."""
+    """Kills mutant 11: device_id = str(device.get('id') or '') — no str(None) ni 'XXXX'."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
     flow.flow_data = {}
     # M11: Para que no aborte en no_coordinator_found, añadimos un coordinator válido.
-    # El segundo dispositivo tiene id=None. El fallback original pone "", el mutante pone "XXXX".
+    # Second device has id=None. Default fallback yields empty string..
     devices = [{"id": "0", "uuid": "coord_uuid"}, {"id": None, "Mode": "cool"}]
 
     with (
@@ -368,7 +366,7 @@ async def test_mim_h03_device_id_str_fallback():
 
 @pytest.mark.asyncio
 async def test_rest_api_aborts_if_already_configured_normal_flow(hass):
-    """Mata M92: Flujo normal aborta si el dispositivo ya existe."""
+    """Verify mutant M92 kill: Flujo normal aborta si el dispositivo ya existe."""
     flow = ClimateIpConfigFlow()
     flow.hass = hass
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
@@ -381,7 +379,7 @@ async def test_rest_api_aborts_if_already_configured_normal_flow(hass):
         mock_get.__aenter__.return_value.status = 200
         mock_session.return_value.get.return_value = mock_get
 
-        # Mockeamos _abort_if_unique_id_configured para que lance el abort garantizado
+        # Mock _abort_if_unique_id_configured para que lance el abort garantizado
         with patch.object(
             flow,
             "_abort_if_unique_id_configured",

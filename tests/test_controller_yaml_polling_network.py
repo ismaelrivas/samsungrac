@@ -8,21 +8,21 @@ from custom_components.climate_ip.exceptions import CannotConnect
 
 
 # =====================================================================
-# UTILIDADES TÁCTICAS RESCATADAS DEL MONOLITO
+# UTILITY HELPERS FOR YAML POLLING TESTS
 # =====================================================================
 class NakedObj:
-    """Objeto estéril sin magia de Mocks para evitar side-effects."""
+    """Sterile object without mock overhead to prevent side-effects."""
 
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
 
 
 class DummyController(NakedObj):
-    """Controlador simulado resistente a AttributeErrors."""
+    """Simulated controller resistant to AttributeErrors."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Prevención de AttributeErrors comunes en el poller
+        # Prevention of common AttributeErrors in poller
         if not hasattr(self, "config"):
             self.config = {}
         if not hasattr(self, "log_prefix"):
@@ -75,11 +75,11 @@ def test_try_create_repair_issue_flow(mock_async_create_issue):
 
 
 async def test_async_update_state_early_exits_and_ping():
-    """Aserta que la falta de getter o el fallo de ping abortan la petición de red."""
+    """Asserts que la falta de getter o el fallo de ping abortan la petición de red."""
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)
 
-    # 1. Sin state_getter (Mata mutantes en `if not self.controller.loader.state_getter`)
+    # 1. Sin state_getter (Kills mutants en `if not self.controller.loader.state_getter`)
     mock_controller.loader.state_getter = None
     with pytest.raises(UpdateFailed, match="State getter is not initialized"):
         await poller.async_update_state()
@@ -103,16 +103,16 @@ async def test_async_update_state_early_exits_and_ping():
         mock_controller.config.get.assert_called_with("device_type")
         mock_ping.assert_called_once_with("192.168.1.100", mock_controller.log_prefix)
 
-        # Mata mutantes en la matemática del contador (ej. += 2 en lugar de += 1)
+        # Kills mutants en la matemática del contador (ej. += 2 en lugar de += 1)
         assert poller._consecutive_connection_errors == 1
 
-    # 3. Cortocircuito de Reachability por ip_address = None (Mata mutante and -> or)
+    # 3. Cortocircuito de Reachability por ip_address = None (Kills mutant and -> or)
     mock_controller.ip_address = None
     with patch(
         "custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability",
         return_value=False,
     ) as mock_ping_none:
-        # Hacemos que state_getter falle para terminar la función, o que devuelva None
+        # Simulate state_getter failure to test early return with None
         mock_controller.loader.state_getter.async_update_state.return_value = None
         with pytest.raises(UpdateFailed):
             await poller.async_update_state()
@@ -128,7 +128,7 @@ async def test_async_update_state_network_failures_and_cache():
     mock_controller.config.get.return_value = "samsung_2878"
     mock_controller.loader.state_getter = AsyncMock()
 
-    # Mockeamos el resto de dependencias para evitar ruido
+    # Mock el resto de dependencias para evitar ruido
     poller.async_update_properties_from_state = AsyncMock()
     mock_controller.loader.is_fully_initialized = True
     mock_controller.debug = False
@@ -137,26 +137,26 @@ async def test_async_update_state_network_failures_and_cache():
     poller._cached_device_state = {"power": "on"}
     poller._consecutive_connection_errors = 0
 
-    # Inyectamos una excepción de conexión
+    # Inject una excepción de conexión
     mock_controller.loader.state_getter.async_update_state.side_effect = CannotConnect(
         "Timeout HTTP"
     )
 
     result = await poller.async_update_state()
 
-    # Asertamos que no explotó y devolvió el estado rescatado
+    # We assert que no explotó y devolvió el estado rescatado
     assert result == {"power": "on"}
-    # Asertamos que el contador de errores subió en la rama `else`
+    # We assert que el contador de errores subió en la rama `else`
     assert poller._consecutive_connection_errors == 1
 
-    # Inyectamos el límite fatal (3 errores)
+    # Inject el límite fatal (3 errores)
     poller._consecutive_connection_errors = 2
     poller._try_create_repair_issue = MagicMock()
 
     with pytest.raises(UpdateFailed, match="Device unreachable: Timeout HTTP"):
         await poller.async_update_state()
 
-    # Asertamos que intentó crear el issue al llegar a 3
+    # We assert que intentó crear el issue al llegar a 3
     poller._try_create_repair_issue.assert_called_once()
 
     # Validamos la resolución del Issue (Cuando la conexión se recupera)
@@ -190,7 +190,7 @@ async def test_async_update_state_persistently_offline():
     poller = YamlStatePoller(mock_controller)
     mock_controller.config.get.return_value = "REST_API"
 
-    # 1. Fallo "persistently offline" (Mata mutantes en `if "persistently offline" in str(e)`)
+    # 1. Fallo "persistently offline" (Kills mutants en `if "persistently offline" in str(e)`)
     mock_controller.loader.state_getter.async_update_state.side_effect = CannotConnect(
         "Host unreachable (ICMP ping failed). Device is persistently offline."
     )
@@ -562,18 +562,18 @@ async def test_async_update_state_sniper_network_ping():
 
 @patch("custom_components.climate_ip.controller_yaml_polling.async_create_issue")
 def test_try_create_repair_issue_missing_hass(mock_create_issue):
-    """Aniquila mutante de `getattr(self.controller, 'hass', None) -> getattr(...)`"""
+    """Verify mutant kill de `getattr(self.controller, 'hass', None) -> getattr(...)`"""
     poller = YamlStatePoller(MagicMock(spec=[]))
     poller._try_create_repair_issue()
     mock_create_issue.assert_not_called()
 
 
 async def test_async_shutdown_raw_client_circuit():
-    """Aniquila flip if raw_client and hasattr() a or hasattr()"""
+    """Verify mutant kill for flip if raw_client and hasattr() a or hasattr()"""
     poller = YamlStatePoller(MagicMock())
     delattr(poller.controller, "close_shared_client")
 
-    # Inyectamos objeto sin 'close', si usa 'or' fallará en runtime al hacer close().
+    # Inject objeto sin 'close', si usa 'or' fallará en runtime al hacer close().
     # El and actúa de circuito cortador seguro.
     class DummyClient:
         pass
@@ -585,15 +585,15 @@ async def test_async_shutdown_raw_client_circuit():
 
 
 async def test_async_update_state_force_connection_errors():
-    """Aniquila mutantes de rsplit/split y validación de UpdateFailed."""
+    """Kills mutants de rsplit/split y validación de UpdateFailed."""
     poller = YamlStatePoller(MagicMock())
     poller.controller.loader.is_fully_initialized = True
     poller.controller.config = {"device_type": "Other"}
 
-    # Mockeamos el getter
+    # Mock el getter
     poller.controller.loader.state_getter = AsyncMock()
 
-    # Inyectamos CannotConnect. El poller debe capturarlo y relanzar UpdateFailed
+    # Inject CannotConnect. El poller debe capturarlo y relanzar UpdateFailed
     poller.controller.loader.state_getter.async_update_state.side_effect = (
         CannotConnect("Prefix:TargetReason")
     )
@@ -607,11 +607,11 @@ async def test_async_update_state_force_connection_errors():
 
 
 async def test_shutdown_raw_client_missing():
-    """Mata el mutante de getattr sin fallback en _shared_raw_client (L1049)"""
+    """Verify mutant kill de getattr sin fallback en _shared_raw_client (L1049)"""
     poller = YamlStatePoller(MagicMock())
     # DESTRUCCIÓN FÍSICA
     if hasattr(poller.controller, "_shared_raw_client"):
         delattr(poller.controller, "_shared_raw_client")
 
-    # Si mutmut eliminó el None, lanzará AttributeError al evaluar la variable temporal.
+    # If mutmut eliminó el None, lanzará AttributeError al evaluar la variable temporal.
     await poller.async_shutdown()

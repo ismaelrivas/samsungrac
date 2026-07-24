@@ -311,10 +311,10 @@ def test_yaml_controller_strict_initialization() -> None:
     assert controller._session is mock_session
     assert controller._logger is mock_logger
 
-    # 2. Mutantes 23-25: Extracción estricta de IP Address
+    # 2. Mutantes 23-25: Strict IP Address extraction
     assert controller._ip_address == "192.168.1.100"
 
-    # 3. Mutantes 33-35: Extracción estricta de Identificadores y Token
+    # 3. Mutantes 33-35: Strict identifier and Token extraction
     assert controller._token == "secret_token"
     assert controller._device_id == "dev_123"
     assert controller._unique_id == "test_mac_uid"
@@ -345,7 +345,7 @@ def test_yaml_controller_strict_initialization() -> None:
 
 
 def test_yaml_controller_fallback_initialization() -> None:
-    """Aniquila mutantes en las ramas condicionales de fallbacks lógicos del init."""
+    """Kills mutants en las ramas condicionales de fallbacks lógicos del init."""
     mock_logger = logging.getLogger("test_logger")
 
     # Configuramos un config donde faltan claves primarias para forzar los `or` lógicos
@@ -390,12 +390,12 @@ def test_yaml_controller_fallback_else_and_debug_default() -> None:
     ):
         controller = YamlController(config_input, mock_logger)
 
-    # Aniquila Mutante 52: La rama 'else' debe haber asignado unique_id a _device_id
+    # Aniquila Mutante 52: The else branch assigns unique_id to _device_id
     assert controller._device_id == "fallback_mac_only", (
         "La rama else no asignó el unique_id al device_id"
     )
 
-    # Aniquila Mutantes 63, 65, 68: El valor de _debug debe ser estrictamente False (por default)
+    # Aniquila Mutantes 63, 65, 68: The _debug value must be strictly False by default
     assert controller._debug is False, "El fallback de debug fue mutado y no es False"
 
 
@@ -422,7 +422,7 @@ def mock_yaml_controller():
 
 @pytest.mark.asyncio
 async def test_update_state_delegation(mock_yaml_controller) -> None:
-    """Aniquila mutantes en update_state (evalúa retorno booleano)."""
+    """Kills mutants en update_state (evalúa retorno booleano)."""
     # Escenario 1: Poller devuelve un dict (éxito) -> update_state debe devolver True
     mock_yaml_controller.poller.async_update_state = AsyncMock(
         return_value={"power": "on"}
@@ -435,7 +435,7 @@ async def test_update_state_delegation(mock_yaml_controller) -> None:
 
 
 def test_get_property_object_hierarchy(mock_yaml_controller) -> None:
-    """Aniquila mutantes en la jerarquía de búsqueda de get_property_object."""
+    """Kills mutants en la jerarquía de búsqueda de get_property_object."""
     mock_op = MagicMock()
     mock_prop = MagicMock()
     mock_sensor = MagicMock()
@@ -452,7 +452,7 @@ def test_get_property_object_hierarchy(mock_yaml_controller) -> None:
 
 
 def test_get_property_value_extraction(mock_yaml_controller) -> None:
-    """Aniquila mutantes en get_property comprobando fallbacks y STATE_UNKNOWN."""
+    """Kills mutants in get_property verifying fallbacks and STATE_UNKNOWN."""
 
     mock_op = MagicMock()
     mock_op.value = "op_value"
@@ -476,7 +476,7 @@ def test_get_property_value_extraction(mock_yaml_controller) -> None:
 
 
 def test_get_property_all_values(mock_yaml_controller) -> None:
-    """Aniquila mutantes en get_property_all_values evaluando protección contra nulos."""
+    """Kills mutants en get_property_all_values evaluando protección contra nulos."""
     mock_op = MagicMock()
     mock_op.all_values = ["val1", "val2"]
 
@@ -500,7 +500,7 @@ def test_get_property_all_values(mock_yaml_controller) -> None:
 
 @pytest.mark.asyncio
 async def test_async_merge_and_predict_delegation(mock_yaml_controller) -> None:
-    """Aniquila mutantes en los delegados de merge y predict."""
+    """Kills mutants en los delegados de merge y predict."""
     mock_yaml_controller.poller.async_merge_device_state = AsyncMock(return_value=True)
     mock_yaml_controller.poller.async_predict_and_correct_state = AsyncMock(
         return_value=(True, {"st": 1})
@@ -527,7 +527,7 @@ async def test_async_merge_and_predict_delegation(mock_yaml_controller) -> None:
 
 @pytest.mark.asyncio
 async def test_async_set_property_error_scenarios(mock_yaml_controller) -> None:
-    """Aniquila mutantes 2, 14, 15, 16 en async_set_property asertando fallos y excepciones."""
+    """Kills mutants 2, 14, 15, 16 en async_set_property asertando fallos y excepciones."""
     # Escenario 1 (Mutante 2): Controlador no inicializado -> devuelve False
     mock_yaml_controller.loader.is_fully_initialized = False
     assert await mock_yaml_controller.async_set_property("prop", "val") is False
@@ -544,7 +544,7 @@ async def test_async_set_property_error_scenarios(mock_yaml_controller) -> None:
     mock_op.async_set_value.side_effect = CannotConnect("Host down")
     with pytest.raises(UpdateFailed) as exc_info:
         await mock_yaml_controller.async_set_property("test_prop", "val")
-    # Asertamos la concatenación estricta de la cadena de error
+    # We assert la concatenación estricta de la cadena de error
     assert "Failed to set property 'test_prop': Host down" in str(exc_info.value)
 
     # Escenario 4 (Mutante 15): Exception genérica -> captura silenciosa y devuelve False
@@ -553,7 +553,7 @@ async def test_async_set_property_error_scenarios(mock_yaml_controller) -> None:
 
 
 def test_yaml_controller_setters_strict_assignment(mock_yaml_controller) -> None:
-    """Aniquila los mutantes de asignación en los setters (5 mutantes)."""
+    """Verify mutant kill de asignación en los setters (5 mutantes)."""
     # 1. device_id
     mock_yaml_controller.device_id = "target_dev_id"
     assert mock_yaml_controller._device_id == "target_dev_id"
@@ -572,7 +572,7 @@ def test_yaml_controller_setters_strict_assignment(mock_yaml_controller) -> None
 
 
 def test_yaml_controller_available_property(mock_yaml_controller) -> None:
-    """Aniquila los 8 mutantes de la propiedad available verificando las 3 ramas."""
+    """Aniquila los 8 mutants in available property across all 3 branches."""
     # Escenario 1: connection es None -> Fallback a True
     mock_yaml_controller.loader.connection = None
     assert mock_yaml_controller.available is True
@@ -589,13 +589,13 @@ def test_yaml_controller_available_property(mock_yaml_controller) -> None:
 
 
 def test_yaml_controller_sensors_property(mock_yaml_controller) -> None:
-    """Aniquila el mutante de la comprensión de listas en la propiedad sensors."""
+    """Aniquila el mutant in list comprehension for sensors property."""
     mock_sensor = MagicMock()
-    # Inyectamos 1 sensor válido y definimos en la lista 1 válido y 1 "fantasma"
+    # Inject 1 sensor válido y definimos en la lista 1 válido y 1 "fantasma"
     mock_yaml_controller.loader.sensors = {"valid_sensor": mock_sensor}
     mock_yaml_controller.loader.sensors_list = ["valid_sensor", "ghost_sensor"]
 
-    # Si mutmut cambia 'in' por 'not in', la lista resultante estará vacía o romperá
+    # If mutmut cambia 'in' por 'not in', la lista resultante estará vacía o romperá
     res = mock_yaml_controller.sensors
     assert len(res) == 1, (
         "El filtrado de sensors incluyó elementos inválidos o mutó la lista"
@@ -604,7 +604,7 @@ def test_yaml_controller_sensors_property(mock_yaml_controller) -> None:
 
 
 def test_yaml_controller_is_push_device_strict(mock_yaml_controller) -> None:
-    """Aniquila los mutantes lógicos evaluando el soporte nativo de push bajo Fail-Fast."""
+    """Verify mutant kill lógicos evaluando el soporte nativo de push bajo Fail-Fast."""
     import pytest
 
     # 1. Sin conexión -> Falla limpiamente por lógica (retorna False)
@@ -648,7 +648,7 @@ def test_yaml_controller_climate_state_mapping(
     # 3. Ejecución
     _ = mock_yaml_controller.climate_state
 
-    # 4. Aserción Letal: Cualquier mutante que inserte un 'None' o rompa la delegación morirá aquí.
+    # 4. Lethal assertion: Cualquier mutante que inserte un 'None' o rompa la delegación morirá aquí.
     mock_state_class.assert_called_once_with(
         hvac_mode=f"val_{ATTR_HVAC_MODE}",
         target_temperature=f"val_{ATTR_TEMPERATURE}",
@@ -664,7 +664,7 @@ def test_yaml_controller_climate_state_mapping(
 
 
 def test_yaml_controller_unique_id_property(mock_yaml_controller) -> None:
-    """Aniquila mutantes en la propiedad unique_id probando todas las combinaciones."""
+    """Kills mutants en la propiedad unique_id probando todas las combinaciones."""
     # 1. Sub-dispositivo con unique_id simple -> Sufijo _device_id
     mock_yaml_controller._unique_id = "mac_123"
     mock_yaml_controller._device_id = "sub_1"
@@ -692,7 +692,7 @@ def test_yaml_controller_unique_id_property(mock_yaml_controller) -> None:
 
 
 def test_yaml_controller_delegated_properties(mock_yaml_controller) -> None:
-    """Aniquila mutantes en las propiedades delegadas simples."""
+    """Kills mutants en las propiedades delegadas simples."""
     # name
     mock_yaml_controller.loader.name = "Test AC Name"
     assert mock_yaml_controller.name == "Test AC Name"
@@ -740,7 +740,7 @@ def test_yaml_controller_delegated_properties(mock_yaml_controller) -> None:
 
 
 def test_yaml_controller_last_poll_data(mock_yaml_controller) -> None:
-    """Aniquila mutantes en last_poll_data."""
+    """Kills mutants en last_poll_data."""
     # Sin state_getter -> None
     mock_yaml_controller.loader.state_getter = None
     assert mock_yaml_controller.last_poll_data is None
@@ -753,7 +753,7 @@ def test_yaml_controller_last_poll_data(mock_yaml_controller) -> None:
 
 
 def test_yaml_controller_connection_diagnostics(mock_yaml_controller) -> None:
-    """Aniquila mutantes en connection_diagnostics."""
+    """Kills mutants en connection_diagnostics."""
     # Sin conexión -> Dict vacío
     mock_yaml_controller.loader.connection = None
     assert mock_yaml_controller.connection_diagnostics == {}
@@ -769,7 +769,7 @@ def test_yaml_controller_connection_diagnostics(mock_yaml_controller) -> None:
 
 
 def test_yaml_controller_device_state(mock_yaml_controller) -> None:
-    """Aniquila mutantes en device_state comprobando la jerarquía poller -> loader -> dict vacío."""
+    """Kills mutants en device_state comprobando la jerarquía poller -> loader -> dict vacío."""
     # 1. Poller tiene _last_device_state -> Devuelve estado de poller
     mock_yaml_controller.poller._last_device_state = {"poller_key": "val1"}
     assert mock_yaml_controller.device_state == {"poller_key": "val1"}
@@ -788,7 +788,7 @@ def test_yaml_controller_device_state(mock_yaml_controller) -> None:
 
 @pytest.mark.asyncio
 async def test_yaml_controller_async_delegates_and_noop(mock_yaml_controller) -> None:
-    """Aniquila mutantes en async_get_status, async_update_state, async_shutdown, y async_refresh_from_connection."""
+    """Kills mutants en async_get_status, async_update_state, async_shutdown, y async_refresh_from_connection."""
     # async_get_status
     mock_yaml_controller.poller.async_get_status = AsyncMock(
         return_value={"status": "ok"}
@@ -814,7 +814,7 @@ async def test_yaml_controller_async_delegates_and_noop(mock_yaml_controller) ->
 
 
 def test_platform_schema_validation() -> None:
-    """Aniquila mutantes en la definición de PLATFORM_SCHEMA."""
+    """Kills mutants en la definición de PLATFORM_SCHEMA."""
     from homeassistant.const import CONF_PLATFORM
     from custom_components.climate_ip.controller_yaml import PLATFORM_SCHEMA
 

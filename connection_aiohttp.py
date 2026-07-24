@@ -445,7 +445,7 @@ class ConnectionAiohttp8888(Connection):
         # 2. Lógica de sesión local
         local_session = self._shared_state.local_session
 
-        # Evaluamos directamente sin variables intermedias
+        # Evaluate condition directly without intermediate variable allocation
         if local_session is None or local_session.closed:
             # Retrieve the shared SSL context (should be initialized by _try_connection)
             ssl_context = self._shared_state.ssl_context
@@ -473,7 +473,7 @@ class ConnectionAiohttp8888(Connection):
         """
         Replaces placeholders in the URL with actual values from configuration.
         """
-        # Host y Mac: Se resuelven de forma centralizada bajo Cero Desconfianza
+        # Host and MAC: Centralized resolution under Zero Trust doctrine
         host, mac = self._resolved_target
 
         token = self._token  # pragma: no mutate
@@ -481,12 +481,12 @@ class ConnectionAiohttp8888(Connection):
 
         if self._controller is not None:
             token = self._controller._config.get(CONF_TOKEN, self._token)
-            # Falla Rápido: Asumimos que el contrato del controlador expone device_id
+            # Fail-Fast: Assume controller contract strictly exposes device_id
             dev_id = self._controller.device_id
 
         url = format_placeholders(url, token, host, dev_id, mac)  # pragma: no mutate
 
-        # Manejo de puertos sin falsos positivos de mutación
+        # Port validation without mutation false positives
         if ":8888/" in url:
             port = str(self._config.get(CONF_PORT, "8888"))
             url = url.replace(":8888/", f":{port}/")
@@ -750,7 +750,7 @@ class ConnectionAiohttp8888(Connection):
             )
             _LOGGER.debug(debug_msg, self.log_prefix)  # pragma: no mutate
             try:
-                # Patrón seguro: extracción de método + callable() en lugar de hasattr()
+                # Safe pattern: method extraction and callable check instead of hasattr()
                 embed_check_func = getattr(
                     self._embedded_command, "check_execute_condition", None
                 )
@@ -771,7 +771,7 @@ class ConnectionAiohttp8888(Connection):
                         )  # pragma: no mutate
 
                         if embedded_template is not None:
-                            # Patrón seguro para Template (soporta render síncrono y asíncrono)
+                            # Safe pattern for Template execution (supports both sync and async rendering)
                             async_render_func = getattr(
                                 embedded_template, "async_render", None
                             )  # pragma: no mutate

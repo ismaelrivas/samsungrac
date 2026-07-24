@@ -33,7 +33,7 @@ def base_sensor_entity(hass: HomeAssistant) -> ClimateIpSensor:
         icon="mdi:thermometer",
     )
 
-    # Prevenimos que __init__ llame a _sync_data para aislar las pruebas de estado inicial
+    # Prevent que __init__ llame a _sync_data para aislar las pruebas de estado inicial
     with patch.object(ClimateIpSensor, "_sync_data_from_coordinator"):
         sensor = ClimateIpSensor(
             coordinator=mock_coord, description=desc, property_object=mock_prop
@@ -50,7 +50,7 @@ def base_sensor_entity(hass: HomeAssistant) -> ClimateIpSensor:
 
 def test_sensor_initialization(base_sensor_entity: ClimateIpSensor) -> None:
     """
-    Aniquila mutante 6 en __init__.
+    Verify mutant kill 6 en __init__.
     Al estar parcheado _sync_data_from_coordinator, podemos asertar
     el valor literal exacto asignado en el constructor.
     """
@@ -68,7 +68,7 @@ def test_update_state_strict_get_property_call(
     base_sensor_entity: ClimateIpSensor,
 ) -> None:
     """
-    Aniquila mutante 2.
+    Verify mutant kill 2.
     Asegura que get_property reciba exactamente description.key.
     """
     base_sensor_entity._update_state()
@@ -80,8 +80,8 @@ def test_update_state_unknown_no_exception_path(
     mock_logger_warning, base_sensor_entity: ClimateIpSensor
 ) -> None:
     """
-    Aniquila mutante 3 (cambio de `or` por `and` en validación de STATE_UNKNOWN).
-    Si el mutante vive, la ejecución pasará a intentar hacer float(STATE_UNKNOWN),
+    Verify mutant kill 3 (cambio de `or` por `and` en validación de STATE_UNKNOWN).
+    If mutant vive, la ejecución pasará a intentar hacer float(STATE_UNKNOWN),
     detonando un ValueError interno y llamando al logger.
     """
     base_sensor_entity.coordinator.get_property.return_value = STATE_UNKNOWN
@@ -113,7 +113,7 @@ def test_update_state_unique_id_property(base_sensor_entity: ClimateIpSensor) ->
 
 def test_update_state_valid_float(base_sensor_entity: ClimateIpSensor) -> None:
     """
-    Aniquila mutantes 10 y 11.
+    Kills mutants 10 y 11.
     Evalúa estrictamente la rama del try donde la conversión a float debe ser exitosa.
     """
     base_sensor_entity.coordinator.get_property.return_value = "23.7"
@@ -122,7 +122,7 @@ def test_update_state_valid_float(base_sensor_entity: ClimateIpSensor) -> None:
 
     base_sensor_entity._update_state()
 
-    # Aserción letal: Si el mutante asigna None o lanza TypeError (float(None)),
+    # Lethal assertion: If mutant asigna None o lanza TypeError (float(None)),
     # el valor resultante será None y esta aserción fallará crasamente.
     assert base_sensor_entity._attr_native_value == 23.7, (
         "Falló la conversión matemática a float (Mutante 10/11)."
@@ -132,11 +132,11 @@ def test_update_state_valid_float(base_sensor_entity: ClimateIpSensor) -> None:
 def test_update_state_float_parsing_failure(
     base_sensor_entity: ClimateIpSensor,
 ) -> None:
-    """Aniquila mutantes en el bloque try/except de float(), incluyendo el Mutante 12."""
+    """Kills mutants en el bloque try/except de float(), incluyendo el Mutante 12."""
     # Al no ser string ni UniqueIdProperty, intentará castear a float
     base_sensor_entity._property.value_is_string = False
 
-    # Inyectamos una cadena corrupta que detonará ValueError
+    # Inject una cadena corrupta que detonará ValueError
     base_sensor_entity.coordinator.get_property.return_value = "not_a_number"
 
     # Forzamos un valor previo conocido que NO sea None ni un string vacío
@@ -187,8 +187,8 @@ async def test_async_setup_entry_strict_mapping(
     mock_parse_category, mock_desc_class, mock_sensor_class
 ) -> None:
     """
-    Aniquila mutantes 8-23 y 40-67.
-    Aserta la firma exacta de extracción (getattr) e inyección de SensorEntityDescription.
+    Kills mutants 8-23 y 40-67.
+    Asserts the firma exacta de extracción (getattr) e inyección de SensorEntityDescription.
     """
     hass = MagicMock()
     entry = MagicMock()
@@ -211,13 +211,13 @@ async def test_async_setup_entry_strict_mapping(
 
     await async_setup_entry(hass, entry, async_add_entities)
 
-    # Aniquila mutantes 5 y 6: Aserta la recepción del raw_state exacto
+    # Kills mutants 5 y 6: Asserts the recepción del raw_state exacto
     prop_instance.is_valid.assert_called_once_with(target_device_state)
 
-    # Aniquila mutantes de parse_entity_category (8, 9, 14, 15)
+    # Kills mutants de parse_entity_category (8, 9, 14, 15)
     mock_parse_category.assert_called_once_with("diagnostic")
 
-    # Aniquila mutantes de extracción y asignación de kwargs
+    # Kills mutants de extracción y asignación de kwargs
     mock_desc_class.assert_called_once_with(
         key="sensor_valid",
         translation_key="sensor_valid",
@@ -229,12 +229,12 @@ async def test_async_setup_entry_strict_mapping(
         icon="mdi:thermometer",
     )
 
-    # Aniquila Mutante 71: Aserta explícitamente los argumentos posicionales del constructor
+    # Aniquila Mutante 71: Asserts explícitamente los argumentos posicionales del constructor
     mock_sensor_class.assert_called_once_with(
         mock_coord, mock_desc_class.return_value, prop_instance
     )
 
-    # Aniquila Mutante 68: Aserta la identidad del objeto en la lista, no solo su longitud
+    # Aniquila Mutante 68: Asserts the identidad del objeto en la lista, no solo su longitud
     async_add_entities.assert_called_once()
     entities_passed = async_add_entities.call_args[0][0]
     assert entities_passed == [mock_sensor_class.return_value], (
@@ -248,7 +248,7 @@ async def test_async_setup_entry_strict_mapping(
 async def test_async_setup_entry_fallback_and_logic(
     mock_parse_category, mock_desc_class
 ) -> None:
-    """Aniquila mutantes lógicos en las ramas de fallback (ej. mutante 32)."""
+    """Kills mutants lógicos en las ramas de fallback (ej. mutante 32)."""
     hass = MagicMock()
     entry = MagicMock()
     mock_coord = MagicMock()
@@ -261,7 +261,7 @@ async def test_async_setup_entry_fallback_and_logic(
 
     await async_setup_entry(hass, entry, async_add_entities)
 
-    # Aniquila mutantes que alteran la condición 'not icon and not device_class'
+    # Kills mutants que alteran la condición 'not icon and not device_class'
     # o que corrompen el getattr forzando el default None
     mock_desc_class.assert_called_once_with(
         key="sensor_fallback",
@@ -311,7 +311,7 @@ async def test_async_setup_entry_icon_logical_operator_inverse(
     mock_desc_class.assert_called_once()
     kwargs = mock_desc_class.call_args.kwargs
 
-    # Aserción letal: El icono debe seguir siendo None, no "mdi:eye"
+    # Lethal assertion: El icono debe seguir siendo None, no "mdi:eye"
     assert kwargs["icon"] is None, (
         "El mutante 'or' reescribió el icono a mdi:eye ignorando el device_class."
     )
@@ -320,7 +320,7 @@ async def test_async_setup_entry_icon_logical_operator_inverse(
 @pytest.mark.asyncio
 @patch("custom_components.climate_ip.sensor.ClimateIpSensor")
 async def test_async_setup_entry_single_coordinator(mock_sensor_class) -> None:
-    """Aniquila mutantes en el desempaquetado singular (if isinstance)."""
+    """Kills mutants en el desempaquetado singular (if isinstance)."""
     hass = MagicMock()
     entry = MagicMock()
 

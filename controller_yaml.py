@@ -260,7 +260,7 @@ class YamlController(ClimateController):
                     f"Failed to set property '{property_name}': {e}"
                 ) from e
             except Exception:
-                # Usamos .exception para incluir el trace sin exponer booleanos (exc_info=True) a mutmut
+                # Use .exception to include traceback log without exposing exc_info boolean flag
                 _LOGGER.exception(
                     "%s Setting property '%s' with value '%s' failed",
                     self.log_prefix,
@@ -433,7 +433,7 @@ class YamlController(ClimateController):
         if self.connection is None:
             return False
 
-        # Evitamos 'hasattr' por ser una validación estructural frágil.
+        # Avoid 'hasattr' to prevent fragile dynamic attribute checking.
         # Intentamos acceder de forma directa y capturamos si la interfaz es incompatible.
 
         # irp

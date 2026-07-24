@@ -97,7 +97,7 @@ async def test_async_initialize_early_exits_bombardment(mock_controller_errors):
 
 @pytest.mark.asyncio
 async def test_async_finish_initialization_duck_typing_snipers(mock_controller_errors):
-    """Mata Mutantes 42, 98, 111 aislando hasattr y getattr con NakedObjs."""
+    """Kills mutants 42, 98, 111 aislando hasattr y getattr con NakedObjs."""
     loader = YamlConfigLoader(mock_controller_errors)
     loader.is_fully_initialized = False
 
@@ -120,7 +120,7 @@ async def test_async_finish_initialization_duck_typing_snipers(mock_controller_e
     naked_attr.device_class = "temperature"
     naked_attr.set_hass_unit = MagicMock()
     # INTENCIONALMENTE NO TIENE set_device_unit.
-    # Si mutmut cambia 'and' por 'or', entrará al bloque y lanzará AttributeError.
+    # If mutmut cambia 'and' por 'or', entrará al bloque y lanzará AttributeError.
 
     def fake_create(key, node, conn, ctrl, getter):
         if key == "op_key_fallback":
@@ -140,11 +140,11 @@ async def test_async_finish_initialization_duck_typing_snipers(mock_controller_e
                 f"Mutante vivo: Intentó usar un método no validado por hasattr/getattr de manera insegura: {e}"
             )
 
-        # Aserción Letal para Target 42:
+        # Lethal assertion para Target 42:
         # Como naked_op no tenía "id", DEBIÓ usar "op_key_fallback"
         assert "op_key_fallback" in loader.operations
 
-        # Aserción Letal para Target 98:
+        # Lethal assertion para Target 98:
         # Al faltarle 'set_device_unit', el 'and' evaluó False, y NO debió ejecutar 'set_hass_unit'
         naked_attr.set_hass_unit.assert_not_called()
 
@@ -172,7 +172,7 @@ async def test_async_finish_initialization_default_schema(mock_controller_errors
     ):
         await loader.async_finish_initialization()
 
-    # Aserción Letal: Debe haber usado el cv.string por defecto
+    # Lethal assertion: Debe haber usado el cv.string por defecto
     assert loader.service_schema_map[vol.Optional("test_op")] == cv.string
 
 
@@ -196,7 +196,7 @@ async def test_async_finish_initialization_config_fallback(mock_controller_error
 
     await loader.async_finish_initialization()
 
-    # Aserción Letal: Si el fallback falló, async_get_entry no se llamará con este ID
+    # Lethal assertion: Si el fallback falló, async_get_entry no se llamará con este ID
     mock_controller_errors.hass.config_entries.async_get_entry.assert_called_once_with(
         "fallback_entry_id"
     )
@@ -204,7 +204,7 @@ async def test_async_finish_initialization_config_fallback(mock_controller_error
 
 @pytest.mark.asyncio
 async def test_async_initialize_config_entry_fetch(mock_controller_errors):
-    """Aniquila la mutación async_get_entry(None) auditando el parámetro (Target 70)."""
+    """Verify mutant kill for mutation async_get_entry(None) auditando el parámetro (Target 70)."""
     from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
     from custom_components.climate_ip.const import CONF_DEVICE_TYPE
     from unittest.mock import patch, MagicMock
@@ -220,7 +220,7 @@ async def test_async_initialize_config_entry_fetch(mock_controller_errors):
     mock_controller_errors._yaml = "test.yaml"
     mock_controller_errors.hass.config_entries.async_get_entry = MagicMock()
 
-    # [!] FIX: Inyectamos una corrutina real para simular el executor de Home Assistant y evitar el crash
+    # [!] FIX: Inject una corrutina real para simular el executor de Home Assistant y evitar el crash
     async def mock_async_add_executor_job(*args, **kwargs):
         return args[0](*args[1:], **kwargs)
 
@@ -243,7 +243,7 @@ async def test_async_initialize_config_entry_fetch(mock_controller_errors):
     ):
         await loader.async_initialize()
 
-    # Aserción Letal: El framework debió ser consultado con el ID exacto, no con None
+    # Lethal assertion: El framework debió ser consultado con el ID exacto, no con None
     mock_controller_errors.hass.config_entries.async_get_entry.assert_called_once_with(
         "TARGET_ENTRY_ID"
     )
@@ -269,7 +269,7 @@ async def test_apply_temperature_units_simple_sensor_fallback(mock_controller_er
         def set_unit_of_measurement(self, unit):
             self.unit_applied = unit
 
-    # Inyectamos el objeto crudo (NO un MagicMock)
+    # Inject el objeto crudo (NO un MagicMock)
     strict_sensor = SimpleTempSensor()
     loader.sensors = {"simple_temp": strict_sensor}
 
@@ -283,7 +283,7 @@ async def test_apply_temperature_units_simple_sensor_fallback(mock_controller_er
 
     await loader.async_finish_initialization()
 
-    # Aserción Letal: El motor DEBIÓ caer en el 'elif' y aplicar la unidad
+    # Lethal assertion: El motor DEBIÓ caer en el 'elif' y aplicar la unidad
     assert strict_sensor.unit_applied == "°F", (
         "El bloque 'elif hasattr' de fallback de temperatura no se ejecutó."
     )

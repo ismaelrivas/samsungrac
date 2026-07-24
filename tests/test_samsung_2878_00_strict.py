@@ -16,7 +16,7 @@ def connection():
 
 @pytest.mark.asyncio
 async def test_00_io_strict_timeouts_and_reads(connection):
-    """Mata mutantes de asyncio.timeout(None), timeout=6.0 y read(4097) ANTES de que cuelguen otros tests."""
+    """Kills mutants de asyncio.timeout(None), timeout=6.0 y read(4097) ANTES de que cuelguen otros tests."""
     connection._reader = MagicMock()
     connection._reader.at_eof.return_value = False
     connection._reader.read = AsyncMock(side_effect=[b"chunk", b""])
@@ -52,7 +52,7 @@ async def test_00_io_strict_timeouts_and_reads(connection):
 
 @pytest.mark.asyncio
 async def test_00_read_full_response_decode_mutants(connection):
-    """Mata mutantes específicos de decodificación y de logic operators en _read_full_response."""
+    """Kills mutants específicos de decodificación y de logic operators en _read_full_response."""
     connection._reader = MagicMock()
     connection._reader.at_eof.return_value = False
 
@@ -90,7 +90,7 @@ async def test_00_read_full_response_decode_mutants(connection):
 
 @pytest.mark.asyncio
 async def test_00_read_full_response_decode_errors_block(connection):
-    """Mata el mutante del bloque except Exception as e de _read_full_response que hace return buffer.decode(None) if buffer else None"""
+    """Verify mutant kill del bloque except Exception as e de _read_full_response que hace return buffer.decode(None) if buffer else None"""
     connection._reader = MagicMock()
     connection._reader.at_eof.return_value = False
 
@@ -104,7 +104,7 @@ async def test_00_read_full_response_decode_errors_block(connection):
 
 @pytest.mark.asyncio
 async def test_00_read_full_response_decode_timeout_block(connection):
-    """Mata el mutante de decodificación en la línea 793 (después de un TimeoutError)."""
+    """Verify mutant kill de decodificación en la línea 793 (después de un TimeoutError)."""
     connection._reader = MagicMock()
     connection._reader.at_eof.return_value = False
 
@@ -114,13 +114,13 @@ async def test_00_read_full_response_decode_timeout_block(connection):
 
     with patch.object(connection, "_close_connection", new_callable=AsyncMock):
         res = await connection._read_full_response()
-        # Si el mutante cambia decode("utf-8") a decode(None), lanzará TypeError y retornará None
+        # If mutant cambia decode("utf-8") a decode(None), lanzará TypeError y retornará None
         assert res == "partial_data"
 
 
 @pytest.mark.asyncio
 async def test_00_async_execute_fast_fail_backoff(connection):
-    """Mata el mutante 'if self._is_ready.is_set()' en async_execute ANTES de que cuelgue tests de integración."""
+    """Verify mutant kill 'if self._is_ready.is_set()' en async_execute ANTES de que cuelgue tests de integración."""
     from custom_components.climate_ip.samsung_2878 import CannotConnect
 
     # Prevenir que start_listening() inicie tareas
@@ -137,26 +137,26 @@ async def test_00_async_execute_fast_fail_backoff(connection):
 
 
 def test_00_socket_timeout_value(connection):
-    """Mata mutante en linea 107 (self._socket_timeout = float(GLOBAL_HTTP_TIMEOUT) + 10.0)."""
+    """Kills mutant en linea 107 (self._socket_timeout = float(GLOBAL_HTTP_TIMEOUT) + 10.0)."""
     from custom_components.climate_ip.samsung_2878 import GLOBAL_HTTP_TIMEOUT
 
     assert connection._socket_timeout == float(GLOBAL_HTTP_TIMEOUT) + 10.0
 
 
 def test_00_load_from_yaml_dict_get_default(connection):
-    """Mata mutante en linea 298 (params_node = node.get(..., {}))."""
+    """Kills mutant en linea 298 (params_node = node.get(..., {}))."""
     res = connection.load_from_yaml({"other_key": 123}, None)
     assert res is False
 
 
 @pytest.mark.asyncio
 async def test_00_connection_manager_read_task_creation(connection):
-    """Mata mutante ID 11 en linea 1268: self._read_task = asyncio.create_task(reader.read(8192)) -> None.
+    """Kills mutant ID 11 en linea 1268: self._read_task = asyncio.create_task(reader.read(8192)) -> None.
 
-    Estrategia: Mockeamos asyncio.create_task para devolver un mock_task sin crear
-    tareas reales (evita lingering tasks). Mockeamos asyncio.wait para lanzar
+    Estrategia: Mock asyncio.create_task para devolver un mock_task sin crear
+    tareas reales (evita lingering tasks). Mock asyncio.wait para lanzar
     CancelledError y salir del while True en la primera iteración.
-    Si el mutante reemplaza la línea con None, self._reader.read nunca se invoca
+    If mutant reemplaza la línea con None, self._reader.read nunca se invoca
     (la coroutine nunca se crea) y la aserción falla.
     """
     connection._writer = MagicMock()
@@ -188,7 +188,7 @@ async def test_00_connection_manager_read_task_creation(connection):
         except asyncio.CancelledError:
             pass
 
-    # Si el mutante pone `self._read_task = None`, reader.read(8192) nunca se invoca → falla aquí
+    # If mutant pone `self._read_task = None`, reader.read(8192) nunca se invoca → falla aquí
     connection._reader.read.assert_called_with(8192)
 
 
@@ -228,7 +228,7 @@ async def test_async_execute_ready_but_with_past_retries(connection):
         return_value=mock_timeout_ctx,
     ):
         # Ejecutamos el método.
-        # Si el mutante (if self._is_ready.is_set() and ...) está vivo, entrará al if,
+        # If mutant (if self._is_ready.is_set() and ...) está vivo, entrará al if,
         # lanzará CannotConnect y el test fallará, matando al mutante.
         try:
             await connection.async_execute("cmd", "url", "<test/>", None)
@@ -238,5 +238,5 @@ async def test_async_execute_ready_but_with_past_retries(connection):
                 "The mutant survived and aborted a valid command!"
             )
 
-        # Comprobamos que el comando sí entró a la cola (es decir, el if no lo bloqueó)
+        # We verify que el comando sí entró a la cola (es decir, el if no lo bloqueó)
         connection._cmd_queue.put.assert_awaited_once()

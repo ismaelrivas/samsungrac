@@ -17,21 +17,21 @@ from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
 
 # =====================================================================
-# UTILIDADES TÁCTICAS RESCATADAS DEL MONOLITO
+# UTILITY HELPERS FOR YAML POLLING TESTS
 # =====================================================================
 class NakedObj:
-    """Objeto estéril sin magia de Mocks para evitar side-effects."""
+    """Sterile object without mock overhead to prevent side-effects."""
 
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
 
 
 class DummyController(NakedObj):
-    """Controlador simulado resistente a AttributeErrors."""
+    """Simulated controller resistant to AttributeErrors."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Prevención de AttributeErrors comunes en el poller
+        # Prevention of common AttributeErrors in poller
         if not hasattr(self, "config"):
             self.config = {}
         if not hasattr(self, "log_prefix"):
@@ -222,10 +222,10 @@ async def test_build_device_state_chaos_monkey_guards():
     mock_controller.loader.state_getter.value = {"Devices": [{"Temperatures": []}]}
     res = await poller._build_device_state_from_props()
     # La lógica original ignora listas vacías si ya existe la clave.
-    # Si mutmut cambia > 0 por >= 0, dará IndexError al intentar acceder a [0].
+    # If mutmut cambia > 0 por >= 0, dará IndexError al intentar acceder a [0].
     assert res["Devices"][0]["Temperatures"] == []
 
-    # --- CASO 5: Arrays 'options' de Mode (Mata mutantes de len == 1, len > 1) ---
+    # --- CASO 5: Arrays 'options' de Mode (Kills mutants de len == 1, len > 1) ---
     setup_ops("good_sleep", 1.0)
 
     # Longitud 0: Ahora sí debe inicializarse porque mejoramos la estructura
@@ -323,7 +323,7 @@ async def test_async_update_properties_sub_device_routing():
     await poller.async_update_properties_from_state(full_payload, force_update=True)
 
     # ASERCIÓN CRÍTICA: La propiedad debió recibir exclusivamente el sub-diccionario del TARGET_ID
-    # Mata mutantes de la iteración `next(...)` y la comparación `== str(...)`
+    # Kills mutants de la iteración `next(...)` y la comparación `== str(...)`
     mock_prop.async_update_state.assert_called_once_with(
         {"id": "TARGET_ID", "power": "on"}, False
     )
@@ -348,7 +348,7 @@ async def test_async_update_properties_sub_device_routing():
 
 
 async def test_async_update_properties_defaults_and_chaos_cache():
-    """Mata mutantes que alteran parámetros por defecto y diccionarios faltantes en la caché."""
+    """Kills mutants que alteran parámetros por defecto y diccionarios faltantes en la caché."""
     from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
     from unittest.mock import MagicMock, AsyncMock
 
@@ -387,7 +387,7 @@ async def test_async_update_properties_defaults_and_chaos_cache():
     await poller.async_update_properties_from_state(fake_payload)
     mock_prop.async_update_state.assert_called_once_with({"some": "data"}, False)
 
-    # 1.5. Test de `force_update=True` mutation (Mata Mutante 2)
+    # 1.5. Test de `force_update=True` mutation (Kills mutant 2)
     # Llamamos de nuevo con el MISMO payload (no ha cambiado el estado)
     mock_prop.async_update_state.reset_mock()
     await poller.async_update_properties_from_state(fake_payload)
@@ -410,7 +410,7 @@ async def test_async_update_properties_defaults_and_chaos_cache():
     await poller.async_update_properties_from_state({"some": "new_data"})
     mock_prop.async_update_state.assert_called_once_with({"some": "new_data"}, False)
 
-    # 1.8 Test de Exception en el bloque try (Mata mutantes en el bloque except)
+    # 1.8 Test de Exception en el bloque try (Kills mutants en el bloque except)
     # Asignar None hace que cache.get lance AttributeError
     mock_controller.loader._parsed_yaml_cache = None
     mock_prop.async_update_state.reset_mock()
@@ -418,7 +418,7 @@ async def test_async_update_properties_defaults_and_chaos_cache():
     await poller.async_update_properties_from_state({"some": "exc_data"})
     mock_prop.async_update_state.assert_called_once_with({"some": "exc_data"}, False)
 
-    # 1.9 Test del dirty check (Mata mutantes de is_prediction y condiciones del dirty check)
+    # 1.9 Test del dirty check (Kills mutants de is_prediction y condiciones del dirty check)
     mock_prop.async_update_state.reset_mock()
     poller._last_device_state = {"some": "dirty_data"}
     poller._last_device_state_str = "{'some': 'dirty_data'}"
@@ -434,16 +434,16 @@ async def test_async_update_properties_defaults_and_chaos_cache():
 
     # Al no haber id_map, `device_to_process` NUNCA DEBE SER REASIGNADO,
     # con lo cual si el mutante puso `device_to_process = None`, el mock recibirá None en lugar del payload real.
-    # 2. Test del default device_id en la caché (Mata Mutante 41)
+    # 2. Test del default device_id en la caché (Kills mutant 41)
     mock_prop.async_update_state.reset_mock()
 
-    # Creamos un caché donde la clave es "XXXX", que es el default de getattr(..., "device_id", "XXXX")
+    # Create un caché donde la clave es "XXXX", que es el default de getattr(..., "device_id", "XXXX")
     mock_controller.loader._parsed_yaml_cache = {
         "XXXX": {
             "device": {"identifiers": {"path_to_devices": ["Devices"], "id": ["id"]}}
         }
     }
-    # Pasamos DOS dispositivos en la lista. El primero tiene id "WRONG", el segundo id "".
+    # Pass DOS dispositivos en la lista. El primero tiene id "WRONG", el segundo id "".
     # Así, si el `getattr` con el default "" es mutado (ej. a None o "XXXX"), el match fallará.
     # Al fallar el match, el código hará fallback a `devices_list[0]` ("WRONG"),
     # con lo cual la aserción sobre mock_prop fallará porque esperaba el de id "".
@@ -456,7 +456,7 @@ async def test_async_update_properties_defaults_and_chaos_cache():
         {"id": "", "power": "off"}, False
     )
 
-    # 3. Test de current_hass_state default (Mata Mutante 11)
+    # 3. Test de current_hass_state default (Kills mutant 11)
     mock_prop.async_update_state.reset_mock()
     poller._build_device_state_from_hass = AsyncMock(return_value={"power": "on"})
     await poller.async_update_properties_from_state(
@@ -1071,7 +1071,7 @@ async def test_build_device_state_from_hass_deepcopy_and_logic():
     poller.controller.loader.state_getter.value = last_real
 
     op_mock = MagicMock()
-    # Inyectamos hass_value pero borramos la función de conversión.
+    # Inject hass_value pero borramos la función de conversión.
     # Si la condición es 'or' en lugar de 'and', intentará evaluar y fallará.
     delattr(op_mock, "convert_hass_to_dev")
     poller.controller.loader.operations = {"op1": op_mock}
@@ -1107,12 +1107,12 @@ async def test_build_device_state_from_props_naked_dicts():
     )
 
     res = await poller._build_device_state_from_props()
-    # Si mutmut alteró len(device_list) > 0 a >= 0, este test lanzará IndexError al intentar Devices[0]
+    # If mutmut alteró len(device_list) > 0 a >= 0, este test lanzará IndexError al intentar Devices[0]
     assert res is not None
 
 
 async def test_async_predict_and_correct_state_logic_flip():
-    """Aniquila la mutación de `not A or not B` a `not A and not B`"""
+    """Verify mutant kill for mutation de `not A or not B` a `not A and not B`"""
     poller = YamlStatePoller(MagicMock())
 
     # Configuramos A = False, B = True. (state_getter existe, pero loader no está inicializado)
@@ -1136,7 +1136,7 @@ async def test_build_device_state_from_props_structural_limits():
     """Aniquila accesos a listas vacías (>= 0), y setdefaults mal mutados"""
     poller = YamlStatePoller(MagicMock())
     st_getter = MagicMock()
-    # 1. Inyectar lista VACÍA. Si mutmut puso len >= 0, intentar [0] lanzará IndexError
+    # 1. Inyectar lista VACÍA. If mutmut puso len >= 0, intentar [0] lanzará IndexError
     st_getter.value = {"Devices": []}
     poller.controller.loader.state_getter = st_getter
     poller.controller.loader.is_fully_initialized = True
@@ -1157,7 +1157,7 @@ async def test_build_device_state_from_props_structural_limits():
     assert res == {"Devices": []}
 
     # 2. Inyectar lista con dict vacío para forzar setdefault.
-    # Si mutmut cambia .setdefault("Wind", {}) a .setdefault("Wind", ), será None y lanzará TypeError
+    # If mutmut cambia .setdefault("Wind", {}) a .setdefault("Wind", ), será None y lanzará TypeError
     st_getter.value = {"Devices": [{}]}
 
     res = await poller._build_device_state_from_props()
@@ -1243,7 +1243,7 @@ async def test_async_update_state_dict_defaults_and_formatting():
 
 
 async def test_build_device_state_from_hass_attribute_missing():
-    """Mata mutantes de getattr sin default y protege el regex de mocks."""
+    """Kills mutants de getattr sin default y protege el regex de mocks."""
     poller = YamlStatePoller(MagicMock())
     poller.controller.loader.is_fully_initialized = True
 
@@ -1330,7 +1330,7 @@ async def test_async_predict_and_correct_state_feature_flag_exact():
 
 
 async def test_build_device_state_fallback_to_private_value():
-    """Mata el mutante que elimina el fallback a '_value' en getattr (L664)"""
+    """Verify mutant kill que elimina el fallback a '_value' en getattr (L664)"""
     poller = YamlStatePoller(MagicMock())
     poller.controller.loader.is_fully_initialized = True
     poller.controller.loader.state_getter = MagicMock(value={"Devices": []})
@@ -1346,7 +1346,7 @@ async def test_build_device_state_fallback_to_private_value():
 
     res = await poller._build_device_state_from_props()
 
-    # Si mutmut eliminó el fallback getattr(..., "_value", None), op_value será None
+    # If mutmut eliminó el fallback getattr(..., "_value", None), op_value será None
     # Saltará el ciclo por un 'continue', y 'target_key' jamás se asignará.
     assert "target_key" in res, (
         "Fallo Lógico: El mutante ignoró el atributo privado '_value'"
@@ -1371,7 +1371,7 @@ async def test_build_device_state_from_props_swing_preset():
     poller.controller.loader.properties = {}
     poller.controller.config = {"device_type": "Other"}
 
-    # Si mutmut inserta un None en setdefault("Wind", ) o setdefault("Mode", )
+    # If mutmut inserta un None en setdefault("Wind", ) o setdefault("Mode", )
     # el acceso posterior a ["direction"] o ["options"] lanzará TypeError: 'NoneType' no indexable
     res = await poller._build_device_state_from_props()
 
@@ -1380,7 +1380,7 @@ async def test_build_device_state_from_props_swing_preset():
 
 
 async def test_async_update_state_final_return_fallback():
-    """Mata mutantes que borran el fallback 'None' en el retorno final de update_state"""
+    """Kills mutants que borran el fallback 'None' en el retorno final de update_state"""
     from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
     from unittest.mock import MagicMock, AsyncMock
     import pytest
@@ -1407,11 +1407,11 @@ async def test_async_update_state_final_return_fallback():
 
 
 async def test_build_device_state_options_length_exact():
-    """Mata la mutación < 2 a <= 2 en good_sleep (L750) inyectando frontera exacta"""
+    """Verify mutant kill < 2 a <= 2 en good_sleep (L750) inyectando frontera exacta"""
     poller = YamlStatePoller(MagicMock())
     poller.controller.loader.is_fully_initialized = True
 
-    # Inyectamos EXACTAMENTE 2 opciones. La frontera del mutante es vulnerable aquí.
+    # Inject EXACTAMENTE 2 opciones. La frontera del mutante es vulnerable aquí.
     st_getter = MagicMock()
     st_getter.value = {"Devices": [{"Mode": {"options": ["Sleep_0", "Sleep_1"]}}]}
     poller.controller.loader.state_getter = st_getter
@@ -1447,7 +1447,7 @@ async def test_async_update_properties_dict_depth():
 
 
 async def test_debug_fallback_boolean():
-    """Aniquila la mutación de fallback False a True en getattr de 'debug' (L289, L537)"""
+    """Verify mutant kill for mutation de fallback False a True en getattr de 'debug' (L289, L537)"""
     ctrl = NakedObj()
     ctrl.loader = NakedObj()
     ctrl.loader.is_fully_initialized = True
@@ -1474,7 +1474,7 @@ async def test_debug_fallback_boolean():
 
 
 async def test_dict_get_fallbacks_strict():
-    """Aniquila mutantes que borran fallbacks '{}' o '[]' encadenados (L463, L465, L479)"""
+    """Kills mutants que borran fallbacks '{}' o '[]' encadenados (L463, L465, L479)"""
     ctrl = NakedObj()
     ctrl.loader = NakedObj()
     ctrl.loader.is_fully_initialized = True
@@ -1502,7 +1502,7 @@ async def test_dict_get_fallbacks_strict():
 
 
 async def test_async_update_properties_dict_get_no_swallow():
-    """Mata mutantes L466-482."""
+    """Kills mutants L466-482."""
     ctrl = NakedObj(
         loader=create_valid_loader(),
         device_id="MissingID",
@@ -1521,7 +1521,7 @@ async def test_async_update_properties_dict_get_no_swallow():
 
 
 async def test_debug_fallback_exact_call():
-    """Mata mutantes de fallback debug en L289 y L540."""
+    """Kills mutants de fallback debug en L289 y L540."""
     loader = create_valid_loader()
     ctrl = NakedObj(log_prefix="TEST", config={"device_type": "Other"}, loader=loader)
 
@@ -1536,7 +1536,7 @@ async def test_debug_fallback_exact_call():
     loader.properties = {}
     loader.sensors = {}
 
-    # 2. Creamos el estado de HASS necesario para pasar el 'hasattr'
+    # 2. Create el estado de HASS necesario para pasar el 'hasattr'
     current_hass_state = NakedObj()
     setattr(current_hass_state, "swing_mode", "on")
 
@@ -1557,7 +1557,7 @@ async def test_debug_fallback_exact_call():
 
 
 async def test_predict_and_correct_state_mutants():
-    """Mata el mutante L979 que asigna op.value = None en el bucle de sincronización."""
+    """Verify mutant kill L979 que asigna op.value = None en el bucle de sincronización."""
     loader = create_valid_loader()
 
     # 0. PREVENCIÓN DE EARLY EXIT: Aseguramos que los "guards" de inicialización pasen
@@ -1604,7 +1604,7 @@ async def test_predict_and_correct_state_mutants():
     assert op_target.value == 24.5, "El target directo no se actualizó correctamente."
 
     # B) KILL THE MUTANT: Verifica el bucle general de operaciones
-    # Si el mutante altera 'op.value = val' a 'op.value = None', el valor aquí será None y el test fallará, matando al mutante.
+    # If mutant altera 'op.value = val' a 'op.value = None', el valor aquí será None y el test fallará, matando al mutante.
     assert op_bystander.value == "auto", (
         "¡Mutante detectado! El espectador recibió None en lugar de su valor original del estado."
     )

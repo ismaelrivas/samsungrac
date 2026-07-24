@@ -169,8 +169,8 @@ class ClimateController(ABC, Generic[_T]):
         """Return the strictly typed state representation of the device."""
 
     # =========================================================================
-    # CALLBACKS DE CONTRATO ESTRICTO (Cero Desconfianza)
-    # Define implementaciones seguras (no-ops) para evitar hasattr() en la red
+    # STRICT CONTRACT CALLBACKS (Zero Trust)
+    # Define safe default no-op implementations to prevent dynamic hasattr() calls
     # =========================================================================
 
     def on_ssl_config_updated(self, ssl_config: dict[str, Any]) -> None:
@@ -182,7 +182,7 @@ class ClimateController(ABC, Generic[_T]):
         pass
 
     async def request_refresh_callback(self) -> None:
-        """Callback para forzar un refresco de estado en Home Assistant."""
+        """Callback to trigger a state update in Home Assistant."""
         pass
 
     def on_offline_callback(self, reason: str) -> None:

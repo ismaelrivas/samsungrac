@@ -18,7 +18,7 @@ import platform
 
 def limit_memory():
     """
-    Collar de ahogo (Hard Limit) para evitar que mutantes con bucles
+    Memory watchdog limit (Hard Limit) para evitar que mutantes con bucles
     infinitos colapsen la RAM y el kernel (WSL OOM).
     """
     if platform.system() != "Windows":  # resource es exclusivo de Unix/Linux
@@ -282,7 +282,7 @@ def auto_mock_network() -> Any:
 @pytest.fixture(scope="function")
 def event_loop():
     """
-    Sobrescribe el event_loop nativo de pytest-asyncio para inyectar
+    Overrides default event_loop de pytest-asyncio para inyectar
     un teardown ultra-agresivo. Garantiza un loop limpio por test y
     aniquila tareas zombis sin colisionar con el plugin.
     """
@@ -291,7 +291,7 @@ def event_loop():
 
     yield loop
 
-    # Fase de purga de estado corrupto
+    # Purge corrupt state phase
     pending = asyncio.all_tasks(loop)
     for task in pending:
         task.cancel()
@@ -330,7 +330,7 @@ def mock_oauth_session():
 
 @pytest.fixture
 def mock_time():
-    """Fixture original recuperado: congela el tiempo en 100.0 para las matemáticas de TTL."""
+    """Original fixture restored: congela el tiempo en 100.0 para las matemáticas de TTL."""
     with patch(
         "custom_components.climate_ip.controller_yaml_polling.time.time",
         return_value=100.0,
@@ -340,7 +340,7 @@ def mock_time():
 
 @pytest.fixture
 def mock_reachability():
-    """Fixture original recuperado: intercepta la red localmente en el poller."""
+    """Original fixture restored: intercepta la red localmente en el poller."""
     with patch(
         "custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability",
         new_callable=AsyncMock,
@@ -350,7 +350,7 @@ def mock_reachability():
 
 @pytest.fixture
 def mock_async_create_issue():
-    """Fixture original recuperado: evita la creación real de issues en HA."""
+    """Original fixture restored: evita la creación real de issues en HA."""
     with patch(
         "custom_components.climate_ip.controller_yaml_polling.async_create_issue"
     ) as mock:
@@ -359,7 +359,7 @@ def mock_async_create_issue():
 
 @pytest.fixture
 def mock_now():
-    """Fixture original recuperado: intercepta dt_util.now()."""
+    """Original fixture restored: intercepta dt_util.now()."""
     with patch(
         "custom_components.climate_ip.controller_yaml_polling.dt_util.now"
     ) as mock:

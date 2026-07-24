@@ -542,7 +542,7 @@ async def test_async_get_mac_address_windows(mock_system, mock_exec):
 def test_mask_sensitive_data_list():
     """Test explicit list processing to kill Mutant 29."""
     data = [{"token": "12345678"}]
-    # Si mutmut cambia 'item' a 'None', devolverá [None] y este assert fallará
+    # If mutmut cambia 'item' a 'None', devolverá [None] y este assert fallará
     assert mask_sensitive_data(data) == [{"token": "***345678"}]
 
 

@@ -9,7 +9,7 @@ from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
 
 # =====================================================================
-# UTILIDADES TÁCTICAS RESCATADAS DEL MONOLITO
+# UTILITY HELPERS FOR YAML POLLING TESTS
 # =====================================================================
 class NakedObj:
     """Objeto estricto que auto-inicializa atributos si se le pasan kwargs."""
@@ -25,11 +25,11 @@ class NakedObj:
 
 
 class DummyController(NakedObj):
-    """Controlador simulado resistente a AttributeErrors."""
+    """Simulated controller resistant to AttributeErrors."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Prevención de AttributeErrors comunes en el poller
+        # Prevention of common AttributeErrors in poller
         if not hasattr(self, "config"):
             self.config = {}
         if not hasattr(self, "log_prefix"):
@@ -78,7 +78,7 @@ def test_yaml_state_poller_initial_state():
 
 
 async def test_async_update_state_device_discovery():
-    """Aserta la extracción del device_id usando el mapa de la caché YAML (MIM-H03)."""
+    """Asserts the extracción del device_id using the YAML cache map (MIM-H03)."""
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)
 
@@ -102,7 +102,7 @@ async def test_async_update_state_device_discovery():
         ]
     }
 
-    # Mockeamos la red y las propiedades
+    # Mock la red y las propiedades
     mock_controller.loader.state_getter.async_update_state = AsyncMock(
         return_value=fake_full_state
     )
@@ -111,13 +111,13 @@ async def test_async_update_state_device_discovery():
 
     await poller.async_update_state()
 
-    # Asertamos rígidamente que saltó el ID "0" y capturó el "12345"
+    # Strictly assert que saltó el ID "0" y capturó el "12345"
     assert mock_controller.device_id == "12345"
     mock_controller.loader.async_finish_initialization.assert_called_once()
 
 
 async def test_calculate_structured_state_exhaustive():
-    """Aserta el mapeo rígido de las propiedades de HA al objeto ClimateIPDeviceState."""
+    """Asserts el mapeo rígido de las propiedades de HA al objeto ClimateIPDeviceState."""
     from homeassistant.components.climate.const import (
         ATTR_HVAC_MODE,
         ATTR_FAN_MODE,
@@ -137,7 +137,7 @@ async def test_calculate_structured_state_exhaustive():
         op.calculate_value_from_state.return_value = calc_val
         return op
 
-    # Inyectamos exactamente las claves que la función busca internamente
+    # Inject exact keys expected internally by the function
     mock_controller.loader.operations = {
         "hvac": create_op(ATTR_HVAC_MODE, "Cool"),
         "temp": create_op(ATTR_TEMPERATURE, 22.5),
@@ -177,7 +177,7 @@ async def test_calculate_structured_state_exhaustive():
 
 
 def test_device_key_from_template_regex():
-    """Mata mutantes que alteran el patrón Regex de búsqueda de estado."""
+    """Kills mutants que alteran el patrón Regex de búsqueda de estado."""
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)
 
@@ -203,7 +203,7 @@ def test_device_key_from_template_regex():
 
 @patch("custom_components.climate_ip.controller_yaml_polling.dt_util.now")
 def test_rebuild_attributes_exact_strings(mock_now):
-    """Aserta el formato exacto de fecha y las claves del diccionario de atributos."""
+    """Asserts el formato exacto de fecha y las claves del diccionario de atributos."""
     import datetime
 
     fake_time = datetime.datetime(2026, 6, 7, 15, 30, 0)
@@ -230,7 +230,7 @@ def test_rebuild_attributes_exact_strings(mock_now):
 
 
 async def test_async_update_state_coordinator_callback():
-    """Aserta el paso del estado del HASS al despachador de propiedades."""
+    """Asserts el paso del estado del HASS al despachador de propiedades."""
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)
     mock_controller.loader.state_getter.async_update_state = AsyncMock(
@@ -467,7 +467,7 @@ async def test_async_update_state_sniper_discovery():
 
         await poller.async_update_state()
 
-        # Comprobamos que el Fail-Fast funcionó y fue atrapado por el logger general de la función
+        # We verify that Fail-Fast triggered and was caught by logger
         mock_log_exc.assert_called_once()
         mock_log_exc.reset_mock()
 
@@ -497,7 +497,7 @@ async def test_async_update_state_sniper_discovery():
         assert getattr(mock_controller, "device_id", "") == ""
         mock_log_exc.assert_not_called()
 
-        # Test 1.4: Inyectamos un Mock explosivo para asegurar la Cobertura del Except
+        # Test 1.4: Inject un Mock explosivo para asegurar la Cobertura del Except
         mock_controller.loader.async_finish_initialization.reset_mock()
         mock_cache = AsyncMock()
         mock_cache.get.side_effect = Exception("Fake Error")
@@ -582,7 +582,7 @@ async def test_async_update_state_sniper_discovery():
 
 
 def test_mask_sensitive_data_boundary():
-    """Aniquila mutante de frontera (> 6 vs >= 6)"""
+    """Verify mutant kill de frontera (> 6 vs >= 6)"""
     poller = YamlStatePoller(MagicMock())
     data = {"uuid": "123456"}
     poller._mask_sensitive_data(data)
@@ -590,7 +590,7 @@ def test_mask_sensitive_data_boundary():
 
 
 async def test_async_update_state_consecutive_errors_logic():
-    """Aniquila flip conditions (< vs <=) y el log reason slicing"""
+    """Verify mutant kill for flip conditions (< vs <=) y el log reason slicing"""
     poller = YamlStatePoller(MagicMock())
     poller.controller.loader.state_getter.async_update_state = AsyncMock(
         return_value={"state": "ok"}
@@ -632,7 +632,7 @@ async def test_async_update_state_consecutive_errors_logic():
 
 
 async def test_getattr_defaults_destructively():
-    """Aniquila mutantes de getattr(..., None) destruyendo los atributos origen y asertando que explota."""
+    """Kills mutants de getattr(..., None) destruyendo los atributos origen y asertando que explota."""
     poller = YamlStatePoller(MagicMock())
     poller.controller.loader.state_getter = MagicMock(value={})
 
@@ -647,21 +647,21 @@ async def test_getattr_defaults_destructively():
 
 
 def test_regex_device_state_key_cache_strict():
-    """Aniquila mutante de regex + a * en inicialización"""
+    """Verify mutant kill de regex + a * en inicialización"""
     poller = YamlStatePoller(MagicMock())
     result = poller._get_device_key_from_template("device_state['']")
     assert result is None, "Fallo de Regex: Mutante cambió '+' por '*'"
 
 
 def test_mask_sensitive_data_exact_boundary():
-    """Aniquila la mutación len(masked['uuid']) > 6 a >= 6."""
+    """Verify mutant kill for mutation len(masked['uuid']) > 6 a >= 6."""
     poller = YamlStatePoller(MagicMock())
     res = poller._mask_sensitive_data({"uuid": "123456"})
     assert res["uuid"] == "123456"
 
 
 def test_calculate_structured_state_logic_flip():
-    """Aniquila mutante 'and' -> 'or' en getattr y hasattr chaining"""
+    """Verify mutant kill 'and' -> 'or' en getattr y hasattr chaining"""
     poller = YamlStatePoller(MagicMock())
     poller.controller.loader.is_fully_initialized = True
 
@@ -679,7 +679,7 @@ def test_calculate_structured_state_logic_flip():
 
 
 async def test_async_update_state_consecutive_errors_exact_boundary():
-    """Mata mutante <= 2 mutado a < 2 forzando el valor exactamente a 2"""
+    """Kills mutant <= 2 mutado a < 2 forzando el valor exactamente a 2"""
     poller = YamlStatePoller(MagicMock())
     poller.controller.config = {"device_type": "Other"}
     poller.controller.loader.is_fully_initialized = True
@@ -695,7 +695,7 @@ async def test_async_update_state_consecutive_errors_exact_boundary():
 
 
 def test_calculate_structured_state_and_to_or_mutation():
-    """Mata la mutación 'if prop_id and hasattr' -> 'or' que fuga valores"""
+    """Verify mutant kill 'if prop_id and hasattr' -> 'or' que fuga valores"""
     poller = YamlStatePoller(MagicMock())
     poller.controller.loader.is_fully_initialized = True
 
@@ -711,7 +711,7 @@ def test_calculate_structured_state_and_to_or_mutation():
 
 
 async def test_async_update_state_next_default_mutation():
-    """Mata el mutante que elimina el fallback 'None' en el next() del generador (L391)"""
+    """Verify mutant kill que elimina el fallback 'None' en el next() del generador (L391)"""
     poller = YamlStatePoller(MagicMock())
     poller.controller.config = {"device_type": "MIM-H03"}
     poller.controller.loader.is_fully_initialized = False
@@ -731,7 +731,7 @@ async def test_async_update_state_next_default_mutation():
 
 
 async def test_async_update_state_id_map():
-    """Mata el mutante de fallback de id_map en proceso de red (L398)"""
+    """Verify mutant kill de fallback de id_map en proceso de red (L398)"""
     ctrl = NakedObj(
         log_prefix="TEST", device_id="MissingID", config={"device_type": "Other"}
     )
@@ -755,7 +755,7 @@ async def test_async_update_state_id_map():
 
 
 async def test_async_update_state_next_no_swallow():
-    """Mata el mutante L394."""
+    """Verify mutant kill L394."""
     loader = create_valid_loader()
     loader.is_fully_initialized = False
     loader.state_getter = NakedObj(
@@ -781,7 +781,7 @@ async def test_async_update_state_next_no_swallow():
 
 
 async def test_st_getter_value_no_mock_magic():
-    """Mata mutantes de getattr exigiendo la presencia explícita de 'value'."""
+    """Kills mutants de getattr exigiendo la presencia explícita de 'value'."""
     ctrl = NakedObj(
         loader=create_valid_loader(), config={"device_type": "Other"}, log_prefix="TEST"
     )
@@ -805,7 +805,7 @@ async def test_st_getter_value_no_mock_magic():
 
 
 async def test_async_update_state_cache_mutants():
-    """Mata los mutantes L360 y L361 que destruyen la caché interna."""
+    """Verify mutant kill L360 y L361 que destruyen la caché interna."""
     loader = create_valid_loader()
     loader.is_fully_initialized = True
     ctrl = NakedObj(config={}, device_id="123", log_prefix="TEST", loader=loader)
@@ -829,7 +829,7 @@ async def test_async_update_state_cache_mutants():
 
 
 def test_calculate_structured_state_getattr_id():
-    """Mata mutante de getattr sin fallback para 'id', forzando Fail-Fast absorbido por el loop."""
+    """Kills mutant de getattr sin fallback para 'id', forzando Fail-Fast absorbido por el loop."""
     poller = YamlStatePoller(MagicMock())
     poller.controller.loader.is_fully_initialized = True
 
@@ -844,7 +844,7 @@ def test_calculate_structured_state_getattr_id():
 
 
 async def test_calculate_structured_state_no_swallow():
-    """Mata el mutante AttributeError en validación de propiedades."""
+    """Verify mutant kill AttributeError en validación de propiedades."""
     ctrl = NakedObj(loader=create_valid_loader())
     poller = YamlStatePoller(ctrl)
 
@@ -857,7 +857,7 @@ async def test_calculate_structured_state_no_swallow():
 
 
 async def test_getattr_anti_magicmock_warfare():
-    """Aniquila los mutantes de getattr(..., None) usando NakedObjs para forzar AttributeError."""
+    """Verify mutant kill de getattr(..., None) usando NakedObjs para forzar AttributeError."""
     ctrl = NakedObj(log_prefix="TEST", config={})
     ctrl.loader = NakedObj(
         is_fully_initialized=True,

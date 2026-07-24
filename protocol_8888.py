@@ -108,7 +108,7 @@ class Samsung8888Client:
         # Optimise SSL for low-memory devices — disable session tickets and compression.
         try:
             applied_opts = []
-            # Bucle transaccional: iteramos el contrato estático hermético.
+            # Transactional loop: iterate through static contract definition.
             for opt_name, opt_val in SSL_OPTIMIZATIONS.items():
                 if opt_val:
                     ctx.options |= opt_val
@@ -300,7 +300,7 @@ class Samsung8888Client:
                     if not status_line:
                         raise ConnectionResetError("Remote closure")
 
-                    # --- REFACTOR: Parseo blindado del Status Line ---
+                    # --- REFACTOR: Hardened HTTP Status Line parser ---
                     decoded_status = status_line.decode("utf-8", "ignore").strip()
                     status_match = STATUS_PATTERN.match(decoded_status)
                     if not status_match:
@@ -331,7 +331,7 @@ class Samsung8888Client:
                         line_str = line.decode("utf-8", "ignore").strip()
                         headers_received.append(line_str)
 
-                        # --- REFACTOR: Parseo blindado de cabeceras ---
+                        # --- REFACTOR: Hardened HTTP Header parser ---
                         match = HEADER_PATTERN.match(line_str)
                         if match:
                             key = match.group("key").lower()
@@ -341,7 +341,7 @@ class Samsung8888Client:
                                 try:
                                     content_length = int(val)
                                 except ValueError:
-                                    pass  # Ignoramos si la API manda basura como Content-Length: abc
+                                    pass  # Ignore invalid non-numeric Content-Length header values from device
                             elif key == "content-type":
                                 content_type = val
                         # -----------------------------------------------

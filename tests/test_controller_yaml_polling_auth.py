@@ -8,21 +8,21 @@ from custom_components.climate_ip.exceptions import AuthError
 
 
 # =====================================================================
-# UTILIDADES TÁCTICAS RESCATADAS DEL MONOLITO
+# UTILITY HELPERS FOR YAML POLLING TESTS
 # =====================================================================
 class NakedObj:
-    """Objeto estéril sin magia de Mocks para evitar side-effects."""
+    """Sterile object without mock overhead to prevent side-effects."""
 
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
 
 
 class DummyController(NakedObj):
-    """Controlador simulado resistente a AttributeErrors."""
+    """Simulated controller resistant to AttributeErrors."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Prevención de AttributeErrors comunes en el poller
+        # Prevention of common AttributeErrors in poller
         if not hasattr(self, "config"):
             self.config = {}
         if not hasattr(self, "log_prefix"):
@@ -81,24 +81,24 @@ async def test_async_update_state_auth_refresh_flow():
 
             result = await poller.async_update_state()
 
-            # 1. Asertamos que el controlador recibió la nueva credencial
+            # 1. We assert que el controlador recibió la nueva credencial
             assert mock_controller.token == "NEW_TOKEN_999"
 
-            # 2. Asertamos que se emitió la orden de actualizar las conexiones hijas
+            # 2. We assert que se emitió la orden de actualizar las conexiones hijas
             mock_update_dispatch.assert_called_once_with("NEW_TOKEN_999")
 
-            # 3. Asertamos que el callback del usuario se llamó (Mata mutante and -> or)
+            # 3. We assert que el callback del usuario se llamó (Kills mutant and -> or)
             mock_controller.on_token_refreshed.assert_called_once_with("NEW_TOKEN_999")
 
-            # 4. Asertamos que el contador de errores se reseteó a 0 estrictamente
+            # 4. We assert que el contador de errores se reseteó a 0 estrictamente
             assert poller._consecutive_connection_errors == 0
 
-            # 5. Asertamos que state_getter se llamó con los argumentos exactos (Mata debug = False -> True)
+            # 5. We assert que state_getter se llamó con los argumentos exactos (Mata debug = False -> True)
             mock_controller.loader.state_getter.async_update_state.assert_called_with(
                 None, False
             )
 
-            # 6. Asertamos que la ejecución retornó el valor exitoso tras el retry
+            # 6. We assert que la ejecución retornó el valor exitoso tras el retry
             assert result == {"status": "ok"}
 
     # Validamos que on_token_refreshed no se llama si es None (mutante AttributeError)
@@ -297,11 +297,11 @@ async def test_async_update_state_auth_refresh_fails_permanently():
 
 
 def test_update_all_connections_token_deduplication():
-    """Aniquila mutantes lógicos (and/or flip) y fallback None en get_connection"""
+    """Kills mutants lógicos (and/or flip) y fallback None en get_connection"""
     poller = YamlStatePoller(MagicMock())
     conn_mock = MagicMock()
 
-    # Creamos dos props que devuelven la MISMA conexión
+    # Create dos props que devuelven la MISMA conexión
     prop1 = MagicMock()
     prop1.get_connection.return_value = conn_mock
     prop2 = MagicMock()

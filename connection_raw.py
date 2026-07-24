@@ -273,7 +273,7 @@ class ConnectionRaw8888(Connection):
     ) -> tuple[str | None, dict[str, Any] | None]:
         """Execute a command (including embedded commands) over raw sockets."""
 
-        # 1. Erradicación del hasattr defensivo
+        # 1. Eradication of defensive hasattr usage
         host = self._host or self._config.get(CONF_IP_ADDRESS, "")
         mac = self._config.get(CONF_MAC, "")
         dev_id = None
@@ -331,7 +331,7 @@ class ConnectionRaw8888(Connection):
                                 embedded_params, current_token, host, dev_id, mac
                             )
 
-                            # 2. Erradicación de la doble lectura del diccionario
+                            # 2. Eradication of double dict lookup
                             json_payload = embedded_params.get("json")
                             embedded_data = (
                                 json_dumps(json_payload)

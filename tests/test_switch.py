@@ -92,7 +92,7 @@ class DummySwitchPropFallback:
 def test_switch_initialization(base_switch_entity: SamsungClimateSwitch) -> None:
     """
     Aniquila Mutantes 1, 4, 5, 6, 7 y 8 en __init__.
-    Aserta estrictamente las asignaciones estructurales iniciales.
+    Asserts estrictamente las asignaciones estructurales iniciales.
     """
     # Mutante 1: super().__init__(None) -> falla porque coordinator no se asignaría.
     assert base_switch_entity.coordinator is not None
@@ -237,7 +237,7 @@ async def test_async_turn_off(base_switch_entity: SamsungClimateSwitch) -> None:
 async def test_async_setup_entry_strict_mapping(
     mock_parse_category, mock_desc_class, mock_switch_class
 ) -> None:
-    """Aniquila mutantes en la iteración, filtros y mapeo de atributos completos."""
+    """Kills mutants en la iteración, filtros y mapeo de atributos completos."""
     hass = MagicMock()
     entry = MagicMock()
     mock_coord = MagicMock()
@@ -286,7 +286,7 @@ async def test_async_setup_entry_strict_mapping(
 async def test_async_setup_entry_fallbacks(
     mock_parse_category, mock_desc_class
 ) -> None:
-    """Aniquila mutantes en los operadores lógicos del fallback de iconos."""
+    """Kills mutants en los operadores lógicos del fallback de iconos."""
     hass = MagicMock()
     entry = MagicMock()
     mock_coord = MagicMock()
@@ -315,7 +315,7 @@ async def test_async_setup_entry_fallbacks(
 async def test_async_setup_entry_single_coordinator_and_dict_ops(
     mock_switch_class,
 ) -> None:
-    """Aniquila mutantes en las ramas de manejo de diccionarios para coordinadores y operaciones."""
+    """Kills mutants en las ramas de manejo de diccionarios para coordinadores y operaciones."""
     hass = MagicMock()
     entry = MagicMock()
     mock_coord = MagicMock()
@@ -342,8 +342,8 @@ async def test_async_setup_entry_get_property_object_failure(mock_switch_class) 
     entry = MagicMock()
     mock_coord = MagicMock()
 
-    # Creamos un objeto válido para que actúe como "testigo" de que el bucle avanzó
-    # Si mutmut cambia la validación de string a None o invierte el 'if', este objeto
+    # Create un objeto válido para que actúe como "testigo" de que el bucle avanzó
+    # If mutmut cambia la validación de string a None o invierte el 'if', este objeto
     # o no será llamado, o será procesado erróneamente.
     valid_op_after_string = DummySwitchPropValid()
     valid_op_after_string.match_type = MagicMock(return_value=True)
@@ -361,7 +361,7 @@ async def test_async_setup_entry_get_property_object_failure(mock_switch_class) 
 
     # Mutantes 9 y 11: Si la evaluación del objeto string falla correctamente (prop_obj is None),
     # el bucle debe hacer 'continue' y procesar 'valid_op_after_string'.
-    # Si mutmut invierte la lógica ('if prop_obj is None: op = prop_obj'), la iteración explotará
+    # If mutmut invierte la lógica ('if prop_obj is None: op = prop_obj'), la iteración explotará
     # o se detendrá. Por tanto, exigimos que la clase se instancie EXACTAMENTE 1 vez.
     assert mock_switch_class.call_count == 1, (
         "El bucle no manejó el string_op correctamente o abortó la iteración."
@@ -420,7 +420,7 @@ async def test_async_setup_entry_continue_vs_break(
 
     await async_setup_entry(hass, entry, async_add_entities)
 
-    # Aserción Letal
+    # Lethal assertion
     assert mock_switch_class.call_count == 1, (
         "La iteración se detuvo prematuramente. Un filtro usó 'break' en lugar de 'continue'."
     )
@@ -494,8 +494,8 @@ async def test_async_setup_entry_get_property_object_success(
 
     await async_setup_entry(hass, entry, async_add_entities)
 
-    # Aserción Letal:
-    # Si mutmut cambia `if prop_obj is not None` por `if prop_obj is None`,
+    # Lethal assertion:
+    # If mutmut cambia `if prop_obj is not None` por `if prop_obj is None`,
     # el objeto válido caerá en la rama 'else', se ejecutará 'continue',
     # y el contador de llamadas será 0.
     assert mock_switch_class.call_count == 1, (

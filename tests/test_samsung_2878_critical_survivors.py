@@ -27,11 +27,11 @@ def connection():
     return conn
 
 
-# --- 1. TESTS PARA LA CONFIGURACIÓN BASE (Mata mutantes "None Fallback" en __init__) ---
+# --- 1. TESTS PARA LA CONFIGURACIÓN BASE (Kills mutants "None Fallback" en __init__) ---
 
 
 def test_connection_config_strict_init():
-    """Mata los mutantes que reemplazan las asignaciones del constructor por None."""
+    """Verify mutant kill que reemplazan las asignaciones del constructor por None."""
     cfg = ConnectionConfig(
         host="192.168.1.100",
         port=2878,
@@ -53,7 +53,7 @@ def test_connection_config_strict_init():
 
 @pytest.mark.asyncio
 async def test_read_full_response_success_and_timeout_args(connection):
-    """Mata mutantes de timeout y da cobertura a la lectura exitosa usando comportamiento real."""
+    """Kills mutants de timeout y da cobertura a la lectura exitosa usando comportamiento real."""
     connection._reader = MagicMock()
     connection._reader.at_eof.return_value = False
     connection._close_connection = AsyncMock()  # Prevents crash on exception handling
@@ -137,7 +137,7 @@ async def test_read_full_response_logic_and_concat(connection):
 
 @pytest.mark.asyncio
 async def test_read_full_response_logic_dplug_only(connection):
-    """Mata mutación: `or PROTOCOL_2878_DPLUG in ... and ...endswith("/>")` y el flip `not in`."""
+    """Verify mutant kill: `or PROTOCOL_2878_DPLUG in ... and ...endswith("/>")` y el flip `not in`."""
     connection._reader = MagicMock()
     connection._reader.at_eof.return_value = False
     connection._close_connection = AsyncMock()
@@ -209,7 +209,7 @@ async def test_async_execute_fast_fail_backoff(connection):
 
 @pytest.mark.asyncio
 async def test_connection_manager_critical_survivors(connection):
-    """Mata los mutantes en _connection_manager relacionados con read_task y read_buffer."""
+    """Verify mutant kill en _connection_manager relacionados con read_task y read_buffer."""
     connection._reader = MagicMock()
     connection._reader.read = AsyncMock(return_value=b"<Response>OK</Response>")
 
@@ -230,7 +230,7 @@ async def test_connection_manager_critical_survivors(connection):
 
     # Para que el while corra rápido y sin bloqueos infinitos
     with patch("custom_components.climate_ip.samsung_2878.asyncio.sleep", AsyncMock()):
-        # Prevenimos que reconecte si falla el writer
+        # Prevent reconnection si falla el writer
         with patch.object(
             connection, "handle_reconnection", new_callable=AsyncMock
         ) as mock_recon:
@@ -238,8 +238,8 @@ async def test_connection_manager_critical_survivors(connection):
             class KillMutant(BaseException):
                 pass
 
-            # Si el mutante hace continue, volverá a llamar a handle_reconnection.
-            # Lanzamos BaseException para saltarnos el "except Exception:" del manager y fallar el test.
+            # If mutant triggers continue branch, volverá a llamar a handle_reconnection.
+            # Raise BaseException para saltarnos el "except Exception:" del manager y fallar el test.
             mock_recon.side_effect = [
                 True,
                 KillMutant("El mutante 'continue' ha sobrevivido!"),
@@ -256,7 +256,7 @@ async def test_connection_manager_critical_survivors(connection):
 
 
 def test_update_configuration_cert_file_strict_path(connection):
-    """Mata mutantes de rutas nulas (None Fallback) en la carga del certificado."""
+    """Kills mutants de rutas nulas (None Fallback) en la carga del certificado."""
     hass_config = {CONF_MAC: "00:11:22:33:44:55", CONF_CERT: "local_cert.pem"}
 
     connection.update_configuration_from_hass(hass_config)
@@ -269,7 +269,7 @@ def test_update_configuration_cert_file_strict_path(connection):
 
 @pytest.mark.asyncio
 async def test_read_full_response_reader_none(connection):
-    """Mata el mutante `if not self._reader and self._reader.at_eof():`"""
+    """Verify mutant kill `if not self._reader and self._reader.at_eof():`"""
     connection._reader = None
     res = await connection._read_full_response()
     assert res is None

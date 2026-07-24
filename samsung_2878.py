@@ -926,7 +926,7 @@ class ConnectionSamsung2878(Connection):
                 )  # pragma: no mutate
                 continue
             try:
-                # Derivar a Home Assistant executor para no congelar Asyncio (CPU-bound obj)
+                # Delegate SSL context creation to HA executor thread to prevent blocking event loop
                 data = await self._controller.hass.async_add_executor_job(
                     safe_xml_to_dict, full_doc
                 )

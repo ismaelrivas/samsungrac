@@ -9,17 +9,17 @@ from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
 
 # =====================================================================
-# UTILIDADES TÁCTICAS RESCATADAS DEL MONOLITO
+# UTILITY HELPERS FOR YAML POLLING TESTS
 # =====================================================================
 class NakedObj:
-    """Objeto estéril sin magia de Mocks para evitar side-effects."""
+    """Sterile object without mock overhead to prevent side-effects."""
 
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
 
 
 class DummyController(NakedObj):
-    """Controlador simulado resistente a AttributeErrors."""
+    """Simulated controller resistant to AttributeErrors."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

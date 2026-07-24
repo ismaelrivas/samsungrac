@@ -24,7 +24,7 @@ from custom_components.climate_ip.config_flow import (
 
 @pytest.mark.asyncio
 async def test_rest_api_token_sanitization_mutants():
-    """Mata mutantes de token (M8, M15, M16, M17, M18, M19, M20, M22, M23)"""
+    """Kills mutants de token (M8, M15, M16, M17, M18, M19, M20, M22, M23)"""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
@@ -43,12 +43,12 @@ async def test_rest_api_token_sanitization_mutants():
         assert result["step_id"] == "rest_api"
         assert result["errors"] == {CONF_TOKEN: "invalid_token_format"}
         assert result["data_schema"] is not None
-        # Si el mutante M19 pone step_id=None o el M22 anula el esquema, estas aserciones fallan
+        # If mutant M19 pone step_id=None o el M22 anula el esquema, estas aserciones fallan
 
 
 @pytest.mark.asyncio
 async def test_rest_api_device_mapping_mutants():
-    """Mata mutantes del mapeo de configuración (M26, M27, M28, M29)"""
+    """Kills mutants del mapeo de configuración (M26, M27, M28, M29)"""
     flow = ClimateIpConfigFlow()
 
     # M26/M27: Anulan la lectura de device_type a None
@@ -59,7 +59,7 @@ async def test_rest_api_device_mapping_mutants():
         CONF_TOKEN: "valid_token",
     }
 
-    # Mockeamos validate_poll para pasar directo al chequeo de REST
+    # Mock validate_poll para pasar directo al chequeo de REST
     with patch(
         "custom_components.climate_ip.config_flow.async_get_clientsession"
     ) as mock_session:
@@ -86,7 +86,7 @@ async def test_rest_api_device_mapping_mutants():
 
 @pytest.mark.asyncio
 async def test_rest_api_unique_id_logic_mutants():
-    """Mata mutantes de extracción de MAC/Device ID (M76, M77, M78, M80, M81, M82, M83, M91)"""
+    """Kills mutants de extracción de MAC/Device ID (M76, M77, M78, M80, M81, M82, M83, M91)"""
     flow = ClimateIpConfigFlow()
     flow.flow_data = {
         CONF_IP_ADDRESS: "1.1.1.1",
@@ -126,7 +126,7 @@ async def test_rest_api_unique_id_logic_mutants():
 
         # 3. Abort Reauth (M91)
         flow.reauth_entry = MagicMock()
-        # Si el mutante 91 cambia `if self.reauth_entry is None` por `is not None`,
+        # If mutant 91 cambia `if self.reauth_entry is None` por `is not None`,
         # llamará a _abort_if_unique_id_configured y saltará una excepción de abort.
         # Forzamos _abort_if_unique_id_configured a lanzar un Exception("MataM91")
         with patch.object(
@@ -154,7 +154,7 @@ def get_schema_marker(schema: vol.Schema, key_name: str):
 
 @pytest.mark.asyncio
 async def test_reconfigure_confirm_schema_fallbacks():
-    """Mata Mutantes M21, M25, M37, M40: Fallbacks iniciales de schema en reconfiguración."""
+    """Kills mutants M21, M25, M37, M40: Fallbacks iniciales de schema en reconfiguración."""
     flow = ClimateIpConfigFlow()
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
@@ -162,7 +162,7 @@ async def test_reconfigure_confirm_schema_fallbacks():
         # INTENCIONADAMENTE omitimos MAC, TOKEN y CERT para forzar los fallbacks de diccionario
     }
 
-    # Mockeamos la entrada a reconfigurar
+    # Mock la entrada a reconfigurar
     mock_entry = MagicMock()
     mock_entry.data = flow.flow_data
     mock_entry.title = "Test AC"
@@ -174,7 +174,7 @@ async def test_reconfigure_confirm_schema_fallbacks():
     mac_key, _ = get_schema_marker(schema, CONF_MAC)
     cert_key, _ = get_schema_marker(schema, CONF_CERT)
 
-    # Si mutmut cambió el fallback a "XXXX" o None, estas aserciones lo liquidan
+    # If mutmut cambió el fallback a "XXXX" o None, estas aserciones lo liquidan
     assert mac_key.description.get("suggested_value") == ""
     assert cert_key.description.get("suggested_value") == "ac14k_m.pem"
 
@@ -205,7 +205,7 @@ async def test_reconfigure_confirm_mac_error_rebuild():
         assert result["errors"]["base"] == "mac_resolve_failed"
         schema = result["data_schema"]
 
-        # M87-M115 y M142-M174: Si el mutante inyecta "XXXX" o None en los fallbacks de error, esto falla
+        # M87-M115 y M142-M174: If mutant inyecta "XXXX" o None en los fallbacks de error, esto falla
         ip_key, _ = get_schema_marker(schema, CONF_IP_ADDRESS)
         mac_key, _ = get_schema_marker(schema, CONF_MAC)
         token_key, _ = get_schema_marker(schema, CONF_TOKEN)
@@ -221,12 +221,12 @@ async def test_reconfigure_confirm_mac_error_rebuild():
 
 @pytest.mark.asyncio
 async def test_reconfigure_confirm_cert_error_rebuild():
-    """Mata mutantes de fallo de certificado (M146-M177) y formateo de MAC (M128, M131)."""
+    """Kills mutants de fallo de certificado (M146-M177) y formateo de MAC (M128, M131)."""
     flow = ClimateIpConfigFlow()
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
         CONF_IP_ADDRESS: "10.0.0.1",
-        # BALA PARA M128/M131: Inyectamos una MAC en minúsculas
+        # BALA PARA M128/M131: Inject una MAC en minúsculas
         CONF_MAC: "aa:bb:cc:dd:ee:ff",
     }
     flow._get_reconfigure_entry = MagicMock(return_value=MagicMock(data={}))
@@ -262,7 +262,7 @@ async def test_reconfigure_confirm_cert_error_rebuild():
 
 @pytest.mark.asyncio
 async def test_rest_api_schema_invalid_poll_interval_except_branch():
-    """Mata Mutantes 18, 20, 21: fallback '' en rama except de _get_rest_api_schema.
+    """Kills mutants 18, 20, 21: fallback '' en rama except de _get_rest_api_schema.
 
     Para activar la rama except, DEFAULT_POLL_INTERVAL debe ser inválido.
     Para activar el fallback '', CONF_POLL_INTERVAL debe estar AUSENTE de flow_data,
@@ -290,7 +290,7 @@ async def test_rest_api_schema_invalid_poll_interval_except_branch():
 
 
 def test_rest_api_schema_non_st_with_existing_ip():
-    """Mata Mutantes 53-57: rama else:if ip_default en _get_rest_api_schema (non-SmartThings)."""
+    """Kills mutants 53-57: rama else:if ip_default en _get_rest_api_schema (non-SmartThings)."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
     flow.hass.config_entries.async_entries.return_value = []
@@ -302,14 +302,14 @@ def test_rest_api_schema_non_st_with_existing_ip():
     schema = flow._get_rest_api_schema()
     ip_key, ip_val = get_schema_marker(schema, CONF_IP_ADDRESS)
 
-    # Si mutmut pone default=None, la IP pre-rellenada desaparece del formulario
+    # If mutmut pone default=None, la IP pre-rellenada desaparece del formulario
     assert ip_key.default() == "192.168.1.50"
     assert ip_val is str
 
 
 @pytest.mark.asyncio
 async def test_reconfigure_confirm_initial_schema_all_empty_fallbacks():
-    """Mata Mutantes 20, 41, 44: fallbacks del schema inicial cuando flow_data está vacío."""
+    """Kills mutants 20, 41, 44: fallbacks del schema inicial cuando flow_data está vacío."""
     flow = ClimateIpConfigFlow()
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
@@ -337,7 +337,7 @@ async def test_reconfigure_confirm_initial_schema_all_empty_fallbacks():
 
 @pytest.mark.asyncio
 async def test_reconfigure_mac_error_with_empty_flow_data():
-    """Mata Mutantes 91-119 (bloque error MAC): fallbacks cuando flow_data carece de campos."""
+    """Kills mutants 91-119 (bloque error MAC): fallbacks cuando flow_data carece de campos."""
     flow = ClimateIpConfigFlow()
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
@@ -371,7 +371,7 @@ async def test_reconfigure_mac_error_with_empty_flow_data():
 
 @pytest.mark.asyncio
 async def test_reconfigure_token_acquirer_ip_empty_fallback():
-    """Mata Mutante 209: ip_val debe ser '' (no 'XXXX') cuando no hay IP en flow_data."""
+    """Kills mutant 209: ip_val debe ser '' (no 'XXXX') cuando no hay IP en flow_data."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
     flow.flow_data = {
@@ -396,12 +396,12 @@ async def test_reconfigure_token_acquirer_ip_empty_fallback():
         await flow.async_step_reconfigure_confirm(user_input)
 
         # M209: ip_val debe ser "" cuando CONF_IP_ADDRESS no está en flow_data
-        # Si el mutante pone "XXXX", el acquirer recibe "XXXX" en lugar de ""
+        # If mutant pone "XXXX", el acquirer recibe "XXXX" en lugar de ""
         mock_acquirer.assert_called_once_with(flow.hass, "", "test.pem")
 
 
 def test_get_base_samsung_schema_rejects_none_mac_required():
-    """Mata Mutantes 46 y 101 (Equivalentes): barrera de tipos en _get_base_samsung_schema."""
+    """Kills mutants 46 y 101 (Equivalentes): barrera de tipos en _get_base_samsung_schema."""
     flow = ClimateIpConfigFlow()
     flow.flow_data = {}
 
@@ -422,7 +422,7 @@ def test_get_base_samsung_schema_rejects_none_mac_required():
 
 @pytest.mark.asyncio
 async def test_reconfigure_token_acquirer_routing():
-    """Mata M205 y M214-M219: Argumentos exactos pasados al Token Acquirer."""
+    """Verify mutant M205 kill y M214-M219: Argumentos exactos pasados al Token Acquirer."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
     flow.flow_data = {
@@ -452,7 +452,7 @@ async def test_reconfigure_token_acquirer_routing():
 
 @pytest.mark.asyncio
 async def test_reconfigure_success_fallbacks():
-    """Mata M234, M242, M246: Fallbacks de UI en caso de éxito."""
+    """Verify mutant M234 kill, M242, M246: Fallbacks de UI en caso de éxito."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
     flow.hass.config_entries.async_reload = AsyncMock()
@@ -495,7 +495,7 @@ async def test_reconfigure_success_fallbacks():
 
 @pytest.mark.asyncio
 async def test_reconfigure_confirm_totally_empty_fallbacks():
-    """Mata Mutantes 142-173: Fallbacks en errores cuando el diccionario está vacío."""
+    """Kills mutants 142-173: Fallbacks en errores cuando el diccionario está vacío."""
     flow = ClimateIpConfigFlow()
     # Flow data completamente vacío
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
@@ -512,7 +512,7 @@ async def test_reconfigure_confirm_totally_empty_fallbacks():
         mac_key, _ = get_schema_marker(schema, CONF_MAC)
         token_key, _ = get_schema_marker(schema, CONF_TOKEN)
 
-        # Si el mutante inyecta None o "XXXX", estas aserciones fallan
+        # If mutant inyecta None o "XXXX", estas aserciones fallan
         assert ip_key.description.get("suggested_value") == "1.1.1.1"
         assert mac_key.description.get("suggested_value") == ""
         assert token_key.description.get("suggested_value") == ""
@@ -520,13 +520,13 @@ async def test_reconfigure_confirm_totally_empty_fallbacks():
 
 @pytest.mark.asyncio
 async def test_rest_api_empty_token_and_reauth_abort():
-    """Mata Mutantes 8 y 91 en REST API."""
+    """Kills mutants 8 y 91 en REST API."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
 
-    # 1. Mata M8 (Token vacío fallback a "XXXX")
-    # Si mutmut cambia raw_token = "" a "XXXX", el 'if raw_token:' se cumple y llama a sanitize.
+    # 1. Verify mutant M8 kill (Token vacío fallback a "XXXX")
+    # If mutmut cambia raw_token = "" a "XXXX", el 'if raw_token:' se cumple y llama a sanitize.
     with patch(
         "custom_components.climate_ip.config_flow.sanitize_token"
     ) as mock_sanitize:
@@ -534,7 +534,7 @@ async def test_rest_api_empty_token_and_reauth_abort():
         # En el código original raw_token="", así que NO debe llamar a sanitize_token
         mock_sanitize.assert_not_called()
 
-    # 2. Mata M91 (Invierte la lógica de reauth en REST)
+    # 2. Verify mutant M91 kill (Invierte la lógica de reauth en REST)
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
         CONF_IP_ADDRESS: "1.1.1.1",
@@ -557,7 +557,7 @@ async def test_rest_api_empty_token_and_reauth_abort():
 
 
 def test_rest_api_schema_poll_interval_empty():
-    """Mata Mutantes 18-21 y 53-57 de schemas REST vacíos."""
+    """Kills mutants 18-21 y 53-57 de schemas REST vacíos."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
     flow.hass.config_entries.async_entries.return_value = []
@@ -565,15 +565,15 @@ def test_rest_api_schema_poll_interval_empty():
 
     schema = flow._get_rest_api_schema()
     poll_key, _ = get_schema_marker(schema, CONF_POLL_INTERVAL)
-    assert poll_key.default() == "0:01:00"  # Mata M18, M20, M21
+    assert poll_key.default() == "0:01:00"  # Verify mutant M18 kill, M20, M21
 
     ip_key, _ = get_schema_marker(schema, CONF_IP_ADDRESS)
-    assert ip_key.default() == "api.smartthings.com"  # Mata M53-M57
+    assert ip_key.default() == "api.smartthings.com"  # Verify mutant M53 kill-M57
 
 
 @pytest.mark.asyncio
 async def test_reconfigure_confirm_non_samsung_cert_fallback():
-    """Mata Mutante 44: Fallback de cert_def para dispositivos no-Samsung debe ser string vacío '' y no 'XXXX'."""
+    """Kills mutant 44: Fallback de cert_def para dispositivos no-Samsung debe ser string vacío '' y no 'XXXX'."""
     flow = ClimateIpConfigFlow()
     flow.flow_data = {
         # ¡Usamos explícitamente un dispositivo que NO es Samsung!
@@ -591,7 +591,7 @@ async def test_reconfigure_confirm_non_samsung_cert_fallback():
 
     cert_key, _ = get_schema_marker(schema, CONF_CERT)
 
-    # M44: Si el mutante cambió 'else ""' por 'else "XXXX"' en la asignación del certificado,
+    # M44: If mutant cambió 'else ""' por 'else "XXXX"' en la asignación del certificado,
     # esta aserción fallará instantáneamente.
     assert cert_key.description.get("suggested_value") == ""
 
@@ -650,7 +650,7 @@ async def test_reconfigure_confirm_cert_error_empty_mac_fallback():
 
 @pytest.mark.asyncio
 async def test_test_connection_safe_strict_timeout(hass: HomeAssistant) -> None:
-    """Mata M47 y M51: Verifica que se usa GLOBAL_HTTP_TIMEOUT en la conexión aiohttp."""
+    """Verify mutant M47 kill y M51: Verifica que se usa GLOBAL_HTTP_TIMEOUT en la conexión aiohttp."""
     flow = ClimateIpConfigFlow()
     flow.hass = hass
     flow.flow_data = {
@@ -682,7 +682,7 @@ async def test_test_connection_safe_strict_timeout(hass: HomeAssistant) -> None:
 
 
 def test_get_smartthings_token_empty_string(hass: HomeAssistant) -> None:
-    """Mata M12: Verifica que devuelve '' cuando tok es None y no 'XXXX'."""
+    """Verify mutant M12 kill: Verifica que devuelve '' cuando tok es None y no 'XXXX'."""
     flow = ClimateIpConfigFlow()
     flow.hass = hass
 
@@ -691,26 +691,26 @@ def test_get_smartthings_token_empty_string(hass: HomeAssistant) -> None:
     mock_entry.data = {}
     flow.hass.config_entries.async_entries.return_value = [mock_entry]
 
-    # Aserción letal
+    # Lethal assertion
     assert flow._get_smartthings_token() == ""
 
 
 @pytest.mark.asyncio
 async def test_reauth_empty_eid_fallback(hass: HomeAssistant) -> None:
-    """Mata M8 (reauth): Eid string fallback."""
+    """Verify mutant M8 kill (reauth): Eid string fallback."""
     flow = ClimateIpConfigFlow()
     flow.hass = hass
     flow.context = {}  # Sin entry_id
 
     with patch.object(flow.hass.config_entries, "async_get_entry") as mock_get:
         await flow.async_step_reauth({})
-        # Aserción letal: Busca ID "", no "XXXX"
+        # Lethal assertion: Busca ID "", no "XXXX"
         mock_get.assert_called_once_with("")
 
 
 @pytest.mark.asyncio
 async def test_reconfigure_null_token_strict(hass: HomeAssistant) -> None:
-    """Mata M157 en reconfiguración: Token ausente (None)."""
+    """Verify mutant M157 kill en reconfiguración: Token ausente (None)."""
     flow = ClimateIpConfigFlow()
     flow.hass = hass
     flow.flow_data = {
@@ -789,7 +789,7 @@ async def test_task_exception_strict_error_handling(hass: HomeAssistant) -> None
 
 @pytest.mark.asyncio
 async def test_rest_api_broad_exception_base_error(hass: HomeAssistant) -> None:
-    """Mata M94-M98: Verifica el diccionario de error exacto ante un fallo catastrófico REST."""
+    """Verify mutant M94 kill-M98: Verifica el diccionario de error exacto ante un fallo catastrófico REST."""
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 
     flow = ClimateIpConfigFlow()
@@ -813,7 +813,7 @@ async def test_rest_api_broad_exception_base_error(hass: HomeAssistant) -> None:
 
 @pytest.mark.asyncio
 async def test_rest_api_unique_id_empty_fallback(hass: HomeAssistant) -> None:
-    """Mata M77, M78: Fuerza un unique_id completamente vacío."""
+    """Verify mutant M77 kill, M78: Fuerza un unique_id completamente vacío."""
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 
     flow = ClimateIpConfigFlow()

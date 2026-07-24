@@ -48,26 +48,26 @@ async def test_options_flow_empty_defaults(hass):
     assert result["type"] == "form", f"Expected form but got: {result}"
     schema = result["data_schema"]
 
-    # Mata Mutante 12
+    # Kills mutant 12
     conn_key, _ = get_schema_marker(schema, CONF_CONN_METHOD)
     assert conn_key.default() == CONN_METHOD_AIOHTTP
 
-    # Mata Mutante 54
+    # Kills mutant 54
     poll_key, _ = get_schema_marker(schema, CONF_POLL_INTERVAL)
     assert poll_key.default() == str(datetime.timedelta(seconds=DEFAULT_POLL_INTERVAL))
 
-    # Mata Mutantes 71, 72
+    # Kills mutants 71, 72
     targ_key, _ = get_schema_marker(schema, CONF_TEMP_NATIVE_TARGET)
     assert targ_key.default() == DEFAULT_CONF_TEMP_UNIT
 
-    # Mata Mutantes 82, 83
+    # Kills mutants 82, 83
     step_key, _ = get_schema_marker(schema, CONF_TARGET_TEMP_STEP)
     assert step_key.default() == str(DEFAULT_TARGET_TEMP_STEP)
 
 
 @pytest.mark.asyncio
 async def test_options_schema_target_temp_fallback_empty(hass):
-    """Mata Mutantes 71, 72, 82, 83."""
+    """Kills mutants 71, 72, 82, 83."""
     from pytest_homeassistant_custom_component.common import MockConfigEntry
     from custom_components.climate_ip.config_flow import OptionsFlowHandler
 

@@ -196,7 +196,7 @@ async def test_sniper_update_properties_cache_and_get_fallbacks():
         await poller.async_update_properties_from_state({"dummy": "data"})
         mock_exc.assert_not_called()
 
-    # Inyectamos una clave dummy para que evada los ifs vacíos pero fuerce el fallback del getter
+    # Inject una clave dummy para que evada los ifs vacíos pero fuerce el fallback del getter
     poller.controller.loader._parsed_yaml_cache["0"][CONFIG_DEVICE] = {
         "identifiers": {"dummy": "val"}
     }
@@ -413,7 +413,7 @@ async def test_sniper_async_merge_device_state_protected_value():
     )
     poller = YamlStatePoller(mock_controller)
 
-    # Creamos un state_getter que SOLO tiene la variable protegida _value
+    # Create un state_getter que SOLO tiene la variable protegida _value
     st_getter = NakedObj(_value={"base": "state"})
 
     poller.controller.loader = NakedObj(
@@ -433,7 +433,7 @@ async def test_sniper_async_merge_device_state_protected_value():
     res = await poller.async_merge_device_state(new_data, False, False)
 
     assert res is True
-    # Esta es la bala de plata: Si mutmut cambió la asignación a None, esto fallará.
+    # Esta es la bala de plata: If mutmut cambió la asignación a None, esto fallará.
     assert st_getter._value == {"base": "state", "new": "data"}
 
 
@@ -446,7 +446,7 @@ async def test_sniper_merge_device_state_protected_value_mutation():
     )
     poller = YamlStatePoller(mock_controller)
 
-    # IMPORTANTE: Creamos un state_getter SIN atributo 'value', SOLO con '_value'
+    # IMPORTANTE: Create un state_getter SIN atributo 'value', SOLO con '_value'
     st_getter = NakedObj(_value={"base": "state"})
 
     poller.controller.loader = NakedObj(
@@ -466,7 +466,7 @@ async def test_sniper_merge_device_state_protected_value_mutation():
     res = await poller.async_merge_device_state(new_data, False, False)
 
     assert res is True
-    # LA BALA DE PLATA: Si el mutante cambia la asignación a None en la L899, esto fallará.
+    # LA BALA DE PLATA: If mutant cambia la asignación a None en la L899, esto fallará.
     assert st_getter._value == {"base": "state", "new": "data"}, (
         "Mutante L899: Corrupción en la escritura de _value"
     )
@@ -474,7 +474,7 @@ async def test_sniper_merge_device_state_protected_value_mutation():
 
 @pytest.mark.asyncio
 async def test_sniper_update_properties_pending_and_is_valid_mutations():
-    """Aniquila mutantes L534 y L567 validando los parámetros de delegación estrictos."""
+    """Kills mutants L534 y L567 validando los parámetros de delegación estrictos."""
     mock_controller = NakedObj(log_prefix="TEST", debug=False)
     poller = YamlStatePoller(mock_controller)
 
@@ -634,12 +634,12 @@ async def test_async_update_state_generator_fallback():
     # y rompe el colapso controlado.
     res = await poller.async_update_state()
 
-    # Asertamos que la función sobrevivió y devolvió algo
+    # We assert que la función sobrevivió y devolvió algo
     assert res is not None
 
 
 async def test_async_merge_device_state_logic_flips():
-    """Aniquila mutantes de 'and -> or' y 'return False -> return True'."""
+    """Kills mutants de 'and -> or' y 'return False -> return True'."""
     # Objeto sin 'get_current_state_callback'. Si el 'and' cambia a 'or' (M5),
     # intentará ejecutar una propiedad que no existe y lanzará AttributeError.
     mock_controller = NakedObj(loader=NakedObj(state_getter=None), log_prefix="Test")
@@ -651,7 +651,7 @@ async def test_async_merge_device_state_logic_flips():
 
 
 async def test_update_properties_private_value_pending():
-    """Aniquila mutantes que deshabilitan la asignación de hasattr('_value')."""
+    """Kills mutants que deshabilitan la asignación de hasattr('_value')."""
     mock_controller = DummyController()
     poller = YamlStatePoller(mock_controller)
 
@@ -669,7 +669,7 @@ async def test_update_properties_private_value_pending():
 
     await poller.async_update_properties_from_state({"raw": "data"})
 
-    # Si mutmut alteró las sentencias hasattr('_value') o la asignación, '_value' seguirá siendo "old_val"
+    # If mutmut alteró las sentencias hasattr('_value') o la asignación, '_value' seguirá siendo "old_val"
     assert prop_private._value == "NEW_DATA"
 
 
@@ -744,7 +744,7 @@ async def test_async_update_state_mutant_split_index():
 
 @pytest.mark.asyncio
 async def test_mutant_71_boundary_less_than_two():
-    """Mata el mutante que cambia <= 2 por < 2."""
+    """Verify mutant kill que cambia <= 2 por < 2."""
     mock_controller = DummyController()
     mock_controller.ip_address = None  # APAGAMOS EL PRE-CHEQUEO DE RED
     poller = YamlStatePoller(mock_controller)
@@ -765,7 +765,7 @@ async def test_mutant_71_boundary_less_than_two():
         res = await poller.async_update_state()
         assert res == {"state": "cached"}
     except UpdateFailed:
-        # Si el mutante (< 2) actúa, evaluará False, ignorará la caché y lanzará UpdateFailed.
+        # If mutant (< 2) actúa, evaluará False, ignorará la caché y lanzará UpdateFailed.
         pytest.fail(
             "Mutante M71 (< 2) detectado: La caché fue ignorada en la frontera exacta."
         )
@@ -773,7 +773,7 @@ async def test_mutant_71_boundary_less_than_two():
 
 @pytest.mark.asyncio
 async def test_mutant_74_75_split_logic():
-    """Mata los mutantes de split(None) y split(':')[+1]."""
+    """Verify mutant kill de split(None) y split(':')[+1]."""
     mock_controller = DummyController()
     mock_controller.ip_address = None  # APAGAMOS EL PRE-CHEQUEO DE RED
     poller = YamlStatePoller(mock_controller)

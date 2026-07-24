@@ -253,7 +253,7 @@ async def test_migration_ignored_for_current_version(hass: HomeAssistant) -> Non
     """Asegura que la migración v1 no se ejecute si la versión ya es la correcta."""
 
     # Entrada ya en v2. Usamos datos INVÁLIDOS para v1.
-    # Si el mutante cambia 'if entry.version == 1:' a '!= 1' o '== 2',
+    # If mutant cambia 'if entry.version == 1:' a '!= 1' o '== 2',
     # entrará al bloque v1, fallará el validador (falta ip_address) y devolverá False.
     mock_entry = MagicMock()
     mock_entry.version = 2

@@ -1744,15 +1744,15 @@ async def test_static_yaml_strings_and_base_units(mock_connection, mock_controll
 async def test_device_property_connection_fallback_dict(
     mock_connection, mock_controller
 ):
-    """Mata el mutante silencioso node.get(CONFIG_DEVICE_CONNECTION, None)."""
+    """Verify mutant kill silencioso node.get(CONFIG_DEVICE_CONNECTION, None)."""
     from custom_components.climate_ip.properties import DeviceProperty
 
     op = DeviceProperty("test_conn", mock_connection, mock_controller)
 
-    # Inyectamos un YAML sin la clave CONFIG_DEVICE_CONNECTION
+    # Inject un YAML sin la clave CONFIG_DEVICE_CONNECTION
     op.load_from_yaml({"name": "Test"})
 
-    # Asertamos rígidamente que la factoría recibió un diccionario vacío y no None
+    # Strictly assert que la factoría recibió un diccionario vacío y no None
     mock_connection.create_updated.assert_called_with({})
 
 

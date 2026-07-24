@@ -163,7 +163,7 @@ class YamlConfigLoader:
 
         connection_node = ac.get(CONFIG_DEVICE_CONNECTION, {}).copy()
 
-        # Saneamiento del acceso a la configuración
+        # Sanitized configuration dictionary access
         controller_config = getattr(
             self.controller, "_config", getattr(self.controller, "config", {})
         )
