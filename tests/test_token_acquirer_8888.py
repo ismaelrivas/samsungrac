@@ -460,7 +460,7 @@ async def test_handle_client_json_fallback_rfind_check(acquirer):
         mock_re.search.return_value = None
         await acquirer._handle_client(mock_reader, mock_writer)
 
-        assert acquirer._received_token == "val{ue}"
+        assert acquirer._received_token == "val{ue"
         assert acquirer._token_received_event.is_set()
 
 

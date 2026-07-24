@@ -17,6 +17,6 @@
   ],
   "version": "9.2.5",
   "homeassistant": "2024.11.0",
-  "quality_scale": "platinum",
+  "quality_scale": "gold",
   "strict_typing": true
 }

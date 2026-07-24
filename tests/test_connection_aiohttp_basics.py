@@ -207,10 +207,6 @@ async def test_create_updated(connection_config, mock_logger, mock_hass, mock_se
         assert new_conn_tmpl._connection_template is not None
         # pylint: enable=duplicate-code
 
-def test_dummy_mutmut():
-    from custom_components.climate_ip.connection_aiohttp import dummy_mutmut_test
-    assert dummy_mutmut_test() == 42
-
 
 # ====================================================================================
 # FRENTE A: CICLO DE VIDA Y ESTADO COMPARTIDO (__init__, close, get_diagnostics)

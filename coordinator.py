@@ -55,10 +55,24 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
         def _save_new_token(new_token: str) -> None:
             """Callback to save the renewed token from the network layer."""
-            new_data = dict(self.entry.data)
-            new_data["token"] = new_token
-            self.hass.config_entries.async_update_entry(self.entry, data=new_data)
-            _LOGGER.info("%s Persisted new network token to Config Entry.", self.log_prefix)  # pragma: no mutate
+            @callback
+            def _update_token() -> None:
+                new_data = dict(self.entry.data)
+                new_data["token"] = new_token
+                self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+                _LOGGER.info("%s Persisted new network token to Config Entry.", self.log_prefix)  # pragma: no mutate
+
+            try:
+                running_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                running_loop = None
+
+            if running_loop is not None and running_loop is getattr(self.hass, "loop", None):
+                _update_token()
+            else:
+                if hasattr(self.hass, "loop") and hasattr(self.hass.loop, "call_soon_threadsafe"):
+                    self.hass.loop.call_soon_threadsafe(_update_token)
+                _update_token()
 
         self.controller.on_token_refreshed = _save_new_token
 
@@ -73,11 +87,25 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
         def _save_ssl_config(ssl_config: dict[str, Any]) -> None:
             """Callback to save SSL configuration to the config entry."""
-            current_data = dict(self.entry.data)
-            if current_data.get("_ssl_config_2878") != ssl_config:
-                current_data["_ssl_config_2878"] = ssl_config
-                self.hass.config_entries.async_update_entry(self.entry, data=current_data)
-                _LOGGER.info("%s Persisted SSL config to ConfigEntry data.", self.log_prefix)  # pragma: no mutate
+            @callback
+            def _update_ssl() -> None:
+                current_data = dict(self.entry.data)
+                if current_data.get("_ssl_config_2878") != ssl_config:
+                    current_data["_ssl_config_2878"] = ssl_config
+                    self.hass.config_entries.async_update_entry(self.entry, data=current_data)
+                    _LOGGER.info("%s Persisted SSL config to ConfigEntry data.", self.log_prefix)  # pragma: no mutate
+
+            try:
+                running_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                running_loop = None
+
+            if running_loop is not None and running_loop is getattr(self.hass, "loop", None):
+                _update_ssl()
+            else:
+                if hasattr(self.hass, "loop") and hasattr(self.hass.loop, "call_soon_threadsafe"):
+                    self.hass.loop.call_soon_threadsafe(_update_ssl)
+                _update_ssl()
 
         self.controller.on_ssl_config_updated = _save_ssl_config
 

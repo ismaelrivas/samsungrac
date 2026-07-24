@@ -219,10 +219,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
         # Store coordinator in runtime_data
         entry.runtime_data = single_coordinator
 
-        await hass.async_add_executor_job(
-            importlib.import_module, "custom_components.climate_ip.climate"
-        )
-
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Add listener for options changes.

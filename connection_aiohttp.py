@@ -808,5 +808,3 @@ class ConnectionAiohttp8888(Connection):
         except (RuntimeError, ValueError) as e:
             err_msg = "%s [aiohttp] Error locking/resetting shared state during close: %s"  # pragma: no mutate
             _LOGGER.error(err_msg, self.log_prefix, e)  # pragma: no mutate
-def dummy_mutmut_test():
-    return 42

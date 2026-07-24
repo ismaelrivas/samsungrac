@@ -72,6 +72,11 @@ ALLOWED_OPTIMISTIC_CORRECTIONS: Final[dict[str, str]] = {
     ATTR_PRESET_MODE: "_attr_preset_mode",
 }
 
+CLIMATE_ENTITY_DESCRIPTION: Final[ClimateEntityDescription] = ClimateEntityDescription(
+    key="samsung_ac",
+    translation_key="samsung_ac",
+)
+
 # Legacy platform schema for YAML import.
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
@@ -149,13 +154,9 @@ async def async_setup_entry(
                 _LOGGER.error("Device info missing for device %s. Skipping entity creation to prevent orphan objects.", device_id) # pragma: no mutate
                 continue
 
-            desc = ClimateIPEntityDescription(
-                key=f"samsung_ac_{device_id}",
-                translation_key="samsung_ac",
-            )
             entities.append(
                 ClimateIP(
-                    coordinator, desc, dict(entry.data), device_info, entry.unique_id
+                    coordinator, CLIMATE_ENTITY_DESCRIPTION, dict(entry.data), device_info, entry.unique_id
                 )
             )
         
@@ -167,12 +168,8 @@ async def async_setup_entry(
     else:
         # Fallback for single-device setups.
         coordinator = coordinators
-        desc = ClimateIPEntityDescription(
-            key="samsung_ac",
-            translation_key="samsung_ac",
-        )
         async_add_entities(
-            [ClimateIP(coordinator, desc, dict(entry.data), None, entry.unique_id)]
+            [ClimateIP(coordinator, CLIMATE_ENTITY_DESCRIPTION, dict(entry.data), None, entry.unique_id)]
         )
 
 

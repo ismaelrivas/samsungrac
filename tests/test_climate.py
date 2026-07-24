@@ -512,7 +512,7 @@ async def test_async_setup_entry_multi_device_kills_mutants() -> None:
     c1_args = mock_climate_class.call_args_list[0].args
     coordinator_1, desc_1, data_1, device_info_1, uid_1 = c1_args
     assert coordinator_1 is mock_coord_1, "Coordinator mismatch for dev1 (mutant 1/23)"
-    assert desc_1.key == "samsung_ac_dev1", "Key mismatch for dev1 (mutant 16/18)"
+    assert desc_1.key == "samsung_ac", "Key mismatch for dev1 (mutant 16/18)"
     assert desc_1.translation_key == "samsung_ac", "translation_key mismatch (mutant 17/20/21)"
     assert data_1 == dict(entry.data), "Data dict mismatch (mutant 25/33)"
     assert device_info_1 == {"id": "dev1", "ip": "192.168.0.10"}, (
@@ -524,7 +524,7 @@ async def test_async_setup_entry_multi_device_kills_mutants() -> None:
     c2_args = mock_climate_class.call_args_list[1].args
     coordinator_2, desc_2, data_2, device_info_2, uid_2 = c2_args
     assert coordinator_2 is mock_coord_2, "Coordinator mismatch for dev2"
-    assert desc_2.key == "samsung_ac_dev2"
+    assert desc_2.key == "samsung_ac"
     assert device_info_2 == {"id": "dev2", "ip": "192.168.0.20"}
 
     # --- async_add_entities must be called with update_before_add=True (mutants 34-38) ---
@@ -766,7 +766,7 @@ async def test_async_setup_entry_partial_corruption_kills_mutant_16():
     entities_created = mock_add_entities.call_args[0][0]
     
     assert len(entities_created) == 1, "The 'break' mutant survived by aborting the entire loop!"
-    assert entities_created[0].entity_description.key == "samsung_ac_valid_device"
+    assert entities_created[0].entity_description.key == "samsung_ac"
 
 
 # ============================================================
