@@ -200,6 +200,21 @@ def test_device_key_from_template_regex():
         is None
     )
 
+    # Sniper tests para eliminar mutantes maxsplit=1 y 'and' -> 'or' en _get_device_key_from_template
+    assert (
+        poller._get_device_key_from_template(
+            FakeTemplate("{{ device_state.first_device_state.second }}")
+        )
+        == "first_device_state"
+    )
+    assert (
+        poller._get_device_key_from_template(
+            FakeTemplate("{{ device_state['key_device_state['] }}")
+        )
+        == "key_device_state"
+    )
+    assert poller._get_device_key_from_template("device_state[123]") == "123"
+
 
 @patch("custom_components.climate_ip.controller_yaml_polling.dt_util.now")
 def test_rebuild_attributes_exact_strings(mock_now):

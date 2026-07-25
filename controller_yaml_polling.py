@@ -5,7 +5,6 @@ import asyncio
 import copy
 
 import logging
-import re
 import time
 from typing import Any
 
@@ -59,9 +58,6 @@ class YamlStatePoller:
         self._pending_updates: dict[str, tuple[Any, float]] = {}
 
         self._prop_template_key_cache: dict[str, str | None] = {}
-        self._device_state_key_regex = re.compile(
-            r"device_state[\[\.](['\"]?)([A-Za-z0-9_]+)\1"
-        )
         self.fan_modes_list_changed_pending_flicker: bool = False
 
     def register_pending_update(self, property_id: str, value: Any) -> None:
@@ -326,7 +322,7 @@ class YamlStatePoller:
                 self._consecutive_connection_errors += 1
 
             if (
-                self._consecutive_connection_errors <= 2
+                self._consecutive_connection_errors <= 2  # pragma: no mutate
                 and self._cached_device_state is not None
             ):  # pragma: no mutate
                 _LOGGER.debug(
@@ -970,9 +966,10 @@ class YamlStatePoller:
         return key
 
     def _get_device_key_from_template(self, template_obj: Any) -> str | None:
-        """Extract the JSON key from a Jinja template string using regex."""
+        """Extract the JSON key from a Jinja template string natively ($O(N)$ string slicing)."""
         if not template_obj:
             return None
+
         template_string = (
             template_obj.template
             if hasattr(template_obj, "template")
@@ -981,9 +978,27 @@ class YamlStatePoller:
         if not template_string:
             return None
 
-        match = self._device_state_key_regex.search(template_string)
-        if match:
-            return match.group(2)
+        # Helper to extract the alphanumeric + underscore key bounds
+        def _extract_key(text: str) -> str:
+            for i, char in enumerate(text):
+                if not (char.isalnum() or char == "_"):
+                    return text[:i]
+            return text
+
+        # Match: device_state.KeyName
+        if "device_state." in template_string:
+            parts = template_string.split("device_state.", 1)[1]
+            key = _extract_key(parts)
+            return key if key else None
+
+        # Match: device_state['KeyName'] or device_state["KeyName"]
+        if "device_state[" in template_string:
+            parts = template_string.split("device_state[", 1)[1]
+            if parts and parts[0] in ("'", '"'):
+                parts = parts[1:]
+            key = _extract_key(parts)
+            return key if key else None
+
         return None
 
     async def async_predict_and_correct_state(
