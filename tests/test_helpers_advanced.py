@@ -516,6 +516,15 @@ async def test_async_get_mac_address(mock_exec):
     mock_proc.communicate.return_value = (b"No entries", b"")
     assert await async_get_mac_address("192.168.1.11") is None
 
+    # Sniper boundary tests to kill `and` -> `or` mutants in MAC parsing
+    # 1. Candidate token with 5 colons but length 18 (len != 17)
+    mock_proc.communicate.return_value = (b"1a:-2b:3c:4d:5e:6f", b"")
+    assert await async_get_mac_address("192.168.1.12") is None
+
+    # 2. Candidate token of length 17 with 5 colons but non-alphanumeric character (cleaned.isalnum() is False)
+    mock_proc.communicate.return_value = (b"1:2:3:4:5:678901!", b"")
+    assert await async_get_mac_address("192.168.1.13") is None
+
 
 @pytest.mark.asyncio
 @patch("asyncio.create_subprocess_exec")
