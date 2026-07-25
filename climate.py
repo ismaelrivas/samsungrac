@@ -26,8 +26,10 @@ from homeassistant.components.climate.const import (
 from homeassistant.config_entries import SOURCE_IMPORT
 from homeassistant import const
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.issue_registry import IssueSeverity, async_create_issue
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 if TYPE_CHECKING:
@@ -149,20 +151,44 @@ async def async_setup_entry(
         # Create entities for a multi-device setup.
         entities: list[ClimateIP] = []
         for device_id, coordinator in coordinators.items():
-            device_info = next(
-                (
-                    d
-                    for d in entry.data.get(CONF_DEVICES, [])
-                    if d.get("id") == device_id
-                ),
-                None,
-            )
+            try:
+                devices = entry.data.get(CONF_DEVICES, [])
+                device_info = next(
+                    (
+                        d
+                        for d in devices
+                        if d.get("id") == device_id
+                    ),
+                    None,
+                )
+            except (TimeoutError, ConnectionRefusedError, OSError) as ex:
+                _LOGGER.warning(
+                    "Transient network drop resolving device_info for device %s: %s",
+                    device_id,
+                    ex,
+                )  # pragma: no mutate
+                raise ConfigEntryNotReady(
+                    f"Transient network failure for device {device_id}: {ex}"
+                ) from ex  # pragma: no mutate
+
             # Factory protection: Prevent creation of zombie entities if config is corrupted
             if not device_info:
-                _LOGGER.error(
-                    "Device info missing for device %s. Skipping entity creation to prevent orphan objects.",
+                _LOGGER.warning(
+                    "Device info missing for device %s. Skipping entity creation to prevent orphan objects. Raw payload: %s",
                     device_id,
+                    entry.data,
                 )  # pragma: no mutate
+                async_create_issue(
+                    _hass,
+                    DOMAIN,
+                    f"missing_device_info_{device_id}",
+                    is_fixable=False,
+                    severity=IssueSeverity.WARNING,
+                    translation_key="missing_device_info",
+                    translation_placeholders={
+                        "device_id": str(device_id),
+                    },
+                )
                 continue
 
             entities.append(

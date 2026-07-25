@@ -162,7 +162,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
                 config=device_config_data, logger=_LOGGER, hass=hass, session=session
             )
 
-            if not await controller.initialize():
+            try:
+                initialized = await controller.initialize()
+            except (TimeoutError, ConnectionRefusedError, OSError) as ex:
+                _LOGGER.warning(
+                    "%s Transient network error during controller initialization for device %s: %s",
+                    controller.log_prefix,
+                    device_name,
+                    ex,
+                )  # pragma: no mutate
+                raise ConfigEntryNotReady(
+                    f"Transient network failure initializing device {device_id}: {ex}"
+                ) from ex  # pragma: no mutate
+
+            if not initialized:
                 # fmt: off
                 _LOGGER.debug("%s Failed to initialize controller for device %s", controller.log_prefix, device_name, exc_info=True)  # pragma: no mutate
                 # fmt: on
@@ -208,7 +221,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
             config=runtime_config, logger=_LOGGER, hass=hass, session=session
         )
 
-        if not await controller.initialize():
+        try:
+            initialized = await controller.initialize()
+        except (TimeoutError, ConnectionRefusedError, OSError) as ex:
+            _LOGGER.warning(
+                "%s Transient network error during controller initialization for %s: %s",
+                controller.log_prefix,
+                entry.title,
+                ex,
+            )  # pragma: no mutate
+            raise ConfigEntryNotReady(
+                f"Transient network error initializing device {entry.title}: {ex}"
+            ) from ex  # pragma: no mutate
+
+        if not initialized:
             # fmt: off
             _LOGGER.debug("%s Failed to initialize controller for %s", controller.log_prefix, entry.title, exc_info=True)  # pragma: no mutate
             # fmt: on

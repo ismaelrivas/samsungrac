@@ -15,6 +15,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import SOURCE_IMPORT
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.issue_registry import IssueSeverity
 
 from custom_components.climate_ip.climate import (
@@ -1053,3 +1054,46 @@ def test_climate_max_temp_fallback_on_invalid_value(
     base_climate_entity.coordinator.get_property_object.return_value = mock_prop
 
     assert base_climate_entity.max_temp == float(DEFAULT_CLIMATE_IP_TEMP_MAX)
+
+
+async def test_async_setup_entry_missing_device_info_creates_repairs_issue() -> None:
+    """Verify that missing device_info triggers a warning log and creates a HA Repairs issue."""
+    entry = MagicMock()
+    entry.data = {CONF_DEVICES: []}
+    entry.unique_id = "test_entry"
+    entry.runtime_data = {"dev_orphan": MagicMock()}
+
+    mock_hass = MagicMock()
+    async_add_entities = MagicMock()
+
+    with patch("custom_components.climate_ip.climate.async_create_issue") as mock_create_issue:
+        await async_setup_entry(mock_hass, entry, async_add_entities)
+
+    mock_create_issue.assert_called_once()
+    call_args, call_kwargs = mock_create_issue.call_args
+    assert call_args[0] is mock_hass
+    assert call_args[1] == DOMAIN
+    assert call_args[2] == "missing_device_info_dev_orphan"
+    assert call_kwargs.get("translation_key") == "missing_device_info"
+    assert call_kwargs.get("translation_placeholders") == {"device_id": "dev_orphan"}
+
+
+async def test_async_setup_entry_transient_network_error_raises_not_ready() -> None:
+    """Verify that network exceptions during device_info resolution raise ConfigEntryNotReady."""
+    entry = MagicMock()
+    entry.unique_id = "test_entry"
+    entry.runtime_data = {"dev_1": MagicMock()}
+
+    # Trigger OSError during dict/get access
+    mock_data = MagicMock()
+    mock_data.get.side_effect = OSError("Socket unreachable")
+    entry.data = mock_data
+
+    mock_hass = MagicMock()
+    async_add_entities = MagicMock()
+
+    with pytest.raises(ConfigEntryNotReady) as exc_info:
+        await async_setup_entry(mock_hass, entry, async_add_entities)
+
+    assert "Transient network failure for device dev_1" in str(exc_info.value)
+

@@ -7,9 +7,11 @@ import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 
 from custom_components.climate_ip import (
     PLATFORMS,
@@ -630,3 +632,25 @@ async def test_async_remove_config_entry_device(hass: HomeAssistant) -> None:
     # The function is simple but must be strictly validated to return True
     result = await async_remove_config_entry_device(hass, entry, device_entry)
     assert result is True
+
+
+async def test_async_setup_entry_controller_transient_network_error(hass: HomeAssistant) -> None:
+    """Verify that transient network errors during controller.initialize raise ConfigEntryNotReady."""
+    mock_entry = MagicMock()
+    mock_entry.unique_id = "test_mac"
+    mock_entry.title = "Test AC"
+    mock_entry.data = {"ip_address": "192.168.1.50"}
+    mock_entry.options = {}
+
+    with (
+        patch("custom_components.climate_ip.YamlController") as mock_yaml_class,
+        patch("custom_components.climate_ip.async_get_clientsession"),
+    ):
+        mock_instance = mock_yaml_class.return_value
+        mock_instance.initialize = AsyncMock(side_effect=TimeoutError("Connection timed out"))
+
+        with pytest.raises(ConfigEntryNotReady) as exc_info:
+            await async_setup_entry(hass, mock_entry)
+
+        assert "Transient network error" in str(exc_info.value)
+
