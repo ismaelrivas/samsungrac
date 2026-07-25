@@ -340,3 +340,282 @@ async def test_diagnostics_isolated_mac_fallback_key(mock_hass):
 
     result = await async_get_config_entry_diagnostics(mock_hass, entry)
     assert result["entry"]["options"]["info"] == "MAC is **REDACTED**"
+
+
+async def test_diagnostics_bootstrapping_and_raw_state(mock_hass, mock_entry):
+    """Test extraction of bootstrapping metrics, connection telemetry, and raw device state."""
+    mock_coordinator = MagicMock(spec=SamsungClimateCoordinator)
+    mock_coordinator.data = DummyCoordinatorData(power="on")
+    mock_coordinator.discovered_devices_count = 2
+    mock_coordinator.skipped_devices_count = 1
+    mock_coordinator.entities = ["climate.ac", "sensor.temp"]
+
+    device1 = MagicMock()
+    device1.raw_state = {"power": "on", "mac": "AA:11:22:33:44:55"}
+    mock_coordinator.devices = {"dev1": device1}
+
+    mock_controller = MagicMock()
+    mock_controller.get_diagnostics.return_value = {"is_connected": True, "socket_status": "open"}
+    mock_coordinator.controller = mock_controller
+
+    mock_entry.runtime_data = mock_coordinator
+
+    result = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+
+    assert result["bootstrapping"] == {
+        "total_devices_discovered": 2,
+        "skipped_devices_missing_info": 1,
+        "active_entities": 2,
+    }
+    assert result["connection_telemetry"] == {"is_connected": True, "socket_status": "open"}
+    assert result["raw_device_state"] == {"dev1": {"power": "on", "mac": "**REDACTED**"}}
+
+
+async def test_diagnostics_controller_missing_methods(mock_hass) -> None:
+    """Kill mutants that remove defensive getattr/callable checks in _extract_controller_diagnostics."""
+    from custom_components.climate_ip.diagnostics import _extract_controller_diagnostics
+
+    # 1. Controller without 'connection'
+    mock_ctrl_no_conn = MagicMock(spec=[])
+    assert _extract_controller_diagnostics(mock_ctrl_no_conn) == {}
+
+    # 2. Controller with 'connection' but without 'get_diagnostics'
+    mock_ctrl_no_diag = MagicMock()
+    del mock_ctrl_no_diag.connection.get_diagnostics
+    assert _extract_controller_diagnostics(mock_ctrl_no_diag) == {}
+
+    # 3. get_diagnostics is not a callable method (e.g., a string)
+    mock_ctrl_not_callable = MagicMock()
+    mock_ctrl_not_callable.connection.get_diagnostics = "not_a_method"
+    assert _extract_controller_diagnostics(mock_ctrl_not_callable) == {}
+
+    # 4. get_diagnostics returns an invalid non-dict object
+    mock_ctrl_bad_return = MagicMock()
+    mock_ctrl_bad_return.connection.get_diagnostics.return_value = ["invalid", "list"]
+    assert _extract_controller_diagnostics(mock_ctrl_bad_return) == {}
+
+
+async def test_diagnostics_bootstrapping_math_mutants(mock_hass) -> None:
+    """Kill mutants altering arithmetic operations (+= to -=) and default values (0 to 1)."""
+    entry = MagicMock()
+    entry.entry_id = "test_entry"
+    entry.data = {"mac": "aa:bb:cc:dd:ee:ff"}
+    entry.options = {}
+    entry.unique_id = "test_unique"
+    entry.title = "Test AC"
+    entry.domain = DOMAIN
+
+    # Create runtime_data with exact metrics
+    entry.runtime_data = MagicMock()
+    entry.runtime_data.discovered_devices_count = 5
+    entry.runtime_data.skipped_devices_count = 2
+    entry.runtime_data.entities = ["ent1", "ent2", "ent3"]  # len = 3
+    entry.runtime_data.devices = {}  # No devices
+
+    res = await async_get_config_entry_diagnostics(mock_hass, entry)
+
+    boot = res.get("bootstrapping", {})
+    assert boot.get("total_devices_discovered") == 5
+    assert boot.get("skipped_devices_missing_info") == 2
+    assert boot.get("active_entities") == 3
+
+
+def test_diagnostics_raw_state_fallback():
+    """Kill mutants in the elif hasattr(device, 'device_state') branch."""
+    from custom_components.climate_ip.diagnostics import _extract_raw_device_state
+
+    coordinator = MagicMock()
+    device = MagicMock()
+    # Delete raw_state to force the elif branch
+    del device.raw_state
+    device.device_state = {"temp": 24}
+
+    coordinator.devices = {"dev_1": device}
+
+    res = _extract_raw_device_state(coordinator)
+    assert res == {"dev_1": {"temp": 24}}
+
+
+async def test_deep_redact_substrings_strict_sort_order(mock_hass):
+    """Kill mutants 4 and 7 in _deep_redact_substrings by enforcing length-descending sort order."""
+    from custom_components.climate_ip.diagnostics import _deep_redact_substrings
+
+    # "X" (len 1) is lexicographically larger than "AX" (len 2).
+    # If sorted(key=len, reverse=True) is mutated to sorted(reverse=True) or key=None,
+    # "X" would be sorted before "AX", producing "A**REDACTED**" instead of "**REDACTED**".
+    threat_patterns = {"X", "AX"}
+    text = "AX"
+
+    redacted = _deep_redact_substrings(text, threat_patterns)
+    assert redacted == "**REDACTED**"
+
+
+async def test_diagnostics_multi_coordinator_bootstrapping_math(mock_hass, mock_entry):
+    """Kill mutants in multi-coordinator bootstrapping math operations."""
+    coord1 = MagicMock(spec=SamsungClimateCoordinator)
+    coord1.data = None
+    coord1.controller = object()
+    coord1.discovered_devices_count = 3
+    coord1.skipped_devices_count = 1
+    coord1.entities = ["e1", "e2"]
+
+    coord2 = MagicMock(spec=SamsungClimateCoordinator)
+    coord2.data = None
+    coord2.controller = object()
+    coord2.discovered_devices_count = 2
+    coord2.skipped_devices_count = 4
+    coord2.entities = ["e3"]
+
+    mock_entry.runtime_data = {
+        "dev_1": coord1,
+        "dev_2": coord2,
+    }
+
+    result = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+
+    boot = result.get("bootstrapping", {})
+    assert boot.get("total_devices_discovered") == 5  # 3 + 2
+    assert boot.get("skipped_devices_missing_info") == 5  # 1 + 4
+    assert boot.get("active_entities") == 3  # 2 + 1
+
+
+async def test_get_mac_threat_patterns_conf_mac_vs_string(mock_hass):
+    """Kill mutants 3, 4, 6, 7 in _get_mac_threat_patterns by isolating CONF_MAC vs 'mac' fallback key."""
+    from custom_components.climate_ip.diagnostics import _get_mac_threat_patterns
+    from homeassistant.const import CONF_MAC
+
+    # Case 1: CONF_MAC present, "mac" missing
+    entry1 = MagicMock()
+    entry1.data = {CONF_MAC: "AA:11:22:33:44:55"}
+    entry1.title = None
+    entry1.unique_id = None
+    patterns1 = _get_mac_threat_patterns(entry1)
+    assert "AA:11:22:33:44:55" in patterns1
+
+    # Case 2: CONF_MAC missing, "mac" string key present
+    entry2 = MagicMock()
+    entry2.data = {"mac": "BB:11:22:33:44:55"}
+    entry2.title = None
+    entry2.unique_id = None
+    patterns2 = _get_mac_threat_patterns(entry2)
+    assert "BB:11:22:33:44:55" in patterns2
+
+
+def test_extract_controller_diagnostics_via_connection():
+    """Kill mutants in _extract_controller_diagnostics when connection has get_diagnostics."""
+    from custom_components.climate_ip.diagnostics import _extract_controller_diagnostics
+
+    controller = MagicMock(spec=["connection"])
+    controller.connection = MagicMock()
+    controller.connection.get_diagnostics.return_value = {"ping": 5, "connected": True}
+
+    res = _extract_controller_diagnostics(controller)
+    assert res == {"ping": 5, "connected": True}
+
+
+def test_extract_raw_device_state_controller_fallbacks():
+    """Kill mutants in _extract_raw_device_state main controller fallbacks."""
+    from custom_components.climate_ip.diagnostics import _extract_raw_device_state
+
+    # 1. Main controller raw_state
+    coord1 = MagicMock(spec=["controller"])
+    coord1.devices = {}
+    coord1.controller = MagicMock(spec=["raw_state"])
+    coord1.controller.raw_state = {"temp": 21}
+    assert _extract_raw_device_state(coord1) == {"main": {"temp": 21}}
+
+    # 2. Main controller device_state
+    coord2 = MagicMock(spec=["controller"])
+    coord2.devices = {}
+    coord2.controller = MagicMock(spec=["device_state"])
+    coord2.controller.device_state = {"mode": "cool"}
+    assert _extract_raw_device_state(coord2) == {"main": {"mode": "cool"}}
+
+    # 3. Main controller last_poll_data
+    coord3 = MagicMock(spec=["controller"])
+    coord3.devices = {}
+    coord3.controller = MagicMock(spec=["last_poll_data"])
+    coord3.controller.last_poll_data = {"status": "ok"}
+    assert _extract_raw_device_state(coord3) == {"main": {"status": "ok"}}
+
+
+async def test_diagnostics_top_level_keys_and_hass_data_fallback(mock_hass):
+    """Kill mutants altering top-level dictionary keys and hass.data fallback in async_get_config_entry_diagnostics."""
+    from custom_components.climate_ip.diagnostics import async_get_config_entry_diagnostics
+
+    entry = MagicMock()
+    entry.entry_id = "entry_123"
+    entry.data = {}
+    entry.options = {}
+    entry.title = "AC"
+    entry.domain = DOMAIN
+    entry.unique_id = "uid"
+    entry.runtime_data = None  # Force fallback to hass.data
+
+    mock_coord = MagicMock(spec=SamsungClimateCoordinator)
+    mock_coord.data = None
+    mock_coord.controller = MagicMock(spec=[])
+    mock_coord.discovered_devices_count = 0
+    mock_coord.skipped_devices_count = 0
+    mock_coord.entities = []
+
+    mock_hass.data = {DOMAIN: {"entry_123": mock_coord}}
+
+    res = await async_get_config_entry_diagnostics(mock_hass, entry)
+
+    # Strictly assert top-level dictionary key names
+    assert "connection_telemetry" in res
+    assert "raw_device_state" in res
+    assert "bootstrapping" in res
+    assert "entry" in res
+    assert res["bootstrapping"]["total_devices_discovered"] == 0
+    assert res["bootstrapping"]["skipped_devices_missing_info"] == 0
+
+
+async def test_diagnostics_single_coordinator_default_fallback_metrics(mock_hass):
+    """Kill mutants 22, 26, 31, 35 in single coordinator getattr default fallback values."""
+    from custom_components.climate_ip.diagnostics import async_get_config_entry_diagnostics
+
+    entry = MagicMock()
+    entry.entry_id = "test_single_fallback"
+    entry.data = {}
+    entry.options = {}
+    entry.title = "Test AC"
+    entry.domain = DOMAIN
+    entry.unique_id = "uid"
+
+    # Coordinator without discovered_devices_count or skipped_devices_count attributes
+    mock_coord = MagicMock(spec=SamsungClimateCoordinator)
+    mock_coord.data = None
+    mock_coord.controller = object()
+    del mock_coord.discovered_devices_count
+    del mock_coord.skipped_devices_count
+    mock_coord.entities = []
+
+    entry.runtime_data = mock_coord
+
+    res = await async_get_config_entry_diagnostics(mock_hass, entry)
+    boot = res.get("bootstrapping", {})
+
+    assert boot.get("total_devices_discovered") == 0
+    assert boot.get("skipped_devices_missing_info") == 0
+
+
+async def test_diagnostics_multi_coordinator_default_fallback_metrics(mock_hass, mock_entry):
+    """Kill mutants 95 and 104 in multi-coordinator getattr default fallback values."""
+    from custom_components.climate_ip.diagnostics import async_get_config_entry_diagnostics
+
+    coord1 = MagicMock(spec=SamsungClimateCoordinator)
+    coord1.data = None
+    coord1.controller = object()
+    del coord1.discovered_devices_count
+    del coord1.skipped_devices_count
+    coord1.entities = []
+
+    mock_entry.runtime_data = {"dev_1": coord1}
+
+    result = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+
+    boot = result.get("bootstrapping", {})
+    assert boot.get("total_devices_discovered") == 1
+    assert boot.get("skipped_devices_missing_info") == 0
