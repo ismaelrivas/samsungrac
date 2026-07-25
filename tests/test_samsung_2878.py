@@ -2,7 +2,6 @@
 """Smoke test for samsung_2878.py."""
 # pylint: disable=protected-access,redefined-outer-name,import-outside-toplevel,reimported,broad-exception-caught,unnecessary-pass,line-too-long
 
-from defusedxml import EntitiesForbidden
 import pytest
 
 from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878
@@ -250,16 +249,13 @@ def test_2878_auth_token_format():
     assert "__CLIMATE_IP_TOKEN__" not in rendered_auth
 
 
-async def test_defusedxml_billion_laughs_rejection():
-    """Test that Billion Laughs XML attacks are rejected by defusedxml."""
+async def test_native_shield_billion_laughs_rejection():
+    """Test that Billion Laughs XML attacks are rejected by Native Shield."""
     from custom_components.climate_ip.helpers import safe_xml_to_dict
 
     # Payload suggested by user (recursive entities)
     malicious_xml = '<!DOCTYPE bomb [ <!ENTITY a "bomb"> <!ENTITY b "&a;&a;"> ]><Status>&b;</Status>'
-
-    # Test that it raises EntitiesForbidden (standard defusedxml behavior)
-    with pytest.raises(EntitiesForbidden):
-        safe_xml_to_dict(malicious_xml)
+    assert safe_xml_to_dict(malicious_xml) == {}
 
     # Also verify that a standard billion laughs (more layers) is caught
     billion_laughs = """<?xml version="1.0"?>
@@ -269,9 +265,7 @@ async def test_defusedxml_billion_laughs_rejection():
      <!ENTITY lol2 "&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;">
     ]>
     <lolz>&lol2;</lolz>"""
-
-    with pytest.raises(EntitiesForbidden):
-        safe_xml_to_dict(billion_laughs)
+    assert safe_xml_to_dict(billion_laughs) == {}
 
 
 def test_connection_config_mutants():

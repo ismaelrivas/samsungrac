@@ -329,13 +329,10 @@ class TestSafeXmlToDict:
         assert result["Response"]["Device"]["Attr"]["@id"] == "Wind"
 
     def test_safe_xml_to_dict_security_propagates(self):
-        """DefusedXml security exceptions must propagate, not be swallowed."""
-        from defusedxml import EntitiesForbidden
-
+        """Native Shield XML security firewall rejects DOCTYPE injection payloads."""
         # Billion laughs payload
         malicious = '<!DOCTYPE b [ <!ENTITY a "x"> <!ENTITY b "&a;&a;"> ]><S>&b;</S>'
-        with pytest.raises(EntitiesForbidden):
-            safe_xml_to_dict(malicious)
+        assert safe_xml_to_dict(malicious) == {}
 
 
 class TestCreateSamsungSslContext:
@@ -621,3 +618,81 @@ async def test_async_check_network_reachability_no_library():
     finally:
         # Restauramos el módulo a su estado original para no romper otros tests
         helpers_module.async_ping = original_ping
+
+
+def test_safe_xml_to_dict_non_string_mutation():
+    """Mata al Mutante 1 forzando un tipo no-string evaluable como True."""
+    # El mutante 'and' intentaría hacer un re.search sobre una lista, reventando.
+    # El código correcto corta por lo sano y devuelve {}.
+    assert safe_xml_to_dict(["<root></root>"]) == {}
+    assert safe_xml_to_dict(12345) == {}
+
+
+def test_safe_xml_to_dict_case_insensitive_doctype():
+    """Kill Mutant 9 by verifying that re.IGNORECASE is mandatory (Layer 1)."""
+    malicious_payload = "<!doctype html><root>bypass</root>"
+
+    # Assert that Layer 1 specific error log was called.
+    # If the mutant removes IGNORECASE, Layer 1 will miss the lowercase doctype.
+    with patch("custom_components.climate_ip.helpers._LOGGER.error") as mock_log:
+        assert safe_xml_to_dict(malicious_payload) == {}
+        mock_log.assert_called_once_with(
+            "XML Payload rejected: DOCTYPE injection attempt detected."
+        )
+
+
+def test_safe_xml_to_dict_layer2_fallback_defense():
+    """Kill Mutants 21, 22, 25, 27 by demonstrating Layer 2 acts if Layer 1 is bypassed."""
+    malicious_payload = "<!DOCTYPE dummy><root>123</root>"
+
+    # Simulate an attacker bypassing the Regex Firewall (Layer 1)
+    with patch("custom_components.climate_ip.helpers.re.search", return_value=None):
+        result = safe_xml_to_dict(malicious_payload)
+
+        # If parser=parser was removed by a mutant, standard parser accepts DOCTYPE.
+        # With SecureTreeBuilder intact, doctype() raises ValueError and returns {}.
+        assert (
+            result == {}
+        ), "Critical Failure! Native interceptor (Layer 2) was removed or bypassed."
+
+
+def test_tolerant_header_parsing_strict_mutants():
+    """Kill Mutants 5, 7, and 8 in monkey-patch variable assignments."""
+    import http.client
+    import urllib3.connection as connection_mod
+    from custom_components.climate_ip.helpers import tolerant_header_parsing
+
+    orig_parse = http.client.parse_headers
+    orig_conn = connection_mod.assert_header_parsing
+
+    with tolerant_header_parsing():
+        # Mutants 7 and 8 change assignments to None.
+        assert connection_mod.assert_header_parsing is not None
+        assert connection_mod.assert_header_parsing is not orig_conn
+        assert http.client.parse_headers is not None
+        assert http.client.parse_headers is not orig_parse
+
+    # Mutant 5 changes original reference backup variable to None, breaking cleanup.
+    assert http.client.parse_headers is orig_parse
+    assert connection_mod.assert_header_parsing is orig_conn
+
+
+def test_tolerant_assert_strict_forwarding():
+    """Kill Mutant 1 which sends None instead of original headers."""
+    import http.client
+    import custom_components.climate_ip.helpers as helpers_mod
+    import urllib3.connection as connection_mod
+    from custom_components.climate_ip.helpers import tolerant_header_parsing
+
+    mock_orig = MagicMock()
+    test_headers = http.client.HTTPMessage()
+
+    with tolerant_header_parsing():
+        old_orig = helpers_mod._HEADER_PATCH_ORIGINAL_RESPONSE
+        helpers_mod._HEADER_PATCH_ORIGINAL_RESPONSE = mock_orig
+        try:
+            _tolerant_assert = connection_mod.assert_header_parsing
+            _tolerant_assert(test_headers)
+            mock_orig.assert_called_once_with(test_headers)
+        finally:
+            helpers_mod._HEADER_PATCH_ORIGINAL_RESPONSE = old_orig

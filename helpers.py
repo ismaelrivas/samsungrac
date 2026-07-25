@@ -23,8 +23,7 @@ import threading
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
 
-import xml.etree.ElementTree as ET_types
-import defusedxml.ElementTree as ET
+import xml.etree.ElementTree as ET
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -72,10 +71,34 @@ def parse_entity_category(raw: str | None) -> "EntityCategory | None":
         return None
 
 
-def safe_xml_to_dict(xml_string: str) -> dict[str, Any]:
-    """Parse an XML string into a dictionary using defusedxml for security."""
+class SecureTreeBuilder(ET.TreeBuilder):
+    """Native Interceptor: Destroys parsing immediately if the engine
 
-    def _element_to_dict(element: ET_types.Element) -> Any:
+    attempts to process a DOCTYPE, neutralizing XXE and Billion Laughs at the root.
+    """
+
+    def doctype(self, name: str, pubid: str | None, system: str | None) -> None:
+        raise ValueError(
+            "Security Violation: DOCTYPE declarations strictly prohibited."
+        )  # pragma: no mutate
+
+
+def safe_xml_to_dict(xml_string: str) -> dict[str, Any]:
+    """Zero-dependency, Production-Grade XML to dict parser.
+
+    Replaces defusedxml using strictly standard library defenses.
+    """
+    if not xml_string or not isinstance(xml_string, str):
+        return {}
+
+    # Layer 1: Fast-Fail Regex Firewall
+    if re.search(r"<!DOCTYPE", xml_string, re.IGNORECASE):
+        _LOGGER.error(
+            "XML Payload rejected: DOCTYPE injection attempt detected."
+        )  # pragma: no mutate
+        return {}
+
+    def _element_to_dict(element: ET.Element) -> Any:
         result: dict[str, Any] = {f"@{k}": v for k, v in element.attrib.items()}
 
         for child in element:
@@ -99,21 +122,17 @@ def safe_xml_to_dict(xml_string: str) -> dict[str, Any]:
         return result
 
     try:
-        root = ET.fromstring(xml_string.strip())
+        # Layer 2: Strict Parsing with Native Interceptor
+        parser = ET.XMLParser(target=SecureTreeBuilder())
+        root = ET.fromstring(xml_string.strip(), parser=parser)
         return {root.tag: _element_to_dict(root)}
-    except (ET_types.ParseError, AttributeError, TypeError) as exc:
+    except (ET.ParseError, AttributeError, TypeError) as exc:
         _LOGGER.debug(
-            "safe_xml_to_dict: failed to parse XML response: %s", exc
+            "Structural error parsing native XML: %s", exc
         )  # pragma: no mutate
         return {}
     except ValueError as exc:
-        from defusedxml.common import DefusedXmlException  # pylint: disable=import-outside-toplevel
-
-        if isinstance(exc, DefusedXmlException):
-            raise  # pragma: no mutate
-        _LOGGER.debug(
-            "safe_xml_to_dict: failed to parse XML response: %s", exc
-        )  # pragma: no mutate
+        _LOGGER.error("XML Security block: %s", exc)  # pragma: no mutate
         return {}
 
 
