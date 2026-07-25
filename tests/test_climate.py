@@ -1074,6 +1074,8 @@ async def test_async_setup_entry_missing_device_info_creates_repairs_issue() -> 
     assert call_args[0] is mock_hass
     assert call_args[1] == DOMAIN
     assert call_args[2] == "missing_device_info_dev_orphan"
+    assert call_kwargs.get("is_fixable") is False, "El issue de reparación no debe ser fixable"
+    assert call_kwargs.get("severity") == IssueSeverity.WARNING
     assert call_kwargs.get("translation_key") == "missing_device_info"
     assert call_kwargs.get("translation_placeholders") == {"device_id": "dev_orphan"}
 
