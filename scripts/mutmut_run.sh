@@ -62,10 +62,11 @@ echo "🎯 Objetivo para mutmut (--source): ${TARGET_FILE}"
 # ── 7. Limpiar estado anterior ────────────────────────────────────────────────
 echo ""
 echo "🧹 Limpiando artefactos anteriores..."
-# rm -rf mutants/ .mutmut-cache .coverage custom_components/climate_ip/.coverage \
-#        mutmut_processed.txt survived_latest.log mutantes.txt mutantes_filtrados.txt \
-#        mutant_analysis.md
-# mkdir -p mutants/custom_components/climate_ip/tests
+rm -rf mutants/ .mutmut-cache .coverage custom_components/climate_ip/.coverage \
+       mutmut_processed.txt survived_latest.log mutantes.txt mutantes_filtrados.txt \
+       mutant_analysis.md
+mkdir -p mutants/custom_components/climate_ip/tests
+PYTHONPATH=. /workspaces/ha_data/.dev-tools/bin/python -m mutmut reset
 echo "✅ Limpieza completa"
 
 # ── 8. Proteger el .git anidado ───────────────────────────────────────────────

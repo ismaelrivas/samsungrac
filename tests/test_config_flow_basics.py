@@ -25,6 +25,15 @@ from custom_components.climate_ip.exceptions import AuthError
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from typing import Coroutine, Any
+
+
+async def fast_await(coro: Coroutine[Any, Any, Any], timeout: float = 0.5) -> Any:
+    """Circuit breaker for async tests to kill deadlocking mutants instantly."""
+    try:
+        return await asyncio.wait_for(coro, timeout=timeout)
+    except TimeoutError:
+        pytest.fail("Circuit breaker triggered: Coroutine hung (likely mutant deadlock)")
 
 
 async def test_form_user_step(hass):
@@ -552,10 +561,10 @@ async def test_initiate_pairing_graceful_failure(hass: HomeAssistant) -> None:
         side_effect=TokenAcquisitionError("Simulated failure")
     )
 
-    result = await flow._initiate_pairing_safe()  # pylint: disable=protected-access
+    result = await fast_await(flow._initiate_pairing_safe())  # pylint: disable=protected-access
 
     assert result["ok"] is False
-    assert result["error"] == "cannot_connect"
+    assert result["error"] == "pairing_connection_failed"
 
 
 async def test_smartthings_token_reauth_triggers_flow(hass: HomeAssistant) -> None:
@@ -2089,10 +2098,10 @@ async def test_pairing_wrappers_mutants(hass: HomeAssistant) -> None:
 
     # 1. Kill mutants when acquirer is None
     flow.acquirer = None
-    res_initiate_none = await flow._initiate_pairing_safe()
+    res_initiate_none = await fast_await(flow._initiate_pairing_safe())
     assert res_initiate_none == {"ok": False, "error": "unknown_error"}
 
-    res_wait_none = await flow._wait_token_safe()
+    res_wait_none = await fast_await(flow._wait_token_safe())
     assert res_wait_none == {"ok": False, "error": "unknown_error"}
 
     from unittest.mock import AsyncMock
@@ -2101,26 +2110,26 @@ async def test_pairing_wrappers_mutants(hass: HomeAssistant) -> None:
 
     # 2. Kill mutants on Success Path
     flow.acquirer.async_initiate_pairing.return_value = {"mocked": "config"}
-    res_initiate_success = await flow._initiate_pairing_safe()
+    res_initiate_success = await fast_await(flow._initiate_pairing_safe())
     assert res_initiate_success == {"ok": True, "config": {"mocked": "config"}}
     flow.acquirer.async_initiate_pairing.assert_awaited_once()
     flow.acquirer.async_initiate_pairing.reset_mock()
 
     flow.acquirer.async_wait_for_token.return_value = "mocked_token"
-    res_wait_success = await flow._wait_token_safe()
+    res_wait_success = await fast_await(flow._wait_token_safe())
     assert res_wait_success == {"ok": True, "token": "mocked_token"}
     flow.acquirer.async_wait_for_token.assert_awaited_once()
     flow.acquirer.async_wait_for_token.reset_mock()
 
     # 3. Kill mutants on Generic Exception Path
     flow.acquirer.async_initiate_pairing.side_effect = Exception("Generic Boom")
-    res_initiate_exc = await flow._initiate_pairing_safe()
+    res_initiate_exc = await fast_await(flow._initiate_pairing_safe())
     assert res_initiate_exc == {"ok": False, "error": "unknown_error"}
     flow.acquirer.async_initiate_pairing.assert_awaited_once()
     flow.acquirer.async_initiate_pairing.reset_mock()
 
     flow.acquirer.async_wait_for_token.side_effect = Exception("Generic Boom")
-    res_wait_exc = await flow._wait_token_safe()
+    res_wait_exc = await fast_await(flow._wait_token_safe())
     assert res_wait_exc == {"ok": False, "error": "unknown_error"}
     flow.acquirer.async_wait_for_token.assert_awaited_once()
     flow.acquirer.async_wait_for_token.reset_mock()
@@ -2132,12 +2141,16 @@ async def test_pairing_wrappers_mutants(hass: HomeAssistant) -> None:
     )
 
     flow.acquirer.async_initiate_pairing.side_effect = CannotConnect("Timeout")
-    res_initiate_spec_exc = await flow._initiate_pairing_safe()
-    assert res_initiate_spec_exc == {"ok": False, "error": "cannot_connect"}
+    res_initiate_spec_exc = await fast_await(flow._initiate_pairing_safe())
+    assert res_initiate_spec_exc == {
+        "ok": False,
+        "error": "pairing_connection_failed",
+        "error_details": "Timeout",
+    }
     flow.acquirer.async_initiate_pairing.assert_awaited_once()
 
     flow.acquirer.async_wait_for_token.side_effect = TokenAcquisitionError("Failed")
-    res_wait_spec_exc = await flow._wait_token_safe()
+    res_wait_spec_exc = await fast_await(flow._wait_token_safe())
     assert res_wait_spec_exc == {"ok": False, "error": "token_acquisition_failed"}
     flow.acquirer.async_wait_for_token.assert_awaited_once()
 
@@ -2179,7 +2192,7 @@ async def test_async_step_await_button_mutants(hass: HomeAssistant) -> None:
     flow.task = MagicMock()
     flow.task.done.return_value = False
 
-    result_progress = await flow.async_step_await_button()
+    result_progress = await fast_await(flow.async_step_await_button())
     assert result_progress["type"] == "progress"
     assert result_progress["step_id"] == "await_button"
     assert result_progress["progress_action"] == "awaiting_ap_button_press"
@@ -2189,7 +2202,7 @@ async def test_async_step_await_button_mutants(hass: HomeAssistant) -> None:
 
     # 2. task is not done, non-MIM_H03 device
     flow.flow_data[CONF_DEVICE_TYPE] = "some_other"
-    result_progress_2 = await flow.async_step_await_button()
+    result_progress_2 = await fast_await(flow.async_step_await_button())
     assert result_progress_2["progress_action"] == "awaiting_button_press"
 
     # 3. Kill mutmut_23, 24, 25, 26, 27, 28: task is done, success, DEVICE_TYPE_SAMSUNG_2878
@@ -2197,7 +2210,7 @@ async def test_async_step_await_button_mutants(hass: HomeAssistant) -> None:
     flow.task.done.return_value = True
     flow.task.result.return_value = {"ok": True, "token": "valid_token"}
 
-    result_success = await flow.async_step_await_button()
+    result_success = await fast_await(flow.async_step_await_button())
     assert result_success["type"] == "progress_done"
     assert result_success["step_id"] == "test_connection"
     assert flow.flow_data[CONF_TOKEN] == "valid_token"
@@ -2209,10 +2222,18 @@ async def test_async_step_await_button_mutants(hass: HomeAssistant) -> None:
     flow.task.done.return_value = True
     flow.task.result.return_value = {"ok": True, "token": "malicious\n\rtoken"}
 
-    result_fail = await flow.async_step_await_button()
+    result_fail = await fast_await(flow.async_step_await_button())
     assert result_fail["type"] == "progress_done"
     assert result_fail["step_id"] == "handle_error"
     assert flow.flow_data.get("error_key") == "token_acquisition_failed"
+
+    # 5. Kill mutmut error_details transfer in await_button
+    flow.task = MagicMock()
+    flow.task.done.return_value = True
+    flow.task.result.return_value = {"ok": False, "error": "some_error", "error_details": "await_details"}
+    result_fail_details = await fast_await(flow.async_step_await_button())
+    assert result_fail_details["step_id"] == "handle_error"
+    assert flow.flow_data.get("error_details") == "await_details"
 
 
 async def test_async_step_discover_uuid_mutants(hass: HomeAssistant) -> None:
@@ -2981,7 +3002,7 @@ async def test_async_step_initiate_pairing_mutants(hass: HomeAssistant) -> None:
     flow.task.done.return_value = True
     flow.task.result.return_value = {"ok": True, "config": "some_config"}
 
-    res1 = await flow.async_step_initiate_pairing()
+    res1 = await fast_await(flow.async_step_initiate_pairing())
     assert res1["type"] == "progress_done"
     assert res1["step_id"] == "await_button"
     assert flow.flow_data["preferred_connection"] == "some_config"
@@ -2994,13 +3015,14 @@ async def test_async_step_initiate_pairing_mutants(hass: HomeAssistant) -> None:
     flow2.flow_data = {"_fallback_attempted": True}
     flow2.task = MagicMock()
     flow2.task.done.return_value = True
-    flow2.task.result.return_value = {"ok": False, "error": "test_error"}
+    flow2.task.result.return_value = {"ok": False, "error": "test_error", "error_details": "test_details"}
 
-    res2 = await flow2.async_step_initiate_pairing()
+    res2 = await fast_await(flow2.async_step_initiate_pairing())
     # It should not try fallback again, it should return progress_done to handle_error
     assert res2["type"] == "progress_done"
     assert res2["step_id"] == "handle_error"
     assert flow2.flow_data["error_key"] == "test_error"
+    assert flow2.flow_data["error_details"] == "test_details"
 
     # 3. Kill mutmut 29 (ip_address in fallback)
     flow3 = ClimateIpConfigFlow()
@@ -3019,7 +3041,7 @@ async def test_async_step_initiate_pairing_mutants(hass: HomeAssistant) -> None:
     with patch(
         "custom_components.climate_ip.config_flow.SamsungTokenAcquirer8888"
     ) as mock_acquirer:
-        res3 = await flow3.async_step_initiate_pairing()
+        res3 = await fast_await(flow3.async_step_initiate_pairing())
 
         # Should initiate progress for fallback
         assert res3["type"] == "progress"
@@ -3049,7 +3071,7 @@ async def test_async_step_initiate_pairing_mutants(hass: HomeAssistant) -> None:
     with patch(
         "custom_components.climate_ip.config_flow.SamsungTokenAcquirer8888"
     ) as mock_acquirer4:
-        res4 = await flow4.async_step_initiate_pairing()
+        res4 = await fast_await(flow4.async_step_initiate_pairing())
 
         assert res4["type"] == "progress"
         mock_acquirer4.assert_called_once()
@@ -3073,7 +3095,7 @@ async def test_async_step_initiate_pairing_mutants(hass: HomeAssistant) -> None:
     with patch(
         "custom_components.climate_ip.config_flow.SamsungTokenAcquirer"
     ) as mock_acquirer5:
-        res5 = await flow5.async_step_initiate_pairing()
+        res5 = await fast_await(flow5.async_step_initiate_pairing())
 
         assert res5["type"] == "progress"
         assert flow5.flow_data[CONF_DEVICE_TYPE] == DEVICE_TYPE_SAMSUNG_2878
@@ -3111,7 +3133,7 @@ async def test_async_step_initiate_pairing_mutants(hass: HomeAssistant) -> None:
     flow6.hass.async_create_task.return_value = mock_task
 
     with patch.object(flow6, "_initiate_pairing_safe", return_value=None):
-        res6 = await flow6.async_step_initiate_pairing()
+        res6 = await fast_await(flow6.async_step_initiate_pairing())
         assert res6["type"] == "progress"
 
         # Kill mutmut 79-87: async_show_progress args at the end of the function
@@ -3305,7 +3327,7 @@ async def test_async_step_test_connection_mutants(hass: HomeAssistant) -> None:
     mock_task.done.return_value = False
     flow.flow_data = {"ip_address": "1.2.3.4", "device_type": "dummy"}
     with patch.object(flow.hass, "async_create_task", return_value=mock_task):
-        res0 = await flow.async_step_test_connection()
+        res0 = await fast_await(flow.async_step_test_connection())
     assert res0["type"] == "progress"
     assert res0["progress_action"] == "testing_connection"
 
@@ -3319,7 +3341,7 @@ async def test_async_step_test_connection_mutants(hass: HomeAssistant) -> None:
     flow.task.done.return_value = True
     flow.task.result.return_value = {"ok": False, "error": "auth_error"}
 
-    res1 = await flow.async_step_test_connection()
+    res1 = await fast_await(flow.async_step_test_connection())
     assert res1["type"] == "progress_done"
     assert res1["step_id"] == "handle_error"
     # Kill mutmut asserting dict pop and assignments
@@ -3334,7 +3356,7 @@ async def test_async_step_test_connection_mutants(hass: HomeAssistant) -> None:
     # FORZAMOS LA EXCEPCIÓN PARA ENTRAR EN EL BLOQUE `except Exception:`
     flow.task.result.side_effect = Exception("Simulated crash")
 
-    res1b = await flow.async_step_test_connection()
+    res1b = await fast_await(flow.async_step_test_connection())
     assert res1b["type"] == "progress_done"
     assert res1b["step_id"] == "handle_error"
     # ASERCIÓN ESTRICTA DE FRANCOTIRADOR:
@@ -3347,7 +3369,7 @@ async def test_async_step_test_connection_mutants(hass: HomeAssistant) -> None:
     flow.task = MagicMock()
     flow.task.done.return_value = True
     flow.task.result.return_value = {"ok": True}
-    res2 = await flow.async_step_test_connection()
+    res2 = await fast_await(flow.async_step_test_connection())
     assert res2["step_id"] == "create_entry"
 
     # Case 3: Success, 8888 Device, NO Device ID -> routes to discover_uuid
@@ -3355,7 +3377,7 @@ async def test_async_step_test_connection_mutants(hass: HomeAssistant) -> None:
     flow.task = MagicMock()
     flow.task.done.return_value = True
     flow.task.result.return_value = {"ok": True}
-    res3 = await flow.async_step_test_connection()
+    res3 = await fast_await(flow.async_step_test_connection())
     assert res3["step_id"] == "discover_uuid"
 
     # Case 4: Success, 8888 Device, HAS Device ID -> routes to create_entry
@@ -3367,7 +3389,7 @@ async def test_async_step_test_connection_mutants(hass: HomeAssistant) -> None:
     flow.task = MagicMock()
     flow.task.done.return_value = True
     flow.task.result.return_value = {"ok": True}
-    res4 = await flow.async_step_test_connection()
+    res4 = await fast_await(flow.async_step_test_connection())
     assert res4["step_id"] == "create_entry"
 
 
@@ -3384,7 +3406,7 @@ async def test_test_connection_safe_untested_paths(hass: HomeAssistant) -> None:
 
     # Kill the "else" branch mutant (Unknown device)
     flow.flow_data = {CONF_DEVICE_TYPE: "Alien_AC"}
-    res = await flow._test_connection_safe()
+    res = await fast_await(flow._test_connection_safe())
     assert res == {"ok": False, "error": "cannot_connect"}
 
     # Kill the broad "except Exception" mutant at the very end
@@ -3397,7 +3419,7 @@ async def test_test_connection_safe_untested_paths(hass: HomeAssistant) -> None:
         "custom_components.climate_ip.config_flow.async_get_clientsession",
         side_effect=Exception("Catastrophic Core Failure"),
     ):
-        res2 = await flow._test_connection_safe()
+        res2 = await fast_await(flow._test_connection_safe())
         assert res2 == {"ok": False, "error": "cannot_connect"}
 
 
@@ -3670,7 +3692,7 @@ async def test_test_connection_safe_2878_branch(hass: HomeAssistant) -> None:
         mock_ctrl.initialize = AsyncMock(return_value=False)
         mock_ctrl_cls.return_value = mock_ctrl
 
-        res1 = await flow._test_connection_safe()
+        res1 = await fast_await(flow._test_connection_safe())
         assert res1 == {"ok": False, "error": "cannot_connect"}
 
         # Kill mutmut_75-81: Ensure "unique_id" is injected exactly when missing
@@ -3686,7 +3708,7 @@ async def test_test_connection_safe_2878_branch(hass: HomeAssistant) -> None:
         mock_ctrl.initialize = AsyncMock(return_value=False)
         mock_ctrl_cls.return_value = mock_ctrl
 
-        await flow._test_connection_safe()
+        await fast_await(flow._test_connection_safe())
         called_config = mock_ctrl_cls.call_args[1]["config"]
         # Kill mutmut_77: Si mutó a `in`, se sobreescribirá.
         assert called_config["unique_id"] == "PRE_EXISTING_ID"
@@ -3708,7 +3730,7 @@ async def test_test_connection_safe_2878_branch(hass: HomeAssistant) -> None:
         mock_ctrl.async_shutdown = AsyncMock()
         mock_ctrl_cls.return_value = mock_ctrl
 
-        res2 = await flow._test_connection_safe()
+        res2 = await fast_await(flow._test_connection_safe())
         assert res2 == {"ok": True}
         # Aseguramos que el shutdown se llama para no dejar sockets abiertos
         mock_ctrl.async_shutdown.assert_awaited_once()
@@ -3729,7 +3751,7 @@ async def test_test_connection_safe_2878_branch(hass: HomeAssistant) -> None:
         mock_ctrl.async_shutdown = AsyncMock()
         mock_ctrl_cls.return_value = mock_ctrl
 
-        res3 = await flow._test_connection_safe()
+        res3 = await fast_await(flow._test_connection_safe())
         assert res3 == {"ok": False}
 
 
@@ -3920,7 +3942,7 @@ async def test_test_connection_safe_8888_strict_kwargs(hass: HomeAssistant) -> N
         mock_session.get.return_value = mock_get
         mock_session_func.return_value = mock_session
 
-        res = await flow._test_connection_safe()
+        res = await fast_await(flow._test_connection_safe())
         assert res == {"ok": True}
 
         # Táctica 3: Strict mock assertions
@@ -3953,7 +3975,7 @@ async def test_test_connection_safe_8888_strict_kwargs(hass: HomeAssistant) -> N
         mock_session.get.return_value = mock_get
         mock_session_func.return_value = mock_session
 
-        res = await flow._test_connection_safe()
+        res = await fast_await(flow._test_connection_safe())
         assert res == {"ok": True}
 
         call_args, call_kwargs = mock_session.get.call_args
@@ -3981,7 +4003,7 @@ async def test_test_connection_safe_8888_strict_kwargs(hass: HomeAssistant) -> N
 
         # Espiamos el método load_verify_locations
         with patch.object(ssl.SSLContext, "load_verify_locations") as mock_load_verify:
-            res_cert = await flow._test_connection_safe()
+            res_cert = await fast_await(flow._test_connection_safe())
             assert res_cert == {"ok": True}
 
             # Kills mutants 41-45 y 48-49: Exige la carga exacta del CA file
@@ -4010,7 +4032,7 @@ async def test_test_connection_safe_8888_strict_kwargs(hass: HomeAssistant) -> N
         mock_session.get.return_value = mock_get
         mock_session_func.return_value = mock_session
 
-        res = await flow._test_connection_safe()
+        res = await fast_await(flow._test_connection_safe())
         assert res == {"ok": True}
 
         call_args, call_kwargs = mock_session.get.call_args
@@ -6080,3 +6102,236 @@ async def test_config_flow_options_none_fallbacks(hass: HomeAssistant) -> None:
         k for k in schema2.schema if getattr(k, "schema", None) == CONF_POLL_INTERVAL
     )
     assert poll_marker2.default() == "0:01:00"  # 60 seconds (DEFAULT_POLL_INTERVAL)
+
+
+async def test_loud_vanguard_lethal_failure_verbose_abort(hass: HomeAssistant) -> None:
+    """Operation Loud Vanguard: Lethal failures abort with description_placeholders."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888,
+        CONF_IP_ADDRESS: "192.168.1.150",
+        "error_key": "pairing_connection_failed",
+        "error_details": "Connection refused on port 8888",
+    }
+
+    result = await flow.async_step_handle_error()
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "pairing_connection_failed"
+    assert result["description_placeholders"]["ip_address"] == "192.168.1.150"
+    assert result["description_placeholders"]["error_details"] == "Connection refused on port 8888"
+
+
+async def test_loud_vanguard_recoverable_failure_form_retry(hass: HomeAssistant) -> None:
+    """Operation Loud Vanguard: Recoverable failures return form retry with targeted errors."""
+    from custom_components.climate_ip.const import DEVICE_TYPE_SAMSUNG_8888
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888,
+        CONF_IP_ADDRESS: "192.168.1.150",
+        "error_key": "timeout_connect",
+    }
+
+    result_timeout = await flow.async_step_handle_error()
+    assert result_timeout["type"] == "form"
+    assert result_timeout["errors"][CONF_IP_ADDRESS] == "timeout_connect"
+
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888,
+        CONF_IP_ADDRESS: "192.168.1.150",
+        "error_key": "invalid_auth",
+    }
+    result_auth = await flow.async_step_handle_error()
+    assert result_auth["type"] == "form"
+    assert result_auth["errors"]["base"] == "invalid_auth"
+
+
+@pytest.mark.asyncio
+async def test_initiate_pairing_safe_timeout_and_auth(hass: HomeAssistant) -> None:
+    """Mata los mutantes 25-29 forzando TimeoutError, AuthError, TokenAcquisitionError y Exception en _initiate_pairing_safe."""
+    from unittest.mock import AsyncMock
+    from custom_components.climate_ip.exceptions import AuthError, TokenAcquisitionError
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.flow_data = {CONF_IP_ADDRESS: "192.168.1.10"}
+    flow.acquirer = AsyncMock()
+
+    # 1. Forzamos TimeoutError
+    flow.acquirer.async_initiate_pairing.side_effect = TimeoutError("Network timeout")
+    res = await flow._initiate_pairing_safe()
+    assert res == {
+        "ok": False,
+        "error": "timeout_connect",
+        "error_details": "Network timeout",
+    }
+
+    # 2. Forzamos AuthError
+    flow.acquirer.async_initiate_pairing.side_effect = AuthError("Token rejected")
+    res2 = await flow._initiate_pairing_safe()
+    assert res2 == {
+        "ok": False,
+        "error": "pairing_connection_failed",
+        "error_details": "Token rejected",
+    }
+
+    # 3. Forzamos TokenAcquisitionError
+    flow.acquirer.async_initiate_pairing.side_effect = TokenAcquisitionError("Acq error")
+    res3 = await flow._initiate_pairing_safe()
+    assert res3 == {
+        "ok": False,
+        "error": "pairing_connection_failed",
+        "error_details": "Acq error",
+    }
+
+    # 4. Forzamos Exception generico
+    flow.acquirer.async_initiate_pairing.side_effect = RuntimeError("Generic error")
+    res4 = await flow._initiate_pairing_safe()
+    assert res4 == {
+        "ok": False,
+        "error": "unknown_error",
+    }
+
+
+@pytest.mark.asyncio
+async def test_handle_error_mac_and_unmapped_fallback_mutants(hass: HomeAssistant) -> None:
+    """Mata los mutantes 16, 17, 18, 19, 1389, 1391 y 1403 en async_step_handle_error."""
+    from custom_components.climate_ip.const import DEVICE_TYPE_SAMSUNG_2878, DEVICE_TYPE_SAMSUNG_8888
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
+        CONF_IP_ADDRESS: "192.168.1.100",
+    }
+
+    # MATAR MUTANTES de mac_resolve_failed
+    flow.flow_data["error_key"] = "mac_resolve_failed"
+    res_mac = await flow.async_step_handle_error()
+    assert res_mac["type"] == "form"
+    assert res_mac["errors"] == {"base": "mac_resolve_failed"}
+    assert res_mac["step_id"] == "samsung_2878"
+
+    # Verifiquemos con 8888 que step_id es samsung_8888
+    flow.flow_data[CONF_DEVICE_TYPE] = DEVICE_TYPE_SAMSUNG_8888
+    flow.flow_data["error_key"] = "mac_resolve_failed"
+    res_8888 = await flow.async_step_handle_error()
+    assert res_8888["step_id"] == "samsung_8888"
+
+    # MATAR M1403 (else branch: error_key no mapeada directamente)
+    flow.flow_data["error_key"] = "algún_error_aleatorio_no_mapeado"
+    res_fallback = await flow.async_step_handle_error()
+    assert res_fallback["type"] == "form"
+    assert res_fallback["errors"] == {"base": "algún_error_aleatorio_no_mapeado"}
+
+
+@pytest.mark.asyncio
+async def test_wait_token_safe_exceptions(hass: HomeAssistant) -> None:
+    """Mata los mutantes en los bloques except de _wait_token_safe."""
+    from unittest.mock import AsyncMock
+    from custom_components.climate_ip.exceptions import (
+        TokenAcquisitionError,
+        AuthTurnedOffError,
+    )
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.flow_data = {CONF_IP_ADDRESS: "192.168.1.50"}
+    flow.acquirer = AsyncMock()
+
+    # 1. Forzar TimeoutError
+    flow.acquirer.async_wait_for_token.side_effect = TimeoutError("Connection timed out waiting for token")
+    res_timeout = await flow._wait_token_safe()
+    assert res_timeout == {
+        "ok": False,
+        "error": "timeout_connect",
+        "error_details": "Connection timed out waiting for token",
+    }
+
+    # 2. Forzar TokenAcquisitionError
+    flow.acquirer.async_wait_for_token.side_effect = TokenAcquisitionError("Failed to acquire token")
+    res_acq = await flow._wait_token_safe()
+    assert res_acq == {
+        "ok": False,
+        "error": "token_acquisition_failed",
+    }
+
+    # 3. Forzar AuthTurnedOffError
+    flow.acquirer.async_wait_for_token.side_effect = AuthTurnedOffError("Auth turned off")
+    res_auth_off = await flow._wait_token_safe()
+    assert res_auth_off == {
+        "ok": False,
+        "error": "token_acquisition_failed",
+    }
+
+    # 4. Forzar Exception generico
+    flow.acquirer.async_wait_for_token.side_effect = RuntimeError("Generic wait error")
+    res_gen = await flow._wait_token_safe()
+    assert res_gen == {
+        "ok": False,
+        "error": "unknown_error",
+    }
+
+
+@pytest.mark.asyncio
+async def test_test_connection_safe_exceptions(hass: HomeAssistant) -> None:
+    """Mata los mutantes en los bloques except de _test_connection_safe."""
+    from unittest.mock import patch
+    from custom_components.climate_ip.exceptions import (
+        CannotConnect,
+        AuthError,
+    )
+    from custom_components.climate_ip.const import DEVICE_TYPE_SAMSUNG_2878
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
+        CONF_IP_ADDRESS: "192.168.1.100",
+        CONF_TOKEN: "mocked_token",
+    }
+
+    # 1. CannotConnect
+    with patch(
+        "custom_components.climate_ip.config_flow.async_get_clientsession",
+        side_effect=CannotConnect("Connection refused at port 8888"),
+    ):
+        res_cannot = await flow._test_connection_safe()
+        assert res_cannot == {
+            "ok": False,
+            "error": "pairing_connection_failed",
+            "error_details": "Connection refused at port 8888",
+        }
+
+    # 2. TimeoutError
+    with patch(
+        "custom_components.climate_ip.config_flow.async_get_clientsession",
+        side_effect=TimeoutError("8888 connection timeout"),
+    ):
+        res_timeout = await flow._test_connection_safe()
+        assert res_timeout == {
+            "ok": False,
+            "error": "timeout_connect",
+            "error_details": "8888 connection timeout",
+        }
+
+    # 3. AuthError
+    with patch(
+        "custom_components.climate_ip.config_flow.async_get_clientsession",
+        side_effect=AuthError("401 Unauthorized"),
+    ):
+        res_auth = await flow._test_connection_safe()
+        assert res_auth == {
+            "ok": False,
+            "error": "invalid_auth",
+            "error_details": "401 Unauthorized",
+        }
+
+    # 4. Exception generico
+    with patch(
+        "custom_components.climate_ip.config_flow.async_get_clientsession",
+        side_effect=RuntimeError("Generic connection error"),
+    ):
+        res_gen = await flow._test_connection_safe()
+        assert res_gen == {
+            "ok": False,
+            "error": "cannot_connect",
+        }

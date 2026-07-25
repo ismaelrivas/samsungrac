@@ -42,6 +42,18 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 # ---------------------
 
 
+@pytest.fixture(autouse=True)
+async def force_task_cancellation():
+    """Teardown guillotine: cancel all lingering background tasks when test finishes."""
+    yield
+    current = asyncio.current_task()
+    pending = [t for t in asyncio.all_tasks() if t is not current and not t.done()]
+    if pending:
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
 # Ensure we can import the component
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(TEST_DIR, "../../.."))

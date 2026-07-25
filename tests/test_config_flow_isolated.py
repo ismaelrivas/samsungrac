@@ -1,9 +1,19 @@
 """Test config flow isolated steps to kill mutants."""
 
 import pytest
+import asyncio
+from typing import Coroutine, Any
 from unittest.mock import patch, MagicMock, AsyncMock
 from homeassistant.data_entry_flow import FlowResultType
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+
+
+async def fast_await(coro: Coroutine[Any, Any, Any], timeout: float = 0.5) -> Any:
+    """Circuit breaker for async tests to kill deadlocking mutants instantly."""
+    try:
+        return await asyncio.wait_for(coro, timeout=timeout)
+    except TimeoutError:
+        pytest.fail("Circuit breaker triggered: Coroutine hung (likely mutant deadlock)")
 from custom_components.climate_ip.const import (
     CONF_DEVICE_TYPE,
     DEVICE_TYPE_SAMSUNG_2878,
@@ -73,7 +83,7 @@ async def test_connection_safe_ssl_mutant(hass):
         mock_get.__aenter__.return_value.status = 200
         mock_session.return_value.get.return_value = mock_get
 
-        await flow._test_connection_safe()
+        await fast_await(flow._test_connection_safe())
 
         # Verify mutant M41 kill: Si es None en vez de False, esto falla
         assert mock_context.check_hostname is False
@@ -93,7 +103,7 @@ async def test_test_connection_fallbacks_and_progress():
     flow.task = MagicMock()
     flow.task.done.return_value = False  # Simulamos que la tarea está pendiente
 
-    result = await flow.async_step_test_connection()
+    result = await fast_await(flow.async_step_test_connection())
     assert result["type"] == FlowResultType.SHOW_PROGRESS
     # If mutant anula p_task, esto falla
     assert result["progress_task"] is flow.task
@@ -103,7 +113,7 @@ async def test_test_connection_fallbacks_and_progress():
     # Simulamos error sin "error" key para forzar el fallback "cannot_connect"
     flow.task.result.return_value = {"ok": False}
 
-    result_done = await flow.async_step_test_connection()
+    result_done = await fast_await(flow.async_step_test_connection())
     assert result_done["type"] == FlowResultType.SHOW_PROGRESS_DONE
     assert result_done["step_id"] == "handle_error"
     # If mutant usa "XXcannot_connectXX", esto falla
@@ -120,7 +130,7 @@ async def test_await_button_fallbacks():
     # 1. Matar M89, M91, M92 (Fallback de IP a "")
     flow.task = MagicMock()
     flow.task.done.return_value = False
-    result = await flow.async_step_await_button()
+    result = await fast_await(flow.async_step_await_button())
     assert (
         result["description_placeholders"]["ip_address"] == ""
     )  # If mutmut puso "XXXX", falla
@@ -133,7 +143,7 @@ async def test_await_button_fallbacks():
     with patch(
         "custom_components.climate_ip.config_flow.sanitize_token", return_value=False
     ):
-        await flow.async_step_await_button()
+        await fast_await(flow.async_step_await_button())
         assert flow.flow_data["error_key"] == "token_acquisition_failed"
         # Esto mata indirectamente a los mutantes del token porque validamos el flujo exacto
 
@@ -193,7 +203,7 @@ async def test_connection_safe_unique_id_empty_fallback():
         mock_ctrl.initialize = AsyncMock(return_value=True)
         mock_ctrl.async_get_status = AsyncMock(return_value=True)
 
-        await flow._test_connection_safe()
+        await fast_await(flow._test_connection_safe())
         args, kwargs = mock_yaml.call_args
         # If mutant puso None o "XXXX", esto falla
         assert kwargs["config"]["unique_id"] == ""
@@ -220,7 +230,7 @@ async def test_await_button_token_missing_fallback():
 
     with patch("custom_components.climate_ip.config_flow.sanitize_token") as mock_san:
         mock_san.return_value = False
-        await flow.async_step_await_button()
+        await fast_await(flow.async_step_await_button())
         # Original lee "", mutante lee None o "XXXX"
         mock_san.assert_called_once_with("")
 

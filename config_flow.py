@@ -279,11 +279,35 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             _LOGGER.debug('_initiate_pairing_safe successful with config: %s', successful_config)  # pragma: no mutate
             # fmt: on
             return {"ok": True, "config": successful_config}
-        except (CannotConnect, AuthError, TokenAcquisitionError) as e:
-            _LOGGER.warning(
-                "Connection error during pairing initiation: %s", e
+        except CannotConnect as err:
+            ip_address = str(self.flow_data.get(CONF_IP_ADDRESS, "Unknown"))  # pragma: no mutate
+            _LOGGER.error(
+                "Fatal pairing failure at %s. Details: %s", ip_address, err
             )  # pragma: no mutate
-            return {"ok": False, "error": "cannot_connect"}
+            return {
+                "ok": False,
+                "error": "pairing_connection_failed",
+                "error_details": str(err),
+            }
+        except (AuthError, TokenAcquisitionError) as err:
+            _LOGGER.warning(
+                "Connection error during pairing initiation: %s", err
+            )  # pragma: no mutate
+            return {
+                "ok": False,
+                "error": "pairing_connection_failed",
+                "error_details": str(err),
+            }
+        except TimeoutError as err:
+            ip_address = str(self.flow_data.get(CONF_IP_ADDRESS, "Unknown"))  # pragma: no mutate
+            _LOGGER.warning(
+                "Timeout connecting to %s. Wrong IP?", ip_address
+            )  # pragma: no mutate
+            return {
+                "ok": False,
+                "error": "timeout_connect",
+                "error_details": str(err),
+            }
         except Exception as e:
             _LOGGER.error(
                 "Unexpected error during pairing: %s", e, exc_info=True
@@ -302,6 +326,16 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 "_wait_token_safe successful, token acquired."
             )  # pragma: no mutate
             return {"ok": True, "token": token}
+        except TimeoutError as err:
+            ip_address = str(self.flow_data.get(CONF_IP_ADDRESS, "Unknown"))  # pragma: no mutate
+            _LOGGER.warning(
+                "Timeout connecting to %s. Wrong IP?", ip_address
+            )  # pragma: no mutate
+            return {
+                "ok": False,
+                "error": "timeout_connect",
+                "error_details": str(err),
+            }
         except (TokenAcquisitionError, AuthTurnedOffError) as e:
             _LOGGER.warning("Token acquisition failed: %s", e)  # pragma: no mutate
             return {"ok": False, "error": "token_acquisition_failed"}
@@ -769,6 +803,8 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 )
 
             self.flow_data["error_key"] = result.get("error", "unknown_error")
+            if "error_details" in result:
+                self.flow_data["error_details"] = result["error_details"]
             return self.async_show_progress_done(next_step_id="handle_error")
 
         return self.async_show_progress(
@@ -821,6 +857,8 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             self.flow_data["error_key"] = result.get(
                 "error", "unknown_error"
             )  # pragma: no mutate
+            if "error_details" in result:
+                self.flow_data["error_details"] = result["error_details"]
             return self.async_show_progress_done(next_step_id="handle_error")
 
         progress_action = (
@@ -846,7 +884,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         )  # pragma: no mutate
         try:
             device_type = self.flow_data[CONF_DEVICE_TYPE]
-            ip_address = str(self.flow_data[CONF_IP_ADDRESS])
+            ip_address = str(self.flow_data.get(CONF_IP_ADDRESS, "Unknown"))  # pragma: no mutate
             token = str(self.flow_data.get(CONF_TOKEN) or "")
 
             if device_type in DEVICE_TYPE_8888_GROUP:
@@ -929,6 +967,31 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 # fmt: on
                 return {"ok": False, "error": "cannot_connect"}
 
+        except CannotConnect as err:
+            ip_address = str(self.flow_data.get(CONF_IP_ADDRESS, "Unknown"))  # pragma: no mutate
+            _LOGGER.error(
+                "Fatal pairing failure at %s. Details: %s", ip_address, err
+            )  # pragma: no mutate
+            return {
+                "ok": False,
+                "error": "pairing_connection_failed",
+                "error_details": str(err),
+            }
+        except TimeoutError as err:
+            ip_address = str(self.flow_data.get(CONF_IP_ADDRESS, "Unknown"))  # pragma: no mutate
+            _LOGGER.warning(
+                "Timeout connecting to %s. Wrong IP?", ip_address
+            )  # pragma: no mutate
+            return {
+                "ok": False,
+                "error": "timeout_connect",
+                "error_details": str(err),
+            }
+        except AuthError as err:
+            _LOGGER.warning(
+                "AC rejected token during pairing."
+            )  # pragma: no mutate
+            return {"ok": False, "error": "invalid_auth", "error_details": str(err)}
         except Exception as e:  # pylint: disable=broad-exception-caught
             _LOGGER.error(
                 "Unknown error during connection test: %s", e, exc_info=True
@@ -1290,7 +1353,25 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         error_key = str(
             self.flow_data.pop("error_key", "unknown_error")
         )  # pragma: no mutate
+        error_details = str(
+            self.flow_data.pop("error_details", "")
+        )  # pragma: no mutate
         device_type = self.flow_data[CONF_DEVICE_TYPE]
+        ip_address = str(self.flow_data.get(CONF_IP_ADDRESS, "Unknown"))  # pragma: no mutate
+
+        # Directive 1: Lethal Failures -> Verbose Abort with Placeholders
+        if error_key == "pairing_connection_failed":
+            details_str = error_details or "Connection refused or unreachable"
+            _LOGGER.error(
+                "Fatal pairing failure at %s. Details: %s", ip_address, details_str
+            )  # pragma: no mutate
+            return self.async_abort(
+                reason="pairing_connection_failed",
+                description_placeholders={
+                    "ip_address": ip_address,
+                    "error_details": details_str,
+                },
+            )
 
         if device_type == DEVICE_TYPE_MIM_H03:
             step_id = "mim_h03"
@@ -1306,13 +1387,29 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         )
 
         req_mac = False
+        errors: dict[str, str] = {}
+
+        # Directive 2: Recoverable Failures -> Form Retry with Targeted Errors
         if error_key == "mac_resolve_failed":
             req_mac = True
+            errors["base"] = "mac_resolve_failed"
+        elif error_key == "timeout_connect":
+            _LOGGER.warning(
+                "Timeout connecting to %s. Wrong IP?", ip_address
+            )  # pragma: no mutate
+            errors[CONF_IP_ADDRESS] = "timeout_connect"
+        elif error_key == "invalid_auth":
+            _LOGGER.warning(
+                "AC rejected token during pairing."
+            )  # pragma: no mutate
+            errors["base"] = "invalid_auth"
+        else:
+            errors["base"] = error_key
 
         return self.async_show_form(
             step_id=step_id,
             data_schema=schema_generator(mac_required=req_mac),
-            errors={"base": error_key},
+            errors=errors,
         )
 
     # pylint: disable=unused-argument
