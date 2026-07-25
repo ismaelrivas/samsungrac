@@ -1,7 +1,7 @@
 # ❄️ Samsung AC / Climate IP (Gold Master Edition)
 
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Core%202026.x%20Ready-blue?style=for-the-badge&logo=home-assistant)
-![Mutation Score](https://img.shields.io/badge/Mutation%20Score-100%25-brightgreen?style=for-the-badge)
+![Mutation Score](https://img.shields.io/badge/Mutation%20Score-100%25-brightgreen.svg)
 ![Unit Tests](https://img.shields.io/badge/Unit%20Tests-1045%20Passed-brightgreen?style=for-the-badge)
 ![Quality Scale](https://img.shields.io/badge/Quality%20Scale-Gold%20Master-gold?style=for-the-badge)
 ![HACS](https://img.shields.io/badge/HACS-Custom%20Repository-orange?style=for-the-badge)
@@ -10,14 +10,14 @@ A highly resilient, mathematically verified, and asynchronously optimized custom
 
 ---
 
-## 🏆 The "Absolute Zero" Release (v10.0.0)
+## 🏆 Version History & Release Notes (v10.0.0b0)
 
 This release marks a monumental milestone in the `climate_ip` integration. The entire codebase has been surgically refactored to align with the strictest Home Assistant Core standards (targeting 2026.x).
 
 **Engineering Highlights:**
-* 🛡️ **100% Mutation Testing Score:** Achieved a mathematically certified 100% kill rate against thousands of injected logic mutants using a custom, parallelized `mutmut` engine with AST-level pruning. 
-* 🔒 **Zero Trust Networking:** Complete architectural overhaul of legacy TCP (Port 2878), modern REST (Port 8888), and SmartThings EHS (Port 9888/9889) protocols. Strict event-loop isolation prevents async task leaks and dangling sockets.
-* 🏛️ **Core Compliance:** Rebuilt atop `DataUpdateCoordinator` with explicit Thread Safety, static `EntityDescription` mapping, and native asynchronous configuration flows (`config_flow`).
+* 🛡️ **Refactored Core:** 100% Mutation Coverage across all connection protocols.
+* 🔧 **Legacy Port 8888 Fix:** Replaced `aiohttp` in Phase 1 pairing with raw asyncio sockets to bypass malformed HTTP response headers from older Samsung firmware (K-Series/2016).
+* ⚡ **Fail-Fast & Event Loop Protection:** Eradicated infinite loops and CPU starvation paths in socket retry managers.
 * 🎯 **1045 Unit Tests:** A comprehensive, sniper-precision `pytest` suite validating every conditional branch, hardware fallback, and malformed device response.
 
 ---
