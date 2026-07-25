@@ -118,6 +118,7 @@
             "discovery_failed": "Failed to discover device details after successful authentication.",
             "no_unique_id": "Failed to assign a unique identifier to the devices.",
             "cannot_connect": "Failed to connect or fetch initial status from the device.",
+            "pairing_connection_failed": "Could not connect to device at {ip_address}. Verify that the AC is turned on, connected to Wi-Fi, and that the IP address is correct. Details: {error_details}",
             "unknown_error": "An unexpected error occurred during the setup process.",
             "reauth_successful": "Re-authentication was successful.",
             "reconfigure_successful": "The device connectivity settings have been updated successfully."

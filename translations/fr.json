@@ -118,6 +118,7 @@
       "discovery_failed": "Échec de la découverte des détails de l'appareil après une authentification réussie.",
       "no_unique_id": "Échec de l'attribution d'un identifiant unique aux appareils.",
       "cannot_connect": "Échec de la connexion ou de la récupération de l'état initial de l'appareil.",
+      "pairing_connection_failed": "Impossible de se connecter à l'appareil à l'adresse {ip_address}. Vérifiez que le climatiseur est sous tension, connecté au Wi-Fi et que l'adresse IP est correcte. Détails : {error_details}",
       "unknown_error": "Une erreur inattendue s'est produite pendant le processus de configuration.",
       "reauth_successful": "La réauthentification a réussi.",
       "reconfigure_successful": "Les paramètres de connectivité de l'appareil ont été mis à jour avec succès."

@@ -118,6 +118,7 @@
       "discovery_failed": "Gerätedetails konnten nach erfolgreicher Authentifizierung nicht abgerufen werden.",
       "no_unique_id": "Den Geräten konnte keine eindeutige Kennung zugewiesen werden.",
       "cannot_connect": "Verbindung oder Abruf des Anfangsstatus vom Gerät fehlgeschlagen.",
+      "pairing_connection_failed": "Verbindung zum Gerät unter {ip_address} konnte nicht hergestellt werden. Bitte überprüfen Sie, ob das Gerät eingeschaltet ist, mit dem WLAN verbunden ist und die IP-Adresse korrekt ist. Details: {error_details}",
       "unknown_error": "Ein unerwarteter Fehler ist während des Einrichtungsvorgangs aufgetreten.",
       "reauth_successful": "Die erneute Authentifizierung war erfolgreich.",
       "reconfigure_successful": "Die Geräteverbindungseinstellungen wurden erfolgreich aktualisiert."

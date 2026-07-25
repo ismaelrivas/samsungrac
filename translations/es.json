@@ -118,6 +118,7 @@
       "discovery_failed": "Fallo al descubrir los detalles del dispositivo tras autenticar.",
       "no_unique_id": "Fallo al asignar un identificador único.",
       "cannot_connect": "No se pudo conectar ni obtener el estado inicial.",
+      "pairing_connection_failed": "No se pudo conectar con el dispositivo en {ip_address}. Verifica que el aire acondicionado esté encendido, conectado a la red Wi-Fi y que la dirección IP sea correcta. Detalles: {error_details}",
       "unknown_error": "Error desconocido durante la configuración.",
       "reauth_successful": "Reautenticación completada con éxito.",
       "reconfigure_successful": "Los ajustes de red del dispositivo se han actualizado con éxito."
