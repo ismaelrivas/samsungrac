@@ -1,0 +1,6 @@
+tests/
+mutmut_run.sh
+survived.log
+*.pyc
+__pycache__/
+.pytest_cache/
