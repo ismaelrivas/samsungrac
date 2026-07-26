@@ -2195,7 +2195,7 @@ async def test_async_step_await_button_mutants(hass: HomeAssistant) -> None:
     result_progress = await fast_await(flow.async_step_await_button())
     assert result_progress["type"] == "progress"
     assert result_progress["step_id"] == "await_button"
-    assert result_progress["progress_action"] == "awaiting_ap_button_press"
+    assert result_progress["progress_action"] == "awaiting_button_press"
     # Kill mutmut_50, 51, 54, 55, 58, 59, 60: strict state verification
     assert result_progress["progress_task"] is flow.task
     assert result_progress["description_placeholders"] == {"ip_address": "1.2.3.4"}

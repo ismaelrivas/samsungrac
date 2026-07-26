@@ -861,15 +861,9 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 self.flow_data["error_details"] = result["error_details"]
             return self.async_show_progress_done(next_step_id="handle_error")
 
-        progress_action = (
-            "awaiting_ap_button_press"
-            if self.flow_data.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_MIM_H03
-            else "awaiting_button_press"
-        )
-
         return self.async_show_progress(
             step_id="await_button",
-            progress_action=progress_action,
+            progress_action="awaiting_button_press",
             progress_task=self.task,
             description_placeholders={
                 "ip_address": self.flow_data.get(CONF_IP_ADDRESS, "")
