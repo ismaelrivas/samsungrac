@@ -333,3 +333,74 @@ async def test_async_setup_entry_single_coordinator(mock_sensor_class) -> None:
 
     assert mock_sensor_class.call_count == 0
     async_add_entities.assert_not_called()
+
+
+def test_sensor_handle_coordinator_update_invalid_state():
+    """Kills untested mutants in _handle_coordinator_update by forcing an invalid state."""
+    from custom_components.climate_ip.sensor import ClimateIpSensor
+
+    # Mock coordinator and property
+    mock_coordinator = MagicMock()
+    mock_coordinator.controller.device_state = {"power": "off"}  # Some state
+
+    mock_prop = MagicMock()
+    # Force is_valid to return False
+    mock_prop.is_valid.return_value = False
+
+    # Init sensor with a dummy valid value first to ensure it changes
+    sensor = ClimateIpSensor(mock_coordinator, MagicMock(), mock_prop)
+    sensor._attr_native_value = "previous_valid_value"
+    sensor.async_write_ha_state = MagicMock()  # Prevent calling HA Core
+
+    # Execute the update callback
+    sensor._handle_coordinator_update()
+
+    # Assertions to kill the mutants
+    assert sensor._attr_native_value is None, (
+        "Mutant survived! _attr_native_value should be explicitly None when state is invalid."
+    )
+    # Ensure properties were checked
+    mock_prop.is_valid.assert_called_with({"power": "off"})
+
+
+@pytest.mark.asyncio
+async def test_sensor_setup_entry_name_mapping(hass):
+    """Kills mutants modifying the 'name' kwarg in SensorEntityDescription."""
+    from custom_components.climate_ip.sensor import async_setup_entry
+
+    # Mock ConfigEntry
+    mock_entry = MagicMock()
+
+    # Create a mock property that explicitly HAS a name
+    mock_prop = MagicMock()
+    mock_prop.id = "test_sensor_id"
+    mock_prop.name = "My Custom Sensor Name"  # <--- Crucial for mutant kill
+    mock_prop.icon = "mdi:thermometer"
+    mock_prop.unit_of_measurement = "°C"
+
+    # Mock Coordinator
+    mock_coordinator = MagicMock()
+    mock_coordinator.controller.properties = {"test_sensor_id": mock_prop}
+    mock_coordinator.controller.sensors = [mock_prop]
+    mock_coordinator.controller.device_state = {}
+
+    # Runtime data setup
+    mock_entry.runtime_data = {"test_mac": mock_coordinator}
+
+    # Capture added entities
+    added_entities = []
+
+    def mock_add_entities(entities):
+        added_entities.extend(entities)
+
+    await async_setup_entry(hass, mock_entry, mock_add_entities)
+
+    assert len(added_entities) == 1
+    sensor = added_entities[0]
+
+    # Assert the description name explicitly matches the YAML property name.
+    # If mutmut changes it to None or removes the getattr fallback, this fails.
+    assert sensor.entity_description.name == "My Custom Sensor Name", (
+        "Mutant survived! The sensor name did not match the YAML property name."
+    )
+

@@ -226,7 +226,7 @@ class ConnectionSamsung2878(Connection):
             # Clear the SSL context cache if configuration changes, as cert path might have changed.
             self._ssl_context_cache.clear()
 
-            duid = re.sub(":", "", mac) if (mac := hass_config.get(CONF_MAC)) else None
+            duid = mac.replace(":", "") if (mac := hass_config.get(CONF_MAC)) else None
 
             if (cert_file := hass_config.get(CONF_CERT) or "") and not (
                 "/" in cert_file or "\\" in cert_file
