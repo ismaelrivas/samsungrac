@@ -55,6 +55,7 @@ class ClimateController(ABC, Generic[_T]):
     def __init__(self, config: dict[str, Any], logger: logging.Logger) -> None:
         """Initialize the controller."""
         self._logger = logger
+        self.hass: Any | None = None
         self._connection: Any = None
         self._shared_raw_client: Any = None
         self.discovered_devices: list[dict[str, Any]] | None = None
@@ -105,6 +106,11 @@ class ClimateController(ABC, Generic[_T]):
     @abstractmethod
     def device_id(self) -> str | None:
         """Return the device id of the controller."""
+
+    @property
+    def host(self) -> str | None:
+        """Return the host or IP address of the controller."""
+        return getattr(self, "ip_address", None)
 
     @property
     def log_prefix(self) -> str:

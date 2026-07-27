@@ -5,6 +5,7 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 from custom_components.climate_ip.exceptions import CannotConnect
+from homeassistant.helpers.issue_registry import IssueSeverity
 
 
 # =====================================================================
@@ -54,9 +55,10 @@ def create_valid_loader():
 
 @patch("custom_components.climate_ip.controller_yaml_polling.async_create_issue")
 def test_try_create_repair_issue_flow(mock_async_create_issue):
-    """Test control flow of _try_create_repair_issue without checking cosmetic strings."""
+    """Test control flow and parameters of _try_create_repair_issue."""
     mock_controller = MagicMock()
     mock_controller.hass = MagicMock()
+    mock_controller.unique_id = "192.168.1.100"
     mock_controller.ip_address = "192.168.1.100"
     mock_controller.name = "Test AC"
 
@@ -66,12 +68,151 @@ def test_try_create_repair_issue_flow(mock_async_create_issue):
     poller._try_create_repair_issue()
     assert mock_async_create_issue.called
     assert mock_async_create_issue.call_count == 1
+    mock_async_create_issue.assert_called_once_with(
+        mock_controller.hass,
+        "climate_ip",
+        "device_offline_192_168_1_100",
+        is_fixable=False,
+        severity=IssueSeverity.WARNING,
+        translation_key="connection_failed",
+        translation_placeholders={
+            "host": "192.168.1.100",
+            "name": "Test AC",
+            "device_name": "Test AC",
+        },
+    )
 
-    # Call without hass object (tests 3rd arg default 'None' of getattr)
+    # Call without hass object
     mock_async_create_issue.reset_mock()
     poller.controller = MagicMock(spec=[])
     poller._try_create_repair_issue()
     assert not mock_async_create_issue.called
+
+
+@pytest.mark.parametrize(
+    "unique_id, name, host, ip_address, expected_issue_id, expected_host_ph, expected_name_ph",
+    [
+        (
+            None,
+            None,
+            "192.168.1.10",
+            "10.0.0.10",
+            "device_offline_192_168_1_10",
+            "10.0.0.10",
+            "192.168.1.10",
+        ),
+        (
+            None,
+            None,
+            None,
+            "10.0.0.10",
+            "device_offline_10_0_0_10",
+            "10.0.0.10",
+            "10.0.0.10",
+        ),
+        (
+            None,
+            None,
+            None,
+            None,
+            "device_offline_unknown",
+            "unknown",
+            "unknown",
+        ),
+        (
+            "my_device_1",
+            "Living Room",
+            None,
+            "10.0.0.10",
+            "device_offline_my_device_1",
+            "10.0.0.10",
+            "Living Room",
+        ),
+        (
+            None,
+            "Bed Room",
+            None,
+            "10.0.0.10",
+            "device_offline_10_0_0_10",
+            "10.0.0.10",
+            "Bed Room",
+        ),
+    ],
+)
+@patch("custom_components.climate_ip.controller_yaml_polling.async_create_issue")
+def test_try_create_repair_issue_fallback_cascade(
+    mock_create_issue,
+    unique_id,
+    name,
+    host,
+    ip_address,
+    expected_issue_id,
+    expected_host_ph,
+    expected_name_ph,
+):
+    """Sniper: Test fallback cascade for raw_id, device_name, and host translation placeholders in async_create_issue."""
+    mock_controller = MagicMock()
+    mock_controller.hass = MagicMock()
+    mock_controller.unique_id = unique_id
+    mock_controller.name = name
+    mock_controller.host = host
+    mock_controller.ip_address = ip_address
+
+    poller = YamlStatePoller(mock_controller)
+    poller._try_create_repair_issue()
+
+    mock_create_issue.assert_called_once_with(
+        mock_controller.hass,
+        "climate_ip",
+        expected_issue_id,
+        is_fixable=False,
+        severity=IssueSeverity.WARNING,
+        translation_key="connection_failed",
+        translation_placeholders={
+            "host": expected_host_ph,
+            "name": expected_name_ph,
+            "device_name": expected_name_ph,
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "unique_id, host, ip_address, expected_issue_id",
+    [
+        (None, "192.168.1.10", "10.0.0.10", "device_offline_192_168_1_10"),
+        (None, None, "10.0.0.10", "device_offline_10_0_0_10"),
+        (None, None, None, "device_offline_unknown"),
+        ("my_device_1", None, "10.0.0.10", "device_offline_my_device_1"),
+    ],
+)
+async def test_async_delete_issue_fallback_cascade(
+    unique_id, host, ip_address, expected_issue_id
+):
+    """Sniper: Test fallback cascade for raw_id in async_delete_issue when connection recovers."""
+    mock_controller = MagicMock()
+    mock_controller.hass = MagicMock()
+    mock_controller.unique_id = unique_id
+    mock_controller.host = host
+    mock_controller.ip_address = ip_address
+
+    mock_controller.loader.is_fully_initialized = True
+    mock_controller.loader.state_getter.async_update_state = AsyncMock(
+        return_value={"power": "on"}
+    )
+    mock_controller.loader.state_getter.value = {"power": "on"}
+
+    poller = YamlStatePoller(mock_controller)
+    poller._consecutive_connection_errors = 1
+    poller._build_device_state_from_hass = AsyncMock(return_value={"power": "on"})
+    poller.async_update_properties_from_state = AsyncMock()
+
+    with patch(
+        "custom_components.climate_ip.controller_yaml_polling.async_delete_issue"
+    ) as mock_delete_issue:
+        await poller.async_update_state()
+        mock_delete_issue.assert_called_once_with(
+            mock_controller.hass, "climate_ip", expected_issue_id
+        )
 
 
 async def test_async_update_state_early_exits_and_ping():
@@ -167,6 +308,7 @@ async def test_async_update_state_network_failures_and_cache():
     }
     mock_controller.loader.state_getter.value = {"power": "on"}
     mock_controller.ip_address = "192.168.1.100"
+    mock_controller.unique_id = "192.168.1.100"
 
     with patch(
         "custom_components.climate_ip.controller_yaml_polling.async_delete_issue"
@@ -174,7 +316,7 @@ async def test_async_update_state_network_failures_and_cache():
         await poller.async_update_state()
         # Verificación estricta de que se borró el issue con los parámetros correctos
         mock_delete_issue.assert_called_once_with(
-            mock_controller.hass, "climate_ip", "connection_failed_192.168.1.100"
+            mock_controller.hass, "climate_ip", "device_offline_192_168_1_100"
         )
 
 

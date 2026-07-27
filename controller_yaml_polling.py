@@ -122,18 +122,31 @@ class YamlStatePoller:
         if not getattr(self.controller, "hass", None):
             return
         try:
+            raw_id = (
+                self.controller.unique_id
+                or self.controller.host
+                or self.controller.ip_address
+                or "unknown"
+            )
+            safe_device_id = str(raw_id).replace(".", "_").replace(" ", "_")
+            device_name = (
+                self.controller.name
+                or self.controller.host
+                or self.controller.ip_address
+                or "unknown"
+            )
             async_create_issue(
                 self.controller.hass,
-                "climate_ip",  # pragma: no mutate
-                f"connection_failed_{self.controller.ip_address}",  # pragma: no mutate
-                is_fixable=False,  # pragma: no mutate
-                severity=IssueSeverity.WARNING,  # pragma: no mutate
-                translation_key="connection_failed",  # pragma: no mutate
-                translation_placeholders={  # pragma: no mutate
-                    "host": self.controller.ip_address,  # pragma: no mutate
-                    "name": getattr(self.controller, "name", None)
-                    or self.controller.ip_address,  # pragma: no mutate
-                },  # pragma: no mutate
+                "climate_ip",
+                f"device_offline_{safe_device_id}",
+                is_fixable=False,
+                severity=IssueSeverity.WARNING,
+                translation_key="connection_failed",
+                translation_placeholders={
+                    "host": self.controller.ip_address or self.controller.host or "unknown",
+                    "name": device_name,
+                    "device_name": device_name,
+                },
             )
         except Exception as e:  # pylint: disable=broad-exception-caught
             _LOGGER.debug(  # pragma: no mutate
@@ -249,10 +262,17 @@ class YamlStatePoller:
                 self._consecutive_connection_errors = 0
                 if getattr(self.controller, "hass", None):
                     try:
+                        raw_id = (
+                            self.controller.unique_id
+                            or self.controller.host
+                            or self.controller.ip_address
+                            or "unknown"
+                        )
+                        safe_device_id = str(raw_id).replace(".", "_").replace(" ", "_")
                         async_delete_issue(
                             self.controller.hass,
                             "climate_ip",
-                            f"connection_failed_{self.controller.ip_address}",
+                            f"device_offline_{safe_device_id}",
                         )
                         _LOGGER.debug(  # pragma: no mutate
                             "%s Successfully resolved/deleted repair issue.",

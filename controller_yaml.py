@@ -195,6 +195,11 @@ class YamlController(ClimateController):
         return self._ip_address
 
     @property
+    def host(self) -> str | None:
+        """Return the host or IP address."""
+        return self._ip_address
+
+    @property
     def debug(self) -> bool:
         """Return the debug flag."""
         return self._debug
