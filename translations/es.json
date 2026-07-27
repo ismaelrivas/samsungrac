@@ -261,6 +261,12 @@
           "beep": {
             "name": "Pitido"
           }
+        },
+        "issues": {
+          "connection_failed": {
+            "title": "{device_name} desconectado ({ip_address})",
+            "description": "El dispositivo {device_name} en {ip_address} no está localizable. Verifica la alimentación y la conexión de red."
+          }
         }
       }
     }

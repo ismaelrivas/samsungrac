@@ -129,12 +129,6 @@ class YamlStatePoller:
                 or "unknown"
             )
             safe_device_id = str(raw_id).replace(".", "_").replace(" ", "_")
-            device_name = (
-                self.controller.name
-                or self.controller.host
-                or self.controller.ip_address
-                or "unknown"
-            )
             async_create_issue(
                 self.controller.hass,
                 "climate_ip",
@@ -143,9 +137,8 @@ class YamlStatePoller:
                 severity=IssueSeverity.WARNING,
                 translation_key="connection_failed",
                 translation_placeholders={
-                    "host": self.controller.ip_address or self.controller.host or "unknown",
-                    "name": device_name,
-                    "device_name": device_name,
+                    "device_name": self.controller.name or "Climate IP",
+                    "ip_address": self.controller.ip_address or self.controller.host or "Unknown",
                 },
             )
         except Exception as e:  # pylint: disable=broad-exception-caught

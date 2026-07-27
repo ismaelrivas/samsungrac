@@ -76,9 +76,8 @@ def test_try_create_repair_issue_flow(mock_async_create_issue):
         severity=IssueSeverity.WARNING,
         translation_key="connection_failed",
         translation_placeholders={
-            "host": "192.168.1.100",
-            "name": "Test AC",
             "device_name": "Test AC",
+            "ip_address": "192.168.1.100",
         },
     )
 
@@ -90,7 +89,7 @@ def test_try_create_repair_issue_flow(mock_async_create_issue):
 
 
 @pytest.mark.parametrize(
-    "unique_id, name, host, ip_address, expected_issue_id, expected_host_ph, expected_name_ph",
+    "unique_id, name, host, ip_address, expected_issue_id, expected_device_name_ph, expected_ip_address_ph",
     [
         (
             None,
@@ -98,8 +97,8 @@ def test_try_create_repair_issue_flow(mock_async_create_issue):
             "192.168.1.10",
             "10.0.0.10",
             "device_offline_192_168_1_10",
+            "Climate IP",
             "10.0.0.10",
-            "192.168.1.10",
         ),
         (
             None,
@@ -107,7 +106,7 @@ def test_try_create_repair_issue_flow(mock_async_create_issue):
             None,
             "10.0.0.10",
             "device_offline_10_0_0_10",
-            "10.0.0.10",
+            "Climate IP",
             "10.0.0.10",
         ),
         (
@@ -116,8 +115,8 @@ def test_try_create_repair_issue_flow(mock_async_create_issue):
             None,
             None,
             "device_offline_unknown",
-            "unknown",
-            "unknown",
+            "Climate IP",
+            "Unknown",
         ),
         (
             "my_device_1",
@@ -125,8 +124,8 @@ def test_try_create_repair_issue_flow(mock_async_create_issue):
             None,
             "10.0.0.10",
             "device_offline_my_device_1",
-            "10.0.0.10",
             "Living Room",
+            "10.0.0.10",
         ),
         (
             None,
@@ -134,8 +133,8 @@ def test_try_create_repair_issue_flow(mock_async_create_issue):
             None,
             "10.0.0.10",
             "device_offline_10_0_0_10",
-            "10.0.0.10",
             "Bed Room",
+            "10.0.0.10",
         ),
     ],
 )
@@ -147,10 +146,10 @@ def test_try_create_repair_issue_fallback_cascade(
     host,
     ip_address,
     expected_issue_id,
-    expected_host_ph,
-    expected_name_ph,
+    expected_device_name_ph,
+    expected_ip_address_ph,
 ):
-    """Sniper: Test fallback cascade for raw_id, device_name, and host translation placeholders in async_create_issue."""
+    """Sniper: Test fallback cascade for raw_id, device_name, and ip_address translation placeholders in async_create_issue."""
     mock_controller = MagicMock()
     mock_controller.hass = MagicMock()
     mock_controller.unique_id = unique_id
@@ -169,9 +168,8 @@ def test_try_create_repair_issue_fallback_cascade(
         severity=IssueSeverity.WARNING,
         translation_key="connection_failed",
         translation_placeholders={
-            "host": expected_host_ph,
-            "name": expected_name_ph,
-            "device_name": expected_name_ph,
+            "device_name": expected_device_name_ph,
+            "ip_address": expected_ip_address_ph,
         },
     )
 

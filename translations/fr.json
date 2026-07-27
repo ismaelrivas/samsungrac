@@ -261,6 +261,12 @@
           "beep": {
             "name": "Bip"
           }
+        },
+        "issues": {
+          "connection_failed": {
+            "title": "{device_name} déconnecté ({ip_address})",
+            "description": "L'appareil {device_name} à {ip_address} est injoignable. Veuillez vérifier l'alimentation et la connexion réseau."
+          }
         }
       }
     }
