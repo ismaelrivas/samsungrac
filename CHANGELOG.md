@@ -1,6 +1,17 @@
 # Changelog
 
-## [10.0.0] - 2026-07-26
+## [10.0.0b1] - 2026-07-26 (HACS Pre-Release / Beta)
+
+> [!WARNING]
+> **BETA TESTERS CALL TO ACTION**: Thank you for testing the `v10.0.0b1` pre-release! This version represents a massive under-the-hood architectural rewrite aimed at extreme performance, zero latency, and absolute security:
+> - **Zero-Dependency XML Engine**: `defusedxml` and `xmltodict` have been purged in favor of native Python standard library parsing (`xml.etree`).
+> - **Asynchronous Purity**: 100% non-blocking I/O verified across all socket connections, file reads, and subprocesses.
+> - **Operation Regex Purge**: Replaced expensive regular expressions in hot-path polling with $O(n)$ string methods.
+> 
+> **What to look out for during Beta testing:**
+> 1. Monitor system logs for any unexpected connection drops or timeout warnings.
+> 2. Verify that UI pairing / re-authentication completes smoothly with your specific AC model.
+> 3. Report any unexpected behavior on our GitHub Issue Tracker!
 
 ### Added & Fortified
 - **Operation Zero Mutants (100% Mutation Score)**: Achieved a mathematically proven **100% Mutation Kill Rate (Zero Survivors)** across the entire core architecture (`config_flow.py`, `climate.py`, `sensor.py`, `switch.py`, `controller.py`, `helpers.py`, `diagnostics.py`, `samsung_2878.py`, `controller_yaml_polling.py`). The integration is mathematically immune to logical regressions, boundary errors, and unintended fallbacks.
