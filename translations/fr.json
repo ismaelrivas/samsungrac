@@ -246,16 +246,21 @@
         "name": "Version Unité Extérieure"
       }
     },
-    "switch": {
-      "purify": {
-        "name": "Purifier"
-      },
-      "auto_clean": {
-        "name": "Nettoyage Automatique"
-      },
-      "beep": {
-        "name": "Bip"
+        "binary_sensor": {
+          "connectivity": {
+            "name": "Connectivité"
+          }
+        },
+        "switch": {
+          "purify": {
+            "name": "Purifier"
+          },
+          "auto_clean": {
+            "name": "Nettoyage Automatique"
+          },
+          "beep": {
+            "name": "Bip"
+          }
+        }
       }
     }
-  }
-}

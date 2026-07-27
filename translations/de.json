@@ -246,16 +246,21 @@
         "name": "Außeneinheit Version"
       }
     },
-    "switch": {
-      "purify": {
-        "name": "Reinigen"
-      },
-      "auto_clean": {
-        "name": "Automatische Reinigung"
-      },
-      "beep": {
-        "name": "Signalton"
+        "binary_sensor": {
+          "connectivity": {
+            "name": "Konnektivität"
+          }
+        },
+        "switch": {
+          "purify": {
+            "name": "Reinigen"
+          },
+          "auto_clean": {
+            "name": "Automatische Reinigung"
+          },
+          "beep": {
+            "name": "Signalton"
+          }
+        }
       }
     }
-  }
-}

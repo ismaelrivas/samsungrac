@@ -246,6 +246,11 @@
                 "name": "External Unit Version"
             }
         },
+        "binary_sensor": {
+            "connectivity": {
+                "name": "Connectivity"
+            }
+        },
         "switch": {
             "purify": {
                 "name": "Purify"

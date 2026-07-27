@@ -36,7 +36,12 @@ type ClimateIPConfigEntry = (  # pylint: disable=import-outside-toplevel,invalid
     ConfigEntry[SamsungClimateCoordinator | dict[str, SamsungClimateCoordinator]]
 )
 
-PLATFORMS: list[Platform] = [Platform.CLIMATE, Platform.SENSOR, Platform.SWITCH]
+PLATFORMS: list[Platform] = [
+    Platform.CLIMATE,
+    Platform.SENSOR,
+    Platform.SWITCH,
+    Platform.BINARY_SENSOR,
+]
 CONFIG_ENTRY_VERSION = 2  # Must match ConfigFlow.VERSION in config_flow.py
 
 

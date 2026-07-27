@@ -247,16 +247,21 @@
         "name": "External Unit Version"
       }
     },
-    "switch": {
-      "purify": {
-        "name": "Purify"
-      },
-      "auto_clean": {
-        "name": "Auto Clean"
-      },
-      "beep": {
-        "name": "Beep"
+        "binary_sensor": {
+          "connectivity": {
+            "name": "Connectivity"
+          }
+        },
+        "switch": {
+          "purify": {
+            "name": "Purify"
+          },
+          "auto_clean": {
+            "name": "Auto Clean"
+          },
+          "beep": {
+            "name": "Beep"
+          }
+        }
       }
     }
-  }
-}
