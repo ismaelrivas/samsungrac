@@ -915,15 +915,38 @@ class YamlStatePoller:
 
         return True
 
+    @staticmethod
+    def _values_match(val1: Any, val2: Any) -> bool:
+        """Check if two values match numerically (float cast) or string-wise (case-insensitive)."""
+        try:
+            return float(val1) == float(val2)
+        except (ValueError, TypeError):
+            return str(val1).strip().lower() == str(val2).strip().lower()
+
     def _evict_invalidated_pending_updates(self, push_data: dict[str, Any]) -> None:
-        """Remove pending-update entries whose device-key is now superseded by the push payload."""
+        """Remove pending-update entries whose device-key is superseded by matching push payload or expired."""
         if not self._pending_updates:
             return
 
+        now = time.time()
+        ttl_threshold = 10.0
         pending_ids = list(self._pending_updates.keys())
         invalidated: set[str] = set()
 
         for prop_id in pending_ids:
+            entry = self._pending_updates.get(prop_id)
+            if not entry:
+                continue
+
+            if isinstance(entry, tuple) and len(entry) == 2:
+                pending_val, timestamp = entry
+            else:
+                pending_val, timestamp = entry, now
+
+            if now - timestamp > ttl_threshold:
+                invalidated.add(prop_id)
+                continue
+
             prop = self.controller.loader.operations.get(
                 prop_id
             ) or self.controller.loader.properties.get(prop_id)
@@ -933,7 +956,14 @@ class YamlStatePoller:
             device_key = self._get_cached_device_key_from_prop(prop)
 
             if device_key and device_key in push_data:
-                invalidated.add(prop_id)
+                push_val = push_data[device_key]
+                expected_dev_val = (
+                    prop.convert_hass_to_dev(pending_val)
+                    if hasattr(prop, "convert_hass_to_dev")
+                    else pending_val
+                )
+                if self._values_match(push_val, expected_dev_val):
+                    invalidated.add(prop_id)
                 continue
 
             power_op = self.controller.loader.operations.get(
@@ -958,7 +988,7 @@ class YamlStatePoller:
 
         for prop_id in invalidated:
             _LOGGER.debug(  # pragma: no mutate
-                "%s [AtomicMerge] Evicting stale pending update for '%s' (push superseded it).",
+                "%s [AtomicMerge] Evicting stale pending update for '%s' (push superseded it or TTL expired).",
                 self.controller.log_prefix,
                 prop_id,
             )

@@ -523,6 +523,7 @@ async def test_evict_invalidated_pending_updates():
     mock_op = MagicMock()
     mock_op.id = "hvac_mode"
     mock_op.status_template = "{{ device_state.hvac_mode }}"
+    mock_op.convert_hass_to_dev.side_effect = lambda v: v
 
     mock_power_op = MagicMock()
     mock_power_op.id = "power"
@@ -534,12 +535,14 @@ async def test_evict_invalidated_pending_updates():
     }
 
     poller = YamlStatePoller(mock_controller)
-    poller._pending_updates["hvac_mode"] = ("heat", 123456789.0)
-
+    now = time.time()
+    # Matching value -> evicted
+    poller._pending_updates["hvac_mode"] = ("cool", now)
     poller._evict_invalidated_pending_updates({"hvac_mode": "cool"})
     assert len(poller._pending_updates) == 0
 
-    poller._pending_updates["hvac_mode"] = ("heat", 123456789.0)
+    # Power Off -> evicted
+    poller._pending_updates["hvac_mode"] = ("heat", now)
     poller._evict_invalidated_pending_updates({"AC_FUN_POWER": "Off"})
     assert len(poller._pending_updates) == 0
 
@@ -561,7 +564,7 @@ async def test_evict_invalidated_pending_updates_power_on_guard():
     }
 
     poller = YamlStatePoller(mock_controller)
-    poller._pending_updates["hvac_mode"] = ("heat", 123456789.0)
+    poller._pending_updates["hvac_mode"] = ("heat", time.time())
 
     # Incoming push is Power ON (not Off) -> MUST NOT evict hvac_mode pending update!
     poller._evict_invalidated_pending_updates({"AC_FUN_POWER": "On"})
@@ -895,22 +898,93 @@ def test_evict_invalidated_pending_updates_strict_logic():
 
     prop1 = MagicMock(id="op1")
     prop2 = MagicMock(id="op2")
+    prop1.convert_hass_to_dev.side_effect = lambda v: v
+    prop2.convert_hass_to_dev.side_effect = lambda v: v
     poller.controller.loader.operations = {"op1": prop1, "op2": prop2}
     poller.controller.loader.properties = {}
 
-    poller._pending_updates = {"op1": ("v", 0), "op2": ("v", 0)}
+    now = time.time()
+    poller._pending_updates = {"op1": ("v1", now), "op2": ("v2", now)}
 
     def mock_get_key(prop):
         return {"op1": "Key1", "op2": "Key2"}.get(prop.id)
 
     poller._get_cached_device_key_from_prop = MagicMock(side_effect=mock_get_key)
 
-    push_data = {"Key2": "updated"}
+    # Push data carries matching value for Key2 ("v2") -> Key2 evicted, Key1 retained
+    push_data = {"Key2": "v2"}
 
     poller._evict_invalidated_pending_updates(push_data)
 
     assert "op1" in poller._pending_updates
     assert "op2" not in poller._pending_updates
+
+
+def test_values_match_float_and_string_cases():
+    """Directly unit test _values_match helper for float conversion and string casing."""
+    assert YamlStatePoller._values_match("22", 22.0) is True
+    assert YamlStatePoller._values_match(22.0, "22") is True
+    assert YamlStatePoller._values_match("22.0", "22") is True
+    assert YamlStatePoller._values_match("22.5", 22.0) is False
+    assert YamlStatePoller._values_match("Cool", "cool") is True
+    assert YamlStatePoller._values_match("Cool", "heat") is False
+
+
+def test_evict_invalidated_pending_updates_float_formatting_match():
+    """Verify that push payload '22' evicts pending update 22.0 via float matching."""
+    poller = YamlStatePoller(MagicMock())
+    temp_op = MagicMock(id="temperature")
+    temp_op.convert_hass_to_dev.side_effect = lambda v: str(v)
+    poller.controller.loader.operations = {"temperature": temp_op}
+    poller.controller.loader.properties = {}
+    poller._get_cached_device_key_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
+
+    now = time.time()
+    poller._pending_updates["temperature"] = (22.0, now)
+
+    # Push data is "22" string, pending expected is 22.0 float -> MUST match and evict!
+    poller._evict_invalidated_pending_updates({"AC_FUN_TEMPSET": "22"})
+    assert "temperature" not in poller._pending_updates
+
+
+def test_evict_invalidated_pending_updates_value_mismatch_retained():
+    """Verify that an echo push update with a stale/mismatched value does NOT evict fresh pending user intent."""
+    poller = YamlStatePoller(MagicMock())
+    temp_op = MagicMock(id="temperature")
+    temp_op.convert_hass_to_dev.side_effect = lambda v: str(v)
+    poller.controller.loader.operations = {"temperature": temp_op}
+    poller.controller.loader.properties = {}
+    poller._get_cached_device_key_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
+
+    now = time.time()
+    # User requested 23.0
+    poller._pending_updates["temperature"] = (23.0, now)
+
+    # Device responds with echo update for prior command (22.0)
+    poller._evict_invalidated_pending_updates({"AC_FUN_TEMPSET": "22"})
+
+    # Pending update for 23.0 MUST be retained to prevent UI flicker!
+    assert "temperature" in poller._pending_updates
+    assert poller._pending_updates["temperature"][0] == 23.0
+
+
+def test_evict_invalidated_pending_updates_ttl_fallback():
+    """Verify that pending updates older than TTL (10s) are evicted even if push value mismatches."""
+    poller = YamlStatePoller(MagicMock())
+    temp_op = MagicMock(id="temperature")
+    temp_op.convert_hass_to_dev.side_effect = lambda v: str(v)
+    poller.controller.loader.operations = {"temperature": temp_op}
+    poller.controller.loader.properties = {}
+    poller._get_cached_device_key_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
+
+    # Stale timestamp (12 seconds ago > 10.0s TTL)
+    stale_time = time.time() - 12.0
+    poller._pending_updates["temperature"] = (23.0, stale_time)
+
+    # Incoming push data carries 22.0 (mismatch), but timestamp > 10s -> TTL fallback evicts it!
+    poller._evict_invalidated_pending_updates({"AC_FUN_TEMPSET": "22"})
+
+    assert "temperature" not in poller._pending_updates
 
 
 async def test_async_merge_device_state_strict_args():
@@ -1006,6 +1080,10 @@ def test_evict_invalidated_pending_updates_loop_mutations():
     op1 = MagicMock(id="prop1")
     op2 = MagicMock(id="prop2")
     op_hvac = MagicMock(id="hvac_mode")
+    op1.convert_hass_to_dev.side_effect = lambda v: v
+    op2.convert_hass_to_dev.side_effect = lambda v: v
+    op_hvac.convert_hass_to_dev.side_effect = lambda v: v
+
     poller.controller.loader.operations = {
         "prop1": op1,
         "prop2": op2,
@@ -1018,10 +1096,11 @@ def test_evict_invalidated_pending_updates_loop_mutations():
 
     poller._get_cached_device_key_from_prop = MagicMock(side_effect=mock_get_key)
 
+    now = time.time()
     poller._pending_updates = {
-        "prop1": ("v", 0),
-        "prop2": ("v", 0),
-        "hvac_mode": ("v", 0),
+        "prop1": ("data", now),
+        "prop2": ("data", now),
+        "hvac_mode": ("v", now),
     }
 
     push_data = {"Key1": "data", "Key2": "data", "AC_FUN_POWER": "On"}
@@ -1040,3 +1119,101 @@ async def test_async_merge_device_state_missing_getter():
 
     with pytest.raises(AttributeError):
         await poller.async_merge_device_state({"new": "data"}, False, False)
+
+
+def test_evict_invalidated_pending_updates_loop_continuation():
+    """Kills mutants changing 'continue' to 'break' at line 943 (if not entry) or 958 (if not prop)."""
+    poller = YamlStatePoller(MagicMock())
+
+    temp_op = MagicMock(id="temperature")
+    temp_op.convert_hass_to_dev.side_effect = lambda v: str(v)
+    poller.controller.loader.operations = {"temperature": temp_op}
+    poller.controller.loader.properties = {}
+    poller._get_cached_device_key_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
+
+    now = time.time()
+    # Insertion order: "null_entry" (None), "missing_prop_id" (no prop), then "temperature" (valid)
+    poller._pending_updates = {
+        "null_entry": None,
+        "missing_prop_id": ("val", now),
+        "temperature": (22.0, now),
+    }
+
+    # Execute eviction with push matching temperature (22.0)
+    poller._evict_invalidated_pending_updates({"AC_FUN_TEMPSET": "22"})
+
+    # If continue -> break mutant occurred at null_entry or missing_prop_id, temperature would never be evaluated.
+    assert "temperature" not in poller._pending_updates
+
+
+def test_evict_invalidated_pending_updates_converter_called_strictly():
+    """Kills mutant changing hasattr(prop, 'convert_hass_to_dev') to return None/False."""
+    poller = YamlStatePoller(MagicMock())
+
+    temp_op = MagicMock(id="temperature")
+    temp_op.convert_hass_to_dev = MagicMock(return_value="22")
+    poller.controller.loader.operations = {"temperature": temp_op}
+    poller.controller.loader.properties = {}
+    poller._get_cached_device_key_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
+
+    now = time.time()
+    poller._pending_updates = {"temperature": (22.0, now)}
+
+    poller._evict_invalidated_pending_updates({"AC_FUN_TEMPSET": "22"})
+
+    # Explicitly assert convert_hass_to_dev was called with 22.0
+    temp_op.convert_hass_to_dev.assert_called_once_with(22.0)
+    assert "temperature" not in poller._pending_updates
+
+
+@patch("time.time", return_value=100.0)
+def test_evict_invalidated_pending_updates_exact_ttl_boundary(mock_time):
+    """Kills mutant mutating '>' to '>=' at line 946 (exact 10.0s TTL boundary)."""
+    poller = YamlStatePoller(MagicMock())
+    temp_op = MagicMock(id="temperature")
+    temp_op.convert_hass_to_dev.side_effect = lambda v: str(v)
+    poller.controller.loader.operations = {"temperature": temp_op}
+    poller.controller.loader.properties = {}
+    poller._get_cached_device_key_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
+
+    # now (100.0) - timestamp (90.0) = EXACTLY 10.0s
+    poller._pending_updates = {"temperature": (23.0, 90.0)}
+
+    # Push data carries 22.0 (mismatch)
+    poller._evict_invalidated_pending_updates({"AC_FUN_TEMPSET": "22"})
+
+    # Because 10.0 is NOT strictly > 10.0, it MUST NOT be evicted by TTL fallback!
+    assert "temperature" in poller._pending_updates
+
+
+def test_evict_invalidated_pending_updates_fallbacks_and_missing_converter():
+    """Kills None fallbacks at line 952 (operations or properties), 962 (hasattr convert_hass_to_dev), and 971 (power in properties)."""
+    poller = YamlStatePoller(MagicMock())
+
+    # prop in loader.properties (NOT operations) and WITHOUT convert_hass_to_dev attribute
+    prop_without_converter = MagicMock(id="custom_prop", spec=["id"])
+    hvac_op = MagicMock(id="hvac_mode")
+    power_prop = MagicMock(id="power")
+
+    poller.controller.loader.operations = {"hvac_mode": hvac_op}
+    poller.controller.loader.properties = {
+        "custom_prop": prop_without_converter,
+        "power": power_prop,
+    }
+
+    def mock_get_key(prop):
+        return {"custom_prop": "CUSTOM_KEY", "hvac_mode": "KeyHVAC", "power": "AC_FUN_POWER"}.get(getattr(prop, "id", None))
+
+    poller._get_cached_device_key_from_prop = MagicMock(side_effect=mock_get_key)
+
+    now = time.time()
+    poller._pending_updates = {
+        "custom_prop": ("val_str", now),
+        "hvac_mode": ("cool", now),
+    }
+
+    push_data = {"CUSTOM_KEY": "val_str", "AC_FUN_POWER": "Off"}
+    poller._evict_invalidated_pending_updates(push_data)
+
+    assert "custom_prop" not in poller._pending_updates
+    assert "hvac_mode" not in poller._pending_updates
