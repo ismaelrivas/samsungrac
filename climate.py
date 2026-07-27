@@ -283,14 +283,18 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         )
 
         # Defensive parsing of temperature step
-        try:
-            step: float = float(configured_step)
-        except (ValueError, TypeError):
-            _LOGGER.warning(
-                "%s Invalid temp step configured. Falling back to default.",
-                self.log_prefix,
-            )  # pragma: no mutate
-            step = float(DEFAULT_TARGET_TEMP_STEP)
+        if configured_step is None:
+            step: float = float(DEFAULT_TARGET_TEMP_STEP)
+        else:
+            try:
+                step = float(configured_step)
+            except (ValueError, TypeError):
+                _LOGGER.warning(
+                    "%s Invalid temp step configured (%s). Falling back to default.",
+                    self.log_prefix,
+                    configured_step,
+                )  # pragma: no mutate
+                step = float(DEFAULT_TARGET_TEMP_STEP)
 
         self._attr_target_temperature_step = int(step) if step == int(step) else step
 

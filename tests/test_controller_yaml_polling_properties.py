@@ -523,7 +523,15 @@ async def test_evict_invalidated_pending_updates():
     mock_op = MagicMock()
     mock_op.id = "hvac_mode"
     mock_op.status_template = "{{ device_state.hvac_mode }}"
-    mock_controller.loader.operations = {"hvac_mode": mock_op}
+
+    mock_power_op = MagicMock()
+    mock_power_op.id = "power"
+    mock_power_op.status_template = "{{ device_state.AC_FUN_POWER }}"
+
+    mock_controller.loader.operations = {
+        "hvac_mode": mock_op,
+        "power": mock_power_op,
+    }
 
     poller = YamlStatePoller(mock_controller)
     poller._pending_updates["hvac_mode"] = ("heat", 123456789.0)
@@ -534,6 +542,59 @@ async def test_evict_invalidated_pending_updates():
     poller._pending_updates["hvac_mode"] = ("heat", 123456789.0)
     poller._evict_invalidated_pending_updates({"AC_FUN_POWER": "Off"})
     assert len(poller._pending_updates) == 0
+
+
+async def test_evict_invalidated_pending_updates_power_on_guard():
+    """Kills mutant changing 'if power_key and push_data.get(power_key) == "Off" and ...' to 'or'."""
+    mock_controller = MagicMock()
+    mock_op = MagicMock()
+    mock_op.id = "hvac_mode"
+    mock_op.status_template = "{{ device_state.hvac_mode }}"
+
+    mock_power_op = MagicMock()
+    mock_power_op.id = "power"
+    mock_power_op.status_template = "{{ device_state.AC_FUN_POWER }}"
+
+    mock_controller.loader.operations = {
+        "hvac_mode": mock_op,
+        "power": mock_power_op,
+    }
+
+    poller = YamlStatePoller(mock_controller)
+    poller._pending_updates["hvac_mode"] = ("heat", 123456789.0)
+
+    # Incoming push is Power ON (not Off) -> MUST NOT evict hvac_mode pending update!
+    poller._evict_invalidated_pending_updates({"AC_FUN_POWER": "On"})
+    assert len(poller._pending_updates) == 1, (
+        "Mutant survived! Pending update was evicted even when power was 'On' instead of 'Off'."
+    )
+
+
+async def test_evict_invalidated_pending_updates_power_properties_fallback():
+    """Kills mutant mutating 'operations.get("power") or properties.get("power")' to fallback to None in eviction."""
+    mock_controller = MagicMock()
+    mock_hvac_op = MagicMock()
+    mock_hvac_op.id = "hvac_mode"
+    mock_hvac_op.status_template = "{{ device_state.hvac_mode }}"
+
+    mock_power_prop = MagicMock()
+    mock_power_prop.id = "power"
+    mock_power_prop.status_template = "{{ device_state.AC_FUN_POWER }}"
+
+    # operations has NO power op (returns None), properties HAS power_prop
+    mock_controller.loader.operations = {"hvac_mode": mock_hvac_op}
+    mock_controller.loader.properties = {"power": mock_power_prop}
+
+    poller = YamlStatePoller(mock_controller)
+    poller._pending_updates["hvac_mode"] = ("heat", 123456789.0)
+
+    # Incoming push is Power Off -> MUST evict hvac_mode pending update via properties.get("power") fallback!
+    poller._evict_invalidated_pending_updates({"AC_FUN_POWER": "Off"})
+    assert len(poller._pending_updates) == 0, (
+        "Mutant survived! Eviction failed when power operation was in properties instead of operations."
+    )
+
+
 
 
 async def test_async_merge_device_state():

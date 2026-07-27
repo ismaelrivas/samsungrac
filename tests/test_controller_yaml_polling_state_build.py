@@ -75,11 +75,29 @@ async def test_build_device_state_from_props_samsung_2878_exhaustive():
         return op
 
     poller = YamlStatePoller(mock_controller)
-    poller._get_cached_device_key_from_prop = MagicMock(return_value="CUSTOM_KEY")
+    key_mapping = {
+        "hvac": "AC_FUN_OPMODE",
+        "hvac_mode": "AC_FUN_OPMODE",
+        "hvac_ha": "AC_FUN_OPMODE",
+        "hvac_alt": "AC_FUN_OPMODE",
+        "power": "AC_FUN_POWER",
+        "temp": "AC_FUN_TEMPSET",
+        "temperature": "AC_FUN_TEMPSET",
+        "temp_ha": "AC_FUN_TEMPSET",
+        "fan": "AC_FUN_WINDLEVEL",
+        "fan_mode": "AC_FUN_WINDLEVEL",
+        "fan_ha": "AC_FUN_WINDLEVEL",
+        "fan_alt": "AC_FUN_WINDLEVEL",
+        "swing": "CUSTOM_KEY",
+    }
+    poller._get_cached_device_key_from_prop = MagicMock(
+        side_effect=lambda op: key_mapping.get(getattr(op, "id", None), "CUSTOM_KEY")
+    )
 
     # BARRIDO 1: Estado OFF con alias nativos
     mock_controller.loader.operations = {
         "hvac": create_op("hvac", "Off"),
+        "power": create_op("power", "Off"),
         "temp": create_op("temperature", 22.0),
         "fan": create_op("fan", "Auto"),
         "swing": create_op("swing", "Up"),  # Debe usar fallback a CUSTOM_KEY
@@ -98,6 +116,7 @@ async def test_build_device_state_from_props_samsung_2878_exhaustive():
         "hvac_alt": create_op(
             "hvac_mode", "Heat"
         ),  # Sobrescribirá a Cool, asertamos "Heat"
+        "power": create_op("power", "On"),
         "temp_ha": create_op(ATTR_TEMPERATURE, 25.5),
         "fan_ha": create_op(ATTR_FAN_MODE, "Low"),
         "fan_alt": create_op(
@@ -1608,3 +1627,188 @@ async def test_predict_and_correct_state_mutants():
     assert op_bystander.value == "auto", (
         "¡Mutante detectado! El espectador recibió None en lugar de su valor original del estado."
     )
+
+
+@pytest.mark.asyncio
+async def test_build_device_state_power_op_fallback() -> None:
+    """Kills mutants in power_op resolution: operations.get('power') or properties.get('power')."""
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SAMSUNG_2878
+
+    mock_controller = MagicMock()
+    mock_controller.config.get.return_value = DEVICE_TYPE_SAMSUNG_2878
+    mock_controller.loader.state_getter.value = {"_is_not_falsy": True}
+
+    hvac_op = MagicMock()
+    hvac_op.id = "hvac_mode"
+    hvac_op.value = "Cool"
+    hvac_op.convert_hass_to_dev.return_value = "Cool"
+
+    power_prop = MagicMock()
+    power_prop.id = "power"
+    power_prop.value = None
+    del power_prop.convert_hass_to_dev
+
+    # Test Case 1: operations.get("power") is None, properties.get("power") returns power_prop
+    mock_controller.loader.operations = {"hvac_mode": hvac_op}
+    mock_controller.loader.properties = {"power": power_prop}
+
+    poller = YamlStatePoller(mock_controller)
+    poller._get_cached_device_key_from_prop = MagicMock(
+        side_effect=lambda op: "AC_FUN_OPMODE" if getattr(op, "id", None) == "hvac_mode" else "AC_FUN_POWER"
+    )
+
+    res1 = await poller._build_device_state_from_props()
+    assert res1.get("AC_FUN_POWER") == "On", (
+        "Mutant survived! operations.get('power') OR properties.get('power') fallback failed."
+    )
+
+    # Test Case 2: BOTH return None -> No power_key injected
+    mock_controller.loader.properties = {}
+    poller2 = YamlStatePoller(mock_controller)
+    poller2._get_cached_device_key_from_prop = MagicMock(
+        side_effect=lambda op: "AC_FUN_OPMODE" if getattr(op, "id", None) == "hvac_mode" else None
+    )
+
+    res2 = await poller2._build_device_state_from_props()
+    assert "AC_FUN_POWER" not in res2, (
+        "Mutant survived! Power key was injected even when power_op was None."
+    )
+
+
+@pytest.mark.asyncio
+async def test_build_device_state_power_ternary_mutual_exclusivity() -> None:
+    """Kills mutants modifying ('Off' if device_value == 'Off' else 'On')."""
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SAMSUNG_2878
+
+    mock_controller = MagicMock()
+    mock_controller.config.get.return_value = DEVICE_TYPE_SAMSUNG_2878
+    mock_controller.loader.state_getter.value = {"_is_not_falsy": True}
+
+    power_op = MagicMock()
+    power_op.id = "power"
+    power_op.value = None
+    del power_op.convert_hass_to_dev
+
+    # Test A: device_value is "Off" -> AC_FUN_POWER must be strictly "Off"
+    hvac_off = MagicMock()
+    hvac_off.id = "hvac_mode"
+    hvac_off.value = "Off"
+    hvac_off.convert_hass_to_dev.return_value = "Off"
+
+    mock_controller.loader.operations = {"hvac_mode": hvac_off, "power": power_op}
+    mock_controller.loader.properties = {}
+
+    poller_off = YamlStatePoller(mock_controller)
+    poller_off._get_cached_device_key_from_prop = MagicMock(
+        side_effect=lambda op: "AC_FUN_OPMODE" if getattr(op, "id", None) == "hvac_mode" else "AC_FUN_POWER"
+    )
+
+    res_off = await poller_off._build_device_state_from_props()
+    assert res_off["AC_FUN_POWER"] == "Off", (
+        "Mutant survived! Power should be strictly 'Off' when device_value is 'Off'."
+    )
+
+    # Test B: device_value is "Cool" -> AC_FUN_POWER must be strictly "On"
+    hvac_cool = MagicMock()
+    hvac_cool.id = "hvac_mode"
+    hvac_cool.value = "Cool"
+    hvac_cool.convert_hass_to_dev.return_value = "Cool"
+
+    mock_controller.loader.operations = {"hvac_mode": hvac_cool, "power": power_op}
+
+    poller_cool = YamlStatePoller(mock_controller)
+    poller_cool._get_cached_device_key_from_prop = MagicMock(
+        side_effect=lambda op: "AC_FUN_OPMODE" if getattr(op, "id", None) == "hvac_mode" else "AC_FUN_POWER"
+    )
+
+    res_cool = await poller_cool._build_device_state_from_props()
+    assert res_cool["AC_FUN_POWER"] == "On", (
+        "Mutant survived! Power should be strictly 'On' when device_value is 'Cool'."
+    )
+
+
+@pytest.mark.asyncio
+async def test_build_device_state_power_key_strict_presence() -> None:
+    """Kills mutant where power_key is mutated to None at line 706."""
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SAMSUNG_2878
+
+    mock_controller = MagicMock()
+    mock_controller.config.get.return_value = DEVICE_TYPE_SAMSUNG_2878
+    mock_controller.loader.state_getter.value = {"_is_not_falsy": True}
+
+    hvac_cool = MagicMock()
+    hvac_cool.id = "hvac_mode"
+    hvac_cool.value = "Cool"
+    hvac_cool.convert_hass_to_dev.return_value = "Cool"
+
+    power_op = MagicMock()
+    power_op.id = "power"
+    power_op.value = None
+    del power_op.convert_hass_to_dev
+
+    mock_controller.loader.operations = {"hvac_mode": hvac_cool, "power": power_op}
+    mock_controller.loader.properties = {}
+
+    poller = YamlStatePoller(mock_controller)
+    poller._get_cached_device_key_from_prop = MagicMock(
+        side_effect=lambda op: "AC_FUN_OPMODE" if getattr(op, "id", None) == "hvac_mode" else "AC_FUN_POWER"
+    )
+
+    res = await poller._build_device_state_from_props()
+    assert "AC_FUN_POWER" in res, (
+        "Mutant survived! 'AC_FUN_POWER' key must strictly exist in reconstructed_state."
+    )
+    assert res["AC_FUN_POWER"] == "On"
+
+
+@pytest.mark.asyncio
+async def test_sniper_kill_final_power_key_none_mutant() -> None:
+    """SILVER BULLET: Strictly kills the power_key = None mutant at line 706."""
+    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SAMSUNG_2878
+
+    mock_controller = MagicMock()
+    mock_controller.config.get.return_value = DEVICE_TYPE_SAMSUNG_2878
+    mock_controller.loader.state_getter.value = {"_is_not_falsy": True}
+
+    # 1. Main HVAC operation
+    op_hvac = MagicMock()
+    op_hvac.id = "hvac_mode"
+    op_hvac.value = "Cool"
+    op_hvac.convert_hass_to_dev.return_value = "Cool"
+
+    # 2. Power operation (value=None so loop iteration skips setting it directly)
+    power_op = MagicMock()
+    power_op.id = "power"
+    power_op.value = None
+    del power_op.convert_hass_to_dev
+
+    mock_controller.loader.operations = {"hvac_mode": op_hvac, "power": power_op}
+    mock_controller.loader.properties = {}
+
+    poller = YamlStatePoller(mock_controller)
+
+    # 3. Dynamic key resolution side_effect
+    def _mock_get_cached_key(prop: Any) -> str | None:
+        prop_id = getattr(prop, "id", None)
+        if prop_id == "hvac_mode":
+            return "FAKE_HVAC_KEY"
+        if prop_id == "power":
+            return "FAKE_POWER_KEY"
+        return None
+
+    poller._get_cached_device_key_from_prop = MagicMock(side_effect=_mock_get_cached_key)
+
+    # 4. Execute state building
+    reconstructed_state = await poller._build_device_state_from_props()
+
+    # 5. Silver Bullet Assertion: If line 706 mutates power_key = None, FAKE_POWER_KEY will NOT be in dictionary
+    assert "FAKE_POWER_KEY" in reconstructed_state, (
+        "FINAL MUTANT SURVIVED! power_key = self._get_cached_device_key_from_prop(power_op) was mutated to None."
+    )
+    assert reconstructed_state["FAKE_POWER_KEY"] == "On", (
+        "FINAL MUTANT SURVIVED! Expected 'FAKE_POWER_KEY' to be 'On'."
+    )
+
+
+
+

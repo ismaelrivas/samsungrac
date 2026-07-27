@@ -696,11 +696,18 @@ class YamlStatePoller:
 
             if op_id in ("hvac", "hvac_mode", ATTR_HVAC_MODE):
                 if is_2878:
-                    reconstructed_state["AC_FUN_OPMODE"] = device_value
-                    if device_value != "Off":
-                        reconstructed_state["AC_FUN_POWER"] = "On"
-                    else:
-                        reconstructed_state["AC_FUN_POWER"] = "Off"
+                    device_key = self._get_cached_device_key_from_prop(op)
+                    if device_key:
+                        reconstructed_state[device_key] = device_value
+                    power_op = self.controller.loader.operations.get(
+                        "power"
+                    ) or self.controller.loader.properties.get("power")
+                    if power_op:
+                        power_key = self._get_cached_device_key_from_prop(power_op)
+                        if power_key:
+                            reconstructed_state[power_key] = (
+                                "Off" if device_value == "Off" else "On"
+                            )
                 else:
                     device_list = reconstructed_state.get("Devices")
                     if isinstance(device_list, list) and device_list:
@@ -717,7 +724,9 @@ class YamlStatePoller:
                                 ]
             elif op_id in ("temperature", ATTR_TEMPERATURE):
                 if is_2878:
-                    reconstructed_state["AC_FUN_TEMPSET"] = str(device_value)
+                    device_key = self._get_cached_device_key_from_prop(op)
+                    if device_key:
+                        reconstructed_state[device_key] = str(device_value)
                 else:
                     device_list = reconstructed_state.get("Devices")
                     if isinstance(device_list, list) and device_list:
@@ -740,12 +749,9 @@ class YamlStatePoller:
                 ATTR_PRESET_MODE,
             ):
                 if is_2878:
-                    if op_id in ("fan", "fan_mode", ATTR_FAN_MODE):
-                        device_key = "AC_FUN_WINDLEVEL"
-                    else:
-                        device_key = self._get_cached_device_key_from_prop(
-                            op
-                        )  # pragma: no mutate
+                    device_key = self._get_cached_device_key_from_prop(
+                        op
+                    )  # pragma: no mutate
                     if device_key:
                         reconstructed_state[device_key] = device_value
                 else:
@@ -930,7 +936,15 @@ class YamlStatePoller:
                 invalidated.add(prop_id)
                 continue
 
-            if push_data.get("AC_FUN_POWER") == "Off" and prop_id in (
+            power_op = self.controller.loader.operations.get(
+                "power"
+            ) or self.controller.loader.properties.get("power")
+            power_key = (
+                self._get_cached_device_key_from_prop(power_op)
+                if power_op
+                else None
+            )
+            if power_key and push_data.get(power_key) == "Off" and prop_id in (
                 "hvac_mode",
                 "hvac",
                 "fan_mode",
