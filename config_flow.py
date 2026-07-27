@@ -1800,9 +1800,10 @@ class OptionsFlowHandler(OptionsFlow):  # pylint: disable=too-few-public-methods
             CONF_ENABLE_POLLING, DEFAULT_ENABLE_POLLING
         )  # pragma: no mutate
 
-        opt_step = options.get(
-            CONF_TARGET_TEMP_STEP,
-            data.get(CONF_TARGET_TEMP_STEP, DEFAULT_TARGET_TEMP_STEP),
+        opt_step = (
+            options.get(CONF_TARGET_TEMP_STEP)
+            or data.get(CONF_TARGET_TEMP_STEP)
+            or DEFAULT_TARGET_TEMP_STEP
         )  # pragma: no mutate
 
         schema_dict |= {
@@ -1812,7 +1813,7 @@ class OptionsFlowHandler(OptionsFlow):  # pylint: disable=too-few-public-methods
             vol.Required(CONF_TEMP_NATIVE_CURRENT, default=opt_curr): temp_selector,
             vol.Required(CONF_TEMP_NATIVE_TARGET, default=opt_targ): temp_selector,
             vol.Optional(CONF_ENABLE_POLLING, default=bool(opt_polling)): bool,
-            vol.Required(CONF_TARGET_TEMP_STEP, default=str(opt_step)): SelectSelector(
+            vol.Optional(CONF_TARGET_TEMP_STEP, default=str(opt_step)): SelectSelector(
                 SelectSelectorConfig(
                     options=[
                         {"value": "0.1", "label": "0.1°"},
