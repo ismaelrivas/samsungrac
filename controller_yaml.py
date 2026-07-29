@@ -414,13 +414,13 @@ class YamlController(ClimateController):
         return await self.poller.async_update_state()
 
     async def async_merge_device_state(
-        self, new_data: dict[str, Any], is_response: bool, is_update: bool
+        self, new_data: dict[str, Any]
     ) -> bool:
         """Merge incoming push updates or responses into the memory state.
         Returns True if committed.
         """
         return await self.poller.async_merge_device_state(
-            new_data, is_response, is_update
+            new_data
         )
 
     async def async_predict_and_correct_state(

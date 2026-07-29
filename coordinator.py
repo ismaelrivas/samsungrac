@@ -371,7 +371,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
             if new_data:
                 if await self.controller.async_merge_device_state(
-                    new_data, is_response=False, is_update=True
+                    new_data
                 ):
                     updated_state = self._create_device_state()  # pragma: no mutate
                     self.async_set_updated_data(updated_state)  # pragma: no mutate

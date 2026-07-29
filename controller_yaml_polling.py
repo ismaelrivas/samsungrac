@@ -171,29 +171,24 @@ class YamlStatePoller:
             + list(loader.sensors.values())
         )
 
+    @property
+    def _device_identifier(self) -> str:
+        """Return a reliable identifier for the device (unique_id, host, or ip_address)."""
+        return str(
+            self.controller.unique_id
+            or self.controller.host
+            or self.controller.ip_address
+            or "unknown"
+        )
+
     def _try_create_repair_issue(self) -> None:
         """Create a HA repair issue for persistent device offline state."""
         if not self.controller.hass:
             return
         try:
-            raw_id = (
-                self.controller.unique_id
-                or self.controller.host
-                or self.controller.ip_address
-                or "unknown"
-            )
-            safe_device_id = str(raw_id).replace(".", "_").replace(" ", "_")
-
+            safe_device_id = self._device_identifier.replace(".", "_").replace(" ", "_")
             config_name = self.controller.config.get("name")
-
-            hardware_id = (
-                self.controller.unique_id
-                or self.controller.host
-                or self.controller.ip_address
-                or "Unknown"
-            )
-
-            device_name = config_name if config_name else f"Samsung AC {hardware_id}"
+            device_name = config_name if config_name else f"Samsung AC {self._device_identifier}"
             async_create_issue(
                 self.controller.hass,
                 "climate_ip",
@@ -281,13 +276,7 @@ class YamlStatePoller:
                 self._consecutive_connection_errors = 0
                 if getattr(self.controller, "hass", None):
                     try:
-                        raw_id = (
-                            self.controller.unique_id
-                            or self.controller.host
-                            or self.controller.ip_address
-                            or "unknown"
-                        )
-                        safe_device_id = str(raw_id).replace(".", "_").replace(" ", "_")
+                        safe_device_id = self._device_identifier.replace(".", "_").replace(" ", "_")
                         async_delete_issue(
                             self.controller.hass,
                             "climate_ip",
@@ -454,6 +443,29 @@ class YamlStatePoller:
         self._prop_template_key_cache[prop_id] = key
         return key
 
+    def _inject_8888_api_structures(self, device_state: dict[str, Any], op_id: str, dev_val: Any) -> None:
+        """Universal 8888 REST API direct structure injection for core HVAC operations."""
+        if not isinstance(device_state, dict):
+            return
+            
+        hass_attr = self._get_hass_attr_for_op_id(op_id)
+        if hass_attr in ("hvac_mode", "hvac") and "Mode" in device_state and isinstance(device_state["Mode"], dict):
+            modes = device_state["Mode"].get("modes")
+            if isinstance(modes, list) and len(modes) > 0:
+                modes[0] = str(dev_val)
+        elif hass_attr in ("target_temperature", "temperature") and "Temperatures" in device_state and isinstance(device_state["Temperatures"], list):
+            if len(device_state["Temperatures"]) > 0 and isinstance(device_state["Temperatures"][0], dict):
+                try:
+                    device_state["Temperatures"][0]["desired"] = float(dev_val)
+                except (ValueError, TypeError):
+                    pass
+        elif hass_attr in ("fan_mode", "fan") and "Wind" in device_state and isinstance(device_state["Wind"], dict):
+            device_state["Wind"]["speedLevel"] = dev_val
+        elif hass_attr in ("preset_mode", "preset") and "Mode" in device_state and isinstance(device_state["Mode"], dict):
+            options = device_state["Mode"].get("options")
+            if isinstance(options, list) and len(options) > 0:
+                options[0] = str(dev_val)
+
     def _inject_value_into_state(self, prop: Any, device_state: dict, value: Any) -> None:
         """Safely inject an optimistic value into the raw device state bypassing stale network data."""
         if not isinstance(device_state, dict):
@@ -509,24 +521,7 @@ class YamlStatePoller:
                             break
 
         # 8888 REST API direct structure injection for core HVAC operations
-        if isinstance(device_state, dict):
-            hass_attr = self._get_hass_attr_for_op_id(op_id)
-            if hass_attr in ("hvac_mode", "hvac") and "Mode" in device_state and isinstance(device_state["Mode"], dict):
-                modes = device_state["Mode"].get("modes")
-                if isinstance(modes, list) and len(modes) > 0:
-                    modes[0] = str(dev_val)
-            elif hass_attr in ("target_temperature", "temperature") and "Temperatures" in device_state and isinstance(device_state["Temperatures"], list):
-                if len(device_state["Temperatures"]) > 0 and isinstance(device_state["Temperatures"][0], dict):
-                    try:
-                        device_state["Temperatures"][0]["desired"] = float(dev_val)
-                    except (ValueError, TypeError):
-                        pass
-            elif hass_attr in ("fan_mode", "fan") and "Wind" in device_state and isinstance(device_state["Wind"], dict):
-                device_state["Wind"]["speedLevel"] = dev_val
-            elif hass_attr in ("preset_mode", "preset") and "Mode" in device_state and isinstance(device_state["Mode"], dict):
-                options = device_state["Mode"].get("options")
-                if isinstance(options, list) and len(options) > 0:
-                    options[0] = str(dev_val)
+        self._inject_8888_api_structures(device_state, op_id, dev_val)
 
         # Universal semantic hardcode for Power
         if op_id in ("hvac", "hvac_mode", ATTR_HVAC_MODE):
@@ -544,6 +539,23 @@ class YamlStatePoller:
                 elif not isinstance(device_state[power_key], (dict, list)):
                     device_state[power_key] = "Off" if is_off else "On"
 
+    def _find_device_node(self, state_dict: dict[str, Any], id_map: dict[str, Any]) -> dict[str, Any] | None:
+        """Find the matching device node in the state dictionary based on id_map."""
+        devices_list = get_value_by_path(state_dict, id_map.get("path_to_devices", []))
+        if not devices_list:
+            return None
+        
+        target_id = str(getattr(self.controller, "device_id", ""))
+        found = next(
+            (
+                d
+                for d in devices_list
+                if d and str(get_value_by_path(d, id_map.get("id", []))) == target_id
+            ),
+            None,
+        )
+        return found if found else devices_list[0]
+
     def _extract_device_nodes(self, full_device_state: dict[str, Any], pure_network_state: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         """Extract the relevant device nodes based on YAML cache id_map."""
         device_to_process = full_device_state
@@ -556,46 +568,13 @@ class YamlStatePoller:
                 .get("identifiers")
             )
             if id_map:
-                devices_list = get_value_by_path(
-                    full_device_state, id_map.get("path_to_devices", [])
-                )
-                if devices_list:
-                    found_device = next(
-                        (
-                            d
-                            for d in devices_list
-                            if d
-                            and str(get_value_by_path(d, id_map.get("id", [])))
-                            == str(getattr(self.controller, "device_id", ""))
-                        ),
-                        None,
-                    )
-                    if not found_device and devices_list:
-                        found_device = devices_list[0]
+                found_device = self._find_device_node(full_device_state, id_map)
+                if found_device:
+                    device_to_process = found_device
 
-                    if found_device:
-                        device_to_process = found_device
-                        
-                # Extract corresponding node for PURE state as well
-                pure_devices_list = get_value_by_path(
-                    pure_device_to_process, id_map.get("path_to_devices", [])
-                )
-                if pure_devices_list:
-                    found_pure_device = next(
-                        (
-                            d
-                            for d in pure_devices_list
-                            if d
-                            and str(get_value_by_path(d, id_map.get("id", [])))
-                            == str(getattr(self.controller, "device_id", ""))
-                        ),
-                        None,
-                    )
-                    if not found_pure_device and pure_devices_list:
-                        found_pure_device = pure_devices_list[0]
-                    
-                    if found_pure_device:
-                        pure_device_to_process = found_pure_device
+                found_pure_device = self._find_device_node(pure_network_state, id_map)
+                if found_pure_device:
+                    pure_device_to_process = found_pure_device
 
         except Exception as e:  # pylint: disable=broad-exception-caught
             _LOGGER.debug("%s [Forensic] Failed to extract device node: %s", self.controller.log_prefix, e)
@@ -616,6 +595,16 @@ class YamlStatePoller:
         # ------------------- ANTI-FLICKER ENGINE (SHADOW STATE) -------------------
         # MUST RUN FIRST to inject optimistic locks into device_to_process BEFORE parsing properties
         now = time.time()
+        
+        props_by_id = {}
+        for op in all_properties:
+            op_id = getattr(op, "id", "")
+            if op_id:
+                props_by_id[op_id] = op
+                hass_attr = self._get_hass_attr_for_op_id(op_id)
+                if hass_attr != op_id:
+                    props_by_id[hass_attr] = op
+
         for prop_id, (pend_val, ts) in list(self._pending_updates.items()):
             # Extended TTL of 45s to process all AC queues without flickering
             if now - ts > 45.0:
@@ -623,50 +612,49 @@ class YamlStatePoller:
                 _LOGGER.debug("%s [Forensic] Lock expired for %s", self.controller.log_prefix, prop_id) # pragma: no mutate
                 continue
                 
-            for op in all_properties:
+            op = props_by_id.get(prop_id)
+            if op:
                 op_id = getattr(op, "id", "")
-                if op_id == prop_id or self._get_hass_attr_for_op_id(op_id) == prop_id:
-                    
-                    pure_val = None
-                    if hasattr(op, "calculate_value_from_state") and pure_device_to_process:
-                        try:
-                            # 💥 THE MAGIC HAPPENS HERE: Evaluate lock AGAINST PURE NETWORK STATE
-                            pure_val = op.calculate_value_from_state(pure_device_to_process)
-                        except Exception as e:
-                            _LOGGER.debug("%s calculate_value_from_state failed: %s", self.controller.log_prefix, e)
-                            
-                    # If REAL physical state matches UI, remove shield
-                    can_release = True
-                    device_key = self._get_cached_device_key_from_prop(op)
-                    if not device_key and op_id in self.SEMANTIC_DEVICE_KEY_MAP:
-                        mapped_key = self.SEMANTIC_DEVICE_KEY_MAP[op_id]
-                        if pure_device_to_process and mapped_key in pure_device_to_process:
-                            device_key = mapped_key
-                        elif device_to_process and mapped_key in device_to_process:
-                            device_key = mapped_key
+                
+                pure_val = None
+                if hasattr(op, "calculate_value_from_state") and pure_device_to_process:
+                    try:
+                        # 💥 THE MAGIC HAPPENS HERE: Evaluate lock AGAINST PURE NETWORK STATE
+                        pure_val = op.calculate_value_from_state(pure_device_to_process)
+                    except Exception as e:
+                        _LOGGER.debug("%s calculate_value_from_state failed: %s", self.controller.log_prefix, e)
+                        
+                # If REAL physical state matches UI, remove shield
+                can_release = True
+                device_key = self._get_cached_device_key_from_prop(op)
+                if not device_key and op_id in self.SEMANTIC_DEVICE_KEY_MAP:
+                    mapped_key = self.SEMANTIC_DEVICE_KEY_MAP[op_id]
+                    if pure_device_to_process and mapped_key in pure_device_to_process:
+                        device_key = mapped_key
+                    elif device_to_process and mapped_key in device_to_process:
+                        device_key = mapped_key
 
-                    lock_age = now - ts
-                    if lock_age < 3.0:
-                        # Temporal Shield: Prevent immediate premature release on fast echo before physical AC reacts
+                lock_age = now - ts
+                if lock_age < 3.0:
+                    # Temporal Shield: Prevent immediate premature release on fast echo before physical AC reacts
+                    can_release = False
+                elif changed_keys is not None:
+                    if device_key and device_key not in changed_keys:
+                        # Push update was for another property (e.g. Wind or Power), NOT for this property!
+                        # Keep shield active until THIS property's device_key arrives in push update or poll.
                         can_release = False
-                    elif changed_keys is not None:
-                        if device_key and device_key not in changed_keys:
-                            # Push update was for another property (e.g. Wind or Power), NOT for this property!
-                            # Keep shield active until THIS property's device_key arrives in push update or poll.
-                            can_release = False
-                            
-                    _LOGGER.debug("%s [Forensic-Verbose] Eval %s: pend_val=%s, pure_val=%s, changed_keys=%s, device_key=%s, can_release=%s", self.controller.log_prefix, prop_id, pend_val, pure_val, changed_keys, device_key, can_release) # pragma: no mutate
+                        
+                _LOGGER.debug("%s [Forensic-Verbose] Eval %s: pend_val=%s, pure_val=%s, changed_keys=%s, device_key=%s, can_release=%s", self.controller.log_prefix, prop_id, pend_val, pure_val, changed_keys, device_key, can_release) # pragma: no mutate
 
-                    if not is_prediction and can_release and pure_val is not None and self._values_match(pure_val, pend_val):
-                        _LOGGER.debug("%s [Forensic] Lock released for %s. Pure matches pend_val: %s", self.controller.log_prefix, prop_id, pend_val) # pragma: no mutate
-                        del self._pending_updates[prop_id]
-                    else:
-                        _LOGGER.debug("%s [Forensic] Lock enforced for %s. Injecting %s into state.", self.controller.log_prefix, prop_id, pend_val) # pragma: no mutate
-                        # Force UI to stay in expected state and update local variable
-                        self._set_prop_value(op, pend_val)
-                            
-                        self._inject_value_into_state(op, device_to_process, pend_val)
-                    break
+                if not is_prediction and can_release and pure_val is not None and self._values_match(pure_val, pend_val):
+                    _LOGGER.debug("%s [Forensic] Lock released for %s. Pure matches pend_val: %s", self.controller.log_prefix, prop_id, pend_val) # pragma: no mutate
+                    del self._pending_updates[prop_id]
+                else:
+                    _LOGGER.debug("%s [Forensic] Lock enforced for %s. Injecting %s into state.", self.controller.log_prefix, prop_id, pend_val) # pragma: no mutate
+                    # Force UI to stay in expected state and update local variable
+                    self._set_prop_value(op, pend_val)
+                        
+                    self._inject_value_into_state(op, device_to_process, pend_val)
 
     def _predict_dependency_cascades(self, device_to_process: dict[str, Any]) -> dict[str, Any]:
         """Apply cascade logic to correct properties that become invalid (e.g. Fan mode when switching to Dry)."""
@@ -704,7 +692,6 @@ class YamlStatePoller:
         full_device_state: dict[str, Any] | None = None,
         is_prediction: bool = False,
         force_update: bool = False,
-        current_hass_state: Any | None = None,
         changed_keys: set[str] | None = None,
     ) -> dict[str, Any]:
         """Update individual entity properties shielding from stale polls via pending locks."""
@@ -743,6 +730,7 @@ class YamlStatePoller:
         self._apply_anti_flicker_locks(all_properties, device_to_process, pure_device_to_process, is_prediction, changed_keys)
 
         for prop in all_properties:
+            # 1. Parse from state
             if hasattr(prop, "async_update_state"):
                 try:
                     await prop.async_update_state(
@@ -751,16 +739,20 @@ class YamlStatePoller:
                 except Exception as e:
                     _LOGGER.debug("%s async_update_state on property failed: %s", self.controller.log_prefix, e)
 
-        # Re-enforce active anti-flicker locks on property values after async_update_state
-        for prop_id, (pend_val, ts) in self._pending_updates.items():
-            for op in all_properties:
-                op_id = getattr(op, "id", "")
-                if op_id == prop_id or self._get_hass_attr_for_op_id(op_id) == prop_id:
-                    self._set_prop_value(op, pend_val)
-                    break
+            # 2. Re-enforce active anti-flicker locks on property values after parsing
+            op_id = getattr(prop, "id", "")
+            hass_attr = self._get_hass_attr_for_op_id(op_id)
+            
+            lock_val = None
+            if op_id in self._pending_updates:
+                lock_val = self._pending_updates[op_id][0]
+            elif hass_attr in self._pending_updates:
+                lock_val = self._pending_updates[hass_attr][0]
+                
+            if lock_val is not None:
+                self._set_prop_value(prop, lock_val)
 
-        # BACKUP NATIVE INJECTION (Ensures memory consistency for HA)
-        for prop in all_properties:
+            # 3. BACKUP NATIVE INJECTION (Ensures memory consistency for HA)
             val = self._get_prop_value(prop)
             if val is not None:
                 self._inject_value_into_state(prop, device_to_process, val)
@@ -799,42 +791,10 @@ class YamlStatePoller:
         """Map YAML operation IDs to HA Attributes for validation mapping."""
         return self.HASS_ATTR_MAP.get(op_id, op_id)
 
-    def _calculate_structured_state(
-        self, raw_state: dict[str, Any]
-    ) -> ClimateIPDeviceState | None:
-        """Pure dry-run calculation of the ClimateIPDeviceState from raw data."""
-        if not self.controller.loader.is_fully_initialized:
-            return None
 
-        try:
-            all_properties = (
-                list(self.controller.loader.operations.values())
-                + list(self.controller.loader.properties.values())
-                + list(self.controller.loader.sensors.values())
-            )
-
-            prop_values = {}
-            for prop in all_properties:
-                prop_id = getattr(prop, "id", None)
-                if prop_id and hasattr(prop, "calculate_value_from_state"):
-                    prop_values[self.HASS_ATTR_MAP.get(prop_id, prop_id)] = prop.calculate_value_from_state(
-                        raw_state
-                    )
-
-            return ClimateIPDeviceState(
-                hvac_mode=prop_values.get("hvac_mode"),
-                target_temperature=prop_values.get("target_temperature"),
-                current_temperature=prop_values.get("current_temperature"),
-                fan_mode=prop_values.get("fan_mode"),
-                swing_mode=prop_values.get("swing_mode"),
-                preset_mode=prop_values.get("preset_mode"),
-            )
-        except Exception as e:
-            _LOGGER.debug("%s [Forensic] Error calculating structured state: %s", self.controller.log_prefix, e)
-            return None
 
     async def async_merge_device_state(
-        self, new_data: dict[str, Any], _is_response: bool, _is_update: bool
+        self, new_data: dict[str, Any]
     ) -> bool:
         """Merge a partial state update (e.g. from a push notification) into the known state."""
         if not new_data:
@@ -913,10 +873,9 @@ class YamlStatePoller:
         )
         corrections.update(update_result)
 
-        # 💥 CASCADE SHIELD: Register predictive corrections
-        for key, val in corrections.items():
-            self.register_pending_update(key, val)
-
+        # 💥 CASCADE SHIELD: Do NOT register predictive corrections as hard locks.
+        # This allows dynamic predictions (like fan=auto in Dry mode) to automatically revert 
+        # to their physical state (fan=medium) if the user swipes quickly to a mode like Cool.
         return ClimateEntityFeature(0), corrections
 
     async def async_shutdown(self) -> None:

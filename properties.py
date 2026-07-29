@@ -557,10 +557,10 @@ class DeviceOperation(DeviceProperty):
     """Base class for a settable device operation."""
 
     def _resolve_async_params(
-        self, connection: Any, dev_value: Any, duid: str | None = None
+        self, connection: Any, dev_value: Any, duid: str | None = None, device_state: dict[str, Any] | None = None
     ) -> dict[str, Any] | None:
         """Resolve the final {method, url, json, headers} dict for an async command."""
-        render_ctx = {"value": dev_value, "device_id": duid, "duid": duid}
+        render_ctx = {"value": dev_value, "device_id": duid, "duid": duid, "device_state": device_state or {}}
         conn_tmpl = getattr(connection, "_connection_template", None)
         template_to_use = self.connection_template or conn_tmpl
 
@@ -638,7 +638,7 @@ class DeviceOperation(DeviceProperty):
 
                 # dev_value is already calculated and validated above
                 params = self._resolve_async_params(
-                    connection, dev_value, duid_for_render
+                    connection, dev_value, duid_for_render, current_full_state
                 )
 
                 if params is None:
