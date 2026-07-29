@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from datetime import timedelta
 from typing import Any
 
@@ -35,6 +36,50 @@ from .state import ClimateIPDeviceState
 _LOGGER = logging.getLogger(__name__)
 
 
+class CommandDebouncer:
+    """Debounces commands per property. First command executes immediately. Subsequent are delayed."""
+
+    def __init__(self, hass: HomeAssistant, delay: float = 3.0) -> None:
+        self.hass = hass
+        self.delay = delay
+        self._timers: dict[str, asyncio.TimerHandle] = {}
+        self._last_execution: dict[str, float] = {}
+
+    async def async_execute(self, property_name: str, coroutine_func, *args, **kwargs) -> bool:
+        """Execute a command with debouncing."""
+        now = time.time()
+        last_exec = self._last_execution.get(property_name, 0.0)
+
+        async def _execute() -> None:
+            self._timers.pop(property_name, None)
+            self._last_execution[property_name] = time.time()
+            try:
+                await coroutine_func(*args, **kwargs)
+            except (UpdateFailed, CannotConnect, asyncio.TimeoutError, OSError) as err:
+                _LOGGER.error("Network error executing delayed command for %s: %s", property_name, err)
+            except Exception as err:
+                _LOGGER.error("Error executing delayed command for %s: %s", property_name, err, exc_info=True)
+
+        # First command or after long pause -> Execute immediately
+        if now - last_exec > self.delay:
+            self._last_execution[property_name] = now
+            if property_name in self._timers:
+                self._timers[property_name].cancel()
+                del self._timers[property_name]
+            return await coroutine_func(*args, **kwargs)
+
+        # Subsequent commands -> Delay
+        if property_name in self._timers:
+            self._timers[property_name].cancel()
+        
+        self._timers[property_name] = self.hass.loop.call_later(
+            self.delay, 
+            lambda: self.hass.async_create_task(_execute())
+        )
+        
+        return True  # Return true optimistically for delayed execution
+
+
 class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     """Manages data fetching for Samsung Climate devices."""
 
@@ -49,6 +94,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         """Initialize the data coordinator."""
         self.controller = controller
         self.entry = entry
+        self.debouncer = CommandDebouncer(hass, delay=3.0)
         # self._entity = None  # Reference to the ClimateIP entity
 
         # Inject callbacks into the controller to avoid circular dependencies.
@@ -373,7 +419,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 if isinstance(val, HVACMode):
                     val = val.value
                 results.append(
-                    await self.controller.async_set_property(prop, val)
+                    await self.debouncer.async_execute(
+                        prop, self.controller.async_set_property, prop, val
+                    )
                 )
 
             if not all(results):

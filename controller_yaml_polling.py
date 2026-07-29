@@ -445,6 +445,25 @@ class YamlStatePoller:
             
         if device_key in device_state:
             device_state[device_key] = dev_val
+        else:
+            # Fallback para estructuras anidadas (ej. 8888 API) usando state_node
+            state_node = getattr(prop, "state_node", None)
+            if state_node and isinstance(state_node, str):
+                parts = state_node.split(".")
+                current = device_state
+                for i, part in enumerate(parts):
+                    if i == len(parts) - 1:
+                        if isinstance(current, dict):
+                            current[part] = dev_val
+                        elif isinstance(current, list) and part.isdigit() and int(part) < len(current):
+                            current[int(part)] = dev_val
+                    else:
+                        if isinstance(current, dict):
+                            current = current.get(part, {})
+                        elif isinstance(current, list) and part.isdigit() and int(part) < len(current):
+                            current = current[int(part)]
+                        else:
+                            break
             
         # Hardcode semántico universal para Power
         if op_id in ("hvac", "hvac_mode", ATTR_HVAC_MODE):
@@ -660,6 +679,14 @@ class YamlStatePoller:
 
         self._rebuild_attributes()
         
+        # 💥 ESCUDO ABSOLUTO: Envenenamos la RAM cruda con la copia blindada
+        st_getter = self.controller.loader.state_getter
+        if st_getter and not is_prediction:
+            if hasattr(st_getter, "value"):
+                st_getter.value = device_to_process
+            elif hasattr(st_getter, "_value"):
+                st_getter._value = device_to_process
+
         if is_prediction:
             _LOGGER.debug("%s [Forensic] Prediction ended. Corrections=%s", self.controller.log_prefix, corrections) # pragma: no mutate
             
@@ -768,9 +795,6 @@ class YamlStatePoller:
         candidate_state = copy.deepcopy(self._pure_network_state)
 
         structured_candidate = self._calculate_structured_state(candidate_state)
-        if structured_candidate is None:
-            return False
-
         if hasattr(st_getter, "value"):
             st_getter.value = candidate_state
         elif hasattr(st_getter, "_value"):
