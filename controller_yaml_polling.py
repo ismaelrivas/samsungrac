@@ -383,9 +383,8 @@ class YamlStatePoller:
             return str(val1).strip().lower() == str(val2).strip().lower()
 
     def _get_state_node_from_prop(self, prop: Any) -> str | None:
-        """Infer or retrieve the state_node path mapped to a specific property."""
+        """Extract the exact state node key used by this property from the parsed YAML operations."""
         prop_id = getattr(prop, "id", None)
-        _LOGGER.debug("%s [Forensic-StateNode] _get_state_node_from_prop called with prop_id=%s, type(prop)=%s", self.controller.log_prefix, prop_id, type(prop).__name__) # pragma: no mutate
         if not prop_id:
             return None
 
@@ -665,8 +664,13 @@ class YamlStatePoller:
                         
                 _LOGGER.debug("%s [Forensic-Verbose] Eval %s: pend_val=%s, pure_val=%s, changed_keys=%s, device_key=%s, can_release=%s", self.controller.log_prefix, prop_id, pend_val, pure_val, changed_keys, device_key, can_release) # pragma: no mutate
 
-                if not is_prediction and can_release and pure_val is not None and self._values_match(pure_val, pend_val):
-                    _LOGGER.debug("%s [Forensic] Lock released for %s. Pure matches pend_val: %s", self.controller.log_prefix, prop_id, pend_val) # pragma: no mutate
+                # Race Condition Fix: We DO NOT use hardware_override to blindly drop locks when the device_key arrives.
+                # If the user clicks rapidly, the AC will push delayed states from OLD commands. 
+                # If we blindly drop our NEW prediction just because a push update arrived, the UI will flicker back to the old state.
+                # We MUST enforce the lock until the AC pushes a value that MATCHES our prediction, OR 15s expires.
+
+                if not is_prediction and can_release and pure_val is not None and (self._values_match(pure_val, pend_val) or lock_age > 15.0):
+                    _LOGGER.debug("%s [Forensic] Lock released for %s. Match=%s, Age=%.1f", self.controller.log_prefix, prop_id, self._values_match(pure_val, pend_val), lock_age) # pragma: no mutate
                     del self._pending_updates[prop_id]
                 else:
                     _LOGGER.debug("%s [Forensic] Lock enforced for %s. Injecting %s into state.", self.controller.log_prefix, prop_id, pend_val) # pragma: no mutate
@@ -879,16 +883,38 @@ class YamlStatePoller:
                 prop_to_change = op
                 break
 
-        # 💥 PRE-TRANSITION STATE CAPTURE
-        # Capture the evaluated "user's truth" for all properties before we inject the new command.
-        # This allows us to detect properties that change purely due to YAML template re-evaluations
-        # (e.g., dropping a mask) so we can lock them against delayed hardware echoes.
-        old_states = {}
-        for op in self.controller.loader.operations.values():
-            old_states[getattr(op, "id", "")] = self._get_prop_value(op)
-            
         if not prop_to_change:
             return ClimateEntityFeature(0), {}
+
+        # 💥 MEMORY FLUSH: Synchronize evaluated UI state to raw memory BEFORE mode transition.
+        # This prevents YAML status_templates from dropping their masks and revealing stale raw 
+        # hardware values during a transition.
+        if property_name == ATTR_HVAC_MODE:
+            fan_op = self.controller.loader.operations.get("fan")
+            if not fan_op:
+                fan_op = self.controller.loader.operations.get(ATTR_FAN_MODE)
+            
+            if fan_op:
+                current_fan = self._get_prop_value(fan_op)
+                if current_fan and current_fan != STATE_UNKNOWN:
+                    _LOGGER.debug(  # pragma: no mutate
+                        "%s [Forensic] Memory Flush: Injecting current evaluated fan '%s' into raw memory before transition",  # pragma: no mutate
+                        self.controller.log_prefix, current_fan  # pragma: no mutate
+                    )  # pragma: no mutate
+                    self._inject_value_into_state(fan_op, st_getter.value, current_fan)
+
+            temp_op = self.controller.loader.operations.get("temperature")
+            if not temp_op:
+                temp_op = self.controller.loader.operations.get(ATTR_TEMPERATURE)
+            
+            if temp_op:
+                current_temp = self._get_prop_value(temp_op)
+                if current_temp and current_temp != STATE_UNKNOWN:
+                    _LOGGER.debug(  # pragma: no mutate
+                        "%s [Forensic] Memory Flush: Injecting current evaluated temperature '%s' into raw memory before transition",  # pragma: no mutate
+                        self.controller.log_prefix, current_temp  # pragma: no mutate
+                    )  # pragma: no mutate
+                    self._inject_value_into_state(temp_op, st_getter.value, current_temp)
 
         if new_value is not None and hasattr(new_value, "value") and not isinstance(new_value, dict):
             new_value = new_value.value
@@ -906,22 +932,6 @@ class YamlStatePoller:
         for k, v in update_result.items():
             if k not in corrections and k != property_name:
                 self.register_pending_update(k, v)
-                
-        # 💥 TEMPLATE SHIELD: Lock properties that changed purely due to YAML logic
-        # If the YAML status_template dictates a change (e.g., unmasking Auto when leaving Wind),
-        # we MUST lock that new evaluated state! Otherwise, delayed hardware echoes from the OLD
-        # state (e.g. Low) will pierce the UI before the physical AC completes its new transition.
-        for op in self.controller.loader.operations.values():
-            op_id = getattr(op, "id", "")
-            if op_id != property_name and op_id not in update_result and op_id in old_states:
-                new_val = self._get_prop_value(op)
-                old_val = old_states[op_id]
-                if new_val != old_val and new_val is not None and new_val != STATE_UNKNOWN:
-                    _LOGGER.debug(  # pragma: no mutate
-                        "%s [Forensic] Template Shield locking %s: %s -> %s",  # pragma: no mutate
-                        self.controller.log_prefix, op_id, old_val, new_val  # pragma: no mutate
-                    )  # pragma: no mutate
-                    self.register_pending_update(op_id, new_val)
 
         # 💥 CASCADE SHIELD: Do NOT register predictive corrections as hard locks.
         # This allows dynamic predictions (like fan=auto in Dry mode) to automatically revert 

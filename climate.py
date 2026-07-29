@@ -376,6 +376,8 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
         temp: float | None = kwargs.get(const.ATTR_TEMPERATURE)
+        _LOGGER.debug("%s [Forensic] async_set_temperature explicitly called with temp=%s, kwargs=%s", self.log_prefix, temp, kwargs) # pragma: no mutate
+
         if temp is not None:
             await self._async_set_climate_mode(
                 const.ATTR_TEMPERATURE, temp, "_attr_target_temperature"
