@@ -46,24 +46,6 @@ _LOGGER = logging.getLogger(__name__)
 class YamlStatePoller:
     """Class responsible for polling the device and managing state."""
 
-    SEMANTIC_DEVICE_KEY_MAP = {
-        "hvac": "AC_FUN_OPMODE",
-        "hvac_mode": "AC_FUN_OPMODE",
-        ATTR_HVAC_MODE: "AC_FUN_OPMODE",
-        "temperature": "AC_FUN_TEMPSET",
-        "target_temperature": "AC_FUN_TEMPSET",
-        ATTR_TEMPERATURE: "AC_FUN_TEMPSET",
-        "fan": "AC_FUN_WINDLEVEL",
-        "fan_mode": "AC_FUN_WINDLEVEL",
-        ATTR_FAN_MODE: "AC_FUN_WINDLEVEL",
-        "swing": "AC_FUN_DIRECTION",
-        "swing_mode": "AC_FUN_DIRECTION",
-        ATTR_SWING_MODE: "AC_FUN_DIRECTION",
-        "preset": "AC_FUN_COMODE",
-        "preset_mode": "AC_FUN_COMODE",
-        ATTR_PRESET_MODE: "AC_FUN_COMODE",
-    }
-
     HASS_ATTR_MAP = {
         "hvac": "hvac_mode",
         "hvac_mode": "hvac_mode",
@@ -212,7 +194,9 @@ class YamlStatePoller:
                 self.controller.ip_address or self.controller.host or "Unknown",
             )
         except Exception as e:  # pylint: disable=broad-exception-caught
-            _LOGGER.debug("%s Failed to create repair issue: %s", self.controller.log_prefix, e)
+            _LOGGER.debug(  # pragma: no mutate
+                "%s Failed to create repair issue: %s", self.controller.log_prefix, e, exc_info=True
+            )
 
     def _update_all_connections_token(self, new_token: str) -> None:
         """Propagate the new token to all active connection engines."""
@@ -282,8 +266,10 @@ class YamlStatePoller:
                             "climate_ip",
                             f"device_offline_{safe_device_id}",
                         )
-                    except Exception as e:
-                        _LOGGER.debug("%s Failed to delete repair issue: %s", self.controller.log_prefix, e)
+                    except Exception as e:  # pylint: disable=broad-exception-caught
+                        _LOGGER.debug(  # pragma: no mutate
+                            "%s Failed to delete repair issue: %s", self.controller.log_prefix, e, exc_info=True
+                        )
 
         except AuthError as exc:
             new_token = await self._refresh_smartthings_token()
@@ -396,148 +382,180 @@ class YamlStatePoller:
         except (ValueError, TypeError):
             return str(val1).strip().lower() == str(val2).strip().lower()
 
-    def _get_device_key_from_template(self, template_obj: Any) -> str | None:
-        """Extract the JSON key from a Jinja template string natively ($O(N)$ string slicing)."""
-        if not template_obj:
-            return None
-
-        template_string = (
-            template_obj.template
-            if hasattr(template_obj, "template")
-            else str(template_obj)
-        )
-        if not template_string:
-            return None
-
-        def _extract_key(text: str) -> str:
-            for i, char in enumerate(text):
-                if not (char.isalnum() or char == "_"):
-                    return text[:i]
-            return text
-
-        if "device_state." in template_string:
-            parts = template_string.split("device_state.", 1)[1]
-            key = _extract_key(parts)
-            return key if key else None
-
-        if "device_state[" in template_string:
-            parts = template_string.split("device_state[", 1)[1]
-            if parts and parts[0] in ("'", '"'):
-                parts = parts[1:]
-            key = _extract_key(parts)
-            return key if key else None
-
-        return None
-
-    def _get_cached_device_key_from_prop(self, prop: Any) -> str | None:
-        """Extract and cache the raw JSON key mapped to a specific property from its template."""
+    def _get_state_node_from_prop(self, prop: Any) -> str | None:
+        """Infer or retrieve the state_node path mapped to a specific property."""
         prop_id = getattr(prop, "id", None)
+        _LOGGER.debug("%s [Forensic-StateNode] _get_state_node_from_prop called with prop_id=%s, type(prop)=%s", self.controller.log_prefix, prop_id, type(prop).__name__) # pragma: no mutate
         if not prop_id:
             return None
 
         if prop_id in self._prop_template_key_cache:
             return self._prop_template_key_cache[prop_id]
 
+        state_node = getattr(prop, "state_node", None) or getattr(prop, "_state_node", None)
+        if state_node and isinstance(state_node, str):
+            self._prop_template_key_cache[prop_id] = state_node
+            return state_node
+
+        # Fallback map for 2878 XML nodes (8888 JSON has state_node defined in yaml)
+        hardcoded_map = {
+            "hvac": "AC_FUN_OPMODE",
+            "hvac_mode": "AC_FUN_OPMODE",
+            "power": "AC_FUN_POWER",
+            "fan": "AC_FUN_WINDLEVEL",
+            "fan_mode": "AC_FUN_WINDLEVEL",
+            "temperature": "AC_FUN_TEMPSET",
+            "target_temperature": "AC_FUN_TEMPSET",
+            "current_temperature": "AC_FUN_TEMPNOW",
+            "swing": "AC_FUN_DIRECTION",
+            "swing_mode": "AC_FUN_DIRECTION",
+            "preset": "AC_FUN_COMODE",
+            "preset_mode": "AC_FUN_COMODE",
+            "purify": "AC_ADD_SPI",
+            "auto_clean": "AC_ADD_AUTOCLEAN",
+            "beep": "AC_ADD_BEEP",
+        }
+        if prop_id in hardcoded_map:
+            self._prop_template_key_cache[prop_id] = hardcoded_map[prop_id]
+            return hardcoded_map[prop_id]
+
         status_tmpl = getattr(prop, "status_template", None)
-        key = self._get_device_key_from_template(status_tmpl)
-        self._prop_template_key_cache[prop_id] = key
-        return key
+        if not status_tmpl:
+            self._prop_template_key_cache[prop_id] = None
+            return None
 
-    def _inject_8888_api_structures(self, device_state: dict[str, Any], op_id: str, dev_val: Any) -> None:
-        """Universal 8888 REST API direct structure injection for core HVAC operations."""
-        if not isinstance(device_state, dict):
-            return
-            
-        hass_attr = self._get_hass_attr_for_op_id(op_id)
-        if hass_attr in ("hvac_mode", "hvac") and "Mode" in device_state and isinstance(device_state["Mode"], dict):
-            modes = device_state["Mode"].get("modes")
-            if isinstance(modes, list) and len(modes) > 0:
-                modes[0] = str(dev_val)
-        elif hass_attr in ("target_temperature", "temperature") and "Temperatures" in device_state and isinstance(device_state["Temperatures"], list):
-            if len(device_state["Temperatures"]) > 0 and isinstance(device_state["Temperatures"][0], dict):
-                try:
-                    device_state["Temperatures"][0]["desired"] = float(dev_val)
-                except (ValueError, TypeError):
-                    pass
-        elif hass_attr in ("fan_mode", "fan") and "Wind" in device_state and isinstance(device_state["Wind"], dict):
-            device_state["Wind"]["speedLevel"] = dev_val
-        elif hass_attr in ("preset_mode", "preset") and "Mode" in device_state and isinstance(device_state["Mode"], dict):
-            options = device_state["Mode"].get("options")
-            if isinstance(options, list) and len(options) > 0:
-                options[0] = str(dev_val)
+        template_string = (
+            status_tmpl.template if hasattr(status_tmpl, "template") else str(status_tmpl)
+        )
+        if not template_string:
+            self._prop_template_key_cache[prop_id] = None
+            return None
 
-    def _inject_value_into_state(self, prop: Any, device_state: dict, value: Any) -> None:
-        """Safely inject an optimistic value into the raw device state bypassing stale network data."""
+        # Known Protocol Mappings (2878 & 8888 REST API)
+        if "AC_FUN_OPMODE" in template_string:
+            node = "AC_FUN_OPMODE"
+        elif "AC_FUN_POWER" in template_string and prop_id == "power":
+            node = "AC_FUN_POWER"
+        elif "AC_FUN_TEMPSET" in template_string:
+            node = "AC_FUN_TEMPSET"
+        elif "AC_FUN_WINDLEVEL" in template_string:
+            node = "AC_FUN_WINDLEVEL"
+        elif "AC_FUN_COMODE" in template_string:
+            node = "AC_FUN_COMODE"
+        elif "AC_FUN_DIRECTION" in template_string:
+            node = "AC_FUN_DIRECTION"
+        elif "AC_ADD_SPI" in template_string:
+            node = "AC_ADD_SPI"
+        elif "AC_ADD_AUTOCLEAN" in template_string:
+            node = "AC_ADD_AUTOCLEAN"
+        elif "AC_ADD_BEEP" in template_string:
+            node = "AC_ADD_BEEP"
+        elif "Mode.modes" in template_string:
+            node = "Mode.modes.0"
+        elif "Mode.options" in template_string:
+            node = "Mode.options.0"
+        elif "Operation.power" in template_string:
+            node = "Operation.power"
+        elif "Temperatures" in template_string:
+            node = "Temperatures.0.desired"
+        elif "Wind.speedLevel" in template_string:
+            node = "Wind.speedLevel"
+        else:
+            import re
+            matches = re.findall(r"device_state\.([a-zA-Z0-9_\.]+)", template_string)
+            if matches:
+                node = matches[0].split(" ")[0].split("(")[0]
+            else:
+                node = None
+
+        self._prop_template_key_cache[prop_id] = node
+        return node
+
+    def _get_cached_device_key_from_prop(self, prop: Any) -> str | None:
+        """Alias for _get_state_node_from_prop for backward compatibility."""
+        return self._get_state_node_from_prop(prop)
+
+    def _inject_value_into_state(self, prop: Any, device_state: dict[str, Any], value: Any) -> None:
+        """Safely inject an optimistic value into the raw device state using state_node & native converters."""
         if not isinstance(device_state, dict):
             return
 
         if hasattr(prop, "set_device_state_for_values"):
             try:
-                # Deep paths for 8888
                 prop.set_device_state_for_values(device_state)
-            except Exception as e:
-                _LOGGER.debug("%s set_device_state_for_values failed: %s", self.controller.log_prefix, e)
-                
-        op_id = getattr(prop, "id", "")
-        
-        # SEMANTIC SHIELDING (Memory Corruption Protection for Protocol 2878)
-        device_key = None
-        if op_id in self.SEMANTIC_DEVICE_KEY_MAP and self.SEMANTIC_DEVICE_KEY_MAP[op_id] in device_state:
-            device_key = self.SEMANTIC_DEVICE_KEY_MAP[op_id]
-            
-        if not device_key:
-            device_key = self._get_cached_device_key_from_prop(prop)
-            
-        if not device_key:
-            return
-            
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                _LOGGER.debug(  # pragma: no mutate
+                    "%s set_device_state_for_values failed for %s: %s",
+                    self.controller.log_prefix,
+                    getattr(prop, "id", "unknown"),
+                    e,
+                    exc_info=True,
+                )
+
         dev_val = value
         if hasattr(prop, "convert_hass_to_dev"):
             try:
                 dev_val = prop.convert_hass_to_dev(value)
-            except Exception as e:
-                _LOGGER.debug("%s convert_hass_to_dev failed: %s", self.controller.log_prefix, e)
-            
-        if device_key and not isinstance(device_state.get(device_key), (dict, list)):
-            device_state[device_key] = dev_val
-        else:
-            # Fallback for nested structures (e.g. 8888 API) using state_node
-            state_node = getattr(prop, "state_node", None)
-            if state_node and isinstance(state_node, str):
-                parts = state_node.split(".")
-                current = device_state
-                for i, part in enumerate(parts):
-                    if i == len(parts) - 1:
-                        if isinstance(current, dict):
-                            current[part] = dev_val
-                        elif isinstance(current, list) and part.isdigit() and int(part) < len(current):
-                            current[int(part)] = dev_val
-                    else:
-                        if isinstance(current, dict):
-                            current = current.get(part, {})
-                        elif isinstance(current, list) and part.isdigit() and int(part) < len(current):
-                            current = current[int(part)]
-                        else:
-                            break
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                _LOGGER.debug(  # pragma: no mutate
+                    "%s convert_hass_to_dev failed for %s: %s",
+                    self.controller.log_prefix,
+                    getattr(prop, "id", "unknown"),
+                    e,
+                    exc_info=True,
+                )
 
-        # 8888 REST API direct structure injection for core HVAC operations
-        self._inject_8888_api_structures(device_state, op_id, dev_val)
+        state_node = self._get_state_node_from_prop(prop)
+        if not state_node or not isinstance(state_node, str):
+            return
 
-        # Universal semantic hardcode for Power
+        _LOGGER.debug(  # pragma: no mutate
+            "%s [DualMemory] Injecting value '%s' (dev_val='%s') into state_node '%s'",
+            self.controller.log_prefix,
+            value,
+            dev_val,
+            state_node,
+        )
+
+        parts = state_node.split(".")
+        current: Any = device_state
+        for i, part in enumerate(parts):
+            is_last = (i == len(parts) - 1)
+            next_part = parts[i + 1] if not is_last else None
+
+            if is_last:
+                if isinstance(current, dict):
+                    current[part] = dev_val
+                elif isinstance(current, list):
+                    if part.isdigit():
+                        idx = int(part)
+                        while len(current) <= idx:
+                            current.append(None)
+                        current[idx] = dev_val
+                break
+
+            if isinstance(current, dict):
+                if part not in current or current[part] is None:
+                    current[part] = [] if (next_part and next_part.isdigit()) else {}
+                current = current[part]
+            elif isinstance(current, list) and part.isdigit():
+                idx = int(part)
+                while len(current) <= idx:
+                    current.append({})
+                if current[idx] is None:
+                    current[idx] = [] if (next_part and next_part.isdigit()) else {}
+                current = current[idx]
+            else:
+                break
+
+        op_id = getattr(prop, "id", "")
         if op_id in ("hvac", "hvac_mode", ATTR_HVAC_MODE):
-            power_op = self.controller.loader.operations.get("power") or self.controller.loader.properties.get("power")
-            power_key = None
-            if power_op:
-                power_key = self._get_cached_device_key_from_prop(power_op)
-            if not power_key and "AC_FUN_POWER" in device_state:
-                power_key = "AC_FUN_POWER"
-                
-            if power_key and power_key in device_state:
-                is_off = (str(value).lower() == "off" or str(dev_val).lower() == "off")
-                if isinstance(device_state[power_key], dict) and "power" in device_state[power_key]:
-                    device_state[power_key]["power"] = "Off" if is_off else "On"
-                elif not isinstance(device_state[power_key], (dict, list)):
-                    device_state[power_key] = "Off" if is_off else "On"
+            is_off = str(value).lower() == "off" or str(dev_val).lower() == "off"
+            p_val = "Off" if is_off else "On"
+            if "AC_FUN_POWER" in device_state:
+                device_state["AC_FUN_POWER"] = p_val
+            elif "Operation" in device_state and isinstance(device_state["Operation"], dict):
+                device_state["Operation"]["power"] = p_val
 
     def _find_device_node(self, state_dict: dict[str, Any], id_map: dict[str, Any]) -> dict[str, Any] | None:
         """Find the matching device node in the state dictionary based on id_map."""
@@ -619,20 +637,21 @@ class YamlStatePoller:
                 pure_val = None
                 if hasattr(op, "calculate_value_from_state") and pure_device_to_process:
                     try:
-                        # 💥 THE MAGIC HAPPENS HERE: Evaluate lock AGAINST PURE NETWORK STATE
+                        # Evaluate lock AGAINST PURE NETWORK STATE
                         pure_val = op.calculate_value_from_state(pure_device_to_process)
-                    except Exception as e:
-                        _LOGGER.debug("%s calculate_value_from_state failed: %s", self.controller.log_prefix, e)
-                        
+                    except Exception as e:  # pylint: disable=broad-exception-caught
+                        _LOGGER.debug(  # pragma: no mutate
+                            "%s calculate_value_from_state failed for %s: %s",
+                            self.controller.log_prefix,
+                            prop_id,
+                            e,
+                            exc_info=True,
+                        )
+
                 # If REAL physical state matches UI, remove shield
                 can_release = True
-                device_key = self._get_cached_device_key_from_prop(op)
-                if not device_key and op_id in self.SEMANTIC_DEVICE_KEY_MAP:
-                    mapped_key = self.SEMANTIC_DEVICE_KEY_MAP[op_id]
-                    if pure_device_to_process and mapped_key in pure_device_to_process:
-                        device_key = mapped_key
-                    elif device_to_process and mapped_key in device_to_process:
-                        device_key = mapped_key
+                state_node = self._get_state_node_from_prop(op)
+                device_key = state_node.split(".")[0] if state_node else None
 
                 lock_age = now - ts
                 if lock_age < 3.0:
@@ -660,6 +679,9 @@ class YamlStatePoller:
         """Apply cascade logic to correct properties that become invalid (e.g. Fan mode when switching to Dry)."""
         corrections: dict[str, Any] = {}
         for _, op in list(self.controller.loader.operations.items()):
+            if hasattr(op, "set_device_state_for_values"):
+                op.set_device_state_for_values(device_to_process)
+
             if hasattr(op, "is_valid") and not op.is_valid(device_to_process):
                 continue
 
@@ -728,7 +750,7 @@ class YamlStatePoller:
         )
 
         self._apply_anti_flicker_locks(all_properties, device_to_process, pure_device_to_process, is_prediction, changed_keys)
-
+        
         for prop in all_properties:
             # 1. Parse from state
             if hasattr(prop, "async_update_state"):
@@ -857,6 +879,14 @@ class YamlStatePoller:
                 prop_to_change = op
                 break
 
+        # 💥 PRE-TRANSITION STATE CAPTURE
+        # Capture the evaluated "user's truth" for all properties before we inject the new command.
+        # This allows us to detect properties that change purely due to YAML template re-evaluations
+        # (e.g., dropping a mask) so we can lock them against delayed hardware echoes.
+        old_states = {}
+        for op in self.controller.loader.operations.values():
+            old_states[getattr(op, "id", "")] = self._get_prop_value(op)
+            
         if not prop_to_change:
             return ClimateEntityFeature(0), {}
 
@@ -871,7 +901,27 @@ class YamlStatePoller:
         update_result = await self.async_update_properties_from_state(
             st_getter.value, is_prediction=True
         )
-        corrections.update(update_result)
+
+        # 💥 SILENT CASCADES: Lock the predicted UI state, but DO NOT send to the AC
+        for k, v in update_result.items():
+            if k not in corrections and k != property_name:
+                self.register_pending_update(k, v)
+                
+        # 💥 TEMPLATE SHIELD: Lock properties that changed purely due to YAML logic
+        # If the YAML status_template dictates a change (e.g., unmasking Auto when leaving Wind),
+        # we MUST lock that new evaluated state! Otherwise, delayed hardware echoes from the OLD
+        # state (e.g. Low) will pierce the UI before the physical AC completes its new transition.
+        for op in self.controller.loader.operations.values():
+            op_id = getattr(op, "id", "")
+            if op_id != property_name and op_id not in update_result and op_id in old_states:
+                new_val = self._get_prop_value(op)
+                old_val = old_states[op_id]
+                if new_val != old_val and new_val is not None and new_val != STATE_UNKNOWN:
+                    _LOGGER.debug(  # pragma: no mutate
+                        "%s [Forensic] Template Shield locking %s: %s -> %s",  # pragma: no mutate
+                        self.controller.log_prefix, op_id, old_val, new_val  # pragma: no mutate
+                    )  # pragma: no mutate
+                    self.register_pending_update(op_id, new_val)
 
         # 💥 CASCADE SHIELD: Do NOT register predictive corrections as hard locks.
         # This allows dynamic predictions (like fan=auto in Dry mode) to automatically revert 
@@ -885,8 +935,10 @@ class YamlStatePoller:
             async def _try(coro):  # pylint: disable=invalid-name
                 try:
                     await coro
-                except Exception as e:
-                    _LOGGER.debug("%s Failed cleanup task: %s", self.controller.log_prefix, e)
+                except Exception as e:  # pylint: disable=broad-exception-caught
+                    _LOGGER.debug(  # pragma: no mutate
+                        "%s Failed cleanup task: %s", self.controller.log_prefix, e, exc_info=True
+                    )
 
             if hasattr(conn, "stop_listening"):
                 await _try(conn.stop_listening())

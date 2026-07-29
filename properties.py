@@ -133,6 +133,7 @@ class DeviceProperty:
         self._connection_template_raw: Any = None
         self._validation_template_raw: Any = None
         self._device_state: dict[str, Any] | None = None
+        self._state_node: str | None = None
 
         self._is_valid_cache: tuple[int | None, bool | None] = (None, None)
 
@@ -262,10 +263,18 @@ class DeviceProperty:
         """Return the validation Jinja2 template."""
         return self._validation_template
 
+    @property
+    def state_node(self) -> str | None:
+        """Return the state node path mapped in the device state structure."""
+        return self._state_node
+
     def load_from_yaml(self, node: dict[str, Any] | None) -> bool:
         """Load configuration from a YAML node dictionary."""
         if node is None:
             return False
+
+        if state_node := node.get("state_node"):
+            self._state_node = state_node
 
         if tmpl := node.get(CONFIG_DEVICE_STATUS_TEMPLATE):
             self._status_template_raw = tmpl
@@ -799,6 +808,7 @@ class BasicDeviceOperation(DeviceOperation):
     def set_device_state_for_values(self, device_state: dict[str, Any] | None) -> None:
         """Set the device state to be used by the ``values`` property."""
         self._device_state = device_state
+        self._values_cache.clear()
 
     @property
     def all_values(self) -> list[Any]:
@@ -811,8 +821,15 @@ class BasicDeviceOperation(DeviceOperation):
         if not self._value_validation_templates:
             return self._values
 
+        hvac_node = None
+        if isinstance(self._device_state, dict):
+            hvac_node = self._device_state.get("AC_FUN_OPMODE")
+            if not hvac_node and "Mode" in self._device_state:
+                mode_dict = self._device_state.get("Mode")
+                if isinstance(mode_dict, dict) and "modes" in mode_dict and isinstance(mode_dict["modes"], list) and mode_dict["modes"]:
+                    hvac_node = mode_dict["modes"][0]
         cache_key_prop = self._controller.get_property(ATTR_HVAC_MODE)
-        cache_key = str(cache_key_prop) if cache_key_prop else "None"
+        cache_key = f"{cache_key_prop}_{hvac_node}"
 
         if cache_key in self._values_cache:
             valid_values = self._values_cache[cache_key]

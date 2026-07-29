@@ -750,7 +750,7 @@ async def test_predict_and_correct_full_flow():
         hass_state, "target_prop", "predicted_val"
     )
 
-    assert "target_prop" not in poller._pending_updates
+    assert "target_prop" in poller._pending_updates
     assert target_op._value == "predicted_val"
     assert c == {"correction": "done"}
     poller.async_update_properties_from_state.assert_called_once_with(

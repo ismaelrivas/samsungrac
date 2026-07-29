@@ -36,48 +36,95 @@ from .state import ClimateIPDeviceState
 _LOGGER = logging.getLogger(__name__)
 
 
-class CommandDebouncer:
-    """Debounces commands per property. First command executes immediately. Subsequent are delayed."""
+class PropertyDebouncer:
+    """Debounces outgoing commands per property to shield hardware from request flooding."""
 
     def __init__(self, hass: HomeAssistant, delay: float = 3.0) -> None:
+        """Initialize the property debouncer."""
         self.hass = hass
         self.delay = delay
         self._timers: dict[str, asyncio.TimerHandle] = {}
         self._last_execution: dict[str, float] = {}
+        self._pending_payloads: dict[str, tuple[Any, tuple, dict]] = {}
 
-    async def async_execute(self, property_name: str, coroutine_func, *args, **kwargs) -> bool:
-        """Execute a command with debouncing."""
+    def cancel_all(self) -> None:
+        """Cancel all active timers and clear pending payloads."""
+        for prop, timer in list(self._timers.items()):
+            timer.cancel()
+            _LOGGER.debug(  # pragma: no mutate
+                "[Debouncer] Cancelled pending timer for property '%s'", prop
+            )
+        self._timers.clear()
+        self._pending_payloads.clear()
+
+    async def async_execute(
+        self, property_name: str, coroutine_func: Any, *args: Any, **kwargs: Any
+    ) -> bool:
+        """Execute a command with trailing debouncing."""
         now = time.time()
         last_exec = self._last_execution.get(property_name, 0.0)
 
-        async def _execute() -> None:
-            self._timers.pop(property_name, None)
-            self._last_execution[property_name] = time.time()
-            try:
-                await coroutine_func(*args, **kwargs)
-            except (UpdateFailed, CannotConnect, asyncio.TimeoutError, OSError) as err:
-                _LOGGER.error("Network error executing delayed command for %s: %s", property_name, err)
-            except Exception as err:
-                _LOGGER.error("Error executing delayed command for %s: %s", property_name, err, exc_info=True)
-
-        # First command or after long pause -> Execute immediately
-        if now - last_exec > self.delay:
-            self._last_execution[property_name] = now
+        # Immediate execution if outside the trailing window
+        if now - last_exec >= self.delay:
             if property_name in self._timers:
-                self._timers[property_name].cancel()
-                del self._timers[property_name]
+                self._timers.pop(property_name).cancel()
+            self._pending_payloads.pop(property_name, None)
+            self._last_execution[property_name] = now
+            _LOGGER.debug(  # pragma: no mutate
+                "[Debouncer] Immediate execution for property '%s' with args=%s, kwargs=%s",
+                property_name,
+                args,
+                kwargs,
+            )
             return await coroutine_func(*args, **kwargs)
 
-        # Subsequent commands -> Delay
+        # Enqueue / replace rapid command within trailing window
         if property_name in self._timers:
-            self._timers[property_name].cancel()
-        
-        self._timers[property_name] = self.hass.loop.call_later(
-            self.delay, 
-            lambda: self.hass.async_create_task(_execute())
+            self._timers.pop(property_name).cancel()
+            _LOGGER.debug(  # pragma: no mutate
+                "[Debouncer] Replacing pending queued command for property '%s'", property_name
+            )
+
+        self._pending_payloads[property_name] = (coroutine_func, args, kwargs)
+
+        def _fire_delayed() -> None:
+            self._timers.pop(property_name, None)
+            payload = self._pending_payloads.pop(property_name, None)
+            if payload:
+                func, p_args, p_kwargs = payload
+                self._last_execution[property_name] = time.time()
+                _LOGGER.debug(  # pragma: no mutate
+                    "[Debouncer] Executing delayed queued command for property '%s'", property_name
+                )
+
+                async def _task_runner() -> None:
+                    try:
+                        await func(*p_args, **p_kwargs)
+                    except (UpdateFailed, CannotConnect, asyncio.TimeoutError, OSError) as err:
+                        _LOGGER.debug(  # pragma: no mutate
+                            "[Debouncer] Network error executing delayed command for '%s': %s",
+                            property_name,
+                            err,
+                            exc_info=True,
+                        )
+                    except Exception as err:  # pylint: disable=broad-exception-caught
+                        _LOGGER.debug(  # pragma: no mutate
+                            "[Debouncer] Error executing delayed command for '%s': %s",
+                            property_name,
+                            err,
+                            exc_info=True,
+                        )
+
+                self.hass.async_create_task(_task_runner())
+
+        self._timers[property_name] = self.hass.loop.call_later(self.delay, _fire_delayed)
+        _LOGGER.debug(  # pragma: no mutate
+            "[Debouncer] Queued command for property '%s' with %.1fs delay", property_name, self.delay
         )
-        
-        return True  # Return true optimistically for delayed execution
+        return True
+
+
+CommandDebouncer = PropertyDebouncer
 
 
 class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
@@ -94,7 +141,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         """Initialize the data coordinator."""
         self.controller = controller
         self.entry = entry
-        self.debouncer = CommandDebouncer(hass, delay=3.0)
+        self.debouncer = PropertyDebouncer(hass, delay=3.0)
         # self._entity = None  # Reference to the ClimateIP entity
 
         # Inject callbacks into the controller to avoid circular dependencies.
@@ -542,6 +589,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         _LOGGER.debug(
             "%s Shutting down coordinator", self.log_prefix
         )  # pragma: no mutate
+        if hasattr(self, "debouncer") and self.debouncer:
+            self.debouncer.cancel_all()
+
         if self.controller:
             await self.controller.async_shutdown()
 
