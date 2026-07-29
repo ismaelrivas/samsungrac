@@ -365,7 +365,9 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
         self._apply_optimistic_corrections(corrections)
         self.async_write_ha_state()
-        await self.coordinator.async_set_property(attr_name, mode_value, corrections)
+        self.hass.async_create_task(
+            self.coordinator.async_set_property(attr_name, mode_value, corrections)
+        )
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
@@ -405,7 +407,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         _LOGGER.debug(
             "%s Setting property %s to %s", self.log_prefix, key, value
         )  # pragma: no mutate
-        await self.coordinator.async_set_property(key, value)
+        self.hass.async_create_task(self.coordinator.async_set_property(key, value))
         self.async_write_ha_state()
 
     async def async_turn_on(self) -> None:
