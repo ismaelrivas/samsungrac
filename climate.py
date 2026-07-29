@@ -145,7 +145,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the climate entity from a config entry."""
-    # coordinators ahora está garantizado por contrato que es un diccionario
+    # coordinators is now guaranteed by contract to be a dictionary
     coordinators = entry.runtime_data
 
     entities: list[ClimateIP] = []
@@ -262,6 +262,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         """Synchronize the entity's state with the latest data from the coordinator."""
         state = self.coordinator.data
         if state:
+            prev_target = getattr(self, "_attr_target_temperature", None)
             self._attr_hvac_mode = state.hvac_mode or HVACMode.OFF
             self._attr_target_temperature = state.target_temperature
             self._attr_current_temperature = state.current_temperature
@@ -272,6 +273,9 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             self._attr_fan_modes = state.fan_modes
             self._attr_swing_modes = state.swing_modes
             self._attr_preset_modes = state.preset_modes
+
+            if prev_target != state.target_temperature:
+                _LOGGER.debug("%s [Forensic-Climate] Target temperature updated: %s -> %s (hvac_mode=%s)", self.log_prefix, prev_target, state.target_temperature, self._attr_hvac_mode) # pragma: no mutate
         else:
             self._attr_hvac_mode = None
             self._attr_target_temperature = None

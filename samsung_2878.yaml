@@ -51,8 +51,10 @@ device:
       connection_template: |
         {% if value == "Off" %}
           <Request Type="DeviceControl"><Control CommandID="AC_FUN_POWER" DUID="{{duid}}"><Attr ID="AC_FUN_POWER" Value="Off" /></Control></Request>
-        {% else %}
+        {% elif device_state.AC_FUN_POWER == "Off" %}
           <Request Type="DeviceControl"><Control CommandID="AC_FUN_POWER" DUID="{{duid}}"><Attr ID="AC_FUN_POWER" Value="On" /><Attr ID="AC_FUN_OPMODE" Value="{{value}}" /></Control></Request>
+        {% else %}
+          <Request Type="DeviceControl"><Control CommandID="AC_FUN_OPMODE" DUID="{{duid}}"><Attr ID="AC_FUN_OPMODE" Value="{{value}}" /></Control></Request>
         {% endif %}
     preset: # preset_mode
       type: modes

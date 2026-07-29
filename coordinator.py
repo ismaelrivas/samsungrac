@@ -304,7 +304,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         except InvalidHeaderError as err:
             current_method = self.entry.options.get(CONF_CONN_METHOD)
             
-            # Cortafuegos: Solo mutamos y recargamos si NO estamos ya en RAW
+            # Firewall: Only mutate and reload if NOT already in RAW
             if current_method != CONN_METHOD_RAW:
                 _LOGGER.warning(
                     "%s Malformed header error detected! Auto-healing: Switching permanently to the 'Robust (raw socket)' connection engine.", 
@@ -316,7 +316,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 
                 raise UpdateFailed("Auto-healing triggered: Switching to 'Robust (Raw)' engine. Reload in progress.") from None  # pragma: no mutate
             
-            # Si ya estamos en RAW y ocurre lo imposible, fallamos de forma segura sin bucles
+            # If already in RAW and an unexpected error occurs, fail gracefully without loops
             _LOGGER.error(
                 "%s Invalid header error persists even on the RAW engine. Auto-healing failed: %s", 
                 self.log_prefix, 

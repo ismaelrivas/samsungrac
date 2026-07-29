@@ -1116,7 +1116,9 @@ class TemperatureOperation(BasicNumericOperation):
                 )  # pragma: no mutate
 
         if v is not STATE_UNKNOWN:
-            return self._convert_dev_to_hass_with_unit(v, device_unit)
+            res = self._convert_dev_to_hass_with_unit(v, device_unit)
+            _LOGGER.debug("%s [Forensic-Temp] Calculated %s value '%s' (raw: %s, dev_unit: %s)", self.log_prefix, self.id, res, v, device_unit) # pragma: no mutate
+            return res
         return STATE_UNKNOWN
 
     async def async_update_state(
