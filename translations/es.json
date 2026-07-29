@@ -164,8 +164,8 @@
   },
   "issues": {
     "connection_failed": {
-      "title": "Aire Acondicionado Desconectado ({name})",
-      "description": "No se ha podido establecer comunicación con el aire acondicionado Samsung **{name}** en **{host}**. Por favor, verifica que el dispositivo esté encendido y conectado a tu red local."
+      "title": "{device_name} - {name} - desconectado ({ip_address})",
+      "description": "El dispositivo **{device_name}** en **{ip_address}** no está localizable. Verifica la alimentación y la conexión a tu red local."
     }
   },
   "selector": {
@@ -246,27 +246,21 @@
         "name": "Versión Unidad Exterior"
       }
     },
-        "binary_sensor": {
-          "connectivity": {
-            "name": "Conectividad"
-          }
-        },
-        "switch": {
-          "purify": {
-            "name": "Purificar"
-          },
-          "auto_clean": {
-            "name": "Limpieza Automática"
-          },
-          "beep": {
-            "name": "Pitido"
-          }
-        },
-        "issues": {
-          "connection_failed": {
-            "title": "{device_name} desconectado ({ip_address})",
-            "description": "El dispositivo {device_name} en {ip_address} no está localizable. Verifica la alimentación y la conexión de red."
-          }
-        }
+    "binary_sensor": {
+      "connectivity": {
+        "name": "Conectividad"
+      }
+    },
+    "switch": {
+      "purify": {
+        "name": "Purificar"
+      },
+      "auto_clean": {
+        "name": "Limpieza Automática"
+      },
+      "beep": {
+        "name": "Pitido"
       }
     }
+  }
+}

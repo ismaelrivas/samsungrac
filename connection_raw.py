@@ -69,10 +69,15 @@ class ConnectionRaw8888(Connection):
         connection_template and params conversion.
         """
         # pylint: disable=import-outside-toplevel,protected-access
-        # Rationale: all accesses are on a shallow copy of self (same class).
-
-        # Shallow copy for value-specific operations
-        new_connection = copy.copy(self)
+        # Instantiate a fresh connection to avoid copying asyncio.Lock and client states
+        new_connection = ConnectionRaw8888(
+            config=self._config,
+            logger=self.logger,
+            hass=self._hass,
+            session=None,
+            ip_address=self._host
+        )
+        new_connection.set_controller_ref(self._controller)
         new_connection._params = self._params.copy()
 
         if yaml_node and "keep_alive" in yaml_node:
@@ -166,7 +171,7 @@ class ConnectionRaw8888(Connection):
         # --- Shared Client Logic ---
         if self._controller:
             # pylint: disable=import-outside-toplevel,protected-access
-            if self._controller._shared_raw_client is None:  # type: ignore[attr-defined]
+            if self._controller.shared_raw_client is None:  # type: ignore[attr-defined]
                 if not self._host:
                     raise CannotConnect(
                         "Host/IP address not provided for RAW connection"
@@ -189,7 +194,7 @@ class ConnectionRaw8888(Connection):
                 # fmt: off
                 _LOGGER.debug('%s [Shared] Initializing NEW shared client. Controller ID: %s, Port: %s', self.log_prefix, id(self._controller), port)  # pragma: no mutate
                 # fmt: on
-                self._controller._shared_raw_client = Samsung8888Client(  # type: ignore[attr-defined]
+                self._controller.shared_raw_client = Samsung8888Client(  # type: ignore[attr-defined]
                     self._host, port, self._cert, log_prefix=self.log_prefix
                 )
             else:
@@ -197,7 +202,7 @@ class ConnectionRaw8888(Connection):
                 _LOGGER.debug('%s [Shared] Reusing EXISTING shared client. Controller ID: %s', self.log_prefix, id(self._controller))  # pragma: no mutate
                 # fmt: on
 
-            return self._controller._shared_raw_client  # type: ignore[attr-defined]
+            return self._controller.shared_raw_client  # type: ignore[attr-defined]
             # pylint: enable=protected-access
 
         # Fallback for standalone usage (no controller)
@@ -381,8 +386,8 @@ class ConnectionRaw8888(Connection):
         # we explicitly close the connection before starting the new poll.
         if _is_poll and not self._keep_alive:
             if self._controller:
-                client_to_close = self._controller._shared_raw_client  # pylint: disable=protected-access
-                self._controller._shared_raw_client = None  # pylint: disable=protected-access
+                client_to_close = self._controller.shared_raw_client  # pylint: disable=protected-access
+                self._controller.shared_raw_client = None  # pylint: disable=protected-access
             else:
                 client_to_close = self._client
                 self._client = None
@@ -507,8 +512,8 @@ class ConnectionRaw8888(Connection):
                 self._client = None
 
         # 3. Close the shared client if it exists and we have a controller ref
-        if self._controller and self._controller._shared_raw_client:
-            shared_client = self._controller._shared_raw_client  # pylint: disable=import-outside-toplevel,protected-access
+        if self._controller and self._controller.shared_raw_client:
+            shared_client = self._controller.shared_raw_client  # pylint: disable=import-outside-toplevel,protected-access
             if shared_client:
                 _LOGGER.debug(
                     "%s [RAW] Closing shared client...", self.log_prefix
@@ -520,7 +525,7 @@ class ConnectionRaw8888(Connection):
                         "%s [RAW] Error closing shared client: %s", self.log_prefix, e
                     )  # pragma: no mutate
                 finally:
-                    self._controller._shared_raw_client = None  # pylint: disable=import-outside-toplevel,protected-access
+                    self._controller.shared_raw_client = None  # pylint: disable=import-outside-toplevel,protected-access
 
         _LOGGER.debug(
             "%s [RAW] Connection resources closed.", self.log_prefix

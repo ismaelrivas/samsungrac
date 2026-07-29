@@ -145,83 +145,28 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the climate entity from a config entry."""
+    # coordinators ahora está garantizado por contrato que es un diccionario
     coordinators = entry.runtime_data
 
-    if isinstance(coordinators, dict):
-        # Create entities for a multi-device setup.
-        entities: list[ClimateIP] = []
-        for device_id, coordinator in coordinators.items():
-            try:
-                devices = entry.data.get(CONF_DEVICES, [])
-                device_info = next(
-                    (
-                        d
-                        for d in devices
-                        if d.get("id") == device_id
-                    ),
-                    None,
-                )
-            except (TimeoutError, ConnectionRefusedError, OSError) as ex:
-                _LOGGER.warning(
-                    "Transient network drop resolving device_info for device %s: %s",
-                    device_id,
-                    ex,
-                )  # pragma: no mutate
-                raise ConfigEntryNotReady(
-                    f"Transient network failure for device {device_id}: {ex}"
-                ) from ex  # pragma: no mutate
-
-            # Factory protection: Prevent creation of zombie entities if config is corrupted
-            if not device_info:
-                _LOGGER.warning(
-                    "Device info missing for device %s. Skipping entity creation to prevent orphan objects. Raw payload: %s",
-                    device_id,
-                    entry.data,
-                )  # pragma: no mutate
-                async_create_issue(
-                    _hass,
-                    DOMAIN,
-                    f"missing_device_info_{device_id}",
-                    is_fixable=False,
-                    severity=IssueSeverity.WARNING,
-                    translation_key="missing_device_info",
-                    translation_placeholders={
-                        "device_id": str(device_id),
-                    },
-                )
-                continue
-
-            entities.append(
-                ClimateIP(
-                    coordinator,
-                    CLIMATE_ENTITY_DESCRIPTION,
-                    dict(entry.data),
-                    device_info,
-                    entry.unique_id,
-                )
+    entities: list[ClimateIP] = []
+    
+    for device_id, coordinator in coordinators.items():
+        entities.append(
+            ClimateIP(
+                coordinator,
+                CLIMATE_ENTITY_DESCRIPTION,
+                dict(entry.data),
+                entry.unique_id,
             )
-
-        if not entities:
-            _LOGGER.error(
-                "No valid entities could be initialized from the provided coordinators."
-            )  # pragma: no mutate
-            return
-
-        async_add_entities(entities, update_before_add=True)
-    else:
-        # Fallback for single-device setups.
-        coordinator = coordinators
-        async_add_entities(
-            [
-                ClimateIP(
-                    coordinator,
-                    CLIMATE_ENTITY_DESCRIPTION,
-                    dict(entry.data),
-                    None,
-                    entry.unique_id,
-                )
-            ]
         )
+
+    if not entities:
+        _LOGGER.error(
+            "No valid entities could be initialized from the provided coordinators."
+        )
+        return
+
+    async_add_entities(entities, update_before_add=True)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -260,7 +205,6 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         coordinator: SamsungClimateCoordinator,
         description: ClimateIPEntityDescription,
         config: dict[str, Any],
-        _device_info: dict[str, Any] | None = None,
         main_unique_id: str | None = None,
     ) -> None:
         """Initialize the climate device."""
@@ -274,8 +218,9 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
         from .const import CONF_TARGET_TEMP_STEP, DEFAULT_TARGET_TEMP_STEP
 
-        entry = getattr(self.coordinator, "entry", None)
-        options_dict = entry.options if entry else {}
+        # entry = getattr(self.coordinator, "entry", None)
+        # options_dict = entry.options if entry else {}
+        options_dict = self.coordinator.entry.options
 
         configured_step = options_dict.get(
             CONF_TARGET_TEMP_STEP,
@@ -296,7 +241,8 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
                 )  # pragma: no mutate
                 step = float(DEFAULT_TARGET_TEMP_STEP)
 
-        self._attr_target_temperature_step = int(step) if step == int(step) else step
+        # self._attr_target_temperature_step = int(step) if step == int(step) else step
+        self._attr_target_temperature_step = int(step) if step.is_integer() else step
 
         if step < 0.5:
             self._attr_precision = const.PRECISION_TENTHS
@@ -337,6 +283,19 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             self._attr_fan_modes = []
             self._attr_swing_modes = []
             self._attr_preset_modes = []
+
+        # Cache temperature boundaries to prevent dynamic parsing on UI render
+        min_t_prop = self.coordinator.get_property_object(ATTR_MIN_TEMP)
+        try:
+            self._attr_min_temp = float(min_t_prop.value) if min_t_prop and min_t_prop.value is not None else float(DEFAULT_CLIMATE_IP_TEMP_MIN)
+        except (ValueError, TypeError):
+            self._attr_min_temp = float(DEFAULT_CLIMATE_IP_TEMP_MIN)
+
+        max_t_prop = self.coordinator.get_property_object(ATTR_MAX_TEMP)
+        try:
+            self._attr_max_temp = float(max_t_prop.value) if max_t_prop and max_t_prop.value is not None else float(DEFAULT_CLIMATE_IP_TEMP_MAX)
+        except (ValueError, TypeError):
+            self._attr_max_temp = float(DEFAULT_CLIMATE_IP_TEMP_MAX)
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -523,24 +482,24 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         """Return the list of available preset modes."""
         return self._attr_preset_modes
 
-    @property
-    def min_temp(self) -> float:
-        """Return the minimum temperature strictly."""
-        min_t_prop = self.coordinator.get_property_object(ATTR_MIN_TEMP)
-        if min_t_prop and min_t_prop.value is not None:
-            try:
-                return float(min_t_prop.value)
-            except (ValueError, TypeError):
-                pass
-        return float(DEFAULT_CLIMATE_IP_TEMP_MIN)
+    # @property
+    # def min_temp(self) -> float:
+    #     """Return the minimum temperature strictly."""
+    #     min_t_prop = self.coordinator.get_property_object(ATTR_MIN_TEMP)
+    #     if min_t_prop and min_t_prop.value is not None:
+    #         try:
+    #             return float(min_t_prop.value)
+    #         except (ValueError, TypeError):
+    #             pass
+    #     return float(DEFAULT_CLIMATE_IP_TEMP_MIN)
 
-    @property
-    def max_temp(self) -> float:
-        """Return the maximum temperature strictly."""
-        max_t_prop = self.coordinator.get_property_object(ATTR_MAX_TEMP)
-        if max_t_prop and max_t_prop.value is not None:
-            try:
-                return float(max_t_prop.value)
-            except (ValueError, TypeError):
-                pass
-        return float(DEFAULT_CLIMATE_IP_TEMP_MAX)
+    # @property
+    # def max_temp(self) -> float:
+    #     """Return the maximum temperature strictly."""
+    #     max_t_prop = self.coordinator.get_property_object(ATTR_MAX_TEMP)
+    #     if max_t_prop and max_t_prop.value is not None:
+    #         try:
+    #             return float(max_t_prop.value)
+    #         except (ValueError, TypeError):
+    #             pass
+    #     return float(DEFAULT_CLIMATE_IP_TEMP_MAX)

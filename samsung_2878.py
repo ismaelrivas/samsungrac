@@ -16,11 +16,7 @@ from homeassistant.helpers.json import json_dumps
 
 
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_PORT, CONF_TOKEN
-from homeassistant.helpers.issue_registry import (
-    IssueSeverity,
-    async_create_issue,
-    async_delete_issue,
-)
+
 from homeassistant.helpers.template import Template
 
 from .connection import Connection, register_connection
@@ -149,7 +145,7 @@ class ConnectionSamsung2878(Connection):
     @property
     def log_prefix(self) -> str:
         """Return the logging prefix for this connection."""
-        if self._controller and self._controller.unique_id:
+        if self._controller and getattr(self._controller, "unique_id", None):
             return self._controller.log_prefix
         if self._cfg and self._cfg.duid:
             return f"[{self._cfg.duid[-6:]}]"
@@ -792,20 +788,7 @@ class ConnectionSamsung2878(Connection):
             )  # pragma: no mutate
             self._is_available = True
             self._persistent_offline_err_logged = False
-            try:
-                # Clear any pending repair issues since the device came back online
-                if self._controller and getattr(self._controller, "hass", None):
-                    from .const import ISSUE_CONNECTION_FAILED
-
-                    async_delete_issue(
-                        self._controller.hass,
-                        "climate_ip",
-                        f"{ISSUE_CONNECTION_FAILED}_{self._cfg.host}",
-                    )
-            except Exception as e:
-                _LOGGER.debug(
-                    "%s Could not clear repair issue: %s", self.log_prefix, e
-                )  # pragma: no mutate
+            
 
         # Request a full status update only on reconnections, not on the very first connection.
         if self._initial_connection_done:
@@ -1131,30 +1114,7 @@ class ConnectionSamsung2878(Connection):
 
         return buffer
 
-    def _check_and_create_repair_issue(self) -> None:
-        """Create a repair issue if the device is persistently offline (3 retries)."""
-        if (
-            self._reconnect_retries == 3
-            and self._controller
-            and getattr(self._controller, "hass", None)
-        ):
-            try:
-                async_create_issue(
-                    self._controller.hass,
-                    "climate_ip",
-                    f"connection_failed_{self._cfg.host}",
-                    is_fixable=False,
-                    severity=IssueSeverity.WARNING,
-                    translation_key="connection_failed",
-                    translation_placeholders={
-                        "host": self._cfg.host,
-                        "name": getattr(self._cfg, "name", None) or self._cfg.host,
-                    },
-                )
-            except Exception as e:
-                _LOGGER.debug(
-                    "%s Failed to create repair issue: %s", self.log_prefix, e
-                )  # pragma: no mutate
+
 
     def _force_unavailability_if_needed(
         self, offline_type: str = "Network"
@@ -1241,9 +1201,6 @@ class ConnectionSamsung2878(Connection):
                 )  # pragma: no mutate
                 self._reconnect_retries += 1
 
-                # Create a repair issue if the device is persistently offline
-                self._check_and_create_repair_issue()
-
                 # If we've failed 2 times on the ping, force unavailability in HA
                 self._force_unavailability_if_needed("Network")  # pragma: no mutate
 
@@ -1274,9 +1231,6 @@ class ConnectionSamsung2878(Connection):
                 )  # pragma: no mutate
                 self._reconnect_retries += 1
 
-                # Create a repair issue if the device is persistently offline
-                self._check_and_create_repair_issue()
-
                 # If we've failed 2 times on the port, force unavailability in HA
                 self._force_unavailability_if_needed("Service")  # pragma: no mutate
 
@@ -1299,8 +1253,6 @@ class ConnectionSamsung2878(Connection):
             # 3. Network UP but an exception occurred during connection logic
             self._reconnect_retries += 1
 
-            # Create a repair issue if the device is persistently offline
-            self._check_and_create_repair_issue()
             # If reconnection fails, fail any pending command
             if self._pending_future and not self._pending_future.done():
                 self._pending_future.set_exception(

@@ -3,6 +3,7 @@
 
 import asyncio
 import copy
+import re
 
 import logging
 import time
@@ -38,7 +39,7 @@ from .const import (
     DEVICE_TYPE_SAMSUNG_2878,
 )
 from .exceptions import AuthError, CannotConnect, InvalidHeaderError
-from .helpers import async_check_network_reachability, get_value_by_path
+from .helpers import async_check_network_reachability, get_value_by_path, set_value_by_path
 from .state import ClimateIPDeviceState
 
 _LOGGER = logging.getLogger(__name__)
@@ -119,7 +120,7 @@ class YamlStatePoller:
 
     def _try_create_repair_issue(self) -> None:
         """Create a HA repair issue for persistent device offline state."""
-        if not getattr(self.controller, "hass", None):
+        if not self.controller.hass:
             return
         try:
             raw_id = (
@@ -129,17 +130,39 @@ class YamlStatePoller:
                 or "unknown"
             )
             safe_device_id = str(raw_id).replace(".", "_").replace(" ", "_")
+
+            config_name = self.controller.config.get("name")
+
+            hardware_id = (
+                self.controller.unique_id
+                or self.controller.host
+                or self.controller.ip_address
+                or "Unknown"
+            )
+
+            # 3. Final UX String
+            device_name = config_name if config_name else f"Samsung AC {hardware_id}"
             async_create_issue(
                 self.controller.hass,
                 "climate_ip",
                 f"device_offline_{safe_device_id}",
                 is_fixable=False,
+                is_persistent=False,
                 severity=IssueSeverity.WARNING,
                 translation_key="connection_failed",
                 translation_placeholders={
-                    "device_name": self.controller.name or "Climate IP",
+                    "name": "device_name",
+                    "device_name": device_name,
+                    "host": self.controller.ip_address or self.controller.host or "Unknown",
                     "ip_address": self.controller.ip_address or self.controller.host or "Unknown",
                 },
+            )
+            _LOGGER.info(
+                "%s Created repair issue 'device_offline_%s' for %s (%s)",
+                self.controller.log_prefix,
+                safe_device_id,
+                self.controller.name or "Climate IP",
+                self.controller.ip_address or self.controller.host or "Unknown",
             )
         except Exception as e:  # pylint: disable=broad-exception-caught
             _LOGGER.debug(  # pragma: no mutate
@@ -267,9 +290,10 @@ class YamlStatePoller:
                             "climate_ip",
                             f"device_offline_{safe_device_id}",
                         )
-                        _LOGGER.debug(  # pragma: no mutate
-                            "%s Successfully resolved/deleted repair issue.",
+                        _LOGGER.info(
+                            "%s Cleared repair issue 'device_offline_%s'",
                             self.controller.log_prefix,
+                            safe_device_id,
                         )
                     except Exception as e:  # pylint: disable=broad-exception-caught
                         _LOGGER.debug(  # pragma: no mutate
@@ -335,7 +359,8 @@ class YamlStatePoller:
                 self._consecutive_connection_errors += 1
 
             if (
-                self._consecutive_connection_errors <= 2  # pragma: no mutate
+                getattr(self.controller, "available", True)  # pragma: no mutate
+                and self._consecutive_connection_errors <= 2  # pragma: no mutate
                 and self._cached_device_state is not None
             ):  # pragma: no mutate
                 _LOGGER.debug(
@@ -362,7 +387,7 @@ class YamlStatePoller:
             ) from e  # pragma: no mutate
 
         if full_device_state is None:
-            if self._cached_device_state:
+            if getattr(self.controller, "available", True) and self._cached_device_state:  # pragma: no mutate
                 _LOGGER.debug(  # pragma: no mutate
                     "%s Failed to get latest state (API Error), using cached state.",
                     self.controller.log_prefix,
@@ -543,32 +568,47 @@ class YamlStatePoller:
             + list(self.controller.loader.sensors.values())
         )
 
-        for prop in all_properties:
-            if hasattr(prop, "id") and prop.id in self._pending_updates:
-                pending_val, timestamp = self._pending_updates[prop.id]
-                if time.time() - timestamp < 15.0:
-                    device_key = self._get_cached_device_key_from_prop(prop)
-                    if device_key and hasattr(prop, "convert_hass_to_dev"):
-                        device_to_process[device_key] = prop.convert_hass_to_dev(
-                            pending_val
-                        )
+        now = time.time()
+        PENDING_TTL = 15.0
 
+        # PASS 1: Evaluate TTL and patch the raw device dictionary optimally
         for prop in all_properties:
+            prop_id = getattr(prop, "id", None)
+            if not prop_id or prop_id not in self._pending_updates:
+                continue
+
+            pending_val, timestamp = self._pending_updates[prop_id]
+
+            # Expire stale pending updates
+            if now - timestamp >= PENDING_TTL:
+                del self._pending_updates[prop_id]
+                continue
+
+            # Update the underlying raw dictionary so dependencies evaluate correctly
+            device_key = self._get_cached_device_key_from_prop(prop)
+            if device_key and hasattr(prop, "convert_hass_to_dev"):
+                device_to_process[device_key] = prop.convert_hass_to_dev(pending_val)
+
+        # PASS 2: Sync UI properties with the crucial optimistic bypass
+        for prop in all_properties:
+            prop_id = getattr(prop, "id", None)
+
             try:
-                if hasattr(prop, "id") and prop.id in self._pending_updates:
-                    pending_val, timestamp = self._pending_updates[prop.id]
-                    if time.time() - timestamp < 15.0:
-                        if hasattr(prop, "value"):
-                            prop.value = pending_val
-                        elif hasattr(prop, "_value"):
-                            prop._value = pending_val
-                        continue
-                    del self._pending_updates[prop.id]
+                # If the property is under an active optimistic lock, inject value and SKIP network sync
+                if prop_id and prop_id in self._pending_updates:
+                    pending_val, _ = self._pending_updates[prop_id]
+                    if hasattr(prop, "value"):
+                        prop.value = pending_val
+                    elif hasattr(prop, "_value"):
+                        prop._value = pending_val
+                    continue  # CRITICAL: Do not overwrite optimistic value with stale network data
 
+                # Normal sync for unlocked properties
                 if hasattr(prop, "async_update_state"):
-                    await prop.async_update_state(
-                        device_to_process, getattr(self.controller, "debug", False)
-                    )
+                    # Polling logic requires synchronous execution if it's a normal method, 
+                    # but async if explicitly defined. We await it since it's defined as async.
+                    await prop.async_update_state(device_to_process, getattr(self.controller, "debug", False))
+
             except Exception as e:  # pylint: disable=broad-exception-caught
                 _LOGGER.error(  # pragma: no mutate
                     "%s FAILED to update property '%s'. Error: %s",
@@ -576,7 +616,7 @@ class YamlStatePoller:
                     getattr(prop, "name", "unknown"),
                     e,
                 )
-
+        # PASS 3: Propagate state flags and enforce hardware limits
         for prop in all_properties:
             if hasattr(prop, "set_device_state_for_values"):
                 prop.set_device_state_for_values(device_to_process)
@@ -586,10 +626,8 @@ class YamlStatePoller:
                 continue
 
             op_value = getattr(op, "value", getattr(op, "_value", None))
-
-            # GUARD AGAINST DEGRADATION TO "UNKNOWN"
-            # Verify that 'values' exists and is NOT empty before evaluating
             op_values = getattr(op, "values", None)
+
             if op_values and op_value is not None and op_value != STATE_UNKNOWN:
                 if op_value not in op_values:
                     new_value = op_values[0] if op_values else STATE_UNKNOWN
@@ -599,11 +637,8 @@ class YamlStatePoller:
                         op._value = new_value
                     corrections[op.id] = new_value
 
-                    if (
-                        getattr(op, "feature_flag", getattr(op, "_feature_flag", None))
-                        == ClimateEntityFeature.FAN_MODE
-                    ):
-                        self.fan_modes_list_changed_pending_flicker = True
+                if getattr(op, "feature_flag", getattr(op, "_feature_flag", None)) == ClimateEntityFeature.FAN_MODE:
+                    self.fan_modes_list_changed_pending_flicker = True
 
         self._rebuild_attributes()
         return corrections
@@ -678,14 +713,152 @@ class YamlStatePoller:
 
         return reconstructed_state
 
+    # async def _build_device_state_from_props(self) -> dict[str, Any] | None:
+    #     """Reconstruct the device state using current internal properties."""
+    #     st_getter = self.controller.loader.state_getter
+    #     if not st_getter:
+    #         return None
+
+    #     last_real_state = st_getter.value
+
+    #     if last_real_state is None:
+    #         return {}
+
+    #     reconstructed_state = copy.deepcopy(last_real_state)
+    #     all_props = list(self.controller.loader.operations.values()) + list(
+    #         self.controller.loader.properties.values()
+    #     )
+    #     for op in all_props:
+    #         op_value = getattr(op, "value", getattr(op, "_value", None))
+    #         if op_value is None:
+    #             continue
+
+    #         device_value = op_value
+    #         if hasattr(op, "convert_hass_to_dev"):  # pragma: no mutate
+    #             device_value = op.convert_hass_to_dev(op_value)  # pragma: no mutate
+
+    #         is_2878 = (
+    #             self.controller.config.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_SAMSUNG_2878
+    #         )
+    #         op_id = op.id
+
+    #         if op_id in ("hvac", "hvac_mode", ATTR_HVAC_MODE):
+    #             if is_2878:
+    #                 device_key = self._get_cached_device_key_from_prop(op)
+    #                 if device_key:
+    #                     reconstructed_state[device_key] = device_value
+    #                 power_op = self.controller.loader.operations.get(
+    #                     "power"
+    #                 ) or self.controller.loader.properties.get("power")
+    #                 if power_op:
+    #                     power_key = self._get_cached_device_key_from_prop(power_op)
+    #                     if power_key:
+    #                         reconstructed_state[power_key] = (
+    #                             "Off" if device_value == "Off" else "On"
+    #                         )
+    #             else:
+    #                 device_list = reconstructed_state.get("Devices")
+    #                 if isinstance(device_list, list) and device_list:
+    #                     device_obj = device_list[0]
+    #                     if isinstance(device_obj, dict):
+    #                         if "Operation" not in device_obj:
+    #                             device_obj["Operation"] = {}
+    #                         if device_value == "Off":
+    #                             device_obj["Operation"]["power"] = "Off"
+    #                         else:
+    #                             device_obj["Operation"]["power"] = "On"
+    #                             device_obj.setdefault("Mode", {})["modes"] = [
+    #                                 device_value
+    #                             ]
+    #         elif op_id in ("temperature", ATTR_TEMPERATURE):
+    #             if is_2878:
+    #                 device_key = self._get_cached_device_key_from_prop(op)
+    #                 if device_key:
+    #                     reconstructed_state[device_key] = str(device_value)
+    #             else:
+    #                 device_list = reconstructed_state.get("Devices")
+    #                 if isinstance(device_list, list) and device_list:
+    #                     device_obj = device_list[0]
+    #                     if isinstance(device_obj, dict):
+    #                         if "Temperatures" not in device_obj:
+    #                             device_obj["Temperatures"] = [{"desired": device_value}]
+    #                         elif device_obj["Temperatures"]:
+    #                             device_obj["Temperatures"][0]["desired"] = device_value
+    #         elif op_id in (
+    #             "fan",
+    #             "fan_mode",
+    #             "fan_max",
+    #             "swing",
+    #             "swing_mode",
+    #             "good_sleep",
+    #             "preset_mode",
+    #             ATTR_FAN_MODE,
+    #             ATTR_SWING_MODE,
+    #             ATTR_PRESET_MODE,
+    #         ):
+    #             if is_2878:
+    #                 device_key = self._get_cached_device_key_from_prop(
+    #                     op
+    #                 )  # pragma: no mutate
+    #                 if device_key:
+    #                     reconstructed_state[device_key] = device_value
+    #             else:
+    #                 device_list = reconstructed_state.get("Devices")
+    #                 if isinstance(device_list, list) and device_list:
+    #                     device_obj = device_list[0]
+    #                     if isinstance(device_obj, dict):
+    #                         if op_id in ("fan", "fan_mode", ATTR_FAN_MODE):
+    #                             device_obj.setdefault("Wind", {})["speedLevel"] = (
+    #                                 int(device_value)
+    #                                 if str(device_value).isdigit()
+    #                                 else device_value
+    #                             )
+    #                         elif op_id in ("fan_max",):
+    #                             device_obj.setdefault("Wind", {})["maxSpeedLevel"] = (
+    #                                 int(device_value)
+    #                                 if str(device_value).isdigit()
+    #                                 else device_value
+    #                             )
+    #                         elif op_id in ("swing", "swing_mode", ATTR_SWING_MODE):
+    #                             device_obj.setdefault("Wind", {})["direction"] = (
+    #                                 device_value
+    #                             )
+    #                         elif op_id in ("preset_mode", ATTR_PRESET_MODE):
+    #                             options = device_obj.setdefault("Mode", {}).setdefault(
+    #                                 "options", []
+    #                             )
+    #                             val_str = str(device_value)
+    #                             if not options:
+    #                                 options.append(val_str)
+    #                             else:
+    #                                 options[0] = val_str
+    #                         elif op_id == "good_sleep":
+    #                             options = device_obj.setdefault("Mode", {}).setdefault(
+    #                                 "options", []
+    #                             )
+    #                             sleep_val = f"Sleep_{int(float(device_value))}"
+
+    #                             if not options:
+    #                                 options.extend(["Comode_Off", sleep_val])
+    #                             elif len(options) == 1:
+    #                                 options.append(sleep_val)
+    #                             else:
+    #                                 options[1] = sleep_val
+    #         else:
+    #             device_key = self._get_cached_device_key_from_prop(op)
+    #             if device_key:
+    #                 reconstructed_state[device_key] = device_value
+
+    #     return reconstructed_state
+
+
     async def _build_device_state_from_props(self) -> dict[str, Any] | None:
-        """Reconstruct the device state using current internal properties."""
+        """Reconstruct the device state by delegating to protocol-specific mutators."""
         st_getter = self.controller.loader.state_getter
         if not st_getter:
             return None
 
         last_real_state = st_getter.value
-
         if last_real_state is None:
             return {}
 
@@ -693,133 +866,117 @@ class YamlStatePoller:
         all_props = list(self.controller.loader.operations.values()) + list(
             self.controller.loader.properties.values()
         )
+
+        is_2878 = self.controller.config.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_SAMSUNG_2878
+
         for op in all_props:
             op_value = getattr(op, "value", getattr(op, "_value", None))
             if op_value is None:
                 continue
 
             device_value = op_value
-            if hasattr(op, "convert_hass_to_dev"):  # pragma: no mutate
-                device_value = op.convert_hass_to_dev(op_value)  # pragma: no mutate
+            if hasattr(op, "convert_hass_to_dev"):
+                device_value = op.convert_hass_to_dev(op_value)
 
-            is_2878 = (
-                self.controller.config.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_SAMSUNG_2878
-            )
-            op_id = op.id
+            op_id = getattr(op, "id", "")
 
-            if op_id in ("hvac", "hvac_mode", ATTR_HVAC_MODE):
-                if is_2878:
-                    device_key = self._get_cached_device_key_from_prop(op)
-                    if device_key:
-                        reconstructed_state[device_key] = device_value
-                    power_op = self.controller.loader.operations.get(
-                        "power"
-                    ) or self.controller.loader.properties.get("power")
-                    if power_op:
-                        power_key = self._get_cached_device_key_from_prop(power_op)
-                        if power_key:
-                            reconstructed_state[power_key] = (
-                                "Off" if device_value == "Off" else "On"
-                            )
-                else:
-                    device_list = reconstructed_state.get("Devices")
-                    if isinstance(device_list, list) and device_list:
-                        device_obj = device_list[0]
-                        if isinstance(device_obj, dict):
-                            if "Operation" not in device_obj:
-                                device_obj["Operation"] = {}
-                            if device_value == "Off":
-                                device_obj["Operation"]["power"] = "Off"
-                            else:
-                                device_obj["Operation"]["power"] = "On"
-                                device_obj.setdefault("Mode", {})["modes"] = [
-                                    device_value
-                                ]
-            elif op_id in ("temperature", ATTR_TEMPERATURE):
-                if is_2878:
-                    device_key = self._get_cached_device_key_from_prop(op)
-                    if device_key:
-                        reconstructed_state[device_key] = str(device_value)
-                else:
-                    device_list = reconstructed_state.get("Devices")
-                    if isinstance(device_list, list) and device_list:
-                        device_obj = device_list[0]
-                        if isinstance(device_obj, dict):
-                            if "Temperatures" not in device_obj:
-                                device_obj["Temperatures"] = [{"desired": device_value}]
-                            elif device_obj["Temperatures"]:
-                                device_obj["Temperatures"][0]["desired"] = device_value
-            elif op_id in (
-                "fan",
-                "fan_mode",
-                "fan_max",
-                "swing",
-                "swing_mode",
-                "good_sleep",
-                "preset_mode",
-                ATTR_FAN_MODE,
-                ATTR_SWING_MODE,
-                ATTR_PRESET_MODE,
-            ):
-                if is_2878:
-                    device_key = self._get_cached_device_key_from_prop(
-                        op
-                    )  # pragma: no mutate
-                    if device_key:
-                        reconstructed_state[device_key] = device_value
-                else:
-                    device_list = reconstructed_state.get("Devices")
-                    if isinstance(device_list, list) and device_list:
-                        device_obj = device_list[0]
-                        if isinstance(device_obj, dict):
-                            if op_id in ("fan", "fan_mode", ATTR_FAN_MODE):
-                                device_obj.setdefault("Wind", {})["speedLevel"] = (
-                                    int(device_value)
-                                    if str(device_value).isdigit()
-                                    else device_value
-                                )
-                            elif op_id in ("fan_max",):
-                                device_obj.setdefault("Wind", {})["maxSpeedLevel"] = (
-                                    int(device_value)
-                                    if str(device_value).isdigit()
-                                    else device_value
-                                )
-                            elif op_id in ("swing", "swing_mode", ATTR_SWING_MODE):
-                                device_obj.setdefault("Wind", {})["direction"] = (
-                                    device_value
-                                )
-                            elif op_id in ("preset_mode", ATTR_PRESET_MODE):
-                                options = device_obj.setdefault("Mode", {}).setdefault(
-                                    "options", []
-                                )
-                                val_str = str(device_value)
-                                if not options:
-                                    options.append(val_str)
-                                else:
-                                    options[0] = val_str
-                            elif op_id == "good_sleep":
-                                options = device_obj.setdefault("Mode", {}).setdefault(
-                                    "options", []
-                                )
-                                sleep_val = f"Sleep_{int(float(device_value))}"
-
-                                if not options:
-                                    options.extend(["Comode_Off", sleep_val])
-                                elif len(options) == 1:
-                                    options.append(sleep_val)
-                                else:
-                                    options[1] = sleep_val
+            # Delegate to protocol-specific mutations
+            if is_2878:
+                self._apply_2878_state_mutation(reconstructed_state, op, op_id, device_value)
             else:
-                device_key = self._get_cached_device_key_from_prop(op)
-                if device_key:
-                    reconstructed_state[device_key] = device_value
+                self._apply_8888_state_mutation(reconstructed_state, op, op_id, device_value)
 
         return reconstructed_state
+
+    def _apply_2878_state_mutation(self, state: dict[str, Any], op: Any, op_id: str, device_value: Any) -> None:
+        """Apply a property mutation specific to the Samsung 2878 socket protocol, with robust fallbacks."""
+        device_key = self._get_cached_device_key_from_prop(op)
+
+        if op_id in ("hvac", "hvac_mode", ATTR_HVAC_MODE):
+            # Fallback to the rigid Samsung XML attribute if template parsing yields None
+            state[device_key or "AC_FUN_OPMODE"] = device_value
+
+            power_op = self.controller.loader.operations.get("power") or self.controller.loader.properties.get("power")
+            power_key = "AC_FUN_POWER"
+            if power_op:
+                power_key = self._get_cached_device_key_from_prop(power_op) or "AC_FUN_POWER"
+
+            state[power_key] = "Off" if device_value == "Off" else "On"
+
+        elif op_id in ("temperature", ATTR_TEMPERATURE):
+            state[device_key or "AC_FUN_TEMPSET"] = str(device_value)
+
+        elif op_id in ("fan", "fan_mode", ATTR_FAN_MODE):
+            state[device_key or "AC_FUN_WINDLEVEL"] = device_value
+
+        elif op_id in ("swing", "swing_mode", ATTR_SWING_MODE):
+            state[device_key or "AC_FUN_DIRECTION"] = device_value
+
+        elif op_id in ("preset_mode", ATTR_PRESET_MODE, "good_sleep"):
+            state[device_key or "AC_FUN_COMODE"] = device_value
+
+        else:
+            # Fallback for generic switches/sensors
+            if device_key:
+                state[device_key] = device_value
+
+    def _apply_8888_state_mutation(self, state: dict[str, Any], op: Any, op_id: str, device_value: Any) -> None:
+        """Apply a property mutation specific to the Samsung 8888 REST protocol."""
+
+        # Keys that require deep injection into the Devices array
+        if op_id in (
+            "hvac", "hvac_mode", ATTR_HVAC_MODE, 
+            "temperature", ATTR_TEMPERATURE, 
+            "fan", "fan_mode", ATTR_FAN_MODE, "fan_max", 
+            "swing", "swing_mode", ATTR_SWING_MODE, 
+            "preset_mode", ATTR_PRESET_MODE, "good_sleep"
+        ):
+            device_list = state.get("Devices")
+            if not isinstance(device_list, list) or not device_list:
+                return
+            device_obj = device_list[0]
+            if not isinstance(device_obj, dict):
+                return
+
+            if op_id in ("hvac", "hvac_mode", ATTR_HVAC_MODE):
+                device_obj.setdefault("Operation", {})["power"] = "Off" if device_value == "Off" else "On"
+                device_obj.setdefault("Mode", {})["modes"] = [device_value]
+            elif op_id in ("temperature", ATTR_TEMPERATURE):
+                temps = device_obj.setdefault("Temperatures", [{"desired": device_value}])
+                if temps:
+                    temps[0]["desired"] = device_value
+            elif op_id in ("fan", "fan_mode", ATTR_FAN_MODE):
+                device_obj.setdefault("Wind", {})["speedLevel"] = int(device_value) if str(device_value).isdigit() else device_value
+            elif op_id == "fan_max":
+                device_obj.setdefault("Wind", {})["maxSpeedLevel"] = int(device_value) if str(device_value).isdigit() else device_value
+            elif op_id in ("swing", "swing_mode", ATTR_SWING_MODE):
+                device_obj.setdefault("Wind", {})["direction"] = device_value
+            elif op_id in ("preset_mode", ATTR_PRESET_MODE):
+                options = device_obj.setdefault("Mode", {}).setdefault("options", [])
+                val_str = str(device_value)
+                if not options:
+                    options.append(val_str)
+                else:
+                    options[0] = val_str
+            elif op_id == "good_sleep":
+                options = device_obj.setdefault("Mode", {}).setdefault("options", [])
+                sleep_val = f"Sleep_{int(float(device_value))}"
+                if not options:
+                    options.extend(["Comode_Off", sleep_val])
+                elif len(options) == 1:
+                    options.append(sleep_val)
+                else:
+                    options[1] = sleep_val
+        else:
+            # Fallback generic key mapping at the ROOT level
+            device_key = self._get_cached_device_key_from_prop(op)
+            if device_key:
+                state[device_key] = device_value
 
     def _calculate_structured_state(
         self, raw_state: dict[str, Any]
     ) -> ClimateIPDeviceState | None:
-        """Pure dry-run calculation of the ClimateIPDeviceState from raw data."""
+        """Pure dry-run calculation of the ClimateIPDeviceState from raw data, respecting optimistic locks."""
         if not self.controller.loader.is_fully_initialized:
             return None
 
@@ -842,13 +999,22 @@ class YamlStatePoller:
             prop_values = {}
             for prop in all_properties:
                 prop_id = getattr(prop, "id", None)
-                if prop_id and hasattr(prop, "calculate_value_from_state"):
-                    # STRICT MAPPING ENFORCEMENT:
-                    # Fallback mapping.get(prop_id, prop_id) was removed. ClimateIPDeviceState
-                    # strictly extracts hardcoded keys. Unmapped properties evaluate to None
-                    # and are intentionally discarded here to prevent inert memory pollution.
-                    # prop_values[mapping.get(prop_id, prop_id)] = prop.calculate_value_from_state(raw_state)
-                    prop_values[mapping.get(prop_id)] = prop.calculate_value_from_state(
+                if not prop_id:
+                    continue
+
+                mapped_key = mapping.get(prop_id)
+                if not mapped_key:
+                    continue
+
+                # OPTIMISTIC INTERCEPTION: If locked, bypass the stale raw payload entirely
+                if prop_id in self._pending_updates:
+                    pending_val, _ = self._pending_updates[prop_id]
+                    prop_values[mapped_key] = pending_val
+                    continue
+
+                # Normal evaluation from the network payload
+                if hasattr(prop, "calculate_value_from_state"):
+                    prop_values[mapped_key] = prop.calculate_value_from_state(
                         raw_state
                     )
 
@@ -942,7 +1108,7 @@ class YamlStatePoller:
             return
 
         now = time.time()
-        ttl_threshold = 10.0
+        ttl_threshold = 15.0
         pending_ids = list(self._pending_updates.keys())
         invalidated: set[str] = set()
 
@@ -1058,6 +1224,72 @@ class YamlStatePoller:
 
         return None
 
+
+    def _get_cached_device_path_from_prop(self, prop: Any) -> list[str | int] | None:
+        """Extract and cache the deep JSON path mapped to a specific property from its template."""
+        prop_id = getattr(prop, "id", None)
+        if not prop_id:
+            return None
+
+        if not hasattr(self, "_prop_template_path_cache"):
+            self._prop_template_path_cache: dict[str, list[str | int] | None] = {}
+
+        if prop_id in self._prop_template_path_cache:
+            return self._prop_template_path_cache[prop_id]
+
+        status_tmpl = getattr(prop, "status_template", None)
+        path = self._get_device_path_from_template(status_tmpl)
+        self._prop_template_path_cache[prop_id] = path
+        return path
+
+    def _get_device_path_from_template(self, template_obj: Any) -> list[str | int] | None:
+        """Robustly tokenize a Jinja template string to extract a deep JSON path.
+        Returns paths like: ["Devices", 0, "Wind", "speedLevel"] or ["AC_FUN_OPMODE"]
+        """
+        if not template_obj:
+            return None
+
+        template_string = (
+            template_obj.template
+            if hasattr(template_obj, "template")
+            else str(template_obj)
+        )
+
+        if not template_string or "device_state" not in template_string:
+            return None
+
+        chain = template_string.split("device_state", 1)[1]
+        path: list[str | int] = []
+
+        pattern = re.compile(
+            r"^(?:"
+            r"\.get\(\s*['\"]([^'\"]+)['\"]"
+            r"|\.([a-zA-Z_]\w*)"
+            r"|\[['\"]([^'\"]+)['\"]\]"
+            r"|\[(\d+)\]"
+            r")"
+        )
+
+        while chain:
+            match = pattern.match(chain)
+            if not match:
+                break
+
+            get_key, dot_key, bracket_str, bracket_int = match.groups()
+
+            if get_key:
+                path.append(get_key)
+            elif dot_key:
+                path.append(dot_key)
+            elif bracket_str:
+                path.append(bracket_str)
+            elif bracket_int:
+                path.append(int(bracket_int))
+
+            chain = chain[match.end():]
+
+        return path if path else None
+
     async def async_predict_and_correct_state(
         self,
         current_hass_state: ClimateIPDeviceState,
@@ -1079,70 +1311,66 @@ class YamlStatePoller:
         if property_name in self._pending_updates:
             del self._pending_updates[property_name]
 
-        for op in list(self.controller.loader.operations.values()):
-            op_id = op.id
+        # 1. Sync properties with current HA state (unwrap Enums safely)
+        all_props = list(self.controller.loader.operations.values()) + list(self.controller.loader.properties.values())
+        for op in all_props:
+            op_id = getattr(op, "id", None)
             if op_id:
                 hass_attr = self._get_hass_attr_for_op_id(op_id)
                 if hasattr(current_hass_state, hass_attr):
                     val = getattr(current_hass_state, hass_attr)
+                    # Extract string value if it's an Enum (e.g., HVACMode.DRY -> "dry")
+                    if val is not None and hasattr(val, "value") and not isinstance(val, dict):
+                        val = val.value
+
                     if hasattr(op, "value"):
                         op.value = val
                     elif hasattr(op, "_value"):
                         op._value = val
 
-        for prop in list(self.controller.loader.properties.values()):
-            prop_id = prop.id
-            if prop_id:
-                hass_attr = self._get_hass_attr_for_op_id(prop_id)
-                if hasattr(current_hass_state, hass_attr):
-                    val = getattr(current_hass_state, hass_attr)
-                    if hasattr(prop, "value"):
-                        prop.value = val
-                    elif hasattr(prop, "_value"):
-                        prop._value = val
+        # 2. Find the property being changed using robust alias mapping
+        prop_to_change = None
+        for op in self.controller.loader.operations.values():
+            op_id = getattr(op, "id", "")
+            if op_id == property_name or self._get_hass_attr_for_op_id(op_id) == property_name:
+                prop_to_change = op
+                break
 
-        prop_to_change = self.controller.loader.operations.get(property_name)
         if not prop_to_change:
-            _LOGGER.debug(  # pragma: no mutate
+            _LOGGER.debug(
                 "%s [Predict] prop_to_change for '%s' is None. Returning early.",
                 self.controller.log_prefix,
                 property_name,
             )
             return ClimateEntityFeature(0), {}
 
-        _LOGGER.debug(  # pragma: no mutate
-            "%s [Predict] prop_to_change found: %s. Setting its _value to: %s",
-            self.controller.log_prefix,
-            # FORENSIC LOGGING: A missing ID evaluates to 'None' during string interpolation.
-            getattr(prop_to_change, "id"),
-            new_value,
-        )
+        # Unwrap the new value if it's an enum
+        if new_value is not None and hasattr(new_value, "value") and not isinstance(new_value, dict):
+            new_value = new_value.value
 
+        # FORCED INJECTION: Directly mutate the operation's value so future_state picks it up
         if hasattr(prop_to_change, "value"):
             prop_to_change.value = new_value
         elif hasattr(prop_to_change, "_value"):
             prop_to_change._value = new_value
 
+        # 3. Build futuristic payload using the highly-specific legacy builder
         future_state = await self._build_device_state_from_props()
         if not future_state:
-            _LOGGER.debug(  # pragma: no mutate
-                "%s [Predict] future_state is empty. Returning early.",
-                self.controller.log_prefix,
-            )
             return ClimateEntityFeature(0), {}
 
-        _LOGGER.debug(  # pragma: no mutate
-            "%s [Predict] Initial future_state built from props: %s",
-            self.controller.log_prefix,
-            future_state,
-        )
+        # --- OPTIMISTIC RAW STATE INJECTION ---
+        if isinstance(self.controller.loader.state_getter.value, dict):
+            self.controller.loader.state_getter.value.update(future_state)
+        # --------------------------------------
 
+        # 4. Process rules and fetch restricted lists
         update_result = await self.async_update_properties_from_state(
             future_state, is_prediction=True, current_hass_state=current_hass_state
         )
         corrections.update(update_result)
 
-        return ClimateEntityFeature(0), corrections
+        return ClimateEntityFeature(0), corrections    
 
     async def async_shutdown(self) -> None:
         """Shut down the poller and cleanly close any active connections."""
@@ -1176,3 +1404,8 @@ class YamlStatePoller:
             self.controller.loader.connection = None
 
         await asyncio.sleep(1.0)
+
+    @property
+    def last_device_state(self) -> dict[str, Any] | None:
+        """Return the last known parsed device state."""
+        return self._last_device_state

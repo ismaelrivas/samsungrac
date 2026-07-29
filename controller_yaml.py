@@ -32,7 +32,7 @@ from homeassistant.const import (
     STATE_UNKNOWN,
     UnitOfTemperature,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.config_validation import PLATFORM_SCHEMA
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
@@ -56,7 +56,7 @@ from .properties import DeviceProperty
 _LOGGER = logging.getLogger(__name__)
 
 CONST_CONTROLLER_TYPE = "yaml"
-CONST_MAX_GET_STATUS_RETRIES = 4
+
 
 
 @register_controller
@@ -234,7 +234,7 @@ class YamlController(ClimateController):
         self,
         property_name: str,
         new_value: Any,
-        _device_id: str | None = None,
+        # _device_id: str | None = None,
     ) -> bool:
         """Asynchronously set a property on the device."""
         if not self.loader.is_fully_initialized:
@@ -258,21 +258,28 @@ class YamlController(ClimateController):
                     new_value,  # pragma: no mutate
                 )  # pragma: no mutate
                 return await op.async_set_value(
-                    new_value, _device_id or self._device_id
+                    new_value, self.device_id
                 )
-            except (requests.exceptions.RequestException, CannotConnect) as e:
-                raise UpdateFailed(
-                    f"Failed to set property '{property_name}': {e}"
-                ) from e
-            except Exception:
-                # Use .exception to include traceback log without exposing exc_info boolean flag
-                _LOGGER.exception(
-                    "%s Setting property '%s' with value '%s' failed",
+            except (requests.exceptions.RequestException, CannotConnect, HomeAssistantError) as e:
+                _LOGGER.debug(
+                    "%s Setting property '%s' with value '%s' failed: %s",
                     self.log_prefix,
                     property_name,
                     new_value,
-                )  # pragma: no mutate
-                return False
+                    e,
+                )
+                raise
+            except Exception as e:
+                _LOGGER.warning(
+                    "%s Unexpected error setting property '%s' with value '%s': %s",
+                    self.log_prefix,
+                    property_name,
+                    new_value,
+                    e,
+                )
+                raise HomeAssistantError(
+                    f"Failed to set property '{property_name}': {e}"
+                ) from e
 
         _LOGGER.error(  # pragma: no mutate
             "%s Failed to set property '%s': property not found",  # pragma: no mutate
@@ -387,10 +394,10 @@ class YamlController(ClimateController):
                 fan_mode=self.get_property(ATTR_FAN_MODE),
                 swing_mode=self.get_property(ATTR_SWING_MODE),
                 preset_mode=self.get_property(ATTR_PRESET_MODE),
-                hvac_modes=self.state_attributes.get(ATTR_HVAC_MODES, []),
-                fan_modes=self.state_attributes.get(ATTR_FAN_MODES, []),
-                swing_modes=self.state_attributes.get(ATTR_SWING_MODES, []),
-                preset_modes=self.state_attributes.get(ATTR_PRESET_MODES, []),
+                hvac_modes=self.get_property_all_values(ATTR_HVAC_MODE) or [],
+                fan_modes=self.get_property_all_values(ATTR_FAN_MODE) or [],
+                swing_modes=self.get_property_all_values(ATTR_SWING_MODE) or [],
+                preset_modes=self.get_property_all_values(ATTR_PRESET_MODE) or [],
             )
         except (ValueError, TypeError) as err:
             _LOGGER.error(
@@ -447,6 +454,16 @@ class YamlController(ClimateController):
         # except AttributeError:
         #     return False
         return self.connection.is_push_supported
+
+    @property
+    def shared_raw_client(self) -> Any:
+        """Return the shared raw socket client."""
+        return self._shared_raw_client
+
+    @shared_raw_client.setter
+    def shared_raw_client(self, client: Any) -> None:
+        """Set the shared raw socket client."""
+        self._shared_raw_client = client
 
     async def async_refresh_from_connection(self) -> None:
         """Refresh the controller's properties from the connection's internal state."""

@@ -17,6 +17,7 @@ class NakedObj:
     """Objeto estricto que falla rápido (Fail-Fast). Si el atributo no existe, detona AttributeError."""
 
     def __init__(self, **kwargs):
+        self.hass = None
         for k, v in kwargs.items():
             setattr(self, k, v)
 

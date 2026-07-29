@@ -235,17 +235,61 @@ def find_key_in_data(data: Any, key: str) -> Any | None:
     return None
 
 
-def get_value_by_path(data: dict[str, Any], path: list[str]) -> Any | None:
-    """Navigate through a nested dictionary using a list of keys."""
+
+
+def get_value_by_path(data: dict[str, Any] | list[Any], path: list[str | int]) -> Any | None:
+    """Navigate through a nested dictionary or list using a path of keys/indices."""
     if not data or not path:
         return None
+        
     current = data
     for key in path:
-        if not isinstance(current, dict) or key not in current:
+        if isinstance(current, dict) and isinstance(key, str):
+            if key not in current:
+                return None
+            current = current[key]
+        elif isinstance(current, list) and isinstance(key, int):
+            if key < 0 or key >= len(current):
+                return None
+            current = current[key]
+        else:
             return None
-        current = current[key]
     return current
 
+
+def set_value_by_path(target: dict[str, Any] | list[Any], path: list[str | int], value: Any) -> None:
+    """Set a value in a deeply nested dictionary/list structure, auto-creating nodes if missing."""
+    if not target or not path:
+        return
+        
+    current = target
+    for i, key in enumerate(path[:-1]):
+        next_key = path[i + 1]
+        is_next_list = isinstance(next_key, int)
+        
+        if isinstance(current, dict) and isinstance(key, str):
+            if key not in current or current[key] is None:
+                current[key] = [] if is_next_list else {}
+            current = current[key]
+        elif isinstance(current, list) and isinstance(key, int):
+            # Extender la lista de forma segura si el índice no existe
+            while len(current) <= key:
+                current.append(None)
+            if current[key] is None:
+                current[key] = [] if is_next_list else {}
+            current = current[key]
+        else:
+            # Ruta inválida (ej. intentar usar una clave string en una lista)
+            return
+
+    # Asignar el valor final en el último nodo
+    last_key = path[-1]
+    if isinstance(current, dict) and isinstance(last_key, str):
+        current[last_key] = value
+    elif isinstance(current, list) and isinstance(last_key, int):
+        while len(current) <= last_key:
+            current.append(None)
+        current[last_key] = value
 
 def resolve_cert_path(
     cert_path: str | None, base_dir: str = "", hass: "HomeAssistant | None" = None

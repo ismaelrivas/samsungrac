@@ -469,6 +469,10 @@ class GetJsonStatus(DeviceProperty):
             params_str = self.connection_template.render(**render_context)
             try:
                 params = json_loads(params_str)
+            except (*JSON_DECODE_EXCEPTIONS,):
+                params = None
+
+            if isinstance(params, dict):
                 response_text, _ = await connection.async_execute(
                     params.get("method"),
                     params.get("url"),
@@ -476,15 +480,14 @@ class GetJsonStatus(DeviceProperty):
                     params.get("headers"),
                     _is_poll=True,
                 )
-            except (*JSON_DECODE_EXCEPTIONS,):
-                if response_text is None:
-                    response_text, _ = await connection.async_execute(
-                        None,
-                        None,
-                        params_str,
-                        None,
-                        _is_poll=True,
-                    )
+            else:
+                response_text, _ = await connection.async_execute(
+                    None,
+                    None,
+                    params_str,
+                    None,
+                    _is_poll=True,
+                )
 
             if response_text is None:
                 _LOGGER.debug(

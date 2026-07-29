@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from custom_components.climate_ip.exceptions import CannotConnect
 
@@ -540,16 +541,16 @@ async def test_async_set_property_error_scenarios(mock_yaml_controller) -> None:
     mock_op = AsyncMock()
     mock_yaml_controller.loader.operations = {"test_prop": mock_op}
 
-    # Escenario 3 (Mutante 14): Error de red -> Lanza UpdateFailed con mensaje estricto
+    # Escenario 3 (Mutante 14): Error de red -> Lanza CannotConnect con mensaje estricto
     mock_op.async_set_value.side_effect = CannotConnect("Host down")
-    with pytest.raises(UpdateFailed) as exc_info:
+    with pytest.raises(CannotConnect) as exc_info:
         await mock_yaml_controller.async_set_property("test_prop", "val")
-    # We assert la concatenación estricta de la cadena de error
-    assert "Failed to set property 'test_prop': Host down" in str(exc_info.value)
+    assert "Host down" in str(exc_info.value)
 
-    # Escenario 4 (Mutante 15): Exception genérica -> captura silenciosa y devuelve False
+    # Escenario 4 (Mutante 15): Exception genérica -> Lanza HomeAssistantError
     mock_op.async_set_value.side_effect = ValueError("Boom")
-    assert await mock_yaml_controller.async_set_property("test_prop", "val") is False
+    with pytest.raises(HomeAssistantError):
+        await mock_yaml_controller.async_set_property("test_prop", "val")
 
 
 def test_yaml_controller_setters_strict_assignment(mock_yaml_controller) -> None:

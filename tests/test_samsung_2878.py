@@ -74,10 +74,12 @@ async def test_repair_issue_created_on_disconnect():
         args, kwargs = mock_create_issue.call_args
         assert args[0] == mock_hass
         assert args[1] == "climate_ip"
-        assert args[2] == "connection_failed_192.168.1.100"
+        assert args[2] == "device_offline_192_168_1_100"
         assert kwargs["translation_key"] == "connection_failed"
-        assert kwargs["translation_placeholders"]["host"] == "192.168.1.100"
         assert kwargs["translation_placeholders"]["name"] == "Test AC"
+        assert kwargs["translation_placeholders"]["device_name"] == "Test AC"
+        assert kwargs["translation_placeholders"]["host"] == "192.168.1.100"
+        assert kwargs["translation_placeholders"]["ip_address"] == "192.168.1.100"
 
 
 async def test_repair_issue_cleared_on_reconnect():
@@ -111,30 +113,18 @@ async def test_repair_issue_cleared_on_reconnect():
             conn, "_establish_connection_and_handshake", new_callable=AsyncMock
         ) as mock_handshake,
     ):
-        # Mock _post_connect_status_request to avoid hanging
         with patch.object(conn, "_post_connect_status_request", new_callable=AsyncMock):
             mock_handshake.return_value = True
-
-            # Reset event and flags to simulate initial connection state missing params
             conn._initial_connection_done = True
 
-            # _establish_connection_and_handshake is called directly inside handle_reconnection if reader exists
-            # Actually, to trigger the 'clear', we need `_establish_connection_and_handshake` to Succeed.
-            # Handshake success block handles `async_delete_issue` in `_establish_connection_and_handshake`
-
-    # However, the delete happens inside `_establish_connection_and_handshake` which is huge.
-    # Better test just that block of logic by simulating the successful connection
     with patch(
         "custom_components.climate_ip.samsung_2878.async_delete_issue"
     ) as mock_delete_issue:
-        # Manually trigger what happens after a successful connect
         conn._is_available = False
 
-        # This replicates the block inside _establish_connection_and_handshake
         if not conn._is_available:
             conn._is_available = True
             try:
-                # Need to use the module name due to local import inside the method
                 from custom_components.climate_ip.samsung_2878 import (
                     async_delete_issue,
                 )
@@ -142,13 +132,13 @@ async def test_repair_issue_cleared_on_reconnect():
                 async_delete_issue(
                     conn._controller.hass,
                     "climate_ip",
-                    f"connection_failed_{conn._cfg.host}",
+                    "device_offline_192_168_1_100",
                 )
             except Exception:
                 pass
 
         mock_delete_issue.assert_called_once_with(
-            mock_hass, "climate_ip", "connection_failed_192.168.1.100"
+            mock_hass, "climate_ip", "device_offline_192_168_1_100"
         )
 
 

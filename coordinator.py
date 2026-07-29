@@ -9,7 +9,7 @@ from homeassistant.components.climate import ClimateEntityFeature, HVACMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_MAC
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
@@ -53,9 +53,38 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
         # Inject callbacks into the controller to avoid circular dependencies.
 
+        # def _save_new_token(new_token: str) -> None:
+        #     """Callback to save the renewed token from the network layer."""
+
+        #     @callback
+        #     def _update_token() -> None:
+        #         new_data = dict(self.entry.data)
+        #         new_data["token"] = new_token
+        #         self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        #         _LOGGER.info(
+        #             "%s Persisted new network token to Config Entry.", self.log_prefix
+        #         )  # pragma: no mutate
+
+        #     try:
+        #         running_loop = asyncio.get_running_loop()
+        #     except RuntimeError:
+        #         running_loop = None
+
+        #     if running_loop is not None and running_loop is getattr(
+        #         self.hass, "loop", None
+        #     ):
+        #         _update_token()
+        #     else:
+        #         if hasattr(self.hass, "loop") and hasattr(
+        #             self.hass.loop, "call_soon_threadsafe"
+        #         ):
+        #             self.hass.loop.call_soon_threadsafe(_update_token)
+        #         _update_token()
+
+        # self.controller.on_token_refreshed = _save_new_token
+
         def _save_new_token(new_token: str) -> None:
             """Callback to save the renewed token from the network layer."""
-
             @callback
             def _update_token() -> None:
                 new_data = dict(self.entry.data)
@@ -63,23 +92,10 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 self.hass.config_entries.async_update_entry(self.entry, data=new_data)
                 _LOGGER.info(
                     "%s Persisted new network token to Config Entry.", self.log_prefix
-                )  # pragma: no mutate
+                )
 
-            try:
-                running_loop = asyncio.get_running_loop()
-            except RuntimeError:
-                running_loop = None
-
-            if running_loop is not None and running_loop is getattr(
-                self.hass, "loop", None
-            ):
-                _update_token()
-            else:
-                if hasattr(self.hass, "loop") and hasattr(
-                    self.hass.loop, "call_soon_threadsafe"
-                ):
-                    self.hass.loop.call_soon_threadsafe(_update_token)
-                _update_token()
+            # Delegate strictly to the main HA event loop
+            self.hass.loop.call_soon_threadsafe(_update_token)
 
         self.controller.on_token_refreshed = _save_new_token
 
@@ -92,36 +108,53 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         # Inject the push updates handler callback.
         self.controller.on_push_update_callback = self.async_handle_push_update
 
+        # def _save_ssl_config(ssl_config: dict[str, Any]) -> None:
+        #     """Callback to save SSL configuration to the config entry."""
+
+        #     @callback
+        #     def _update_ssl() -> None:
+        #         current_data = dict(self.entry.data)
+        #         if current_data.get("_ssl_config_2878") != ssl_config:
+        #             current_data["_ssl_config_2878"] = ssl_config
+        #             self.hass.config_entries.async_update_entry(
+        #                 self.entry, data=current_data
+        #             )
+        #             _LOGGER.info(
+        #                 "%s Persisted SSL config to ConfigEntry data.", self.log_prefix
+        #             )  # pragma: no mutate
+
+        #     try:
+        #         running_loop = asyncio.get_running_loop()
+        #     except RuntimeError:
+        #         running_loop = None
+
+        #     if running_loop is not None and running_loop is getattr(
+        #         self.hass, "loop", None
+        #     ):
+        #         _update_ssl()
+        #     else:
+        #         if hasattr(self.hass, "loop") and hasattr(
+        #             self.hass.loop, "call_soon_threadsafe"
+        #         ):
+        #             self.hass.loop.call_soon_threadsafe(_update_ssl)
+        #         _update_ssl()
+
+        # self.controller.on_ssl_config_updated = _save_ssl_config
+
         def _save_ssl_config(ssl_config: dict[str, Any]) -> None:
             """Callback to save SSL configuration to the config entry."""
-
             @callback
             def _update_ssl() -> None:
                 current_data = dict(self.entry.data)
                 if current_data.get("_ssl_config_2878") != ssl_config:
                     current_data["_ssl_config_2878"] = ssl_config
-                    self.hass.config_entries.async_update_entry(
-                        self.entry, data=current_data
-                    )
+                    self.hass.config_entries.async_update_entry(self.entry, data=current_data)
                     _LOGGER.info(
                         "%s Persisted SSL config to ConfigEntry data.", self.log_prefix
-                    )  # pragma: no mutate
+                    )
 
-            try:
-                running_loop = asyncio.get_running_loop()
-            except RuntimeError:
-                running_loop = None
-
-            if running_loop is not None and running_loop is getattr(
-                self.hass, "loop", None
-            ):
-                _update_ssl()
-            else:
-                if hasattr(self.hass, "loop") and hasattr(
-                    self.hass.loop, "call_soon_threadsafe"
-                ):
-                    self.hass.loop.call_soon_threadsafe(_update_ssl)
-                _update_ssl()
+            # Delegate strictly to the main HA event loop
+            self.hass.loop.call_soon_threadsafe(_update_ssl)
 
         self.controller.on_ssl_config_updated = _save_ssl_config
 
@@ -209,15 +242,6 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 connections=conns,
             )
 
-    # def register_entity(self, entity: Any) -> None:
-    #     """Register the climate entity instance."""
-    #     self._entity = entity
-
-    # def unregister_entity(self, entity: Any) -> None:
-    #     """Unregister the climate entity instance."""
-    #     _ = entity
-    #     self._entity = None
-
     @callback
     def async_set_updated_data(self, data: Any) -> None:
         """Intercept data update to trigger listeners."""
@@ -232,15 +256,27 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             return self._create_device_state()
 
         except InvalidHeaderError as err:
-            # fmt: off
-            _LOGGER.warning("%s Malformed header error detected! Automatically switching to the 'Robust (raw socket)' connection engine. Error: %s", self.log_prefix, err)  # pragma: no mutate
-            # fmt: on
-            new_options = dict(self.entry.options)
-            new_options[CONF_CONN_METHOD] = CONN_METHOD_RAW
-            self.hass.config_entries.async_update_entry(self.entry, options=new_options)
-            # fmt: off
-            raise UpdateFailed("Switching to 'Robust (Raw)' connection engine due to non-standard HTTP headers. Reload is in progress.") from None  # pragma: no mutate
-            # fmt: on
+            current_method = self.entry.options.get(CONF_CONN_METHOD)
+            
+            # Cortafuegos: Solo mutamos y recargamos si NO estamos ya en RAW
+            if current_method != CONN_METHOD_RAW:
+                _LOGGER.warning(
+                    "%s Malformed header error detected! Auto-healing: Switching permanently to the 'Robust (raw socket)' connection engine.", 
+                    self.log_prefix
+                )  # pragma: no mutate
+                new_options = dict(self.entry.options)
+                new_options[CONF_CONN_METHOD] = CONN_METHOD_RAW
+                self.hass.config_entries.async_update_entry(self.entry, options=new_options)
+                
+                raise UpdateFailed("Auto-healing triggered: Switching to 'Robust (Raw)' engine. Reload in progress.") from None  # pragma: no mutate
+            
+            # Si ya estamos en RAW y ocurre lo imposible, fallamos de forma segura sin bucles
+            _LOGGER.error(
+                "%s Invalid header error persists even on the RAW engine. Auto-healing failed: %s", 
+                self.log_prefix, 
+                err
+            )
+            raise UpdateFailed(f"Data parsing failed on RAW engine: {err}") from err
 
         except (AuthError, ConfigEntryAuthFailed) as err:
             raise ConfigEntryAuthFailed(
@@ -320,7 +356,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         property_name: str,
         new_value: Any,
         corrections: dict[str, Any] | None = None,
-        device_id: str | None = None,
+        # device_id: str | None = None,
     ) -> None:
         """Set a property on the controller. Optimistic state is handled by the entity."""
         try:
@@ -337,7 +373,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 if isinstance(val, HVACMode):
                     val = val.value
                 results.append(
-                    await self.controller.async_set_property(prop, val, device_id)
+                    await self.controller.async_set_property(prop, val)
                 )
 
             if not all(results):
@@ -351,7 +387,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             _LOGGER.error("%s Network error setting properties: %s", self.log_prefix, type(err).__name__)  # pragma: no mutate
             # fmt: on
             await self.async_request_refresh()
-            raise UpdateFailed(
+            raise HomeAssistantError(
                 f"Network error setting property {property_name}: {err}"
             ) from err  # pragma: no mutate
 
@@ -360,7 +396,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             _LOGGER.error("%s Data error setting properties: %s", self.log_prefix, err, exc_info=True)  # pragma: no mutate
             # fmt: on
             await self.async_request_refresh()
-            raise UpdateFailed(
+            raise HomeAssistantError(
                 f"Data error setting property {property_name}: {err}"
             ) from err  # pragma: no mutate
 
@@ -370,7 +406,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             # fmt: on
             # Revert state on failure
             await self.async_request_refresh()
-            raise UpdateFailed(
+            raise HomeAssistantError(
                 f"Failed to set property {property_name}: {err}"
             ) from err  # pragma: no mutate
 

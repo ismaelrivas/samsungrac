@@ -1057,7 +1057,7 @@ async def test_establish_connection_cipher_iteration_and_issue_clear(connection)
 
             # Verificamos que al tener éxito, borró el issue pasándole HASS explícitamente
             mock_delete.assert_called_once_with(
-                connection._controller.hass, "climate_ip", "connection_failed_1.2.3.4"
+                connection._controller.hass, "climate_ip", "device_offline_1_2_3_4"
             )
 
 
@@ -1527,12 +1527,14 @@ def test_check_and_create_repair_issue_strict(mock_issue, connection):
     # Validaciones anti-mutmut ultra estrictas
     assert args[0] is connection._controller.hass
     assert args[1] == "climate_ip"
-    assert args[2] == "connection_failed_1.2.3.4"
+    assert args[2] == "device_offline_1_2_3_4"
     assert kwargs["is_fixable"] is False
     assert kwargs["severity"] == IssueSeverity.WARNING
     assert kwargs["translation_key"] == "connection_failed"
-    assert kwargs["translation_placeholders"]["host"] == "1.2.3.4"
     assert kwargs["translation_placeholders"]["name"] == "MyAC"
+    assert kwargs["translation_placeholders"]["device_name"] == "MyAC"
+    assert kwargs["translation_placeholders"]["host"] == "1.2.3.4"
+    assert kwargs["translation_placeholders"]["ip_address"] == "1.2.3.4"
 
 
 def test_update_configuration_from_hass_strict(connection):
@@ -1872,6 +1874,7 @@ async def test_connection_manager_strict_buffer(connection):
         # LA TRAMPA: Si en la segunda iteración el buffer no conservó el b"FRAGMENT",
         # significa que Mutmut saboteó la asignación "buffer = read_buffer" a None o vacío.
         assert mock_process_read.call_args_list[1][0][0] == b"FRAGMENT"
+        assert mock_wait.call_args.kwargs.get("return_when") == asyncio.FIRST_COMPLETED
 
 
 @pytest.mark.asyncio
@@ -2163,7 +2166,10 @@ def test_check_and_create_repair_issue_strict_getattr(connection):
 
             # Verificamos que, al no existir 'name', se usó 'host' de forma segura
             kwargs = mock_issue.call_args[1]
-            assert kwargs["translation_placeholders"]["name"] == "1.2.3.4"
+            assert kwargs["translation_placeholders"]["name"] == "Climate IP"
+            assert kwargs["translation_placeholders"]["device_name"] == "Climate IP"
+            assert kwargs["translation_placeholders"]["host"] == "1.2.3.4"
+            assert kwargs["translation_placeholders"]["ip_address"] == "1.2.3.4"
         except AttributeError as e:
             # Si Mutmut borró el 'None' del getattr(), esto explotará porque 'name' no existe
             pytest.fail(f"Mutante cazado (AttributeError en getattr sin default): {e}")
@@ -2444,3 +2450,40 @@ async def test_read_full_response_unified_assault(connection):
     res_d = await connection._read_full_response(timeout=1.0)
     assert res_d is not None, "Mutante vivo: 'or' cambió a 'and' en '/>'"
     assert res_d.endswith("/>")
+
+
+@pytest.mark.asyncio
+async def test_connection_manager_read_task_in_done_strict(connection):
+    """Sniper: Kills mutant 'if self._read_task in done:' -> 'if self._read_task not in done:'."""
+    connection._writer = MagicMock()
+    connection._writer.is_closing.return_value = False
+    connection._writer.wait_closed = AsyncMock()
+    connection._reader = MagicMock()
+    connection._reader.read = AsyncMock(return_value=b"some_data")
+
+    # Prevent command queue task creation
+    connection._pending_future = MagicMock()
+
+    async def fake_process_read(buf):
+        raise asyncio.CancelledError()
+
+    def mock_wait_side_effect(tasks, **kwargs):
+        return {connection._read_task}, set()
+
+    with (
+        patch("asyncio.wait", side_effect=mock_wait_side_effect) as mock_wait,
+        patch.object(
+            connection, "_process_read_queue", side_effect=fake_process_read
+        ) as mock_process_read,
+        patch(
+            "custom_components.climate_ip.samsung_2878.asyncio.sleep",
+            new_callable=AsyncMock,
+        ),
+    ):
+        try:
+            await asyncio.wait_for(connection._connection_manager(), timeout=1.0)
+        except asyncio.CancelledError:
+            pass
+
+        mock_process_read.assert_awaited_once()
+        assert mock_wait.call_args.kwargs.get("return_when") == asyncio.FIRST_COMPLETED

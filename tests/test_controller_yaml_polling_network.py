@@ -53,8 +53,9 @@ def create_valid_loader():
 # =====================================================================
 
 
+@patch("custom_components.climate_ip.controller_yaml_polling._LOGGER.info")
 @patch("custom_components.climate_ip.controller_yaml_polling.async_create_issue")
-def test_try_create_repair_issue_flow(mock_async_create_issue):
+def test_try_create_repair_issue_flow(mock_async_create_issue, mock_logger_info):
     """Test control flow and parameters of _try_create_repair_issue."""
     mock_controller = MagicMock()
     mock_controller.hass = MagicMock()
@@ -73,19 +74,32 @@ def test_try_create_repair_issue_flow(mock_async_create_issue):
         "climate_ip",
         "device_offline_192_168_1_100",
         is_fixable=False,
+        is_persistent=True,
         severity=IssueSeverity.WARNING,
         translation_key="connection_failed",
         translation_placeholders={
+            "name": "Test AC",
             "device_name": "Test AC",
+            "host": "192.168.1.100",
             "ip_address": "192.168.1.100",
         },
+    )
+    mock_logger_info.assert_called_once_with(
+        "%s Created repair issue 'device_offline_%s' for %s (%s)",
+        mock_controller.log_prefix,
+        "192_168_1_100",
+        "Test AC",
+        "192.168.1.100",
     )
 
     # Call without hass object
     mock_async_create_issue.reset_mock()
-    poller.controller = MagicMock(spec=[])
+    mock_logger_info.reset_mock()
+    poller.controller = MagicMock()
+    poller.controller.hass = None
     poller._try_create_repair_issue()
     assert not mock_async_create_issue.called
+    assert not mock_logger_info.called
 
 
 @pytest.mark.parametrize(
@@ -138,9 +152,11 @@ def test_try_create_repair_issue_flow(mock_async_create_issue):
         ),
     ],
 )
+@patch("custom_components.climate_ip.controller_yaml_polling._LOGGER.info")
 @patch("custom_components.climate_ip.controller_yaml_polling.async_create_issue")
 def test_try_create_repair_issue_fallback_cascade(
     mock_create_issue,
+    mock_logger_info,
     unique_id,
     name,
     host,
@@ -165,12 +181,23 @@ def test_try_create_repair_issue_fallback_cascade(
         "climate_ip",
         expected_issue_id,
         is_fixable=False,
+        is_persistent=True,
         severity=IssueSeverity.WARNING,
         translation_key="connection_failed",
         translation_placeholders={
+            "name": expected_device_name_ph,
             "device_name": expected_device_name_ph,
+            "host": expected_ip_address_ph,
             "ip_address": expected_ip_address_ph,
         },
+    )
+    expected_safe_id = expected_issue_id.replace("device_offline_", "")
+    mock_logger_info.assert_called_once_with(
+        "%s Created repair issue 'device_offline_%s' for %s (%s)",
+        mock_controller.log_prefix,
+        expected_safe_id,
+        expected_device_name_ph,
+        expected_ip_address_ph,
     )
 
 
@@ -183,8 +210,9 @@ def test_try_create_repair_issue_fallback_cascade(
         ("my_device_1", None, "10.0.0.10", "device_offline_my_device_1"),
     ],
 )
+@patch("custom_components.climate_ip.controller_yaml_polling._LOGGER.info")
 async def test_async_delete_issue_fallback_cascade(
-    unique_id, host, ip_address, expected_issue_id
+    mock_logger_info, unique_id, host, ip_address, expected_issue_id
 ):
     """Sniper: Test fallback cascade for raw_id in async_delete_issue when connection recovers."""
     mock_controller = MagicMock()
@@ -210,6 +238,12 @@ async def test_async_delete_issue_fallback_cascade(
         await poller.async_update_state()
         mock_delete_issue.assert_called_once_with(
             mock_controller.hass, "climate_ip", expected_issue_id
+        )
+        expected_safe_id = expected_issue_id.replace("device_offline_", "")
+        mock_logger_info.assert_any_call(
+            "%s Cleared repair issue 'device_offline_%s'",
+            mock_controller.log_prefix,
+            expected_safe_id,
         )
 
 
@@ -702,8 +736,10 @@ async def test_async_update_state_sniper_network_ping():
 
 @patch("custom_components.climate_ip.controller_yaml_polling.async_create_issue")
 def test_try_create_repair_issue_missing_hass(mock_create_issue):
-    """Verify mutant kill de `getattr(self.controller, 'hass', None) -> getattr(...)`"""
-    poller = YamlStatePoller(MagicMock(spec=[]))
+    """Verify early exit when self.controller.hass is None."""
+    mock_controller = MagicMock()
+    mock_controller.hass = None
+    poller = YamlStatePoller(mock_controller)
     poller._try_create_repair_issue()
     mock_create_issue.assert_not_called()
 

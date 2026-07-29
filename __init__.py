@@ -32,9 +32,10 @@ from .samsung_2878 import ConnectionSamsung2878  # noqa: F401
 
 _LOGGER = logging.getLogger(__name__)
 
-type ClimateIPConfigEntry = (  # pylint: disable=import-outside-toplevel,invalid-name
-    ConfigEntry[SamsungClimateCoordinator | dict[str, SamsungClimateCoordinator]]
-)
+# type ClimateIPConfigEntry = (  # pylint: disable=import-outside-toplevel,invalid-name
+#     ConfigEntry[SamsungClimateCoordinator | dict[str, SamsungClimateCoordinator]]
+# )
+type ClimateIPConfigEntry = ConfigEntry[dict[str, SamsungClimateCoordinator]]
 
 PLATFORMS: list[Platform] = [
     Platform.CLIMATE,
@@ -128,102 +129,45 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
     _LOGGER.debug(
         "Climate IP setup. devices_config: %s", devices_config
     )  # pragma: no mutate
-    if devices_config:
-        coordinators: dict[str, SamsungClimateCoordinator] = {}
-        for device_info in devices_config:
-            device_id = device_info.get("id")
-            device_name = device_info.get("name")  # pragma: no mutate
-            device_uuid = device_info.get("uuid")
 
-            # MIM-H03 Wifi-kit (ID 0) is a management controller, not a climate device.
-            # We skip it to avoid template errors and incorrect entity registration.
-            if device_id == "0":
-                _LOGGER.debug(
-                    "Skipping Wifi-kit management device (ID 0)"
-                )  # pragma: no mutate
-                continue
+    # Normalize: If no sub-devices are defined, create a synthetic list for the main unit
+    if not devices_config:
+        devices_config = [{"id": "main", "name": entry.data.get("name", entry.title)}]
 
-            device_config_data = runtime_config.copy()
+    _LOGGER.debug("Climate IP setup. devices_config: %s", devices_config)
+
+    coordinators: dict[str, SamsungClimateCoordinator] = {}
+
+    for device_info in devices_config:
+        device_id = device_info.get("id")
+        device_name = device_info.get("name")
+        device_uuid = device_info.get("uuid")
+
+        if device_id == "0":
+            _LOGGER.debug("Skipping Wifi-kit management device (ID 0)")
+            continue
+
+        device_config_data = runtime_config.copy()
+
+        # Ensure the controller receives its specific UI name
+        if device_name:
+            device_config_data["name"] = device_name
+
+        # Unique ID generation logic
+        if device_id != "main":
             device_config_data[CONF_DEVICE_ID] = device_id
-
-            # Ensure unique_id is truly unique by appending device_id if uuid is missing
-            # or if it matches the parent UUID to avoid registry collisions.
             base_unique_id = device_uuid or entry.unique_id
-            if (
-                base_unique_id
-                and device_id
-                and f"_{device_id}" not in str(base_unique_id)
-            ):
+            if base_unique_id and f"_{device_id}" not in str(base_unique_id):
                 device_config_data["unique_id"] = f"{base_unique_id}_{device_id}"
             else:
                 device_config_data["unique_id"] = base_unique_id
+        else:
+            device_config_data["unique_id"] = entry.unique_id
 
-            # fmt: off
-            _LOGGER.info("Setting up Samsung sub-unit '%s' (ID %s) with unique_id: %s", device_name, device_id, device_config_data["unique_id"])  # pragma: no mutate
-            _LOGGER.debug("Setting up controller for device: %s with unique_id: %s", device_name, device_config_data["unique_id"])  # pragma: no mutate
-            # fmt: on
+        _LOGGER.info("Setting up Samsung unit '%s' (ID %s) with unique_id: %s", device_name, device_id, device_config_data["unique_id"])
 
-            controller = YamlController(
-                config=device_config_data, logger=_LOGGER, hass=hass, session=session
-            )
-
-            try:
-                initialized = await controller.initialize()
-            except (TimeoutError, ConnectionRefusedError, OSError) as ex:
-                _LOGGER.warning(
-                    "%s Transient network error during controller initialization for device %s: %s",
-                    controller.log_prefix,
-                    device_name,
-                    ex,
-                )  # pragma: no mutate
-                raise ConfigEntryNotReady(
-                    f"Transient network failure initializing device {device_id}: {ex}"
-                ) from ex  # pragma: no mutate
-
-            if not initialized:
-                # fmt: off
-                _LOGGER.debug("%s Failed to initialize controller for device %s", controller.log_prefix, device_name, exc_info=True)  # pragma: no mutate
-                # fmt: on
-                continue
-
-            # The coordinator is initialized with discovery info to ensure correct naming
-            # and parent-child relationship (via_device) in the HA registry.
-            coordinator = SamsungClimateCoordinator(
-                hass,
-                controller,
-                entry,
-                device_info=device_info,
-                parent_unique_id=entry.unique_id,
-            )
-
-            # Wait for the first refresh to complete before setting up platforms.
-            # This ensures that the initial state is available for sensor validation.
-            try:
-                await coordinator.async_config_entry_first_refresh()
-            except ConfigEntryAuthFailed:
-                raise
-            except Exception as ex:
-                # fmt: off
-                _LOGGER.error("%s Initial connection to Climate IP failed: %s", controller.log_prefix, ex)  # pragma: no mutate
-                # fmt: on
-                raise ConfigEntryNotReady(
-                    f"Device unreachable during startup: {ex}"
-                ) from ex  # pragma: no mutate
-
-            if device_id:
-                coordinators[device_id] = coordinator
-
-        if not coordinators:
-            # fmt: off
-            _LOGGER.error("No coordinators could be set up for entry %s", entry.title, exc_info=True)  # pragma: no mutate
-            # fmt: on
-            return False
-
-        # Store coordinators in runtime_data
-        entry.runtime_data = coordinators
-    else:
         controller = YamlController(
-            config=runtime_config, logger=_LOGGER, hass=hass, session=session
+            config=device_config_data, logger=_LOGGER, hass=hass, session=session
         )
 
         try:
@@ -232,39 +176,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
             _LOGGER.warning(
                 "%s Transient network error during controller initialization for %s: %s",
                 controller.log_prefix,
-                entry.title,
+                device_name,
                 ex,
-            )  # pragma: no mutate
+            )
             raise ConfigEntryNotReady(
-                f"Transient network error initializing device {entry.title}: {ex}"
-            ) from ex  # pragma: no mutate
+                f"Transient network failure initializing device {device_name}: {ex}"
+            ) from ex
 
         if not initialized:
-            # fmt: off
-            _LOGGER.debug("%s Failed to initialize controller for %s", controller.log_prefix, entry.title, exc_info=True)  # pragma: no mutate
-            # fmt: on
-            return False
+            _LOGGER.debug("%s Failed to initialize controller for %s", controller.log_prefix, device_name, exc_info=True)
+            continue
 
-        # The coordinator is initialized. The network engine (samsung_2878) will autonomously
-        # start its own listener if it is not already running upon executing a command.
-        single_coordinator = SamsungClimateCoordinator(hass, controller, entry)
+        coordinator = SamsungClimateCoordinator(
+            hass,
+            controller,
+            entry,
+            device_info=device_info if device_id != "main" else None,
+            parent_unique_id=entry.unique_id if device_id != "main" else None,
+        )
 
-        # Wait for the first refresh to complete before setting up platforms.
-        # This ensures that the initial state is available for sensor validation.
         try:
-            await single_coordinator.async_config_entry_first_refresh()
+            await coordinator.async_config_entry_first_refresh()
         except ConfigEntryAuthFailed:
             raise
         except Exception as ex:
-            # fmt: off
-            _LOGGER.debug("%s Initial connection to Climate IP failed: %s", controller.log_prefix, ex)  # pragma: no mutate
-            # fmt: on
-            raise ConfigEntryNotReady(
-                f"Device unreachable during startup: {ex}"
-            ) from ex  # pragma: no mutate
+            _LOGGER.error("%s Initial connection failed: %s", controller.log_prefix, ex)
+            raise ConfigEntryNotReady(f"Device unreachable during startup: {ex}") from ex
 
-        # Store coordinator in runtime_data
-        entry.runtime_data = single_coordinator
+        coordinators[device_id] = coordinator
+
+    if not coordinators:
+        _LOGGER.error("No coordinators could be set up for entry %s", entry.title)
+        return False
+
+    # Contract strictly fulfilled: runtime_data is ALWAYS a dict
+    entry.runtime_data = coordinators
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -287,11 +233,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -
         _LOGGER.debug(
             "Shutting down background connection tasks for entry %s", entry.entry_id
         )  # pragma: no mutate
-        if isinstance(entry_data, dict):  # Multiple devices
-            for coordinator in entry_data.values():
-                await coordinator.async_shutdown()
-        elif hasattr(entry_data, "async_shutdown"):  # Single coordinator
-            await entry_data.async_shutdown()
+        # if isinstance(entry_data, dict):  # Multiple devices
+        #     for coordinator in entry_data.values():
+        #         await coordinator.async_shutdown()
+        # elif hasattr(entry_data, "async_shutdown"):  # Single coordinator
+        #     await entry_data.async_shutdown()
+        for coordinator in entry_data.values():
+            await coordinator.async_shutdown()
 
     # We leave the standard Home Assistant unload logic here.
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

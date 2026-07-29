@@ -164,8 +164,8 @@
     },
     "issues": {
         "connection_failed": {
-            "title": "Samsung AC Connection Lost ({name})",
-            "description": "Unable to communicate with Samsung AC **{name}** at **{host}**. Please verify the device is powered on and connected to your local network."
+            "title": "{device_name} - {name} - Disconnected ({ip_address})",
+            "description": "The device **{device_name}** at **{ip_address}** is persistently unreachable. Please verify power and network connection."
         }
     },
     "selector": {
@@ -260,12 +260,6 @@
             },
             "beep": {
                 "name": "Beep"
-            }
-        },
-        "issues": {
-            "connection_failed": {
-                "title": "{device_name} disconnected ({ip_address})",
-                "description": "The device {device_name} at {ip_address} is persistently unreachable. Please verify power and network connection."
             }
         }
     }
