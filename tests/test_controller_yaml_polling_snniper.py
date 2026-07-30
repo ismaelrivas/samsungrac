@@ -57,7 +57,7 @@ async def test_sniper_build_device_state_from_props_2878_and_options():
     )
 
     with patch.object(
-        poller, "_get_cached_device_key_from_prop", return_value="custom_key"
+        poller, "_get_state_node_from_prop", return_value="custom_key"
     ) as mock_get_key:
         await poller._build_device_state_from_props()
         mock_get_key.assert_called_once_with(op_generic)
@@ -244,7 +244,7 @@ async def test_sniper_update_properties_delegations():
     # Escenario A: < 15 segundos (Pasa por convert_hass_to_dev pero hace continue)
     poller._pending_updates = {"prop1": ("pending_val", time.time() - 5.0)}
     with patch.object(
-        poller, "_get_cached_device_key_from_prop", return_value="prop1_key"
+        poller, "_get_state_node_from_prop", return_value="prop1_key"
     ):
         await poller.async_update_properties_from_state({"dummy": "state_A"})
         prop.convert_hass_to_dev.assert_called_once_with("pending_val")
@@ -252,7 +252,7 @@ async def test_sniper_update_properties_delegations():
     # Escenario B: >= 15 segundos (Llama a async_update_state completo)
     poller._pending_updates = {"prop1": ("pending_val", time.time() - 20.0)}
     with patch.object(
-        poller, "_get_cached_device_key_from_prop", return_value="prop1_key"
+        poller, "_get_state_node_from_prop", return_value="prop1_key"
     ):
         await poller.async_update_properties_from_state({"dummy": "state_B"})
         prop.async_update_state.assert_awaited_once_with({"dummy": "state_B"}, True)
@@ -398,7 +398,7 @@ async def test_sniper_build_device_state_success_flow():
         properties={},
     )
     with patch.object(
-        poller, "_get_cached_device_key_from_prop", return_value="target_key"
+        poller, "_get_state_node_from_prop", return_value="target_key"
     ) as mock_get_key:
         res = await poller._build_device_state_from_props()
         mock_get_key.assert_called_once_with(op_success)
@@ -500,7 +500,7 @@ async def test_sniper_update_properties_pending_and_is_valid_mutations():
     poller._pending_updates = {"prop1": ("pending_val", time.time() - 5.0)}
 
     with patch.object(
-        poller, "_get_cached_device_key_from_prop", return_value="prop1_key"
+        poller, "_get_state_node_from_prop", return_value="prop1_key"
     ) as mock_get_key:
         base_state = {"dummy": "state"}
         await poller.async_update_properties_from_state(base_state)

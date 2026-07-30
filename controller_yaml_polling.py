@@ -408,20 +408,8 @@ class YamlStatePoller:
             self._prop_template_key_cache[prop_id] = None
             return None
 
-        # Fallback to regex for older YAMLs without state_node
-        import re
-        matches = re.findall(r"device_state\.([a-zA-Z0-9_\.]+)", template_string)
-        if matches:
-            node = matches[0].split(" ")[0].split("(")[0]
-        else:
-            node = None
-
-        self._prop_template_key_cache[prop_id] = node
-        return node
-
-    def _get_cached_device_key_from_prop(self, prop: Any) -> str | None:
-        """Alias for _get_state_node_from_prop for backward compatibility."""
-        return self._get_state_node_from_prop(prop)
+        self._prop_template_key_cache[prop_id] = None
+        return None
 
     def _inject_value_into_state(self, prop: Any, device_state: dict[str, Any], value: Any) -> None:
         """Safely inject an optimistic value into the raw device state using state_node & native converters."""
@@ -458,7 +446,7 @@ class YamlStatePoller:
             return
 
         _LOGGER.debug(  # pragma: no mutate
-            "%s [DualMemory] Injecting value '%s' (dev_val='%s') into state_node '%s'",
+            "%s Injecting value '%s' (dev_val='%s') into state_node '%s'",
             self.controller.log_prefix,
             value,
             dev_val,
@@ -500,10 +488,9 @@ class YamlStatePoller:
         if op_id in ("hvac", "hvac_mode", ATTR_HVAC_MODE):
             is_off = str(value).lower() == "off" or str(dev_val).lower() == "off"
             p_val = "Off" if is_off else "On"
-            if "AC_FUN_POWER" in device_state:
-                device_state["AC_FUN_POWER"] = p_val
-            elif "Operation" in device_state and isinstance(device_state["Operation"], dict):
-                device_state["Operation"]["power"] = p_val
+            power_prop = self.controller.loader.operations.get("power")
+            if power_prop:
+                self._inject_value_into_state(power_prop, device_state, p_val)
 
     def _find_device_node(self, state_dict: dict[str, Any], id_map: dict[str, Any]) -> dict[str, Any] | None:
         """Find the matching device node in the state dictionary based on id_map."""

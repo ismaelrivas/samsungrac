@@ -270,7 +270,7 @@ async def test_async_update_state_coordinator_callback():
         )
 
 
-def test_get_cached_device_key_from_prop_and_register():
+def test_get_state_node_from_prop_and_register():
     """Evalúa la caché de plantillas y el registro de pending_updates."""
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)
@@ -281,22 +281,22 @@ def test_get_cached_device_key_from_prop_and_register():
     assert val == "Cool"
     assert isinstance(ts, float)
 
-    assert poller._get_cached_device_key_from_prop(MagicMock(spec=[])) is None
+    assert poller._get_state_node_from_prop(MagicMock(spec=[])) is None
 
     prop = MagicMock()
     prop.id = "target_prop"
     prop.status_template = None
 
-    assert poller._get_cached_device_key_from_prop(prop) is None
+    assert poller._get_state_node_from_prop(prop) is None
 
     prop.id = "target_prop_2"
     prop.status_template = MagicMock()
     prop.status_template.template = "{{ device_state.power }}"
-    assert poller._get_cached_device_key_from_prop(prop) == "power"
+    assert poller._get_state_node_from_prop(prop) == "power"
     assert poller._prop_template_key_cache["target_prop_2"] == "power"
 
     prop.status_template.template = "{{ device_state.mode }}"
-    assert poller._get_cached_device_key_from_prop(prop) == "power"
+    assert poller._get_state_node_from_prop(prop) == "power"
 
 
 def test_mask_sensitive_data():

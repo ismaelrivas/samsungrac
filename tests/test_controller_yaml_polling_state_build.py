@@ -90,7 +90,7 @@ async def test_build_device_state_from_props_samsung_2878_exhaustive():
         "fan_alt": "AC_FUN_WINDLEVEL",
         "swing": "CUSTOM_KEY",
     }
-    poller._get_cached_device_key_from_prop = MagicMock(
+    poller._get_state_node_from_prop = MagicMock(
         side_effect=lambda op: key_mapping.get(getattr(op, "id", None), "CUSTOM_KEY")
     )
 
@@ -618,8 +618,8 @@ async def test_build_device_state_from_hass_reconstruction():
 
     # We mock _get_hass_attr_for_op_id
     poller._get_hass_attr_for_op_id = MagicMock(side_effect=lambda x: x)
-    # We mock _get_cached_device_key_from_prop
-    poller._get_cached_device_key_from_prop = MagicMock(
+    # We mock _get_state_node_from_prop
+    poller._get_state_node_from_prop = MagicMock(
         side_effect=lambda op: "dev_mode" if op == mock_op else "dev_temp"
     )
 
@@ -838,7 +838,7 @@ async def test_build_device_state_from_hass_edge_cases():
     mock_controller.loader.operations = {"op": op}
     mock_controller.loader.properties = {}
 
-    poller._get_cached_device_key_from_prop = MagicMock(return_value=None)
+    poller._get_state_node_from_prop = MagicMock(return_value=None)
 
     hass_state = MagicMock()
     hass_state.hvac_mode = "hass_new"
@@ -866,7 +866,7 @@ async def test_build_device_state_from_props_other_op():
     mock_controller.loader.sensors = {}
 
     poller = YamlStatePoller(mock_controller)
-    poller._get_cached_device_key_from_prop = MagicMock(return_value="PurifierMode")
+    poller._get_state_node_from_prop = MagicMock(return_value="PurifierMode")
 
     res = await poller._build_device_state_from_props()
     assert res["PurifierMode"] == "On"
@@ -914,7 +914,7 @@ async def test_build_device_state_loop_control():
     mock_controller.loader.operations = {"op1": MockOpNone(), "op2": MockOpValid()}
     mock_controller.loader.properties = {}
 
-    poller._get_cached_device_key_from_prop = MagicMock(return_value="ValidKey")
+    poller._get_state_node_from_prop = MagicMock(return_value="ValidKey")
     mock_controller.config.get.return_value = "REST"
 
     res = await poller._build_device_state_from_props()
@@ -1121,7 +1121,7 @@ async def test_build_device_state_from_props_naked_dicts():
 
     poller._get_hass_attr_for_op_id = MagicMock(return_value="prop1")
     # Forzamos que se inyecte en un sub-diccionario para evaluar el fallo del len(list) > 0 y setdefaults
-    poller._get_cached_device_key_from_prop = MagicMock(
+    poller._get_state_node_from_prop = MagicMock(
         return_value="Devices.0.Wind.direction"
     )
 
@@ -1228,7 +1228,7 @@ async def test_evict_invalidated_pending_updates_pop_fallback():
     poller.controller.loader.operations = {"hvac_mode": MagicMock()}
     poller.controller.loader.properties = {}
 
-    poller._get_cached_device_key_from_prop = MagicMock(return_value=None)
+    poller._get_state_node_from_prop = MagicMock(return_value=None)
     # Metemos una key para que evalúe a True la lógica de añadir a invalidated
     poller._pending_updates = {"hvac_mode": ("v", 0)}
 
@@ -1286,7 +1286,7 @@ async def test_build_device_state_from_hass_attribute_missing():
     hass_state = MockHassState()
 
     # Evitamos que get_cached_device_key_from_prop invoque regex sobre mocks
-    poller._get_cached_device_key_from_prop = MagicMock(return_value=None)
+    poller._get_state_node_from_prop = MagicMock(return_value=None)
 
     # Ejecución
     res = await poller._build_device_state_from_hass(hass_state)
@@ -1361,7 +1361,7 @@ async def test_build_device_state_fallback_to_private_value():
 
     poller.controller.loader.operations = {"test_op": op}
     poller.controller.loader.properties = {}
-    poller._get_cached_device_key_from_prop = MagicMock(return_value="target_key")
+    poller._get_state_node_from_prop = MagicMock(return_value="target_key")
 
     res = await poller._build_device_state_from_props()
 
@@ -1483,7 +1483,7 @@ async def test_debug_fallback_boolean():
     ctrl.loader.sensors = {}
 
     poller = YamlStatePoller(ctrl)
-    poller._get_cached_device_key_from_prop = MagicMock(return_value="target")
+    poller._get_state_node_from_prop = MagicMock(return_value="target")
     poller.async_update_properties_from_state = AsyncMock()
 
     # ctrl NO tiene atributo 'debug'.
@@ -1560,7 +1560,7 @@ async def test_debug_fallback_exact_call():
     setattr(current_hass_state, "swing_mode", "on")
 
     poller = YamlStatePoller(ctrl)
-    poller._get_cached_device_key_from_prop = lambda x: "Key"
+    poller._get_state_node_from_prop = lambda x: "Key"
     poller._last_device_state = {"Key": "old_val"}
 
     # 3. Llamada al método real
@@ -1653,7 +1653,7 @@ async def test_build_device_state_power_op_fallback() -> None:
     mock_controller.loader.properties = {"power": power_prop}
 
     poller = YamlStatePoller(mock_controller)
-    poller._get_cached_device_key_from_prop = MagicMock(
+    poller._get_state_node_from_prop = MagicMock(
         side_effect=lambda op: "AC_FUN_OPMODE" if getattr(op, "id", None) == "hvac_mode" else "AC_FUN_POWER"
     )
 
@@ -1665,7 +1665,7 @@ async def test_build_device_state_power_op_fallback() -> None:
     # Test Case 2: BOTH return None -> No power_key injected
     mock_controller.loader.properties = {}
     poller2 = YamlStatePoller(mock_controller)
-    poller2._get_cached_device_key_from_prop = MagicMock(
+    poller2._get_state_node_from_prop = MagicMock(
         side_effect=lambda op: "AC_FUN_OPMODE" if getattr(op, "id", None) == "hvac_mode" else None
     )
 
@@ -1699,7 +1699,7 @@ async def test_build_device_state_power_ternary_mutual_exclusivity() -> None:
     mock_controller.loader.properties = {}
 
     poller_off = YamlStatePoller(mock_controller)
-    poller_off._get_cached_device_key_from_prop = MagicMock(
+    poller_off._get_state_node_from_prop = MagicMock(
         side_effect=lambda op: "AC_FUN_OPMODE" if getattr(op, "id", None) == "hvac_mode" else "AC_FUN_POWER"
     )
 
@@ -1717,7 +1717,7 @@ async def test_build_device_state_power_ternary_mutual_exclusivity() -> None:
     mock_controller.loader.operations = {"hvac_mode": hvac_cool, "power": power_op}
 
     poller_cool = YamlStatePoller(mock_controller)
-    poller_cool._get_cached_device_key_from_prop = MagicMock(
+    poller_cool._get_state_node_from_prop = MagicMock(
         side_effect=lambda op: "AC_FUN_OPMODE" if getattr(op, "id", None) == "hvac_mode" else "AC_FUN_POWER"
     )
 
@@ -1750,7 +1750,7 @@ async def test_build_device_state_power_key_strict_presence() -> None:
     mock_controller.loader.properties = {}
 
     poller = YamlStatePoller(mock_controller)
-    poller._get_cached_device_key_from_prop = MagicMock(
+    poller._get_state_node_from_prop = MagicMock(
         side_effect=lambda op: "AC_FUN_OPMODE" if getattr(op, "id", None) == "hvac_mode" else "AC_FUN_POWER"
     )
 
@@ -1796,14 +1796,14 @@ async def test_sniper_kill_final_power_key_none_mutant() -> None:
             return "FAKE_POWER_KEY"
         return None
 
-    poller._get_cached_device_key_from_prop = MagicMock(side_effect=_mock_get_cached_key)
+    poller._get_state_node_from_prop = MagicMock(side_effect=_mock_get_cached_key)
 
     # 4. Execute state building
     reconstructed_state = await poller._build_device_state_from_props()
 
     # 5. Silver Bullet Assertion: If line 706 mutates power_key = None, FAKE_POWER_KEY will NOT be in dictionary
     assert "FAKE_POWER_KEY" in reconstructed_state, (
-        "FINAL MUTANT SURVIVED! power_key = self._get_cached_device_key_from_prop(power_op) was mutated to None."
+        "FINAL MUTANT SURVIVED! power_key = self._get_state_node_from_prop(power_op) was mutated to None."
     )
     assert reconstructed_state["FAKE_POWER_KEY"] == "On", (
         "FINAL MUTANT SURVIVED! Expected 'FAKE_POWER_KEY' to be 'On'."

@@ -177,7 +177,7 @@ async def test_async_update_properties_pending_ttl_and_degradation():
     mock_prop_valid = MagicMock()
     mock_prop_valid.id = "prop_valid"
     mock_prop_valid.convert_hass_to_dev.return_value = "dev_val_valid"
-    poller._get_cached_device_key_from_prop = MagicMock(return_value="raw_key")
+    poller._get_state_node_from_prop = MagicMock(return_value="raw_key")
 
     mock_prop_stale = MagicMock()
     mock_prop_stale.id = "prop_stale"
@@ -351,7 +351,7 @@ async def test_async_update_properties_ttl():
 
     mock_controller = FakeController()
     poller = YamlStatePoller(mock_controller)
-    poller._get_cached_device_key_from_prop = MagicMock(return_value="WindLevel")
+    poller._get_state_node_from_prop = MagicMock(return_value="WindLevel")
 
     device_payload = {"WindLevel": "low_dev"}
 
@@ -433,7 +433,7 @@ async def test_async_update_properties_loop_sequences_and_eviction_handling():
     mock_controller.loader.is_fully_initialized = True
     mock_controller.debug = False
     poller = YamlStatePoller(mock_controller)
-    poller._get_cached_device_key_from_prop = MagicMock(return_value="power_key")
+    poller._get_state_node_from_prop = MagicMock(return_value="power_key")
 
     class FakeProp:
         def __init__(self, id_val):
@@ -869,7 +869,7 @@ async def test_async_update_properties_from_state_strict_logger():
     op_mock.async_update_state = AsyncMock()
     poller._pending_updates = {"test_op": ("val", time.time() - 15.0)}
     poller.controller.loader.properties = {"test_op": op_mock}
-    poller._get_cached_device_key_from_prop = MagicMock(return_value=None)
+    poller._get_state_node_from_prop = MagicMock(return_value=None)
 
     poller.controller.debug = False
 
@@ -885,7 +885,7 @@ async def test_evict_invalidated_updates_break_mutation():
     poller.controller.loader.properties = {"prop2": prop_mock}
 
     poller._pending_updates = {"op1": ("val", 0), "prop2": ("val", 0)}
-    poller._get_cached_device_key_from_prop = MagicMock(return_value="ValidKey")
+    poller._get_state_node_from_prop = MagicMock(return_value="ValidKey")
 
     push_data = {"ValidKey": "trigger"}
     poller._evict_invalidated_pending_updates(push_data)
@@ -909,7 +909,7 @@ def test_evict_invalidated_pending_updates_strict_logic():
     def mock_get_key(prop):
         return {"op1": "Key1", "op2": "Key2"}.get(prop.id)
 
-    poller._get_cached_device_key_from_prop = MagicMock(side_effect=mock_get_key)
+    poller._get_state_node_from_prop = MagicMock(side_effect=mock_get_key)
 
     # Push data carries matching value for Key2 ("v2") -> Key2 evicted, Key1 retained
     push_data = {"Key2": "v2"}
@@ -937,7 +937,7 @@ def test_evict_invalidated_pending_updates_float_formatting_match():
     temp_op.convert_hass_to_dev.side_effect = lambda v: str(v)
     poller.controller.loader.operations = {"temperature": temp_op}
     poller.controller.loader.properties = {}
-    poller._get_cached_device_key_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
+    poller._get_state_node_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
 
     now = time.time()
     poller._pending_updates["temperature"] = (22.0, now)
@@ -954,7 +954,7 @@ def test_evict_invalidated_pending_updates_value_mismatch_retained():
     temp_op.convert_hass_to_dev.side_effect = lambda v: str(v)
     poller.controller.loader.operations = {"temperature": temp_op}
     poller.controller.loader.properties = {}
-    poller._get_cached_device_key_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
+    poller._get_state_node_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
 
     now = time.time()
     # User requested 23.0
@@ -975,7 +975,7 @@ def test_evict_invalidated_pending_updates_ttl_fallback():
     temp_op.convert_hass_to_dev.side_effect = lambda v: str(v)
     poller.controller.loader.operations = {"temperature": temp_op}
     poller.controller.loader.properties = {}
-    poller._get_cached_device_key_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
+    poller._get_state_node_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
 
     # Stale timestamp (12 seconds ago > 10.0s TTL)
     stale_time = time.time() - 12.0
@@ -1066,7 +1066,7 @@ async def test_update_properties_time_exact_boundary(mock_time):
     poller.controller.loader.operations = {"test_op": op}
     poller.controller.loader.properties = {}
     poller.controller.loader.sensors = {}
-    poller._get_cached_device_key_from_prop = MagicMock(return_value="Key")
+    poller._get_state_node_from_prop = MagicMock(return_value="Key")
 
     await poller.async_update_properties_from_state(
         {"Key": "old_val"}, is_prediction=False
@@ -1094,7 +1094,7 @@ def test_evict_invalidated_pending_updates_loop_mutations():
     def mock_get_key(prop):
         return {"prop1": "Key1", "prop2": "Key2", "hvac_mode": "KeyHVAC"}.get(prop.id)
 
-    poller._get_cached_device_key_from_prop = MagicMock(side_effect=mock_get_key)
+    poller._get_state_node_from_prop = MagicMock(side_effect=mock_get_key)
 
     now = time.time()
     poller._pending_updates = {
@@ -1129,7 +1129,7 @@ def test_evict_invalidated_pending_updates_loop_continuation():
     temp_op.convert_hass_to_dev.side_effect = lambda v: str(v)
     poller.controller.loader.operations = {"temperature": temp_op}
     poller.controller.loader.properties = {}
-    poller._get_cached_device_key_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
+    poller._get_state_node_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
 
     now = time.time()
     # Insertion order: "null_entry" (None), "missing_prop_id" (no prop), then "temperature" (valid)
@@ -1154,7 +1154,7 @@ def test_evict_invalidated_pending_updates_converter_called_strictly():
     temp_op.convert_hass_to_dev = MagicMock(return_value="22")
     poller.controller.loader.operations = {"temperature": temp_op}
     poller.controller.loader.properties = {}
-    poller._get_cached_device_key_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
+    poller._get_state_node_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
 
     now = time.time()
     poller._pending_updates = {"temperature": (22.0, now)}
@@ -1174,7 +1174,7 @@ def test_evict_invalidated_pending_updates_exact_ttl_boundary(mock_time):
     temp_op.convert_hass_to_dev.side_effect = lambda v: str(v)
     poller.controller.loader.operations = {"temperature": temp_op}
     poller.controller.loader.properties = {}
-    poller._get_cached_device_key_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
+    poller._get_state_node_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
 
     # now (100.0) - timestamp (90.0) = EXACTLY 10.0s
     poller._pending_updates = {"temperature": (23.0, 90.0)}
@@ -1204,7 +1204,7 @@ def test_evict_invalidated_pending_updates_fallbacks_and_missing_converter():
     def mock_get_key(prop):
         return {"custom_prop": "CUSTOM_KEY", "hvac_mode": "KeyHVAC", "power": "AC_FUN_POWER"}.get(getattr(prop, "id", None))
 
-    poller._get_cached_device_key_from_prop = MagicMock(side_effect=mock_get_key)
+    poller._get_state_node_from_prop = MagicMock(side_effect=mock_get_key)
 
     now = time.time()
     poller._pending_updates = {
