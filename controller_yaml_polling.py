@@ -89,13 +89,13 @@ class YamlStatePoller:
         self._consecutive_connection_errors: int = 0
         
         # 💥 ISOLATED PURE STATE: Stores network truth without UI pollution
-        self._pure_network_state: dict[str, Any] = {}
+        self._pure_device_state: dict[str, Any] | None = None
         
-        # Shield Engine (Optimistic Locks)
-        self._pending_updates: dict[str, tuple[Any, float]] = {}
+        # Caches resolved state_nodes for properties
         self._prop_template_key_cache: dict[str, str | None] = {}
 
-        self.fan_modes_list_changed_pending_flicker: bool = False
+        # Shield Engine (Optimistic Locks)
+        self._pending_updates: dict[str, tuple[Any, float]] = {}
 
     def register_pending_update(self, property_id: str, value: Any) -> None:
         """Register a pending update to shield the UI from stale network polling echoes."""
@@ -224,30 +224,40 @@ class YamlStatePoller:
         device_state = await self.async_update_state()
         return copy.deepcopy(device_state) if device_state else None
 
+    def _requires_icmp_ping(self, device_type: str) -> bool:
+        """Determine if this device type requires an ICMP ping before polling."""
+        return device_type != DEVICE_TYPE_SAMSUNG_2878
+
+    async def _async_perform_icmp_check(self) -> None:
+        """Perform ICMP ping connectivity check."""
+        device_type = self.controller.config.get(CONF_DEVICE_TYPE)
+        if not self._requires_icmp_ping(device_type) or not getattr(self.controller, "ip_address", None):
+            return
+
+        network_reachable = await async_check_network_reachability(
+            self.controller.ip_address, self.controller.log_prefix
+        )
+        if not network_reachable:
+            self._consecutive_connection_errors += 1
+            if self._consecutive_connection_errors == 3:
+                self._try_create_repair_issue()
+            if self._consecutive_connection_errors >= 2:
+                raise CannotConnect(
+                    "Host unreachable (ICMP ping failed). Device is persistently offline."
+                )
+            raise CannotConnect("Host unreachable (ICMP ping failed).")
+
     async def async_update_state(self) -> dict[str, Any] | None:
         """Fetch the actual state from the device over the network."""
         if not self.controller.loader.state_getter:
             raise UpdateFailed("State getter is not initialized, cannot update state.")
 
-        if self.controller.config.get(
-            CONF_DEVICE_TYPE
-        ) != DEVICE_TYPE_SAMSUNG_2878 and getattr(self.controller, "ip_address", None):
-            try:
-                network_reachable = await async_check_network_reachability(
-                    self.controller.ip_address, self.controller.log_prefix
-                )
-                if not network_reachable:
-                    self._consecutive_connection_errors += 1
-                    if self._consecutive_connection_errors == 3:
-                        self._try_create_repair_issue()
-                    if self._consecutive_connection_errors >= 2:
-                        raise CannotConnect(
-                            "Host unreachable (ICMP ping failed). Device is persistently offline."
-                        )
-                    raise CannotConnect("Host unreachable (ICMP ping failed).")
-            except Exception as diag_err:  # pylint: disable=broad-exception-caught
-                if isinstance(diag_err, CannotConnect):
-                    raise
+        try:
+            await self._async_perform_icmp_check()
+        except CannotConnect:
+            raise
+        except Exception as diag_err:
+            _LOGGER.debug("%s ICMP check failed: %s", self.controller.log_prefix, diag_err)
 
         try:
             full_device_state = (
@@ -342,15 +352,9 @@ class YamlStatePoller:
                     )
 
                     if self.controller.discovered_devices:
-                        device_to_discover = None
-
-                        if device_type == DEVICE_TYPE_MIM_H03:
-                            device_to_discover = next(
-                                (d for d in self.controller.discovered_devices if d and d.get("id") != "0" and "Mode" in d),
-                                None,
-                            )
-                        else:
-                            device_to_discover = self.controller.discovered_devices[0]
+                        device_to_discover = self._discover_target_node(
+                            device_type, self.controller.discovered_devices
+                        )
 
                         if device_to_discover:
                             id_path = id_map.get("id")
@@ -422,27 +426,33 @@ class YamlStatePoller:
             if is_last:
                 if isinstance(current, dict):
                     current[part] = value
-                elif isinstance(current, list):
-                    if part.isdigit():
-                        idx = int(part)
-                        while len(current) <= idx:
-                            current.append(None)
-                        current[idx] = value
+                elif isinstance(current, list) and part.isdigit():
+                    idx = int(part)
+                    if idx > 100:
+                        raise ValueError("Array index too large, preventing memory exhaustion.")
+                    while len(current) <= idx:
+                        current.append(None)
+                    current[idx] = value
                 break
 
             if isinstance(current, dict):
                 if part not in current or current[part] is None:
                     current[part] = [] if (next_part and next_part.isdigit()) else {}
                 current = current[part]
-            elif isinstance(current, list) and part.isdigit():
+                continue
+
+            if isinstance(current, list) and part.isdigit():
                 idx = int(part)
+                if idx > 100:
+                    raise ValueError("Array index too large, preventing memory exhaustion.")
                 while len(current) <= idx:
                     current.append({})
                 if current[idx] is None:
                     current[idx] = [] if (next_part and next_part.isdigit()) else {}
                 current = current[idx]
-            else:
-                break
+                continue
+
+            break
 
     def _inject_value_into_state(self, prop: Any, device_state: dict[str, Any], value: Any) -> None:
         """Safely inject an optimistic value into the raw device state using state_node & native converters."""
@@ -643,11 +653,6 @@ class YamlStatePoller:
                     corrections[op.id] = new_value
                     self._inject_value_into_state(op, device_to_process, new_value)
 
-                if (
-                    getattr(op, "feature_flag", getattr(op, "_feature_flag", None))
-                    == ClimateEntityFeature.FAN_MODE
-                ):
-                    self.fan_modes_list_changed_pending_flicker = True
         return corrections
 
     async def async_update_properties_from_state(
