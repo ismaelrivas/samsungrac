@@ -396,28 +396,6 @@ class YamlStatePoller:
             self._prop_template_key_cache[prop_id] = state_node
             return state_node
 
-        # Fallback map for 2878 XML nodes (8888 JSON has state_node defined in yaml)
-        hardcoded_map = {
-            "hvac": "AC_FUN_OPMODE",
-            "hvac_mode": "AC_FUN_OPMODE",
-            "power": "AC_FUN_POWER",
-            "fan": "AC_FUN_WINDLEVEL",
-            "fan_mode": "AC_FUN_WINDLEVEL",
-            "temperature": "AC_FUN_TEMPSET",
-            "target_temperature": "AC_FUN_TEMPSET",
-            "current_temperature": "AC_FUN_TEMPNOW",
-            "swing": "AC_FUN_DIRECTION",
-            "swing_mode": "AC_FUN_DIRECTION",
-            "preset": "AC_FUN_COMODE",
-            "preset_mode": "AC_FUN_COMODE",
-            "purify": "AC_ADD_SPI",
-            "auto_clean": "AC_ADD_AUTOCLEAN",
-            "beep": "AC_ADD_BEEP",
-        }
-        if prop_id in hardcoded_map:
-            self._prop_template_key_cache[prop_id] = hardcoded_map[prop_id]
-            return hardcoded_map[prop_id]
-
         status_tmpl = getattr(prop, "status_template", None)
         if not status_tmpl:
             self._prop_template_key_cache[prop_id] = None
@@ -430,42 +408,13 @@ class YamlStatePoller:
             self._prop_template_key_cache[prop_id] = None
             return None
 
-        # Known Protocol Mappings (2878 & 8888 REST API)
-        if "AC_FUN_OPMODE" in template_string:
-            node = "AC_FUN_OPMODE"
-        elif "AC_FUN_POWER" in template_string and prop_id == "power":
-            node = "AC_FUN_POWER"
-        elif "AC_FUN_TEMPSET" in template_string:
-            node = "AC_FUN_TEMPSET"
-        elif "AC_FUN_WINDLEVEL" in template_string:
-            node = "AC_FUN_WINDLEVEL"
-        elif "AC_FUN_COMODE" in template_string:
-            node = "AC_FUN_COMODE"
-        elif "AC_FUN_DIRECTION" in template_string:
-            node = "AC_FUN_DIRECTION"
-        elif "AC_ADD_SPI" in template_string:
-            node = "AC_ADD_SPI"
-        elif "AC_ADD_AUTOCLEAN" in template_string:
-            node = "AC_ADD_AUTOCLEAN"
-        elif "AC_ADD_BEEP" in template_string:
-            node = "AC_ADD_BEEP"
-        elif "Mode.modes" in template_string:
-            node = "Mode.modes.0"
-        elif "Mode.options" in template_string:
-            node = "Mode.options.0"
-        elif "Operation.power" in template_string:
-            node = "Operation.power"
-        elif "Temperatures" in template_string:
-            node = "Temperatures.0.desired"
-        elif "Wind.speedLevel" in template_string:
-            node = "Wind.speedLevel"
+        # Fallback to regex for older YAMLs without state_node
+        import re
+        matches = re.findall(r"device_state\.([a-zA-Z0-9_\.]+)", template_string)
+        if matches:
+            node = matches[0].split(" ")[0].split("(")[0]
         else:
-            import re
-            matches = re.findall(r"device_state\.([a-zA-Z0-9_\.]+)", template_string)
-            if matches:
-                node = matches[0].split(" ")[0].split("(")[0]
-            else:
-                node = None
+            node = None
 
         self._prop_template_key_cache[prop_id] = node
         return node
@@ -786,11 +735,7 @@ class YamlStatePoller:
         corrections = self._predict_dependency_cascades(device_to_process)
 
         self._rebuild_attributes()
-        
-        # 💥 ABSOLUTE SHIELD: Poison raw RAM with shielded copy
-        st_getter = self.controller.loader.state_getter
-        if st_getter and not is_prediction:
-            self._set_prop_value(st_getter, device_to_process)
+
 
         if is_prediction:
             _LOGGER.debug("%s [Forensic] Prediction ended. Corrections=%s", self.controller.log_prefix, corrections) # pragma: no mutate
@@ -886,35 +831,6 @@ class YamlStatePoller:
         if not prop_to_change:
             return ClimateEntityFeature(0), {}
 
-        # 💥 MEMORY FLUSH: Synchronize evaluated UI state to raw memory BEFORE mode transition.
-        # This prevents YAML status_templates from dropping their masks and revealing stale raw 
-        # hardware values during a transition.
-        if property_name == ATTR_HVAC_MODE:
-            fan_op = self.controller.loader.operations.get("fan")
-            if not fan_op:
-                fan_op = self.controller.loader.operations.get(ATTR_FAN_MODE)
-            
-            if fan_op:
-                current_fan = self._get_prop_value(fan_op)
-                if current_fan and current_fan != STATE_UNKNOWN:
-                    _LOGGER.debug(  # pragma: no mutate
-                        "%s [Forensic] Memory Flush: Injecting current evaluated fan '%s' into raw memory before transition",  # pragma: no mutate
-                        self.controller.log_prefix, current_fan  # pragma: no mutate
-                    )  # pragma: no mutate
-                    self._inject_value_into_state(fan_op, st_getter.value, current_fan)
-
-            temp_op = self.controller.loader.operations.get("temperature")
-            if not temp_op:
-                temp_op = self.controller.loader.operations.get(ATTR_TEMPERATURE)
-            
-            if temp_op:
-                current_temp = self._get_prop_value(temp_op)
-                if current_temp and current_temp != STATE_UNKNOWN:
-                    _LOGGER.debug(  # pragma: no mutate
-                        "%s [Forensic] Memory Flush: Injecting current evaluated temperature '%s' into raw memory before transition",  # pragma: no mutate
-                        self.controller.log_prefix, current_temp  # pragma: no mutate
-                    )  # pragma: no mutate
-                    self._inject_value_into_state(temp_op, st_getter.value, current_temp)
 
         if new_value is not None and hasattr(new_value, "value") and not isinstance(new_value, dict):
             new_value = new_value.value

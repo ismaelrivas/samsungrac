@@ -35,6 +35,7 @@ device:
           value: 'on'
         'off': # must be quoted otherwise is interpreted as false
           value: 'off'
+      state_node: 'components.main.switch.switch.value'
       status_template: '{{ "heat" if device_state.components.main.switch.switch.value == "on" else "off" }}'
       connection_template: '{ "json": { "commands": [ {"component": "main", "capability": "switch", "command": "{{value}}" } ] } }'
     preset: # preset_mode
@@ -43,6 +44,7 @@ device:
         Eco: {}
         Std: {}
         Force: {}
+      state_node: 'components.main.airConditionerMode.airConditionerMode.value'
       status_template: '{{ device_state.components.main.airConditionerMode.airConditionerMode.value | capitalize }}'
       connection_template: '{ "json": { "commands": [ {"component": "main", "capability": "switch", "command": "off" }, { "component": "main", "capability": "airConditionerMode", "command": "setAirConditionerMode", "arguments": [ "{{value|lower}}" ] } ] } }'
     power:
@@ -50,10 +52,12 @@ device:
       values:
         'on': {}
         'off': {}
+      state_node: 'components.main.switch.switch.value'
       status_template: '{{ device_state.components.main.switch.switch.value }}'
       connection_template: '{ "json": { "commands": [ {"component": "main", "capability": "switch", "command": "{{value}}" } ] } }'
     temperature:
       type: number
+      state_node: 'components.main.thermostatCoolingSetpoint.coolingSetpoint.value'
       status_template: '{{ device_state.components.main.thermostatCoolingSetpoint.coolingSetpoint.value | float }}'
       connection_template: '{ "json": { "commands": [ {"component": "main", "capability": "switch", "command": "off" }, { "component": "main", "capability": "thermostatCoolingSetpoint", "command": "setCoolingSetpoint", "arguments": [ {{value | int}} ] } ] } }'
   attributes:

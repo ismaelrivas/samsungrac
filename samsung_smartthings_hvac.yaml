@@ -35,6 +35,7 @@ device:
         cool: {}
         heat: {}
         'off': {} # must be quoted otherwise is interpreted as false
+      state_node: 'components.INDOOR1.airConditionerMode.airConditionerMode.value'
       status_template: '{{ device_state.components.INDOOR1.airConditionerMode.airConditionerMode.value if device_state.components.INDOOR1.switch.switch.value == "on" else "off" }}'
       connection_template: >-
           {% if value == "off" %}
@@ -47,10 +48,12 @@ device:
       values:
         'on': {}
         'off': {}
+      state_node: 'components.INDOOR1.switch.switch.value'
       status_template: '{{ device_state.components.INDOOR1.switch.switch.value }}'
       connection_template: '{ "json": { "commands": [ {"component": "INDOOR1", "capability": "switch", "command": "{{value}}" } ] } }'
     temperature:
       type: number
+      state_node: 'components.INDOOR1.thermostatCoolingSetpoint.coolingSetpoint.value'
       status_template: '{{ 50 if device_state.components.INDOOR1.airConditionerMode.airConditionerMode.value == "auto" else device_state.components.INDOOR1.thermostatCoolingSetpoint.coolingSetpoint.value | float }}'
       connection_template: '{ "json": { "commands": [ {"component": "INDOOR1", "capability": "switch", "command": "off" }, { "component": "INDOOR1", "capability": "thermostatCoolingSetpoint", "command": "setCoolingSetpoint", "arguments": [ {{value | int}} ] } ] } }'
   attributes:
