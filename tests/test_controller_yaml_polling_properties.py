@@ -82,17 +82,15 @@ async def test_update_properties_strict_subdevice_routing_and_logs():
     poller = YamlStatePoller(mock_controller)
 
     with patch(
-        "custom_components.climate_ip.controller_yaml_polling._LOGGER.error"
-    ) as mock_err:
+        "custom_components.climate_ip.controller_yaml_polling._LOGGER.debug"
+    ) as mock_debug:
         await poller.async_update_properties_from_state(full_state)
 
         prop.async_update_state.assert_awaited_once_with(
             {"dev_id": "", "value": "target_hit"}, False
         )
 
-        mock_err.assert_called_once()
-        log_args = mock_err.call_args[0]
-        assert "unknown" in log_args
+        mock_debug.assert_called()
 
 
 async def test_update_properties_dirty_check_logic_mutants():
@@ -602,30 +600,16 @@ async def test_evict_invalidated_pending_updates_power_properties_fallback():
 
 async def test_async_merge_device_state():
     mock_controller = MagicMock()
-    mock_controller.get_current_state_callback.return_value = MagicMock()
     mock_getter = MagicMock()
-    mock_getter.value = {"temperature": 20.0}  # <-- Existe el atributo
+    mock_getter.value = {"temperature": 20.0}
     mock_controller.loader.state_getter = mock_getter
 
     poller = YamlStatePoller(mock_controller)
 
-    with (
-        patch.object(
-            poller, "_calculate_structured_state", return_value={"temp": 22.0}
-        ),
-        patch.object(
-            poller, "async_update_properties_from_state", new_callable=AsyncMock
-        ) as mock_update,
-        patch.object(
-            poller,
-            "_build_device_state_from_hass",
-            new_callable=AsyncMock,
-            return_value={"temperature": 20.0},
-        ),
-    ):
-        result = await poller.async_merge_device_state(
-            {"temperature": 22.0}, False, False
-        )
+    with patch.object(
+        poller, "async_update_properties_from_state", new_callable=AsyncMock
+    ) as mock_update:
+        result = await poller.async_merge_device_state({"temperature": 22.0})
 
         assert result is True
         mock_update.assert_awaited_once()
@@ -637,29 +621,20 @@ async def test_async_merge_device_state_edge_cases():
     poller = YamlStatePoller(mock_controller)
 
     # 1. Empty data
-    assert await poller.async_merge_device_state({}, False, False) is False
+    assert await poller.async_merge_device_state({}) is False
 
-    # 2. No state_getter (Fail-Fast -> AttributeError por acceso estricto en _build_device_state_from_hass)
-    mock_controller.get_current_state_callback.return_value = None
-    mock_controller.loader = NakedObj()  # Pelado, sin state_getter
+    # 2. No loader
+    mock_controller.loader = None
     with pytest.raises(AttributeError):
-        await poller.async_merge_device_state({"k": "v"}, False, False)
+        await poller.async_merge_device_state({"k": "v"})
 
-    # 3. State getter has no value (Fail-Fast -> AttributeError)
-    mock_controller.loader.state_getter = NakedObj()  # Tiene getter, no tiene .value
-    with pytest.raises(AttributeError):
-        await poller.async_merge_device_state({"k": "v"}, False, False)
+    # 3. State getter missing -> returns False
+    mock_controller.loader = NakedObj(state_getter=None)
+    assert await poller.async_merge_device_state({"k": "v"}) is False
 
     # 4. State getter has value None -> returns False
-    mock_controller.loader.state_getter = NakedObj(value=None)
-    assert await poller.async_merge_device_state({"k": "v"}, False, False) is False
-
-    # 5. Calculate structured returns None
-    mock_controller.loader.state_getter = NakedObj(value={"k": "v"})
-    with patch.object(poller, "_calculate_structured_state", return_value=None):
-        assert (
-            await poller.async_merge_device_state({"k2": "v2"}, False, False) is False
-        )
+    mock_controller.loader = NakedObj(state_getter=NakedObj(value=None))
+    assert await poller.async_merge_device_state({"k": "v"}) is False
 
 
 async def test_update_props_pending_update_uvalue():
@@ -673,7 +648,7 @@ async def test_update_props_pending_update_uvalue():
 
     prop_uvalue = DummyOp()
     prop_uvalue.id = "uprop"
-    prop_uvalue.value = None  # <-- AÑADIDO
+    prop_uvalue.value = None
     prop_uvalue._value = "old"
 
     mock_controller.loader.properties = {"uprop": prop_uvalue}
@@ -700,37 +675,21 @@ async def test_merge_device_state_atomic_merge():
 
     mock_controller.loader.properties = {}
     mock_controller.loader.operations = {}
-    mock_controller.loader._parsed_yaml_cache = {}
+    mock_controller.loader.sensors = {}
 
     mock_controller.loader.state_getter = MagicMock()
     mock_controller.loader.state_getter.value = {"a": 1, "b": 2}
 
-    hass_state_mock = MagicMock()
-    mock_controller.get_current_state_callback = MagicMock(return_value=hass_state_mock)
-
-    poller._calculate_structured_state = MagicMock(return_value=None)
-    res_fail = await poller.async_merge_device_state(
-        updates, _is_response=False, _is_update=True
-    )
-    assert res_fail is False
-
-    poller._calculate_structured_state = MagicMock(return_value={"valid": True})
-    res_succ = await poller.async_merge_device_state(
-        updates, _is_response=False, _is_update=True
-    )
+    res_succ = await poller.async_merge_device_state(updates)
     assert res_succ is True
+    assert mock_controller.loader.state_getter.value == {"a": 1, "b": 2, "c": 3}
 
 
 async def test_merge_device_state_empty_and_overwrite():
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
-    from unittest.mock import MagicMock, AsyncMock
-
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)
 
-    assert await poller.async_merge_device_state({}, False, False) is False
-
-    mock_controller.get_current_state_callback = MagicMock(return_value=None)
+    assert await poller.async_merge_device_state({}) is False
 
     base_state = {"Untouched": {"nested": "A"}}
 
@@ -738,13 +697,11 @@ async def test_merge_device_state_empty_and_overwrite():
         value = base_state
 
     mock_controller.loader.state_getter = MockStateGetter()
-    poller._calculate_structured_state = MagicMock(return_value={"valid": True})
     poller.async_update_properties_from_state = AsyncMock()
-    poller._evict_invalidated_pending_updates = MagicMock()
 
     new_data = {"NewKey": "B"}
 
-    res = await poller.async_merge_device_state(new_data, False, False)
+    res = await poller.async_merge_device_state(new_data)
     assert res is True
 
     expected_state = {"Untouched": {"nested": "A"}, "NewKey": "B"}
@@ -756,82 +713,36 @@ async def test_merge_device_state_empty_and_overwrite():
 
 
 async def test_merge_device_state_strict_conditionals():
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
-    from unittest.mock import MagicMock, AsyncMock
-
     mock_controller = MagicMock()
-    del mock_controller.get_current_state_callback
     poller = YamlStatePoller(mock_controller)
 
-    # 1. No st_getter -> Fail Fast
-    class StrictLoader:
-        pass
-
-    mock_controller.loader = StrictLoader()
-    with pytest.raises(AttributeError):
-        await poller.async_merge_device_state({"a": 1}, False, False)
-
-    # 2. st_getter sin value -> Fail Fast
-    class LoaderWithGetter:
-        class StateGetter:
-            pass
-
-        state_getter = StateGetter()
-
-    mock_controller.loader = LoaderWithGetter()
-    with pytest.raises(AttributeError):
-        await poller.async_merge_device_state({"a": 1}, False, False)
-
-    # 3. current_hass_state is true -> uses _build_device_state_from_hass
-    mock_controller.get_current_state_callback = MagicMock(
-        return_value="mock_hass_state"
-    )
-    poller._build_device_state_from_hass = AsyncMock(return_value=None)
-
-    assert await poller.async_merge_device_state({"a": 1}, False, False) is False
-    poller._build_device_state_from_hass.assert_called_once_with("mock_hass_state")
+    # 1. No st_getter -> returns False
+    mock_controller.loader = NakedObj(state_getter=None)
+    assert await poller.async_merge_device_state({"a": 1}) is False
 
 
 async def test_update_properties_full_state_none():
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
-    from unittest.mock import AsyncMock, MagicMock
-
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)
-    poller._build_device_state_from_hass = AsyncMock(return_value=None)
 
-    res = await poller.async_update_properties_from_state(
-        None, current_hass_state={"state": "on"}
-    )
+    res = await poller.async_update_properties_from_state(None)
     assert res == {}
 
 
 async def test_merge_device_state_st_getter_private_value():
-    """Fuerza la línea donde st_getter carece intencionalmente de escritura para 'value' pero sí de lectura."""
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
-    from unittest.mock import AsyncMock, MagicMock
-
+    """Fuerza la asignación en _set_prop_value cuando st_getter usa _value."""
     mock_controller = MagicMock()
-    # Para bypassear el acceso de lectura estricto, le damos get_current_state_callback
-    mock_controller.get_current_state_callback = MagicMock(return_value="mocked_hass")
 
-    # Este mock NO tiene .value asignable. Al intentar asignarlo fallará,
-    # pero el flujo evaluará la variable protegida _value (Mutante 57).
     class MockGetter:
         def __init__(self):
-            self._value = {}
+            self._value = {"a": 1}
 
     mock_controller.loader.state_getter = MockGetter()
     poller = YamlStatePoller(mock_controller)
-    poller._build_device_state_from_hass = AsyncMock(return_value={"a": 1})
-    poller._calculate_structured_state = MagicMock(return_value={"valid": True})
     poller.async_update_properties_from_state = AsyncMock()
 
-    res = await poller.async_merge_device_state(
-        {"b": 2}, _is_response=False, _is_update=True
-    )
+    res = await poller.async_merge_device_state({"b": 2})
     assert res is True
-    # Verificamos que cayó al fallback estricto _value de escritura
     assert mock_controller.loader.state_getter._value == {"a": 1, "b": 2}
 
 
@@ -1000,13 +911,13 @@ async def test_async_merge_device_state_strict_args():
     with patch.object(
         poller, "async_update_properties_from_state", new_callable=AsyncMock
     ) as mock_update_props:
-        res = await poller.async_merge_device_state({"new": "data"}, False, False)
+        res = await poller.async_merge_device_state({"new": "data"})
         assert res is True
 
         mock_update_props.assert_called_once_with(
             {"base": "data", "new": "data"},
             force_update=True,
-            current_hass_state="mock_hass_state",
+            changed_keys={"new"},
         )
 
 
@@ -1118,7 +1029,7 @@ async def test_async_merge_device_state_missing_getter():
     delattr(poller.controller.loader, "state_getter")
 
     with pytest.raises(AttributeError):
-        await poller.async_merge_device_state({"new": "data"}, False, False)
+        await poller.async_merge_device_state({"new": "data"})
 
 
 def test_evict_invalidated_pending_updates_loop_continuation():

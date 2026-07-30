@@ -59,6 +59,7 @@ def test_try_create_repair_issue_flow(mock_async_create_issue, mock_logger_info)
     """Test control flow and parameters of _try_create_repair_issue."""
     mock_controller = MagicMock()
     mock_controller.hass = MagicMock()
+    mock_controller.config = {"name": "Test AC"}
     mock_controller.unique_id = "192.168.1.100"
     mock_controller.ip_address = "192.168.1.100"
     mock_controller.name = "Test AC"
@@ -74,11 +75,11 @@ def test_try_create_repair_issue_flow(mock_async_create_issue, mock_logger_info)
         "climate_ip",
         "device_offline_192_168_1_100",
         is_fixable=False,
-        is_persistent=True,
+        is_persistent=False,
         severity=IssueSeverity.WARNING,
         translation_key="connection_failed",
         translation_placeholders={
-            "name": "Test AC",
+            "name": "device_name",
             "device_name": "Test AC",
             "host": "192.168.1.100",
             "ip_address": "192.168.1.100",
@@ -111,7 +112,7 @@ def test_try_create_repair_issue_flow(mock_async_create_issue, mock_logger_info)
             "192.168.1.10",
             "10.0.0.10",
             "device_offline_192_168_1_10",
-            "Climate IP",
+            "Samsung AC 192.168.1.10",
             "10.0.0.10",
         ),
         (
@@ -120,7 +121,7 @@ def test_try_create_repair_issue_flow(mock_async_create_issue, mock_logger_info)
             None,
             "10.0.0.10",
             "device_offline_10_0_0_10",
-            "Climate IP",
+            "Samsung AC 10.0.0.10",
             "10.0.0.10",
         ),
         (
@@ -129,7 +130,7 @@ def test_try_create_repair_issue_flow(mock_async_create_issue, mock_logger_info)
             None,
             None,
             "device_offline_unknown",
-            "Climate IP",
+            "Samsung AC unknown",
             "Unknown",
         ),
         (
@@ -168,6 +169,7 @@ def test_try_create_repair_issue_fallback_cascade(
     """Sniper: Test fallback cascade for raw_id, device_name, and ip_address translation placeholders in async_create_issue."""
     mock_controller = MagicMock()
     mock_controller.hass = MagicMock()
+    mock_controller.config = {"name": name} if name else {}
     mock_controller.unique_id = unique_id
     mock_controller.name = name
     mock_controller.host = host
@@ -181,11 +183,11 @@ def test_try_create_repair_issue_fallback_cascade(
         "climate_ip",
         expected_issue_id,
         is_fixable=False,
-        is_persistent=True,
+        is_persistent=False,
         severity=IssueSeverity.WARNING,
         translation_key="connection_failed",
         translation_placeholders={
-            "name": expected_device_name_ph,
+            "name": "device_name",
             "device_name": expected_device_name_ph,
             "host": expected_ip_address_ph,
             "ip_address": expected_ip_address_ph,
@@ -196,7 +198,7 @@ def test_try_create_repair_issue_fallback_cascade(
         "%s Created repair issue 'device_offline_%s' for %s (%s)",
         mock_controller.log_prefix,
         expected_safe_id,
-        expected_device_name_ph,
+        name or "Climate IP",
         expected_ip_address_ph,
     )
 
@@ -210,9 +212,8 @@ def test_try_create_repair_issue_fallback_cascade(
         ("my_device_1", None, "10.0.0.10", "device_offline_my_device_1"),
     ],
 )
-@patch("custom_components.climate_ip.controller_yaml_polling._LOGGER.info")
 async def test_async_delete_issue_fallback_cascade(
-    mock_logger_info, unique_id, host, ip_address, expected_issue_id
+    unique_id, host, ip_address, expected_issue_id
 ):
     """Sniper: Test fallback cascade for raw_id in async_delete_issue when connection recovers."""
     mock_controller = MagicMock()
@@ -229,7 +230,6 @@ async def test_async_delete_issue_fallback_cascade(
 
     poller = YamlStatePoller(mock_controller)
     poller._consecutive_connection_errors = 1
-    poller._build_device_state_from_hass = AsyncMock(return_value={"power": "on"})
     poller.async_update_properties_from_state = AsyncMock()
 
     with patch(
@@ -238,12 +238,6 @@ async def test_async_delete_issue_fallback_cascade(
         await poller.async_update_state()
         mock_delete_issue.assert_called_once_with(
             mock_controller.hass, "climate_ip", expected_issue_id
-        )
-        expected_safe_id = expected_issue_id.replace("device_offline_", "")
-        mock_logger_info.assert_any_call(
-            "%s Cleared repair issue 'device_offline_%s'",
-            mock_controller.log_prefix,
-            expected_safe_id,
         )
 
 

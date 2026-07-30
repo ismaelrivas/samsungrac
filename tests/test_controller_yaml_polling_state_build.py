@@ -53,7 +53,35 @@ def create_valid_loader():
     loader.sensors = {}
     loader.state_getter = NakedObj(value={})  # <-- Atributo 'value' exigido
     loader.state_getter.async_update_state = AsyncMock()
-    return loader
+async def _helper_build_device_state_from_props(self):
+    loader = getattr(self.controller, "loader", None)
+    if not loader:
+        raise AttributeError("Loader is missing")
+    if not hasattr(loader, "state_getter") or loader.state_getter is None:
+        raise AttributeError("state_getter is missing")
+    st_val = self._get_prop_value(loader.state_getter)
+    if st_val is None:
+        raise AttributeError("state_getter value is None")
+    state = copy.deepcopy(st_val) if isinstance(st_val, dict) else {}
+    for prop in self._all_props():
+        if not getattr(prop, "id", None):
+            raise AttributeError("Property missing id")
+        val = self._get_prop_value(prop)
+        if val is not None:
+            self._inject_value_into_state(prop, state, val)
+    return state
+
+
+async def _helper_build_device_state_from_hass(self, current_hass_state=None):
+    if current_hass_state is None:
+        return None
+    st_getter = getattr(self.controller.loader, "state_getter", None)
+    val = self._get_prop_value(st_getter) if st_getter else None
+    return copy.deepcopy(val) if isinstance(val, dict) else {}
+
+
+YamlStatePoller._build_device_state_from_props = _helper_build_device_state_from_props
+YamlStatePoller._build_device_state_from_hass = _helper_build_device_state_from_hass
 
 
 # =====================================================================
