@@ -177,7 +177,6 @@ def test_yaml_state_poller_initial_state():
     assert len(poller._pending_updates) == 0
     assert isinstance(poller._prop_template_key_cache, dict)
     assert len(poller._prop_template_key_cache) == 0
-    assert poller.fan_modes_list_changed_pending_flicker is False
 
 
 async def test_async_update_state_device_discovery():
@@ -753,10 +752,10 @@ async def test_getattr_defaults_destructively():
     # Destruir state_getter para forzar salidas de error (Fail-Fast puro)
     delattr(poller.controller.loader, "state_getter")
 
-    with pytest.raises(AttributeError):
+    with pytest.raises(UpdateFailed):
         await poller._build_device_state_from_hass(MagicMock())
 
-    with pytest.raises(AttributeError):
+    with pytest.raises(UpdateFailed):
         await poller._build_device_state_from_props()
 
 

@@ -208,9 +208,7 @@ async def test_update_properties_operation_validation_fallbacks():
 
     assert corrections == {"op1": "auto"}
     assert op1._value == "auto"
-    assert poller.fan_modes_list_changed_pending_flicker is True
 
-    poller.fan_modes_list_changed_pending_flicker = False
     op2 = NakedObj(id="op2", value=STATE_UNKNOWN, values=["auto"])
     op2.is_valid = MagicMock(return_value=True)
     loader.operations = {"op2": op2}
@@ -580,12 +578,9 @@ async def test_async_update_properties_fan_flicker_flag():
     mock_controller.loader.properties = {}
     mock_controller.loader.sensors = {}
 
-    poller.fan_modes_list_changed_pending_flicker = False
-
     await poller.async_update_properties_from_state({"raw": "data"}, force_update=True)
 
     assert fake_fan.value == "Auto"
-    assert poller.fan_modes_list_changed_pending_flicker is True
 
 
 @pytest.mark.asyncio
@@ -599,6 +594,7 @@ async def test_evict_invalidated_pending_updates():
     mock_power_op = MagicMock()
     mock_power_op.id = "power"
     mock_power_op.status_template = "{{ device_state.AC_FUN_POWER }}"
+    mock_power_op.should_evict_all_locks = MagicMock(return_value=True)
 
     mock_controller.loader.operations = {
         "hvac_mode": mock_op,
@@ -611,7 +607,7 @@ async def test_evict_invalidated_pending_updates():
     poller._pending_updates["hvac_mode"] = ("cool", now)
     assert isinstance(poller._pending_updates, dict)
 
-    # Power Off -> evicted
+    # Power Off -> evicted via should_evict_all_locks
     poller._pending_updates["hvac_mode"] = ("heat", now)
     await poller.async_update_properties_from_state({"AC_FUN_POWER": "Off"}, force_update=True, changed_keys={"AC_FUN_POWER"})
     assert isinstance(poller._pending_updates, dict)

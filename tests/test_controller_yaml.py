@@ -565,12 +565,6 @@ def test_yaml_controller_setters_strict_assignment(mock_yaml_controller) -> None
     assert mock_yaml_controller._token == "target_token"
     assert mock_yaml_controller._config[CONF_TOKEN] == "target_token"
 
-    # 3. fan_modes_list_changed_pending_flicker (delegación estricta)
-    mock_yaml_controller.fan_modes_list_changed_pending_flicker = True
-    assert mock_yaml_controller.poller.fan_modes_list_changed_pending_flicker is True
-    mock_yaml_controller.fan_modes_list_changed_pending_flicker = False
-    assert mock_yaml_controller.poller.fan_modes_list_changed_pending_flicker is False
-
 
 def test_yaml_controller_available_property(mock_yaml_controller) -> None:
     """Aniquila los 8 mutants in available property across all 3 branches."""

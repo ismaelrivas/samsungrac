@@ -1815,6 +1815,11 @@ async def test_build_device_state_power_ternary_mutual_exclusivity() -> None:
     hvac_off.value = "Off"
     hvac_off.convert_hass_to_dev.return_value = "Off"
 
+    def mock_apply_off(state, val, dev_val):
+        state["AC_FUN_POWER"] = "Off"
+
+    hvac_off.apply_optimistic_cascades = MagicMock(side_effect=mock_apply_off)
+
     mock_controller.loader.operations = {"hvac_mode": hvac_off, "power": power_op}
     mock_controller.loader.properties = {}
 
@@ -1831,6 +1836,11 @@ async def test_build_device_state_power_ternary_mutual_exclusivity() -> None:
     hvac_cool.id = "hvac_mode"
     hvac_cool.value = "Cool"
     hvac_cool.convert_hass_to_dev.return_value = "Cool"
+
+    def mock_apply_cool(state, val, dev_val):
+        state["AC_FUN_POWER"] = "On"
+
+    hvac_cool.apply_optimistic_cascades = MagicMock(side_effect=mock_apply_cool)
 
     mock_controller.loader.operations = {"hvac_mode": hvac_cool, "power": power_op}
 
