@@ -5,9 +5,10 @@ import asyncio
 import copy
 import logging
 import time
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 
+@runtime_checkable
 class YamlPropertyProtocol(Protocol):
     """Protocol defining the interface for YAML properties and operations."""
 
@@ -587,8 +588,13 @@ class YamlStatePoller:
                         if op.should_evict_all_locks(pure_device_to_process, changed_keys):
                             global_evict = True
                             break
-                    except Exception:  # pylint: disable=broad-exception-caught
-                        pass
+                    except Exception as e:  # pylint: disable=broad-exception-caught
+                        _LOGGER.debug(
+                            "%s Error evaluating global eviction for %s: %s",
+                            self.controller.log_prefix,
+                            getattr(op, "id", "unknown"),
+                            e,
+                        )
 
         now = time.time()
         
