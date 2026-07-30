@@ -5,7 +5,32 @@ import asyncio
 import copy
 import logging
 import time
-from typing import Any
+from typing import Any, Protocol
+
+
+class YamlPropertyProtocol(Protocol):
+    """Protocol defining the interface for YAML properties and operations."""
+
+    id: str
+    value: Any
+
+    def convert_hass_to_dev(self, value: Any) -> Any:
+        ...
+
+    def set_device_state_for_values(self, state: dict[str, Any]) -> None:
+        ...
+
+    def calculate_value_from_state(self, state: dict[str, Any]) -> Any:
+        ...
+
+    def async_update_state(self, state: dict[str, Any], debug: bool) -> Any:
+        ...
+
+    def should_evict_all_locks(self, state: dict[str, Any], changed_keys: set[str]) -> bool:
+        ...
+
+    def apply_optimistic_cascades(self, state: dict[str, Any], value: Any, dev_val: Any) -> None:
+        ...
 
 from homeassistant.components.climate import (
     ATTR_HVAC_MODE,
@@ -46,6 +71,12 @@ _LOGGER = logging.getLogger(__name__)
 class YamlStatePoller:
     """Class responsible for polling the device and managing state."""
 
+    CACHE_FRESHNESS_SEC = 2.0
+    LOCK_TTL_SEC = 45.0
+    LOCK_SHIELD_SEC = 3.0
+    LOCK_PHYSICAL_TIMEOUT_SEC = 15.0
+    MAX_LIST_INFLATION_SIZE = 100
+
     HASS_ATTR_MAP = {
         "hvac": "hvac_mode",
         "hvac_mode": "hvac_mode",
@@ -67,7 +98,7 @@ class YamlStatePoller:
     }
 
     @staticmethod
-    def _set_prop_value(prop: Any, value: Any) -> None:
+    def _set_prop_value(prop: YamlPropertyProtocol | Any, value: Any) -> None:
         """Safely set a value on a property object regardless of duck-typing interface."""
         if hasattr(prop, "value"):
             prop.value = value
@@ -75,7 +106,7 @@ class YamlStatePoller:
             prop._value = value
 
     @staticmethod
-    def _get_prop_value(prop: Any) -> Any:
+    def _get_prop_value(prop: YamlPropertyProtocol | Any) -> Any:
         """Safely get a value from a property object regardless of duck-typing interface."""
         return getattr(prop, "value", getattr(prop, "_value", None))
 
@@ -214,7 +245,7 @@ class YamlStatePoller:
     async def async_get_status(self) -> dict[str, Any] | None:
         """Fetch status prioritizing memory state to shield from polling flicker."""
         now_ts = time.time()
-        if self._cached_device_state and (now_ts - self._last_state_fetch_time < 2.0):
+        if self._cached_device_state and (now_ts - self._last_state_fetch_time < self.CACHE_FRESHNESS_SEC):
             st_getter = self.controller.loader.state_getter
             if st_getter and st_getter.value:
                 # Return RAM state injected with locks to lock the UI without flickering
@@ -428,8 +459,10 @@ class YamlStatePoller:
                     current[part] = value
                 elif isinstance(current, list) and part.isdigit():
                     idx = int(part)
-                    if idx > 100:
-                        raise ValueError("Array index too large, preventing memory exhaustion.")
+                    if idx > self.MAX_LIST_INFLATION_SIZE:
+                        raise ValueError(
+                            f"Path '{path_str}' attempted to inflate list beyond limit ({idx} > {self.MAX_LIST_INFLATION_SIZE})"
+                        )
                     while len(current) <= idx:
                         current.append(None)
                     current[idx] = value
@@ -443,8 +476,10 @@ class YamlStatePoller:
 
             if isinstance(current, list) and part.isdigit():
                 idx = int(part)
-                if idx > 100:
-                    raise ValueError("Array index too large, preventing memory exhaustion.")
+                if idx > self.MAX_LIST_INFLATION_SIZE:
+                    raise ValueError(
+                        f"Path '{path_str}' attempted to inflate list beyond limit ({idx} > {self.MAX_LIST_INFLATION_SIZE})"
+                    )
                 while len(current) <= idx:
                     current.append({})
                 if current[idx] is None:
@@ -454,7 +489,7 @@ class YamlStatePoller:
 
             break
 
-    def _inject_value_into_state(self, prop: Any, device_state: dict[str, Any], value: Any) -> None:
+    def _inject_value_into_state(self, prop: YamlPropertyProtocol | Any, device_state: dict[str, Any], value: Any) -> None:
         """Safely inject an optimistic value into the raw device state using state_node & native converters."""
         if not isinstance(device_state, dict):
             return
@@ -533,7 +568,7 @@ class YamlStatePoller:
 
     def _apply_anti_flicker_locks(
         self,
-        all_properties: list[Any],
+        all_properties: list[YamlPropertyProtocol | Any],
         device_to_process: dict[str, Any],
         pure_device_to_process: dict[str, Any],
         is_prediction: bool,
@@ -568,7 +603,7 @@ class YamlStatePoller:
 
         for prop_id, (pend_val, ts) in list(self._pending_updates.items()):
             # Extended TTL of 45s to process all AC queues without flickering
-            if now - ts > 45.0:
+            if now - ts > self.LOCK_TTL_SEC:
                 del self._pending_updates[prop_id]
                 _LOGGER.debug("%s [Forensic] Lock expired for %s", self.controller.log_prefix, prop_id) # pragma: no mutate
                 continue
@@ -597,7 +632,7 @@ class YamlStatePoller:
                 device_key = state_node.split(".")[0] if state_node else None
 
                 lock_age = now - ts
-                if lock_age < 3.0:
+                if lock_age < self.LOCK_SHIELD_SEC:
                     # Temporal Shield: Prevent immediate premature release on fast echo before physical AC reacts
                     can_release = False
                 elif changed_keys is not None:
@@ -616,7 +651,7 @@ class YamlStatePoller:
                 # If we blindly drop our NEW prediction just because a push update arrived, the UI will flicker back to the old state.
                 # We MUST enforce the lock until the AC pushes a value that MATCHES our prediction, OR 15s expires.
 
-                if not is_prediction and can_release and pure_val is not None and (self._values_match(pure_val, pend_val) or lock_age > 15.0):
+                if not is_prediction and can_release and pure_val is not None and (self._values_match(pure_val, pend_val) or lock_age > self.LOCK_PHYSICAL_TIMEOUT_SEC):
                     _LOGGER.debug("%s [Forensic] Lock released for %s. Match=%s, Age=%.1f", self.controller.log_prefix, prop_id, self._values_match(pure_val, pend_val), lock_age) # pragma: no mutate
                     del self._pending_updates[prop_id]
                 else:
