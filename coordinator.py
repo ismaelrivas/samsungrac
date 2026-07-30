@@ -39,22 +39,19 @@ _LOGGER = logging.getLogger(__name__)
 class PropertyDebouncer:
     """Debounces outgoing commands per property to shield hardware from request flooding."""
 
-    def __init__(self, hass: HomeAssistant, delay: float = 3.0) -> None:
+    def __init__(self, hass: HomeAssistant, delay: float = 2.0) -> None:
         """Initialize the property debouncer."""
         self.hass = hass
         self.delay = delay
-        self._timers: dict[str, asyncio.TimerHandle] = {}
-        self._last_execution: dict[str, float] = {}
+        self._global_timer: asyncio.TimerHandle | None = None
         self._pending_payloads: dict[str, tuple[Any, tuple, dict]] = {}
+        self._global_last_execution: float = 0.0
 
     def cancel_all(self) -> None:
         """Cancel all active timers and clear pending payloads."""
-        for prop, timer in list(self._timers.items()):
-            timer.cancel()
-            _LOGGER.debug(  # pragma: no mutate
-                "[Debouncer] Cancelled pending timer for property '%s'", prop
-            )
-        self._timers.clear()
+        if self._global_timer:
+            self._global_timer.cancel()
+            self._global_timer = None
         self._pending_payloads.clear()
 
     async def async_execute(
@@ -62,14 +59,16 @@ class PropertyDebouncer:
     ) -> bool:
         """Execute a command with trailing debouncing."""
         now = time.time()
-        last_exec = self._last_execution.get(property_name, 0.0)
+        # Use global execution time to debounce cross-property spams (Mode + Temp)
+        last_exec = self._global_last_execution
 
         # Immediate execution if outside the trailing window
         if now - last_exec >= self.delay:
-            if property_name in self._timers:
-                self._timers.pop(property_name).cancel()
+            if self._global_timer:
+                self._global_timer.cancel()
+                self._global_timer = None
             self._pending_payloads.pop(property_name, None)
-            self._last_execution[property_name] = now
+            self._global_last_execution = now
             _LOGGER.debug(  # pragma: no mutate
                 "[Debouncer] Immediate execution for property '%s' with args=%s, kwargs=%s",
                 property_name,
@@ -79,45 +78,48 @@ class PropertyDebouncer:
             return await coroutine_func(*args, **kwargs)
 
         # Enqueue / replace rapid command within trailing window
-        if property_name in self._timers:
-            self._timers.pop(property_name).cancel()
+        if self._global_timer:
+            self._global_timer.cancel()
+            self._global_timer = None
             _LOGGER.debug(  # pragma: no mutate
-                "[Debouncer] Replacing pending queued command for property '%s'", property_name
+                "[Debouncer] Replacing pending queued command and extending global timer"
             )
 
         self._pending_payloads[property_name] = (coroutine_func, args, kwargs)
 
         def _fire_delayed() -> None:
-            self._timers.pop(property_name, None)
-            payload = self._pending_payloads.pop(property_name, None)
-            if payload:
-                func, p_args, p_kwargs = payload
-                self._last_execution[property_name] = time.time()
+            self._global_timer = None
+            payloads = dict(self._pending_payloads)
+            self._pending_payloads.clear()
+            
+            if payloads:
+                self._global_last_execution = time.time()
                 _LOGGER.debug(  # pragma: no mutate
-                    "[Debouncer] Executing delayed queued command for property '%s'", property_name
+                    "[Debouncer] Executing delayed queued commands for: %s", list(payloads.keys())
                 )
 
                 async def _task_runner() -> None:
-                    try:
-                        await func(*p_args, **p_kwargs)
-                    except (UpdateFailed, CannotConnect, asyncio.TimeoutError, OSError) as err:
-                        _LOGGER.debug(  # pragma: no mutate
-                            "[Debouncer] Network error executing delayed command for '%s': %s",
-                            property_name,
-                            err,
-                            exc_info=True,
-                        )
-                    except Exception as err:  # pylint: disable=broad-exception-caught
-                        _LOGGER.debug(  # pragma: no mutate
-                            "[Debouncer] Error executing delayed command for '%s': %s",
-                            property_name,
-                            err,
-                            exc_info=True,
-                        )
+                    for prop, (func, p_args, p_kwargs) in payloads.items():
+                        try:
+                            await func(*p_args, **p_kwargs)
+                        except (UpdateFailed, CannotConnect, asyncio.TimeoutError, OSError) as err:
+                            _LOGGER.debug(  # pragma: no mutate
+                                "[Debouncer] Network error executing delayed command for '%s': %s",
+                                prop,
+                                err,
+                                exc_info=True,
+                            )
+                        except Exception as err:  # pylint: disable=broad-exception-caught
+                            _LOGGER.debug(  # pragma: no mutate
+                                "[Debouncer] Error executing delayed command for '%s': %s",
+                                prop,
+                                err,
+                                exc_info=True,
+                            )
 
                 self.hass.async_create_task(_task_runner())
 
-        self._timers[property_name] = self.hass.loop.call_later(self.delay, _fire_delayed)
+        self._global_timer = self.hass.loop.call_later(self.delay, _fire_delayed)
         _LOGGER.debug(  # pragma: no mutate
             "[Debouncer] Queued command for property '%s' with %.1fs delay", property_name, self.delay
         )
@@ -142,39 +144,10 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         self.controller = controller
         self.entry = entry
         self.debouncer = PropertyDebouncer(hass, delay=3.0)
+        self._global_network_lock = asyncio.Lock()
         # self._entity = None  # Reference to the ClimateIP entity
 
         # Inject callbacks into the controller to avoid circular dependencies.
-
-        # def _save_new_token(new_token: str) -> None:
-        #     """Callback to save the renewed token from the network layer."""
-
-        #     @callback
-        #     def _update_token() -> None:
-        #         new_data = dict(self.entry.data)
-        #         new_data["token"] = new_token
-        #         self.hass.config_entries.async_update_entry(self.entry, data=new_data)
-        #         _LOGGER.info(
-        #             "%s Persisted new network token to Config Entry.", self.log_prefix
-        #         )  # pragma: no mutate
-
-        #     try:
-        #         running_loop = asyncio.get_running_loop()
-        #     except RuntimeError:
-        #         running_loop = None
-
-        #     if running_loop is not None and running_loop is getattr(
-        #         self.hass, "loop", None
-        #     ):
-        #         _update_token()
-        #     else:
-        #         if hasattr(self.hass, "loop") and hasattr(
-        #             self.hass.loop, "call_soon_threadsafe"
-        #         ):
-        #             self.hass.loop.call_soon_threadsafe(_update_token)
-        #         _update_token()
-
-        # self.controller.on_token_refreshed = _save_new_token
 
         def _save_new_token(new_token: str) -> None:
             """Callback to save the renewed token from the network layer."""
@@ -200,39 +173,6 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
         # Inject the push updates handler callback.
         self.controller.on_push_update_callback = self.async_handle_push_update
-
-        # def _save_ssl_config(ssl_config: dict[str, Any]) -> None:
-        #     """Callback to save SSL configuration to the config entry."""
-
-        #     @callback
-        #     def _update_ssl() -> None:
-        #         current_data = dict(self.entry.data)
-        #         if current_data.get("_ssl_config_2878") != ssl_config:
-        #             current_data["_ssl_config_2878"] = ssl_config
-        #             self.hass.config_entries.async_update_entry(
-        #                 self.entry, data=current_data
-        #             )
-        #             _LOGGER.info(
-        #                 "%s Persisted SSL config to ConfigEntry data.", self.log_prefix
-        #             )  # pragma: no mutate
-
-        #     try:
-        #         running_loop = asyncio.get_running_loop()
-        #     except RuntimeError:
-        #         running_loop = None
-
-        #     if running_loop is not None and running_loop is getattr(
-        #         self.hass, "loop", None
-        #     ):
-        #         _update_ssl()
-        #     else:
-        #         if hasattr(self.hass, "loop") and hasattr(
-        #             self.hass.loop, "call_soon_threadsafe"
-        #         ):
-        #             self.hass.loop.call_soon_threadsafe(_update_ssl)
-        #         _update_ssl()
-
-        # self.controller.on_ssl_config_updated = _save_ssl_config
 
         def _save_ssl_config(ssl_config: dict[str, Any]) -> None:
             """Callback to save SSL configuration to the config entry."""
@@ -444,6 +384,13 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         # fmt: on
         return state
 
+    async def _locked_set_property(self, prop: str, val: Any) -> bool:
+        """Serialize network commands with a global lock and delay to prevent AC drops."""
+        async with self._global_network_lock:
+            res = await self.controller.async_set_property(prop, val)
+            await asyncio.sleep(1.0)  # 1s breathing room for the AC
+            return res
+
     async def async_set_property(
         self,
         property_name: str,
@@ -467,7 +414,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                     val = val.value
                 results.append(
                     await self.debouncer.async_execute(
-                        prop, self.controller.async_set_property, prop, val
+                        prop, self._locked_set_property, prop, val
                     )
                 )
 

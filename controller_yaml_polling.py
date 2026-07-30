@@ -445,14 +445,6 @@ class YamlStatePoller:
         if not state_node or not isinstance(state_node, str):
             return
 
-        _LOGGER.debug(  # pragma: no mutate
-            "%s Injecting value '%s' (dev_val='%s') into state_node '%s'",
-            self.controller.log_prefix,
-            value,
-            dev_val,
-            state_node,
-        )
-
         parts = state_node.split(".")
         current: Any = device_state
         for i, part in enumerate(parts):
@@ -609,7 +601,7 @@ class YamlStatePoller:
                     _LOGGER.debug("%s [Forensic] Lock released for %s. Match=%s, Age=%.1f", self.controller.log_prefix, prop_id, self._values_match(pure_val, pend_val), lock_age) # pragma: no mutate
                     del self._pending_updates[prop_id]
                 else:
-                    _LOGGER.debug("%s [Forensic] Lock enforced for %s. Injecting %s into state.", self.controller.log_prefix, prop_id, pend_val) # pragma: no mutate
+                    _LOGGER.debug("%s [Forensic] Lock enforced for %s.", self.controller.log_prefix, prop_id) # pragma: no mutate
                     # Force UI to stay in expected state and update local variable
                     self._set_prop_value(op, pend_val)
                         
