@@ -393,18 +393,21 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         # fmt: on
         return state
 
-    async def _locked_set_property(self, prop: str, val: Any) -> bool:
+    async def _locked_set_property(
+        self, prop: str, val: Any, device_id: str | None = None
+    ) -> bool:
         """Serialize network commands with a global lock and delay to prevent AC drops."""
         async with self._global_network_lock:
-            await self.controller.async_set_property(prop, val)
+            res = await self.controller.async_set_property(prop, val, device_id)
             await asyncio.sleep(HARDWARE_BREATHING_ROOM_SEC)
-            return True
+            return False if res is False else True
 
     async def async_set_property(
         self,
         property_name: str,
         new_value: Any,
         corrections: dict[str, Any] | None = None,
+        device_id: str | None = None,
     ) -> None:
         """Set a property on the controller. Optimistic state is handled by the entity."""
         try:
@@ -422,7 +425,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                     val = val.value
                 results.append(
                     await self.debouncer.async_execute(
-                        prop, self._locked_set_property, prop, val
+                        prop, self._locked_set_property, prop, val, device_id
                     )
                 )
 

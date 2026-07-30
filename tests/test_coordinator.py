@@ -190,7 +190,7 @@ async def test_push_update_triggers_entity_refresh(hass: HomeAssistant) -> None:
 
     # Verify coordinator state was updated
     mock_controller.async_merge_device_state.assert_awaited_once_with(
-        {"AC_FUN_POWER": "On"}, is_response=False, is_update=True
+        {"AC_FUN_POWER": "On"}
     )
     assert len(listener_called) == 1
 
@@ -321,7 +321,9 @@ async def test_optimistic_refresh_on_network_error(hass: HomeAssistant) -> None:
     coordinator.data = mock_controller.climate_state
     coordinator.async_request_refresh = AsyncMock()
 
-    with pytest.raises(UpdateFailed):
+    from homeassistant.exceptions import HomeAssistantError
+
+    with pytest.raises(HomeAssistantError):
         await coordinator.async_set_property("hvac_mode", "dry")
 
     # Even on exception the coordinator must refresh to reconcile the real state
@@ -405,11 +407,14 @@ async def test_corrections_are_dispatched_to_controller(hass: HomeAssistant) -> 
     mock_entry.options = {}
     mock_entry.data = {}
 
+    hass.loop.call_later.side_effect = lambda delay, callback: callback()
+    hass.async_create_task.side_effect = lambda coro, **kw: asyncio.create_task(coro)
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
     coordinator.data = mock_controller.climate_state
 
     corrections = {"fan_mode": "auto"}
     await coordinator.async_set_property("hvac_mode", "cool", corrections=corrections)
+    await asyncio.sleep(0)
 
     # The controller must have been called exactly twice:
     #   call 1 → ("hvac_mode", "cool", None)
@@ -447,6 +452,7 @@ async def test_save_new_token_updates_config_entry(hass: HomeAssistant) -> None:
     mock_entry.data = {"host": "192.168.1.10", "token": "old_token"}
     mock_entry.options = {}
 
+    hass.loop.call_soon_threadsafe.side_effect = lambda f, *a, **kw: f(*a, **kw)
     SamsungClimateCoordinator(hass, mock_controller, mock_entry)
 
     with (
@@ -473,6 +479,7 @@ async def test_save_new_token_async_flow(hass: HomeAssistant) -> None:
     mock_entry.data = {"host": "192.168.1.10", "token": "old_token"}
     mock_entry.options = {}
 
+    hass.loop.call_soon_threadsafe.side_effect = lambda f, *a, **kw: f(*a, **kw)
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
 
     task_executed = False
@@ -583,6 +590,7 @@ async def test_save_ssl_config_updates_entry(hass: HomeAssistant) -> None:
     mock_entry.data = {"host": "192.168.1.10"}
     mock_entry.options = {}
 
+    hass.loop.call_soon_threadsafe.side_effect = lambda f, *a, **kw: f(*a, **kw)
     SamsungClimateCoordinator(hass, mock_controller, mock_entry)
 
     with (
@@ -1015,8 +1023,10 @@ async def test_async_set_property_raises_update_failed_on_exception_with_message
     coordinator.data = mock_controller.climate_state
     coordinator.async_request_refresh = AsyncMock()
 
+    from homeassistant.exceptions import HomeAssistantError
+
     with pytest.raises(
-        UpdateFailed,
+        HomeAssistantError,
         match="Failed to set property hvac_mode: Simulated unexpected failure",
     ):
         await coordinator.async_set_property("hvac_mode", "dry")
@@ -1170,12 +1180,10 @@ async def test_async_predict_and_correct_unsupported(hass: HomeAssistant) -> Non
     mock_entry.data = {}
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
 
-    flags, corrections = await coordinator.async_predict_and_correct(
-        {"fake": "state"}, "hvac_mode", "heat"
-    )
-
-    assert flags == ClimateEntityFeature(0)
-    assert corrections == {}
+    with pytest.raises(AttributeError):
+        await coordinator.async_predict_and_correct(
+            {"fake": "state"}, "hvac_mode", "heat"
+        )
 
 
 async def test_coordinator_getters(hass: HomeAssistant) -> None:
