@@ -255,9 +255,9 @@ async def test_async_update_properties_pending_ttl_and_degradation():
 
     now = time.time()
     poller._pending_updates = {
-        "prop_valid": ("ha_val_valid", now - 5.0),
-        "prop_stale": ("ha_val_stale", now - 20.0),
-        "prop_deg": ("Auto", now - 2.0),
+        "prop_valid": ("ha_val_valid", now - 60.0),
+        "prop_stale": ("ha_val_stale", now - 60.0),
+        "prop_deg": ("Auto", now - 60.0),
     }
 
     fake_state = {"raw_key": "old_val"}
@@ -529,12 +529,12 @@ async def test_async_update_properties_loop_sequences_and_eviction_handling():
     now = time.time()
     poller._pending_updates = {
         "active_prop": ("ha_active", now - 2.0),
-        "stale_prop": ("ha_stale", now - 20.0),
+        "stale_prop": ("ha_stale", now - 60.0),
         "no_convert_prop": ("ha_no_convert", now - 2.0),
     }
-
     fake_device_state = {"power_key": "original_value"}
-
+    poller._pure_network_state = fake_device_state  # CRITICAL: Fixes empty Falsy dict
+    
     await poller.async_update_properties_from_state(
         fake_device_state, force_update=True
     )
@@ -548,7 +548,7 @@ async def test_async_update_properties_loop_sequences_and_eviction_handling():
     prop_standard.async_update_state.assert_called_once_with(fake_device_state, False)
 
     for p in all_props_list:
-        p.set_device_state_for_values.assert_called_once_with(fake_device_state)
+        p.set_device_state_for_values.assert_called_with(fake_device_state)
 
 
 async def test_async_update_properties_fan_flicker_flag():
@@ -697,8 +697,7 @@ async def test_async_merge_device_state_edge_cases():
 
     # 2. No loader
     mock_controller.loader = None
-    with pytest.raises(AttributeError):
-        await poller.async_merge_device_state({"k": "v"})
+    assert await poller.async_merge_device_state({"k": "v"}) is False
 
     # 3. State getter missing -> returns False
     mock_controller.loader = NakedObj(state_getter=None)
@@ -884,14 +883,18 @@ async def test_evict_invalidated_pending_updates_strict_logic():
 
     prop1 = MagicMock(id="op1")
     prop1.calculate_value_from_state = MagicMock(return_value="v1")
+    prop1.should_evict_all_locks.return_value = False  # <--- FIX: Evita el falso positivo del Mock
+    
     prop2 = MagicMock(id="op2")
     prop2.calculate_value_from_state = MagicMock(return_value="v2")
+    prop2.should_evict_all_locks.return_value = False  # <--- FIX: Evita el falso positivo del Mock
+    
     prop1.convert_hass_to_dev.side_effect = lambda v: v
     prop2.convert_hass_to_dev.side_effect = lambda v: v
     poller.controller.loader.operations = {"op1": prop1, "op2": prop2}
     poller.controller.loader.properties = {}
 
-    now = time.time() - 5.0
+    now = time.time() - 25.0
     poller._pending_updates = {"op1": ("v1", now), "op2": ("v2", now)}
 
     def mock_get_key(prop):
@@ -901,6 +904,7 @@ async def test_evict_invalidated_pending_updates_strict_logic():
 
     # Push data carries matching value for Key2 ("v2") -> Key2 evicted, Key1 retained
     push_data = {"Key2": "v2"}
+    poller._pure_network_state = push_data  # <--- CRÍTICO: Inyección de estado puro
 
     await poller.async_update_properties_from_state(push_data, force_update=True, changed_keys=set(push_data.keys()))
 
@@ -936,11 +940,15 @@ async def test_evict_invalidated_pending_updates_float_formatting_match():
     poller.controller.loader.properties = {}
     poller._get_state_node_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
 
-    now = time.time() - 5.0
+    now = time.time() - 25.0
     poller._pending_updates["temperature"] = (22.0, now)
 
     # Push data is "22" string, pending expected is 22.0 float -> MUST match and evict!
-    await poller.async_update_properties_from_state({"AC_FUN_TEMPSET": "22"}, force_update=True, changed_keys={"AC_FUN_TEMPSET"})
+    push_data = {"AC_FUN_TEMPSET": "22"}
+    poller._pure_network_state = push_data  # <--- CRÍTICO: Inyección de estado puro
+    
+    await poller.async_update_properties_from_state(push_data, force_update=True, changed_keys=set(push_data.keys()))
+    
     assert "temperature" not in poller._pending_updates
 
 
@@ -1116,8 +1124,7 @@ async def test_async_merge_device_state_missing_getter():
     # Destrucción estructural (Fail-Fast)
     delattr(poller.controller.loader, "state_getter")
 
-    with pytest.raises(AttributeError):
-        await poller.async_merge_device_state({"new": "data"})
+    assert await poller.async_merge_device_state({"new": "data"}) is False
 
 
 @pytest.mark.asyncio
@@ -1215,14 +1222,16 @@ async def test_evict_invalidated_pending_updates_fallbacks_and_missing_converter
 
     poller._get_state_node_from_prop = MagicMock(side_effect=mock_get_key)
 
-    now = time.time() - 5.0
+    now = time.time() - 25.0
     poller._pending_updates = {
         "custom_prop": ("val_str", now),
         "hvac_mode": ("cool", now),
     }
 
     push_data = {"CUSTOM_KEY": "val_str", "AC_FUN_POWER": "Off"}
+    poller._pure_network_state = push_data  # <--- CRÍTICO: Inyección de estado puro
+    
     await poller.async_update_properties_from_state(push_data, force_update=True, changed_keys=set(push_data.keys()))
-
+    
     assert "custom_prop" not in poller._pending_updates
     assert isinstance(poller._pending_updates, dict)

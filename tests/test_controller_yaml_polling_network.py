@@ -253,9 +253,9 @@ async def test_async_update_state_early_exits_and_ping():
     poller = YamlStatePoller(mock_controller)
 
     # 1. Sin state_getter (Kills mutants en `if not self.controller.loader.state_getter`)
-    mock_controller.loader.state_getter = None
-    with pytest.raises(UpdateFailed, match="State getter is not initialized"):
-        await poller.async_update_state()
+    poller.controller.loader = MagicMock()
+    poller.controller.loader.state_getter = None
+    assert await poller.async_update_state() is None
 
     # 2. Ping ICMP fallido para dispositivos no-2878
     mock_controller.loader.state_getter = AsyncMock()

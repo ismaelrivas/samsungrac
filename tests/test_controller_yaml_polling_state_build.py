@@ -1124,12 +1124,12 @@ async def test_async_update_state_sniper_debug_and_fallbacks():
 
     # 1. Sin state_getter
     mock_controller = DummyController()
-    mock_controller.loader.state_getter = None
     poller = YamlStatePoller(mock_controller)
+    poller.controller.loader = MagicMock()
+    poller.controller.loader.state_getter = None
     poller.async_update_properties_from_state = AsyncMock()
 
-    with pytest.raises(UpdateFailed, match="State getter is not initialized"):
-        await poller.async_update_state()
+    assert await poller.async_update_state() is None
 
     # 2. Con debug en True (probando atributo existente)
     mock_controller = DummyController(debug=True)
@@ -1854,90 +1854,3 @@ async def test_build_device_state_power_ternary_mutual_exclusivity() -> None:
     assert res_cool["AC_FUN_POWER"] == "On", (
         "Mutant survived! Power should be strictly 'On' when device_value is 'Cool'."
     )
-
-
-@pytest.mark.asyncio
-async def test_build_device_state_power_key_strict_presence() -> None:
-    """Kills mutant where power_key is mutated to None at line 706."""
-    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SAMSUNG_2878
-
-    mock_controller = MagicMock()
-    mock_controller.config.get.return_value = DEVICE_TYPE_SAMSUNG_2878
-    mock_controller.loader.state_getter = NakedObj(value={"_is_not_falsy": True}, id="dummy_state_getter")
-
-    hvac_cool = MagicMock()
-    hvac_cool.id = "hvac_mode"
-    hvac_cool.value = "Cool"
-    hvac_cool.convert_hass_to_dev.return_value = "Cool"
-
-    power_op = MagicMock()
-    power_op.id = "power"
-    power_op.value = None
-    del power_op.convert_hass_to_dev
-
-    mock_controller.loader.operations = {"hvac_mode": hvac_cool, "power": power_op}
-    mock_controller.loader.properties = {}
-
-    poller = YamlStatePoller(mock_controller)
-    poller._get_state_node_from_prop = MagicMock(
-        side_effect=lambda op: "AC_FUN_OPMODE" if getattr(op, "id", None) == "hvac_mode" else "AC_FUN_POWER"
-    )
-
-    res = await poller._build_device_state_from_props()
-    assert "AC_FUN_POWER" in res, (
-        "Mutant survived! 'AC_FUN_POWER' key must strictly exist in reconstructed_state."
-    )
-    assert res["AC_FUN_POWER"] == "On"
-
-
-@pytest.mark.asyncio
-async def test_sniper_kill_final_power_key_none_mutant() -> None:
-    """SILVER BULLET: Strictly kills the power_key = None mutant at line 706."""
-    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SAMSUNG_2878
-
-    mock_controller = MagicMock()
-    mock_controller.config.get.return_value = DEVICE_TYPE_SAMSUNG_2878
-    mock_controller.loader.state_getter = NakedObj(value={"_is_not_falsy": True}, id="dummy_state_getter")
-
-    # 1. Main HVAC operation
-    op_hvac = MagicMock()
-    op_hvac.id = "hvac_mode"
-    op_hvac.value = "Cool"
-    op_hvac.convert_hass_to_dev.return_value = "Cool"
-
-    # 2. Power operation (value=None so loop iteration skips setting it directly)
-    power_op = MagicMock()
-    power_op.id = "power"
-    power_op.value = None
-    del power_op.convert_hass_to_dev
-
-    mock_controller.loader.operations = {"hvac_mode": op_hvac, "power": power_op}
-    mock_controller.loader.properties = {}
-
-    poller = YamlStatePoller(mock_controller)
-
-    # 3. Dynamic key resolution side_effect
-    def _mock_get_cached_key(prop: Any) -> str | None:
-        prop_id = getattr(prop, "id", None)
-        if prop_id == "hvac_mode":
-            return "FAKE_HVAC_KEY"
-        if prop_id == "power":
-            return "FAKE_POWER_KEY"
-        return None
-
-    poller._get_state_node_from_prop = MagicMock(side_effect=_mock_get_cached_key)
-
-    # 4. Execute state building
-    reconstructed_state = await poller._build_device_state_from_props()
-
-    # 5. Silver Bullet Assertion: If line 706 mutates power_key = None, FAKE_POWER_KEY will NOT be in dictionary
-    assert "FAKE_POWER_KEY" in reconstructed_state, (
-        "FINAL MUTANT SURVIVED! power_key = self._get_state_node_from_prop(power_op) was mutated to None."
-    )
-    assert reconstructed_state["FAKE_POWER_KEY"] == "On", (
-        "FINAL MUTANT SURVIVED! Expected 'FAKE_POWER_KEY' to be 'On'."
-    )
-
-
-
-

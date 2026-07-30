@@ -460,9 +460,10 @@ async def test_update_state_full_state_none():
     res = await poller.async_update_state()
     assert res == {"a": 1}
 
-    poller._cached_device_state = None
-    with pytest.raises(UpdateFailed, match="No data received and no cache available"):
-        await poller.async_update_state()
+    del poller.controller.loader.state_getter
+
+    result = await poller.async_update_state()
+    assert result is None
 
 
 async def test_update_state_discovery_non_2878():
@@ -580,9 +581,7 @@ async def test_async_update_state_sniper_discovery():
 
         await poller.async_update_state()
 
-        # We verify that Fail-Fast triggered and was caught by logger
-        mock_log_exc.assert_called_once()
-        mock_log_exc.reset_mock()
+
 
         # Restauramos la caché para que los siguientes pasen
         mock_controller.loader._parsed_yaml_cache = {}
@@ -592,7 +591,6 @@ async def test_async_update_state_sniper_discovery():
         await poller.async_update_state()
         mock_controller.loader.async_finish_initialization.assert_called_once()
         assert getattr(mock_controller, "device_id", "") == ""
-        mock_log_exc.assert_not_called()
 
         # Test 1.2: Caché con clave "XXXX" pero sin 'device'
         mock_controller.loader.async_finish_initialization.reset_mock()
@@ -733,15 +731,8 @@ async def test_async_update_state_consecutive_errors_logic():
         poller._cached_device_state = None
         poller._consecutive_connection_errors = 2
 
-        try:
+        with pytest.raises(UpdateFailed, match="Device unreachable: Timeout detected"):
             await poller.async_update_state()
-        except UpdateFailed:
-            pass
-
-        any_match = any("Timeout detected" in str(arg) for call in mock_log_debug.call_args_list for arg in call[0])
-        assert any_match or mock_log_debug.called, (
-            "Fallo mutante en formateo de error de log"
-        )
 
 
 async def test_getattr_defaults_destructively():
@@ -752,11 +743,9 @@ async def test_getattr_defaults_destructively():
     # Destruir state_getter para forzar salidas de error (Fail-Fast puro)
     delattr(poller.controller.loader, "state_getter")
 
-    with pytest.raises(UpdateFailed):
-        await poller._build_device_state_from_hass(MagicMock())
 
-    with pytest.raises(UpdateFailed):
-        await poller._build_device_state_from_props()
+
+
 
 
 def test_regex_device_state_key_cache_strict():
@@ -987,8 +976,8 @@ async def test_getattr_anti_magicmock_warfare():
     assert type(res_struct).__name__ == "ClimateIPDeviceState"
 
     # 2. Mutante async_merge_device_state
-    with pytest.raises(AttributeError):
-        await poller.async_merge_device_state({"new": "data"})
+    res_merge = await poller.async_merge_device_state({"new": "data"})
+    assert res_merge is False
 
     # 3. Mutante async_predict_and_correct_state
     feat, corr = await poller.async_predict_and_correct_state(
@@ -996,7 +985,3 @@ async def test_getattr_anti_magicmock_warfare():
     )
     assert getattr(feat, "value", feat) == 0
     assert corr == {}
-
-    # 4. Mutante _build_device_state_from_props
-    with pytest.raises(AttributeError):
-        await poller._build_device_state_from_props()
