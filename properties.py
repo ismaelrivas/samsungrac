@@ -823,11 +823,16 @@ class BasicDeviceOperation(DeviceOperation):
 
         hvac_node = None
         if isinstance(self._device_state, dict):
-            hvac_node = self._device_state.get("AC_FUN_OPMODE")
-            if not hvac_node and "Mode" in self._device_state:
-                mode_dict = self._device_state.get("Mode")
-                if isinstance(mode_dict, dict) and "modes" in mode_dict and isinstance(mode_dict["modes"], list) and mode_dict["modes"]:
-                    hvac_node = mode_dict["modes"][0]
+            hvac_prop = (
+                self._controller.loader.operations.get(ATTR_HVAC_MODE)
+                or self._controller.loader.operations.get("hvac")
+                or self._controller.loader.operations.get("hvac_mode")
+            )
+            if hvac_prop:
+                state_node = getattr(hvac_prop, "state_node", getattr(hvac_prop, "_state_node", None))
+                if state_node:
+                    from .helpers import get_value_by_path
+                    hvac_node = get_value_by_path(self._device_state, state_node.split("."))
         cache_key_prop = self._controller.get_property(ATTR_HVAC_MODE)
         cache_key = f"{cache_key_prop}_{hvac_node}"
 
