@@ -494,7 +494,7 @@ async def test_deviceoperation_resolve_async_params_raw(
 
     # Assert render context to kill dict key mutants
     mock_template.render.assert_called_once_with(
-        value="val_str", device_id=None, duid=None
+        value="val_str", device_id=None, duid=None, device_state={}
     )
 
 
@@ -2296,3 +2296,48 @@ async def test_device_operation_async_set_value_connection_params_headers():
         {"Authorization": "Bearer token123"},
         device_state=ctrl.device_state,
     )
+
+
+def test_load_from_yaml_missing_connection_and_values(mock_connection, mock_controller):
+    """Verify load_from_yaml when CONFIG_DEVICE_CONNECTION and CONFIG_DEVICE_OPERATION_VALUES are missing."""
+    prop = DeviceProperty("test_prop", mock_connection, mock_controller)
+    assert prop.load_from_yaml({"name": "test"}) is True
+
+    op = BasicDeviceOperation("test_op", mock_connection, mock_controller)
+    # Missing CONFIG_DEVICE_OPERATION_VALUES should safely return False instead of raising TypeError on len(None)
+    assert op.load_from_yaml({"name": "test_op"}) is False
+
+
+def test_basicdeviceoperation_values_hvac_mode_key(mock_connection, mock_controller):
+    """Verify that hvac_mode key in loader operations is resolved for hvac_prop."""
+    op = BasicDeviceOperation("test_op", mock_connection, mock_controller)
+    op._value_validation_templates = {"on": MagicMock()}
+    mock_hvac_op = MagicMock()
+    mock_hvac_op.state_node = "hvac_state"
+    # Set loader operations to ONLY have "hvac_mode" key
+    mock_controller.loader.operations = {"hvac_mode": mock_hvac_op}
+    mock_controller.get_property.return_value = "cool"
+    op._device_state = {"hvac_state": "cool"}
+
+    # Must resolve mock_hvac_op via "hvac_mode" key and use hvac_state in cache key
+    vals = op.values
+    assert op._values_cache["cool_cool"] == vals
+
+
+async def test_device_operation_async_set_value_device_state_passed(mock_connection, mock_controller):
+    """Verify that current_full_state is passed to _resolve_async_params as device_state."""
+    op = DeviceOperation("test_op", mock_connection, mock_controller)
+    mock_template = MagicMock()
+    mock_template.render.return_value = '{"url": "/test"}'
+    op._connection_template = mock_template
+
+    mock_controller.device_state = {"custom_key": "custom_val"}
+    mock_connection.async_execute = AsyncMock(return_value=("ok", 200))
+
+    res = await op.async_set_value("val")
+    assert res is True
+    # Ensure render was called with device_state equal to mock_controller.device_state
+    mock_template.render.assert_called_with(
+        value="val", device_id="test_duid", duid="test_duid", device_state={"custom_key": "custom_val"}
+    )
+

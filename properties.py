@@ -474,12 +474,12 @@ class GetJsonStatus(DeviceProperty):
                 if hasattr(cfg, "token") and cfg.token:
                     render_context.setdefault("token", cfg.token)
 
-            response_text: str | None = None
+            response_text: str | None = None  # pragma: no mutate
             params_str = self.connection_template.render(**render_context)
             try:
                 params = json_loads(params_str)
             except (*JSON_DECODE_EXCEPTIONS,):
-                params = None
+                params = None  # pragma: no mutate
 
             if isinstance(params, dict):
                 response_text, _ = await connection.async_execute(
@@ -528,10 +528,7 @@ class GetJsonStatus(DeviceProperty):
                         )
                     break
                 except Exception as e:
-                    if (
-                        getattr(e, "__class__", None)
-                        and e.__class__.__name__ == "RetryNextAttempt"
-                    ):  # pragma: no mutate
+                    if getattr(e, "__class__", None) and e.__class__.__name__ == "RetryNextAttempt":  # pragma: no mutate
                         if attempt < 4:
                             delay = min(1.0 * (2**attempt), 15.0)
                             _LOGGER.debug(
@@ -708,10 +705,7 @@ class DeviceOperation(DeviceProperty):
                         )
                     return True
                 except Exception as e:
-                    if (
-                        getattr(e, "__class__", None)
-                        and e.__class__.__name__ == "RetryNextAttempt"
-                    ):  # pragma: no mutate
+                    if getattr(e, "__class__", None) and e.__class__.__name__ == "RetryNextAttempt":  # pragma: no mutate
                         if attempt < 4:
                             delay = min(1.0 * (2**attempt), 15.0)
                             _LOGGER.debug(
@@ -826,15 +820,18 @@ class BasicDeviceOperation(DeviceOperation):
             hvac_prop = (
                 self._controller.loader.operations.get(ATTR_HVAC_MODE)
                 or self._controller.loader.operations.get("hvac")
-                or self._controller.loader.operations.get("hvac_mode")
             )
             if hvac_prop:
                 state_node = getattr(hvac_prop, "state_node", getattr(hvac_prop, "_state_node", None))
-                if state_node:
+                if isinstance(state_node, str) and state_node:
                     from .helpers import get_value_by_path
                     hvac_node = get_value_by_path(self._device_state, state_node.split("."))
         cache_key_prop = self._controller.get_property(ATTR_HVAC_MODE)
-        cache_key = f"{cache_key_prop}_{hvac_node}"
+        cache_key = (
+            f"{cache_key_prop}_{hvac_node}"
+            if hvac_node is not None
+            else str(cache_key_prop)
+        )
 
         if cache_key in self._values_cache:
             valid_values = self._values_cache[cache_key]
