@@ -273,10 +273,10 @@ class YamlConfigLoader:
                 self.controller.log_prefix,  # pragma: no mutate
                 conn_type_str,  # pragma: no mutate
             )  # pragma: no mutate
-            # irp
-            # if self.connection is None:
-            #     _LOGGER.error("%s Could not create connection object", self.controller.log_prefix)  # pragma: no mutate
             return False
+
+        if hasattr(self.connection, "set_controller_ref"):
+            self.connection.set_controller_ref(self.controller)
 
         _LOGGER.debug(  # pragma: no mutate
             "%s Connection object created successfully. Type: %s",  # pragma: no mutate

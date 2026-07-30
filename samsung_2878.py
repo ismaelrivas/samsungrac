@@ -141,6 +141,8 @@ class ConnectionSamsung2878(Connection):
     def set_controller_ref(self, controller: Any) -> None:
         """Set the controller reference."""
         self._controller = controller
+        if controller and getattr(controller, "hass", None):
+            self._hass = controller.hass
 
     @property
     def log_prefix(self) -> str:

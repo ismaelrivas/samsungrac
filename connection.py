@@ -94,6 +94,40 @@ class Connection:
         """Execute a synchronous command."""
         raise NotImplementedError
 
+    async def async_execute_with_retry(
+        self, template: Any, value: Any, device_state: Any = None, device_id: str | None = None
+    ) -> Any:
+        """Asynchronously execute synchronous command with non-blocking exponential backoff."""
+        import asyncio
+        from .exceptions import CannotConnect
+
+        MAX_SYNC_RETRIES = 5
+        MAX_RETRY_DELAY_SEC = 15.0
+
+        for attempt in range(MAX_SYNC_RETRIES):
+            try:
+                async with self.async_lock:
+                    hass = self._hass or (getattr(self, "_controller", None) and getattr(self._controller, "hass", None))
+                    if hass:
+                        return await hass.async_add_executor_job(
+                            self.execute, template, value, device_state, device_id
+                        )
+                    return await asyncio.to_thread(
+                        self.execute, template, value, device_state, device_id
+                    )
+            except Exception as e:
+                # Duck-type the exception to avoid circular imports with exceptions.py
+                if getattr(e, "__class__", None) and e.__class__.__name__ == "RetryNextAttempt":
+                    if attempt < MAX_SYNC_RETRIES - 1:
+                        delay = min(1.0 * (2**attempt), MAX_RETRY_DELAY_SEC)
+                        self._logger.debug(
+                            "%s Sync command yielded RetryNextAttempt. Async sleeping %.1fs (Attempt %s/%s)...",
+                            self.log_prefix, delay, attempt + 1, MAX_SYNC_RETRIES
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                raise CannotConnect(f"Connection failed after {MAX_SYNC_RETRIES} retries: {e}") from e
+
     # pylint: disable=import-outside-toplevel,too-many-arguments,too-many-positional-arguments
     async def async_execute(
         self,

@@ -883,6 +883,7 @@ class ConnectionRequest(ConnectionRequestBase):  # pylint: disable=import-outsid
     def create_updated(self, yaml_node: dict[str, Any] | None) -> "ConnectionRequest":
         c = ConnectionRequest(None, _LOGGER, session=self._session)
         c.load_from_yaml(yaml_node, self)
+        c._controller = self._controller
 
         # Register this new instance as a child so it receives session updates
         self._children.append(c)

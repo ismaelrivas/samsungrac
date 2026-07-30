@@ -52,8 +52,6 @@ from .helpers import get_value_by_path
 
 _LOGGER = logging.getLogger(__name__)
 
-MAX_SYNC_RETRIES: int = 5
-MAX_RETRY_DELAY_SEC: float = 15.0
 TOTAL_INCREASING_DEVICE_CLASSES = ("carbon_monoxide", "gas")
 MEASUREMENT_DEVICE_CLASSES = ("power", "temperature", "humidity", "voltage", "current")
 
@@ -433,15 +431,7 @@ class GetJsonStatus(DeviceProperty):
         self, device_state_override: dict[str, Any] | None, _debug: bool
     ) -> Any:
         """Fetch the device state asynchronously."""
-        if hasattr(
-            self.get_connection(None), "set_controller_ref"
-        ):  # pragma: no mutate
-            self.get_connection(None).set_controller_ref(
-                self._controller
-            )  # pragma: no mutate
-
-        # Declare local variable type annotation.
-        device_state_result: dict[str, Any] | None
+        device_state_result: dict[str, Any] | None = None
         connection = self.get_connection(None)
 
         if connection is None:
@@ -465,11 +455,12 @@ class GetJsonStatus(DeviceProperty):
                 render_context["device_id"] = dev_id
                 render_context.setdefault("duid", dev_id)
 
-            if cfg := getattr(connection, "_cfg", getattr(connection, "config", None)):
-                if hasattr(cfg, "duid") and cfg.duid:
-                    render_context.setdefault("duid", cfg.duid)
-                if hasattr(cfg, "token") and cfg.token:
-                    render_context.setdefault("token", cfg.token)
+            cfg = getattr(connection, "_cfg", getattr(connection, "config", None))
+            if cfg:
+                if duid := getattr(cfg, "duid", None):
+                    render_context.setdefault("duid", duid)
+                if token := getattr(cfg, "token", None):
+                    render_context.setdefault("token", token)
 
             response_text: str | None = None  # pragma: no mutate
             params_str = self.connection_template.render(**render_context)
@@ -512,34 +503,9 @@ class GetJsonStatus(DeviceProperty):
                 )  # pragma: no mutate
                 return None
         else:
-            for attempt in range(MAX_SYNC_RETRIES):
-                try:
-                    async with connection.async_lock:
-                        device_state_result = (
-                            await self._controller.hass.async_add_executor_job(
-                                connection.execute,
-                                self.connection_template,
-                                None,
-                                self.value,
-                            )
-                        )
-                    break
-                except Exception as e:
-                    if getattr(e, "__class__", None) and e.__class__.__name__ == "RetryNextAttempt":  # pragma: no mutate
-                        if attempt < MAX_SYNC_RETRIES - 1:
-                            delay = min(1.0 * (2**attempt), MAX_RETRY_DELAY_SEC)
-                            _LOGGER.debug(
-                                "%s Sync poll yielded RetryNextAttempt. Async sleeping %.1fs (Attempt %s/%s)...",
-                                self.log_prefix,
-                                delay,
-                                attempt + 1,
-                                MAX_SYNC_RETRIES,
-                            )  # pragma: no mutate
-                            await asyncio.sleep(delay)
-                            continue
-                    raise CannotConnect(
-                        f"Connection failed after {MAX_SYNC_RETRIES} retries: {e}"
-                    ) from e  # pragma: no mutate
+            device_state_result = await connection.async_execute_with_retry(
+                self.connection_template, None, self.value
+            )
 
         self.value = self.calculate_value_from_state(device_state_result)
         self._json_status = device_state_result
@@ -610,9 +576,6 @@ class DeviceOperation(DeviceProperty):
             return False
 
         connection = self.get_connection(v)
-        if hasattr(connection, "set_controller_ref"):  # pragma: no mutate
-            connection.set_controller_ref(self._controller)  # pragma: no mutate
-
         current_full_state = getattr(self._controller, "device_state", None) or self._device_state
         if not current_full_state and self._status_getter:
             current_full_state = self._status_getter.value
@@ -622,12 +585,9 @@ class DeviceOperation(DeviceProperty):
                 duid_for_render = device_id or getattr(
                     self._controller, "device_id", None
                 )
-                if not duid_for_render and (
-                    cfg := getattr(
-                        connection, "_cfg", getattr(connection, "config", None)
-                    )
-                ):
-                    duid_for_render = getattr(cfg, "duid", None)
+                if not duid_for_render:
+                    cfg = getattr(connection, "_cfg", getattr(connection, "config", None))
+                    duid_for_render = getattr(cfg, "duid", None) if cfg else None
 
                 # dev_value is already calculated and validated above
                 params = self._resolve_async_params(
@@ -680,45 +640,21 @@ class DeviceOperation(DeviceProperty):
                     f"Unexpected error when setting {self.id}"
                 ) from e  # pragma: no mutate
         else:
-            for attempt in range(MAX_SYNC_RETRIES):
-                try:
-                    async with connection.async_lock:
-                        await self._controller.hass.async_add_executor_job(
-                            connection.execute,
-                            self.connection_template,
-                            dev_value,
-                            current_full_state,
-                            device_id,
-                        )
-                    return True
-                except Exception as e:
-                    if getattr(e, "__class__", None) and e.__class__.__name__ == "RetryNextAttempt":  # pragma: no mutate
-                        if attempt < MAX_SYNC_RETRIES - 1:
-                            delay = min(1.0 * (2**attempt), MAX_RETRY_DELAY_SEC)
-                            _LOGGER.debug(
-                                "%s Sync command yielded RetryNextAttempt. Async sleeping %.1fs (Attempt %s/%s)...",
-                                self.log_prefix,
-                                delay,
-                                attempt + 1,
-                                MAX_SYNC_RETRIES,
-                            )  # pragma: no mutate
-                            await asyncio.sleep(delay)
-                            continue
-                        raise CannotConnect(
-                            f"Connection failed after {MAX_SYNC_RETRIES} retries: {e}"
-                        ) from e  # pragma: no mutate
-                    if isinstance(e, (CannotConnect, AuthError)):
-                        _LOGGER.warning(
-                            "%s Failed to set value for %s: connection error: %s",
-                            self.log_prefix,
-                            self.id,
-                            e,
-                        )  # pragma: no mutate
-                        raise HomeAssistantError(
-                            f"Connection error: could not set value for {self.id}"
-                        ) from e  # pragma: no mutate
-                    raise
-            return False
+            try:
+                await connection.async_execute_with_retry(
+                    self.connection_template, dev_value, current_full_state, device_id
+                )
+                return True
+            except (CannotConnect, AuthError) as e:
+                _LOGGER.warning(
+                    "%s Failed to set value for %s: connection error: %s",
+                    self.log_prefix,
+                    self.id,
+                    e,
+                )  # pragma: no mutate
+                raise HomeAssistantError(
+                    f"Connection error: could not set value for {self.id}"
+                ) from e  # pragma: no mutate
 
     def match_value(self, value: Any) -> bool:
         """Check if value matches the operation. True if the value is correct."""

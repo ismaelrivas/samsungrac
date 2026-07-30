@@ -282,6 +282,7 @@ class ConnectionRequestBase(Connection):
             hass=getattr(self, "_hass", None),
         )
         new_instance.load_from_yaml(yaml_node, self)
+        new_instance._controller = getattr(self, "_controller", None)
         return new_instance
 
     async def async_execute(
