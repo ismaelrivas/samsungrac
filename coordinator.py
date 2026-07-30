@@ -6,7 +6,7 @@ import time
 from datetime import timedelta
 from typing import Any
 
-from homeassistant.components.climate import ClimateEntityFeature, HVACMode
+from homeassistant.components.climate import HVACMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_MAC
 from homeassistant.core import HomeAssistant, callback
@@ -35,17 +35,24 @@ from .state import ClimateIPDeviceState
 
 _LOGGER = logging.getLogger(__name__)
 
+HARDWARE_BREATHING_ROOM_SEC: float = 1.0
+
 
 class PropertyDebouncer:
     """Debounces outgoing commands per property to shield hardware from request flooding."""
 
-    def __init__(self, hass: HomeAssistant, delay: float = 2.0) -> None:
+    def __init__(self, coordinator: "SamsungClimateCoordinator", delay: float = 2.0) -> None:
         """Initialize the property debouncer."""
-        self.hass = hass
+        self.coordinator = coordinator
         self.delay = delay
         self._global_timer: asyncio.TimerHandle | None = None
         self._pending_payloads: dict[str, tuple[Any, tuple, dict]] = {}
         self._global_last_execution: float = 0.0
+
+    @property
+    def hass(self) -> HomeAssistant:
+        """Return the HomeAssistant instance from the coordinator."""
+        return self.coordinator.hass
 
     def cancel_all(self) -> None:
         """Cancel all active timers and clear pending payloads."""
@@ -109,6 +116,7 @@ class PropertyDebouncer:
                                 err,
                                 exc_info=True,
                             )
+                            await self.coordinator.async_request_refresh()
                         except Exception as err:  # pylint: disable=broad-exception-caught
                             _LOGGER.debug(  # pragma: no mutate
                                 "[Debouncer] Error executing delayed command for '%s': %s",
@@ -116,8 +124,12 @@ class PropertyDebouncer:
                                 err,
                                 exc_info=True,
                             )
+                            await self.coordinator.async_request_refresh()
 
-                self.hass.async_create_task(_task_runner())
+                self.hass.async_create_task(
+                    _task_runner(),
+                    name=f"samsung_ac_debouncer_{self.coordinator.unique_id}"
+                )
 
         self._global_timer = self.hass.loop.call_later(self.delay, _fire_delayed)
         _LOGGER.debug(  # pragma: no mutate
@@ -143,15 +155,13 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         """Initialize the data coordinator."""
         self.controller = controller
         self.entry = entry
-        self.debouncer = PropertyDebouncer(hass, delay=3.0)
+        self.debouncer = PropertyDebouncer(self, delay=3.0)
         self._global_network_lock = asyncio.Lock()
-        # self._entity = None  # Reference to the ClimateIP entity
 
         # Inject callbacks into the controller to avoid circular dependencies.
 
         def _save_new_token(new_token: str) -> None:
             """Callback to save the renewed token from the network layer."""
-            @callback
             def _update_token() -> None:
                 new_data = dict(self.entry.data)
                 new_data["token"] = new_token
@@ -176,7 +186,6 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
         def _save_ssl_config(ssl_config: dict[str, Any]) -> None:
             """Callback to save SSL configuration to the config entry."""
-            @callback
             def _update_ssl() -> None:
                 current_data = dict(self.entry.data)
                 if current_data.get("_ssl_config_2878") != ssl_config:
@@ -341,7 +350,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 f"Data parsing error: {err}"
             ) from err  # pragma: no mutate
 
-        except Exception as err:  # pylint: disable=import-outside-toplevel,broad-exception-caught
+        except Exception as err:  # pylint: disable=broad-exception-caught
             # fmt: off
             _LOGGER.critical("%s Fatal unexpected error during update: %s", self.log_prefix, err, exc_info=True)  # pragma: no mutate
             # fmt: on
@@ -371,7 +380,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 _LOGGER.debug("%s Push update did not contain state data, skipping processing", self.log_prefix)  # pragma: no mutate
                 # fmt: on
 
-        except Exception as err:  # pylint: disable=import-outside-toplevel,broad-exception-caught
+        except Exception as err:  # pylint: disable=broad-exception-caught
             # fmt: off
             _LOGGER.error("%s Unexpected error during push update: %s", self.log_prefix, err, exc_info=True)  # pragma: no mutate
             # fmt: on
@@ -387,16 +396,15 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     async def _locked_set_property(self, prop: str, val: Any) -> bool:
         """Serialize network commands with a global lock and delay to prevent AC drops."""
         async with self._global_network_lock:
-            res = await self.controller.async_set_property(prop, val)
-            await asyncio.sleep(1.0)  # 1s breathing room for the AC
-            return res
+            await self.controller.async_set_property(prop, val)
+            await asyncio.sleep(HARDWARE_BREATHING_ROOM_SEC)
+            return True
 
     async def async_set_property(
         self,
         property_name: str,
         new_value: Any,
         corrections: dict[str, Any] | None = None,
-        # device_id: str | None = None,
     ) -> None:
         """Set a property on the controller. Optimistic state is handled by the entity."""
         try:
@@ -442,7 +450,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 f"Data error setting property {property_name}: {err}"
             ) from err  # pragma: no mutate
 
-        except Exception as err:  # pylint: disable=import-outside-toplevel,broad-exception-caught
+        except Exception as err:  # pylint: disable=broad-exception-caught
             # fmt: off
             _LOGGER.error("%s Error setting properties: %s", self.log_prefix, err, exc_info=True)  # pragma: no mutate
             # fmt: on
@@ -459,26 +467,19 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         new_value: Any,
     ) -> tuple[Any, dict[str, Any]]:
         """Pass through to the controller's prediction method."""
-        if hasattr(self.controller, "async_predict_and_correct_state"):
-            if isinstance(new_value, HVACMode):
-                new_value = new_value.value
-            (
-                changed_flags,
-                corrections,
-            ) = await self.controller.async_predict_and_correct_state(
-                current_state, property_name, new_value
-            )
+        if isinstance(new_value, HVACMode):
+            new_value = new_value.value
+            
+        changed_flags, corrections = await self.controller.async_predict_and_correct_state(
+            current_state, property_name, new_value
+        )
 
-            # Push the fast-tracked predicted state through the coordinator
-            # This triggers all entities to immediately see new valid modes/lists.
-            predicted_state = self._create_device_state()
-            self.async_set_updated_data(predicted_state)
+        # Push the fast-tracked predicted state through the coordinator
+        # This triggers all entities to immediately see new valid modes/lists.
+        predicted_state = self._create_device_state()
+        self.async_set_updated_data(predicted_state)
 
-            return changed_flags, corrections
-        _LOGGER.debug(
-            "%s Controller does not support state prediction", self.log_prefix
-        )  # pragma: no mutate
-        return ClimateEntityFeature(0), {}
+        return changed_flags, corrections
 
     @property
     def log_prefix(self) -> str:
@@ -491,12 +492,12 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         return self.controller.unique_id
 
     @property
-    def operations(self) -> list:
+    def operations(self) -> list[str]:
         """Return the list of settable operations."""
         return self.controller.operations
 
     @property
-    def attributes(self) -> list:
+    def attributes(self) -> list[str]:
         """Return the list of read-only attributes."""
         return self.controller.attributes
 
@@ -536,11 +537,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         _LOGGER.debug(
             "%s Shutting down coordinator", self.log_prefix
         )  # pragma: no mutate
-        if hasattr(self, "debouncer") and self.debouncer:
-            self.debouncer.cancel_all()
-
-        if self.controller:
-            await self.controller.async_shutdown()
+        
+        self.debouncer.cancel_all()
+        await self.controller.async_shutdown()
 
         _LOGGER.debug(
             "%s Coordinator shutdown complete", self.log_prefix
