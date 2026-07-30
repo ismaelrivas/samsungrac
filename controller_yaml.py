@@ -234,7 +234,7 @@ class YamlController(ClimateController):
         self,
         property_name: str,
         new_value: Any,
-        # _device_id: str | None = None,
+        device_id: str | None = None,
     ) -> bool:
         """Asynchronously set a property on the device."""
         if not self.loader.is_fully_initialized:
@@ -245,8 +245,8 @@ class YamlController(ClimateController):
             )  # pragma: no mutate
             return False
 
-        op = self.loader.operations.get(property_name)
-        if op:
+        op = self.get_property_object(property_name)
+        if op and hasattr(op, "async_set_value"):
             try:
                 # Register the pending update in the poller dispatcher
                 # pylint: disable=protected-access
@@ -257,8 +257,9 @@ class YamlController(ClimateController):
                     property_name,  # pragma: no mutate
                     new_value,  # pragma: no mutate
                 )  # pragma: no mutate
+                target_device_id = device_id or self.device_id
                 return await op.async_set_value(
-                    new_value, self.device_id
+                    new_value, target_device_id
                 )
             except (requests.exceptions.RequestException, CannotConnect, HomeAssistantError) as e:
                 _LOGGER.debug(
@@ -299,7 +300,7 @@ class YamlController(ClimateController):
 
     def get_property_object(self, property_name: str) -> Any | None:
         """Return the property object (not just its value) by name."""
-        _LOGGER.warning(
+        _LOGGER.debug(
             "%s [DEBUG DUMP] property_name='%s', operations=%s, properties=%s, sensors=%s",
             self.log_prefix,
             property_name,

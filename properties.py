@@ -1,6 +1,7 @@
-# pylint: disable=import-outside-toplevel,too-many-branches,too-many-instance-attributes,too-many-statements
-"""Device property classes for the climate_ip integration."""  # pylint: disable=import-outside-toplevel,too-many-lines
+# pylint: disable=too-many-branches,too-many-instance-attributes
+"""Device property classes for the climate_ip integration."""
 
+import ast
 import asyncio
 import logging
 from typing import Any
@@ -47,8 +48,14 @@ from .const import (
     LEGACY_YAML_TO_ATTR_MAP,
 )
 from .exceptions import AuthError, CannotConnect
+from .helpers import get_value_by_path
 
 _LOGGER = logging.getLogger(__name__)
+
+MAX_SYNC_RETRIES: int = 5
+MAX_RETRY_DELAY_SEC: float = 15.0
+TOTAL_INCREASING_DEVICE_CLASSES = ("carbon_monoxide", "gas")
+MEASUREMENT_DEVICE_CLASSES = ("power", "temperature", "humidity", "voltage", "current")
 
 UNIT_MAP: dict[str, str] = {
     "C": UnitOfTemperature.CELSIUS,
@@ -135,8 +142,6 @@ class DeviceProperty:
         self._device_state: dict[str, Any] | None = None
         self._state_node: str | None = None
 
-        self._is_valid_cache: tuple[int | None, bool | None] = (None, None)
-
         self._friendly_name: str | None = None
         self._device_class: str | None = None
         self._unit_of_measurement: str | None = None
@@ -156,22 +161,15 @@ class DeviceProperty:
 
     def is_valid(self, device_state: dict[str, Any] | None) -> bool:
         """Return True if this property is valid for the given device state."""
+        self._device_state = device_state
         if self.validation_template is None or device_state is None:
-            self._device_state = device_state
             return True
 
-        state_id = id(device_state)
-        if state_id == self._is_valid_cache[0]:
-            self._device_state = device_state
-            return bool(self._is_valid_cache[1])
-
-        self._device_state = device_state
         try:
             v = self.validation_template.render(device_state=device_state)
             result = str(v).lower() == "valid"
-            self._is_valid_cache = (state_id, result)
             return result
-        except Exception as e:  # pylint: disable=broad-exception-caught
+        except Exception as e:
             _LOGGER.error(
                 "%s Error rendering validation template for %s: %s",
                 self.log_prefix,
@@ -309,18 +307,9 @@ class DeviceProperty:
                 raise ValueError(
                     f"Invalid state_class '{raw_state_class}' in YAML"
                 ) from e
-        elif self._device_class in (
-            "carbon_monoxide",
-            "gas",
-        ):
+        elif self._device_class in TOTAL_INCREASING_DEVICE_CLASSES:
             self._state_class = SensorStateClass.TOTAL_INCREASING
-        elif self._device_class in (
-            "power",
-            "temperature",
-            "humidity",
-            "voltage",
-            "current",
-        ):
+        elif self._device_class in MEASUREMENT_DEVICE_CLASSES:
             self._state_class = SensorStateClass.MEASUREMENT
 
         return True
@@ -335,7 +324,7 @@ class DeviceProperty:
         if self.status_template is not None and device_state is not None:
             try:
                 v = self.status_template.render(device_state=device_state)
-            except Exception as e:  # pylint: disable=broad-exception-caught
+            except Exception as e:
                 _LOGGER.debug(
                     "%s Dry-run error for %s: %s", self.log_prefix, self.id, e
                 )  # pragma: no mutate
@@ -420,11 +409,19 @@ class GetJsonStatus(DeviceProperty):
             try:
                 v = self.status_template.render(device_state=device_state)
                 if isinstance(v, str):
-                    v = v.replace("'", '"')
-                    v = v.replace("True", '"True"')
-                    return json_loads(v)
+                    v = v.strip()
+                    try:
+                        # 1. Try strictly as JSON (handles 'null', 'true', double quotes)
+                        return json_loads(v)
+                    except (*JSON_DECODE_EXCEPTIONS,):
+                        try:
+                            # 2. Fallback to Python AST literal (handles 'None', 'True', single quotes)
+                            return ast.literal_eval(v)
+                        except (ValueError, SyntaxError):
+                            # 3. Safe fallback if it's just a regular string
+                            return v
                 return v
-            except Exception as e:  # pylint: disable=broad-exception-caught
+            except Exception as e:
                 _LOGGER.debug(
                     "%s [GetJsonStatus] Dry-run error parsing status template: %s",
                     self.log_prefix,
@@ -515,7 +512,7 @@ class GetJsonStatus(DeviceProperty):
                 )  # pragma: no mutate
                 return None
         else:
-            for attempt in range(5):  # pragma: no mutate
+            for attempt in range(MAX_SYNC_RETRIES):
                 try:
                     async with connection.async_lock:
                         device_state_result = (
@@ -529,18 +526,19 @@ class GetJsonStatus(DeviceProperty):
                     break
                 except Exception as e:
                     if getattr(e, "__class__", None) and e.__class__.__name__ == "RetryNextAttempt":  # pragma: no mutate
-                        if attempt < 4:
-                            delay = min(1.0 * (2**attempt), 15.0)
+                        if attempt < MAX_SYNC_RETRIES - 1:
+                            delay = min(1.0 * (2**attempt), MAX_RETRY_DELAY_SEC)
                             _LOGGER.debug(
-                                "%s Sync poll yielded RetryNextAttempt. Async sleeping %.1fs (Attempt %s/5)...",
+                                "%s Sync poll yielded RetryNextAttempt. Async sleeping %.1fs (Attempt %s/%s)...",
                                 self.log_prefix,
                                 delay,
                                 attempt + 1,
+                                MAX_SYNC_RETRIES,
                             )  # pragma: no mutate
                             await asyncio.sleep(delay)
                             continue
                     raise CannotConnect(
-                        f"Connection failed after 5 retries: {e}"
+                        f"Connection failed after {MAX_SYNC_RETRIES} retries: {e}"
                     ) from e  # pragma: no mutate
 
         self.value = self.calculate_value_from_state(device_state_result)
@@ -615,20 +613,9 @@ class DeviceOperation(DeviceProperty):
         if hasattr(connection, "set_controller_ref"):  # pragma: no mutate
             connection.set_controller_ref(self._controller)  # pragma: no mutate
 
-        current_full_state = (
-            getattr(self._controller, "device_state", None)
-            if self._controller
-            else None
-        )
-
-        if not current_full_state:
-            current_full_state = self._device_state
-            _LOGGER.warning(
-                "%s _device_state is None during set_value, falling back to status_getter.value",
-                self.log_prefix,
-            )  # pragma: no mutate
-            if self._status_getter:
-                current_full_state = self._status_getter.value
+        current_full_state = getattr(self._controller, "device_state", None) or self._device_state
+        if not current_full_state and self._status_getter:
+            current_full_state = self._status_getter.value
 
         if connection.is_async_native:
             try:
@@ -693,31 +680,32 @@ class DeviceOperation(DeviceProperty):
                     f"Unexpected error when setting {self.id}"
                 ) from e  # pragma: no mutate
         else:
-            for attempt in range(5):
+            for attempt in range(MAX_SYNC_RETRIES):
                 try:
-                    async with connection._lock:
+                    async with connection.async_lock:
                         await self._controller.hass.async_add_executor_job(
                             connection.execute,
                             self.connection_template,
-                            dev_value,  # Use sanitized value here as well
+                            dev_value,
                             current_full_state,
                             device_id,
                         )
                     return True
                 except Exception as e:
                     if getattr(e, "__class__", None) and e.__class__.__name__ == "RetryNextAttempt":  # pragma: no mutate
-                        if attempt < 4:
-                            delay = min(1.0 * (2**attempt), 15.0)
+                        if attempt < MAX_SYNC_RETRIES - 1:
+                            delay = min(1.0 * (2**attempt), MAX_RETRY_DELAY_SEC)
                             _LOGGER.debug(
-                                "%s Sync command yielded RetryNextAttempt. Async sleeping %.1fs (Attempt %s/5)...",
+                                "%s Sync command yielded RetryNextAttempt. Async sleeping %.1fs (Attempt %s/%s)...",
                                 self.log_prefix,
                                 delay,
                                 attempt + 1,
+                                MAX_SYNC_RETRIES,
                             )  # pragma: no mutate
                             await asyncio.sleep(delay)
                             continue
                         raise CannotConnect(
-                            f"Connection failed after 5 retries: {e}"
+                            f"Connection failed after {MAX_SYNC_RETRIES} retries: {e}"
                         ) from e  # pragma: no mutate
                     if isinstance(e, (CannotConnect, AuthError)):
                         _LOGGER.warning(
@@ -824,7 +812,6 @@ class BasicDeviceOperation(DeviceOperation):
             if hvac_prop:
                 state_node = getattr(hvac_prop, "state_node", getattr(hvac_prop, "_state_node", None))
                 if isinstance(state_node, str) and state_node:
-                    from .helpers import get_value_by_path
                     hvac_node = get_value_by_path(self._device_state, state_node.split("."))
         cache_key_prop = self._controller.get_property(ATTR_HVAC_MODE)
         cache_key = (
@@ -935,17 +922,13 @@ class ModeOperation(BasicDeviceOperation):
     @property
     def state_attributes(self) -> dict[str, Any]:
         """Return a dictionary with the current mode and available modes list."""
-        list_attribute_name = None
-        if self._id == ATTR_HVAC_MODE:
-            list_attribute_name = ATTR_HVAC_MODES
-        elif self._id == ATTR_FAN_MODE:
-            list_attribute_name = ATTR_FAN_MODES
-        elif self._id == ATTR_PRESET_MODE:
-            list_attribute_name = ATTR_PRESET_MODES
-        elif self._id == ATTR_SWING_MODE:
-            list_attribute_name = ATTR_SWING_MODES
-        else:
-            list_attribute_name = self.name + "_modes"
+        mode_map = {
+            ATTR_HVAC_MODE: ATTR_HVAC_MODES,
+            ATTR_FAN_MODE: ATTR_FAN_MODES,
+            ATTR_PRESET_MODE: ATTR_PRESET_MODES,
+            ATTR_SWING_MODE: ATTR_SWING_MODES,
+        }
+        list_attribute_name = mode_map.get(self._id, f"{self.name}_modes")
 
         return {
             self.id: self.value,
