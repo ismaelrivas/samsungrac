@@ -3,6 +3,7 @@
 
 # pylint: disable=import-outside-toplevel
 from unittest.mock import AsyncMock, MagicMock
+import asyncio
 
 from homeassistant.core import HomeAssistant
 
@@ -37,6 +38,8 @@ async def test_set_property_action(hass: HomeAssistant) -> None:
         swing_modes=[],
         preset_modes=[],
     )
+    mock_coordinator.entry = MagicMock(options={}, data={})
+    mock_coordinator.config_entry = mock_coordinator.entry
     mock_coordinator.device_info = MagicMock()
     mock_coordinator.async_set_property = AsyncMock()
     mock_coordinator.register_entity = MagicMock()
@@ -55,7 +58,9 @@ async def test_set_property_action(hass: HomeAssistant) -> None:
     # In a real HA environment, this would be triggered via hass.services.async_call
     # Here we just verify the entity method exists and behaves as expected when called
     # with common parameters from actions.yaml
+    hass.async_create_task.side_effect = lambda coro, **kw: asyncio.create_task(coro)
     await entity.async_set_property("AC_FUN_POWER", "On")
+    await asyncio.sleep(0)
 
     # Verify it delegated to the coordinator
     mock_coordinator.async_set_property.assert_awaited_once_with("AC_FUN_POWER", "On")
