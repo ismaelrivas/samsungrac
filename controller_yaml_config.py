@@ -471,7 +471,8 @@ class YamlConfigLoader:
         self.operations_list = list(self.operations.keys())
         self.properties_list = list(self.properties.keys())
         self.is_fully_initialized = True
-        _LOGGER.debug(  # pragma: no mutate
-            "%s Controller config loading is now fully completed.",
+        _LOGGER.warning(  # pragma: no mutate
+            "%s [DEBUG INIT] Finished initialization! Operations mapped: %s",
             self.controller.log_prefix,  # pragma: no mutate
+            self.operations_list
         )  # pragma: no mutate

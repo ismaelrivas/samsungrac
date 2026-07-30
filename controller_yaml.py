@@ -299,6 +299,14 @@ class YamlController(ClimateController):
 
     def get_property_object(self, property_name: str) -> Any | None:
         """Return the property object (not just its value) by name."""
+        _LOGGER.warning(
+            "%s [DEBUG DUMP] property_name='%s', operations=%s, properties=%s, sensors=%s",
+            self.log_prefix,
+            property_name,
+            list(self.loader.operations.keys()),
+            list(self.loader.properties.keys()),
+            list(self.loader.sensors.keys())
+        )
         if property_name in self.loader.operations:
             return self.loader.operations[property_name]
         if property_name in self.loader.properties:
@@ -306,8 +314,25 @@ class YamlController(ClimateController):
         if property_name in self.loader.sensors:
             return self.loader.sensors[property_name]
 
-        _LOGGER.debug(
-            "%s Property object '%s' not found", self.log_prefix, property_name
+        all_objs = (
+            list(self.loader.operations.values())
+            + list(self.loader.properties.values())
+            + list(self.loader.sensors.values())
+        )
+        for op in all_objs:
+            op_id = getattr(op, "id", "")
+            if op_id == property_name:
+                return op
+            if hasattr(self, "poller"):
+                mapped = self.poller._get_hass_attr_for_op_id(op_id)
+                if mapped == property_name:
+                    return op
+
+        _LOGGER.warning(
+            "%s Property object '%s' not found. Available operation ids: %s", 
+            self.log_prefix, 
+            property_name,
+            [getattr(op, "id", "unknown") for op in self.loader.operations.values()]
         )  # pragma: no mutate
         return None
 

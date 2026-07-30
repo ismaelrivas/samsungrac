@@ -368,18 +368,10 @@ class YamlStatePoller:
         # 💥 NETWORK TRUTH STORAGE: Isolated from UI pollution
         self._pure_network_state = copy.deepcopy(full_device_state)
 
-    def _discover_target_node(self, device_type: str, devices_list: list[Any]) -> dict[str, Any] | None:
-        """Isolate device-specific discovery logic."""
-        if device_type == DEVICE_TYPE_MIM_H03:
-            return next((d for d in devices_list if d and d.get("id") != "0" and "Mode" in d), None)
-        return devices_list[0] if devices_list else None
-
-    async def _extract_device_nodes(self, full_device_state: dict[str, Any]) -> dict[str, Any]:
-        """Extract device nodes from full device state."""
         if not self.controller.loader.is_fully_initialized:
             try:
                 device_type = self.controller.config.get(CONF_DEVICE_TYPE)
-                cache = self.controller.loader._parsed_yaml_cache
+                cache = getattr(self.controller.loader, "_parsed_yaml_cache", {})
                 id_map = (
                     cache.get(getattr(self.controller, "device_id", "XXXX"), {})
                     .get(CONFIG_DEVICE, {})
@@ -413,6 +405,12 @@ class YamlStatePoller:
 
         await self.async_update_properties_from_state(full_device_state)
         return self.controller.loader.state_getter.value
+
+    def _discover_target_node(self, device_type: str, devices_list: list[Any]) -> dict[str, Any] | None:
+        """Isolate device-specific discovery logic."""
+        if device_type == DEVICE_TYPE_MIM_H03:
+            return next((d for d in devices_list if d and d.get("id") != "0" and "Mode" in d), None)
+        return devices_list[0] if devices_list else None
 
     @staticmethod
     def _values_match(val1: Any, val2: Any) -> bool:

@@ -3727,6 +3727,7 @@ async def test_test_connection_safe_2878_branch(hass: HomeAssistant) -> None:
         mock_ctrl.loader.state_getter.async_update_state = AsyncMock(
             return_value={"power": "on"}
         )
+        mock_ctrl.loader.state_getter.value = {"power": "on"}
         mock_ctrl.async_shutdown = AsyncMock()
         mock_ctrl_cls.return_value = mock_ctrl
 
@@ -5797,6 +5798,7 @@ async def test_yaml_controller_instantiation_strict(hass: HomeAssistant) -> None
         mock_ctrl.loader.state_getter.async_update_state = AsyncMock(
             return_value={"state": "ok"}
         )
+        mock_ctrl.loader.state_getter.value = {"state": "ok"}
         mock_ctrl.async_shutdown = AsyncMock()
         mock_ctrl_class.return_value = mock_ctrl
 
