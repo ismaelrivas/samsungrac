@@ -22,4 +22,4 @@ mutants/
 .codebase-memory/
 **/.codebase-memory/
 mutantes*.txt
-tests/.codebase-memory/graph.db.zst
+**/graph.db.zst

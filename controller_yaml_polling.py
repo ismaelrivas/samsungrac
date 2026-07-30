@@ -411,55 +411,23 @@ class YamlStatePoller:
         self._prop_template_key_cache[prop_id] = None
         return None
 
-    def _inject_value_into_state(self, prop: Any, device_state: dict[str, Any], value: Any) -> None:
-        """Safely inject an optimistic value into the raw device state using state_node & native converters."""
-        if not isinstance(device_state, dict):
-            return
-
-        if hasattr(prop, "set_device_state_for_values"):
-            try:
-                prop.set_device_state_for_values(device_state)
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                _LOGGER.debug(  # pragma: no mutate
-                    "%s set_device_state_for_values failed for %s: %s",
-                    self.controller.log_prefix,
-                    getattr(prop, "id", "unknown"),
-                    e,
-                    exc_info=True,
-                )
-
-        dev_val = value
-        if hasattr(prop, "convert_hass_to_dev"):
-            try:
-                dev_val = prop.convert_hass_to_dev(value)
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                _LOGGER.debug(  # pragma: no mutate
-                    "%s convert_hass_to_dev failed for %s: %s",
-                    self.controller.log_prefix,
-                    getattr(prop, "id", "unknown"),
-                    e,
-                    exc_info=True,
-                )
-
-        state_node = self._get_state_node_from_prop(prop)
-        if not state_node or not isinstance(state_node, str):
-            return
-
-        parts = state_node.split(".")
-        current: Any = device_state
+    def _set_dict_value_by_path(self, target_dict: dict[str, Any], path_str: str, value: Any) -> None:
+        """Inject a value into a nested dict using dot notation path."""
+        parts = path_str.split(".")
+        current: Any = target_dict
         for i, part in enumerate(parts):
             is_last = (i == len(parts) - 1)
             next_part = parts[i + 1] if not is_last else None
 
             if is_last:
                 if isinstance(current, dict):
-                    current[part] = dev_val
+                    current[part] = value
                 elif isinstance(current, list):
                     if part.isdigit():
                         idx = int(part)
                         while len(current) <= idx:
                             current.append(None)
-                        current[idx] = dev_val
+                        current[idx] = value
                 break
 
             if isinstance(current, dict):
@@ -476,13 +444,39 @@ class YamlStatePoller:
             else:
                 break
 
-        op_id = getattr(prop, "id", "")
-        if op_id in ("hvac", "hvac_mode", ATTR_HVAC_MODE):
-            is_off = str(value).lower() == "off" or str(dev_val).lower() == "off"
-            p_val = "Off" if is_off else "On"
-            power_prop = self.controller.loader.operations.get("power")
-            if power_prop:
-                self._inject_value_into_state(power_prop, device_state, p_val)
+    def _inject_value_into_state(self, prop: Any, device_state: dict[str, Any], value: Any) -> None:
+        """Safely inject an optimistic value into the raw device state using state_node & native converters."""
+        if not isinstance(device_state, dict):
+            return
+
+        dev_val = value
+        if hasattr(prop, "convert_hass_to_dev"):
+            try:
+                dev_val = prop.convert_hass_to_dev(value)
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                _LOGGER.debug(
+                    "%s convert_hass_to_dev failed for %s: %s",
+                    self.controller.log_prefix,
+                    getattr(prop, "id", "unknown"),
+                    e,
+                    exc_info=True,
+                )  # pragma: no mutate
+
+        state_node = self._get_state_node_from_prop(prop)
+        if state_node and isinstance(state_node, str):
+            self._set_dict_value_by_path(device_state, state_node, dev_val)
+
+        # Delegate purely to the property object's interface for any cascading relationships defined by YAML metadata
+        if hasattr(prop, "apply_optimistic_cascades"):
+            try:
+                prop.apply_optimistic_cascades(device_state, value, dev_val)
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                _LOGGER.debug("%s apply_optimistic_cascades failed: %s", self.controller.log_prefix, getattr(prop, "id", "unknown"), e) # pragma: no mutate
+        elif hasattr(prop, "set_device_state_for_values"):
+            try:
+                prop.set_device_state_for_values(device_state)
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                _LOGGER.debug("%s set_device_state_for_values failed for %s: %s", self.controller.log_prefix, getattr(prop, "id", "unknown"), e, exc_info=True)  # pragma: no mutate
 
     def _find_device_node(self, state_dict: dict[str, Any], id_map: dict[str, Any]) -> dict[str, Any] | None:
         """Find the matching device node in the state dictionary based on id_map."""
@@ -506,20 +500,19 @@ class YamlStatePoller:
         device_to_process = full_device_state
         pure_device_to_process = pure_network_state
         try:
-            cache = self.controller.loader._parsed_yaml_cache
-            id_map = (
-                cache.get(getattr(self.controller, "device_id", "XXXX"), {})
-                .get(CONFIG_DEVICE, {})
-                .get("identifiers")
-            )
-            if id_map:
-                found_device = self._find_device_node(full_device_state, id_map)
-                if found_device:
-                    device_to_process = found_device
+            cache = getattr(self.controller.loader, "_parsed_yaml_cache", {})
+            if isinstance(cache, dict):
+                dev_conf = cache.get(getattr(self.controller, "device_id", "XXXX"), {})
+                if isinstance(dev_conf, dict):
+                    id_map = dev_conf.get(CONFIG_DEVICE, {}).get("identifiers")
+                    if isinstance(id_map, dict):
+                        found_device = self._find_device_node(full_device_state, id_map)
+                        if isinstance(found_device, dict):
+                            device_to_process = found_device
 
-                found_pure_device = self._find_device_node(pure_network_state, id_map)
-                if found_pure_device:
-                    pure_device_to_process = found_pure_device
+                        found_pure_device = self._find_device_node(pure_network_state, id_map)
+                        if isinstance(found_pure_device, dict):
+                            pure_device_to_process = found_pure_device
 
         except Exception as e:  # pylint: disable=broad-exception-caught
             _LOGGER.debug("%s [Forensic] Failed to extract device node: %s", self.controller.log_prefix, e)
@@ -539,6 +532,19 @@ class YamlStatePoller:
         """Apply anti-flicker pending updates shielding UI from stale network data."""
         # ------------------- ANTI-FLICKER ENGINE (SHADOW STATE) -------------------
         # MUST RUN FIRST to inject optimistic locks into device_to_process BEFORE parsing properties
+        
+        # Check for global evictions driven dynamically by property object metadata
+        global_evict = False
+        if changed_keys is not None:
+            for op in all_properties:
+                if hasattr(op, "should_evict_all_locks"):
+                    try:
+                        if op.should_evict_all_locks(pure_device_to_process, changed_keys):
+                            global_evict = True
+                            break
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        pass
+
         now = time.time()
         
         props_by_id = {}
@@ -585,7 +591,10 @@ class YamlStatePoller:
                     # Temporal Shield: Prevent immediate premature release on fast echo before physical AC reacts
                     can_release = False
                 elif changed_keys is not None:
-                    if device_key and device_key not in changed_keys:
+                    # Delegate global eviction (like Power Off) to the declarative property hook
+                    if global_evict:
+                        can_release = True
+                    elif device_key and device_key not in changed_keys:
                         # Push update was for another property (e.g. Wind or Power), NOT for this property!
                         # Keep shield active until THIS property's device_key arrives in push update or poll.
                         can_release = False

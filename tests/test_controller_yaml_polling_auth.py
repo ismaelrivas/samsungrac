@@ -14,6 +14,12 @@ class NakedObj:
     """Sterile object without mock overhead to prevent side-effects."""
 
     def __init__(self, **kwargs):
+        self.debug = False
+        self.name = "TestName"
+        self.ip_address = "1.2.3.4"
+        self.available = True
+        self.device_id = "XXXX"
+        self.hass = __import__('unittest.mock').mock.MagicMock()
         self.__dict__.update(kwargs)
 
 
@@ -166,6 +172,11 @@ async def test_refresh_smartthings_token_sniper_failures(
     # Dummy estricto para evitar MagicMocks donde testeamos hasattr/getattr
     class DummyController:
         def __init__(self):
+            self.debug = False
+            self.name = "TestName"
+            self.ip_address = "1.2.3.4"
+            self.available = True
+            self.device_id = "XXXX"
             self.log_prefix = "[AuthTest]"
             # hass no está definido a propósito al inicio
 

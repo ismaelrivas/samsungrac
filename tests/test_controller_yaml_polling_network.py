@@ -15,6 +15,12 @@ class NakedObj:
     """Sterile object without mock overhead to prevent side-effects."""
 
     def __init__(self, **kwargs):
+        self.debug = False
+        self.name = "TestName"
+        self.ip_address = "1.2.3.4"
+        self.available = True
+        self.device_id = "XXXX"
+        self.hass = __import__('unittest.mock').mock.MagicMock()
         self.__dict__.update(kwargs)
 
 
@@ -773,7 +779,7 @@ async def test_async_update_state_force_connection_errors():
     with pytest.raises(UpdateFailed) as exc:
         await poller.async_update_state()
 
-    assert "TargetReason" in str(exc.value)
+    assert str(exc.value) == "Device unreachable: TargetReason"
 
 
 async def test_shutdown_raw_client_missing():
