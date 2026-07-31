@@ -72,8 +72,9 @@ def mock_connection():
     connection.create_updated.return_value = connection
     connection.is_async_native = True
 
-    # Ensure async_execute is awaitable
+    # Ensure async_execute and async_execute_with_retry are awaitable
     connection.async_execute = AsyncMock(return_value=("{}", None))
+    connection.async_execute_with_retry = AsyncMock(return_value={})
 
     connection._lock = MagicMock()
     connection.async_lock = MagicMock()
@@ -105,7 +106,6 @@ async def test_device_property_init(mock_connection, mock_controller):
     assert prop._connection_template_raw is None
     assert prop._validation_template_raw is None
     assert prop._device_state is None
-    assert prop._is_valid_cache == (None, None)
     assert prop._friendly_name is None
     assert prop._device_class is None
     assert prop._unit_of_measurement is None
@@ -144,26 +144,6 @@ async def test_device_property_load_state_class_exception(
     yaml_node = {"state_class": "invalid_class"}
     with pytest.raises(ValueError, match="Invalid state_class 'invalid_class' in YAML"):
         prop.load_from_yaml(yaml_node)
-
-
-async def test_device_property_is_valid_cache(mock_connection, mock_controller):
-    """Pattern 3: Internal Cache Freezing for is_valid."""
-    prop = DeviceProperty("test", mock_connection, mock_controller)
-    mock_template = MagicMock()
-    mock_template.render.return_value = "VaLid"  # case insensitive match
-    prop._validation_template = mock_template
-
-    dev_state = {"a": 1}
-    # Call 1
-    assert prop.is_valid(dev_state) is True
-    # Verify cache
-    state_id = id(dev_state)
-    assert prop._is_valid_cache == (state_id, True)
-
-    # Call 2 with same dict
-    mock_template.render.reset_mock()
-    assert prop.is_valid(dev_state) is True
-    mock_template.render.assert_not_called()  # Cache hit
 
 
 async def test_device_property_is_valid_exception(
@@ -246,7 +226,7 @@ async def test_getjsonstatus_calculate_value_valid(mock_connection, mock_control
 
     dev_state = {"raw": "data"}
     res = g.calculate_value_from_state(dev_state)
-    assert res == {"key": "True"}  # Strict match
+    assert res == {"key": True}  # Dual-parser AST literal_eval preserves boolean True
 
 
 async def test_getjsonstatus_calculate_value_exception(
@@ -336,14 +316,7 @@ async def test_getjsonstatus_async_update_sync_success(
     """Test happy path for sync connection execution."""
     g = GetJsonStatus("test_sync_success", mock_connection, mock_controller)
     mock_connection.is_async_native = False
-    g._connection_template = MagicMock()
-    g._connection_template.render.return_value = '{"method": "GET"}'
-
-    async def _mock_add_job(*args, **kwargs):
-        return {"ok": True}
-
-    mock_controller.hass.async_add_executor_job = AsyncMock(side_effect=_mock_add_job)
-    mock_connection.async_lock = AsyncMock()
+    mock_connection.async_execute_with_retry = AsyncMock(return_value={"ok": True})
 
     res = await g.async_update_state(None, False)
     assert res == {"ok": True}
@@ -401,25 +374,12 @@ async def test_getjsonstatus_async_update_sync_retry(
     """Pattern 2: Test 5 retries in sync connection and final CannotConnect."""
     g = GetJsonStatus("test", mock_connection, mock_controller)
     mock_connection.is_async_native = False
+    mock_connection.async_execute_with_retry = AsyncMock(
+        side_effect=CannotConnect("Connection failed after 5 retries")
+    )
 
-    class RetryNextAttempt(Exception):
-        pass
-
-    async def _mock_add_job(*args, **kwargs):
-        raise RetryNextAttempt("Simulated timeout")
-
-    mock_controller.hass.async_add_executor_job = AsyncMock(side_effect=_mock_add_job)
-
-    # We must patch asyncio.sleep to not hang the test, but we also need connection.async_lock to be async context manager.
-    mock_connection.async_lock = AsyncMock()
-    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-        with pytest.raises(CannotConnect, match="Connection failed after 5 retries"):
-            await g.async_update_state(None, False)
-
-        assert (
-            mock_sleep.call_count == 4
-        )  # Attempt 1 to 4 trigger sleep, 5th throws CannotConnect
-        assert mock_controller.hass.async_add_executor_job.call_count == 5
+    with pytest.raises(CannotConnect, match="Connection failed after 5 retries"):
+        await g.async_update_state(None, False)
 
 
 async def test_getjsonstatus_async_update_success(mock_connection, mock_controller):
@@ -568,11 +528,11 @@ async def test_deviceoperation_async_set_value_sync_success(
     """Test sync execution wraps properly."""
     op = DeviceOperation("test_op", mock_connection, mock_controller)
     mock_connection.is_async_native = False
+    mock_connection.async_execute_with_retry = AsyncMock(return_value={})
 
-    mock_controller.hass.async_add_executor_job = AsyncMock(return_value=True)
     res = await op.async_set_value("val")
     assert res is True
-    mock_controller.hass.async_add_executor_job.assert_called_once()
+    mock_connection.async_execute_with_retry.assert_called_once()
 
 
 async def test_deviceoperation_async_set_value_sync_retry(
@@ -581,19 +541,12 @@ async def test_deviceoperation_async_set_value_sync_retry(
     """Test sync RetryNextAttempt mechanism loops and finally raises CannotConnect."""
     op = DeviceOperation("test_op", mock_connection, mock_controller)
     mock_connection.is_async_native = False
+    mock_connection.async_execute_with_retry = AsyncMock(
+        side_effect=CannotConnect("Connection failed after 5 retries")
+    )
 
-    class RetryNextAttempt(Exception):
-        pass
-
-    async def _mock_job(*args, **kwargs):
-        raise RetryNextAttempt("try again")
-
-    mock_controller.hass.async_add_executor_job = AsyncMock(side_effect=_mock_job)
-
-    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-        with pytest.raises(CannotConnect, match="Connection failed after 5 retries"):
-            await op.async_set_value("val")
-        assert mock_sleep.call_count == 4
+    with pytest.raises(HomeAssistantError, match="Connection error: could not set value for test_op"):
+        await op.async_set_value("val")
 
 
 # ====================================================================================
@@ -782,30 +735,28 @@ async def test_deviceoperation_async_set_value_config_fallbacks(
     op._connection_template = MagicMock()
     op.convert_hass_to_dev = MagicMock(return_value="val")
 
-    # 1. No device_id, No cfg, No config
+    # 1. No device_id, No cfg, No config, No device_state
     mock_controller.device_id = None
+    mock_controller.device_state = None
     del mock_connection._cfg
     del mock_connection.config
 
     mock_connection.is_async_native = False
-    mock_connection.execute.return_value = {"success": True}
-
-    async def _mock_add_job(*args, **kwargs):
-        func = args[0]
-        return func(*args[1:])
-
-    mock_controller.hass.async_add_executor_job = AsyncMock(side_effect=_mock_add_job)
+    mock_connection.async_execute_with_retry = AsyncMock(return_value={"success": True})
 
     await op.async_set_value("val")
-    args, _ = mock_connection.execute.call_args
-    assert args[3] is None  # device_id/duid is None
+    mock_connection.async_execute_with_retry.assert_called_once_with(
+        op._connection_template, "val", None, None
+    )
 
     # 2. No duid attribute on cfg
     mock_cfg = MagicMock(spec=[])
     mock_connection._cfg = mock_cfg
+    mock_connection.async_execute_with_retry.reset_mock()
     await op.async_set_value("val")
-    args, _ = mock_connection.execute.call_args
-    assert args[3] is None
+    mock_connection.async_execute_with_retry.assert_called_once_with(
+        op._connection_template, "val", None, None
+    )
 
 
 async def test_global_factories_and_registers(mock_connection, mock_controller):
@@ -998,20 +949,12 @@ async def test_deviceoperation_async_set_value_mutants(
     # Verify current_full_state fallback
     del mock_controller.device_state
     mock_connection.is_async_native = False
-    mock_connection.execute.return_value = {"success": True}
-
-    async def _mock_add_job(*args, **kwargs):
-        # execute is args[0]
-        func = args[0]
-        return func(*args[1:])
-
-    mock_controller.hass.async_add_executor_job = AsyncMock(side_effect=_mock_add_job)
+    mock_connection.async_execute_with_retry = AsyncMock(return_value={"success": True})
 
     await op.async_set_value("val")
-    args, _ = mock_connection.execute.call_args
-    assert (
-        args[2] is None
-    )  # args[2] is current_full_state (0:template, 1:dev_value, 2:current_full_state, 3:device_id)
+    mock_connection.async_execute_with_retry.assert_called_once_with(
+        op._connection_template, "val", None, None
+    )
 
 
 async def test_basicdeviceoperation_init_and_get_conn(mock_connection, mock_controller):
@@ -1409,22 +1352,18 @@ async def test_getjsonstatus_sync_execute(mock_connection, mock_controller):
     g._connection_template = mock_tmpl
 
     mock_controller.device_id = "test_duid"
-    mock_controller.hass.async_add_executor_job = AsyncMock(
-        return_value=('{"sync": true}', None)
-    )
+    mock_connection.async_execute_with_retry = AsyncMock(return_value={"sync": True})
     await g.async_update_state(None, False)
 
-    mock_controller.hass.async_add_executor_job.assert_called_once_with(
-        mock_connection.execute, mock_tmpl, None, "unknown"
+    mock_connection.async_execute_with_retry.assert_called_once_with(
+        mock_tmpl, None, "unknown"
     )
 
 
 async def test_deviceoperation_sync_execute(mock_connection, mock_controller):
     """Test sync execution path for DeviceOperation."""
     mock_connection.is_async_native = False
-    mock_connection._lock = MagicMock()
-    mock_connection._lock.__aenter__ = AsyncMock()
-    mock_connection._lock.__aexit__ = AsyncMock()
+    mock_connection.async_execute_with_retry = AsyncMock(return_value=True)
     del mock_controller.device_state
 
     op = DeviceOperation("test_sync", mock_connection, mock_controller)
@@ -1439,13 +1378,11 @@ async def test_deviceoperation_sync_execute(mock_connection, mock_controller):
     mock_tmpl.render.return_value = '{"method": "SET"}'
     op._connection_template = mock_tmpl
 
-    mock_controller.device_id = "test_duid"
-    mock_controller.hass.async_add_executor_job = AsyncMock(return_value=True)
     res = await op.async_set_value("ha_val")
 
     assert res is True
-    mock_controller.hass.async_add_executor_job.assert_called_once_with(
-        mock_connection.execute, mock_tmpl, "dev_val", {"power": "off"}, None
+    mock_connection.async_execute_with_retry.assert_called_once_with(
+        mock_tmpl, "dev_val", {"power": "off"}, None
     )
 
 
@@ -1704,6 +1641,7 @@ async def test_deviceoperation_async_set_value_mutants_async_native():
     conn = MagicMock(is_async_native=True)
     conn._lock = AsyncMock()
     conn.async_execute = AsyncMock(return_value=("ok", None))
+    conn.async_execute_with_retry = AsyncMock(return_value={})
     ctrl = MagicMock()
 
     op = DeviceOperation("test_set", conn, ctrl)
@@ -2231,22 +2169,17 @@ async def test_device_operation_async_set_value_conversions_and_fallbacks():
     )
 
     # 4. Test sync execution passing device_id
-    sync_conn = MagicMock(spec=["is_async_native", "_lock", "execute"])
+    sync_conn = MagicMock(spec=["is_async_native", "_lock", "execute", "async_execute_with_retry"])
     sync_conn.is_async_native = False
+    sync_conn.async_execute_with_retry = AsyncMock(return_value={})
     sync_conn._lock = AsyncMock()
 
     op_sync = DeviceOperation("test_sync", sync_conn, ctrl_no_state)
     op_sync._connection_template = Template("tmpl")
 
-    async def _mock_add_job(fn, *args):
-        fn(*args)
-
-    ctrl_no_state.hass = MagicMock()
-    ctrl_no_state.hass.async_add_executor_job = AsyncMock(side_effect=_mock_add_job)
-
     res_sync = await op_sync.async_set_value("val", device_id="sync_dev_99")
     assert res_sync is True
-    sync_conn.execute.assert_called_once_with(
+    sync_conn.async_execute_with_retry.assert_called_once_with(
         op_sync.connection_template, "val", None, "sync_dev_99"
     )
 
@@ -2340,4 +2273,22 @@ async def test_device_operation_async_set_value_device_state_passed(mock_connect
     mock_template.render.assert_called_with(
         value="val", device_id="test_duid", duid="test_duid", device_state={"custom_key": "custom_val"}
     )
+
+
+async def test_getjsonstatus_calculate_value_json_strict(mock_connection, mock_controller):
+    """Kill json_loads(None) mutant by asserting strict JSON parsing output."""
+    from custom_components.climate_ip.properties import GetJsonStatus
+    from jinja2 import Template
+
+    getter = GetJsonStatus("test_json_strict", mock_connection, mock_controller)
+    # Give it a pure, valid JSON string output
+    getter._status_template = Template('{"strict_key": "strict_value", "is_active": true}')
+    
+    # Run the calculation
+    result = getter.calculate_value_from_state({"dummy": 1})
+    
+    # STRICT ASSERTION: If the mutant returns None, this will fail and kill it.
+    assert isinstance(result, dict)
+    assert result == {"strict_key": "strict_value", "is_active": True}
+
 

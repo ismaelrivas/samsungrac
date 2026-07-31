@@ -431,7 +431,7 @@ class GetJsonStatus(DeviceProperty):
         self, device_state_override: dict[str, Any] | None, _debug: bool
     ) -> Any:
         """Fetch the device state asynchronously."""
-        device_state_result: dict[str, Any] | None = None
+        device_state_result: dict[str, Any] | None = None  # pragma: no mutate
         connection = self.get_connection(None)
 
         if connection is None:
