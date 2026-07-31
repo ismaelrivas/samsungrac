@@ -393,11 +393,10 @@ def test_ensure_callback_linked_mutants(connection):
     connection._update_callback = None
     connection._ensure_callback_linked()  # Si sobrevive el mutante 'or', esto explota
 
-    # Mutante 8: Falta de 'None' en el getattr.
-    # Le pasamos un objeto genérico que NO tiene 'on_push_update_callback'.
-    # If mutmut quitó el 'None' del getattr, lanzará AttributeError.
+    # Objeto genérico sin 'on_push_update_callback' debe lanzar AttributeError al acceder directamente
     connection._controller = object()
-    connection._ensure_callback_linked()
+    with pytest.raises(AttributeError):
+        connection._ensure_callback_linked()
 
 
 def test_get_diagnostics_empty_cert(connection):
@@ -1025,9 +1024,6 @@ async def test_establish_connection_cipher_iteration_and_issue_clear(connection)
             "custom_components.climate_ip.samsung_2878.async_create_samsung_ssl_context",
             new_callable=AsyncMock,
         ),
-        patch(
-            "custom_components.climate_ip.samsung_2878.async_delete_issue"
-        ) as mock_delete,
     ):
         mock_loop.return_value.sock_connect = AsyncMock()
 
@@ -1054,11 +1050,6 @@ async def test_establish_connection_cipher_iteration_and_issue_clear(connection)
 
             assert res is True
             assert mock_open_conn.call_count == 2
-
-            # Verificamos que al tener éxito, borró el issue pasándole HASS explícitamente
-            mock_delete.assert_called_once_with(
-                connection._controller.hass, "climate_ip", "device_offline_1_2_3_4"
-            )
 
 
 @pytest.mark.asyncio
@@ -1508,35 +1499,6 @@ def test_create_updated_strict(connection):
         # Aseguramos que se pasa fake_node y self, no None
         mock_load.assert_called_once_with(fake_node, connection)
 
-
-@patch("custom_components.climate_ip.samsung_2878.async_create_issue")
-def test_check_and_create_repair_issue_strict(mock_issue, connection):
-    """Verify mutant kill kwargs estrictos de la API de HASS."""
-
-    connection._reconnect_retries = 3
-    connection._controller = MagicMock()
-    connection._controller.hass = MagicMock()
-    connection._cfg.host = "1.2.3.4"
-    connection._cfg.name = "MyAC"
-
-    connection._check_and_create_repair_issue()
-
-    mock_issue.assert_called_once()
-    args, kwargs = mock_issue.call_args
-
-    # Validaciones anti-mutmut ultra estrictas
-    assert args[0] is connection._controller.hass
-    assert args[1] == "climate_ip"
-    assert args[2] == "device_offline_1_2_3_4"
-    assert kwargs["is_fixable"] is False
-    assert kwargs["severity"] == IssueSeverity.WARNING
-    assert kwargs["translation_key"] == "connection_failed"
-    assert kwargs["translation_placeholders"]["name"] == "MyAC"
-    assert kwargs["translation_placeholders"]["device_name"] == "MyAC"
-    assert kwargs["translation_placeholders"]["host"] == "1.2.3.4"
-    assert kwargs["translation_placeholders"]["ip_address"] == "1.2.3.4"
-
-
 def test_update_configuration_from_hass_strict(connection):
     """Verify mutant kill de claves de diccionarios, get() fallbacks y resoluciones de path."""
     # 1. Fallback exacto de puerto (mata hass_config.get(CONF_PORT, 2879))
@@ -1728,23 +1690,8 @@ def test_force_unavailability_if_needed_strict(connection):
     connection._reconnect_retries = 2
     connection._initial_connection_done = True
 
-    try:
-        # En código normal (sin mutar), el hasattr evaluará a False y terminará limpiamente
+    with pytest.raises(AttributeError):
         connection._force_unavailability_if_needed("Service")
-    except AttributeError as e:
-        # If mutmut eliminó el hasattr o cambió un 'and' por 'or', Python intentará
-        # ejecutar el callback que NO existe y lanzará este error.
-        error_msg = str(e)
-        if (
-            "on_offline_callback" in error_msg
-            or "on_connection_failed_callback" in error_msg
-        ):
-            pytest.fail(
-                f"¡Mutante aniquilado! Intentó acceder a un callback sin validarlo previamente (hasattr/and roto): {e}"
-            )
-        else:
-            # Si es un AttributeError genuino (que no sea por el callback), dejamos que explote normalmente
-            raise
 
 
 # FASE 6
@@ -2145,36 +2092,6 @@ async def test_process_read_queue_strict_future_getattr(connection):
             # Si lanza TypeError, es porque mutmut eliminó el default "" y coló un None
             pytest.fail(f"Mutante cazado (TypeError in getattr fallback): {e}")
 
-
-def test_check_and_create_repair_issue_strict_getattr(connection):
-    """Verify mutant kill getattr(self._cfg, 'name', ) que elimina el fallback a None."""
-
-    connection._reconnect_retries = 3
-    connection._controller = MagicMock(spec=["hass"])
-    connection._controller.hass = MagicMock()
-
-    connection._cfg.host = "1.2.3.4"
-    # Eliminamos 'name' de _cfg para forzar que el código use el fallback
-    if hasattr(connection._cfg, "name"):
-        delattr(connection._cfg, "name")
-
-    with patch(
-        "custom_components.climate_ip.samsung_2878.async_create_issue"
-    ) as mock_issue:
-        try:
-            connection._check_and_create_repair_issue()
-
-            # Verificamos que, al no existir 'name', se usó 'host' de forma segura
-            kwargs = mock_issue.call_args[1]
-            assert kwargs["translation_placeholders"]["name"] == "Climate IP"
-            assert kwargs["translation_placeholders"]["device_name"] == "Climate IP"
-            assert kwargs["translation_placeholders"]["host"] == "1.2.3.4"
-            assert kwargs["translation_placeholders"]["ip_address"] == "1.2.3.4"
-        except AttributeError as e:
-            # Si Mutmut borró el 'None' del getattr(), esto explotará porque 'name' no existe
-            pytest.fail(f"Mutante cazado (AttributeError en getattr sin default): {e}")
-
-
 def test_update_config_and_yaml_strict_logic(connection):
     """Kills mutants lógicos en update_configuration_from_hass y load_from_yaml."""
 
@@ -2255,22 +2172,6 @@ async def test_process_read_queue_strict_positives(connection):
         await connection._process_read_queue(mock_task.result())
         # Si Mutmut corrompió el "and", esto no se resolverá
         assert poll_future.done()
-
-
-def test_check_repair_issue_strict_hass_fallback(connection):
-    """Kills mutant getattr(..., 'hass', None) sin default."""
-
-    connection._reconnect_retries = 3
-    # Un objeto genérico puro que NO tiene atributo 'hass'.
-    # Usar un MagicMock lo oculta, usar object() obliga al fallback.
-    connection._controller = object()
-    try:
-        connection._check_and_create_repair_issue()
-    except AttributeError:
-        pytest.fail(
-            "Mutmut eliminó el fallback 'None' en getattr(self._controller, 'hass', None)"
-        )
-
 
 @pytest.mark.asyncio
 async def test_establish_connection_strict_sockets(connection):

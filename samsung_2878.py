@@ -141,13 +141,13 @@ class ConnectionSamsung2878(Connection):
     def set_controller_ref(self, controller: Any) -> None:
         """Set the controller reference."""
         self._controller = controller
-        if controller and getattr(controller, "hass", None):
+        if controller:
             self._hass = controller.hass
 
     @property
     def log_prefix(self) -> str:
         """Return the logging prefix for this connection."""
-        if self._controller and getattr(self._controller, "unique_id", None):
+        if self._controller and self._controller.unique_id:
             return self._controller.log_prefix
         if self._cfg and self._cfg.duid:
             return f"[{self._cfg.duid[-6:]}]"
@@ -172,9 +172,8 @@ class ConnectionSamsung2878(Connection):
     def _ensure_callback_linked(self) -> None:
         """Link the push update callback via the controller to maintain IoC."""
         if not self._update_callback and self._controller:
-            push_callback = getattr(self._controller, "on_push_update_callback", None)
-            if push_callback:
-                self.set_update_callback(push_callback)
+            if self._controller.on_push_update_callback:
+                self.set_update_callback(self._controller.on_push_update_callback)
                 _LOGGER.debug(
                     "%s Auto-linked push update callback from controller.",
                     self.log_prefix,
@@ -337,7 +336,7 @@ class ConnectionSamsung2878(Connection):
         self._params.update(params_node)
 
         # Runtime config from HA overrides default YAML placeholders
-        if hasattr(self, "_cfg") and self._cfg:
+        if self._cfg:
             if self._cfg.token:
                 self._params[CONF_TOKEN] = self._cfg.token
             if self._cfg.host:
@@ -646,10 +645,7 @@ class ConnectionSamsung2878(Connection):
                 }
 
                 # Persist to ConfigEntry data so it survives HA restarts
-                if (
-                    hasattr(self._controller, "on_ssl_config_updated")
-                    and self._controller.on_ssl_config_updated
-                ):
+                if self._controller and self._controller.on_ssl_config_updated:
                     self._controller.on_ssl_config_updated(self._last_successful_config)
 
                 connection_successful = True
@@ -796,10 +792,7 @@ class ConnectionSamsung2878(Connection):
         if self._initial_connection_done:
             self._track_task(self._post_connect_status_request())
             # Proactively refresh HA state after reconnection
-            if (
-                hasattr(self._controller, "request_refresh_callback")
-                and self._controller.request_refresh_callback
-            ):
+            if self._controller and self._controller.request_refresh_callback:
                 _LOGGER.info(
                     "%s Requesting immediate coordinator refresh after reconnection.",
                     self.log_prefix,
@@ -1123,7 +1116,7 @@ class ConnectionSamsung2878(Connection):
     ) -> None:  # pragma: no mutate
         """Force frontend unavailability if retries hit threshold."""
         if self._reconnect_retries == 2:
-            if not getattr(self, "_persistent_offline_err_logged", False):
+            if not self._persistent_offline_err_logged:
                 if not self._initial_connection_done:
                     _LOGGER.debug(
                         "%s AC %s is persistently offline during initial setup.",
@@ -1137,11 +1130,7 @@ class ConnectionSamsung2878(Connection):
                         offline_type,
                     )  # pragma: no mutate
                     # Trigger the panic button callback to notify the coordinator immediately
-                    if (
-                        self._controller
-                        and hasattr(self._controller, "on_offline_callback")
-                        and self._controller.on_offline_callback
-                    ):
+                    if self._controller and self._controller.on_offline_callback:
                         self._controller.on_offline_callback(
                             "Host unreachable after multiple retry attempts."
                         )
@@ -1151,10 +1140,7 @@ class ConnectionSamsung2878(Connection):
                     "%s AC %s is persistently offline.", self.log_prefix, offline_type
                 )  # pragma: no mutate
 
-            if (
-                hasattr(self._controller, "on_connection_failed_callback")
-                and self._controller.on_connection_failed_callback
-            ):
+            if self._controller and self._controller.on_connection_failed_callback:
                 self._controller.on_connection_failed_callback()
 
     async def handle_reconnection(self) -> bool:
