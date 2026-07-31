@@ -20,6 +20,7 @@ from homeassistant.config_entries import (
     OptionsFlow,
     SOURCE_RECONFIGURE,
 )
+from homeassistant.data_entry_flow import AbortFlow
 from homeassistant.const import (
     CONF_IP_ADDRESS,
     CONF_MAC,
@@ -308,6 +309,8 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 "error": "timeout_connect",
                 "error_details": str(err),
             }
+        except AbortFlow:
+            raise  # Let Home Assistant handle its own flow control
         except Exception as e:
             _LOGGER.error(
                 "Unexpected error during pairing: %s", e, exc_info=True
@@ -339,6 +342,8 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         except (TokenAcquisitionError, AuthTurnedOffError) as e:
             _LOGGER.warning("Token acquisition failed: %s", e)  # pragma: no mutate
             return {"ok": False, "error": "token_acquisition_failed"}
+        except AbortFlow:
+            raise  # Let Home Assistant handle its own flow control
         except Exception as e:
             _LOGGER.error(
                 "Unknown error while waiting for token: %s", e, exc_info=True
@@ -716,9 +721,9 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
 
             except CannotConnect:
                 errors["base"] = "cannot_connect"
+            except AbortFlow:
+                raise  # Let Home Assistant handle its own flow control
             except Exception as e:  # pylint: disable=broad-except
-                if e.__class__.__name__ == "AbortFlow":
-                    raise
                 _LOGGER.exception(
                     "Unexpected error during connection test"
                 )  # pragma: no mutate
@@ -746,6 +751,8 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         if self.task is not None and self.task.done():
             try:
                 result = self.task.result()
+            except AbortFlow:
+                raise  # Let Home Assistant handle its own flow control
             except Exception as e:
                 _LOGGER.error("Task failed unexpectedly: %s", e)  # pragma: no mutate
                 result = {"ok": False, "error": "unknown_error"}  # pragma: no mutate
@@ -826,6 +833,8 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         if self.task is not None and self.task.done():
             try:
                 result = self.task.result()
+            except AbortFlow:
+                raise  # Let Home Assistant handle its own flow control
             except Exception as e:
                 _LOGGER.error("Task failed unexpectedly: %s", e)  # pragma: no mutate
                 result = {"ok": False, "error": "unknown_error"}  # pragma: no mutate
@@ -871,6 +880,19 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         )
 
     # pylint: disable=too-many-locals,too-many-branches
+    @staticmethod
+    def _build_ssl_context(cert_path: str) -> ssl.SSLContext:
+        """Build an SSL context, loading certificate if provided (sync, executor-safe)."""
+        ssl_context = ssl.create_default_context()
+        if cert_path:
+            full_path = resolve_cert_path(cert_path, os.path.dirname(__file__))
+            if full_path is not None and os.path.exists(full_path):
+                ssl_context.load_verify_locations(cafile=full_path)
+        else:
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+        return ssl_context
+
     async def _test_connection_safe(self) -> dict[str, Any]:
         """Safe and lightweight wrapper for testing the connection."""
         _LOGGER.debug(
@@ -889,20 +911,10 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                     "Content-Type": "application/json",
                 }
 
-                ssl_context = ssl.create_default_context()
                 cert_path = str(self.flow_data.get(CONF_CERT) or "")
-
-                if cert_path:
-                    full_path = resolve_cert_path(cert_path, os.path.dirname(__file__))
-                    if full_path is not None:
-                        cert_exists = await self.hass.async_add_executor_job(
-                            os.path.exists, full_path
-                        )
-                        if cert_exists:
-                            ssl_context.load_verify_locations(cafile=full_path)
-                else:
-                    ssl_context.check_hostname = False
-                    ssl_context.verify_mode = ssl.CERT_NONE
+                ssl_context = await self.hass.async_add_executor_job(
+                    self._build_ssl_context, cert_path
+                )
 
                 async with session.get(
                     url,
@@ -986,6 +998,8 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 "AC rejected token during pairing."
             )  # pragma: no mutate
             return {"ok": False, "error": "invalid_auth", "error_details": str(err)}
+        except AbortFlow:
+            raise  # Let Home Assistant handle its own flow control
         except Exception as e:  # pylint: disable=broad-exception-caught
             _LOGGER.error(
                 "Unknown error during connection test: %s", e, exc_info=True
@@ -1261,6 +1275,8 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 controller = None
             return await self._async_fallback_raw_discovery(config_data)
 
+        except AbortFlow:
+            raise  # Let Home Assistant handle its own flow control
         except Exception as e:  # pylint: disable=broad-exception-caught
             _LOGGER.exception("Discovery failed: %s", e)  # pragma: no mutate
             return self.async_abort(reason="unknown_error")
