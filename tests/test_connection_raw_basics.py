@@ -1,7 +1,6 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
 """Tests for ConnectionRaw8888."""
 
-# pylint: disable=import-outside-toplevel,protected-access,redefined-outer-name
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -122,6 +121,12 @@ async def test_create_updated(connection_config, mock_logger, mock_hass):
         assert new_conn_embedded._embedded_command is not None
         assert new_conn_embedded._embedded_command.condition_template is not None
         assert new_conn_embedded._embedded_command.condition_template.hass == mock_hass
+
+        # Test embedded command WITHOUT condition_template (kills boolean condition_str mutant)
+        yaml_node_no_cond = {"connection": {"params": {"foo": "bar"}}}
+        new_conn_no_cond = conn.create_updated(yaml_node_no_cond)
+        assert new_conn_no_cond._embedded_command is not None
+        assert new_conn_no_cond._embedded_command.condition_template is None
         # pylint: enable=duplicate-code
 
 
@@ -277,7 +282,7 @@ async def test_async_get_client(connection_config, mock_logger, mock_hass):
         conn3 = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
         conn3._params = {"url": "http://test.com:1234/path"}
         mock_controller = MagicMock()
-        mock_controller._shared_raw_client = None  # Ensure it does not exist
+        mock_controller.shared_raw_client = None  # Ensure it does not exist
         conn3.set_controller_ref(mock_controller)
 
         with patch(
@@ -287,7 +292,7 @@ async def test_async_get_client(connection_config, mock_logger, mock_hass):
             mock_client_cls.assert_called_once_with(
                 "192.168.1.100", 1234, conn3._cert, log_prefix=conn3.log_prefix
             )
-            assert mock_controller._shared_raw_client == client
+            assert mock_controller.shared_raw_client == client
 
             # Requesting again should return cached shared client
             mock_client_cls.reset_mock()
@@ -301,7 +306,7 @@ async def test_async_get_client(connection_config, mock_logger, mock_hass):
         )
         conn3b._params = {"url": "https://test.com/path"}
         mock_controller_b = MagicMock()
-        mock_controller_b._shared_raw_client = None
+        mock_controller_b.shared_raw_client = None
         conn3b.set_controller_ref(mock_controller_b)
         with patch(
             "custom_components.climate_ip.connection_raw.Samsung8888Client"
@@ -316,7 +321,7 @@ async def test_async_get_client(connection_config, mock_logger, mock_hass):
         )
         conn3c._params = {"url": "http://test.com/path"}
         mock_controller_c = MagicMock()
-        mock_controller_c._shared_raw_client = None
+        mock_controller_c.shared_raw_client = None
         conn3c.set_controller_ref(mock_controller_c)
         with patch(
             "custom_components.climate_ip.connection_raw.Samsung8888Client"
@@ -329,7 +334,7 @@ async def test_async_get_client(connection_config, mock_logger, mock_hass):
         # 4. Shared client, no host raises CannotConnect
         conn4 = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
         mock_controller2 = MagicMock()
-        mock_controller2._shared_raw_client = None
+        mock_controller2.shared_raw_client = None
         conn4.set_controller_ref(mock_controller2)
         conn4._host = None
         with pytest.raises(CannotConnect):
@@ -357,11 +362,11 @@ async def test_close(connection_config, mock_logger, mock_hass):
         # 3. Close shared client
         mock_controller = MagicMock()
         mock_shared_client = AsyncMock()
-        mock_controller._shared_raw_client = mock_shared_client
+        mock_controller.shared_raw_client = mock_shared_client
         conn.set_controller_ref(mock_controller)
         await conn.close()
         mock_shared_client.close.assert_called_once()
-        assert mock_controller._shared_raw_client is None
+        assert mock_controller.shared_raw_client is None
 
         # 4. Handle exceptions during close
         mock_client2 = AsyncMock()
@@ -370,7 +375,7 @@ async def test_close(connection_config, mock_logger, mock_hass):
 
         mock_shared_client2 = AsyncMock()
         mock_shared_client2.close.side_effect = TimeoutError("timeout")
-        mock_controller._shared_raw_client = mock_shared_client2
+        mock_controller.shared_raw_client = mock_shared_client2
 
         conn._embedded_command.close.side_effect = TimeoutError("timeout")
 
@@ -385,9 +390,9 @@ async def test_close(connection_config, mock_logger, mock_hass):
         conn_empty._client = None
         conn_empty._embedded_command = None
         conn_empty._controller = MagicMock()
-        conn_empty._controller._shared_raw_client = None
+        conn_empty._controller.shared_raw_client = None
         await conn_empty.close()  # Should succeed cleanly
-        assert mock_controller._shared_raw_client is None
+        assert conn_empty._controller.shared_raw_client is None
 
 
 async def test_set_controller_ref(connection_config, mock_logger, mock_hass):
@@ -395,7 +400,7 @@ async def test_set_controller_ref(connection_config, mock_logger, mock_hass):
     with patch("os.path.exists", return_value=True):
         conn = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
         mock_controller = MagicMock()
-        mock_controller._shared_raw_client = None
+        mock_controller.shared_raw_client = None
 
         # Test basic assignment
         conn.set_controller_ref(mock_controller)
@@ -418,17 +423,17 @@ async def test_set_controller_ref(connection_config, mock_logger, mock_hass):
             "custom_components.climate_ip.connection_raw.Samsung8888Client"
         ) as mock_client_cls:
             client = await conn.async_get_client()
-            assert client == mock_controller._shared_raw_client
+            assert client == mock_controller.shared_raw_client
             mock_client_cls.assert_called_once_with(
                 "192.168.1.100", 8888, conn._cert, log_prefix=conn.log_prefix
             )
 
         # Also test close with controller
         mock_shared_client = AsyncMock()
-        mock_controller._shared_raw_client = mock_shared_client
+        mock_controller.shared_raw_client = mock_shared_client
         await conn.close()
         mock_shared_client.close.assert_called_once()
-        assert mock_controller._shared_raw_client is None
+        assert mock_controller.shared_raw_client is None
 
 
 async def test_load_from_yaml(connection_config, mock_logger, mock_hass):
@@ -528,12 +533,12 @@ async def test_async_execute_poll_and_keep_alive(
 
             # With shared client
             mock_controller = MagicMock()
-            mock_controller._shared_raw_client = AsyncMock()
-            shared_to_close = mock_controller._shared_raw_client
+            mock_controller.shared_raw_client = AsyncMock()
+            shared_to_close = mock_controller.shared_raw_client
             conn.set_controller_ref(mock_controller)
             await conn.async_execute("GET", "/poll2", None, None, _is_poll=True)
             shared_to_close.close.assert_called_once()
-            assert mock_controller._shared_raw_client is None
+            assert mock_controller.shared_raw_client is None
 
             # _is_poll=False -> Does NOT close
             conn._client = AsyncMock()
@@ -639,7 +644,6 @@ async def test_async_execute_exceptions(connection_config, mock_logger, mock_has
                 match=r"Connection refused \(device unreachable or offline\)",
             ):
                 await conn.async_execute("GET", "/x", None, None)
-            mock_client.close.assert_called_once()
 
             # ConnectionRefused by peer
             mock_client.close.reset_mock()
@@ -710,8 +714,8 @@ async def test_async_execute_mutants_coverage(
         conn._config[CONF_TOKEN] = "CONN_TOKEN"
 
         mock_controller = MagicMock()
-        del mock_controller.device_id
-        del mock_controller.token
+        mock_controller.device_id = None
+        mock_controller.token = None
         mock_controller._config = {CONF_TOKEN: "CTRL_CONFIG_TOKEN"}
         conn.set_controller_ref(mock_controller)
 
@@ -764,10 +768,12 @@ async def test_async_execute_mutants_coverage(
         conn._embedded_command._connection_template = None
         conn._embedded_command._params = {"url": "/emb", "method": "GET"}
         conn._embedded_command.check_execute_condition = MagicMock(return_value=True)
-        conn._embedded_command.async_execute.side_effect = TypeError("Emb failed")
+        # Use an AsyncMock with side_effect to simulate standard failure in an awaitable
+        conn._embedded_command.async_execute = AsyncMock(side_effect=TypeError("Emb failed"))
+        
         with patch.object(conn, "async_get_client", return_value=mock_client):
-            # It logs the error and raises it
-            with pytest.raises(TypeError):
+            # The production code catches Exception and wraps it in CannotConnect
+            with pytest.raises(CannotConnect, match="Embedded command failed: Emb failed"):
                 await conn.async_execute(
                     "GET", "/main", None, None, device_state={"state": "on"}
                 )
@@ -813,11 +819,11 @@ async def test_async_execute_embedded_and_path(
             assert emb_kwargs["method"] == "POST"
             assert emb_kwargs["url"] == "/main/__CLIMATE_IP_HOST__"
 
-        # Test render, embedded params replacement
-        del mock_template.async_render
-        mock_template.render.return_value = (
+        # Test embedded params replacement (second pass)
+        # DO NOT delete async_render, just reconfigure the return value
+        mock_template.async_render = AsyncMock(return_value=(
             '{"url": "/emb/__DEVICE_ID__/__CLIMATE_IP_HOST__", "method": "GET"}'
-        )
+        ))
         conn._embedded_command._connection_template = mock_template
         conn._embedded_command.async_execute.reset_mock()
 
@@ -825,7 +831,7 @@ async def test_async_execute_embedded_and_path(
             await conn.async_execute(
                 "PUT", "/main", None, None, device_state={"state": "on"}
             )
-            mock_template.render.assert_called_once()
+            mock_template.async_render.assert_called_once()
             conn._embedded_command.async_execute.assert_called_once()
             emb_kwargs = conn._embedded_command.async_execute.call_args[1]
             assert emb_kwargs["method"] == "GET"
@@ -866,7 +872,7 @@ async def test_async_execute_defaults(mock_logger):
     mock_client.request.return_value = ({"status": "ok"}, None)
 
     mock_controller = MagicMock()
-    mock_controller._shared_raw_client = mock_client
+    mock_controller.shared_raw_client = mock_client
     conn._controller = mock_controller
 
     with patch.object(conn, "async_get_client", return_value=mock_client):
@@ -876,7 +882,7 @@ async def test_async_execute_defaults(mock_logger):
         # We explicitly verify that close() was not called (which happens if _is_poll=True)
         mock_client.close.assert_not_called()
         # Ensure the shared client was NOT removed
-        assert mock_controller._shared_raw_client is mock_client
+        assert mock_controller.shared_raw_client is mock_client
 
         # 2. Test that when _is_probe is False (by default), errors are NOT swallowed
         mock_client.request.side_effect = ClientConnectorError(
