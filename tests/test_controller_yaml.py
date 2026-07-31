@@ -509,11 +509,11 @@ async def test_async_merge_and_predict_delegation(mock_yaml_controller) -> None:
 
     # Test merge
     assert (
-        await mock_yaml_controller.async_merge_device_state({"k": "v"}, True, False)
+        await mock_yaml_controller.async_merge_device_state({"k": "v"})
         is True
     )
     mock_yaml_controller.poller.async_merge_device_state.assert_called_once_with(
-        {"k": "v"}, True, False
+        {"k": "v"}
     )
 
     # Test predict
@@ -640,6 +640,16 @@ def test_yaml_controller_climate_state_mapping(
         ATTR_PRESET_MODES: ["eco"],
     }
 
+    # 2.5 Inyectar operaciones simuladas con sus valores correspondientes
+    mock_yaml_controller.loader = MagicMock()
+    mock_yaml_controller.loader.operations = {
+        "hvac_mode": MagicMock(id="hvac_mode", all_values=["auto", "heat"]),
+        "target_temperature": MagicMock(id="target_temperature"),
+        "current_temperature": MagicMock(id="current_temperature"),
+        "fan_mode": MagicMock(id="fan_mode", all_values=["high", "low"]),
+        "swing_mode": MagicMock(id="swing_mode", all_values=["on", "off"]),
+        "preset_mode": MagicMock(id="preset_mode", all_values=["eco"]),
+    }
     # 3. Ejecución
     _ = mock_yaml_controller.climate_state
 

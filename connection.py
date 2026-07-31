@@ -34,7 +34,17 @@ class Connection:
         
         # FAIL-FAST DOCTRINE: Formalize ghost attributes
         self._controller: Any | None = None
-        self.condition_template: Any | None = None
+        self._condition_template: Template | None = None
+
+    @property
+    def condition_template(self) -> Template | None:
+        """Return the execution condition template."""
+        return self._condition_template
+
+    @condition_template.setter
+    def condition_template(self, value: Template | None) -> None:
+        """Set the execution condition template."""
+        self._condition_template = value
 
     @property
     def log_prefix(self) -> str:
@@ -149,7 +159,7 @@ class Connection:
         """Return True if the command should be executed for the given device state."""
         _log = self._logger or logging.getLogger(__name__)  # pragma: no mutate
         
-        condition = self.condition_template
+        condition = self._condition_template
         if condition is None:
             return True
             

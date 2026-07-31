@@ -376,8 +376,13 @@ async def test_setup_entry_instantiates_controller_strictly(
         ), "device_type fallback missing"
 
         # Mutant 84: Verify standalone injection
-        mock_coord_class.assert_called_once_with(hass, mock_instance, mock_entry)
-
+        mock_coord_class.assert_called_once_with(
+            hass, 
+            mock_instance, 
+            mock_entry, 
+            device_info=None, 
+            parent_unique_id=None
+        )
         # Mutants 98 and 99: Verify platforms are registered
         from custom_components.climate_ip import PLATFORMS
 
@@ -652,5 +657,5 @@ async def test_async_setup_entry_controller_transient_network_error(hass: HomeAs
         with pytest.raises(ConfigEntryNotReady) as exc_info:
             await async_setup_entry(hass, mock_entry)
 
-        assert "Transient network error" in str(exc_info.value)
+        assert "Transient network failure" in str(exc_info.value)
 

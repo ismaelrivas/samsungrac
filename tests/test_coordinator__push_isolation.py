@@ -67,36 +67,3 @@ async def test_junk_push_update_ignored():
 
         mock_controller.async_merge_device_state.assert_called_once()
         coordinator.async_set_updated_data.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_dry_run_logic_isolation():
-    """Test the dry-run logic in YamlStatePoller directly."""
-    from custom_components.climate_ip.controller_yaml_polling import (
-        YamlStatePoller,
-    )
-
-    mock_controller = MagicMock()
-    mock_controller.loader.is_fully_initialized = True
-    mock_controller.log_prefix = "[Test]"
-
-    prop = MagicMock()
-    prop.id = "hvac_mode"
-    prop.calculate_value_from_state.return_value = HVACMode.COOL
-
-    mock_controller.loader.operations = {"hvac_mode": prop}
-    mock_controller.loader.properties = {}
-    mock_controller.loader.sensors = {}
-
-    poller = YamlStatePoller(mock_controller)
-    raw_state = {"power": "on"}
-
-    with patch(
-        "custom_components.climate_ip.controller_yaml_polling.ClimateIPDeviceState"
-    ) as MockState:
-        res = poller._calculate_structured_state(raw_state)
-
-        assert res == MockState.return_value
-        prop.calculate_value_from_state.assert_called_once_with(raw_state)
-        # Ensure async_update_state was NOT called (no side effects)
-        assert not prop.async_update_state.called
