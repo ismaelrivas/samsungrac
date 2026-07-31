@@ -243,3 +243,26 @@ def test_check_execute_condition():
     mock_err_tmpl.async_render.side_effect = RuntimeError("Template syntax error")
     conn.condition_template = mock_err_tmpl
     assert conn.check_execute_condition({"state": "on"}) is True
+
+def test_check_execute_condition_default_logger():
+    """Kills logger fallback / logical mutation mutants in check_execute_condition when logger is None."""
+    conn = DummyConnection({}, logger=None)
+    assert conn.check_execute_condition(None) is True
+
+import inspect
+
+def test_connection_async_execute_signature_defaults():
+    """Sniper test: kills boolean flip mutants on async_execute default arguments via inspection."""
+    sig = inspect.signature(Connection.async_execute)
+    assert sig.parameters["_is_probe"].default is False
+    assert sig.parameters["_is_poll"].default is False
+
+
+def test_check_execute_condition_with_default_logger_and_template():
+    """Sniper test: kills logical/structural mutants on _log fallback when logger is None and template exists."""
+    from jinja2 import Template
+    conn = DummyConnection({}, logger=None)
+    conn.condition_template = Template("1")
+    # Al ser logger=None, _log usará logging.getLogger(__name__) y llegará al .debug() sin explotar.
+    # Si mutmut cambia 'or' por 'and', _log será None y saltará un AttributeError al intentar hacer .debug()
+    assert conn.check_execute_condition({"state": "on"}) is True

@@ -927,3 +927,43 @@ async def test_is_push_supported(connection_config, mock_logger, mock_hass):
         conn = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
         assert conn.is_push_supported is False
         assert type(conn.is_push_supported) is bool
+
+# ====================================================================================
+# TESTS DE COMANDOS EMBEBIDOS: LOGS Y WARNINGS (Migrados)
+# ====================================================================================
+
+async def test_embedded_command_no_params_no_template_logs_warning(connection_config, mock_logger, mock_hass):
+    """When embedded command has neither _connection_template nor _params, it should log a warning."""
+    from jinja2 import Template
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from custom_components.climate_ip.connection_raw import ConnectionRaw8888
+    
+    with patch("os.path.exists", return_value=True):
+        conn = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
+        embedded = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
+        
+        embedded._connection_template = None
+        embedded._params = {}  # Empty params
+        embedded.condition_template = Template("1")
+        conn._embedded_command = embedded
+
+    device_state = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.request.return_value = ('{"result": "ok"}', None)
+    mock_client.close = AsyncMock()
+
+    with patch(
+        "custom_components.climate_ip.connection_raw.Samsung8888Client",
+        return_value=mock_client,
+    ):
+        embedded.async_execute = AsyncMock()
+        await conn.async_execute(
+            method="PUT",
+            url="https://192.168.1.100:8888/devices/0/mode",
+            data='{"modes": ["Cool"]}',
+            headers={"Authorization": "Bearer mock_token"},
+            device_state=device_state,
+        )
+        
+        # Embedded should NOT have been called (no params to send)
+        embedded.async_execute.assert_not_called()

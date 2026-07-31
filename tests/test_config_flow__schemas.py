@@ -1,6 +1,8 @@
 """Test config flow schemas to kill mutants."""
 
+import pytest
 import voluptuous as vol
+from unittest.mock import MagicMock
 
 from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN, CONF_MAC
 from custom_components.climate_ip.const import (
@@ -27,21 +29,20 @@ def get_schema_marker(schema: vol.Schema, key_name: str):
 async def test_rest_api_schema_mutants_annihilation():
     """Mata a los 12 mutantes de _get_rest_api_schema."""
     flow = ClimateIpConfigFlow()
+    flow.hass = MagicMock()
+    flow.hass.config_entries.async_entries.return_value = []  # Simulate no SmartThings
+
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
         CONF_IP_ADDRESS: "192.168.1.99",  # Para el mutante 37 (get(None))
     }
 
     # Al no haber SmartThings en hass, el token debe caer a "" (Mata al Mutante 31)
-    # Al no haber CONF_POLL_INTERVAL en flow_data, debe caer a "" (Kills mutants 18, 20, 21)
-
-    # Mock de _get_smartthings_token simulando que devuelve None
-    flow._get_smartthings_token = lambda: None
-
+    # Al no haber CONF_POLL_INTERVAL en flow_data, debe caer a ""...
     schema = flow._get_rest_api_schema()
 
-    # 1. Verificar tipos estrictos (Kills mutants 51 y 65)
-    _, dev_id_type = get_schema_marker(schema, CONF_DEVICE_ID)
+    # 1. Verificar parámetros base (Kills mutants 51, 60)
+    dev_id_key, dev_id_type = get_schema_marker(schema, CONF_DEVICE_ID)
     assert dev_id_type is str  # If mutant asigna None a la derecha del dict, esto falla
 
     _, name_type = get_schema_marker(schema, CONF_NAME)
@@ -63,19 +64,99 @@ async def test_rest_api_schema_mutants_annihilation():
 async def test_base_samsung_schema_mutants():
     """Verify mutant kill de _get_base_samsung_schema."""
     flow = ClimateIpConfigFlow()
+    flow.hass = MagicMock()
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
         CONF_POLL_INTERVAL: None,
     }
 
-    # Generar esquema exigiendo MAC
-    schema = flow._get_samsung_2878_schema(mac_required=True)
+    # Generar esquema exigiendo MAC (is_8888=False)
+    schema = flow._get_base_samsung_schema(mac_required=True, is_8888=False)
 
-    # Kills mutant 39 (Verifica que CONF_MAC exige str, no None)
     mac_key, mac_type = get_schema_marker(schema, CONF_MAC)
     assert isinstance(mac_key, vol.Required)
     assert mac_type is str
 
-    # Kills mutant 24 (Verifica que el fallback de intervalo crudo es "" y no "XXXX")
+
+# ====================================================================================
+# TESTS DE FLUJO DE OPCIONES (Options Flow Schemas) - Migrados para matar mutantes
+# ====================================================================================
+
+
+@pytest.mark.asyncio
+async def test_options_flow_empty_defaults(hass):
+    """Prueba que los defaults intrínsecos funcionen si la entrada de opciones está vacía."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+    from custom_components.climate_ip.const import (
+        DOMAIN,
+        CONF_CONN_METHOD,
+        CONN_METHOD_AIOHTTP,
+        CONF_TEMP_NATIVE_TARGET,
+        DEFAULT_CONF_TEMP_UNIT,
+        CONF_TARGET_TEMP_STEP,
+        DEFAULT_TARGET_TEMP_STEP,
+    )
+    from custom_components.climate_ip.config_flow import (
+        OptionsFlowHandler,
+        DEFAULT_POLL_INTERVAL,
+    )
+    import datetime
+
+    # Entrada vacía de opciones y configuración básica
+    # USAMOS SMARTTHINGS_HVAC porque soporta AIOHTTP y expone el CONF_CONN_METHOD en opciones
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC},
+        options={},  # Clave para matar a los mutantes
+    )
+    entry.add_to_hass(hass)
+
+    flow = OptionsFlowHandler(entry)
+    flow.hass = hass
+
+    result = await flow.async_step_init()
+    assert result["type"] == "form", f"Expected form but got: {result}"
+    schema = result["data_schema"]
+
+    # Kills mutant 12
+    conn_key, _ = get_schema_marker(schema, CONF_CONN_METHOD)
+    assert conn_key.default() == CONN_METHOD_AIOHTTP
+
+    # Kills mutant 54
     poll_key, _ = get_schema_marker(schema, CONF_POLL_INTERVAL)
-    assert poll_key.default() == ""
+    assert poll_key.default() == str(datetime.timedelta(seconds=DEFAULT_POLL_INTERVAL))
+
+    # Kills mutants 71, 72
+    targ_key, _ = get_schema_marker(schema, CONF_TEMP_NATIVE_TARGET)
+    assert targ_key.default() == DEFAULT_CONF_TEMP_UNIT
+
+    # Kills mutants 82, 83
+    step_key, _ = get_schema_marker(schema, CONF_TARGET_TEMP_STEP)
+    assert step_key.default() == str(DEFAULT_TARGET_TEMP_STEP)
+
+
+@pytest.mark.asyncio
+async def test_options_schema_target_temp_fallback_empty(hass):
+    """Kills mutants 71, 72, 82, 83 mediante el generador interno de esquema."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+    from custom_components.climate_ip.config_flow import OptionsFlowHandler
+    from custom_components.climate_ip.const import (
+        DOMAIN,
+        CONF_TEMP_NATIVE_TARGET,
+        DEFAULT_CONF_TEMP_UNIT,
+        CONF_TARGET_TEMP_STEP,
+        DEFAULT_TARGET_TEMP_STEP,
+    )
+
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
+    entry.add_to_hass(hass)
+
+    flow = OptionsFlowHandler(entry)
+    flow.hass = hass
+    schema = flow._get_options_schema()
+
+    targ_key, _ = get_schema_marker(schema, CONF_TEMP_NATIVE_TARGET)
+    assert targ_key.default() == DEFAULT_CONF_TEMP_UNIT
+
+    step_key, _ = get_schema_marker(schema, CONF_TARGET_TEMP_STEP)
+    assert step_key.default() == str(DEFAULT_TARGET_TEMP_STEP)

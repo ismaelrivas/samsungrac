@@ -24,7 +24,7 @@ from custom_components.climate_ip.const import (
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 
 # Import schema validator helper
-from .test_config_flow_schemas import get_schema_marker
+from .test_config_flow__schemas import get_schema_marker
 
 
 @pytest.mark.asyncio

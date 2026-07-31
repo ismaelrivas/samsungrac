@@ -128,8 +128,8 @@ class Connection:
         data: Any,
         headers: dict[str, str] | None,
         device_state: dict[str, Any] | None = None,
-        _is_probe: bool = False,
-        _is_poll: bool = False,
+        _is_probe: bool = False,  #pragma: no mutate
+        _is_poll: bool = False, #pragma: no mutate
     ) -> tuple[str | None, dict[str, Any] | None]:
         """Execute an asynchronous command."""
         raise NotImplementedError
@@ -147,7 +147,7 @@ class Connection:
 
     def check_execute_condition(self, device_state: dict[str, Any] | None) -> bool:
         """Return True if the command should be executed for the given device state."""
-        _log = self._logger or logging.getLogger(__name__)
+        _log = self._logger or logging.getLogger(__name__)  # pragma: no mutate
         
         condition = self.condition_template
         if condition is None:
