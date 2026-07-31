@@ -97,6 +97,11 @@ from .token_acquirer_8888 import SamsungTokenAcquirer8888
 
 _LOGGER = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Module-level constants for magic strings
+# ---------------------------------------------------------------------------
+DEFAULT_CERT_NAME = "ac14k_m.pem"
+DEFAULT_SMARTTHINGS_HOST = "api.smartthings.com"
 
 class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
     """
@@ -312,8 +317,8 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         except AbortFlow:
             raise  # Let Home Assistant handle its own flow control
         except Exception as e:
-            _LOGGER.error(
-                "Unexpected error during pairing: %s", e, exc_info=True
+            _LOGGER.exception(
+                "Unexpected error during pairing: %s", e
             )  # pragma: no mutate
             return {"ok": False, "error": "unknown_error"}
 
@@ -345,8 +350,8 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         except AbortFlow:
             raise  # Let Home Assistant handle its own flow control
         except Exception as e:
-            _LOGGER.error(
-                "Unknown error while waiting for token: %s", e, exc_info=True
+            _LOGGER.exception(
+                "Unknown error while waiting for token: %s", e
             )  # pragma: no mutate
             return {"ok": False, "error": "unknown_error"}
 
@@ -416,7 +421,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             )
         ] = str
 
-        if mac_required is True:
+        if mac_required:
             schema_dict[vol.Required(CONF_MAC, default=formatted_mac)] = str
         else:
             schema_dict[vol.Optional(CONF_MAC, default=formatted_mac)] = str
@@ -439,7 +444,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT))
         )
 
-        if is_8888 is False:
+        if not is_8888:
             schema_dict[
                 vol.Optional(
                     CONF_ENABLE_POLLING,
@@ -492,7 +497,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         errors: dict[str, str] = {}
         schema_generator = (
             self._get_samsung_8888_schema
-            if is_8888 is True
+            if is_8888
             else self._get_samsung_2878_schema
         )
 
@@ -548,8 +553,8 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 )
 
             # 5. Initialize the appropriate token acquirer
-            if is_8888 is True:
-                target_cert = str(cert_val) if cert_val else "ac14k_m.pem"
+            if is_8888:
+                target_cert = str(cert_val) if cert_val else DEFAULT_CERT_NAME
                 self.acquirer = SamsungTokenAcquirer8888(
                     self.hass, ip_addr, target_cert
                 )
@@ -608,7 +613,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         token_from_data = self.flow_data.get(CONF_TOKEN)
         if token_from_data:
             default_token = str(token_from_data)
-        elif is_st is True:
+        elif is_st:
             st_token = self._get_smartthings_token()
             default_token = st_token if st_token is not None else ""
         else:
@@ -616,11 +621,11 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
 
         schema_dict: dict[vol.Marker, Any] = {}
 
-        ip_default = str(
-            self.flow_data.get(CONF_IP_ADDRESS, "api.smartthings.com" if is_st else "")
-        )
+        ip_default = self.flow_data.get(
+            CONF_IP_ADDRESS, DEFAULT_SMARTTHINGS_HOST if is_st else ""
+        ) or ""
 
-        if is_st is True:
+        if is_st:
             schema_dict[vol.Required(CONF_IP_ADDRESS, default=ip_default)] = str
             schema_dict[vol.Optional(CONF_DEVICE_ID)] = str
         else:
@@ -787,7 +792,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                     # fmt: on
                     # We intentionally update flow_data with the fallback value so the UI reflects the attempted state if it fails. This is expected behavior.
                     self.flow_data[CONF_DEVICE_TYPE] = DEVICE_TYPE_SAMSUNG_8888
-                    target_cert = cert_path if cert_path else "ac14k_m.pem"
+                    target_cert = cert_path if cert_path else DEFAULT_CERT_NAME
                     self.flow_data[CONF_CERT] = target_cert
                     self.acquirer = SamsungTokenAcquirer8888(
                         self.hass, ip_address, target_cert
@@ -1001,8 +1006,8 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         except AbortFlow:
             raise  # Let Home Assistant handle its own flow control
         except Exception as e:  # pylint: disable=broad-exception-caught
-            _LOGGER.error(
-                "Unknown error during connection test: %s", e, exc_info=True
+            _LOGGER.exception(
+                "Unknown error during connection test: %s", e
             )  # pragma: no mutate
             return {"ok": False, "error": "cannot_connect"}
 
@@ -1227,14 +1232,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 )  # pragma: no mutate
                 return self.async_abort(reason="cannot_connect")
 
-            raw_devs: list[Any] = []  # pragma: no mutate
-            if hasattr(controller, "discovered_devices"):
-                raw_devs = controller.discovered_devices
-
-            discovered_devices = []
-            if raw_devs:
-                for dev in raw_devs:
-                    discovered_devices.append(dev)
+            discovered_devices = list(getattr(controller, "discovered_devices", []))
 
             # Scenario A: Blind device (no sub-devices)
             if not discovered_devices:
@@ -1294,27 +1292,19 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             for device in discovered_devices
         }
 
+        def _build_select_schema() -> vol.Schema:
+            def_keys = list(device_options.keys())
+            req_key = vol.Required(CONF_SELECTED_DEVICES, default=def_keys)
+            return vol.Schema({req_key: cv.multi_select(device_options)})
+
         if user_input:
             selected_devices_ids = user_input.get(CONF_SELECTED_DEVICES) or []
             if not selected_devices_ids:
-                step_id_def = "select_devices"
-
-                def_keys = []
-                for k in device_options:
-                    def_keys.append(k)
-
-                dev_count = len(discovered_devices)
-                err_dict = {"base": "no_devices_selected"}
-                desc_dict = {"device_count": dev_count}
-
-                req_key = vol.Required(CONF_SELECTED_DEVICES, default=def_keys)
-                schema_dict = {req_key: cv.multi_select(device_options)}
-
                 return self.async_show_form(
-                    step_id=step_id_def,
-                    data_schema=vol.Schema(schema_dict),
-                    errors=err_dict,
-                    description_placeholders=desc_dict,
+                    step_id="select_devices",
+                    data_schema=_build_select_schema(),
+                    errors={"base": "no_devices_selected"},
+                    description_placeholders={"device_count": len(discovered_devices)},
                 )
 
             self.flow_data[CONF_DEVICES] = [
@@ -1336,23 +1326,10 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 return await self._create_entry()
             return self.async_abort(reason="no_unique_id")
 
-        step_id_def2 = "select_devices"
-
-        def_keys2 = []
-        for k in device_options:
-            def_keys2.append(k)
-
-        dev_count2 = len(discovered_devices)
-        desc_dict2 = {"device_count": dev_count2}
-
-        req_key2 = vol.Required(CONF_SELECTED_DEVICES, default=def_keys2)
-        schema_dict2 = {req_key2: cv.multi_select(device_options)}
-        schema = vol.Schema(schema_dict2)
-
         return self.async_show_form(
-            step_id=step_id_def2,
-            data_schema=schema,
-            description_placeholders=desc_dict2,
+            step_id="select_devices",
+            data_schema=_build_select_schema(),
+            description_placeholders={"device_count": len(discovered_devices)},
         )
 
     # pylint: disable=unused-argument
@@ -1581,7 +1558,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         )
 
         raw_ip_def = self.flow_data.get(CONF_IP_ADDRESS)
-        ip_def = str(raw_ip_def) if raw_ip_def is not None else ""
+        ip_def = raw_ip_def or ""
         raw_mac_def = str(self.flow_data.get(CONF_MAC) or "")
         mac_def = dr.format_mac(raw_mac_def).upper() if raw_mac_def else ""
         token_def = str(self.flow_data.get(CONF_TOKEN) or "")
@@ -1673,9 +1650,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 )
 
             token_raw = self.flow_data.get(CONF_TOKEN)
-            token_val = (
-                str(token_raw) if token_raw is not None else ""
-            )  # pragma: no mutate
+            token_val = str(token_raw) if token_raw is not None else ""  # pragma: no mutate
             if not token_val and device_type not in (
                 DEVICE_TYPE_SMARTTHINGS_HVAC,
                 DEVICE_TYPE_SMARTTHINGS_DHW,
@@ -1683,8 +1658,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 _LOGGER.info(
                     "Token absent during reconfigure. Setting up acquirer for discovery."
                 )  # pragma: no mutate
-                target_cert_name = "ac14k_m.pem"
-                target_cert = cert_value if cert_value else target_cert_name
+                target_cert = cert_value if cert_value else DEFAULT_CERT_NAME
 
                 # FAIL FAST APPLIED: Direct dictionary access
                 ip_val = str(self.flow_data[CONF_IP_ADDRESS])
