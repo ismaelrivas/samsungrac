@@ -15,6 +15,7 @@ from typing import Any, Final
 from homeassistant.util.json import json_loads
 from homeassistant.helpers.json import json_dumps
 
+from .const import GLOBAL_HTTP_TIMEOUT
 from .exceptions import AuthError, CannotConnect
 from .helpers import (
     async_create_samsung_ssl_context,
@@ -159,7 +160,7 @@ class Samsung8888Client:
             self._ssl_context = await self._create_ssl_context()
         try:
             # Modern Python 3.11+ timeout context manager
-            async with asyncio.timeout(10.0):
+            async with asyncio.timeout(GLOBAL_HTTP_TIMEOUT):
                 (
                     self._reader,
                     self._writer,
@@ -287,9 +288,9 @@ class Samsung8888Client:
                     request_str = "\r\n".join(req) + "\r\n\r\n" + (payload or "")
                     writer.write(request_str.encode("utf-8"))
                     try:
-                        async with asyncio.timeout(5.0):
+                        async with asyncio.timeout(GLOBAL_HTTP_TIMEOUT // 2):
                             await writer.drain()
-                        async with asyncio.timeout(10.0):
+                        async with asyncio.timeout(GLOBAL_HTTP_TIMEOUT):
                             status_line = await reader.readline()
                     except TimeoutError as exc:
                         await self.close()
@@ -317,7 +318,7 @@ class Samsung8888Client:
                     content_type = ""  # pragma: no mutate
                     while True:
                         try:
-                            async with asyncio.timeout(5.0):
+                            async with asyncio.timeout(GLOBAL_HTTP_TIMEOUT // 2):
                                 line = await reader.readline()
                         except TimeoutError as exc:
                             await self.close()
@@ -350,7 +351,7 @@ class Samsung8888Client:
                     resp_body = ""  # pragma: no mutate
                     if content_length > 0:
                         try:
-                            async with asyncio.timeout(10.0):
+                            async with asyncio.timeout(GLOBAL_HTTP_TIMEOUT):
                                 chunk = await reader.readexactly(content_length)
                             resp_body = chunk.decode("utf-8", "ignore")
                         except TimeoutError as exc:

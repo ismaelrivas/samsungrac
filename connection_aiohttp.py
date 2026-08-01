@@ -29,6 +29,8 @@ from .const import (
     CONFIG_DEVICE_CONNECTION,
     CONFIG_DEVICE_CONNECTION_PARAMS,
     CONFIG_DEVICE_CONNECTION_TEMPLATE,
+    GLOBAL_HTTP_TIMEOUT,
+    NETWORK_POLL_TIMEOUT,
 )
 from .exceptions import AuthError, CannotConnect, InvalidHeaderError
 from .helpers import (
@@ -217,9 +219,11 @@ class ConnectionAiohttp8888(Connection):
                     getattr(self, "_hass", None),  # pragma: no mutate
                 )
             elif CONFIG_DEVICE_CONNECTION_PARAMS in yaml_node:
+                # Explicit extraction to prevent None-unpacking errors
+                node_params = yaml_node.get(CONFIG_DEVICE_CONNECTION_PARAMS) or {}
                 params = {
                     **self._params,
-                    **yaml_node.get(CONFIG_DEVICE_CONNECTION_PARAMS, {}),
+                    **node_params,
                 }
                 new_connection._params.update(params)
 
@@ -324,7 +328,7 @@ class ConnectionAiohttp8888(Connection):
                     probe_url,
                     headers=probe_headers,
                     ssl=test_ssl_ctx,
-                    timeout=aiohttp.ClientTimeout(total=10, sock_read=5),
+                    timeout=aiohttp.ClientTimeout(total=GLOBAL_HTTP_TIMEOUT, sock_read=GLOBAL_HTTP_TIMEOUT // 2),
                 ) as response:  # type: ignore[arg-type] # pragma: no mutate
                     if response.status in (
                         200,
@@ -458,7 +462,7 @@ class ConnectionAiohttp8888(Connection):
                     keepalive_timeout=75, ssl=ssl_context, limit=1
                 )  # type: ignore[arg-type]
 
-            timeout = aiohttp.ClientTimeout(total=30, connect=10)
+            timeout = aiohttp.ClientTimeout(total=NETWORK_POLL_TIMEOUT, connect=GLOBAL_HTTP_TIMEOUT)
             local_session = aiohttp.ClientSession(connector=connector, timeout=timeout)
             self._shared_state.local_session = local_session
 
@@ -586,7 +590,7 @@ class ConnectionAiohttp8888(Connection):
                     headers=req_headers,
                     data=data,
                     ssl=ssl_context,  # type: ignore[arg-type]  # pragma: no mutate
-                    timeout=aiohttp.ClientTimeout(total=10),
+                    timeout=aiohttp.ClientTimeout(total=GLOBAL_HTTP_TIMEOUT),
                 ) as response:
                     response_text = await response.text()  # pragma: no mutate
 
@@ -675,7 +679,7 @@ class ConnectionAiohttp8888(Connection):
                         data=data,
                         headers=req_headers,
                         ssl=ssl_context,  # type: ignore[arg-type]
-                        timeout=aiohttp.ClientTimeout(total=10),
+                        timeout=aiohttp.ClientTimeout(total=GLOBAL_HTTP_TIMEOUT),
                     ) as response:
                         response_text = await response.text()
                         return response_text, None
@@ -696,7 +700,7 @@ class ConnectionAiohttp8888(Connection):
             _LOGGER.error(err_msg, self.log_prefix, clean_e)  # pragma: no mutate
             exc_msg = f"Connection error: {clean_e}"  # pragma: no mutate
             raise CannotConnect(exc_msg) from e  # pragma: no mutate
-        except (ValueError, TypeError, KeyError) as e:
+        except (ValueError, TypeError, KeyError, UnicodeDecodeError) as e:
             err_msg = "%s [aiohttp] Unexpected data error: %s"  # pragma: no mutate
             _LOGGER.error(
                 err_msg, self.log_prefix, e, exc_info=True
