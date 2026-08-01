@@ -133,6 +133,14 @@ class YamlStatePoller:
         """Register a pending update to shield the UI from stale network polling echoes."""
         self._pending_updates[property_id] = (value, time.time())
 
+    def _clear_state_cache(self) -> None:
+        """Clear internal state cache buffer to prevent stale data (anti-ghosting)."""
+        self._cached_device_state = None
+        self._last_device_state = None
+        self._pure_device_state = None
+        if hasattr(self, "_pure_network_state"):
+            self._pure_network_state = None
+
     async def _refresh_smartthings_token(self) -> str | None:
         """Attempt to refresh an expired SmartThings token using the official HA integration."""
         try:
@@ -231,17 +239,16 @@ class YamlStatePoller:
             )
 
     def _update_all_connections_token(self, new_token: str) -> None:
-        """Update the auth token across all connections."""
+        """Propagate the new token to all active connection engines."""
         if hasattr(self.controller, "_connection") and self.controller._connection:
             if hasattr(self.controller._connection, "update_auth_token"):
                 self.controller._connection.update_auth_token(new_token)
 
-        updated_connections = set()
-        for prop in getattr(self.controller, "_properties", {}).values():
-            conn = getattr(prop, "connection", None)
+        updated_connections: set = set()
+        for prop in self._all_props():
             if (
-                conn
-                and conn != getattr(self.controller, "_connection", None)
+                prop
+                and (conn := prop.get_connection(None))
                 and conn not in updated_connections
             ):
                 if hasattr(conn, "update_auth_token"):
@@ -271,18 +278,15 @@ class YamlStatePoller:
         if not self._requires_icmp_ping(device_type) or not getattr(self.controller, "ip_address", None):
             return
 
-        network_reachable = await async_check_network_reachability(
-            self.controller.ip_address, self.controller.log_prefix
-        )
+        try:
+            network_reachable = await async_check_network_reachability(
+                self.controller.ip_address, self.controller.log_prefix
+            )
+        except Exception as diag_err:
+            _LOGGER.debug("%s ICMP check failed: %s", self.controller.log_prefix, diag_err)
+            return
+
         if not network_reachable:
-            self._consecutive_connection_errors += 1
-            if self._consecutive_connection_errors == 3:
-                self._try_create_repair_issue()
-            if self._consecutive_connection_errors >= 2:
-                self._clear_state_cache()
-                raise CannotConnect(
-                    "Host unreachable (ICMP ping failed). Device is persistently offline."
-                )
             raise CannotConnect("Host unreachable (ICMP ping failed).")
 
     async def async_update_state(self) -> dict[str, Any] | None:
@@ -292,12 +296,7 @@ class YamlStatePoller:
 
         try:
             await self._async_perform_icmp_check()
-        except CannotConnect:
-            raise
-        except Exception as diag_err:
-            _LOGGER.debug("%s ICMP check failed: %s", self.controller.log_prefix, diag_err)
 
-        try:
             full_device_state = (
                 await self.controller.loader.state_getter.async_update_state(
                     None, getattr(self.controller, "debug", False)

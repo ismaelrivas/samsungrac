@@ -263,21 +263,24 @@ async def test_async_update_state_early_exits_and_ping():
         "rest_api"  # Falsa la guardia de DEVICE_TYPE_SAMSUNG_2878
     )
     mock_controller.ip_address = "192.168.1.100"
+    poller._consecutive_connection_errors = 2
 
     # Simulamos que la red no es alcanzable
     with patch(
         "custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability",
         return_value=False,
     ) as mock_ping:
-        with pytest.raises(CannotConnect, match="Host unreachable"):
+        with pytest.raises(
+            UpdateFailed, match=r"Device unreachable: Host unreachable \(ICMP ping failed\)"
+        ):
             await poller.async_update_state()
 
-        # Aserciones estrictas del pre-check (Frente de Red)
-        mock_controller.config.get.assert_called_with("device_type")
+        # Aserciones strictly del pre-check (Frente de Red)
+        mock_controller.config.get.assert_any_call("device_type")
         mock_ping.assert_called_once_with("192.168.1.100", mock_controller.log_prefix)
 
         # Kills mutants en la matemática del contador (ej. += 2 en lugar de += 1)
-        assert poller._consecutive_connection_errors == 1
+        assert poller._consecutive_connection_errors == 3
 
     # 3. Cortocircuito de Reachability por ip_address = None (Kills mutant and -> or)
     mock_controller.ip_address = None
@@ -424,30 +427,31 @@ async def test_async_shutdown():
 )
 async def test_async_update_state_network_failures_thresholds(mock_reachability):
     """Test the thresholds for consecutive network failures."""
-    from custom_components.climate_ip.exceptions import CannotConnect
+    from homeassistant.helpers.update_coordinator import UpdateFailed
 
     mock_controller = MagicMock()
     mock_controller.config = {"device_type": "some_rest"}
     mock_controller.ip_address = "192.168.1.100"
+    mock_controller.loader.state_getter.async_update_state = AsyncMock()
     poller = YamlStatePoller(mock_controller)
     poller._try_create_repair_issue = MagicMock()
 
     mock_reachability.return_value = False
 
     # 1st failure -> Exception, issue NOT created
-    with pytest.raises(CannotConnect, match="Host unreachable"):
+    with pytest.raises(UpdateFailed, match="Device unreachable"):
         await poller.async_update_state()
     assert poller._consecutive_connection_errors == 1
     poller._try_create_repair_issue.assert_not_called()
 
     # 2nd failure -> Exception (persistently offline)
-    with pytest.raises(CannotConnect, match="persistently offline"):
+    with pytest.raises(UpdateFailed, match="Device unreachable"):
         await poller.async_update_state()
     assert poller._consecutive_connection_errors == 2
     poller._try_create_repair_issue.assert_not_called()
 
     # 3rd failure -> Exception (persistently offline) + creates issue
-    with pytest.raises(CannotConnect, match="persistently offline"):
+    with pytest.raises(UpdateFailed, match="Device unreachable"):
         await poller.async_update_state()
     assert poller._consecutive_connection_errors == 3
     poller._try_create_repair_issue.assert_called_once()
@@ -682,44 +686,47 @@ async def test_update_state_delete_issue_exception():
 
 
 async def test_async_update_state_sniper_network_ping():
-    """Sniper: Dispositivos REST fallan temprano (burbujea CannotConnect de red)."""
+    """Sniper: Dispositivos REST fallan temprano y generan repair issue en el umbral."""
     from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+    from homeassistant.helpers.update_coordinator import UpdateFailed
 
-    # Asignamos ip_address expresamente, pero omitimos otros atributos para forzar getattr fallbacks.
     mock_controller = DummyController(ip_address="192.168.1.100")
     mock_controller.config = {"device_type": "REST"}
 
     poller = YamlStatePoller(mock_controller)
     poller.async_update_properties_from_state = AsyncMock()
-    poller._consecutive_connection_errors = 1
+    poller._consecutive_connection_errors = 2
     poller._cached_device_state = {"a": 1}
 
     with patch(
         "custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability",
         new_callable=AsyncMock,
     ) as mock_ping:
-        # 1. Ping falla
         mock_ping.return_value = False
 
-        with pytest.raises(
-            CannotConnect,
-            match="^Host unreachable \\(ICMP ping failed\\). Device is persistently offline.$",
-        ):
-            await poller.async_update_state()
-
-        mock_ping.assert_called_once_with("192.168.1.100", mock_controller.log_prefix)
-        assert poller._consecutive_connection_errors == 2
-
-        # 2. Ping falla de nuevo (colapso)
-        mock_ping.reset_mock()
+        # Wrap the ENTIRE sequence in the repair patch
         with patch.object(poller, "_try_create_repair_issue") as mock_repair:
+            # 1. First Ping Failure (Counter goes 2 -> 3)
             with pytest.raises(
-                CannotConnect,
-                match="^Host unreachable \\(ICMP ping failed\\). Device is persistently offline.$",
+                UpdateFailed,
+                match=r"Device unreachable: Host unreachable \(ICMP ping failed\)",
             ):
                 await poller.async_update_state()
+
+            mock_ping.assert_called_with("192.168.1.100", mock_controller.log_prefix)
             assert poller._consecutive_connection_errors == 3
-            mock_repair.assert_called_once()
+            mock_repair.assert_called_once()  # Issue generated EXACTLY at 3
+
+            # 2. Second Ping Failure (Counter goes 3 -> 4)
+            mock_ping.reset_mock()
+            with pytest.raises(
+                UpdateFailed,
+                match=r"Device unreachable: Host unreachable \(ICMP ping failed\)",
+            ):
+                await poller.async_update_state()
+
+            assert poller._consecutive_connection_errors == 4
+            mock_repair.assert_called_once()  # Remains at 1, no duplicate issues generated
 
         # 3. Ping lanza excepción pero se captura como diagnóstico, delegando luego a state_getter
         mock_ping.side_effect = Exception("Ping error")
