@@ -224,28 +224,36 @@ async def async_unload_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -
     """Unload a config entry."""
     _LOGGER.debug("Unloading entry: %s", entry.entry_id)  # pragma: no mutate
 
-    # Clear the YAML cache to ensure changes are loaded on reload.
-    clear_yaml_cache()
-
-    # Stop background tasks BEFORE unloading platforms to prevent asymmetric cleanup.
-    entry_data = entry.runtime_data
-    if entry_data:
-        _LOGGER.debug(
-            "Shutting down background connection tasks for entry %s", entry.entry_id
-        )  # pragma: no mutate
-        # if isinstance(entry_data, dict):  # Multiple devices
-        #     for coordinator in entry_data.values():
-        #         await coordinator.async_shutdown()
-        # elif hasattr(entry_data, "async_shutdown"):  # Single coordinator
-        #     await entry_data.async_shutdown()
-        for coordinator in entry_data.values():
-            await coordinator.async_shutdown()
-
-    # We leave the standard Home Assistant unload logic here.
+    # 1. UNLOAD PLATFORMS FIRST
+    # Halt all entity polling and state updates before severing the network connection.
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
-    return unload_ok
+    if unload_ok:
+        # Clear the YAML cache to prevent memory drift across reloads
+        clear_yaml_cache()
 
+        # 2. TERMINATE BACKGROUND TASKS
+        # Safely shut down all coordinators and underlying socket/aiohttp connections
+        if entry.runtime_data:
+            _LOGGER.debug("Terminating active connections and coordinators for entry %s", entry.entry_id)
+            for device_id, coordinator in entry.runtime_data.items():
+                _LOGGER.debug("Executing async_shutdown for device ID: %s", device_id)
+                try:
+                    await coordinator.async_shutdown()
+                except Exception as ex:
+                    # Fail-fast: Log the teardown failure but do not halt the unload sequence
+                    _LOGGER.error("Failed to cleanly shutdown coordinator for device %s: %s", device_id, ex)
+
+            # 3. PURGE MEMORY FOOTPRINT
+            # Explicitly clear the dictionary to drop controller references immediately, 
+            # ensuring no dangling pointers prevent garbage collection.
+            entry.runtime_data.clear()
+        
+        _LOGGER.info("Teardown complete. Config entry %s fully unloaded.", entry.entry_id)
+    else:
+        _LOGGER.warning("Platform unload failed for entry %s. Aborting teardown to prevent unstable state.", entry.entry_id)
+
+    return unload_ok
 
 async def async_remove_config_entry_device(
     _hass: HomeAssistant, entry: ClimateIPConfigEntry, device_entry: Any
