@@ -240,10 +240,6 @@ class YamlStatePoller:
 
     def _update_all_connections_token(self, new_token: str) -> None:
         """Propagate the new token to all active connection engines."""
-        if hasattr(self.controller, "_connection") and self.controller._connection:
-            if hasattr(self.controller._connection, "update_auth_token"):
-                self.controller._connection.update_auth_token(new_token)
-
         updated_connections: set = set()
         for prop in self._all_props():
             if (

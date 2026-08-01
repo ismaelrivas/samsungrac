@@ -244,3 +244,14 @@ async def test_create_controller_success_kills_mutants() -> None:
         assert controller is not None
         assert controller._saved_config is config  # Kills config=None mutant
         assert controller._logger is logger  # Kills logger=None mutant
+
+
+def test_controller_host_property() -> None:
+    """Cover the host property to kill untested mutants."""
+    logger = logging.getLogger(__name__)
+    controller = DummyController({}, logger)
+    controller.ip_address = "192.168.1.50"
+    assert controller.host == "192.168.1.50"
+
+    del controller.ip_address
+    assert controller.host is None

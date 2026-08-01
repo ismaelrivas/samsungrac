@@ -835,3 +835,31 @@ def test_platform_schema_validation() -> None:
     assert validated[CONF_IP_ADDRESS] == "192.168.1.10"
     assert validated[CONF_TOKEN] == "abc"
     assert validated[CONF_DEVICE_ID] == "dev1"
+
+
+def test_yaml_controller_untested_properties_and_cache() -> None:
+    """Cover getters, setters, and clear_state_cache to kill untested mutants."""
+    import logging
+    from unittest.mock import MagicMock
+    from custom_components.climate_ip.controller_yaml import YamlController
+
+    mock_logger = logging.getLogger(__name__)
+    controller = YamlController(
+        config={"device_type": "test_device"}, logger=mock_logger
+    )
+
+    # 1. shared_raw_client setter
+    controller.shared_raw_client = "mock_client"
+    assert controller._shared_raw_client == "mock_client"
+
+    # 2. fan_modes_list_changed_pending_flicker setter
+    controller.poller = MagicMock()
+    controller.fan_modes_list_changed_pending_flicker = True
+    assert controller.poller.fan_modes_list_changed_pending_flicker is True
+
+    # 3. clear_state_cache
+    controller.clear_state_cache()  # With poller
+    controller.poller._clear_state_cache.assert_called_once()
+
+    controller.poller = None
+    controller.clear_state_cache()  # Without poller, should safely do nothing
