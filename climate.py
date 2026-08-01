@@ -148,11 +148,13 @@ async def async_setup_entry(
         )
         return
     async_add_entities(entities, update_before_add=True)
+
 @dataclass(frozen=True, kw_only=True)
 class ClimateIPEntityDescription(ClimateEntityDescription):
     """Class describing ClimateIP entities."""
     key: str
     translation_key: str | None = None
+
 class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
     # pylint: disable=import-outside-toplevel,abstract-method
     """Representation of a climate_ip climate device using a coordinator."""
@@ -171,6 +173,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
     _attr_preset_modes: list[str] = []
     _config: dict[str, Any]
     _main_unique_id: str
+    
     def __init__(
         self,
         coordinator: SamsungClimateCoordinator,
@@ -185,13 +188,19 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         self._main_unique_id = main_unique_id or str(coordinator.unique_id)
         self._attr_unique_id = str(self.coordinator.unique_id)
         self._attr_device_info = self.coordinator.device_info
-        # entry = getattr(self.coordinator, "entry", None)
-        # options_dict = entry.options if entry else {}
+        
+        # Pre-calculated State Attributes ($O(1)$ enforce)
+        self._attr_supported_features = ClimateEntityFeature(0)
+        self._attr_extra_state_attributes: dict[str, Any] = {}
+        self._attr_min_temp: float = DEFAULT_CLIMATE_IP_TEMP_MIN
+        self._attr_max_temp: float = DEFAULT_CLIMATE_IP_TEMP_MAX
+
         options_dict = self.coordinator.entry.options
         configured_step = options_dict.get(
             CONF_TARGET_TEMP_STEP,
             self._config.get(CONF_TARGET_TEMP_STEP, self._config.get(CONF_TEMP_STEP)),
         )
+
         # Defensive parsing of temperature step
         if configured_step is None:
             step: float = float(DEFAULT_TARGET_TEMP_STEP)
@@ -203,24 +212,49 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
                     "%s Invalid temp step configured (%s). Falling back to default.",
                     self.log_prefix,
                     configured_step,
-                )  # pragma: no mutate
+                )
                 step = float(DEFAULT_TARGET_TEMP_STEP)
-        # self._attr_target_temperature_step = int(step) if step == int(step) else step
+        
         self._attr_target_temperature_step = int(step) if step.is_integer() else step
+        
         if step < const.PRECISION_HALVES:
             self._attr_precision = const.PRECISION_TENTHS
         elif step == const.PRECISION_HALVES:
             self._attr_precision = const.PRECISION_HALVES
         else:
             self._attr_precision = const.PRECISION_WHOLE
+
         self._sync_data_from_coordinator()
-    @property
-    def log_prefix(self) -> str:
-        """Return the log prefix from the coordinator for consistency."""
-        return self.coordinator.log_prefix
+
     def _sync_data_from_coordinator(self) -> None:
-        """Synchronize the entity's state with the latest data from the coordinator."""
+        """Pre-calculate and synchronize all entity states to guarantee $O(1)$ getters."""
         state = self.coordinator.data
+        
+        # 1. PRE-CALCULATE BOUNDARIES & EXTENDED ATTRIBUTES
+        self._attr_min_temp = self._resolve_numeric_boundary(ATTR_MIN_TEMP, DEFAULT_CLIMATE_IP_TEMP_MIN)
+        self._attr_max_temp = self._resolve_numeric_boundary(ATTR_MAX_TEMP, DEFAULT_CLIMATE_IP_TEMP_MAX)
+
+        core_attrs = {
+            const.ATTR_TEMPERATURE, ATTR_CURRENT_TEMPERATURE,
+            ATTR_HVAC_MODE, ATTR_FAN_MODE, ATTR_SWING_MODE, ATTR_PRESET_MODE,
+        }
+        self._attr_extra_state_attributes = {
+            k: v for k, v in self.coordinator.state_attributes.items() if k not in core_attrs
+        }
+
+        # 2. FEATURE FLAG RESOLUTION (Strict Enum adherence, pre-calculated)
+        features = ClimateEntityFeature(0)
+        ops = self.coordinator.operations
+        
+        for attr, feature in SUPPORTED_FEATURES_MAP.items():
+            if attr in ops:
+                # We defer swing evaluation until after checking swing_modes below, 
+                # but safely evaluate existence here.
+                features |= feature
+        
+        if ATTR_POWER in ops:
+            features |= ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
+
         if state:
             prev_target = getattr(self, "_attr_target_temperature", None)
             self._attr_hvac_mode = state.hvac_mode or HVACMode.OFF
@@ -229,12 +263,23 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             self._attr_fan_mode = state.fan_mode
             self._attr_swing_mode = state.swing_mode
             self._attr_preset_mode = state.preset_mode
-            self._attr_hvac_modes = state.hvac_modes
             self._attr_fan_modes = state.fan_modes
             self._attr_swing_modes = state.swing_modes
             self._attr_preset_modes = state.preset_modes
+
+            # Post-process Swing Mode Feature based on actual loaded modes
+            if ATTR_SWING_MODE in ops and not self._attr_swing_modes:
+                features &= ~ClimateEntityFeature.SWING_MODE
+
+            # Pre-calculate HVAC modes array (including OFF logic)
+            modes = list(state.hvac_modes)
+            if ClimateEntityFeature.TURN_OFF in features and HVACMode.OFF not in modes:
+                modes.append(HVACMode.OFF)
+            self._attr_hvac_modes = modes
+
             if prev_target != state.target_temperature:
-                _LOGGER.debug("%s [Forensic-Climate] Target temperature updated: %s -> %s (hvac_mode=%s)", self.log_prefix, prev_target, state.target_temperature, self._attr_hvac_mode) # pragma: no mutate
+                _LOGGER.debug("%s [Forensic-Climate] Target temperature updated: %s -> %s (hvac_mode=%s)", 
+                              self.log_prefix, prev_target, state.target_temperature, self._attr_hvac_mode)
         else:
             self._attr_hvac_mode = None
             self._attr_target_temperature = None
@@ -242,6 +287,15 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             self._attr_fan_mode = None
             self._attr_swing_mode = None
             self._attr_preset_mode = None
+            # Leave modes intact on brief drops to prevent UI flicker
+
+        self._attr_supported_features = features
+
+    @property
+    def log_prefix(self) -> str:
+        """Return the log prefix from the coordinator for consistency."""
+        return self.coordinator.log_prefix
+    
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator and update the entity state."""
@@ -259,19 +313,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
     def device_info(self) -> DeviceInfo:
         """Return device information."""
         return self._attr_device_info
-    @property
-    def supported_features(self) -> ClimateEntityFeature:
-        """Return the supported features, computed from the controller's operations."""
-        features = ClimateEntityFeature(0)
-        ops = self.coordinator.operations
-        for attr, feature in SUPPORTED_FEATURES_MAP.items():
-            if attr in ops:
-                if attr == ATTR_SWING_MODE and not self.swing_modes:
-                    continue
-                features |= feature
-        if ATTR_POWER in ops:
-            features |= ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
-        return features
+    
     def _apply_optimistic_corrections(self, corrections: dict[str, Any] | None) -> None:
         """Apply predicted corrections strictly using ALLOWED_OPTIMISTIC_CORRECTIONS map."""
         if not corrections:
@@ -358,48 +400,12 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         )  # pragma: no mutate
         await self.coordinator.async_set_property(key, value, {})
         await self.coordinator.async_request_refresh()
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the state attributes."""
-        core_attrs = {
-            const.ATTR_TEMPERATURE,
-            ATTR_CURRENT_TEMPERATURE,
-            ATTR_HVAC_MODE,
-            ATTR_FAN_MODE,
-            ATTR_SWING_MODE,
-            ATTR_PRESET_MODE,
-        }
-        return {
-            k: v
-            for k, v in self.coordinator.state_attributes.items()
-            if k not in core_attrs
-        }
+    
     @property
     def temperature_unit(self) -> str:
         """Return the temperature unit."""
         return self.hass.config.units.temperature_unit
-    @property
-    def hvac_modes(self) -> list[HVACMode]:
-        """Return the list of available hvac operation modes."""
-        modes: list[HVACMode] = self._attr_hvac_modes
-        if (
-            ClimateEntityFeature.TURN_OFF in self.supported_features
-            and HVACMode.OFF not in modes
-        ):
-            return modes + [HVACMode.OFF]
-        return modes
-    @property
-    def fan_modes(self) -> list[str]:
-        """Return the list of available fan modes."""
-        return self._attr_fan_modes
-    @property
-    def swing_modes(self) -> list[str]:
-        """Return the list of available swing modes."""
-        return self._attr_swing_modes
-    @property
-    def preset_modes(self) -> list[str]:
-        """Return the list of available preset modes."""
-        return self._attr_preset_modes
+
     def _resolve_numeric_boundary(self, prop_key: str, default_val: float) -> float:
         """Safely resolve numeric boundaries avoiding hot-path overhead."""
         prop_obj = self.coordinator.get_property_object(prop_key)
@@ -409,11 +415,4 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             return float(prop_obj.value)
         except (ValueError, TypeError):
             return float(default_val)
-    @property
-    def min_temp(self) -> float:
-        """Return the minimum temperature."""
-        return self._resolve_numeric_boundary(ATTR_MIN_TEMP, DEFAULT_CLIMATE_IP_TEMP_MIN)
-    @property
-    def max_temp(self) -> float:
-        """Return the maximum temperature."""
-        return self._resolve_numeric_boundary(ATTR_MAX_TEMP, DEFAULT_CLIMATE_IP_TEMP_MAX)
+

@@ -235,25 +235,28 @@ async def async_unload_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -
         # 2. TERMINATE BACKGROUND TASKS
         # Safely shut down all coordinators and underlying socket/aiohttp connections
         if entry.runtime_data:
-            _LOGGER.debug("Terminating active connections and coordinators for entry %s", entry.entry_id)
+            _LOGGER.debug(  # pragma: no mutate
+                "Terminating active connections and coordinators for entry %s", entry.entry_id
+            )  # pragma: no mutate
             for device_id, coordinator in entry.runtime_data.items():
-                _LOGGER.debug("Executing async_shutdown for device ID: %s", device_id)
+                _LOGGER.debug("Executing async_shutdown for device ID: %s", device_id)  # pragma: no mutate
                 try:
                     await coordinator.async_shutdown()
                 except Exception as ex:
                     # Fail-fast: Log the teardown failure but do not halt the unload sequence
-                    _LOGGER.error("Failed to cleanly shutdown coordinator for device %s: %s", device_id, ex)
+                    _LOGGER.error("Failed to cleanly shutdown coordinator for device %s: %s", device_id, ex)  # pragma: no mutate
 
             # 3. PURGE MEMORY FOOTPRINT
             # Explicitly clear the dictionary to drop controller references immediately, 
             # ensuring no dangling pointers prevent garbage collection.
             entry.runtime_data.clear()
         
-        _LOGGER.info("Teardown complete. Config entry %s fully unloaded.", entry.entry_id)
+        _LOGGER.info("Teardown complete. Config entry %s fully unloaded.", entry.entry_id)  # pragma: no mutate
     else:
-        _LOGGER.warning("Platform unload failed for entry %s. Aborting teardown to prevent unstable state.", entry.entry_id)
+        _LOGGER.warning("Platform unload failed for entry %s. Aborting teardown to prevent unstable state.", entry.entry_id)  # pragma: no mutate
 
     return unload_ok
+
 
 async def async_remove_config_entry_device(
     _hass: HomeAssistant, entry: ClimateIPConfigEntry, device_entry: Any
