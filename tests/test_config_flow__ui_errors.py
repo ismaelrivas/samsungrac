@@ -1,6 +1,7 @@
 import pytest
 import voluptuous as vol
 from unittest.mock import patch, MagicMock, AsyncMock
+from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import AbortFlow, FlowResultType
 from homeassistant.config_entries import SOURCE_RECONFIGURE
 from custom_components.climate_ip.config_flow import (
@@ -225,6 +226,46 @@ async def test_initiate_pairing_and_discover_uuid_mutants():
 
 
 @pytest.mark.asyncio
+async def test_discover_uuid_missing_discovered_devices_attr(hass: HomeAssistant) -> None:
+    """Kill mutant on getattr default [] fallback.
+
+    When the controller has no 'discovered_devices' attribute at all, the
+    getattr(..., []) default must kick in and route to Scenario A (blind
+    device / single-entry creation).  Any mutant that changes the default
+    from [] to a non-empty list, or replaces getattr with hasattr/direct
+    access, will cause the mock to raise AttributeError or incorrectly
+    branch to Scenario B, failing this test.
+    """
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
+
+    with patch(
+        "custom_components.climate_ip.config_flow.YamlController"
+    ) as mock_ctrl_cls:
+        mock_ctrl = mock_ctrl_cls.return_value
+        mock_ctrl.initialize = AsyncMock(return_value=True)
+        mock_ctrl.async_get_status = AsyncMock(return_value=True)
+        mock_ctrl.async_shutdown = AsyncMock()
+        mock_ctrl.unique_id = None
+        mock_ctrl.device_id = None
+
+        # LETHAL INJECTION: delete the attribute entirely from the MagicMock so
+        # that getattr(controller, "discovered_devices", []) must use the default.
+        del mock_ctrl.discovered_devices
+
+        with patch.object(
+            flow, "_create_entry", return_value={"type": "create_entry"}
+        ) as mock_create:
+            result = await flow.async_step_discover_uuid()
+
+            # Scenario A (blind device) must have been triggered: _create_entry called
+            mock_create.assert_called_once()
+            # The return value bubbles straight through
+            assert result["type"] == "create_entry"
+
+
+@pytest.mark.asyncio
 async def test_handle_error_req_mac_is_false_not_none():
     """Kills mutant 25: req_mac = False (no None) para errores distintos de mac_resolve_failed."""
     flow = ClimateIpConfigFlow()
@@ -402,3 +443,381 @@ async def test_rest_api_aborts_if_already_configured_normal_flow(hass):
             except AbortFlow as e:
                 # El código original lanza el abort correctamente, cazando al mutante
                 assert e.reason == "already_configured"
+
+
+# ===========================================================================
+# SECTION: Exact error-key assertions for safe wrapper exception branches
+# Directive: every except clause must produce a precise, string-verified key.
+# Kills mutants that swap "timeout_connect" ↔ "pairing_connection_failed",
+# change "token_acquisition_failed" to "unknown_error", etc.
+# ===========================================================================
+
+from custom_components.climate_ip.exceptions import (
+    AuthError,
+    AuthTurnedOffError,
+    CannotConnect,
+    TokenAcquisitionError,
+)
+
+
+# ---------------------------------------------------------------------------
+# _initiate_pairing_safe
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_initiate_pairing_safe_cannot_connect_error_key():
+    """CannotConnect → error == 'pairing_connection_failed' (not 'cannot_connect' or 'timeout_connect')."""
+    flow = ClimateIpConfigFlow()
+    flow.flow_data = {CONF_IP_ADDRESS: "1.1.1.1"}
+    flow.acquirer = MagicMock()
+    flow.acquirer.async_initiate_pairing = AsyncMock(
+        side_effect=CannotConnect("refused")
+    )
+
+    result = await flow._initiate_pairing_safe()
+
+    assert result["ok"] is False
+    assert result["error"] == "pairing_connection_failed"
+    assert result["error_details"] == "refused"
+
+
+@pytest.mark.asyncio
+async def test_initiate_pairing_safe_auth_error_key():
+    """AuthError → error == 'pairing_connection_failed' (not 'auth_error' or 'unknown_error')."""
+    flow = ClimateIpConfigFlow()
+    flow.flow_data = {CONF_IP_ADDRESS: "1.1.1.1"}
+    flow.acquirer = MagicMock()
+    flow.acquirer.async_initiate_pairing = AsyncMock(
+        side_effect=AuthError("bad creds")
+    )
+
+    result = await flow._initiate_pairing_safe()
+
+    assert result["ok"] is False
+    assert result["error"] == "pairing_connection_failed"
+    assert result["error_details"] == "bad creds"
+
+
+@pytest.mark.asyncio
+async def test_initiate_pairing_safe_token_acquisition_error_key():
+    """TokenAcquisitionError → error == 'pairing_connection_failed'."""
+    flow = ClimateIpConfigFlow()
+    flow.flow_data = {CONF_IP_ADDRESS: "1.1.1.1"}
+    flow.acquirer = MagicMock()
+    flow.acquirer.async_initiate_pairing = AsyncMock(
+        side_effect=TokenAcquisitionError("no token")
+    )
+
+    result = await flow._initiate_pairing_safe()
+
+    assert result["ok"] is False
+    assert result["error"] == "pairing_connection_failed"
+
+
+@pytest.mark.asyncio
+async def test_initiate_pairing_safe_timeout_error_key():
+    """TimeoutError → error == 'timeout_connect' (not 'pairing_connection_failed' or 'cannot_connect')."""
+    flow = ClimateIpConfigFlow()
+    flow.flow_data = {CONF_IP_ADDRESS: "10.0.0.1"}
+    flow.acquirer = MagicMock()
+    flow.acquirer.async_initiate_pairing = AsyncMock(
+        side_effect=TimeoutError("timed out")
+    )
+
+    result = await flow._initiate_pairing_safe()
+
+    assert result["ok"] is False
+    assert result["error"] == "timeout_connect"
+    assert "timed out" in result["error_details"]
+
+
+@pytest.mark.asyncio
+async def test_initiate_pairing_safe_unknown_exception_key():
+    """Unexpected Exception → error == 'unknown_error'."""
+    flow = ClimateIpConfigFlow()
+    flow.flow_data = {}
+    flow.acquirer = MagicMock()
+    flow.acquirer.async_initiate_pairing = AsyncMock(
+        side_effect=RuntimeError("boom")
+    )
+
+    result = await flow._initiate_pairing_safe()
+
+    assert result["ok"] is False
+    assert result["error"] == "unknown_error"
+
+
+@pytest.mark.asyncio
+async def test_initiate_pairing_safe_abortflow_propagates():
+    """AbortFlow must NOT be swallowed — it must re-raise."""
+    from homeassistant.data_entry_flow import AbortFlow
+
+    flow = ClimateIpConfigFlow()
+    flow.flow_data = {}
+    flow.acquirer = MagicMock()
+    flow.acquirer.async_initiate_pairing = AsyncMock(
+        side_effect=AbortFlow("already_configured")
+    )
+
+    with pytest.raises(AbortFlow):
+        await flow._initiate_pairing_safe()
+
+
+@pytest.mark.asyncio
+async def test_initiate_pairing_safe_null_acquirer_key():
+    """acquirer is None → error == 'unknown_error' (fast-fail path)."""
+    flow = ClimateIpConfigFlow()
+    flow.flow_data = {}
+    flow.acquirer = None
+
+    result = await flow._initiate_pairing_safe()
+
+    assert result["ok"] is False
+    assert result["error"] == "unknown_error"
+
+
+# ---------------------------------------------------------------------------
+# _wait_token_safe
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_wait_token_safe_timeout_error_key():
+    """TimeoutError → error == 'timeout_connect' (not 'token_acquisition_failed')."""
+    flow = ClimateIpConfigFlow()
+    flow.flow_data = {CONF_IP_ADDRESS: "192.168.1.5"}
+    flow.acquirer = MagicMock()
+    flow.acquirer.async_wait_for_token = AsyncMock(
+        side_effect=TimeoutError("wait expired")
+    )
+
+    result = await flow._wait_token_safe()
+
+    assert result["ok"] is False
+    assert result["error"] == "timeout_connect"
+    assert "wait expired" in result["error_details"]
+
+
+@pytest.mark.asyncio
+async def test_wait_token_safe_token_acquisition_error_key():
+    """TokenAcquisitionError → error == 'token_acquisition_failed' (not 'timeout_connect')."""
+    flow = ClimateIpConfigFlow()
+    flow.flow_data = {}
+    flow.acquirer = MagicMock()
+    flow.acquirer.async_wait_for_token = AsyncMock(
+        side_effect=TokenAcquisitionError("no token returned")
+    )
+
+    result = await flow._wait_token_safe()
+
+    assert result["ok"] is False
+    assert result["error"] == "token_acquisition_failed"
+
+
+@pytest.mark.asyncio
+async def test_wait_token_safe_auth_turned_off_error_key():
+    """AuthTurnedOffError → error == 'token_acquisition_failed'."""
+    flow = ClimateIpConfigFlow()
+    flow.flow_data = {}
+    flow.acquirer = MagicMock()
+    flow.acquirer.async_wait_for_token = AsyncMock(
+        side_effect=AuthTurnedOffError("auth disabled")
+    )
+
+    result = await flow._wait_token_safe()
+
+    assert result["ok"] is False
+    assert result["error"] == "token_acquisition_failed"
+
+
+@pytest.mark.asyncio
+async def test_wait_token_safe_unknown_exception_key():
+    """Unexpected Exception → error == 'unknown_error'."""
+    flow = ClimateIpConfigFlow()
+    flow.flow_data = {}
+    flow.acquirer = MagicMock()
+    flow.acquirer.async_wait_for_token = AsyncMock(
+        side_effect=ValueError("unexpected")
+    )
+
+    result = await flow._wait_token_safe()
+
+    assert result["ok"] is False
+    assert result["error"] == "unknown_error"
+
+
+@pytest.mark.asyncio
+async def test_wait_token_safe_abortflow_propagates():
+    """AbortFlow must re-raise from _wait_token_safe."""
+    from homeassistant.data_entry_flow import AbortFlow
+
+    flow = ClimateIpConfigFlow()
+    flow.flow_data = {}
+    flow.acquirer = MagicMock()
+    flow.acquirer.async_wait_for_token = AsyncMock(
+        side_effect=AbortFlow("already_configured")
+    )
+
+    with pytest.raises(AbortFlow):
+        await flow._wait_token_safe()
+
+
+@pytest.mark.asyncio
+async def test_wait_token_safe_null_acquirer_key():
+    """acquirer is None → error == 'unknown_error'."""
+    flow = ClimateIpConfigFlow()
+    flow.flow_data = {}
+    flow.acquirer = None
+
+    result = await flow._wait_token_safe()
+
+    assert result["ok"] is False
+    assert result["error"] == "unknown_error"
+
+
+@pytest.mark.asyncio
+async def test_wait_token_safe_success_returns_token():
+    """Happy path: returned dict has ok=True and the token value."""
+    flow = ClimateIpConfigFlow()
+    flow.flow_data = {}
+    flow.acquirer = MagicMock()
+    flow.acquirer.async_wait_for_token = AsyncMock(return_value="ABC123")
+
+    result = await flow._wait_token_safe()
+
+    assert result["ok"] is True
+    assert result["token"] == "ABC123"
+
+
+# ---------------------------------------------------------------------------
+# _test_connection_safe
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_test_connection_safe_cannot_connect_error_key(hass):
+    """CannotConnect → error == 'pairing_connection_failed'."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888,
+        CONF_IP_ADDRESS: "1.1.1.1",
+        CONF_TOKEN: "tok",
+    }
+
+    with patch(
+        "custom_components.climate_ip.config_flow.async_get_clientsession"
+    ) as mock_sess:
+        mock_sess.return_value.get.side_effect = CannotConnect("refused")
+
+        result = await flow._test_connection_safe()
+
+    assert result["ok"] is False
+    assert result["error"] == "pairing_connection_failed"
+
+
+@pytest.mark.asyncio
+async def test_test_connection_safe_timeout_error_key(hass):
+    """TimeoutError → error == 'timeout_connect' (not 'pairing_connection_failed')."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888,
+        CONF_IP_ADDRESS: "1.1.1.1",
+        CONF_TOKEN: "tok",
+    }
+
+    with patch(
+        "custom_components.climate_ip.config_flow.async_get_clientsession"
+    ) as mock_sess:
+        mock_sess.return_value.get.side_effect = TimeoutError("connection timed out")
+
+        result = await flow._test_connection_safe()
+
+    assert result["ok"] is False
+    assert result["error"] == "timeout_connect"
+    assert "connection timed out" in result["error_details"]
+
+
+@pytest.mark.asyncio
+async def test_test_connection_safe_auth_error_key(hass):
+    """AuthError → error == 'invalid_auth' (not 'pairing_connection_failed')."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888,
+        CONF_IP_ADDRESS: "1.1.1.1",
+        CONF_TOKEN: "tok",
+    }
+
+    with patch(
+        "custom_components.climate_ip.config_flow.async_get_clientsession"
+    ) as mock_sess:
+        mock_sess.return_value.get.side_effect = AuthError("token rejected")
+
+        result = await flow._test_connection_safe()
+
+    assert result["ok"] is False
+    assert result["error"] == "invalid_auth"
+    assert "token rejected" in result["error_details"]
+
+
+@pytest.mark.asyncio
+async def test_test_connection_safe_unknown_exception_key(hass):
+    """Unexpected Exception → error == 'cannot_connect'."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888,
+        CONF_IP_ADDRESS: "1.1.1.1",
+        CONF_TOKEN: "tok",
+    }
+
+    with patch(
+        "custom_components.climate_ip.config_flow.async_get_clientsession"
+    ) as mock_sess:
+        mock_sess.return_value.get.side_effect = OSError("network failure")
+
+        result = await flow._test_connection_safe()
+
+    assert result["ok"] is False
+    assert result["error"] == "cannot_connect"
+
+
+@pytest.mark.asyncio
+async def test_test_connection_safe_abortflow_propagates(hass):
+    """AbortFlow must re-raise from _test_connection_safe."""
+    from homeassistant.data_entry_flow import AbortFlow
+
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888,
+        CONF_IP_ADDRESS: "1.1.1.1",
+        CONF_TOKEN: "tok",
+    }
+
+    with patch(
+        "custom_components.climate_ip.config_flow.async_get_clientsession"
+    ) as mock_sess:
+        mock_sess.return_value.get.side_effect = AbortFlow("already_configured")
+
+        with pytest.raises(AbortFlow):
+            await flow._test_connection_safe()
+
+
+@pytest.mark.asyncio
+async def test_test_connection_safe_unknown_device_type_key(hass):
+    """Unknown device_type → ok=False, error == 'cannot_connect'."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: "nonexistent_type",
+        CONF_IP_ADDRESS: "1.1.1.1",
+    }
+
+    result = await flow._test_connection_safe()
+
+    assert result["ok"] is False
+    assert result["error"] == "cannot_connect"

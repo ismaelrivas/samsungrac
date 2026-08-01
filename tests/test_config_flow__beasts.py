@@ -715,7 +715,8 @@ async def test_reauth_empty_eid_fallback(hass: HomeAssistant) -> None:
     with patch.object(flow.hass.config_entries, "async_get_entry") as mock_get:
         await flow.async_step_reauth({})
         # Lethal assertion: Busca ID "", no "XXXX"
-        mock_get.assert_called_once_with("")
+        mock_get.assert_not_called()
+        assert flow.reauth_entry is None
 
 
 @pytest.mark.asyncio
