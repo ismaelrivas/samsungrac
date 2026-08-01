@@ -78,15 +78,18 @@ class YamlController(ClimateController):
         serializable (safe for ConfigEntry storage and diagnostics).
         """
         super().__init__(config, logger)  # pragma: no mutate
-        # Store HA runtime objects as typed instance attributes.
+        # 1. Pure dictionary clone — never mutate the caller's reference.
+        self._config = dict(config)
+
+        # 2. Strict instance attributes for HA runtime objects.
         self.hass = hass
         self._session = session
 
-        # Remove HA runtime objects from the config dict so it stays serializable.
-        config.pop("hass", None)
-        config.pop("session", None)
-
-        self._config = config
+        # 3. Purge serialization poison from the clone (Fail-Safe).
+        #    Guarantees self._config remains JSON-serializable.
+        self._config.pop("hass", None)
+        self._config.pop("session", None)
+        self._config.pop("logger", None)
         self._yaml = config.get(CONF_CONFIG_FILE)
         self._ip_address = config.get(CONF_IP_ADDRESS) or config.get("host")
 

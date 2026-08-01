@@ -372,11 +372,10 @@ class YamlStatePoller:
             try:
                 device_type = self.controller.config.get(CONF_DEVICE_TYPE)
                 cache = getattr(self.controller.loader, "_parsed_yaml_cache", {})
-                id_map = (
-                    cache.get(getattr(self.controller, "device_id", "XXXX"), {})
-                    .get(CONFIG_DEVICE, {})
-                    .get("identifiers")
-                )
+                device_id = getattr(self.controller, "device_id", "XXXX")
+                device_cache = cache.get(device_id) or {}
+                device_config = device_cache.get(CONFIG_DEVICE) or {}
+                id_map = device_config.get("identifiers")
 
                 if id_map:
                     self.controller.discovered_devices = get_value_by_path(
@@ -563,7 +562,8 @@ class YamlStatePoller:
             if isinstance(cache, dict):
                 dev_conf = cache.get(getattr(self.controller, "device_id", "XXXX"), {})
                 if isinstance(dev_conf, dict):
-                    id_map = dev_conf.get(CONFIG_DEVICE, {}).get("identifiers")
+                    device_config = dev_conf.get(CONFIG_DEVICE) or {}
+                    id_map = device_config.get("identifiers")
                     if isinstance(id_map, dict):
                         found_device = self._find_device_node(full_device_state, id_map)
                         if isinstance(found_device, dict):
