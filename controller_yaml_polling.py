@@ -401,7 +401,7 @@ class YamlStatePoller:
                 await self.controller.loader.async_finish_initialization()
 
             except Exception as e:
-                _LOGGER.exception("%s Error during initial device discovery: %s", self.controller.log_prefix, e)
+                _LOGGER.exception("%s Error during initial device discovery", self.controller.log_prefix)  # pragma: no mutate
 
         await self.async_update_properties_from_state(full_device_state)
         return self.controller.loader.state_getter.value
