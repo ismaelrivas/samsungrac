@@ -231,12 +231,17 @@ class YamlStatePoller:
             )
 
     def _update_all_connections_token(self, new_token: str) -> None:
-        """Propagate the new token to all active connection engines."""
-        updated_connections: set = set()
-        for prop in self._all_props():
+        """Update the auth token across all connections."""
+        if hasattr(self.controller, "_connection") and self.controller._connection:
+            if hasattr(self.controller._connection, "update_auth_token"):
+                self.controller._connection.update_auth_token(new_token)
+
+        updated_connections = set()
+        for prop in getattr(self.controller, "_properties", {}).values():
+            conn = getattr(prop, "connection", None)
             if (
-                prop
-                and (conn := prop.get_connection(None))
+                conn
+                and conn != getattr(self.controller, "_connection", None)
                 and conn not in updated_connections
             ):
                 if hasattr(conn, "update_auth_token"):
@@ -274,6 +279,7 @@ class YamlStatePoller:
             if self._consecutive_connection_errors == 3:
                 self._try_create_repair_issue()
             if self._consecutive_connection_errors >= 2:
+                self._clear_state_cache()
                 raise CannotConnect(
                     "Host unreachable (ICMP ping failed). Device is persistently offline."
                 )
@@ -331,14 +337,23 @@ class YamlStatePoller:
                     )
                     self._consecutive_connection_errors = 0
                 except Exception as retry_exc:
+                    self._clear_state_cache()
                     raise UpdateFailed(f"Retry after token refresh failed: {retry_exc}") from retry_exc
             else:
+                self._clear_state_cache()
                 raise ConfigEntryAuthFailed("Authentication failed. Please check tokens.") from exc
 
         except InvalidHeaderError:
             raise
 
-        except (RequestException, CannotConnect) as e:
+        except (
+            RequestException,
+            CannotConnect,
+            TimeoutError,
+            asyncio.TimeoutError,
+            ConnectionRefusedError,
+            OSError,
+        ) as e:
             if "persistently offline" in str(e):
                 self._consecutive_connection_errors = 2
             else:
@@ -354,12 +369,14 @@ class YamlStatePoller:
             if self._consecutive_connection_errors == 3:
                 self._try_create_repair_issue()
 
+            self._clear_state_cache()
             reason = str(e).split(":")[-1].strip()  # pragma: no mutate
             raise UpdateFailed(f"Device unreachable: {reason}") from e
 
         if full_device_state is None:
             if getattr(self.controller, "available", True) and self._cached_device_state:
                 return self._cached_device_state
+            self._clear_state_cache()
             raise UpdateFailed("Failed to get device state: No data received and no cache available")
 
         self._cached_device_state = full_device_state

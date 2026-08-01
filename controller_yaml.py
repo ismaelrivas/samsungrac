@@ -442,6 +442,12 @@ class YamlController(ClimateController):
         """Update the entity state values."""
         return await self.poller.async_update_state()
 
+    def clear_state_cache(self) -> None:
+        """Clear cached state in poller to prevent ghosting."""
+        if hasattr(self, "poller") and self.poller:
+            if hasattr(self.poller, "_clear_state_cache"):
+                self.poller._clear_state_cache()
+
     async def async_merge_device_state(
         self, new_data: dict[str, Any]
     ) -> bool:
