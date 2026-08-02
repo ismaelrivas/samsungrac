@@ -208,8 +208,8 @@ async def test_async_initialize_connection_instantiation_args():
             self.args = args
             self.kwargs = kwargs
 
-        @staticmethod
-        def match_type(conn_type):
+        @classmethod
+        def match_type(cls, conn_type):
             return conn_type == "test_conn_type"
 
         def load_from_yaml(self, node, state_getter):
@@ -508,8 +508,8 @@ async def test_async_finish_initialization_config_entry_options():
         def __init__(self, *args, **kwargs):
             pass
 
-        @staticmethod
-        def match_type(conn_type):
+        @classmethod
+        def match_type(cls, conn_type):
             return conn_type == "samsung_8888_raw"
 
         def load_from_yaml(self, node, state_getter):
@@ -1458,8 +1458,8 @@ async def test_async_initialize_connection_raw8888_args(mock_controller) -> None
         def __init__(self, *args, **kwargs):
             self.args = args  # Capturamos los argumentos del constructor
 
-        @staticmethod
-        def match_type(conn_type):
+        @classmethod
+        def match_type(cls, conn_type):
             return conn_type == "samsung_8888_raw"
 
         def load_from_yaml(self, node, getter):

@@ -22,6 +22,10 @@ class RetryNextAttempt(Exception):
 class DummyConnection(Connection):
     """Subclass for testing base Connection functionality."""
 
+    @classmethod
+    def match_type(cls, conn_type: str) -> bool:
+        return conn_type == "dummy"
+
     @property
     def is_push_supported(self) -> bool:
         return False
@@ -33,12 +37,20 @@ def test_register_connection():
 
     @register_connection
     class TestConn(Connection):
+        @classmethod
+        def match_type(cls, conn_type: str) -> bool:
+            return conn_type == "test"
+
         @property
         def is_push_supported(self) -> bool:
             return False
 
-    assert len(CLIMATE_IP_CONNECTIONS) == initial_len + 1
-    assert TestConn in CLIMATE_IP_CONNECTIONS
+    try:
+        assert len(CLIMATE_IP_CONNECTIONS) == initial_len + 1
+        assert TestConn in CLIMATE_IP_CONNECTIONS
+    finally:
+        if TestConn in CLIMATE_IP_CONNECTIONS:
+            CLIMATE_IP_CONNECTIONS.remove(TestConn)
 
 
 def test_connection_init_properties():

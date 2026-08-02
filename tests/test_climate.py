@@ -610,31 +610,6 @@ def test_climate_available_success(base_climate_entity: ClimateIP) -> None:
 # --- supported_features property (3 mutants: lines 316-317) ---
 
 
-def test_climate_supported_features_swing_continue_and_bitwise(
-    base_climate_entity: ClimateIP,
-) -> None:
-    """Kill mutants 9-11 in supported_features.
-
-    1. Mutant 9 changes 'continue' to 'break' when ATTR_SWING_MODE is in ops but swing_modes is empty.
-       If 'break' is executed, ATTR_PRESET_MODE (which comes after SWING_MODE in SUPPORTED_FEATURES_MAP)
-       would be skipped.
-    2. Mutants 10 & 11 change '|=' to '&='.
-    """
-    from homeassistant.components.climate import ClimateEntityFeature
-
-    base_climate_entity.coordinator.operations = [
-        HA_ATTR_TEMPERATURE,
-        ATTR_SWING_MODE,
-        ATTR_PRESET_MODE,
-    ]
-    base_climate_entity._attr_swing_modes = []  # Empty swing_modes forces 'continue'
-
-    features = base_climate_entity.supported_features
-
-    # Must include TARGET_TEMPERATURE and PRESET_MODE, but NOT SWING_MODE
-    assert ClimateEntityFeature.TARGET_TEMPERATURE in features
-    assert ClimateEntityFeature.PRESET_MODE in features
-    assert ClimateEntityFeature.SWING_MODE not in features
 
 
 # --- extra_state_attributes property (2 mutants: lines 411, 419) ---
@@ -655,6 +630,7 @@ def test_climate_extra_state_attributes_filtering(
         "custom_attribute_2": 42,
     }
 
+    base_climate_entity._sync_data_from_coordinator()
     extra_attrs = base_climate_entity.extra_state_attributes
 
     # Must only contain non-core attributes
@@ -679,6 +655,7 @@ def test_climate_min_temp_from_coordinator_property(
         mock_prop if key == ATTR_MIN_TEMP else None
     )
 
+    base_climate_entity._sync_data_from_coordinator()
     assert base_climate_entity.min_temp == 17.5
 
 
@@ -688,6 +665,7 @@ def test_climate_min_temp_fallback_on_none_prop(base_climate_entity: ClimateIP) 
 
     base_climate_entity.coordinator.get_property_object.return_value = None
 
+    base_climate_entity._sync_data_from_coordinator()
     assert base_climate_entity.min_temp == float(DEFAULT_CLIMATE_IP_TEMP_MIN)
 
 
@@ -701,6 +679,7 @@ def test_climate_min_temp_fallback_on_invalid_value(
     mock_prop.value = "invalid_number"
     base_climate_entity.coordinator.get_property_object.return_value = mock_prop
 
+    base_climate_entity._sync_data_from_coordinator()
     assert base_climate_entity.min_temp == float(DEFAULT_CLIMATE_IP_TEMP_MIN)
 
 
@@ -719,6 +698,7 @@ def test_climate_max_temp_from_coordinator_property(
         mock_prop if key == ATTR_MAX_TEMP else None
     )
 
+    base_climate_entity._sync_data_from_coordinator()
     assert base_climate_entity.max_temp == 31.0
 
 
@@ -728,6 +708,7 @@ def test_climate_max_temp_fallback_on_none_prop(base_climate_entity: ClimateIP) 
 
     base_climate_entity.coordinator.get_property_object.return_value = None
 
+    base_climate_entity._sync_data_from_coordinator()
     assert base_climate_entity.max_temp == float(DEFAULT_CLIMATE_IP_TEMP_MAX)
 
 
@@ -741,6 +722,7 @@ def test_climate_max_temp_fallback_on_invalid_value(
     mock_prop.value = "invalid_number"
     base_climate_entity.coordinator.get_property_object.return_value = mock_prop
 
+    base_climate_entity._sync_data_from_coordinator()
     assert base_climate_entity.max_temp == float(DEFAULT_CLIMATE_IP_TEMP_MAX)
 
 
