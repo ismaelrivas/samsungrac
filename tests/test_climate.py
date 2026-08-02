@@ -607,9 +607,52 @@ def test_climate_available_success(base_climate_entity: ClimateIP) -> None:
     assert base_climate_entity.available is True
 
 
-# --- supported_features property (3 mutants: lines 316-317) ---
+# --- supported_features property & temp step fallbacks ---
 
 
+def test_climate_invalid_temp_step_fallback(
+    base_climate_entity: ClimateIP, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Kill mutants in __init__ for invalid temp step configuration."""
+    import logging
+    from custom_components.climate_ip.climate import ClimateIP
+    from custom_components.climate_ip.const import CONF_TEMP_STEP, DEFAULT_TARGET_TEMP_STEP
+
+    # 1. Inject invalid string to force the ValueError/TypeError branch
+    base_climate_entity._config[CONF_TEMP_STEP] = "invalid_string"
+
+    # 2. Capture logs and re-instantiate
+    with caplog.at_level(logging.WARNING):
+        entity = ClimateIP(
+            base_climate_entity.coordinator,
+            base_climate_entity.entity_description,
+            base_climate_entity._config,
+        )
+
+        # 3. Assert mathematical fallback
+        assert entity.target_temperature_step == float(DEFAULT_TARGET_TEMP_STEP)
+
+        # 4. Assert log mutant kill
+        assert "Invalid temp step configured" in caplog.text
+
+
+def test_climate_supported_features_bitwise_strict_accumulation(
+    base_climate_entity: ClimateIP,
+) -> None:
+    """Kill mutants in _sync_data_from_coordinator (features |= feature)."""
+    from homeassistant.components.climate import ClimateEntityFeature
+    from homeassistant.components.climate.const import ATTR_PRESET_MODE
+
+    # 1. Set exactly two features that map through the dynamic loop
+    base_climate_entity.coordinator.operations = [ATTR_PRESET_MODE, HA_ATTR_TEMPERATURE]
+    base_climate_entity.coordinator.swing_modes = []
+
+    # 2. Trigger O(1) Cache Rebuild
+    base_climate_entity._sync_data_from_coordinator()
+
+    # 3. Strict bitwise equality assertion (kills &= mutants)
+    expected_features = ClimateEntityFeature.PRESET_MODE | ClimateEntityFeature.TARGET_TEMPERATURE
+    assert base_climate_entity.supported_features == expected_features
 
 
 # --- extra_state_attributes property (2 mutants: lines 411, 419) ---
