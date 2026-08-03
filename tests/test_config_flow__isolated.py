@@ -1,27 +1,21 @@
 """Test config flow isolated steps to kill mutants."""
 
-import pytest
 import asyncio
-from typing import Coroutine, Any
-from unittest.mock import patch, MagicMock, AsyncMock
+import ssl
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from homeassistant.const import CONF_IP_ADDRESS
 from homeassistant.data_entry_flow import FlowResultType
+
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
-
-
-async def fast_await(coro: Coroutine[Any, Any, Any], timeout: float = 0.5) -> Any:
-    """Circuit breaker for async tests to kill deadlocking mutants instantly."""
-    try:
-        return await asyncio.wait_for(coro, timeout=timeout)
-    except TimeoutError:
-        pytest.fail("Circuit breaker triggered: Coroutine hung (likely mutant deadlock)")
 from custom_components.climate_ip.const import (
+    CONF_DEVICE_ID,
     CONF_DEVICE_TYPE,
     DEVICE_TYPE_SAMSUNG_2878,
     DEVICE_TYPE_SAMSUNG_8888,
-    CONF_DEVICE_ID,
 )
-from homeassistant.const import CONF_IP_ADDRESS
-import ssl
 
 
 @pytest.mark.asyncio
@@ -30,16 +24,22 @@ async def test_samsung_device_type_routing_mutants():
     flow = ClimateIpConfigFlow()
 
     with patch.object(flow, "_async_process_samsung_device_step") as mock_process:
-        await flow.async_step_samsung_2878({"dummy": "data"})
-        # Mata el Mutante 2 (is_8888=None) y 9 (is_8888=True en vez de False)
+        try:
+            async with asyncio.timeout(0.5):
+                await flow.async_step_samsung_2878({"dummy": "data"})
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         mock_process.assert_called_once_with(
             step_id="samsung_2878", is_8888=False, user_input={"dummy": "data"}
         )
 
     flow = ClimateIpConfigFlow()
     with patch.object(flow, "_async_process_samsung_device_step") as mock_process:
-        await flow.async_step_samsung_8888({"dummy": "data"})
-        # Verify mutant kill análogos para 8888
+        try:
+            async with asyncio.timeout(0.5):
+                await flow.async_step_samsung_8888({"dummy": "data"})
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         mock_process.assert_called_once_with(
             step_id="samsung_8888", is_8888=True, user_input={"dummy": "data"}
         )
@@ -53,8 +53,11 @@ async def test_reconfigure_arguments_mutants():
 
     with patch.object(flow, "async_step_reconfigure_confirm") as mock_confirm:
         test_input = {CONF_IP_ADDRESS: "1.1.1.1"}
-        await flow.async_step_reconfigure(test_input)
-        # If mutant cambia u_input = None, esta aserción reventará
+        try:
+            async with asyncio.timeout(0.5):
+                await flow.async_step_reconfigure(test_input)
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         mock_confirm.assert_called_once_with(test_input)
 
 
@@ -83,9 +86,12 @@ async def test_connection_safe_ssl_mutant(hass):
         mock_get.__aenter__.return_value.status = 200
         mock_session.return_value.get.return_value = mock_get
 
-        await fast_await(flow._test_connection_safe())
+        try:
+            async with asyncio.timeout(0.5):
+                await flow._test_connection_safe()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
-        # Verify mutant M41 kill: Si es None en vez de False, esto falla
         assert mock_context.check_hostname is False
         assert mock_context.verify_mode == ssl.CERT_NONE
 
@@ -101,22 +107,29 @@ async def test_test_connection_fallbacks_and_progress():
 
     # 1. Matar M60, M63, M67 (Tareas de progreso a None)
     flow.task = MagicMock()
-    flow.task.done.return_value = False  # Simulamos que la tarea está pendiente
+    flow.task.done.return_value = False
 
-    result = await fast_await(flow.async_step_test_connection())
+    try:
+        async with asyncio.timeout(0.5):
+            result = await flow.async_step_test_connection()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+
     assert result["type"] == FlowResultType.SHOW_PROGRESS
-    # If mutant anula p_task, esto falla
     assert result["progress_task"] is flow.task
 
     # 2. Matar M47, M48 (Fallback de error)
     flow.task.done.return_value = True
-    # Simulamos error sin "error" key para forzar el fallback "cannot_connect"
     flow.task.result.return_value = {"ok": False}
 
-    result_done = await fast_await(flow.async_step_test_connection())
+    try:
+        async with asyncio.timeout(0.5):
+            result_done = await flow.async_step_test_connection()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+
     assert result_done["type"] == FlowResultType.SHOW_PROGRESS_DONE
     assert result_done["step_id"] == "handle_error"
-    # If mutant usa "XXcannot_connectXX", esto falla
     assert flow.flow_data["error_key"] == "cannot_connect"
 
 
@@ -124,46 +137,49 @@ async def test_test_connection_fallbacks_and_progress():
 async def test_await_button_fallbacks():
     """Kills mutants 29, 31, 34, 89, 91, 92."""
     flow = ClimateIpConfigFlow()
-    # Sin IP configurada para forzar el fallback en description_placeholders
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888}
 
-    # 1. Matar M89, M91, M92 (Fallback de IP a "")
     flow.task = MagicMock()
     flow.task.done.return_value = False
-    result = await fast_await(flow.async_step_await_button())
-    assert (
-        result["description_placeholders"]["ip_address"] == ""
-    )  # If mutmut puso "XXXX", falla
+    try:
+        async with asyncio.timeout(0.5):
+            result = await flow.async_step_await_button()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+    assert result["description_placeholders"]["ip_address"] == ""
 
-    # 2. Matar M29, 31, 34 (Fallback de Token a "")
     flow.task.done.return_value = True
-    # Devolvemos ok: True pero sin token en el diccionario
     flow.task.result.return_value = {"ok": True}
 
     with patch(
         "custom_components.climate_ip.config_flow.sanitize_token", return_value=False
     ):
-        await fast_await(flow.async_step_await_button())
+        try:
+            async with asyncio.timeout(0.5):
+                await flow.async_step_await_button()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert flow.flow_data["error_key"] == "token_acquisition_failed"
-        # Esto mata indirectamente a los mutantes del token porque validamos el flujo exacto
 
 
 @pytest.mark.asyncio
 async def test_mim_h03_discovery_fallbacks():
     """Kills mutants 11 y 92 en _async_process_mim_h03."""
     flow = ClimateIpConfigFlow()
-    flow.reauth_entry = MagicMock()  # Evitar chequeos de abort
+    flow.reauth_entry = MagicMock()
 
-    # Pass un dispositivo sin "id" y sin "Mode" para forzar que sea coordinador y el fallback a ""
     discovered = [{"uuid": "test_uuid"}]
 
     with (
         patch.object(flow, "async_set_unique_id"),
         patch.object(flow, "_create_entry", return_value={"type": "create_entry"}),
     ):
-        await flow._async_process_mim_h03(discovered)
+        try:
+            async with asyncio.timeout(0.5):
+                await flow._async_process_mim_h03(discovered)
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
-        # Verify mutant M11 kill y M92: If mutant inyectó "XXXX" en el or "", esto falla
         assert flow.flow_data[CONF_DEVICE_ID] == ""
 
 
@@ -174,16 +190,16 @@ async def test_fallback_raw_discovery_controller_mutant(hass):
     flow.hass = hass
     flow.flow_data = {}
 
-    # Forzamos una excepción en la inicialización de YamlController
     with patch(
         "custom_components.climate_ip.config_flow.YamlController",
         side_effect=Exception("Boom"),
     ):
-        result = await flow._async_fallback_raw_discovery({})
+        try:
+            async with asyncio.timeout(0.5):
+                result = await flow._async_fallback_raw_discovery({})
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
-        # Debe atrapar la excepción y abortar graciosamente.
-        # If mutant 8 puso controller="", el bloque finally hará "".async_shutdown()
-        # lanzando AttributeError y fallando este test con un error no controlado.
         assert result["type"] == FlowResultType.ABORT
         assert result["reason"] == "cannot_connect"
 
@@ -196,18 +212,21 @@ async def test_connection_safe_unique_id_empty_fallback():
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
         CONF_IP_ADDRESS: "1.1.1.1",
-    }  # Sin MAC ni UUID
+    }
 
     with patch("custom_components.climate_ip.config_flow.YamlController") as mock_yaml:
         mock_ctrl = mock_yaml.return_value
         mock_ctrl.initialize = AsyncMock(return_value=True)
         mock_ctrl.async_get_status = AsyncMock(return_value=True)
 
-        await fast_await(flow._test_connection_safe())
+        try:
+            async with asyncio.timeout(0.5):
+                await flow._test_connection_safe()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         args, kwargs = mock_yaml.call_args
-        # If mutant puso None o "XXXX", esto falla
         assert kwargs["config"]["unique_id"] == ""
-        # M77: Verificar que se inyectó el config_file
+
         from custom_components.climate_ip.const import (
             CONF_CONFIG_FILE,
             DEVICE_TYPE_TO_CONFIG_FILE,
@@ -225,13 +244,15 @@ async def test_await_button_token_missing_fallback():
     flow = ClimateIpConfigFlow()
     flow.task = MagicMock()
     flow.task.done.return_value = True
-    # Devolvemos un dicccionario SIN "token"
     flow.task.result.return_value = {"ok": True}
 
     with patch("custom_components.climate_ip.config_flow.sanitize_token") as mock_san:
         mock_san.return_value = False
-        await fast_await(flow.async_step_await_button())
-        # Original lee "", mutante lee None o "XXXX"
+        try:
+            async with asyncio.timeout(0.5):
+                await flow.async_step_await_button()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         mock_san.assert_called_once_with("")
 
 
@@ -251,15 +272,17 @@ async def test_select_devices_error_schema_default_keys():
         ]
     }
 
-    # Simula submit con selección vacía — activa la rama de error con def_keys
-    result = await flow.async_step_select_devices(
-        user_input={CONF_SELECTED_DEVICES: []}
-    )
+    try:
+        async with asyncio.timeout(0.5):
+            result = await flow.async_step_select_devices(
+                user_input={CONF_SELECTED_DEVICES: []}
+            )
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     assert result["errors"] == {"base": "no_devices_selected"}
     schema = result["data_schema"]
 
-    # Encontrar el campo CONF_SELECTED_DEVICES en el schema
     sel_key = None
     for key in schema.schema:
         if hasattr(key, "schema") and key.schema == CONF_SELECTED_DEVICES:
@@ -268,16 +291,13 @@ async def test_select_devices_error_schema_default_keys():
 
     assert sel_key is not None, "CONF_SELECTED_DEVICES no encontrado en el schema"
 
-    # M35/M37: default debe ser la lista de IDs reales, no None
     default_val = sel_key.default()
     assert default_val == ["dev1", "dev2"], (
         f"Expected ['dev1', 'dev2'], got {default_val}"
     )
 
-    # M23: verificar que los valores de default son los IDs, no None
     assert None not in default_val
 
-    # M39: verificar que las opciones del selector son las correctas (no None)
     selector = schema.schema[sel_key]
     assert hasattr(selector, "options"), "El selector debe tener opciones"
     assert selector.options is not None, (
@@ -297,26 +317,26 @@ async def test_select_devices_unique_id_from_device_id():
     flow.flow_data = {
         CONF_DISCOVERED_DEVICES: [{"id": "dev_abc", "name": "Unit ABC"}],
         CONF_DEVICE_ID: "dev_abc",
-        # Sin "unique_id" ni CONF_MAC — fuerza el tercer nivel de fallback
     }
 
     with (
         patch.object(flow, "async_set_unique_id") as mock_set_uid,
         patch.object(flow, "_create_entry", return_value={"type": "create_entry"}),
     ):
-        await flow.async_step_select_devices(
-            user_input={CONF_SELECTED_DEVICES: ["dev_abc"]}
-        )
+        try:
+            async with asyncio.timeout(0.5):
+                await flow.async_step_select_devices(
+                    user_input={CONF_SELECTED_DEVICES: ["dev_abc"]}
+                )
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
-        # M62: si el mutante pone main_unique_id = None, no se llama async_set_unique_id
-        # M63: si pone flow_data.get(None), tampoco lo encontrará
         mock_set_uid.assert_called_once_with("dev_abc", raise_on_progress=False)
 
 
 @pytest.mark.asyncio
 async def test_discover_uuid_controller_init_none_is_correct_start():
     """Kills mutant 15: controller = None al inicio (no controller = '')."""
-
     flow = ClimateIpConfigFlow()
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
@@ -328,10 +348,11 @@ async def test_discover_uuid_controller_init_none_is_correct_start():
         "custom_components.climate_ip.config_flow.YamlController",
         side_effect=Exception("Constructor Crash"),
     ):
-        result = await flow.async_step_discover_uuid()
-        # If mutant puso controller="" en vez de None,
-        # al hacer if controller is not None en el finally, intentará "".async_shutdown()
-        # y explotará con AttributeError en lugar de retornar el FlowResult.
+        try:
+            async with asyncio.timeout(0.5):
+                result = await flow.async_step_discover_uuid()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert result["type"] == FlowResultType.ABORT
         assert result["reason"] == "unknown_error"
 
@@ -345,7 +366,6 @@ async def test_discover_uuid_hasattr_exact_attribute_name():
         CONF_IP_ADDRESS: "1.1.1.1",
     }
     flow.hass = MagicMock()
-    # unique_id del flow es solo-lectura; lo que importa aquí es el del mock_ctrl
 
     with patch("custom_components.climate_ip.config_flow.YamlController") as mock_yaml:
         mock_ctrl = MagicMock(
@@ -361,7 +381,6 @@ async def test_discover_uuid_hasattr_exact_attribute_name():
         mock_ctrl.initialize = AsyncMock(return_value=True)
         mock_ctrl.async_get_status = AsyncMock(return_value=True)
         mock_ctrl.async_shutdown = AsyncMock()
-        # Solo tiene el atributo 'discovered_devices' (no 'XXdiscovered_devicesXX')
         mock_ctrl.discovered_devices = [{"uuid": "abc123", "id": "1"}]
         mock_ctrl.unique_id = "test_uid"
         mock_ctrl.device_id = "1"
@@ -372,9 +391,11 @@ async def test_discover_uuid_hasattr_exact_attribute_name():
             "_async_process_samsung_8888_discovery",
             return_value={"type": "create_entry"},
         ) as mock_proc:
-            await flow.async_step_discover_uuid()
-            # M39/M40: si el hasattr busca "XXdiscovered_devicesXX" o "DISCOVERED_DEVICES",
-            # raw_devs quedará None y mock_proc recibirá [] en vez de la lista real.
+            try:
+                async with asyncio.timeout(0.5):
+                    await flow.async_step_discover_uuid()
+            except TimeoutError:
+                pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
             mock_proc.assert_called_once()
             called_devices = mock_proc.call_args[0][0]
             assert len(called_devices) == 1
@@ -392,7 +413,6 @@ async def test_discover_uuid_invalid_header_controller_shutdown():
         CONF_IP_ADDRESS: "1.1.1.1",
     }
     flow.hass = MagicMock()
-    # unique_id es propiedad de solo lectura — ya es None en un flow nuevo
 
     with patch("custom_components.climate_ip.config_flow.YamlController") as mock_yaml:
         mock_ctrl = MagicMock()
@@ -405,17 +425,16 @@ async def test_discover_uuid_invalid_header_controller_shutdown():
             "_async_fallback_raw_discovery",
             return_value={"type": "abort", "reason": "cannot_connect"},
         ) as mock_fallback:
-            # Create un mock parent para rastrear el orden
             manager = MagicMock()
             manager.attach_mock(mock_ctrl.async_shutdown, "shutdown")
             manager.attach_mock(mock_fallback, "fallback")
 
-            await flow.async_step_discover_uuid()
+            try:
+                async with asyncio.timeout(0.5):
+                    await flow.async_step_discover_uuid()
+            except TimeoutError:
+                pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
-            # M62: verificar que shutdown se llama ANTES que fallback.
-            # If mutant cambia el if a 'is None', el shutdown se salta en el except,
-            # el fallback se llama, y luego el finally hace el shutdown.
-            # El orden sería [fallback, shutdown]. El código correcto es [shutdown, fallback, shutdown(opcional)].
             expected_calls = [manager.mock_calls[0], manager.mock_calls[1]]
             assert expected_calls[0][0] == "shutdown", (
                 "Shutdown debe llamarse antes del fallback"

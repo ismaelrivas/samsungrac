@@ -16,24 +16,6 @@ import resource
 import platform
 
 
-def limit_memory():
-    """
-    Memory watchdog limit (Hard Limit) para evitar que mutantes con bucles
-    infinitos colapsen la RAM y el kernel (WSL OOM).
-    """
-    if platform.system() != "Windows":  # resource es exclusivo de Unix/Linux
-        # Límite de 2 GB (2 * 1024 * 1024 * 1024 bytes) para evitar OOM pero dar respiro a chunks grandes
-        MAX_RAM = 2 * 1024 * 1024 * 1024
-        try:
-            resource.setrlimit(resource.RLIMIT_AS, (MAX_RAM, MAX_RAM))
-        except ValueError:
-            pass  # Ignorar si el OS no lo permite
-
-
-# Ejecutar el límite en el momento en que pytest arranca
-limit_memory()
-
-
 # --- HIDE WARNINGS ---
 # Hide DeprecationWarnings from our own legacy connection methods
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -42,16 +24,16 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 # ---------------------
 
 
-@pytest.fixture(autouse=True)
-async def force_task_cancellation():
-    """Teardown guillotine: cancel all lingering background tasks when test finishes."""
-    yield
-    current = asyncio.current_task()
-    pending = [t for t in asyncio.all_tasks() if t is not current and not t.done()]
-    if pending:
-        for task in pending:
-            task.cancel()
-        await asyncio.gather(*pending, return_exceptions=True)
+# @pytest.fixture(autouse=True)
+# async def force_task_cancellation():
+#     """Teardown guillotine: cancel all lingering background tasks when test finishes."""
+#     yield
+#     current = asyncio.current_task()
+#     pending = [t for t in asyncio.all_tasks() if t is not current and not t.done()]
+#     if pending:
+#         for task in pending:
+#             task.cancel()
+#         await asyncio.gather(*pending, return_exceptions=True)
 
 
 # Ensure we can import the component
@@ -294,27 +276,28 @@ def auto_mock_network() -> Any:
 @pytest.fixture(scope="function")
 def event_loop():
     """
-    Overrides default event_loop de pytest-asyncio para inyectar
-    un teardown ultra-agresivo. Garantiza un loop limpio por test y
-    aniquila tareas zombis sin colisionar con el plugin.
+    Overrides default event_loop de pytest-asyncio.
+    Garantiza un loop limpio por test y aniquila tareas zombis.
     """
     loop = asyncio.get_event_loop_policy().new_event_loop()
     asyncio.set_event_loop(loop)
 
     yield loop
 
-    # Purge corrupt state phase
+    # --- FASE DE TEARDOWN ULTRA-AGRESIVA ---
     pending = asyncio.all_tasks(loop)
-    for task in pending:
-        task.cancel()
-
     if pending:
+        # 1. Enviar señal de cancelación a todas las tareas
+        for task in pending:
+            task.cancel()
+
+        # 2. Dar MÁXIMO 0.5s para que mueran. NO usar gather sin timeout.
         try:
-            # Damos un ciclo de reloj para que las cancelaciones hagan efecto
-            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            loop.run_until_complete(asyncio.wait(pending, timeout=0.5))
         except Exception:
             pass
 
+    # 3. Forzar cierre sin importar el estado de las tareas restantes
     loop.close()
     asyncio.set_event_loop(None)
 
@@ -376,3 +359,75 @@ def mock_now():
         "custom_components.climate_ip.controller_yaml_polling.dt_util.now"
     ) as mock:
         yield mock
+
+
+@pytest.fixture(autouse=True)
+async def ruthless_teardown():
+    """
+    Se ejecuta automáticamente en cada test asíncrono.
+    Garantiza que ninguna tarea generada por un mutante mantenga 
+    el Event Loop abierto durante la fase de teardown de Pytest.
+    """
+    yield # Deja que el test se ejecute normalmente (incluyendo tu Fail-Fast)
+    
+    # Fase de Teardown: Buscar y destruir tareas zombi
+    loop = asyncio.get_running_loop()
+    pending_tasks = [
+        task for task in asyncio.all_tasks(loop)
+        if task is not asyncio.current_task(loop) and not task.done()
+    ]
+    
+    if pending_tasks:
+        for task in pending_tasks:
+            task.cancel()
+        
+        # Dar un ciclo de reloj para que las tareas procesen la cancelación
+        await asyncio.gather(*pending_tasks, return_exceptions=True)
+
+def limit_memory_and_cpu():
+    """
+    Watchdog Limit (Hard Limit) a nivel de OS.
+    Evita OOM (Out of Memory) y Bucles Infinitos (CPU Spin).
+    """
+    if platform.system() != "Windows":
+        try:
+            # 1. Límite de RAM (2 GB)
+            MAX_RAM = 2 * 1024 * 1024 * 1024
+            resource.setrlimit(resource.RLIMIT_AS, (MAX_RAM, MAX_RAM))
+            
+            # 2. LA GUILLOTINA DEL KERNEL: Límite de CPU (5 Segundos)
+            # Si un mutante entra en bucle infinito síncrono, el Kernel 
+            # de Linux matará el proceso instantáneamente.
+            #resource.setrlimit(resource.RLIMIT_CPU, (5, 5))
+        except ValueError:
+            pass  # Ignorar si el OS o Docker no permite modificar rlimits
+
+limit_memory_and_cpu()
+
+@pytest.fixture(autouse=True)
+def block_unmocked_network_io(monkeypatch):
+    """
+    Cortafuegos de Capa Cero:
+    Intercepta llamadas de red/socket no mockeadas dentro de config_flow.py
+    y las hace fallar instantáneamente (0.0s) en lugar de esperar el timeout del OS.
+    """
+    async def immediate_network_fail(*args, **kwargs):
+        raise OSError("FAIL-FAST: Unmocked network connection attempt intercepted.")
+
+    # 1. Bloquear apertura de sockets TCP en asyncio
+    monkeypatch.setattr("asyncio.open_connection", immediate_network_fail)
+
+    # 2. Bloquear resolución ARP/MAC no mockeada
+    monkeypatch.setattr(
+        "custom_components.climate_ip.config_flow.async_get_mac_address",
+        AsyncMock(return_value=None),
+    )
+
+    # 3. Fail-fast para YamlController no mockeados en discovery/test_connection
+    async def immediate_controller_init_fail(self):
+        return False
+
+    monkeypatch.setattr(
+        "custom_components.climate_ip.config_flow.YamlController.initialize",
+        immediate_controller_init_fail,
+    )

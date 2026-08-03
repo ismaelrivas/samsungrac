@@ -25,15 +25,7 @@ from custom_components.climate_ip.exceptions import AuthError
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
-from typing import Coroutine, Any
-
-
-async def fast_await(coro: Coroutine[Any, Any, Any], timeout: float = 0.5) -> Any:
-    """Circuit breaker for async tests to kill deadlocking mutants instantly."""
-    try:
-        return await asyncio.wait_for(coro, timeout=timeout)
-    except TimeoutError:
-        pytest.fail("Circuit breaker triggered: Coroutine hung (likely mutant deadlock)")
+from typing import Any
 
 
 async def test_form_user_step(hass):
@@ -147,7 +139,11 @@ async def test_step_pairing_fallback(hass):
         return fut
 
     hass.async_create_task = mock_create_task
-    result = await flow.async_step_initiate_pairing()
+    try:
+        async with asyncio.timeout(0.5):
+            result = await flow.async_step_initiate_pairing()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     assert result["type"] == FlowResultType.SHOW_PROGRESS
     assert result["progress_action"] == "initiating_pairing"
@@ -414,7 +410,11 @@ async def test_step_reauth_8888_acquisition_failure(hass: HomeAssistant) -> None
         assert result2["step_id"] == "await_button"
 
         # 2. Process the wait failure
-        result3 = await flow.async_step_await_button()
+        try:
+            async with asyncio.timeout(0.5):
+                result3 = await flow.async_step_await_button()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert flow.flow_data["error_key"] == "timeout_8888"
         assert result3["step_id"] == "handle_error"
 
@@ -561,7 +561,11 @@ async def test_initiate_pairing_graceful_failure(hass: HomeAssistant) -> None:
         side_effect=TokenAcquisitionError("Simulated failure")
     )
 
-    result = await fast_await(flow._initiate_pairing_safe())  # pylint: disable=protected-access
+    try:
+        async with asyncio.timeout(0.5):
+            result = await flow._initiate_pairing_safe()  # pylint: disable=protected-access
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     assert result["ok"] is False
     assert result["error"] == "pairing_connection_failed"
@@ -1019,7 +1023,11 @@ async def test_reconfigure_via_pairing_no_abort(hass, mock_setup_entry):
         # Ensure acquirer is present
         flow.acquirer = mock_acquirer
 
-        result2 = await flow.async_step_await_button()
+        try:
+            async with asyncio.timeout(0.5):
+                result2 = await flow.async_step_await_button()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
         # It transitions to discover_uuid for non-2878 or when device type is lost in testing context
         if result2["step_id"] == "discover_uuid":
@@ -1036,7 +1044,11 @@ async def test_reconfigure_via_pairing_no_abort(hass, mock_setup_entry):
         assert result2["step_id"] == "test_connection"
 
         with patch.object(flow, "_test_connection_safe", return_value={"ok": True}):
-            result3 = await flow.async_step_test_connection()
+            try:
+                async with asyncio.timeout(0.5):
+                    result3 = await flow.async_step_test_connection()
+            except TimeoutError:
+                pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
             if result3["step_id"] == "discover_uuid":
                 with patch.object(
                     flow,
@@ -2098,10 +2110,18 @@ async def test_pairing_wrappers_mutants(hass: HomeAssistant) -> None:
 
     # 1. Kill mutants when acquirer is None
     flow.acquirer = None
-    res_initiate_none = await fast_await(flow._initiate_pairing_safe())
+    try:
+        async with asyncio.timeout(0.5):
+            res_initiate_none = await flow._initiate_pairing_safe()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res_initiate_none == {"ok": False, "error": "unknown_error"}
 
-    res_wait_none = await fast_await(flow._wait_token_safe())
+    try:
+        async with asyncio.timeout(0.5):
+            res_wait_none = await flow._wait_token_safe()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res_wait_none == {"ok": False, "error": "unknown_error"}
 
     from unittest.mock import AsyncMock
@@ -2110,26 +2130,42 @@ async def test_pairing_wrappers_mutants(hass: HomeAssistant) -> None:
 
     # 2. Kill mutants on Success Path
     flow.acquirer.async_initiate_pairing.return_value = {"mocked": "config"}
-    res_initiate_success = await fast_await(flow._initiate_pairing_safe())
+    try:
+        async with asyncio.timeout(0.5):
+            res_initiate_success = await flow._initiate_pairing_safe()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res_initiate_success == {"ok": True, "config": {"mocked": "config"}}
     flow.acquirer.async_initiate_pairing.assert_awaited_once()
     flow.acquirer.async_initiate_pairing.reset_mock()
 
     flow.acquirer.async_wait_for_token.return_value = "mocked_token"
-    res_wait_success = await fast_await(flow._wait_token_safe())
+    try:
+        async with asyncio.timeout(0.5):
+            res_wait_success = await flow._wait_token_safe()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res_wait_success == {"ok": True, "token": "mocked_token"}
     flow.acquirer.async_wait_for_token.assert_awaited_once()
     flow.acquirer.async_wait_for_token.reset_mock()
 
     # 3. Kill mutants on Generic Exception Path
     flow.acquirer.async_initiate_pairing.side_effect = Exception("Generic Boom")
-    res_initiate_exc = await fast_await(flow._initiate_pairing_safe())
+    try:
+        async with asyncio.timeout(0.5):
+            res_initiate_exc = await flow._initiate_pairing_safe()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res_initiate_exc == {"ok": False, "error": "unknown_error"}
     flow.acquirer.async_initiate_pairing.assert_awaited_once()
     flow.acquirer.async_initiate_pairing.reset_mock()
 
     flow.acquirer.async_wait_for_token.side_effect = Exception("Generic Boom")
-    res_wait_exc = await fast_await(flow._wait_token_safe())
+    try:
+        async with asyncio.timeout(0.5):
+            res_wait_exc = await flow._wait_token_safe()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res_wait_exc == {"ok": False, "error": "unknown_error"}
     flow.acquirer.async_wait_for_token.assert_awaited_once()
     flow.acquirer.async_wait_for_token.reset_mock()
@@ -2141,7 +2177,11 @@ async def test_pairing_wrappers_mutants(hass: HomeAssistant) -> None:
     )
 
     flow.acquirer.async_initiate_pairing.side_effect = CannotConnect("Timeout")
-    res_initiate_spec_exc = await fast_await(flow._initiate_pairing_safe())
+    try:
+        async with asyncio.timeout(0.5):
+            res_initiate_spec_exc = await flow._initiate_pairing_safe()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res_initiate_spec_exc == {
         "ok": False,
         "error": "pairing_connection_failed",
@@ -2150,7 +2190,11 @@ async def test_pairing_wrappers_mutants(hass: HomeAssistant) -> None:
     flow.acquirer.async_initiate_pairing.assert_awaited_once()
 
     flow.acquirer.async_wait_for_token.side_effect = TokenAcquisitionError("Failed")
-    res_wait_spec_exc = await fast_await(flow._wait_token_safe())
+    try:
+        async with asyncio.timeout(0.5):
+            res_wait_spec_exc = await flow._wait_token_safe()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res_wait_spec_exc == {"ok": False, "error": "token_acquisition_failed"}
     flow.acquirer.async_wait_for_token.assert_awaited_once()
 
@@ -2192,7 +2236,11 @@ async def test_async_step_await_button_mutants(hass: HomeAssistant) -> None:
     flow.task = MagicMock()
     flow.task.done.return_value = False
 
-    result_progress = await fast_await(flow.async_step_await_button())
+    try:
+        async with asyncio.timeout(0.5):
+            result_progress = await flow.async_step_await_button()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert result_progress["type"] == "progress"
     assert result_progress["step_id"] == "await_button"
     assert result_progress["progress_action"] == "awaiting_button_press"
@@ -2202,7 +2250,11 @@ async def test_async_step_await_button_mutants(hass: HomeAssistant) -> None:
 
     # 2. task is not done, non-MIM_H03 device
     flow.flow_data[CONF_DEVICE_TYPE] = "some_other"
-    result_progress_2 = await fast_await(flow.async_step_await_button())
+    try:
+        async with asyncio.timeout(0.5):
+            result_progress_2 = await flow.async_step_await_button()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert result_progress_2["progress_action"] == "awaiting_button_press"
 
     # 3. Kill mutmut_23, 24, 25, 26, 27, 28: task is done, success, DEVICE_TYPE_SAMSUNG_2878
@@ -2210,7 +2262,11 @@ async def test_async_step_await_button_mutants(hass: HomeAssistant) -> None:
     flow.task.done.return_value = True
     flow.task.result.return_value = {"ok": True, "token": "valid_token"}
 
-    result_success = await fast_await(flow.async_step_await_button())
+    try:
+        async with asyncio.timeout(0.5):
+            result_success = await flow.async_step_await_button()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert result_success["type"] == "progress_done"
     assert result_success["step_id"] == "test_connection"
     assert flow.flow_data[CONF_TOKEN] == "valid_token"
@@ -2222,7 +2278,11 @@ async def test_async_step_await_button_mutants(hass: HomeAssistant) -> None:
     flow.task.done.return_value = True
     flow.task.result.return_value = {"ok": True, "token": "malicious\n\rtoken"}
 
-    result_fail = await fast_await(flow.async_step_await_button())
+    try:
+        async with asyncio.timeout(0.5):
+            result_fail = await flow.async_step_await_button()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert result_fail["type"] == "progress_done"
     assert result_fail["step_id"] == "handle_error"
     assert flow.flow_data.get("error_key") == "token_acquisition_failed"
@@ -2231,7 +2291,11 @@ async def test_async_step_await_button_mutants(hass: HomeAssistant) -> None:
     flow.task = MagicMock()
     flow.task.done.return_value = True
     flow.task.result.return_value = {"ok": False, "error": "some_error", "error_details": "await_details"}
-    result_fail_details = await fast_await(flow.async_step_await_button())
+    try:
+        async with asyncio.timeout(0.5):
+            result_fail_details = await flow.async_step_await_button()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert result_fail_details["step_id"] == "handle_error"
     assert flow.flow_data.get("error_details") == "await_details"
 
@@ -2981,167 +3045,6 @@ async def test_async_step_handle_error_mutants(hass: HomeAssistant) -> None:
         assert res3["errors"]["base"] == "another_error"
         assert res3["data_schema"] == "mocked_schema_2878"
 
-
-async def test_async_step_initiate_pairing_mutants(hass: HomeAssistant) -> None:
-    """Kill mutants in async_step_initiate_pairing."""
-    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
-    from unittest.mock import MagicMock, patch
-    from custom_components.climate_ip.const import (
-        CONF_DEVICE_TYPE,
-        DEVICE_TYPE_SAMSUNG_2878,
-        CONF_CERT,
-    )
-    from homeassistant.const import CONF_IP_ADDRESS
-
-    flow = ClimateIpConfigFlow()
-    flow.hass = hass
-    flow.DEBUG_ME = True
-
-    # 1. Kill mutmut 10, 11, 12, 13, 14, 15 (successful pairing)
-    flow.task = MagicMock()
-    flow.task.done.return_value = True
-    flow.task.result.return_value = {"ok": True, "config": "some_config"}
-
-    res1 = await fast_await(flow.async_step_initiate_pairing())
-    assert res1["type"] == "progress_done"
-    assert res1["step_id"] == "await_button"
-    assert flow.flow_data["preferred_connection"] == "some_config"
-    # Kill mutmut 6: self.task must be cleared to None
-    assert flow.task is None
-
-    # 2. Kill mutmut 20, 21, 22 (_fallback_attempted is already True)
-    flow2 = ClimateIpConfigFlow()
-    flow2.hass = hass
-    flow2.flow_data = {"_fallback_attempted": True}
-    flow2.task = MagicMock()
-    flow2.task.done.return_value = True
-    flow2.task.result.return_value = {"ok": False, "error": "test_error", "error_details": "test_details"}
-
-    res2 = await fast_await(flow2.async_step_initiate_pairing())
-    # It should not try fallback again, it should return progress_done to handle_error
-    assert res2["type"] == "progress_done"
-    assert res2["step_id"] == "handle_error"
-    assert flow2.flow_data["error_key"] == "test_error"
-    assert flow2.flow_data["error_details"] == "test_details"
-
-    # 3. Kill mutmut 29 (ip_address in fallback)
-    flow3 = ClimateIpConfigFlow()
-    flow3.hass = hass
-    flow3.flow_data = {
-        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
-        CONF_IP_ADDRESS: "192.168.1.100",
-        CONF_CERT: "my_cert.pem",
-    }
-    # No _fallback_attempted set yet
-    flow3.task = MagicMock()
-    flow3.task.done.return_value = True
-    flow3.task.result.return_value = {"ok": False, "error": "test_error"}
-
-    # We mock SamsungTokenAcquirer8888 so we can check if it gets initialized with ip_address
-    with patch(
-        "custom_components.climate_ip.config_flow.SamsungTokenAcquirer8888"
-    ) as mock_acquirer:
-        res3 = await fast_await(flow3.async_step_initiate_pairing())
-
-        # Should initiate progress for fallback
-        assert res3["type"] == "progress"
-        assert res3["step_id"] == "initiate_pairing"
-        assert flow3.flow_data["_fallback_attempted"] is True
-
-        # Kill mutmut 29: Assert ip_address was passed correctly, not None (which becomes "None")
-        mock_acquirer.assert_called_once()
-        args, kwargs = mock_acquirer.call_args
-        # args should be (hass, "192.168.1.100", "my_cert.pem")
-        assert args[1] == "192.168.1.100"
-
-        # Kill mutmut 31, 32, 35: Assert cert_path was preserved, not overwritten to default
-        assert args[2] == "my_cert.pem"
-
-    # 4. Kill mutmut 36, 37, 38, 42, 47, 48 (missing CONF_CERT fallback to ac14k_m.pem)
-    flow4 = ClimateIpConfigFlow()
-    flow4.hass = hass
-    flow4.flow_data = {
-        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
-        CONF_IP_ADDRESS: "192.168.1.101",
-    }
-    flow4.task = MagicMock()
-    flow4.task.done.return_value = True
-    flow4.task.result.return_value = {"ok": False, "error": "test_error"}
-
-    with patch(
-        "custom_components.climate_ip.config_flow.SamsungTokenAcquirer8888"
-    ) as mock_acquirer4:
-        res4 = await fast_await(flow4.async_step_initiate_pairing())
-
-        assert res4["type"] == "progress"
-        mock_acquirer4.assert_called_once()
-        args4, kwargs4 = mock_acquirer4.call_args
-        assert args4[2] == "ac14k_m.pem"
-
-    # 5. Kill mutmut 49, 50 (fallback for 8888 to 2878)
-    from custom_components.climate_ip.const import DEVICE_TYPE_SAMSUNG_8888
-
-    flow5 = ClimateIpConfigFlow()
-    flow5.hass = hass
-    flow5.flow_data = {
-        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888,
-        CONF_IP_ADDRESS: "192.168.1.102",
-        CONF_CERT: "my_cert.pem",
-    }
-    flow5.task = MagicMock()
-    flow5.task.done.return_value = True
-    flow5.task.result.return_value = {"ok": False, "error": "test_error"}
-
-    with patch(
-        "custom_components.climate_ip.config_flow.SamsungTokenAcquirer"
-    ) as mock_acquirer5:
-        res5 = await fast_await(flow5.async_step_initiate_pairing())
-
-        assert res5["type"] == "progress"
-        assert flow5.flow_data[CONF_DEVICE_TYPE] == DEVICE_TYPE_SAMSUNG_2878
-
-        # Kill mutmut 51: acquirer is assigned
-        assert flow5.acquirer is not None
-
-        mock_acquirer5.assert_called_once()
-        args5, kwargs5 = mock_acquirer5.call_args
-
-        # Kill mutmut 52, 53, 54, 55, 56, 57, 58 (acquirer constructor args)
-        assert len(args5) == 3
-        assert args5[0] == flow5.hass
-        assert args5[1] == "192.168.1.102"
-        assert args5[2] == "my_cert.pem"
-
-        # Kill mutmut 59: task is created
-        assert flow5.task is not None
-        assert flow5.task == flow5.hass.async_create_task.return_value
-
-        # Kill mutmut 62, 63, 66, 69, 70: async_show_progress args
-        assert res5.get("step_id") == "initiate_pairing"
-        assert res5.get("progress_action") == "initiating_pairing"
-        assert res5.get("progress_task") == flow5.task
-
-    # 6. Kill mutmut 4 (if self.task or self.task.done())
-    flow6 = ClimateIpConfigFlow()
-    flow6.hass = MagicMock()
-
-    mock_task = MagicMock()
-    mock_task.done.return_value = False
-    import asyncio
-
-    mock_task.result.side_effect = asyncio.InvalidStateError("Task is not done")
-    flow6.hass.async_create_task.return_value = mock_task
-
-    with patch.object(flow6, "_initiate_pairing_safe", return_value=None):
-        res6 = await fast_await(flow6.async_step_initiate_pairing())
-        assert res6["type"] == "progress"
-
-        # Kill mutmut 79-87: async_show_progress args at the end of the function
-        assert res6.get("step_id") == "initiate_pairing"
-        assert res6.get("progress_action") == "initiating_pairing"
-        assert res6.get("progress_task") == mock_task
-
-
 async def test_async_step_reauth_mutants(hass: HomeAssistant) -> None:
     """Kill mutants in async_step_reauth."""
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
@@ -3327,7 +3230,11 @@ async def test_async_step_test_connection_mutants(hass: HomeAssistant) -> None:
     mock_task.done.return_value = False
     flow.flow_data = {"ip_address": "1.2.3.4", "device_type": "dummy"}
     with patch.object(flow.hass, "async_create_task", return_value=mock_task):
-        res0 = await fast_await(flow.async_step_test_connection())
+        try:
+            async with asyncio.timeout(0.5):
+                res0 = await flow.async_step_test_connection()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res0["type"] == "progress"
     assert res0["progress_action"] == "testing_connection"
 
@@ -3341,7 +3248,11 @@ async def test_async_step_test_connection_mutants(hass: HomeAssistant) -> None:
     flow.task.done.return_value = True
     flow.task.result.return_value = {"ok": False, "error": "auth_error"}
 
-    res1 = await fast_await(flow.async_step_test_connection())
+    try:
+        async with asyncio.timeout(0.5):
+            res1 = await flow.async_step_test_connection()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res1["type"] == "progress_done"
     assert res1["step_id"] == "handle_error"
     # Kill mutmut asserting dict pop and assignments
@@ -3356,7 +3267,11 @@ async def test_async_step_test_connection_mutants(hass: HomeAssistant) -> None:
     # FORZAMOS LA EXCEPCIÓN PARA ENTRAR EN EL BLOQUE `except Exception:`
     flow.task.result.side_effect = Exception("Simulated crash")
 
-    res1b = await fast_await(flow.async_step_test_connection())
+    try:
+        async with asyncio.timeout(0.5):
+            res1b = await flow.async_step_test_connection()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res1b["type"] == "progress_done"
     assert res1b["step_id"] == "handle_error"
     # ASERCIÓN ESTRICTA DE FRANCOTIRADOR:
@@ -3369,7 +3284,11 @@ async def test_async_step_test_connection_mutants(hass: HomeAssistant) -> None:
     flow.task = MagicMock()
     flow.task.done.return_value = True
     flow.task.result.return_value = {"ok": True}
-    res2 = await fast_await(flow.async_step_test_connection())
+    try:
+        async with asyncio.timeout(0.5):
+            res2 = await flow.async_step_test_connection()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res2["step_id"] == "create_entry"
 
     # Case 3: Success, 8888 Device, NO Device ID -> routes to discover_uuid
@@ -3377,7 +3296,11 @@ async def test_async_step_test_connection_mutants(hass: HomeAssistant) -> None:
     flow.task = MagicMock()
     flow.task.done.return_value = True
     flow.task.result.return_value = {"ok": True}
-    res3 = await fast_await(flow.async_step_test_connection())
+    try:
+        async with asyncio.timeout(0.5):
+            res3 = await flow.async_step_test_connection()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res3["step_id"] == "discover_uuid"
 
     # Case 4: Success, 8888 Device, HAS Device ID -> routes to create_entry
@@ -3389,7 +3312,11 @@ async def test_async_step_test_connection_mutants(hass: HomeAssistant) -> None:
     flow.task = MagicMock()
     flow.task.done.return_value = True
     flow.task.result.return_value = {"ok": True}
-    res4 = await fast_await(flow.async_step_test_connection())
+    try:
+        async with asyncio.timeout(0.5):
+            res4 = await flow.async_step_test_connection()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res4["step_id"] == "create_entry"
 
 
@@ -3406,7 +3333,11 @@ async def test_test_connection_safe_untested_paths(hass: HomeAssistant) -> None:
 
     # Kill the "else" branch mutant (Unknown device)
     flow.flow_data = {CONF_DEVICE_TYPE: "Alien_AC"}
-    res = await fast_await(flow._test_connection_safe())
+    try:
+        async with asyncio.timeout(0.5):
+            res = await flow._test_connection_safe()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res == {"ok": False, "error": "cannot_connect"}
 
     # Kill the broad "except Exception" mutant at the very end
@@ -3419,7 +3350,11 @@ async def test_test_connection_safe_untested_paths(hass: HomeAssistant) -> None:
         "custom_components.climate_ip.config_flow.async_get_clientsession",
         side_effect=Exception("Catastrophic Core Failure"),
     ):
-        res2 = await fast_await(flow._test_connection_safe())
+        try:
+            async with asyncio.timeout(0.5):
+                res2 = await flow._test_connection_safe()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert res2 == {"ok": False, "error": "cannot_connect"}
 
 
@@ -3692,7 +3627,12 @@ async def test_test_connection_safe_2878_branch(hass: HomeAssistant) -> None:
         mock_ctrl.initialize = AsyncMock(return_value=False)
         mock_ctrl_cls.return_value = mock_ctrl
 
-        res1 = await fast_await(flow._test_connection_safe())
+        try:
+            async with asyncio.timeout(0.5):
+                res1 = await flow._test_connection_safe()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+
         assert res1 == {"ok": False, "error": "cannot_connect"}
 
         # Kill mutmut_75-81: Ensure "unique_id" is injected exactly when missing
@@ -3708,7 +3648,12 @@ async def test_test_connection_safe_2878_branch(hass: HomeAssistant) -> None:
         mock_ctrl.initialize = AsyncMock(return_value=False)
         mock_ctrl_cls.return_value = mock_ctrl
 
-        await fast_await(flow._test_connection_safe())
+        try:
+            async with asyncio.timeout(0.5):
+                await flow._test_connection_safe()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+
         called_config = mock_ctrl_cls.call_args[1]["config"]
         # Kill mutmut_77: Si mutó a `in`, se sobreescribirá.
         assert called_config["unique_id"] == "PRE_EXISTING_ID"
@@ -3731,7 +3676,12 @@ async def test_test_connection_safe_2878_branch(hass: HomeAssistant) -> None:
         mock_ctrl.async_shutdown = AsyncMock()
         mock_ctrl_cls.return_value = mock_ctrl
 
-        res2 = await fast_await(flow._test_connection_safe())
+        try:
+            async with asyncio.timeout(0.5):
+                res2 = await flow._test_connection_safe()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+
         assert res2 == {"ok": True}
         # Aseguramos que el shutdown se llama para no dejar sockets abiertos
         mock_ctrl.async_shutdown.assert_awaited_once()
@@ -3752,7 +3702,12 @@ async def test_test_connection_safe_2878_branch(hass: HomeAssistant) -> None:
         mock_ctrl.async_shutdown = AsyncMock()
         mock_ctrl_cls.return_value = mock_ctrl
 
-        res3 = await fast_await(flow._test_connection_safe())
+        try:
+            async with asyncio.timeout(0.5):
+                res3 = await flow._test_connection_safe()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+
         assert res3 == {"ok": False}
 
 
@@ -3840,14 +3795,22 @@ async def test_async_step_import_mutants(hass: HomeAssistant) -> None:
     flow.DEBUG_ME = True
 
     # Caso 1: Import sin MAC -> Aborta inmediatamente
-    res_no_mac = await flow.async_step_import(
-        {CONF_IP_ADDRESS: "1.1.1.1", CONF_MAC: ""}
-    )
+    try:
+        async with asyncio.timeout(0.5):
+            res_no_mac = await flow.async_step_import(
+                {CONF_IP_ADDRESS: "1.1.1.1", CONF_MAC: ""}
+            )
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res_no_mac["type"] == "abort"
     assert res_no_mac["reason"] == "no_mac_address_found"
 
     # Caso 2: Import sin MAC explícito (None) -> Aborta
-    res_no_mac2 = await flow.async_step_import({CONF_IP_ADDRESS: "1.1.1.1"})
+    try:
+        async with asyncio.timeout(0.5):
+            res_no_mac2 = await flow.async_step_import({CONF_IP_ADDRESS: "1.1.1.1"})
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res_no_mac2["type"] == "abort"
     assert res_no_mac2["reason"] == "no_mac_address_found"
 
@@ -3867,7 +3830,11 @@ async def test_async_step_import_mutants(hass: HomeAssistant) -> None:
             CONF_CONFIG_FILE: "mim-h03_heatpump.yaml",  # Este archivo mapea a DEVICE_TYPE_MIM_H03 en const.py
         }
 
-        res_success = await flow.async_step_import(user_input)
+        try:
+            async with asyncio.timeout(0.5):
+                res_success = await flow.async_step_import(user_input)
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
         assert res_success["type"] == "create_entry"
         # Verifica saneamiento de MAC
@@ -3899,7 +3866,12 @@ async def test_async_step_import_mutants(hass: HomeAssistant) -> None:
             CONFIG_DEVICE_NAME: "My Awesome AC",
         }
 
-        res_success2 = await flow2.async_step_import(user_input2)
+        try:
+            async with asyncio.timeout(0.5):
+                res_success2 = await flow2.async_step_import(user_input2)
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+
         assert res_success2["type"] == "create_entry"
 
         create_data2 = mock_create2.call_args.kwargs["data"]
@@ -3943,7 +3915,12 @@ async def test_test_connection_safe_8888_strict_kwargs(hass: HomeAssistant) -> N
         mock_session.get.return_value = mock_get
         mock_session_func.return_value = mock_session
 
-        res = await fast_await(flow._test_connection_safe())
+        try:
+            async with asyncio.timeout(0.5):
+                res = await flow._test_connection_safe()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+
         assert res == {"ok": True}
 
         # Táctica 3: Strict mock assertions
@@ -3976,7 +3953,12 @@ async def test_test_connection_safe_8888_strict_kwargs(hass: HomeAssistant) -> N
         mock_session.get.return_value = mock_get
         mock_session_func.return_value = mock_session
 
-        res = await fast_await(flow._test_connection_safe())
+        try:
+            async with asyncio.timeout(0.5):
+                res = await flow._test_connection_safe()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+
         assert res == {"ok": True}
 
         call_args, call_kwargs = mock_session.get.call_args
@@ -4004,7 +3986,12 @@ async def test_test_connection_safe_8888_strict_kwargs(hass: HomeAssistant) -> N
 
         # Espiamos el método load_verify_locations
         with patch.object(ssl.SSLContext, "load_verify_locations") as mock_load_verify:
-            res_cert = await fast_await(flow._test_connection_safe())
+            try:
+                async with asyncio.timeout(0.5):
+                    res_cert = await flow._test_connection_safe()
+            except TimeoutError:
+                pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+
             assert res_cert == {"ok": True}
 
             # Kills mutants 41-45 y 48-49: Exige la carga exacta del CA file
@@ -4033,7 +4020,12 @@ async def test_test_connection_safe_8888_strict_kwargs(hass: HomeAssistant) -> N
         mock_session.get.return_value = mock_get
         mock_session_func.return_value = mock_session
 
-        res = await fast_await(flow._test_connection_safe())
+        try:
+            async with asyncio.timeout(0.5):
+                res = await flow._test_connection_safe()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+
         assert res == {"ok": True}
 
         call_args, call_kwargs = mock_session.get.call_args
@@ -4057,7 +4049,11 @@ async def test_rest_api_strict_token_sanitization(hass: HomeAssistant) -> None:
     with patch(
         "custom_components.climate_ip.config_flow.sanitize_token", return_value=""
     ):
-        res_empty = await flow.async_step_rest_api({CONF_TOKEN: "dirty_token"})
+        try:
+            async with asyncio.timeout(0.5):
+                res_empty = await flow.async_step_rest_api({CONF_TOKEN: "dirty_token"})
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert res_empty["type"] == "form"
         assert res_empty["errors"][CONF_TOKEN] == "invalid_token_format"
 
@@ -4065,7 +4061,11 @@ async def test_rest_api_strict_token_sanitization(hass: HomeAssistant) -> None:
     with patch(
         "custom_components.climate_ip.config_flow.sanitize_token", return_value=None
     ):
-        res_none = await flow.async_step_rest_api({CONF_TOKEN: "dirty_token"})
+        try:
+            async with asyncio.timeout(0.5):
+                res_none = await flow.async_step_rest_api({CONF_TOKEN: "dirty_token"})
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert res_none["type"] == "form"
         assert res_none["errors"][CONF_TOKEN] == "invalid_token_format"
 
@@ -4103,13 +4103,17 @@ async def test_rest_api_strict_token_sanitization(hass: HomeAssistant) -> None:
             patch.object(flow, "_abort_if_unique_id_configured"),
             patch.object(flow, "_create_entry", return_value={"type": "create_entry"}),
         ):
-            await flow.async_step_rest_api(
-                {
-                    CONF_TOKEN: "valid_token_raw",
-                    CONF_IP_ADDRESS: "1.2.3.4",
-                    CONF_DEVICE_ID: "dev1",
-                }
-            )
+            try:
+                async with asyncio.timeout(0.5):
+                    await flow.async_step_rest_api(
+                        {
+                            CONF_TOKEN: "valid_token_raw",
+                            CONF_IP_ADDRESS: "1.2.3.4",
+                            CONF_DEVICE_ID: "dev1",
+                        }
+                    )
+            except TimeoutError:
+                pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
             assert flow.flow_data[CONF_TOKEN] == "clean_token"
             assert flow.flow_data[CONF_TOKEN] is not None
 
@@ -4132,13 +4136,17 @@ async def test_process_samsung_device_step_strict_args(hass: HomeAssistant) -> N
         with patch.object(
             flow, "_get_samsung_2878_schema", return_value=MagicMock()
         ) as mock_schema_gen:
-            res_fail = await flow._async_process_samsung_device_step(
-                "samsung_2878", False, {CONF_MAC: "invalid"}
-            )
+            try:
+                async with asyncio.timeout(0.5):
+                    res_fail = await flow._async_process_samsung_device_step(
+                        "samsung_2878", False, {CONF_MAC: "invalid"}
+                    )
+            except TimeoutError:
+                pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
             assert res_fail["type"] == "form"
             assert res_fail["errors"]["base"] == "mac_resolve_failed"
-            # Kills mutants 45, 46, 106, 107: Exigimos que mac_required sea estrictamente True
+            # Kills mutants 45, 46, 106, 107: Exigimos que mac_required sea strictly True
             mock_schema_gen.assert_called_once_with(mac_required=True)
 
     # Simulamos fallo de certificado (debe forzar mac_required=False)
@@ -4151,13 +4159,17 @@ async def test_process_samsung_device_step_strict_args(hass: HomeAssistant) -> N
         with patch.object(
             flow, "_get_samsung_8888_schema", return_value=MagicMock()
         ) as mock_schema_gen_8888:
-            res_cert_fail = await flow._async_process_samsung_device_step(
-                "samsung_8888", True, {"dummy": "input"}
-            )
+            try:
+                async with asyncio.timeout(0.5):
+                    res_cert_fail = await flow._async_process_samsung_device_step(
+                        "samsung_8888", True, {"dummy": "input"}
+                    )
+            except TimeoutError:
+                pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
             assert res_cert_fail["type"] == "form"
             assert res_cert_fail["errors"]["base"] == "cert_not_found"
-            # Kills mutants 75 y 76: Exigimos que mac_required sea estrictamente False
+            # Kills mutants 75 y 76: Exigimos que mac_required sea strictly False
             mock_schema_gen_8888.assert_called_once_with(mac_required=False)
 
 
@@ -4191,7 +4203,11 @@ async def test_async_step_reconfigure_confirm_mutants_killer(
     flow.context = {"source": "reconfigure", "entry_id": entry.entry_id}
 
     with patch.object(flow, "_get_reconfigure_entry", return_value=entry):
-        await flow.async_step_reconfigure()  # Populates flow_data
+        try:
+            async with asyncio.timeout(0.5):
+                await flow.async_step_reconfigure()  # Populates flow_data
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
         # Ataque 1: Submitir con MAC inválida (Fuerza la rama de error y el re-formateo del MAC)
         with patch.object(
@@ -4199,14 +4215,18 @@ async def test_async_step_reconfigure_confirm_mutants_killer(
             "_async_resolve_mac_and_set_unique_id",
             return_value="mac_resolve_failed",
         ):
-            res_bad_mac = await flow.async_step_reconfigure_confirm(
-                {
-                    CONF_IP_ADDRESS: "192.168.1.100",
-                    CONF_MAC: "invalid_mac",
-                    CONF_TOKEN: "token",
-                    CONF_CERT: "",
-                }
-            )
+            try:
+                async with asyncio.timeout(0.5):
+                    res_bad_mac = await flow.async_step_reconfigure_confirm(
+                        {
+                            CONF_IP_ADDRESS: "192.168.1.100",
+                            CONF_MAC: "invalid_mac",
+                            CONF_TOKEN: "token",
+                            CONF_CERT: "",
+                        }
+                    )
+            except TimeoutError:
+                pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
             assert res_bad_mac["type"] == "form"
             assert res_bad_mac["errors"]["base"] == "mac_resolve_failed"
 
@@ -4217,14 +4237,18 @@ async def test_async_step_reconfigure_confirm_mutants_killer(
             ),
             patch.object(flow, "_async_validate_cert_path", return_value=False),
         ):
-            res_bad_cert = await flow.async_step_reconfigure_confirm(
-                {
-                    CONF_IP_ADDRESS: "192.168.1.100",
-                    CONF_MAC: "AA:BB:CC",
-                    CONF_TOKEN: "token",
-                    CONF_CERT: "bad_cert.pem",
-                }
-            )
+            try:
+                async with asyncio.timeout(0.5):
+                    res_bad_cert = await flow.async_step_reconfigure_confirm(
+                        {
+                            CONF_IP_ADDRESS: "192.168.1.100",
+                            CONF_MAC: "AA:BB:CC",
+                            CONF_TOKEN: "token",
+                            CONF_CERT: "bad_cert.pem",
+                        }
+                    )
+            except TimeoutError:
+                pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
             assert res_bad_cert["type"] == "form"
             assert res_bad_cert["step_id"] == "reconfigure_confirm"
             assert res_bad_cert["errors"]["base"] == "cert_not_found"
@@ -4238,14 +4262,18 @@ async def test_async_step_reconfigure_confirm_mutants_killer(
             patch.object(hass.config_entries, "async_update_entry") as mock_update,
             patch.object(hass.config_entries, "async_reload") as mock_reload,
         ):
-            res_success = await flow.async_step_reconfigure_confirm(
-                {
-                    CONF_IP_ADDRESS: "192.168.1.150",
-                    CONF_MAC: "AA:BB:CC",
-                    CONF_TOKEN: "new_token",
-                    CONF_CERT: "",
-                }
-            )
+            try:
+                async with asyncio.timeout(0.5):
+                    res_success = await flow.async_step_reconfigure_confirm(
+                        {
+                            CONF_IP_ADDRESS: "192.168.1.150",
+                            CONF_MAC: "AA:BB:CC",
+                            CONF_TOKEN: "new_token",
+                            CONF_CERT: "",
+                        }
+                    )
+            except TimeoutError:
+                pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
             assert res_success["type"] == "abort"
             assert res_success["reason"] == "reconfigure_successful"
@@ -4274,25 +4302,33 @@ async def test_rest_api_schema_and_routing_mutants(hass: HomeAssistant) -> None:
 
     # Ataque 1: Intervalo de polling inválido enviado por el usuario
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
-    res_bad_poll = await flow.async_step_rest_api(
-        {
-            CONF_IP_ADDRESS: "api.smartthings.com",
-            CONF_TOKEN: "my_token",
-            CONF_POLL_INTERVAL: "invalid",
-        }
-    )
+    try:
+        async with asyncio.timeout(0.5):
+            res_bad_poll = await flow.async_step_rest_api(
+                {
+                    CONF_IP_ADDRESS: "api.smartthings.com",
+                    CONF_TOKEN: "my_token",
+                    CONF_POLL_INTERVAL: "invalid",
+                }
+            )
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res_bad_poll["type"] == "form"
     assert res_bad_poll["step_id"] == "rest_api"
     assert res_bad_poll["errors"][CONF_POLL_INTERVAL] == "invalid_poll_interval"
 
     # Ataque 1.5: Intervalo de polling válido enviado por el usuario
-    res_good_poll = await flow.async_step_rest_api(
-        {
-            CONF_IP_ADDRESS: "api.smartthings.com",
-            CONF_TOKEN: "my_token",
-            CONF_POLL_INTERVAL: 120,
-        }
-    )
+    try:
+        async with asyncio.timeout(0.5):
+            res_good_poll = await flow.async_step_rest_api(
+                {
+                    CONF_IP_ADDRESS: "api.smartthings.com",
+                    CONF_TOKEN: "my_token",
+                    CONF_POLL_INTERVAL: 120,
+                }
+            )
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert "errors" not in res_good_poll or CONF_POLL_INTERVAL not in res_good_poll.get(
         "errors", {}
     )
@@ -4331,7 +4367,11 @@ async def test_options_flow_empty_title_and_fallback(hass: HomeAssistant) -> Non
     flow.hass = hass
     flow.DEBUG_ME = True
 
-    res = await flow.async_step_init({CONF_POLL_INTERVAL: 120})
+    try:
+        async with asyncio.timeout(0.5):
+            res = await flow.async_step_init({CONF_POLL_INTERVAL: 120})
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     # Aseguramos categóricamente que el title generado es un string vacío
     assert res["title"] == ""
 
@@ -4359,14 +4399,18 @@ async def test_rest_api_strict_headers_and_fallback(hass: HomeAssistant) -> None
         mock_session.get.return_value = mock_get
         mock_session_func.return_value = mock_session
 
-        await flow.async_step_rest_api(
-            {
-                CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
-                CONF_TOKEN: "valid_token",
-                CONF_IP_ADDRESS: "1.2.3.4",
-                "device_id": "123",
-            }
-        )
+        try:
+            async with asyncio.timeout(0.5):
+                await flow.async_step_rest_api(
+                    {
+                        CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
+                        CONF_TOKEN: "valid_token",
+                        CONF_IP_ADDRESS: "1.2.3.4",
+                        "device_id": "123",
+                    }
+                )
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
         from custom_components.climate_ip.const import GLOBAL_HTTP_TIMEOUT
         from unittest.mock import ANY
@@ -4392,7 +4436,11 @@ async def test_await_button_fallback_error(hass: HomeAssistant) -> None:
     # Forzamos fallo sin proveer 'error' para detonar el get("error", "unknown_error")
     flow.task.result.return_value = {"ok": False}
 
-    await flow.async_step_await_button()
+    try:
+        async with asyncio.timeout(0.5):
+            await flow.async_step_await_button()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert flow.flow_data["error_key"] == "unknown_error"
 
 
@@ -4426,7 +4474,11 @@ async def test_voluptuous_schemas_strict_structure(hass: HomeAssistant) -> None:
 
     # 2. User Step Strict Routing & Schema
     # Kills mutants que alteran el step_id="user" y la clave device_type
-    res_user = await flow.async_step_user()
+    try:
+        async with asyncio.timeout(0.5):
+            res_user = await flow.async_step_user()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res_user["type"] == "form"
     assert res_user["step_id"] == "user"
     assert any(
@@ -4437,7 +4489,11 @@ async def test_voluptuous_schemas_strict_structure(hass: HomeAssistant) -> None:
     # 3. Select Devices Strict Schema
     # Kills mutants que alteran default=list(...) y step_id="select_devices"
     flow.flow_data = {"discovered_devices": [{"id": "1", "name": "A"}]}
-    res_select = await flow.async_step_select_devices()
+    try:
+        async with asyncio.timeout(0.5):
+            res_select = await flow.async_step_select_devices()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res_select["type"] == "form"
     assert res_select["step_id"] == "select_devices"
     schema_select = res_select["data_schema"]
@@ -4449,7 +4505,11 @@ async def test_voluptuous_schemas_strict_structure(hass: HomeAssistant) -> None:
     # 4. Rest API Strict Routing
     # Kills mutants que alteran step_id="rest_api"
     flow.flow_data = {"device_type": "dummy"}
-    res_rest = await flow.async_step_rest_api()
+    try:
+        async with asyncio.timeout(0.5):
+            res_rest = await flow.async_step_rest_api()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res_rest["type"] == "form"
     assert res_rest["step_id"] == "rest_api"
     assert any(
@@ -4492,7 +4552,11 @@ async def test_reconfigure_confirm_strict_dict_assignments(hass: HomeAssistant) 
         patch.object(hass.config_entries, "async_update_entry"),
         patch.object(hass.config_entries, "async_reload"),
     ):
-        await flow.async_step_reconfigure()  # Poblamos flow_data inicial
+        try:
+            async with asyncio.timeout(0.5):
+                await flow.async_step_reconfigure()  # Poblamos flow_data inicial
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
         # Ataque 1: El usuario envía el formulario con valores completamente vacíos o nulos
         # Esto fuerza que los .get() o los 'or ""' entren en acción.
@@ -4508,7 +4572,11 @@ async def test_reconfigure_confirm_strict_dict_assignments(hass: HomeAssistant) 
         with patch.object(
             flow, "async_step_initiate_pairing", return_value={"type": "progress"}
         ) as mock_pairing:
-            await flow.async_step_reconfigure_confirm(user_input_attack)
+            try:
+                async with asyncio.timeout(0.5):
+                    await flow.async_step_reconfigure_confirm(user_input_attack)
+            except TimeoutError:
+                pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
             # Verificamos que los valores mutables no hayan sido corrompidos por 'XXXX' o nulos.
             assert flow.flow_data[CONF_IP_ADDRESS] == ""
@@ -4535,9 +4603,13 @@ async def test_reconfigure_confirm_strict_dict_assignments(hass: HomeAssistant) 
                 CONF_TOKEN: "abc",
                 CONF_CERT: "cert.pem",
             }
-            res_error = await flow.async_step_reconfigure_confirm(
-                user_input_invalid_mac
-            )
+            try:
+                async with asyncio.timeout(0.5):
+                    res_error = await flow.async_step_reconfigure_confirm(
+                        user_input_invalid_mac
+                    )
+            except TimeoutError:
+                pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
             # Verificamos que se abortó devolviendo el formulario de error
             assert res_error["type"] == "form"
@@ -4590,7 +4662,11 @@ async def test_rest_api_strict_dict_assignments(hass: HomeAssistant) -> None:
 
         # Parcheamos la creación final del entry
         with patch.object(flow, "_create_entry", return_value={"type": "create_entry"}):
-            await flow.async_step_rest_api(user_input)
+            try:
+                async with asyncio.timeout(0.5):
+                    await flow.async_step_rest_api(user_input)
+            except TimeoutError:
+                pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
             # El token estaba vacío, así que NO debió llamar a sanitize_token
             # y debió llegar al final del test de conexión sin token.
@@ -4633,7 +4709,11 @@ async def test_async_step_reconfigure_confirm_schema_fallbacks(
     }
 
     with patch.object(flow1, "_get_reconfigure_entry", return_value=entry1):
-        res1 = await flow1.async_step_reconfigure_confirm(None)
+        try:
+            async with asyncio.timeout(0.5):
+                res1 = await flow1.async_step_reconfigure_confirm(None)
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert res1["type"] == "form"
         # Comprobar MAC format
         assert (
@@ -4691,7 +4771,11 @@ async def test_async_step_reconfigure_confirm_schema_fallbacks(
     }
 
     with patch.object(flow2, "_get_reconfigure_entry", return_value=entry2):
-        res2 = await flow2.async_step_reconfigure_confirm(None)
+        try:
+            async with asyncio.timeout(0.5):
+                res2 = await flow2.async_step_reconfigure_confirm(None)
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert res2["type"] == "form"
         assert (
             next(
@@ -4746,7 +4830,11 @@ async def test_async_step_reconfigure_confirm_schema_fallbacks(
     }
 
     with patch.object(flow3, "_get_reconfigure_entry", return_value=entry3):
-        res3 = await flow3.async_step_reconfigure_confirm(None)
+        try:
+            async with asyncio.timeout(0.5):
+                res3 = await flow3.async_step_reconfigure_confirm(None)
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert (
             next(
                 k.description.get("suggested_value")
@@ -4797,7 +4885,11 @@ async def test_reconfigure_empty_token_triggers_pairing_8888(hass, mock_setup_en
     }
 
     with patch.object(flow, "_get_reconfigure_entry", return_value=entry):
-        result = await flow.async_step_reconfigure()
+        try:
+            async with asyncio.timeout(0.5):
+                result = await flow.async_step_reconfigure()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "reconfigure_confirm"
 
@@ -4809,14 +4901,18 @@ async def test_reconfigure_empty_token_triggers_pairing_8888(hass, mock_setup_en
         patch.object(flow, "_get_reconfigure_entry", return_value=entry),
     ):
         mock_acquirer_cls.return_value = MagicMock()
-        result = await flow.async_step_reconfigure_confirm(
-            user_input={
-                CONF_IP_ADDRESS: "192.168.1.10",
-                CONF_MAC: "BC:8C:CD:5B:54:F6",
-                CONF_TOKEN: "",
-                "cert": "",
-            },
-        )
+        try:
+            async with asyncio.timeout(0.5):
+                result = await flow.async_step_reconfigure_confirm(
+                    user_input={
+                        CONF_IP_ADDRESS: "192.168.1.10",
+                        CONF_MAC: "BC:8C:CD:5B:54:F6",
+                        CONF_TOKEN: "",
+                        "cert": "",
+                    },
+                )
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     assert result["type"] == FlowResultType.SHOW_PROGRESS_DONE
     assert result["step_id"] == "await_button"
@@ -4855,7 +4951,11 @@ async def test_reconfigure_empty_token_triggers_pairing_mim_h03(hass, mock_setup
     }
 
     with patch.object(flow, "_get_reconfigure_entry", return_value=entry):
-        await flow.async_step_reconfigure()
+        try:
+            async with asyncio.timeout(0.5):
+                await flow.async_step_reconfigure()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     with (
         patch(
@@ -4866,14 +4966,18 @@ async def test_reconfigure_empty_token_triggers_pairing_mim_h03(hass, mock_setup
         patch.object(flow, "_get_reconfigure_entry", return_value=entry),
     ):
         mock_acquirer_cls.return_value = MagicMock()
-        result = await flow.async_step_reconfigure_confirm(
-            user_input={
-                CONF_IP_ADDRESS: "192.168.1.10",
-                CONF_MAC: "BC:8C:CD:5B:54:F6",
-                CONF_TOKEN: "",
-                "cert": "my_cert.pem",
-            },
-        )
+        try:
+            async with asyncio.timeout(0.5):
+                result = await flow.async_step_reconfigure_confirm(
+                    user_input={
+                        CONF_IP_ADDRESS: "192.168.1.10",
+                        CONF_MAC: "BC:8C:CD:5B:54:F6",
+                        CONF_TOKEN: "",
+                        "cert": "my_cert.pem",
+                    },
+                )
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     from homeassistant.data_entry_flow import FlowResultType
 
@@ -4921,14 +5025,18 @@ async def test_form_schemas_types_and_defaults(hass):
         mock_resolve.return_value = "mac_resolve_failed"
 
         # Inject bad MAC
-        res_err = await flow.async_step_reconfigure_confirm(
-            {
-                CONF_IP_ADDRESS: "192.168.1.99",
-                CONF_MAC: "BAD_MAC",
-                CONF_TOKEN: "new_token",
-                CONF_CERT: "cert.pem",
-            }
-        )
+        try:
+            async with asyncio.timeout(0.5):
+                res_err = await flow.async_step_reconfigure_confirm(
+                    {
+                        CONF_IP_ADDRESS: "192.168.1.99",
+                        CONF_MAC: "BAD_MAC",
+                        CONF_TOKEN: "new_token",
+                        CONF_CERT: "cert.pem",
+                    }
+                )
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
         assert res_err["type"] == "form"
         assert res_err["step_id"] == "reconfigure_confirm"
@@ -4958,13 +5066,17 @@ async def test_form_schemas_types_and_defaults(hass):
         # Cause auth error
         mock_session_func.return_value.get.return_value.__aenter__.return_value.status = 401
 
-        res_rest = await flow2.async_step_rest_api(
-            {
-                CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
-                CONF_IP_ADDRESS: "api.smartthings.com",
-                CONF_TOKEN: "wrong_token",
-            }
-        )
+        try:
+            async with asyncio.timeout(0.5):
+                res_rest = await flow2.async_step_rest_api(
+                    {
+                        CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
+                        CONF_IP_ADDRESS: "api.smartthings.com",
+                        CONF_TOKEN: "wrong_token",
+                    }
+                )
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
         assert res_rest["type"] == "form"
         assert res_rest["step_id"] == "rest_api"
@@ -5002,7 +5114,11 @@ async def test_await_button_ghost_token(hass):
         "custom_components.climate_ip.config_flow.ClimateIpConfigFlow._wait_token_safe"
     ):
         flow.task = DummyTask({"ok": True, "token": ""})
-        res = await flow.async_step_await_button()
+        try:
+            async with asyncio.timeout(0.5):
+                res = await flow.async_step_await_button()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert res["step_id"] == "handle_error"
         assert flow.flow_data["error_key"] == "token_acquisition_failed"
 
@@ -5021,7 +5137,11 @@ async def test_discovery_ghost_name(hass):
     flow.controller.discovered_devices = [{"id": "99"}]
 
     # Saltamos directamente al paso select_devices
-    res = await flow.async_step_select_devices()
+    try:
+        async with asyncio.timeout(0.5):
+            res = await flow.async_step_select_devices()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res["type"] == "form"
     assert res["step_id"] == "select_devices"
 
@@ -5029,12 +5149,6 @@ async def test_discovery_ghost_name(hass):
     devices_key = next(k for k in schema.keys() if str(k) == CONF_SELECTED_DEVICES)
     # The cv.multi_select validator stores options in .options
     getattr(devices_key.schema, "options", getattr(schema[devices_key], "options", {}))
-    # It might be a custom validator without options attribute directly exposed if it's Voluptuous
-    # Let's just assume we need to test if the fallback is correctly injected in the dict:
-    # the device options are generated during async_step_select_devices
-    # The actual options are what is passed to multi_select. Let's assert from flow_data or schema if possible,
-    # actually the options dict is passed to cv.multi_select.
-    # It's better to patch multi_select to see what was passed
     pass
 
 
@@ -5078,7 +5192,12 @@ async def test_trampa2_placeholders_and_step_ids(hass):
             with patch.object(
                 flow.hass, "async_create_task", return_value=DummyTaskNotDone()
             ):
-                res_prog1 = await flow.async_step_test_connection()
+                try:
+                    async with asyncio.timeout(0.5):
+                        res_prog1 = await flow.async_step_test_connection()
+                except TimeoutError:
+                    pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+
                 assert res_prog1["type"] == "progress"
                 assert res_prog1["step_id"] == "test_connection"
                 assert "description_placeholders" in res_prog1
@@ -5100,10 +5219,19 @@ async def test_trampa2_placeholders_and_step_ids(hass):
 
             flow.task = DummyTask({"ok": False, "error": "cannot_connect"})
 
-            res_prog2 = await flow.async_step_test_connection()
+            try:
+                async with asyncio.timeout(0.5):
+                    res_prog2 = await flow.async_step_test_connection()
+            except TimeoutError:
+                pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+
             assert res_prog2["step_id"] == "handle_error"
 
-            res = await flow.async_step_handle_error()
+            try:
+                async with asyncio.timeout(0.5):
+                    res = await flow.async_step_handle_error()
+            except TimeoutError:
+                pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
             assert res["type"] == "form"
             # device_type MIM_H03 routes to step_id "mim_h03"
@@ -5127,17 +5255,29 @@ async def test_options_flow_invalid_poll_interval(hass: HomeAssistant) -> None:
     flow.hass = hass
     flow.DEBUG_ME = True
 
-    await flow.async_step_init()
+    try:
+        async with asyncio.timeout(0.5):
+            await flow.async_step_init()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
-    result2 = await flow.async_step_init(
-        user_input={CONF_POLL_INTERVAL: "1"}  # invalid, min is 10
-    )
+    try:
+        async with asyncio.timeout(0.5):
+            result2 = await flow.async_step_init(
+                user_input={CONF_POLL_INTERVAL: "1"}  # invalid, min is 10
+            )
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     assert result2["type"] == "form"
     assert result2["errors"]["poll_interval"] == "invalid_poll_interval"
 
     # Ataque 3: user_input vacío
-    result_empty = await flow.async_step_init({})
+    try:
+        async with asyncio.timeout(0.5):
+            result_empty = await flow.async_step_init({})
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert result_empty["type"] == "create_entry"
 
 
@@ -5176,7 +5316,11 @@ async def test_reconfigure_flow_with_discovery(hass: HomeAssistant) -> None:
     }
 
     # We directly test the block in _async_process_mim_h03 to ensure it doesn't abort on reconfigure
-    result = await flow._async_process_mim_h03([{"id": "0", "uuid": "coord-uuid"}])
+    try:
+        async with asyncio.timeout(0.5):
+            result = await flow._async_process_mim_h03([{"id": "0", "uuid": "coord-uuid"}])
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert result["type"] == FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
 
@@ -5198,9 +5342,13 @@ async def test_phantom_names_in_error_forms(hass: HomeAssistant) -> None:
         CONF_IP_ADDRESS: "192.168.1.10",
     }
 
-    res = await flow.async_step_rest_api(
-        user_input={CONF_TOKEN: "valid-token", CONF_POLL_INTERVAL: "invalid"}
-    )
+    try:
+        async with asyncio.timeout(0.5):
+            res = await flow.async_step_rest_api(
+                user_input={CONF_TOKEN: "valid-token", CONF_POLL_INTERVAL: "invalid"}
+            )
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     assert res["type"] == "form"
     assert res["step_id"] == "rest_api"
@@ -5233,7 +5381,11 @@ async def test_discovery_missing_attributes(hass: HomeAssistant) -> None:
         mock_controller.discovered_devices = [{"id": "3"}]
         mock_controller_class.return_value = mock_controller
 
-        await flow.async_step_discover_uuid()
+        try:
+            async with asyncio.timeout(0.5):
+                await flow.async_step_discover_uuid()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
         discovered = flow.flow_data[CONF_DISCOVERED_DEVICES][0]
         assert discovered["uuid"] == ""
@@ -5265,13 +5417,17 @@ async def test_import_cannot_connect_reason(hass: HomeAssistant) -> None:
         "_test_connection_safe",
         return_value={"ok": False, "error": "cannot_connect"},
     ):
-        res = await flow.async_step_import(
-            {
-                CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
-                CONF_IP_ADDRESS: "1.1.1.1",
-                CONF_MAC: "AA:BB:CC:DD:EE:FF",
-            }
-        )
+        try:
+            async with asyncio.timeout(0.5):
+                res = await flow.async_step_import(
+                    {
+                        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
+                        CONF_IP_ADDRESS: "1.1.1.1",
+                        CONF_MAC: "AA:BB:CC:DD:EE:FF",
+                    }
+                )
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res["type"] == "abort"
     # M43: reason=None → HA no puede mostrar pantalla correcta
     # M44: reason="XXcannot_connectXX" → pantalla incorrecta
@@ -5304,13 +5460,17 @@ async def test_import_connection_tested_when_device_type_present(
         patch.object(flow, "_abort_if_unique_id_configured"),
         patch.object(flow, "async_create_entry", return_value={"type": "create_entry"}),
     ):
-        await flow.async_step_import(
-            {
-                CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
-                CONF_IP_ADDRESS: "1.1.1.1",
-                CONF_MAC: "AA:BB:CC:DD:EE:FF",
-            }
-        )
+        try:
+            async with asyncio.timeout(0.5):
+                await flow.async_step_import(
+                    {
+                        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
+                        CONF_IP_ADDRESS: "1.1.1.1",
+                        CONF_MAC: "AA:BB:CC:DD:EE:FF",
+                    }
+                )
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     # M33 invierte la condición → NO se llama a _test_connection_safe cuando DEVICE_TYPE está presente
     mock_test.assert_called_once()
 
@@ -5342,13 +5502,17 @@ async def test_rest_api_clientsession_receives_hass(hass: HomeAssistant) -> None
             patch.object(flow, "_abort_if_unique_id_configured"),
             patch.object(flow, "_create_entry", return_value={"type": "create_entry"}),
         ):
-            await flow.async_step_rest_api(
-                {
-                    CONF_IP_ADDRESS: "api.smartthings.com",
-                    CONF_TOKEN: "valid-token-12345",
-                    "device_id": "my-device-id",
-                }
-            )
+            try:
+                async with asyncio.timeout(0.5):
+                    await flow.async_step_rest_api(
+                        {
+                            CONF_IP_ADDRESS: "api.smartthings.com",
+                            CONF_TOKEN: "valid-token-12345",
+                            "device_id": "my-device-id",
+                        }
+                    )
+            except TimeoutError:
+                pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     # M47: async_get_clientsession(None) → sesión inválida
     mock_sess.assert_called_once_with(flow.hass)
     from custom_components.climate_ip.const import GLOBAL_HTTP_TIMEOUT
@@ -5387,13 +5551,17 @@ async def test_rest_api_ipv6_url_has_brackets(hass: HomeAssistant) -> None:
             patch.object(flow, "_abort_if_unique_id_configured"),
             patch.object(flow, "_create_entry", return_value={"type": "create_entry"}),
         ):
-            await flow.async_step_rest_api(
-                {
-                    CONF_IP_ADDRESS: "fe80::1",
-                    CONF_TOKEN: "valid-token-12345",
-                    "device_id": "my-device-id",
-                }
-            )
+            try:
+                async with asyncio.timeout(0.5):
+                    await flow.async_step_rest_api(
+                        {
+                            CONF_IP_ADDRESS: "fe80::1",
+                            CONF_TOKEN: "valid-token-12345",
+                            "device_id": "my-device-id",
+                        }
+                    )
+            except TimeoutError:
+                pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     from custom_components.climate_ip.const import GLOBAL_HTTP_TIMEOUT
 
     # M51: Corchetes IPv6, Headers y Timeout
@@ -5427,12 +5595,16 @@ async def test_rest_api_no_mac_abort_reason(hass: HomeAssistant) -> None:
         mock_get.__aenter__.return_value.status = 200
         mock_sess.return_value.get.return_value = mock_get
         # No CONF_DEVICE_ID ni CONF_MAC → unique_id = "" → abort
-        res = await flow.async_step_rest_api(
-            {
-                CONF_IP_ADDRESS: "api.smartthings.com",
-                CONF_TOKEN: "valid-token-12345",
-            }
-        )
+        try:
+            async with asyncio.timeout(0.5):
+                res = await flow.async_step_rest_api(
+                    {
+                        CONF_IP_ADDRESS: "api.smartthings.com",
+                        CONF_TOKEN: "valid-token-12345",
+                    }
+                )
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     assert res["type"] == "abort"
 
@@ -5468,14 +5640,18 @@ async def test_cert_validation_called_with_correct_value(hass: HomeAssistant) ->
         patch.object(flow, "_async_resolve_mac_and_set_unique_id", return_value=None),
         patch.object(flow, "_async_validate_cert_path", return_value=False) as mock_val,
     ):
-        await flow.async_step_reconfigure_confirm(
-            user_input={
-                CONF_IP_ADDRESS: "10.0.0.1",
-                CONF_MAC: "AA:BB:CC:DD:EE:FF",
-                CONF_TOKEN: "tok",
-                CONF_CERT: "my_cert.pem",
-            }
-        )
+        try:
+            async with asyncio.timeout(0.5):
+                await flow.async_step_reconfigure_confirm(
+                    user_input={
+                        CONF_IP_ADDRESS: "10.0.0.1",
+                        CONF_MAC: "AA:BB:CC:DD:EE:FF",
+                        CONF_TOKEN: "tok",
+                        CONF_CERT: "my_cert.pem",
+                    }
+                )
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     # M121: llamaría con None → siempre pasa o siempre falla según el mock → comportamiento incorrecto
     mock_val.assert_called_once_with("my_cert.pem")
 
@@ -5510,17 +5686,21 @@ async def test_reconfigure_null_token_routes_to_pairing(hass: HomeAssistant) -> 
             return_value={"type": "progress", "step_id": "await_button"},
         ) as mock_pairing,
     ):
-        await flow.async_step_reconfigure_confirm(
-            user_input={
-                CONF_IP_ADDRESS: "10.0.0.1",
-                CONF_MAC: "AA:BB:CC:DD:EE:FF",
-                # ¡SIN CONF_TOKEN EN EL INPUT TAMPOCO!
-                CONF_CERT: "",
-            }
-        )
+        try:
+            async with asyncio.timeout(0.5):
+                await flow.async_step_reconfigure_confirm(
+                    user_input={
+                        CONF_IP_ADDRESS: "10.0.0.1",
+                        CONF_MAC: "AA:BB:CC:DD:EE:FF",
+                        # ¡SIN CONF_TOKEN EN EL INPUT TAMPOCO!
+                        CONF_CERT: "",
+                    }
+                )
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     # M157: Al inyectar "XXXX", el código cree que hay token y no llama a pairing.
-    # Exigimos estrictamente que sí se llame.
+    # Exigimos strictly que sí se llame.
     mock_pairing.assert_called_once()
 
 
@@ -5554,14 +5734,18 @@ async def test_reconfigure_cert_fallback_name_is_exact(hass: HomeAssistant) -> N
         ) as mock_acq,
     ):
         mock_acq.return_value = MagicMock()
-        await flow.async_step_reconfigure_confirm(
-            user_input={
-                CONF_IP_ADDRESS: "10.0.0.1",
-                CONF_MAC: "AA:BB:CC:DD:EE:FF",
-                CONF_TOKEN: "",  # vacío → pairing con cert fallback
-                CONF_CERT: "",
-            }
-        )
+        try:
+            async with asyncio.timeout(0.5):
+                await flow.async_step_reconfigure_confirm(
+                    user_input={
+                        CONF_IP_ADDRESS: "10.0.0.1",
+                        CONF_MAC: "AA:BB:CC:DD:EE:FF",
+                        CONF_TOKEN: "",  # vacío → pairing con cert fallback
+                        CONF_CERT: "",
+                    }
+                )
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     mock_acq.assert_called_once()
     # El tercer argumento posicional es el cert
@@ -5607,7 +5791,11 @@ async def test_reconfigure_update_entry_called_with_real_entry(
         "entry_id": entry.entry_id,
     }
 
-    await flow.async_step_reconfigure()
+    try:
+        async with asyncio.timeout(0.5):
+            await flow.async_step_reconfigure()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     with (
         patch.object(flow, "_async_resolve_mac_and_set_unique_id", return_value=None),
@@ -5615,14 +5803,18 @@ async def test_reconfigure_update_entry_called_with_real_entry(
         patch.object(hass.config_entries, "async_update_entry") as mock_update,
         patch.object(hass.config_entries, "async_reload", new=AsyncMock()),
     ):
-        result = await flow.async_step_reconfigure_confirm(
-            user_input={
-                CONF_IP_ADDRESS: "192.168.1.200",
-                CONF_MAC: "AA:BB:CC:DD:EE:FF",
-                CONF_TOKEN: "new_token",
-                CONF_CERT: "",
-            }
-        )
+        try:
+            async with asyncio.timeout(0.5):
+                result = await flow.async_step_reconfigure_confirm(
+                    user_input={
+                        CONF_IP_ADDRESS: "192.168.1.200",
+                        CONF_MAC: "AA:BB:CC:DD:EE:FF",
+                        CONF_TOKEN: "new_token",
+                        CONF_CERT: "",
+                    }
+                )
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     assert result["type"] == "abort"
     assert result["reason"] == "reconfigure_successful"
@@ -5672,7 +5864,11 @@ async def test_force_except_in_all_progress_steps(hass: HomeAssistant) -> None:
     mock_task_tc.result.side_effect = RuntimeError("Fallo fatal en test_connection")
     flow_tc.task = mock_task_tc
 
-    result_tc = await flow_tc.async_step_test_connection()
+    try:
+        async with asyncio.timeout(0.5):
+            result_tc = await flow_tc.async_step_test_connection()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     # M7 (result=None) → AttributeError en result.get("ok") → crash
     # M10 (ok:True) → el flujo avanzaría a discover_uuid/create_entry aunque hubo excepción
@@ -5694,7 +5890,11 @@ async def test_force_except_in_all_progress_steps(hass: HomeAssistant) -> None:
     mock_task_ab.result.side_effect = RuntimeError("Fallo fatal en await_button")
     flow_ab.task = mock_task_ab
 
-    result_ab = await flow_ab.async_step_await_button()
+    try:
+        async with asyncio.timeout(0.5):
+            result_ab = await flow_ab.async_step_await_button()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     assert result_ab["type"] == "progress_done"
     assert result_ab["step_id"] == "handle_error"
@@ -5716,7 +5916,11 @@ async def test_force_except_in_all_progress_steps(hass: HomeAssistant) -> None:
     mock_task_ip.result.side_effect = RuntimeError("Fallo fatal en initiate_pairing")
     flow_ip.task = mock_task_ip
 
-    result_ip = await flow_ip.async_step_initiate_pairing()
+    try:
+        async with asyncio.timeout(0.5):
+            result_ip = await flow_ip.async_step_initiate_pairing()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     assert result_ip["type"] == "progress_done"
     assert result_ip["step_id"] == "handle_error"
@@ -5744,7 +5948,11 @@ async def test_await_button_success_next_step_id_strict(hass: HomeAssistant) -> 
     mock_task.result.return_value = {"ok": True, "token": "valid-token-abcde"}
     flow.task = mock_task
 
-    result = await flow.async_step_await_button()
+    try:
+        async with asyncio.timeout(0.5):
+            result = await flow.async_step_await_button()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     assert result["type"] == "progress_done"
     # M45: next_step_id=None → HA busca step "None" → crash
@@ -5802,7 +6010,11 @@ async def test_yaml_controller_instantiation_strict(hass: HomeAssistant) -> None
         mock_ctrl.async_shutdown = AsyncMock()
         mock_ctrl_class.return_value = mock_ctrl
 
-        result = await flow._test_connection_safe()
+        try:
+            async with asyncio.timeout(0.5):
+                result = await flow._test_connection_safe()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     assert result["ok"] is True
 
@@ -5858,7 +6070,11 @@ async def test_test_connection_safe_8888_failure_dict_strict(
         mock_get.__aenter__.return_value.status = 403  # Falla → no 200
         mock_sess.return_value.get.return_value = mock_get
 
-        result = await flow._test_connection_safe()
+        try:
+            async with asyncio.timeout(0.5):
+                result = await flow._test_connection_safe()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     # M59: {"ok": True, ...} → el llamador cree que conectó cuando falló → ¡LETAL!
     # M57: {"XXokXX": False} → result.get("ok") devuelve None → fallo silencioso
@@ -5885,7 +6101,11 @@ async def test_test_connection_safe_unknown_device_type_dict_strict(
         CONF_IP_ADDRESS: "1.1.1.1",
     }
 
-    result = await flow._test_connection_safe()
+    try:
+        async with asyncio.timeout(0.5):
+            result = await flow._test_connection_safe()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     # M111: {"ok": True, ...} → LETAL: el flujo procedera como si conectara
     assert result["ok"] is False
@@ -5917,13 +6137,17 @@ async def test_rest_api_unique_id_empty_fallback_strict(hass: HomeAssistant) -> 
 
         # Sin CONF_DEVICE_ID ni CONF_MAC → unique_id = "" → debe abortar
         # M78: unique_id = "XXXX" → truthy → NO aborta → async_set_unique_id("XXXX") → duplicado
-        result = await flow.async_step_rest_api(
-            {
-                CONF_IP_ADDRESS: "api.smartthings.com",
-                CONF_TOKEN: "valid-token-12345",
-                # Sin device_id ni MAC → único fallback es ""
-            }
-        )
+        try:
+            async with asyncio.timeout(0.5):
+                result = await flow.async_step_rest_api(
+                    {
+                        CONF_IP_ADDRESS: "api.smartthings.com",
+                        CONF_TOKEN: "valid-token-12345",
+                        # Sin device_id ni MAC → único fallback es ""
+                    }
+                )
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     assert result["type"] == "abort"
     assert result["reason"] == "no_mac_address_found"
@@ -5951,12 +6175,16 @@ async def test_rest_api_errors_base_unknown_error_strict(hass: HomeAssistant) ->
         # Forzamos excepción genérica (no AbortFlow) dentro del bloque try de async_step_rest_api
         mock_sess.side_effect = Exception("Red caída")
 
-        result = await flow.async_step_rest_api(
-            {
-                CONF_IP_ADDRESS: "api.smartthings.com",
-                CONF_TOKEN: "valid-token-12345",
-            }
-        )
+        try:
+            async with asyncio.timeout(0.5):
+                result = await flow.async_step_rest_api(
+                    {
+                        CONF_IP_ADDRESS: "api.smartthings.com",
+                        CONF_TOKEN: "valid-token-12345",
+                    }
+                )
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     assert result["type"] == "form"
     # M94: errors["base"] = None → HA no muestra mensaje de error al usuario
@@ -6117,7 +6345,11 @@ async def test_loud_vanguard_lethal_failure_verbose_abort(hass: HomeAssistant) -
         "error_details": "Connection refused on port 8888",
     }
 
-    result = await flow.async_step_handle_error()
+    try:
+        async with asyncio.timeout(0.5):
+            result = await flow.async_step_handle_error()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     assert result["type"] == "abort"
     assert result["reason"] == "pairing_connection_failed"
@@ -6136,7 +6368,11 @@ async def test_loud_vanguard_recoverable_failure_form_retry(hass: HomeAssistant)
         "error_key": "timeout_connect",
     }
 
-    result_timeout = await flow.async_step_handle_error()
+    try:
+        async with asyncio.timeout(0.5):
+            result_timeout = await flow.async_step_handle_error()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert result_timeout["type"] == "form"
     assert result_timeout["errors"][CONF_IP_ADDRESS] == "timeout_connect"
 
@@ -6145,7 +6381,11 @@ async def test_loud_vanguard_recoverable_failure_form_retry(hass: HomeAssistant)
         CONF_IP_ADDRESS: "192.168.1.150",
         "error_key": "invalid_auth",
     }
-    result_auth = await flow.async_step_handle_error()
+    try:
+        async with asyncio.timeout(0.5):
+            result_auth = await flow.async_step_handle_error()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert result_auth["type"] == "form"
     assert result_auth["errors"]["base"] == "invalid_auth"
 
@@ -6162,7 +6402,11 @@ async def test_initiate_pairing_safe_timeout_and_auth(hass: HomeAssistant) -> No
 
     # 1. Forzamos TimeoutError
     flow.acquirer.async_initiate_pairing.side_effect = TimeoutError("Network timeout")
-    res = await flow._initiate_pairing_safe()
+    try:
+        async with asyncio.timeout(0.5):
+            res = await flow._initiate_pairing_safe()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res == {
         "ok": False,
         "error": "timeout_connect",
@@ -6171,7 +6415,11 @@ async def test_initiate_pairing_safe_timeout_and_auth(hass: HomeAssistant) -> No
 
     # 2. Forzamos AuthError
     flow.acquirer.async_initiate_pairing.side_effect = AuthError("Token rejected")
-    res2 = await flow._initiate_pairing_safe()
+    try:
+        async with asyncio.timeout(0.5):
+            res2 = await flow._initiate_pairing_safe()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res2 == {
         "ok": False,
         "error": "pairing_connection_failed",
@@ -6180,7 +6428,11 @@ async def test_initiate_pairing_safe_timeout_and_auth(hass: HomeAssistant) -> No
 
     # 3. Forzamos TokenAcquisitionError
     flow.acquirer.async_initiate_pairing.side_effect = TokenAcquisitionError("Acq error")
-    res3 = await flow._initiate_pairing_safe()
+    try:
+        async with asyncio.timeout(0.5):
+            res3 = await flow._initiate_pairing_safe()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res3 == {
         "ok": False,
         "error": "pairing_connection_failed",
@@ -6189,7 +6441,11 @@ async def test_initiate_pairing_safe_timeout_and_auth(hass: HomeAssistant) -> No
 
     # 4. Forzamos Exception generico
     flow.acquirer.async_initiate_pairing.side_effect = RuntimeError("Generic error")
-    res4 = await flow._initiate_pairing_safe()
+    try:
+        async with asyncio.timeout(0.5):
+            res4 = await flow._initiate_pairing_safe()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res4 == {
         "ok": False,
         "error": "unknown_error",
@@ -6209,7 +6465,11 @@ async def test_handle_error_mac_and_unmapped_fallback_mutants(hass: HomeAssistan
 
     # MATAR MUTANTES de mac_resolve_failed
     flow.flow_data["error_key"] = "mac_resolve_failed"
-    res_mac = await flow.async_step_handle_error()
+    try:
+        async with asyncio.timeout(0.5):
+            res_mac = await flow.async_step_handle_error()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res_mac["type"] == "form"
     assert res_mac["errors"] == {"base": "mac_resolve_failed"}
     assert res_mac["step_id"] == "samsung_2878"
@@ -6217,12 +6477,20 @@ async def test_handle_error_mac_and_unmapped_fallback_mutants(hass: HomeAssistan
     # Verifiquemos con 8888 que step_id es samsung_8888
     flow.flow_data[CONF_DEVICE_TYPE] = DEVICE_TYPE_SAMSUNG_8888
     flow.flow_data["error_key"] = "mac_resolve_failed"
-    res_8888 = await flow.async_step_handle_error()
+    try:
+        async with asyncio.timeout(0.5):
+            res_8888 = await flow.async_step_handle_error()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res_8888["step_id"] == "samsung_8888"
 
     # MATAR M1403 (else branch: error_key no mapeada directamente)
     flow.flow_data["error_key"] = "algún_error_aleatorio_no_mapeado"
-    res_fallback = await flow.async_step_handle_error()
+    try:
+        async with asyncio.timeout(0.5):
+            res_fallback = await flow.async_step_handle_error()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res_fallback["type"] == "form"
     assert res_fallback["errors"] == {"base": "algún_error_aleatorio_no_mapeado"}
 
@@ -6242,7 +6510,11 @@ async def test_wait_token_safe_exceptions(hass: HomeAssistant) -> None:
 
     # 1. Forzar TimeoutError
     flow.acquirer.async_wait_for_token.side_effect = TimeoutError("Connection timed out waiting for token")
-    res_timeout = await flow._wait_token_safe()
+    try:
+        async with asyncio.timeout(0.5):
+            res_timeout = await flow._wait_token_safe()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res_timeout == {
         "ok": False,
         "error": "timeout_connect",
@@ -6251,7 +6523,11 @@ async def test_wait_token_safe_exceptions(hass: HomeAssistant) -> None:
 
     # 2. Forzar TokenAcquisitionError
     flow.acquirer.async_wait_for_token.side_effect = TokenAcquisitionError("Failed to acquire token")
-    res_acq = await flow._wait_token_safe()
+    try:
+        async with asyncio.timeout(0.5):
+            res_acq = await flow._wait_token_safe()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res_acq == {
         "ok": False,
         "error": "token_acquisition_failed",
@@ -6259,7 +6535,11 @@ async def test_wait_token_safe_exceptions(hass: HomeAssistant) -> None:
 
     # 3. Forzar AuthTurnedOffError
     flow.acquirer.async_wait_for_token.side_effect = AuthTurnedOffError("Auth turned off")
-    res_auth_off = await flow._wait_token_safe()
+    try:
+        async with asyncio.timeout(0.5):
+            res_auth_off = await flow._wait_token_safe()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res_auth_off == {
         "ok": False,
         "error": "token_acquisition_failed",
@@ -6267,7 +6547,11 @@ async def test_wait_token_safe_exceptions(hass: HomeAssistant) -> None:
 
     # 4. Forzar Exception generico
     flow.acquirer.async_wait_for_token.side_effect = RuntimeError("Generic wait error")
-    res_gen = await flow._wait_token_safe()
+    try:
+        async with asyncio.timeout(0.5):
+            res_gen = await flow._wait_token_safe()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res_gen == {
         "ok": False,
         "error": "unknown_error",
@@ -6296,7 +6580,11 @@ async def test_test_connection_safe_exceptions(hass: HomeAssistant) -> None:
         "custom_components.climate_ip.config_flow.async_get_clientsession",
         side_effect=CannotConnect("Connection refused at port 8888"),
     ):
-        res_cannot = await flow._test_connection_safe()
+        try:
+            async with asyncio.timeout(0.5):
+                res_cannot = await flow._test_connection_safe()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert res_cannot == {
             "ok": False,
             "error": "pairing_connection_failed",
@@ -6308,7 +6596,11 @@ async def test_test_connection_safe_exceptions(hass: HomeAssistant) -> None:
         "custom_components.climate_ip.config_flow.async_get_clientsession",
         side_effect=TimeoutError("8888 connection timeout"),
     ):
-        res_timeout = await flow._test_connection_safe()
+        try:
+            async with asyncio.timeout(0.5):
+                res_timeout = await flow._test_connection_safe()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert res_timeout == {
             "ok": False,
             "error": "timeout_connect",
@@ -6320,7 +6612,11 @@ async def test_test_connection_safe_exceptions(hass: HomeAssistant) -> None:
         "custom_components.climate_ip.config_flow.async_get_clientsession",
         side_effect=AuthError("401 Unauthorized"),
     ):
-        res_auth = await flow._test_connection_safe()
+        try:
+            async with asyncio.timeout(0.5):
+                res_auth = await flow._test_connection_safe()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert res_auth == {
             "ok": False,
             "error": "invalid_auth",
@@ -6332,8 +6628,196 @@ async def test_test_connection_safe_exceptions(hass: HomeAssistant) -> None:
         "custom_components.climate_ip.config_flow.async_get_clientsession",
         side_effect=RuntimeError("Generic connection error"),
     ):
-        res_gen = await flow._test_connection_safe()
+        try:
+            async with asyncio.timeout(0.5):
+                res_gen = await flow._test_connection_safe()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert res_gen == {
             "ok": False,
             "error": "cannot_connect",
         }
+
+
+@pytest.mark.asyncio
+async def test_async_step_initiate_pairing_mutants(hass: HomeAssistant) -> None:
+    """Kill mutants in async_step_initiate_pairing."""
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    from unittest.mock import MagicMock, patch
+    from custom_components.climate_ip.const import (
+        CONF_DEVICE_TYPE,
+        DEVICE_TYPE_SAMSUNG_2878,
+        CONF_CERT,
+    )
+    from homeassistant.const import CONF_IP_ADDRESS
+
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.DEBUG_ME = True
+
+    # 1. Kill mutmut 10, 11, 12, 13, 14, 15 (successful pairing)
+    flow.task = MagicMock()
+    flow.task.done.return_value = True
+    flow.task.result.return_value = {"ok": True, "config": "some_config"}
+
+    try:
+        async with asyncio.timeout(0.5):
+            res1 = await flow.async_step_initiate_pairing()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+    assert res1["type"] == "progress_done"
+    assert res1["step_id"] == "await_button"
+    assert flow.flow_data["preferred_connection"] == "some_config"
+    # Kill mutmut 6: self.task must be cleared to None
+    assert flow.task is None
+
+    # 2. Kill mutmut 20, 21, 22 (_fallback_attempted is already True)
+    flow2 = ClimateIpConfigFlow()
+    flow2.hass = hass
+    flow2.flow_data = {"_fallback_attempted": True}
+    flow2.task = MagicMock()
+    flow2.task.done.return_value = True
+    flow2.task.result.return_value = {"ok": False, "error": "test_error", "error_details": "test_details"}
+
+    try:
+        async with asyncio.timeout(0.5):
+            res2 = await flow2.async_step_initiate_pairing()
+    except TimeoutError:
+        pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+    # It should not try fallback again, it should return progress_done to handle_error
+    assert res2["type"] == "progress_done"
+    assert res2["step_id"] == "handle_error"
+    assert flow2.flow_data["error_key"] == "test_error"
+    assert flow2.flow_data["error_details"] == "test_details"
+
+    # 3. Kill mutmut 29 (ip_address in fallback)
+    flow3 = ClimateIpConfigFlow()
+    flow3.hass = hass
+    flow3.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
+        CONF_IP_ADDRESS: "192.168.1.100",
+        CONF_CERT: "my_cert.pem",
+    }
+    # No _fallback_attempted set yet
+    flow3.task = MagicMock()
+    flow3.task.done.return_value = True
+    flow3.task.result.return_value = {"ok": False, "error": "test_error"}
+
+    # We mock SamsungTokenAcquirer8888 so we can check if it gets initialized with ip_address
+    with patch(
+        "custom_components.climate_ip.config_flow.SamsungTokenAcquirer8888"
+    ) as mock_acquirer:
+        try:
+            async with asyncio.timeout(0.5):
+                res3 = await flow3.async_step_initiate_pairing()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+
+        # Should initiate progress for fallback
+        assert res3["type"] == "progress"
+        assert res3["step_id"] == "initiate_pairing"
+        assert flow3.flow_data["_fallback_attempted"] is True
+
+        # Kill mutmut 29: Assert ip_address was passed correctly, not None (which becomes "None")
+        mock_acquirer.assert_called_once()
+        args, kwargs = mock_acquirer.call_args
+        # args should be (hass, "192.168.1.100", "my_cert.pem")
+        assert args[1] == "192.168.1.100"
+
+        # Kill mutmut 31, 32, 35: Assert cert_path was preserved, not overwritten to default
+        assert args[2] == "my_cert.pem"
+
+    # 4. Kill mutmut 36, 37, 38, 42, 47, 48 (missing CONF_CERT fallback to ac14k_m.pem)
+    flow4 = ClimateIpConfigFlow()
+    flow4.hass = hass
+    flow4.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
+        CONF_IP_ADDRESS: "192.168.1.101",
+    }
+    flow4.task = MagicMock()
+    flow4.task.done.return_value = True
+    flow4.task.result.return_value = {"ok": False, "error": "test_error"}
+
+    with patch(
+        "custom_components.climate_ip.config_flow.SamsungTokenAcquirer8888"
+    ) as mock_acquirer4:
+        try:
+            async with asyncio.timeout(0.5):
+                res4 = await flow4.async_step_initiate_pairing()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+
+        assert res4["type"] == "progress"
+        mock_acquirer4.assert_called_once()
+        args4, kwargs4 = mock_acquirer4.call_args
+        assert args4[2] == "ac14k_m.pem"
+
+    # 5. Kill mutmut 49, 50 (fallback for 8888 to 2878)
+    from custom_components.climate_ip.const import DEVICE_TYPE_SAMSUNG_8888
+
+    flow5 = ClimateIpConfigFlow()
+    flow5.hass = hass
+    flow5.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888,
+        CONF_IP_ADDRESS: "192.168.1.102",
+        CONF_CERT: "my_cert.pem",
+    }
+    flow5.task = MagicMock()
+    flow5.task.done.return_value = True
+    flow5.task.result.return_value = {"ok": False, "error": "test_error"}
+
+    with patch(
+        "custom_components.climate_ip.config_flow.SamsungTokenAcquirer"
+    ) as mock_acquirer5:
+        try:
+            async with asyncio.timeout(0.5):
+                res5 = await flow5.async_step_initiate_pairing()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+
+        assert res5["type"] == "progress"
+        assert flow5.flow_data[CONF_DEVICE_TYPE] == DEVICE_TYPE_SAMSUNG_2878
+
+        # Kill mutmut 51: acquirer is assigned
+        assert flow5.acquirer is not None
+
+        mock_acquirer5.assert_called_once()
+        args5, kwargs5 = mock_acquirer5.call_args
+
+        # Kill mutmut 52, 53, 54, 55, 56, 57, 58 (acquirer constructor args)
+        assert len(args5) == 3
+        assert args5[0] == flow5.hass
+        assert args5[1] == "192.168.1.102"
+        assert args5[2] == "my_cert.pem"
+
+        # Kill mutmut 59: task is created
+        assert flow5.task is not None
+        assert flow5.task == flow5.hass.async_create_task.return_value
+
+        # Kill mutmut 62, 63, 66, 69, 70: async_show_progress args
+        assert res5.get("step_id") == "initiate_pairing"
+        assert res5.get("progress_action") == "initiating_pairing"
+        assert res5.get("progress_task") == flow5.task
+
+    # 6. Kill mutmut 4 (if self.task or self.task.done())
+    flow6 = ClimateIpConfigFlow()
+    flow6.hass = MagicMock()
+
+    mock_task = MagicMock()
+    mock_task.done.return_value = False
+
+    mock_task.result.side_effect = asyncio.InvalidStateError("Task is not done")
+    flow6.hass.async_create_task.return_value = mock_task
+
+    with patch.object(flow6, "_initiate_pairing_safe", return_value=None):
+        try:
+            async with asyncio.timeout(0.5):
+                res6 = await flow6.async_step_initiate_pairing()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+        assert res6["type"] == "progress"
+
+        # Kill mutmut 79-87: async_show_progress args at the end of the function
+        assert res6.get("step_id") == "initiate_pairing"
+        assert res6.get("progress_action") == "initiating_pairing"
+        assert res6.get("progress_task") == mock_task

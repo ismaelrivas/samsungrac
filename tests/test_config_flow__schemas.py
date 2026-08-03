@@ -1,20 +1,22 @@
 """Test config flow schemas to kill mutants."""
 
-import pytest
-import voluptuous as vol
+import asyncio
 from unittest.mock import MagicMock
 
-from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN, CONF_MAC
-from custom_components.climate_ip.const import (
-    CONF_DEVICE_TYPE,
-    DEVICE_TYPE_SMARTTHINGS_HVAC,
-    DEVICE_TYPE_SAMSUNG_2878,
-)
+import pytest
+import voluptuous as vol
+from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
+
 from custom_components.climate_ip.config_flow import (
-    ClimateIpConfigFlow,
     CONF_DEVICE_ID,
     CONF_NAME,
     CONF_POLL_INTERVAL,
+    ClimateIpConfigFlow,
+)
+from custom_components.climate_ip.const import (
+    CONF_DEVICE_TYPE,
+    DEVICE_TYPE_SAMSUNG_2878,
+    DEVICE_TYPE_SMARTTHINGS_HVAC,
 )
 
 
@@ -26,6 +28,7 @@ def get_schema_marker(schema: vol.Schema, key_name: str):
     return None, None
 
 
+@pytest.mark.asyncio
 async def test_rest_api_schema_mutants_annihilation():
     """Mata a los 12 mutantes de _get_rest_api_schema."""
     flow = ClimateIpConfigFlow()
@@ -61,6 +64,7 @@ async def test_rest_api_schema_mutants_annihilation():
     assert token_key.default() == ""  # Mata al mutante 31 (default_token = "XXXX")
 
 
+@pytest.mark.asyncio
 async def test_base_samsung_schema_mutants():
     """Verify mutant kill de _get_base_samsung_schema."""
     flow = ClimateIpConfigFlow()
@@ -86,21 +90,23 @@ async def test_base_samsung_schema_mutants():
 @pytest.mark.asyncio
 async def test_options_flow_empty_defaults(hass):
     """Prueba que los defaults intrínsecos funcionen si la entrada de opciones está vacía."""
-    from pytest_homeassistant_custom_component.common import MockConfigEntry
-    from custom_components.climate_ip.const import (
-        DOMAIN,
-        CONF_CONN_METHOD,
-        CONN_METHOD_AIOHTTP,
-        CONF_TEMP_NATIVE_TARGET,
-        DEFAULT_CONF_TEMP_UNIT,
-        CONF_TARGET_TEMP_STEP,
-        DEFAULT_TARGET_TEMP_STEP,
-    )
-    from custom_components.climate_ip.config_flow import (
-        OptionsFlowHandler,
-        DEFAULT_POLL_INTERVAL,
-    )
     import datetime
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.climate_ip.config_flow import (
+        DEFAULT_POLL_INTERVAL,
+        OptionsFlowHandler,
+    )
+    from custom_components.climate_ip.const import (
+        CONF_CONN_METHOD,
+        CONF_TARGET_TEMP_STEP,
+        CONF_TEMP_NATIVE_TARGET,
+        CONN_METHOD_AIOHTTP,
+        DEFAULT_CONF_TEMP_UNIT,
+        DEFAULT_TARGET_TEMP_STEP,
+        DOMAIN,
+    )
 
     # Entrada vacía de opciones y configuración básica
     # USAMOS SMARTTHINGS_HVAC porque soporta AIOHTTP y expone el CONF_CONN_METHOD en opciones
@@ -139,13 +145,14 @@ async def test_options_flow_empty_defaults(hass):
 async def test_options_schema_target_temp_fallback_empty(hass):
     """Kills mutants 71, 72, 82, 83 mediante el generador interno de esquema."""
     from pytest_homeassistant_custom_component.common import MockConfigEntry
+
     from custom_components.climate_ip.config_flow import OptionsFlowHandler
     from custom_components.climate_ip.const import (
-        DOMAIN,
+        CONF_TARGET_TEMP_STEP,
         CONF_TEMP_NATIVE_TARGET,
         DEFAULT_CONF_TEMP_UNIT,
-        CONF_TARGET_TEMP_STEP,
         DEFAULT_TARGET_TEMP_STEP,
+        DOMAIN,
     )
 
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})

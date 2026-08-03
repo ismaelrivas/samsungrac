@@ -2,17 +2,41 @@
 """Test DataUpdateCoordinator and state polling behaviors."""
 # pylint: disable=redefined-outer-name,protected-access,import-outside-toplevel
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, ANY
 
 import asyncio
 import pytest
+import time
 
 from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
-from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
+from custom_components.climate_ip.coordinator import SamsungClimateCoordinator, PropertyDebouncer
 from custom_components.climate_ip.exceptions import AuthError
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
+_original_sleep = asyncio.sleep
+
+@pytest.fixture(autouse=True)
+def prevent_asyncio_sleep_timeouts():
+    """Evita el Event Loop Starvation de mutmut sin causar recursividad infinita."""
+    async def zero_sleep(*args, **kwargs):
+        # 2. Llamamos a la función original, rompiendo la recursividad
+        await _original_sleep(0)
+        
+    with patch("custom_components.climate_ip.coordinator.asyncio.sleep", side_effect=zero_sleep):
+        yield
+
+@pytest.fixture(autouse=True)
+def bypass_sleeps():
+    """
+    Evita el Event Loop Starvation y los cuelgues saltándose los sleeps.
+    new_callable=AsyncMock garantiza que 'await asyncio.sleep()' funcione
+    perfectamente sin lanzar TypeError ni causar recursión.
+    """
+    with patch("custom_components.climate_ip.coordinator.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        yield mock_sleep
+
+#####################################################
 
 async def test_token_auto_recovery_smartthings(hass: HomeAssistant) -> None:
     """Test that a 401 error triggers token refresh via SmartThings OAuth."""
@@ -386,57 +410,61 @@ async def test_coordinator_timeout_recovery(hass: HomeAssistant) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.asyncio
 async def test_corrections_are_dispatched_to_controller(hass: HomeAssistant) -> None:
     """Verify that corrections are sent to the controller as individual commands.
-
+    
     Regression test for the bug where a guard condition inside the
     async_set_property loop caused all entries in the ``corrections`` dict to be
     silently skipped before reaching the controller.
-
-    Scenario: setting hvac_mode=COOL forces fan_mode=auto (COOL is incompatible
-    with turbo fan speed).  The coordinator must fire one controller command per
-    property — two total: 'hvac_mode' first, then 'fan_mode'.
     """
     mock_controller = MagicMock()
     mock_controller.log_prefix = "[CorrectionTest]"
-    # Every async_set_property call succeeds
     mock_controller.async_set_property = AsyncMock(return_value=True)
     mock_controller.climate_state = MagicMock(hvac_mode="cool")
-
+    
     mock_entry = MagicMock()
     mock_entry.options = {}
     mock_entry.data = {}
-
+    
+    # Ejecutamos los call_later síncronamente
     hass.loop.call_later.side_effect = lambda delay, callback: callback()
-    hass.async_create_task.side_effect = lambda coro, **kw: asyncio.create_task(coro)
+    
+    # FIX: Rastreamos las tareas en segundo plano del debouncer para esperarlas
+    tasks = []
+    def mock_create_task(coro, **kwargs):
+        task = asyncio.create_task(coro)
+        tasks.append(task)
+        return task
+        
+    hass.async_create_task.side_effect = mock_create_task
+    
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
     coordinator.data = mock_controller.climate_state
-
+    
     corrections = {"fan_mode": "auto"}
     await coordinator.async_set_property("hvac_mode", "cool", corrections=corrections)
-    await asyncio.sleep(0)
-
+    
+    # Esperamos a que todas las tareas encoladas terminen de ejecutarse
+    if tasks:
+        try:
+            await asyncio.wait_for(asyncio.gather(*tasks), timeout=0.5)
+        except asyncio.TimeoutError:
+            pytest.fail("Mutante cazado: Tarea asíncrona colgada por mutación.")
+    
     # The controller must have been called exactly twice:
-    #   call 1 → ("hvac_mode", "cool", None)
-    #   call 2 → ("fan_mode", "auto", None)
     assert mock_controller.async_set_property.await_count == 2, (
         f"Expected 2 controller calls (main + correction), "
         f"got {mock_controller.async_set_property.await_count}"
     )
-
-    # Verify the specific calls and their order (dict insertion order is stable in Python 3.7+)
+    
     call_args_list = mock_controller.async_set_property.await_args_list
     first_call_prop, first_call_val, _ = call_args_list[0].args
     second_call_prop, second_call_val, _ = call_args_list[1].args
-
-    assert first_call_prop == "hvac_mode", (
-        f"First command must be the main property 'hvac_mode', got '{first_call_prop}'"
-    )
+    
+    assert first_call_prop == "hvac_mode"
     assert first_call_val == "cool"
-
-    assert second_call_prop == "fan_mode", (
-        f"Second command must be the correction 'fan_mode', got '{second_call_prop}'"
-    )
+    assert second_call_prop == "fan_mode"
     assert second_call_val == "auto"
 
 
@@ -1204,3 +1232,530 @@ async def test_coordinator_getters(hass: HomeAssistant) -> None:
 
     assert coordinator.get_property_object("some_obj") == {"object": "value"}
     mock_controller.get_property_object.assert_called_once_with("some_obj")
+
+@pytest.mark.asyncio
+async def test_coordinator_auto_healing_fails_when_already_raw(hass: HomeAssistant) -> None:
+    """
+    Aniquila el mutante de la línea 307 (if current_method == CONN_METHOD_RAW)
+    y cubre el bloque Untested de fallo persistente (Líneas 320-324).
+    """
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+    from custom_components.climate_ip.const import CONF_CONN_METHOD, CONN_METHOD_RAW
+    from custom_components.climate_ip.exceptions import InvalidHeaderError
+
+    mock_controller = MagicMock()
+    mock_controller.log_prefix = "[RAW_Test]"
+    mock_controller.name = "RAW AC"
+    
+    # Simulamos el error recurrente de cabeceras
+    mock_controller.async_get_status = AsyncMock(side_effect=InvalidHeaderError("Test Header Error"))
+
+    mock_entry = MagicMock()
+    # TRUCO: Ya estamos en el motor RAW.
+    mock_entry.options = {CONF_CONN_METHOD: CONN_METHOD_RAW} 
+    mock_entry.data = {}
+
+    with patch("custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__", return_value=None):
+        from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
+        coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+
+        with patch.object(hass.config_entries, "async_update_entry") as mock_update_entry:
+            # Al fallar estando ya en RAW, debe lanzar UpdateFailed normal con el error, sin reconfigurar
+            with pytest.raises(UpdateFailed, match="Data parsing failed on RAW engine: Test Header Error"):
+                await coordinator._async_update_data()
+
+            # Aniquila M307 (==): Validamos que NO intentó volver a actualizar el ConfigEntry
+            mock_update_entry.assert_not_called()
+
+
+@pytest.mark.parametrize("exception_instance, expected_match", [
+    (ValueError("Bad JSON mapping"), "Data parsing error: Bad JSON mapping"),
+    (TypeError("Invalid object type"), "Data parsing error: Invalid object type"),
+    (Exception("Fatal system crash"), "Fatal error: Fatal system crash"),
+])
+@pytest.mark.asyncio
+async def test_coordinator_clears_cache_on_critical_errors(
+    hass: HomeAssistant, exception_instance, expected_match
+) -> None:
+    """
+    Aniquila los mutantes "Untested" y condicionales (or) de las líneas 355-367.
+    Garantiza que ValueError, TypeError y Exception limpien el caché del poller.
+    """
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    mock_controller = MagicMock()
+    mock_controller.log_prefix = "[ErrTest]"
+    mock_controller.name = "Error AC"
+    mock_controller.async_get_status = AsyncMock(side_effect=exception_instance)
+
+    # Creamos un mock estricto para el poller
+    mock_poller = MagicMock()
+    mock_controller.poller = mock_poller
+
+    mock_entry = MagicMock()
+    mock_entry.options = {}
+    mock_entry.data = {}
+
+    with patch("custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__", return_value=None):
+        from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
+        coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+
+        with pytest.raises(UpdateFailed, match=expected_match):
+            await coordinator._async_update_data()
+
+        # Verifica que se haya forzado la limpieza de caché (Línea 356/367)
+        mock_poller._clear_state_cache.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_coordinator_handles_missing_poller_safely(hass: HomeAssistant) -> None:
+    """
+    Aniquila los mutantes en la condición `hasattr(self.controller, "poller") and ...`.
+    Si el poller es None o no existe, no debe romper el flujo de excepciones.
+    """
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    mock_controller = MagicMock()
+    mock_controller.log_prefix = "[NoPollerTest]"
+    mock_controller.async_get_status = AsyncMock(side_effect=ValueError("No poller JSON error"))
+    
+    # Eliminamos el atributo poller explícitamente para forzar la primera parte del condicional
+    del mock_controller.poller
+
+    mock_entry = MagicMock()
+    mock_entry.options = {}
+    mock_entry.data = {}
+
+    with patch("custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__", return_value=None):
+        from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
+        coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+
+        # Debería lanzar el error limpiamente sin arrojar AttributeError interno
+        with pytest.raises(UpdateFailed, match="Data parsing error: No poller JSON error"):
+            await coordinator._async_update_data()
+
+def test_debouncer_cancel_all_strict_none():
+    """Aniquila el mutante Untested de la línea 61 (self._global_timer = None)."""
+    mock_coordinator = MagicMock()
+    debouncer = PropertyDebouncer(mock_coordinator)
+    
+    mock_timer = MagicMock()
+    debouncer._global_timer = mock_timer
+    debouncer._pending_payloads["dummy"] = ("func", (), {})
+    
+    debouncer.cancel_all()
+    
+    mock_timer.cancel.assert_called_once()
+    # Verifica estrictamente que el valor es None (y no "")
+    assert debouncer._global_timer is None
+    assert len(debouncer._pending_payloads) == 0
+
+
+# @pytest.mark.asyncio
+# async def test_debouncer_exception_handling_and_window_replace():
+#     """
+#     Cubre y aniquila los mutantes 'Untested' de exc_info=True (líneas 117 y 125)
+#     y cubre la rama de re-encolado rápido (línea 90).
+#     """
+#     from custom_components.climate_ip.exceptions import CannotConnect
+    
+#     mock_coordinator = MagicMock()
+#     mock_coordinator.async_request_refresh = AsyncMock()
+#     mock_coordinator.hass = MagicMock()
+#     mock_coordinator.unique_id = "test_123"
+    
+#     # Interceptamos la creación de la tarea en segundo plano para ejecutarla nosotros
+#     created_tasks = []
+#     def fake_create_task(coro, **kwargs):
+#         created_tasks.append(coro)
+#         return coro
+        
+#     mock_coordinator.hass.async_create_task.side_effect = fake_create_task
+#     mock_coordinator.hass.loop.call_later = MagicMock(return_value="mock_timer")
+    
+#     debouncer = PropertyDebouncer(mock_coordinator, delay=10.0)
+    
+#     # --- 1. Cubrir Línea 90: Reemplazar un comando rápido ---
+#     # Simulamos que ya hay un timer activo y estamos dentro de la ventana del delay
+#     mock_existing_timer = MagicMock()
+#     debouncer._global_timer = mock_existing_timer
+#     debouncer._global_last_execution = time.time()  
+    
+#     async def dummy_success(): pass
+    
+#     # Ejecutamos. Al haber un timer activo, lo cancela y pasa por la línea 90
+#     await debouncer.async_execute("prop_success", dummy_success)
+#     mock_existing_timer.cancel.assert_called_once()
+    
+#     # --- 2. Cubrir Líneas 117 y 125: Excepciones en el runner ---
+#     # Preparamos funciones que fallen al ejecutarse para detonar los bloques except
+#     async def dummy_fail_network():
+#         raise CannotConnect("Network offline")
+        
+#     async def dummy_fail_generic():
+#         raise ValueError("Generic boom")
+        
+#     # Añadimos los fallos a la cola pendiente
+#     debouncer._pending_payloads["prop_net"] = (dummy_fail_network, ("arg_net",), {"kw": 1})
+#     debouncer._pending_payloads["prop_gen"] = (dummy_fail_generic, ("arg_gen",), {"kw": 2})
+    
+#     # Extraemos la función interna _fire_delayed que el debouncer programó en call_later
+#     callback_fire_delayed = mock_coordinator.hass.loop.call_later.call_args[0][1]
+    
+#     with patch("custom_components.climate_ip.coordinator._LOGGER.debug") as mock_debug:
+#         # Disparamos el timer manualmente
+#         callback_fire_delayed()
+        
+#         # _fire_delayed saca las tareas pendientes y crea un _task_runner
+#         assert len(created_tasks) > 0
+#         task_coro = created_tasks[-1]
+        
+#         # Ejecutamos la tarea asíncrona real
+#         try:
+#             await asyncio.wait_for(task_coro, timeout=0.5)
+#         except asyncio.TimeoutError:
+#             pytest.fail("Mutante cazado: El runner interno se colgó.")
+        
+#         # Verificamos que el coordinador pidió refresco tras ambos fallos
+#         assert mock_coordinator.async_request_refresh.await_count == 2
+        
+#         # Aniquilamos los mutantes lógicos de la línea 117 y 125 comprobando que exc_info=True se usó intacto
+#         mock_debug.assert_any_call(
+#             "[Debouncer] Network error executing delayed command for '%s': %s",
+#             "prop_net",
+#             ANY,
+#             exc_info=True
+#         )
+#         mock_debug.assert_any_call(
+#             "[Debouncer] Error executing delayed command for '%s': %s",
+#             "prop_gen",
+#             ANY,
+#             exc_info=True
+#         )
+
+@pytest.mark.asyncio
+async def test_debouncer_exact_time_boundary():
+    """Aniquila el mutante de la línea 73 (>= cambiado a >)."""
+    mock_coordinator = MagicMock()
+    mock_coordinator.hass.loop.call_later = MagicMock()
+    
+    debouncer = PropertyDebouncer(mock_coordinator, delay=2.0)
+    
+    async def dummy_coroutine():
+        return True
+
+    with patch("custom_components.climate_ip.coordinator.time.time") as mock_time:
+        # Ejecución 1: Fija last_execution a 1000.0
+        mock_time.return_value = 1000.0
+        await debouncer.async_execute("prop1", dummy_coroutine)
+        
+        # Ejecución 2: Exactamente 2.0 segundos después (el límite)
+        mock_time.return_value = 1002.0
+        await debouncer.async_execute("prop1", dummy_coroutine)
+        
+        # Si el mutante '>' sobrevive, evaluará 2.0 > 2.0 (Falso) y lo meterá en pending.
+        # El código original '>=' evalúa 2.0 >= 2.0 (Verdadero) y lo ejecuta, vaciando pending.
+        assert "prop1" not in debouncer._pending_payloads
+
+@pytest.mark.asyncio
+async def test_locked_set_property_mutants(hass: HomeAssistant) -> None:
+    """Aniquila la pérdida de argumentos y la inversión booleana en _locked_set_property."""
+    mock_controller = MagicMock()
+    mock_controller.async_set_property = AsyncMock()
+    
+    mock_entry = MagicMock()
+    mock_entry.options = {}
+    mock_entry.data = {}
+    
+    with patch("custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__", return_value=None):
+        from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
+        coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+        
+        # CASO 1: Controller devuelve True (Aniquila L414 pérdida de param y L416 False condicional)
+        mock_controller.async_set_property.return_value = True
+        res_true = await coordinator._locked_set_property("hvac_mode", "cool", "dev_1")
+        
+        # L414: Verificamos que se pasó la propiedad, el VALOR y el device_id
+        mock_controller.async_set_property.assert_awaited_once_with("hvac_mode", "cool", "dev_1")
+        # L416: Aseguramos el retorno correcto
+        assert res_true is True
+
+        # CASO 2: Controller devuelve explícitamente False
+        mock_controller.async_set_property.return_value = False
+        res_false = await coordinator._locked_set_property("fan_mode", "high", "dev_1")
+        assert res_false is False
+
+@pytest.mark.asyncio
+async def test_predict_and_correct_strict_args(hass: HomeAssistant) -> None:
+    """Aniquila la pérdida del argumento current_state (Mutante L482)."""
+    mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(["mock_flag"], {"mock": "corr"}))
+    
+    mock_entry = MagicMock()
+    mock_entry.options = {}
+    mock_entry.data = {}
+    
+    with patch("custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__", return_value=None):
+        from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
+        coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+        coordinator._create_device_state = MagicMock(return_value="mock_state")
+        coordinator.async_set_updated_data = MagicMock()
+
+        current_fake_state = {"power": "on"}
+        # Ejecutamos con una clase genérica sin usar el Enum de HA para forzar la firma
+        await coordinator.async_predict_and_correct(current_fake_state, "power", "off")
+
+        # ASSERTION ESTRICTA: Falla si el mutante eliminó current_fake_state
+        mock_controller.async_predict_and_correct_state.assert_awaited_once_with(
+            current_fake_state, "power", "off"
+        )
+
+
+
+
+@pytest.mark.asyncio
+async def test_debouncer_exact_time_boundary_mutant():
+    """Aniquila el mutante L73 (>= mutado a >). Si es exacto, debe ejecutarse, no encolarse."""
+    mock_coordinator = MagicMock()
+    mock_coordinator.hass.loop.call_later = MagicMock()
+    
+    debouncer = PropertyDebouncer(mock_coordinator, delay=2.0)
+    
+    async def dummy_coroutine():
+        return True
+
+    with patch("custom_components.climate_ip.coordinator.time.time") as mock_time:
+        mock_time.return_value = 1000.0
+        await debouncer.async_execute("prop1", dummy_coroutine)
+        
+        # Exactamente 2.0s después. El código original (>=) lo ejecuta. El mutante (>) lo encola.
+        mock_time.return_value = 1002.0
+        await debouncer.async_execute("prop1", dummy_coroutine)
+        
+        assert "prop1" not in debouncer._pending_payloads
+
+
+# def test_coordinator_debouncer_delay_init(hass: HomeAssistant) -> None:
+#     """Aniquila el mutante L158 que elimina explícitamente delay=3.0 en la inicialización."""
+#     mock_controller = MagicMock()
+#     mock_entry = MagicMock()
+#     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+#     assert coordinator.debouncer.delay == 3.0
+
+
+@pytest.mark.asyncio
+async def test_sniper_locked_set_property_args_and_bools(hass: HomeAssistant) -> None:
+    """Aniquila la pérdida de argumentos y la inversión booleana en _locked_set_property."""
+    mock_controller = MagicMock()
+    mock_controller.poll = False  # Evita el cálculo timedelta y el TypeError
+    mock_controller.async_set_property = AsyncMock()
+    
+    mock_entry = MagicMock()
+    mock_entry.options = {}
+    mock_entry.data = {}
+    
+    with patch("custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__", return_value=None):
+        from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
+        coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+        
+        mock_controller.async_set_property.return_value = True
+        res_true = await coordinator._locked_set_property("hvac_mode", "cool", "dev_1")
+        
+        mock_controller.async_set_property.assert_awaited_once_with("hvac_mode", "cool", "dev_1")
+        assert res_true is True
+
+        mock_controller.async_set_property.return_value = False
+        res_false = await coordinator._locked_set_property("fan_mode", "high", "dev_1")
+        assert res_false is False
+
+
+@pytest.mark.asyncio
+async def test_sniper_predict_and_correct_strict_state_arg(hass: HomeAssistant) -> None:
+    """Aniquila la pérdida del argumento current_state en async_predict_and_correct."""
+    mock_controller = MagicMock()
+    mock_controller.poll = False  # Evita el cálculo timedelta y el TypeError
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(["mock_flag"], {"mock": "corr"}))
+    
+    mock_entry = MagicMock()
+    mock_entry.options = {}
+    mock_entry.data = {}
+    
+    with patch("custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__", return_value=None):
+        from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
+        coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+        coordinator._create_device_state = MagicMock(return_value="mock_state")
+        coordinator.async_set_updated_data = MagicMock()
+
+        current_fake_state = {"power": "on"}
+        await coordinator.async_predict_and_correct(current_fake_state, "power", "off")
+
+        mock_controller.async_predict_and_correct_state.assert_awaited_once_with(
+            current_fake_state, "power", "off"
+        )
+
+@pytest.mark.asyncio
+async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistant):
+    """Cubre y aniquila los mutantes de exc_info=True y re-encolado rápido."""
+    from custom_components.climate_ip.exceptions import CannotConnect
+    
+    mock_coordinator = MagicMock()
+    mock_coordinator.async_request_refresh = AsyncMock()
+    mock_coordinator.hass = MagicMock()
+    mock_coordinator.unique_id = "test_123"
+    
+    created_tasks = []
+    def fake_create_task(coro, **kwargs):
+        created_tasks.append(coro)
+        return coro
+        
+    mock_coordinator.hass.async_create_task.side_effect = fake_create_task
+    mock_coordinator.hass.loop.call_later = MagicMock(return_value="mock_timer")
+    
+    debouncer = PropertyDebouncer(mock_coordinator, delay=10.0)
+    
+    mock_existing_timer = MagicMock()
+    debouncer._global_timer = mock_existing_timer
+    debouncer._global_last_execution = time.time()  
+    
+    async def dummy_success(): pass
+    
+    # Cubrir re-encolado
+    await debouncer.async_execute("prop_success", dummy_success)
+    mock_existing_timer.cancel.assert_called_once()
+    
+    # Excepciones que pasan kwargs
+    async def dummy_fail_network(*args, **kwargs):
+        raise CannotConnect("Network offline")
+        
+    async def dummy_fail_generic(*args, **kwargs):
+        raise ValueError("Generic boom")
+        
+    debouncer._pending_payloads["prop_net"] = (dummy_fail_network, ("arg1",), {"kw": 1})
+    debouncer._pending_payloads["prop_gen"] = (dummy_fail_generic, ("arg2",), {"kw": 2})
+    
+    callback_fire_delayed = mock_coordinator.hass.loop.call_later.call_args[0][1]
+    
+    with patch("custom_components.climate_ip.coordinator._LOGGER.debug") as mock_debug:
+        callback_fire_delayed()
+        assert len(created_tasks) > 0
+        
+        # Al usar nuestro fixture bypass_sleeps, esta tarea asíncrona no se colgará
+        await created_tasks[-1]
+        
+        assert mock_coordinator.async_request_refresh.await_count == 2
+        
+        # VERIFICACIÓN BLINDADA: Buscamos en las llamadas interceptadas
+        debug_calls = mock_debug.call_args_list
+        net_call = next(c for c in debug_calls if "Network error executing" in c.args[0])
+        gen_call = next(c for c in debug_calls if "Error executing delayed command" in c.args[0])
+        
+        # Aniquilamos los mutantes que cambian exc_info a False o lo eliminan
+        assert net_call.kwargs.get("exc_info") is True
+        assert gen_call.kwargs.get("exc_info") is True
+
+
+def test_sniper_coordinator_debouncer_delay_init_mutant(hass: HomeAssistant) -> None:
+    """Aniquila el mutante L158 que elimina explícitamente delay=3.0 en la inicialización."""
+    mock_controller = MagicMock()
+    mock_controller.poll = False  # Evita el cálculo timedelta y el TypeError
+    
+    mock_entry = MagicMock()
+    mock_entry.options = {}
+    mock_entry.data = {}
+    coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+    assert coordinator.debouncer.delay == 3.0
+
+@pytest.mark.asyncio
+async def test_sniper_debouncer_exact_time_boundary_strict(hass: HomeAssistant):
+    """Aniquila el mutante de la línea 73 (>= cambiado a >) evitando errores de coma flotante."""
+    from custom_components.climate_ip.coordinator import PropertyDebouncer
+    mock_coordinator = MagicMock()
+    debouncer = PropertyDebouncer(mock_coordinator, delay=2.0)
+    
+    # Forzamos el tiempo exacto a 0.0 para que 2.0 - 0.0 sea matemáticamente perfecto
+    debouncer._global_last_execution = 0.0  
+    
+    async def dummy(*args, **kwargs): return True
+    
+    # Al ser el tiempo 2.0 exacto, (2.0 - 0.0 >= 2.0) es True. El mutante (>) dará False.
+    with patch("custom_components.climate_ip.coordinator.time.time", return_value=2.0):
+        await debouncer.async_execute("prop1", dummy)
+        
+    assert "prop1" not in debouncer._pending_payloads
+
+
+@pytest.mark.asyncio
+async def test_sniper_debouncer_kwargs_and_pop_strict(hass: HomeAssistant):
+    """Aniquila los mutantes L77 (pop None) y L85 (pérdida de kwargs)."""
+    from custom_components.climate_ip.coordinator import PropertyDebouncer
+    mock_coordinator = MagicMock()
+    debouncer = PropertyDebouncer(mock_coordinator, delay=2.0)
+    debouncer._pending_payloads["test_prop"] = "stale"
+    
+    async def dummy(*args, **kwargs): return args, kwargs
+        
+    res = await debouncer.async_execute("test_prop", dummy, "arg1", kw_key="kw_val")
+    
+    # Aserción ultra-estricta de tuplas para evitar que el mutante devuelva la tupla sin kwargs
+    assert res == (("arg1",), {"kw_key": "kw_val"})
+    assert "test_prop" not in debouncer._pending_payloads
+
+
+@pytest.mark.asyncio
+async def test_sniper_locked_set_property_strict_args(hass: HomeAssistant):
+    """Aniquila el mutante L433 que elimina argumentos en _locked_set_property."""
+    mock_controller = MagicMock()
+    mock_controller.poll = False
+    mock_controller.async_set_property = AsyncMock(return_value=True)
+    
+    with patch("custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__", return_value=None):
+        from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
+        coordinator = SamsungClimateCoordinator(hass, mock_controller, MagicMock(options={}, data={}))
+        
+        await coordinator._locked_set_property("my_prop", "my_val", "my_dev")
+        
+        # Verificamos la longitud exacta de la tupla de argumentos que recibió el mock
+        args, _ = mock_controller.async_set_property.call_args
+        assert len(args) == 3, f"Mutante cazado: Se perdieron argumentos. Esperaba 3, llegaron {len(args)}"
+        assert args == ("my_prop", "my_val", "my_dev")
+
+
+@pytest.mark.asyncio
+async def test_sniper_async_set_property_debouncer_args(hass: HomeAssistant):
+    """Aniquila el mutante L460 que elimina el 'val' al llamar al debouncer."""
+    mock_controller = MagicMock()
+    mock_controller.poll = False
+    
+    with patch("custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__", return_value=None):
+        from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
+        coordinator = SamsungClimateCoordinator(hass, mock_controller, MagicMock(options={}, data={}))
+        coordinator.debouncer = MagicMock()
+        coordinator.debouncer.async_execute = AsyncMock(return_value=True)
+        
+        await coordinator.async_set_property("hvac_mode", "cool", device_id="dev_1")
+        
+        # Debouncer debe recibir exactamente 5 argumentos posicionales
+        args, _ = coordinator.debouncer.async_execute.call_args
+        assert len(args) == 5, f"Mutante cazado: Faltan argumentos. Llegaron: {args}"
+        assert args[3] == "cool"
+
+
+@pytest.mark.asyncio
+async def test_sniper_predict_and_correct_strict_args_len(hass: HomeAssistant):
+    """Aniquila el mutante L501 que elimina el parámetro 'current_state'."""
+    mock_controller = MagicMock()
+    mock_controller.poll = False
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(["flag"], {}))
+    
+    with patch("custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__", return_value=None):
+        from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
+        coordinator = SamsungClimateCoordinator(hass, mock_controller, MagicMock(options={}, data={}))
+        coordinator._create_device_state = MagicMock()
+        coordinator.async_set_updated_data = MagicMock()
+
+        current_state = {"power": "on"}
+        await coordinator.async_predict_and_correct(current_state, "power", "off")
+
+        args, _ = mock_controller.async_predict_and_correct_state.call_args
+        assert len(args) == 3, f"Mutante cazado: async_predict_and_correct_state recibió {len(args)} args en vez de 3"
+        assert args[0] is current_state

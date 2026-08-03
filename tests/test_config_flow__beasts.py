@@ -1,18 +1,10 @@
 import pytest
 import voluptuous as vol
 import asyncio
-from typing import Coroutine, Any
+from typing import Any
 from unittest.mock import patch, MagicMock, AsyncMock
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
-
-
-async def fast_await(coro: Coroutine[Any, Any, Any], timeout: float = 0.5) -> Any:
-    """Circuit breaker for async tests to kill deadlocking mutants instantly."""
-    try:
-        return await asyncio.wait_for(coro, timeout=timeout)
-    except TimeoutError:
-        pytest.fail("Circuit breaker triggered: Coroutine hung (likely mutant deadlock)")
 
 from custom_components.climate_ip.const import (
     CONF_DEVICE_TYPE,
@@ -676,7 +668,11 @@ async def test_test_connection_safe_strict_timeout(hass: HomeAssistant) -> None:
         mock_get.__aenter__.return_value.status = 200
         mock_sess.return_value.get.return_value = mock_get
 
-        await fast_await(flow._test_connection_safe())
+        try:
+            async with asyncio.timeout(0.5):
+                await flow._test_connection_safe()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
         # 🔥 KILL SHOT: Aserción estricta de kwargs de red y argumento posicional de URL
         assert mock_sess.return_value.get.called
@@ -769,7 +765,11 @@ async def test_task_exception_strict_error_handling(hass: HomeAssistant) -> None
     with patch.object(flow, "task", create=True) as mock_task:
         mock_task.done.return_value = True
         mock_task.result.side_effect = Exception("Boom initiate")
-        res1 = await fast_await(flow.async_step_initiate_pairing())
+        try:
+            async with asyncio.timeout(0.5):
+                res1 = await flow.async_step_initiate_pairing()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert res1["step_id"] == "handle_error"
         assert flow.flow_data["error_key"] == "unknown_error"
 
@@ -781,7 +781,11 @@ async def test_task_exception_strict_error_handling(hass: HomeAssistant) -> None
     with patch.object(flow, "task", create=True) as mock_task:
         mock_task.done.return_value = True
         mock_task.result.side_effect = Exception("Boom await")
-        res2 = await fast_await(flow.async_step_await_button())
+        try:
+            async with asyncio.timeout(0.5):
+                res2 = await flow.async_step_await_button()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert res2["step_id"] == "handle_error"
         assert flow.flow_data["error_key"] == "unknown_error"
 
@@ -793,7 +797,11 @@ async def test_task_exception_strict_error_handling(hass: HomeAssistant) -> None
     with patch.object(flow, "task", create=True) as mock_task:
         mock_task.done.return_value = True
         mock_task.result.side_effect = Exception("Boom test_conn")
-        res3 = await fast_await(flow.async_step_test_connection())
+        try:
+            async with asyncio.timeout(0.5):
+                res3 = await flow.async_step_test_connection()
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert res3["step_id"] == "handle_error"
         assert flow.flow_data["error_key"] == "unknown_error"
 
