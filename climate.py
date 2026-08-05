@@ -299,32 +299,6 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         """Return device information."""
         return self._attr_device_info
 
-    def _apply_optimistic_corrections(self, corrections: dict[str, Any] | None) -> None:
-        """Apply predicted corrections using strict static dispatch."""
-        if not corrections:
-            return
-
-        _LOGGER.debug("%s Applying optimistic corrections: %s", self.log_prefix, corrections)  # pragma: no mutate
-
-        for prop, value in corrections.items():
-            match prop:
-                case const.ATTR_TEMPERATURE:
-                    self._attr_target_temperature = value
-                case ha_climate.ATTR_HVAC_MODE:
-                    self._attr_hvac_mode = value
-                case ha_climate.ATTR_FAN_MODE:
-                    self._attr_fan_mode = value
-                case ha_climate.ATTR_SWING_MODE:
-                    self._attr_swing_mode = value
-                case ha_climate.ATTR_PRESET_MODE:
-                    self._attr_preset_mode = value
-                case _:
-                    _LOGGER.debug(
-                        "%s Ignoring unmapped optimistic correction for property: %s",
-                        self.log_prefix,
-                        prop,
-                    )  # pragma: no mutate
-    
     async def _async_set_climate_mode(
         self, attr_name: str, mode_value: Any
     ) -> None:
@@ -392,7 +366,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         _LOGGER.debug(
             "%s Action set_property called: %s = %s", self.log_prefix, key, value
         )  # pragma: no mutate
-        await self.coordinator.async_set_property(key, value, {})
+        await self.coordinator.async_set_property(key, value)
         await self.coordinator.async_request_refresh()
     
     @property

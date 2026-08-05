@@ -53,21 +53,22 @@ def base_climate_entity(hass: HomeAssistant) -> ClimateIP:
 
 
 async def test_turn_on_dry_helper(base_climate_entity: ClimateIP) -> None:
-    """Test that turn_on and turn_off use the DRY helper _async_set_climate_mode."""
+    """Test that turn_on and turn_off delegate to coordinator.async_set_property."""
     base_climate_entity.coordinator.operations = [ATTR_POWER]
+    base_climate_entity.coordinator.async_set_property = AsyncMock()
 
-    # Patch the helper function we want to verify is called
-    with patch.object(
-        base_climate_entity, "_async_set_climate_mode", new_callable=AsyncMock
-    ) as mock_helper:
-        # Test turn on
-        await base_climate_entity.async_turn_on()
-        mock_helper.assert_awaited_once_with(ATTR_POWER, STATE_ON, None)
-        mock_helper.reset_mock()
+    # Test turn on
+    await base_climate_entity.async_turn_on()
+    base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(
+        ATTR_POWER, STATE_ON
+    )
+    base_climate_entity.coordinator.async_set_property.reset_mock()
 
-        # Test turn off
-        await base_climate_entity.async_turn_off()
-        mock_helper.assert_awaited_once_with(ATTR_POWER, STATE_OFF, None)
+    # Test turn off
+    await base_climate_entity.async_turn_off()
+    base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(
+        ATTR_POWER, STATE_OFF
+    )
 
 
 
@@ -262,55 +263,33 @@ async def test_climate_sync_data_none(base_climate_entity: ClimateIP) -> None:
 async def test_public_async_set_hvac_mode_behavior(
     base_climate_entity: ClimateIP,
 ) -> None:
-    """Verify local state change and network output of the HVAC delegator."""
-    # Simulate that the async predictor does not require additional corrections
-    base_climate_entity.coordinator.async_predict_and_correct = AsyncMock(
-        return_value=({}, {})
-    )
-
-    # Establish an initial state
-    base_climate_entity._attr_hvac_mode = HVACMode.OFF
+    """Verify network output of the HVAC delegator."""
+    base_climate_entity.coordinator.async_set_property = AsyncMock()
 
     # Execute the public API just as Home Assistant would
     await base_climate_entity.async_set_hvac_mode(HVACMode.COOL)
 
-    # LETHAL ASSERTIONS (Mutants 7 and 8)
-    # 1. Verify that the local string ("_attr_hvac_mode") was applied correctly:
-    assert base_climate_entity._attr_hvac_mode == HVACMode.COOL, (
-        "Local state was not updated (leak in local_attr variable)"
-    )
-
-    # 2. Verify that the network output uses the appropriate constant and correct values:
-    base_climate_entity.coordinator.async_set_property.assert_called_once_with(
-        ATTR_HVAC_MODE, HVACMode.COOL, {}
+    # LETHAL ASSERTION: Verify network output uses appropriate constant and correct values
+    base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(
+        ATTR_HVAC_MODE, HVACMode.COOL
     )
 
 
 async def test_public_async_set_fan_mode_behavior(
     base_climate_entity: ClimateIP,
 ) -> None:
-    """Verify local state change and network output of the Fan delegator."""
-    # Simulate that the async predictor does not require additional corrections
-    base_climate_entity.coordinator.async_predict_and_correct = AsyncMock(
-        return_value=({}, {})
-    )
+    """Verify network output of the Fan delegator."""
+    base_climate_entity.coordinator.async_set_property = AsyncMock()
 
     # Prerequisite: The mode must exist in available options or the function's guard will abort
     base_climate_entity._attr_fan_modes = ["low", "high"]
-    base_climate_entity._attr_fan_mode = "low"
 
     # Execute the public API
     await base_climate_entity.async_set_fan_mode("high")
 
-    # LETHAL ASSERTIONS (Mutant 2)
-    # 1. Check state update
-    assert base_climate_entity._attr_fan_mode == "high", (
-        "Local fan state was not updated."
-    )
-
-    # 2. Rigorously check the async signature towards the coordinator
-    base_climate_entity.coordinator.async_set_property.assert_called_once_with(
-        ATTR_FAN_MODE, "high", {}
+    # LETHAL ASSERTION: Check async signature towards coordinator
+    base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(
+        ATTR_FAN_MODE, "high"
     )
 
 
@@ -324,20 +303,14 @@ async def test_public_async_set_fan_mode_behavior(
 async def test_async_set_temperature_with_valid_temp_kills_mutants(
     base_climate_entity: ClimateIP,
 ) -> None:
-    """Kill mutants 1-11 in async_set_temperature.
+    """Kill mutants in async_set_temperature."""
+    base_climate_entity.coordinator.async_set_property = AsyncMock()
 
-    Mutants alter: kwargs lookup key, the 'is not None' guard, and all three
-    positional arguments passed to _async_set_climate_mode.
-    A strict assert_awaited_once_with covers all argument-swap variants.
-    """
-    # -- Path: temperature value is present → helper must be called exactly once --
     await base_climate_entity.async_set_temperature(temperature=21.0)
 
-    base_climate_entity.coordinator.async_set_property.assert_called_once_with(
-        HA_ATTR_TEMPERATURE, 21.0, {}
+    base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(
+        HA_ATTR_TEMPERATURE, 21.0
     )
-    # Also verify the local attribute was updated (kills local_attr=None mutant)
-    assert base_climate_entity._attr_target_temperature == 21.0
 
 
 async def test_async_set_temperature_with_hvac_mode(
@@ -345,6 +318,8 @@ async def test_async_set_temperature_with_hvac_mode(
 ) -> None:
     """Verify that async_set_temperature processes hvac_mode when provided in kwargs."""
     base_climate_entity.coordinator.entry.data = {}
+    base_climate_entity.coordinator.async_set_property = AsyncMock()
+
     await base_climate_entity.async_set_temperature(hvac_mode=HVACMode.COOL, temperature=22.0)
 
     base_climate_entity.coordinator.async_set_property.assert_any_call(
@@ -361,21 +336,15 @@ async def test_async_set_temperature_with_hvac_mode(
 async def test_async_set_swing_mode_strict_args_kills_mutants(
     base_climate_entity: ClimateIP,
 ) -> None:
-    """Kill mutants 1-8 in async_set_swing_mode.
-
-    Every mutant swaps one of the three positional arguments passed to
-    _async_set_climate_mode (attr_name, mode_value, local_attr). The strict
-    assert_called_once_with fires on any deviation.
-    """
+    """Kill mutants in async_set_swing_mode."""
+    base_climate_entity.coordinator.async_set_property = AsyncMock()
     base_climate_entity._attr_swing_modes = ["vertical", "horizontal"]
 
     await base_climate_entity.async_set_swing_mode("vertical")
 
-    base_climate_entity.coordinator.async_set_property.assert_called_once_with(
-        ATTR_SWING_MODE, "vertical", {}
+    base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(
+        ATTR_SWING_MODE, "vertical"
     )
-    # Local attribute update must match the literal string "_attr_swing_mode"
-    assert base_climate_entity._attr_swing_mode == "vertical"
 
 
 # --- async_set_preset_mode (8 mutants) ---
@@ -384,17 +353,14 @@ async def test_async_set_swing_mode_strict_args_kills_mutants(
 async def test_async_set_preset_mode_strict_args_kills_mutants(
     base_climate_entity: ClimateIP,
 ) -> None:
-    """Kill mutants 1-8 in async_set_preset_mode.
+    """Kill mutants in async_set_preset_mode."""
+    base_climate_entity.coordinator.async_set_property = AsyncMock()
 
-    Same pattern as swing: every mutant swaps one positional argument.
-    """
     await base_climate_entity.async_set_preset_mode("sleep")
 
-    base_climate_entity.coordinator.async_set_property.assert_called_once_with(
-        ATTR_PRESET_MODE, "sleep", {}
+    base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(
+        ATTR_PRESET_MODE, "sleep"
     )
-    # Local attribute must carry the preset value
-    assert base_climate_entity._attr_preset_mode == "sleep"
 
 
 # --- async_service_set_property (4 mutants) ---
@@ -403,17 +369,13 @@ async def test_async_set_preset_mode_strict_args_kills_mutants(
 async def test_async_service_set_property_valid_key_kills_mutants(
     base_climate_entity: ClimateIP,
 ) -> None:
-    """Kill mutants 1-4 in async_service_set_property.
+    """Kill mutants in async_service_set_property."""
+    base_climate_entity.coordinator.async_set_property = AsyncMock()
 
-    Mutants alter the literal 'key' string used in kwargs.get(), replace it
-    with None, or with mangled variants. Providing the exact key and asserting
-    both coordinator calls fires on any lookup deviation.
-    """
     await base_climate_entity.async_service_set_property(key="beep", value="on")
 
-    # Both downstream calls must fire with the exact extracted values
     base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(
-        "beep", "on", {}
+        "beep", "on"
     )
     base_climate_entity.coordinator.async_request_refresh.assert_awaited_once()
 
@@ -459,18 +421,17 @@ async def test_async_setup_platform_already_imported_skips_task(
 async def test_async_set_property_strict_args(base_climate_entity: ClimateIP):
     """
     Kills mutants 1-4 en async_set_property.
-    Asegura la delegación exacta de clave/valor al coordinador y la escritura de estado.
+    Asegura la delegación exacta de clave/valor al coordinador.
     """
+    base_climate_entity.coordinator.async_set_property = AsyncMock()
+
     # Inject valores específicos para evitar falsos positivos con defaults
     await base_climate_entity.async_set_property("power_mode", "turbo")
 
     # We assert la firma exacta hacia el coordinador
-    base_climate_entity.coordinator.async_set_property.assert_called_once_with(
+    base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(
         "power_mode", "turbo"
     )
-
-    # We assert la actualización síncrona en el core de HA
-    base_climate_entity.async_write_ha_state.assert_called_once()
 
 
 
@@ -520,8 +481,9 @@ def test_climate_invalid_temp_step_fallback(
     from custom_components.climate_ip.climate import ClimateIP
     from custom_components.climate_ip.const import CONF_TARGET_TEMP_STEP, DEFAULT_TARGET_TEMP_STEP
 
-    # 1. Inject invalid string to force the ValueError/TypeError branch
-    base_climate_entity.coordinator.entry.data[CONF_TARGET_TEMP_STEP] = "invalid_string"
+    # 1. Ensure options dict contains corrupted string
+    base_climate_entity.coordinator.entry.options = {CONF_TARGET_TEMP_STEP: "invalid_string"}
+    base_climate_entity.coordinator.entry.data = {}
 
     # 2. Capture logs and re-instantiate
     with caplog.at_level(logging.WARNING):
@@ -702,13 +664,11 @@ async def test_modern_async_setup_entry_success() -> None:
     
     assert mock_climate_class.call_count == 2
     
-    # Verify the signature matches the 3-arg constructor:
-    # ClimateIP(coordinator, description, config)
+    # Verify signature matches 2-arg constructor: ClimateIP(coordinator, description)
     first_call_args = mock_climate_class.call_args_list[0].args
-    assert len(first_call_args) == 3
+    assert len(first_call_args) == 2
     assert first_call_args[0] == coord_1
     assert first_call_args[1].key == "samsung_ac"
-    assert first_call_args[2] == {"conf_key": "conf_val"}
     
     async_add_entities.assert_called_once()
     assert len(async_add_entities.call_args[0][0]) == 2
