@@ -42,6 +42,8 @@ async def test_token_auto_recovery_smartthings(hass: HomeAssistant) -> None:
     """Test that a 401 error triggers token refresh via SmartThings OAuth."""
     # Create a mock controller facade
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[Test]"
     mock_controller.token = "old_token"
     mock_controller.config = {"device_type": "smartthings_hvac"}
@@ -78,6 +80,8 @@ async def test_token_auto_recovery_smartthings(hass: HomeAssistant) -> None:
 async def test_coordinator_transient_failure(hass: HomeAssistant) -> None:
     """Test that transient network errors are handled without dropping the entity state."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[Test]"
     mock_controller.name = "Test AC"
     # Ensure there's some initial data
@@ -126,6 +130,8 @@ async def test_coordinator_strike_1_and_2_return_stale_data(
     This ensures the entities don't transition to 'unavailable' on transient skips.
     """
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[Test]"
     mock_controller.name = "Test AC"
 
@@ -176,6 +182,8 @@ async def test_auth_error_raises_config_entry_auth_failed(hass: HomeAssistant) -
     from homeassistant.exceptions import ConfigEntryAuthFailed
 
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[AuthTest]"
     mock_controller.async_get_status = AsyncMock(
         side_effect=AuthError("401 Unauthorized")
@@ -195,6 +203,8 @@ async def test_auth_error_raises_config_entry_auth_failed(hass: HomeAssistant) -
 async def test_push_update_triggers_entity_refresh(hass: HomeAssistant) -> None:
     """Verify that push updates merge state and notify listeners."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[PushTest]"
     mock_controller.async_merge_device_state = AsyncMock()
     mock_controller.climate_state = MagicMock(hvac_mode="cool")
@@ -224,6 +234,8 @@ async def test_coordinator_handles_503_transient_smartthings(
 ) -> None:
     """Test that 503/Timeout transient errors in SmartThings don't drop the entity state."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[ST-Test]"
     mock_controller.config = {"device_type": "smartthings_hvac"}
     mock_controller.name = "Smart AC"
@@ -296,6 +308,8 @@ async def test_optimistic_state_reverts_on_device_failure(hass: HomeAssistant) -
     coordinator must request a refresh to revert any optimistic state changes.
     """
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[OptimisticTest]"
     mock_controller.async_set_property = AsyncMock(return_value=False)
     mock_controller.climate_state = MagicMock(hvac_mode="cool")
@@ -331,6 +345,8 @@ async def test_optimistic_refresh_on_network_error(hass: HomeAssistant) -> None:
     from homeassistant.helpers.update_coordinator import UpdateFailed
 
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[NetErrTest]"
     mock_controller.async_set_property = AsyncMock(
         side_effect=CannotConnect("Device unreachable")
@@ -359,6 +375,8 @@ async def test_coordinator_timeout_recovery(hass: HomeAssistant) -> None:
     from homeassistant.helpers.update_coordinator import UpdateFailed
 
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[RecoverTest]"
     mock_controller.name = "Test AC"
 
@@ -419,6 +437,8 @@ async def test_corrections_are_dispatched_to_controller(hass: HomeAssistant) -> 
     silently skipped before reaching the controller.
     """
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[CorrectionTest]"
     mock_controller.async_set_property = AsyncMock(return_value=True)
     mock_controller.climate_state = MagicMock(hvac_mode="cool")
@@ -443,7 +463,8 @@ async def test_corrections_are_dispatched_to_controller(hass: HomeAssistant) -> 
     coordinator.data = mock_controller.climate_state
     
     corrections = {"fan_mode": "auto"}
-    await coordinator.async_set_property("hvac_mode", "cool", corrections=corrections)
+    mock_controller.async_predict_and_correct_state.return_value = (None, corrections)
+    await coordinator.async_set_property("hvac_mode", "cool")
     
     # Esperamos a que todas las tareas encoladas terminen de ejecutarse
     if tasks:
@@ -475,6 +496,8 @@ async def test_save_new_token_updates_config_entry(hass: HomeAssistant) -> None:
     mock_update_entry is called correctly with the new token.
     """
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[TokenTest]"
     mock_entry = MagicMock()
     mock_entry.data = {"host": "192.168.1.10", "token": "old_token"}
@@ -502,6 +525,8 @@ async def test_save_new_token_updates_config_entry(hass: HomeAssistant) -> None:
 async def test_save_new_token_async_flow(hass: HomeAssistant) -> None:
     """Verify that the token refresh flow works when emitted asynchronously."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[TokenAsyncTest]"
     mock_entry = MagicMock()
     mock_entry.data = {"host": "192.168.1.10", "token": "old_token"}
@@ -549,6 +574,8 @@ async def test_save_new_token_async_flow(hass: HomeAssistant) -> None:
 async def test_coordinator_injected_callbacks(hass: HomeAssistant) -> None:
     """Test that coordinator correctly injects callbacks into the controller."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_entry = MagicMock()
     mock_entry.data = {}
     mock_entry.options = {}
@@ -583,6 +610,8 @@ async def test_coordinator_injected_callbacks(hass: HomeAssistant) -> None:
 async def test_offline_callback_forces_update_error(hass: HomeAssistant) -> None:
     """Test that the offline callback correctly triggers an update error."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[OfflineTest]"
 
     mock_entry = MagicMock()
@@ -613,6 +642,8 @@ async def test_offline_callback_forces_update_error(hass: HomeAssistant) -> None
 async def test_save_ssl_config_updates_entry(hass: HomeAssistant) -> None:
     """Test that _save_ssl_config updates the ConfigEntry with new SSL config."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[SSLTest]"
     mock_entry = MagicMock()
     mock_entry.data = {"host": "192.168.1.10"}
@@ -652,6 +683,8 @@ async def test_coordinator_update_interval_enable_polling_options(
 ) -> None:
     """Test update_interval logic with enable_polling in options."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.poll = True
 
     mock_entry = MagicMock()
@@ -665,6 +698,8 @@ async def test_coordinator_update_interval_enable_polling_options(
 async def test_coordinator_super_init_attributes(hass: HomeAssistant) -> None:
     """Test that coordinator correctly passes parameters to super().__init__."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[SuperTest]"
     mock_controller.poll = True
 
@@ -684,6 +719,8 @@ async def test_coordinator_super_init_attributes(hass: HomeAssistant) -> None:
 async def test_coordinator_device_info_with_name_and_id(hass: HomeAssistant) -> None:
     """Test device_info parsing when both name and id are provided."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.unique_id = "test_sub_device_1"
 
     mock_entry = MagicMock()
@@ -701,6 +738,8 @@ async def test_coordinator_device_info_with_name_and_id(hass: HomeAssistant) -> 
 async def test_coordinator_device_info_without_name(hass: HomeAssistant) -> None:
     """Test device_info parsing when name is missing."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.unique_id = "test_sub_device_2"
 
     mock_entry = MagicMock()
@@ -718,6 +757,8 @@ async def test_coordinator_device_info_without_name(hass: HomeAssistant) -> None
 async def test_coordinator_device_info_without_id(hass: HomeAssistant) -> None:
     """Test device_info parsing when id is missing."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.unique_id = "test_sub_device_3"
 
     mock_entry = MagicMock()
@@ -735,6 +776,8 @@ async def test_coordinator_device_info_without_id(hass: HomeAssistant) -> None:
 async def test_coordinator_device_info_redundant_name(hass: HomeAssistant) -> None:
     """Test device_info parsing when name already includes the ID."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.unique_id = "test_sub_device_4"
 
     mock_entry = MagicMock()
@@ -753,6 +796,8 @@ async def test_coordinator_device_info_redundant_name(hass: HomeAssistant) -> No
 async def test_coordinator_device_info_complete_attributes(hass: HomeAssistant) -> None:
     """Test all attributes of device_info for a sub-device."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.unique_id = "test_sub_device_5"
 
     mock_entry = MagicMock()
@@ -780,6 +825,8 @@ async def test_coordinator_device_info_complete_attributes(hass: HomeAssistant) 
 async def test_coordinator_standalone_device_info(hass: HomeAssistant) -> None:
     """Test device_info parsing for a standalone device (no sub-devices)."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.unique_id = "standalone_ac_123"
 
     from homeassistant.const import CONF_MAC
@@ -806,6 +853,8 @@ async def test_coordinator_standalone_device_info_no_mac_no_name(
 ) -> None:
     """Test device_info fallback logic when MAC and Name are missing."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.unique_id = "standalone_ac_456"
 
     mock_entry = MagicMock()
@@ -827,6 +876,8 @@ async def test_fallback_to_raw_engine_on_http_header_error(hass: HomeAssistant) 
     from unittest.mock import MagicMock, AsyncMock, patch
 
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[Fallback]"
     mock_controller.name = "Test AC"
 
@@ -865,6 +916,8 @@ async def test_fallback_to_raw_engine_on_http_header_error(hass: HomeAssistant) 
 async def test_coordinator_initialization_logging(hass: HomeAssistant) -> None:
     """Test that coordinator logs its initialization with the correct parameters."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[InitLogTest]"
     mock_controller.poll = True
 
@@ -891,6 +944,8 @@ async def test_coordinator_update_interval_enable_polling_data(
 ) -> None:
     """Test update_interval logic with enable_polling in data."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.poll = True
 
     mock_entry = MagicMock()
@@ -908,6 +963,8 @@ async def test_coordinator_update_interval_enable_polling_default(
 ) -> None:
     """Test update_interval logic with enable_polling default."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.poll = True
 
     mock_entry = MagicMock()
@@ -925,6 +982,8 @@ async def test_coordinator_update_interval_poll_interval_options(
 ) -> None:
     """Test that poll_interval is pulled from options."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.poll = True
 
     mock_entry = MagicMock()
@@ -942,6 +1001,8 @@ async def test_coordinator_update_interval_poll_interval_data(
 ) -> None:
     """Test that poll_interval is pulled from data when options is missing it."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.poll = True
 
     mock_entry = MagicMock()
@@ -959,6 +1020,8 @@ async def test_coordinator_update_interval_poll_interval_default(
 ) -> None:
     """Test that poll_interval falls back to default."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.poll = True
 
     mock_entry = MagicMock()
@@ -974,6 +1037,8 @@ async def test_coordinator_update_interval_poll_interval_default(
 async def test_coordinator_update_interval_no_poll(hass: HomeAssistant) -> None:
     """Test that update_interval is None when controller.poll is False."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.poll = False
 
     mock_entry = MagicMock()
@@ -991,6 +1056,8 @@ async def test_coordinator_update_interval_enable_polling_data_false(
     from custom_components.climate_ip.const import CONF_ENABLE_POLLING
 
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.poll = True
 
     mock_entry = MagicMock()
@@ -1010,6 +1077,8 @@ async def test_coordinator_update_interval_enable_polling_data_false(
 async def test_async_set_property_passes_device_id(hass: HomeAssistant) -> None:
     """Verify that async_set_property passes the specific device_id to the controller."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[DeviceIDTest]"
     mock_controller.async_set_property = AsyncMock(return_value=True)
     mock_controller.climate_state = MagicMock(hvac_mode="cool")
@@ -1037,6 +1106,8 @@ async def test_async_set_property_raises_update_failed_on_exception_with_message
     from homeassistant.helpers.update_coordinator import UpdateFailed
 
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[ExcMsgTest]"
     mock_controller.async_set_property = AsyncMock(
         side_effect=Exception("Simulated unexpected failure")
@@ -1067,6 +1138,8 @@ async def test_coordinator_enforces_strict_timeout(hass: HomeAssistant) -> None:
     from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_entry = MagicMock()
     mock_entry.options = {}
     mock_entry.data = {}
@@ -1095,6 +1168,8 @@ async def test_coordinator_unwraps_hvac_enum_before_sending(
     from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.async_set_property = AsyncMock(return_value=True)
 
     mock_entry = MagicMock()
@@ -1120,6 +1195,8 @@ async def test_coordinator_requests_refresh_on_partial_failure(
     from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     # Simulate that sending the command fails
     mock_controller.async_set_property = AsyncMock(return_value=False)
 
@@ -1143,6 +1220,8 @@ async def test_coordinator_success_path_no_refresh(hass: HomeAssistant) -> None:
     from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     # Simulate that the command SUCCEEDS (returns True)
     mock_controller.async_set_property = AsyncMock(return_value=True)
 
@@ -1165,6 +1244,8 @@ async def test_coordinator_getters(hass: HomeAssistant) -> None:
     from unittest.mock import MagicMock
 
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.get_property.return_value = "property_value"
     mock_controller.get_property_object.return_value = {"object": "value"}
 
@@ -1190,6 +1271,8 @@ async def test_coordinator_auto_healing_fails_when_already_raw(hass: HomeAssista
     from custom_components.climate_ip.exceptions import InvalidHeaderError
 
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[RAW_Test]"
     mock_controller.name = "RAW AC"
     
@@ -1230,6 +1313,8 @@ async def test_coordinator_clears_cache_on_critical_errors(
     from homeassistant.helpers.update_coordinator import UpdateFailed
 
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[ErrTest]"
     mock_controller.name = "Error AC"
     mock_controller.async_get_status = AsyncMock(side_effect=exception_instance)
@@ -1262,6 +1347,8 @@ async def test_coordinator_handles_missing_poller_safely(hass: HomeAssistant) ->
     from homeassistant.helpers.update_coordinator import UpdateFailed
 
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[NoPollerTest]"
     mock_controller.async_get_status = AsyncMock(side_effect=ValueError("No poller JSON error"))
     
@@ -1407,6 +1494,8 @@ async def test_debouncer_exact_time_boundary():
 async def test_locked_set_property_mutants(hass: HomeAssistant) -> None:
     """Aniquila la pérdida de argumentos y la inversión booleana en _locked_set_property."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.async_set_property = AsyncMock()
     
     mock_entry = MagicMock()
@@ -1457,6 +1546,8 @@ async def test_debouncer_exact_time_boundary_mutant():
 # def test_coordinator_debouncer_delay_init(hass: HomeAssistant) -> None:
 #     """Aniquila el mutante L158 que elimina explícitamente delay=3.0 en la inicialización."""
 #     mock_controller = MagicMock()
+#     mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+#     mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
 #     mock_entry = MagicMock()
 #     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
 #     assert coordinator.debouncer.delay == 3.0
@@ -1466,6 +1557,8 @@ async def test_debouncer_exact_time_boundary_mutant():
 async def test_sniper_locked_set_property_args_and_bools(hass: HomeAssistant) -> None:
     """Aniquila la pérdida de argumentos y la inversión booleana en _locked_set_property."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.poll = False  # Evita el cálculo timedelta y el TypeError
     mock_controller.async_set_property = AsyncMock()
     
@@ -1553,6 +1646,8 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
 def test_sniper_coordinator_debouncer_delay_init_mutant(hass: HomeAssistant) -> None:
     """Aniquila el mutante L158 que elimina explícitamente delay=3.0 en la inicialización."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.poll = False  # Evita el cálculo timedelta y el TypeError
     
     mock_entry = MagicMock()
@@ -1601,6 +1696,8 @@ async def test_sniper_debouncer_kwargs_and_pop_strict(hass: HomeAssistant):
 async def test_sniper_locked_set_property_strict_args(hass: HomeAssistant):
     """Aniquila el mutante L433 que elimina argumentos en _locked_set_property."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.poll = False
     mock_controller.async_set_property = AsyncMock(return_value=True)
     
@@ -1620,17 +1717,21 @@ async def test_sniper_locked_set_property_strict_args(hass: HomeAssistant):
 async def test_sniper_async_set_property_debouncer_args(hass: HomeAssistant):
     """Aniquila el mutante L460 que elimina el 'val' al llamar al debouncer."""
     mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.poll = False
     
     with patch("custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__", return_value=None):
         from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
         coordinator = SamsungClimateCoordinator(hass, mock_controller, MagicMock(options={}, data={}))
+        coordinator.data = MagicMock()
         coordinator.debouncer = MagicMock()
         coordinator.debouncer.async_execute = AsyncMock(return_value=True)
+        coordinator.async_set_updated_data = MagicMock()
         
         await coordinator.async_set_property("hvac_mode", "cool", device_id="dev_1")
         
         # Debouncer debe recibir exactamente 5 argumentos posicionales
         args, _ = coordinator.debouncer.async_execute.call_args
         assert len(args) == 5, f"Mutante cazado: Faltan argumentos. Llegaron: {args}"
-        assert args[3] == "cool"
+        assert args[3] == "cool", f"Mutante cazado: Faltan argumentos. Llegaron: {args}"

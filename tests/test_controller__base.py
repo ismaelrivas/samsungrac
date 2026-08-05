@@ -38,6 +38,15 @@ class DummyController(ClimateController):
     def available(self) -> bool:
         return True
 
+    async def async_predict_and_correct_state(self, *args, **kwargs) -> tuple:
+        return None, {}
+
+    async def async_clear_pending_updates(self) -> None:
+        pass
+
+    async def async_set_property(self, *args, **kwargs) -> bool:
+        return True
+
     @property
     def poll(self) -> bool | None:
         return False

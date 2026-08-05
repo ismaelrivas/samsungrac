@@ -52,6 +52,43 @@ def base_climate_entity(hass: HomeAssistant) -> ClimateIP:
     return entity
 
 
+def test_00_climate_defensive_init_properties(base_climate_entity: ClimateIP) -> None:
+    """Fail-fast test for constructor state attributes to prevent Pytest timeouts during mutation.
+    
+    This ensures that structural mutations (e.g., self._attr_unique_id = None) fail immediately
+    with an AssertionError before hitting the event loop or async integrations.
+    """
+    assert base_climate_entity._attr_unique_id is not None, "unique_id MUST NOT be None"
+    assert base_climate_entity._attr_min_temp is not None, "min_temp MUST NOT be None"
+    assert base_climate_entity._attr_max_temp is not None, "max_temp MUST NOT be None"
+    assert base_climate_entity._attr_target_temperature_step is not None, "step MUST NOT be None"
+    assert isinstance(base_climate_entity._attr_hvac_modes, list), "hvac_modes MUST be a list"
+    assert base_climate_entity._attr_fan_modes is not None, "fan_modes MUST NOT be None"
+    assert base_climate_entity._attr_swing_modes is not None, "swing_modes MUST NOT be None"
+    assert base_climate_entity._attr_preset_modes is not None, "preset_modes MUST NOT be None"
+
+
+def test_01_climate_defensive_sync_none_fallback() -> None:
+    """Fail-fast test for _sync_data_from_coordinator fallback logic.
+    
+    Ensures that when coordinator.data is None, the entity initializes its lists correctly.
+    This kills structural mutations to fallback assignments instantly.
+    """
+    mock_coord = MagicMock(spec=SamsungClimateCoordinator)
+    mock_coord.data = None
+    mock_coord.unique_id = "defensive_id"
+    mock_coord.entry = MagicMock(options={})
+    mock_coord.device_info = MagicMock()
+    desc = ClimateIPEntityDescription(key="samsung_ac", translation_key="samsung_ac")
+    
+    entity = ClimateIP(coordinator=mock_coord, description=desc)
+    
+    assert isinstance(entity._attr_hvac_modes, list), "hvac_modes MUST be a list"
+    assert isinstance(entity._attr_fan_modes, list), "fan_modes MUST be a list"
+    assert isinstance(entity._attr_swing_modes, list), "swing_modes MUST be a list"
+    assert isinstance(entity._attr_preset_modes, list), "preset_modes MUST be a list"
+
+
 async def test_turn_on_dry_helper(base_climate_entity: ClimateIP) -> None:
     """Test that turn_on and turn_off delegate to coordinator.async_set_property."""
     base_climate_entity.coordinator.operations = [ATTR_POWER]
