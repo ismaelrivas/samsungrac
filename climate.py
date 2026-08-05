@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
+from homeassistant.components import climate as ha_climate
 from homeassistant.components.climate import (
     ATTR_CURRENT_TEMPERATURE,
     ATTR_FAN_MODE,
@@ -160,7 +161,6 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
     _attr_fan_modes: list[str]
     _attr_swing_modes: list[str]
     _attr_preset_modes: list[str]
-    _config: dict[str, Any]
     
     def __init__(
         self,
@@ -171,7 +171,6 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         """Initialize the climate device."""
         super().__init__(coordinator)
         self.entity_description = description
-        self._config = config
         self._attr_unique_id = str(self.coordinator.unique_id)
         self._attr_device_info = self.coordinator.device_info
         
@@ -191,8 +190,9 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         self._attr_max_temp: float = DEFAULT_CLIMATE_IP_TEMP_MAX
 
         options_dict = self.coordinator.entry.options
+        data_dict = self.coordinator.entry.data
         configured_step = options_dict.get(
-            CONF_TARGET_TEMP_STEP, self._config.get(CONF_TARGET_TEMP_STEP)
+            CONF_TARGET_TEMP_STEP, data_dict.get(CONF_TARGET_TEMP_STEP)
         )
 
         # Defensive parsing of temperature step
@@ -300,6 +300,32 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
     def device_info(self) -> DeviceInfo:
         """Return device information."""
         return self._attr_device_info
+
+    def _apply_optimistic_corrections(self, corrections: dict[str, Any] | None) -> None:
+        """Apply predicted corrections using strict static dispatch."""
+        if not corrections:
+            return
+
+        _LOGGER.debug("%s Applying optimistic corrections: %s", self.log_prefix, corrections)  # pragma: no mutate
+
+        for prop, value in corrections.items():
+            match prop:
+                case const.ATTR_TEMPERATURE:
+                    self._attr_target_temperature = value
+                case ha_climate.ATTR_HVAC_MODE:
+                    self._attr_hvac_mode = value
+                case ha_climate.ATTR_FAN_MODE:
+                    self._attr_fan_mode = value
+                case ha_climate.ATTR_SWING_MODE:
+                    self._attr_swing_mode = value
+                case ha_climate.ATTR_PRESET_MODE:
+                    self._attr_preset_mode = value
+                case _:
+                    _LOGGER.debug(
+                        "%s Ignoring unmapped optimistic correction for property: %s",
+                        self.log_prefix,
+                        prop,
+                    )  # pragma: no mutate
     
     async def _async_set_climate_mode(
         self, attr_name: str, mode_value: Any
@@ -307,9 +333,18 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         """Helper to unify the logic for setting hvac, fan, swing, and preset modes."""
         await self.coordinator.async_set_property(attr_name, mode_value)
     async def async_set_temperature(self, **kwargs: Any) -> None:
-        """Set new target temperature."""
+        """Set new target temperature and handle optional hvac_mode."""
         temp: float | None = kwargs.get(const.ATTR_TEMPERATURE)
-        _LOGGER.debug("%s [Forensic] async_set_temperature explicitly called with temp=%s, kwargs=%s", self.log_prefix, temp, kwargs) # pragma: no mutate
+        hvac_mode: HVACMode | None = kwargs.get(ATTR_HVAC_MODE)
+
+        _LOGGER.debug(
+            "%s [Forensic] async_set_temperature called with temp=%s, hvac_mode=%s, kwargs=%s", 
+            self.log_prefix, temp, hvac_mode, kwargs
+        )  # pragma: no mutate
+
+        if hvac_mode is not None:
+            await self.async_set_hvac_mode(hvac_mode)
+
         if temp is not None:
             await self._async_set_climate_mode(
                 const.ATTR_TEMPERATURE, temp

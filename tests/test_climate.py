@@ -341,15 +341,19 @@ async def test_async_set_temperature_with_valid_temp_kills_mutants(
     assert base_climate_entity._attr_target_temperature == 21.0
 
 
-async def test_async_set_temperature_no_temp_kwarg_is_noop(
+async def test_async_set_temperature_with_hvac_mode(
     base_climate_entity: ClimateIP,
 ) -> None:
-    """Kill mutant 3 (is None inversion): when no temperature is passed the
-    helper must NOT be called at all."""
-    # Called with a keyword that is NOT ATTR_TEMPERATURE → no-op
-    await base_climate_entity.async_set_temperature(hvac_mode=HVACMode.COOL)
+    """Verify that async_set_temperature processes hvac_mode when provided in kwargs."""
+    base_climate_entity.coordinator.entry.data = {}
+    await base_climate_entity.async_set_temperature(hvac_mode=HVACMode.COOL, temperature=22.0)
 
-    base_climate_entity.coordinator.async_set_property.assert_not_awaited()
+    base_climate_entity.coordinator.async_set_property.assert_any_call(
+        ATTR_HVAC_MODE, HVACMode.COOL
+    )
+    base_climate_entity.coordinator.async_set_property.assert_any_call(
+        HA_ATTR_TEMPERATURE, 22.0
+    )
 
 
 # --- async_set_swing_mode (8 mutants) ---
@@ -518,14 +522,14 @@ def test_climate_invalid_temp_step_fallback(
     from custom_components.climate_ip.const import CONF_TARGET_TEMP_STEP, DEFAULT_TARGET_TEMP_STEP
 
     # 1. Inject invalid string to force the ValueError/TypeError branch
-    base_climate_entity._config[CONF_TARGET_TEMP_STEP] = "invalid_string"
+    base_climate_entity.coordinator.entry.data[CONF_TARGET_TEMP_STEP] = "invalid_string"
 
     # 2. Capture logs and re-instantiate
     with caplog.at_level(logging.WARNING):
         entity = ClimateIP(
             base_climate_entity.coordinator,
             base_climate_entity.entity_description,
-            base_climate_entity._config,
+            {},
         )
 
         # 3. Assert mathematical fallback
@@ -551,7 +555,7 @@ def test_climate_supported_features_bitwise_strict_accumulation(
     entity = ClimateIP(
         base_climate_entity.coordinator,
         base_climate_entity.entity_description,
-        base_climate_entity._config,
+        {},
     )
 
     # 3. Strict bitwise equality assertion (kills &= mutants)
