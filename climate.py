@@ -218,6 +218,18 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         else:
             self._attr_precision = const.PRECISION_WHOLE
 
+        # Strict Instance Initialization (Eradicating OOP Distrust)
+        self._attr_hvac_mode = None
+        self._attr_target_temperature = None
+        self._attr_current_temperature = None
+        self._attr_fan_mode = None
+        self._attr_swing_mode = None
+        self._attr_preset_mode = None
+        self._attr_hvac_modes = []
+        self._attr_fan_modes = []
+        self._attr_swing_modes = []
+        self._attr_preset_modes = []
+
         self._sync_data_from_coordinator()
 
     def _sync_data_from_coordinator(self) -> None:
@@ -237,7 +249,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         }
 
         if state:
-            prev_target = getattr(self, "_attr_target_temperature", None)
+            prev_target = self._attr_target_temperature
             self._attr_hvac_mode = state.hvac_mode or HVACMode.OFF
             self._attr_target_temperature = state.target_temperature
             self._attr_current_temperature = state.current_temperature
