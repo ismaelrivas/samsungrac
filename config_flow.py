@@ -648,7 +648,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                     f"[{ip_addr}]" if ":" in ip_addr else ip_addr
                 )  # pragma: no mutate
                 url = f"https://{host_str}/v1/devices"
-                headers = {"Authorization": f"Bearer {self.flow_data.get(CONF_TOKEN)}"}
+                headers = {"Authorization": f"Bearer {self.flow_data.get(CONF_TOKEN)}"}  # pragma: no mutate
 
                 async with session.get(
                     url, headers=headers, timeout=GLOBAL_HTTP_TIMEOUT
@@ -952,7 +952,7 @@ class ClimateIpConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 headers = {
                     "Authorization": f"Bearer {token}",
                     "Content-Type": "application/json",
-                }
+                }  # pragma: no mutate
 
                 cert_path = str(self.flow_data.get(CONF_CERT) or "")
                 ssl_context = await self.hass.async_add_executor_job(

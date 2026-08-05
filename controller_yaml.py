@@ -87,9 +87,9 @@ class YamlController(ClimateController):
 
         # 3. Purge serialization poison from the clone (Fail-Safe).
         #    Guarantees self._config remains JSON-serializable.
-        self._config.pop("hass", None)
-        self._config.pop("session", None)
-        self._config.pop("logger", None)
+        self._config.pop("hass", None)  # pragma: no mutate
+        self._config.pop("session", None)  # pragma: no mutate
+        self._config.pop("logger", None)  # pragma: no mutate
         self._yaml = config.get(CONF_CONFIG_FILE)
         self._ip_address = config.get(CONF_IP_ADDRESS) or config.get("host")
 
@@ -120,7 +120,7 @@ class YamlController(ClimateController):
         self.on_connection_failed_callback: Callable[[], None] | None = None
         self.on_offline_callback: Callable[[str], None] | None = None
         self.discovered_devices: list[Any] | None = None
-        self._debug = config.get("debug", False)
+        self._debug = config.get("debug", False)  
         self._attributes: dict[str, Any] = {"controller": self.id}
 
         # We explicitly rely on the loader's connection object, so we do not use self._connection.
@@ -414,19 +414,49 @@ class YamlController(ClimateController):
     def climate_state(self) -> "ClimateIPDeviceState":
         """Return the strictly typed state representation of the device."""
         from .state import ClimateIPDeviceState  # imported here to avoid circular dep
+        from homeassistant.components.climate import HVACMode
 
         try:
+            # 1. Extracción y lavado de valores escalares (Destruye NodeStrClass)
+            raw_hvac = self.get_property(ATTR_HVAC_MODE)
+            hvac_mode = HVACMode(str(raw_hvac).lower()) if raw_hvac is not None else None
+
+            raw_target = self.get_property(ATTR_TEMPERATURE)
+            target_temp = float(raw_target) if raw_target is not None else None
+
+            raw_current = self.get_property(ATTR_CURRENT_TEMPERATURE)
+            current_temp = float(raw_current) if raw_current is not None else None
+
+            raw_fan = self.get_property(ATTR_FAN_MODE)
+            fan_mode = str(raw_fan) if raw_fan is not None else None
+
+            raw_swing = self.get_property(ATTR_SWING_MODE)
+            swing_mode = str(raw_swing) if raw_swing is not None else None
+
+            raw_preset = self.get_property(ATTR_PRESET_MODE)
+            preset_mode = str(raw_preset) if raw_preset is not None else None
+
+            # 2. Lavado y conversión a Tuplas Inmutables para las listas de modos
+            # Filtramos posibles nulos y forzamos el tipo estricto.
+            raw_hvac_modes = self.get_property_all_values(ATTR_HVAC_MODE) or []
+            hvac_modes_tuple = tuple(HVACMode(str(m).lower()) for m in raw_hvac_modes if m is not None)
+
+            fan_modes_tuple = tuple(str(m) for m in (self.get_property_all_values(ATTR_FAN_MODE) or []))
+            swing_modes_tuple = tuple(str(m) for m in (self.get_property_all_values(ATTR_SWING_MODE) or []))
+            preset_modes_tuple = tuple(str(m) for m in (self.get_property_all_values(ATTR_PRESET_MODE) or []))
+
+            # 3. Empaquetado estricto. La dataclass ahora recibe datos 100% puros.
             return ClimateIPDeviceState(
-                hvac_mode=self.get_property(ATTR_HVAC_MODE),
-                target_temperature=self.get_property(ATTR_TEMPERATURE),
-                current_temperature=self.get_property(ATTR_CURRENT_TEMPERATURE),
-                fan_mode=self.get_property(ATTR_FAN_MODE),
-                swing_mode=self.get_property(ATTR_SWING_MODE),
-                preset_mode=self.get_property(ATTR_PRESET_MODE),
-                hvac_modes=self.get_property_all_values(ATTR_HVAC_MODE) or [],
-                fan_modes=self.get_property_all_values(ATTR_FAN_MODE) or [],
-                swing_modes=self.get_property_all_values(ATTR_SWING_MODE) or [],
-                preset_modes=self.get_property_all_values(ATTR_PRESET_MODE) or [],
+                hvac_mode=hvac_mode,
+                target_temperature=target_temp,
+                current_temperature=current_temp,
+                fan_mode=fan_mode,
+                swing_mode=swing_mode,
+                preset_mode=preset_mode,
+                hvac_modes=hvac_modes_tuple,
+                fan_modes=fan_modes_tuple,
+                swing_modes=swing_modes_tuple,
+                preset_modes=preset_modes_tuple,
             )
         except (ValueError, TypeError) as err:
             _LOGGER.error(

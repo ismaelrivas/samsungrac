@@ -17,6 +17,7 @@ import functools
 import http.client
 import logging
 from pathlib import Path
+import platform
 import re
 import ssl
 import threading
@@ -25,9 +26,10 @@ from typing import TYPE_CHECKING, Any
 
 import xml.etree.ElementTree as ET
 
-if TYPE_CHECKING:
-    from homeassistant.core import HomeAssistant
-    from homeassistant.helpers.entity import EntityCategory
+# HA Core standard imports moved to module level
+from homeassistant.helpers.entity import EntityCategory
+from homeassistant.helpers import config_validation as cv
+from voluptuous.error import Invalid
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,10 +51,8 @@ def sanitize_token(token: str | None) -> str | None:
     return None
 
 
-def parse_entity_category(raw: str | None) -> "EntityCategory | None":
+def parse_entity_category(raw: str | None) -> EntityCategory | None:
     """Parse a raw entity_category string into an EntityCategory enum value."""
-    from homeassistant.helpers.entity import EntityCategory  # pylint: disable=import-outside-toplevel
-
     if not raw:
         return None
     try:
@@ -258,7 +258,7 @@ def get_value_by_path(data: dict[str, Any] | list[Any], path: list[str | int]) -
 
 
 def set_value_by_path(target: dict[str, Any] | list[Any], path: list[str | int], value: Any) -> None:
-    """Set a value in a deeply nested dictionary/list structure, auto-creating nodes if missing."""
+    """Set a value in a deeply nested dictionary/list structure. Aborts securely if target is falsy."""
     if not target or not path:
         return
         
@@ -272,52 +272,47 @@ def set_value_by_path(target: dict[str, Any] | list[Any], path: list[str | int],
                 current[key] = [] if is_next_list else {}
             current = current[key]
         elif isinstance(current, list) and isinstance(key, int):
-            # Extender la lista de forma segura si el índice no existe
-            while len(current) <= key:
-                current.append(None)
+            # Strict O(1) list extension. Replaces vulnerable while-loops and avoids infinite timeouts.
+            if key >= len(current):
+                current.extend([None] * (key - len(current) + 1))
+            
             if current[key] is None:
                 current[key] = [] if is_next_list else {}
             current = current[key]
         else:
-            # Ruta inválida (ej. intentar usar una clave string en una lista)
             return
 
-    # Asignar el valor final en el último nodo
+    # Assign final value at the terminal node
     last_key = path[-1]
     if isinstance(current, dict) and isinstance(last_key, str):
         current[last_key] = value
     elif isinstance(current, list) and isinstance(last_key, int):
-        while len(current) <= last_key:
-            current.append(None)
+        if last_key >= len(current):
+            current.extend([None] * (last_key - len(current) + 1))
         current[last_key] = value
 
 def resolve_cert_path(
     cert_path: str | None, base_dir: str = "", hass: "HomeAssistant | None" = None
 ) -> str | None:
-    """Safely resolve certificate path using pathlib and Home Assistant dual-resolution rules."""
+    """Safely resolve certificate path relying on strict Object-Oriented contracts."""
     if not cert_path:
         return None
-    if "/" in cert_path or "\\" in cert_path:
-        if hass is not None:
-            try:
-                return hass.config.path(cert_path)
-            except AttributeError:
-                pass
-        return str(Path(cert_path))
+
+    has_slash = "/" in cert_path or "\\" in cert_path
 
     if hass is not None:
-        try:
-            _ = hass.config.path  # pragma: no mutate
-            return str(Path(__file__).parent / cert_path)
-        except AttributeError:
-            pass
+        # STRICT CONTRACT: We expect a valid HomeAssistant instance. 
+        # Fail-fast (raise AttributeError) if an invalid mock or broken object is injected.
+        if has_slash:
+            return hass.config.path(cert_path)
+        return str(Path(__file__).parent / cert_path)
 
-    return (
-        str(Path(base_dir) / cert_path)
-        if base_dir
-        else str(Path(__file__).parent / cert_path)
-    )
+    if has_slash:
+        return str(Path(cert_path))
 
+    if base_dir:
+        return str(Path(base_dir) / cert_path)
+    return str(Path(__file__).parent / cert_path)
 
 def stream_wrapper(
     data: str,
@@ -327,14 +322,17 @@ def stream_wrapper(
     mac: str | None = None,
 ) -> str:
     """Replaces placeholder values in a string."""
-    if token is not None:
-        data = data.replace("__CLIMATE_IP_TOKEN__", str(token))
-    if ip_address is not None:
-        data = data.replace("__CLIMATE_IP_HOST__", str(ip_address))
-    if mac is not None:
-        data = data.replace("__CLIMATE_IP_MAC__", str(mac))
-    if device_id is not None:
-        data = data.replace("__DEVICE_ID__", str(device_id))
+    replacements = {
+        "__CLIMATE_IP_TOKEN__": token,
+        "__CLIMATE_IP_HOST__": ip_address,
+        "__CLIMATE_IP_MAC__": mac,
+        "__DEVICE_ID__": device_id,
+    }
+
+    for placeholder, actual_value in replacements.items():
+        if actual_value is not None:
+            data = data.replace(placeholder, str(actual_value))
+            
     return data
 
 
@@ -548,44 +546,65 @@ async def async_check_network_reachability(
 
 
 async def async_get_mac_address(ip_address: str) -> str | None:
-    """Get the MAC address for a given IP address using the 'arp' command."""
-    import platform
-    from homeassistant.helpers.device_registry import format_mac  # pylint: disable=import-outside-toplevel
+    """Get the MAC address for a given IP address using the 'arp' command.
+    
+    Strictly uses native O(N) string operations and enforces a fail-fast 
+    subprocess timeout to prevent Event Loop deadlocks.
+    """
 
     try:
-        if platform.system() == "Windows":  # pragma: no mutate
-            cmd = ["arp", "-a", ip_address]
-        else:
-            cmd = ["arp", "-n", ip_address]
+        cmd = ["arp", "-a", ip_address] if platform.system() == "Windows" else ["arp", "-n", ip_address]
 
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
         )
-        stdout, _ = await proc.communicate()
-        output = stdout.decode().lower()
+        
+        try:
+            # Envolvemos la espera en un cortafuegos estricto de 2.0 segundos
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=2.0)
+        except asyncio.TimeoutError:
+            # Si el SO se cuelga, matamos el proceso para no dejar zombies
+            with contextlib.suppress(OSError):
+                proc.kill()
+            _LOGGER.debug("ARP command timed out for %s. Process killed.", ip_address)  # pragma: no mutate
+            return None
+
+        output = stdout.decode("utf-8", errors="ignore")
 
         for token in output.split():
-            if len(token) == 17 and (token.count(":") == 5 or token.count("-") == 5):
-                cleaned = token.replace(":", "").replace("-", "")
-                if len(cleaned) == 12 and cleaned.isalnum() and cleaned.isascii():
-                    return token
+            # Phase 1: Fail-fast on length
+            if len(token) != 17:
+                continue
+            
+            # Phase 2: Exact separator count
+            colons = token.count(":")
+            dashes = token.count("-")
+            
+            if colons != 5 and dashes != 5:
+                continue
+                
+            # Phase 3: Pure alphanumeric length after strip
+            cleaned = token.replace(":", "").replace("-", "")
+            if len(cleaned) != 12:
+                continue
+                
+            # Phase 4: Strict Hexadecimal validation natively
+            try:
+                int(cleaned, 16)
+                return token.lower()
+            except ValueError:
+                continue
 
     except FileNotFoundError:
-        _LOGGER.debug(
-            "ARP command not found. Cannot resolve MAC for %s.", ip_address
-        )  # pragma: no mutate
-    except (OSError, UnicodeDecodeError, asyncio.TimeoutError) as e:
-        _LOGGER.debug(
-            "Failed to resolve MAC address for %s via ARP: %s", ip_address, e
-        )  # pragma: no mutate
+        _LOGGER.debug("ARP command not found. Cannot resolve MAC for %s.", ip_address)  # pragma: no mutate
+    except OSError as e:
+        _LOGGER.debug("Failed to resolve MAC address for %s via ARP: %s", ip_address, e)  # pragma: no mutate
 
     return None
 
 
 def validate_poll_interval(val: Any) -> int:
     """Validate and convert poll interval to seconds."""
-    from homeassistant.helpers import config_validation as cv
-    from voluptuous.error import Invalid
     from .const import MIN_POLL_INTERVAL, MAX_POLL_INTERVAL
 
     try:

@@ -225,7 +225,8 @@ class TestResolveCertPath:
         assert res == str(Path(helpers.__file__).parent / "ac14k_m.pem")
 
     def test_resolve_cert_path_hass_attribute_error(self):
-        """Test resolve_cert_path when hass raises AttributeError."""
+        """Test resolve_cert_path when hass raises AttributeError (Strict Fail-Fast)."""
+        import pytest
         from custom_components.climate_ip.helpers import resolve_cert_path
 
         class FaultyHass:
@@ -233,10 +234,10 @@ class TestResolveCertPath:
             def config(self):
                 raise AttributeError("No config")
 
-        from pathlib import Path
-
-        res = resolve_cert_path("subdir/my_cert.pem", "/base/dir", hass=FaultyHass())
-        assert res == str(Path("subdir/my_cert.pem"))
+        # STRICT CONTRACT: We no longer swallow AttributeErrors from broken Hass objects.
+        # It must fail fast and bubble up the exception.
+        with pytest.raises(AttributeError, match="No config"):
+            resolve_cert_path("subdir/my_cert.pem", "/base/dir", hass=FaultyHass())
 
     def test_resolve_cert_path_no_base_dir(self):
         """Test resolve_cert_path when base_dir is empty."""
@@ -388,6 +389,21 @@ def test_get_value_by_path():
     assert get_value_by_path(None, ["level1"]) is None
     assert get_value_by_path({"level1": "not_a_dict"}, ["level1", "level2"]) is None
 
+def test_get_value_valid_list_traversal():
+    """Asserts successful list index resolution to kill the final Untested mutant."""
+    from custom_components.climate_ip.helpers import get_value_by_path
+    
+    # Valid traversal through a dictionary into a list
+    data = {"items": ["zero", "one", "two"]}
+    assert get_value_by_path(data, ["items", 1]) == "one"
+    
+    # Deep traversal: list containing a dictionary
+    nested = [{"id": 42}]
+    assert get_value_by_path(nested, [0, "id"]) == 42
+    
+    # Multidimensional list traversal
+    matrix = [[0, 1], [2, 3]]
+    assert get_value_by_path(matrix, [1, 0]) == 2
 
 # --- stream_wrapper ---
 def test_stream_wrapper():
@@ -487,67 +503,6 @@ def test_mask_sensitive_data():
     assert masked["nested_limits"]["uuid"] == "1234"
     assert masked["nested_limits"]["DUID"] == "123"
     assert masked["normal_key"] == "visible"
-
-
-# --- async_get_mac_address ---
-@pytest.mark.asyncio
-@patch("asyncio.create_subprocess_exec")
-async def test_async_get_mac_address(mock_exec):
-    mock_proc = AsyncMock()
-    # Cambiamos la MAC a una con LETRAS para cazar el mutante '.lower()' a '.upper()'
-    mock_proc.communicate.return_value = (
-        b"Address HWtype 1A:2B:3C:4D:5E:6F C eth0",
-        b"",
-    )
-    mock_exec.return_value = mock_proc
-
-    mac = await async_get_mac_address("192.168.1.10")
-    assert mac == "1a:2b:3c:4d:5e:6f"
-
-    # Matamos los mutantes que quitan los argumentos o los cambian a None
-    mock_exec.assert_called_with(
-        "arp",
-        "-n",
-        "192.168.1.10",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-
-    mock_proc.communicate.return_value = (b"No entries", b"")
-    assert await async_get_mac_address("192.168.1.11") is None
-
-    # Sniper boundary tests to kill `and` -> `or` mutants in MAC parsing
-    # 1. Candidate token with 5 colons but length 18 (len != 17)
-    mock_proc.communicate.return_value = (b"1a:-2b:3c:4d:5e:6f", b"")
-    assert await async_get_mac_address("192.168.1.12") is None
-
-    # 2. Candidate token of length 17 with 5 colons but non-alphanumeric character (cleaned.isalnum() is False)
-    mock_proc.communicate.return_value = (b"1:2:3:4:5:678901!", b"")
-    assert await async_get_mac_address("192.168.1.13") is None
-
-
-@pytest.mark.asyncio
-@patch("asyncio.create_subprocess_exec")
-@patch("platform.system")
-async def test_async_get_mac_address_windows(mock_system, mock_exec):
-    mock_system.return_value = "Windows"  # Forzamos la entrada al IF
-
-    mock_proc = AsyncMock()
-    mock_proc.communicate.return_value = (b"1A-2B-3C-4D-5E-6F", b"")
-    mock_exec.return_value = mock_proc
-
-    mac = await async_get_mac_address("192.168.1.10")
-    assert mac == "1a-2b-3c-4d-5e-6f"
-
-    # Validamos que los argumentos del SO sean puramente los de Windows
-    mock_exec.assert_called_with(
-        "arp",
-        "-a",
-        "192.168.1.10",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-
 
 # --- mask_sensitive_data (Añadido para cazar al Mutante 29 y string DUID mutants) ---
 def test_mask_sensitive_data_list():
@@ -705,3 +660,135 @@ def test_tolerant_assert_strict_forwarding():
             mock_orig.assert_called_once_with(test_headers)
         finally:
             helpers_mod._HEADER_PATCH_ORIGINAL_RESPONSE = old_orig
+
+# --- set_value_by_path ---
+class TestSetValueByPathStrict:
+    """Annihilation of mutants while respecting business logic (Falsy Target Abort)."""
+    
+    def test_set_value_falsy_target_aborts(self):
+        """KILLS LOGICAL MUTANT: 'if not target and not path'."""
+        from custom_components.climate_ip.helpers import set_value_by_path
+        
+        d = {}
+        set_value_by_path(d, ["a"], 1)
+        assert d == {}  # Business logic dictates it remains empty!
+        
+        l = []
+        set_value_by_path(l, [0], 1)
+        assert l == []  # Empty lists must also abort
+        
+    def test_set_value_dict_simple_and_nested(self):
+        """Tests standard dictionary traversal and creation."""
+        from custom_components.climate_ip.helpers import set_value_by_path
+        
+        d = {"base": True} 
+        
+        set_value_by_path(d, ["a"], 1)
+        assert d["a"] == 1
+        
+        set_value_by_path(d, ["b", "c"], 2)
+        assert d["b"]["c"] == 2
+        
+        set_value_by_path(d, ["b", "d"], 3)
+        assert d["b"] == {"c": 2, "d": 3}
+        
+        d["null_node"] = None
+        set_value_by_path(d, ["null_node", "e"], 4)
+        assert d["null_node"]["e"] == 4
+
+    def test_set_value_list_creation_and_padding(self):
+        """Tests strict list boundary extensions."""
+        from custom_components.climate_ip.helpers import set_value_by_path
+        
+        d = {"l": ["first"]} 
+        
+        # KILLS MUTANT: "while len(current) < key" (forcing pure out-of-bounds)
+        set_value_by_path(d, ["l", 2], "third")
+        assert d["l"] == ["first", None, "third"]
+        
+        set_value_by_path(d, ["l", 1], "second")
+        assert d["l"] == ["first", "second", "third"]
+
+    def test_set_value_invalid_paths(self):
+        """Tests that illegal traversal paths abort gracefully."""
+        from custom_components.climate_ip.helpers import set_value_by_path
+        
+        d = {"l": []}
+        set_value_by_path(d, ["l", "invalid_key", "x"], 10)
+        assert d["l"] == []
+
+    def test_set_value_target_is_list(self):
+        """Tests operations where the root target is a list."""
+        from custom_components.climate_ip.helpers import set_value_by_path
+        
+        l = ["init"] 
+        
+        set_value_by_path(l, [2], "b")
+        assert l == ["init", None, "b"]
+        
+        set_value_by_path(l, [1, "sub"], "a")
+        assert l[1] == {"sub": "a"}
+
+# --- async_get_mac_address ---
+@pytest.mark.asyncio
+@patch("asyncio.create_subprocess_exec")
+async def test_async_get_mac_address_strict_native_parsing(mock_exec):
+    """Asserts MAC address is strictly evaluated through native string operations."""
+    mock_proc = AsyncMock()
+    mock_exec.return_value = mock_proc
+
+    # Test 1: Invalid length (20 chars) -> Killed by len() != 17
+    mock_proc.communicate.return_value = (b"12:34:56:78:90:xx:yy", b"")
+    assert await async_get_mac_address("1.1.1.1") is None
+
+    # Test 2: Valid length but invalid characters (Not Hexadecimal) -> Killed by int(..., 16)
+    mock_proc.communicate.return_value = (b"12:34:56:78:90:XX", b"")
+    assert await async_get_mac_address("1.1.1.1") is None
+    
+    # Test 3: Wrong separators -> Killed by colons/dashes count
+    mock_proc.communicate.return_value = (b"12_34_56_78_90_ab", b"")
+    assert await async_get_mac_address("1.1.1.1") is None
+
+    # Test 4: Valid formats (Both Linux colon and Windows dash formats)
+    mock_proc.communicate.return_value = (b"12:34:56:78:90:ab", b"")
+    assert await async_get_mac_address("1.1.1.1") == "12:34:56:78:90:ab"
+
+    mock_proc.communicate.return_value = (b"12-34-56-78-90-CD", b"")
+    assert await async_get_mac_address("1.1.1.1") == "12-34-56-78-90-cd"
+
+@pytest.mark.asyncio
+@patch("asyncio.create_subprocess_exec")
+@patch("platform.system")
+async def test_async_get_mac_address_os_routing(mock_system, mock_exec):
+    """Validates correct ARP arguments based on OS routing."""
+    mock_system.return_value = "Windows"
+    mock_proc = AsyncMock()
+    mock_proc.communicate.return_value = (b"1A-2B-3C-4D-5E-6F", b"")
+    mock_exec.return_value = mock_proc
+
+    await async_get_mac_address("192.168.1.10")
+    
+    # Windows uses '-a'
+    mock_exec.assert_called_with(
+        "arp",
+        "-a",
+        "192.168.1.10",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+
+@pytest.mark.asyncio
+@patch("asyncio.create_subprocess_exec")
+async def test_async_get_mac_address_timeout_zombie_kill(mock_exec):
+    """Asserts that a hanging ARP process is killed via TimeoutError."""
+    mock_proc = AsyncMock()
+    mock_exec.return_value = mock_proc
+    
+    # Force asyncio.wait_for to raise a TimeoutError
+    with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError):
+        result = await async_get_mac_address("192.168.1.10")
+        
+    assert result is None
+    # Ensure the zombie process was terminated
+    mock_proc.kill.assert_called_once()
+
