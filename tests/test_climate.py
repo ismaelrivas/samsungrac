@@ -538,20 +538,25 @@ def test_climate_invalid_temp_step_fallback(
 def test_climate_supported_features_bitwise_strict_accumulation(
     base_climate_entity: ClimateIP,
 ) -> None:
-    """Kill mutants in _sync_data_from_coordinator (features |= feature)."""
+    """Kill mutants in __init__ (features |= feature)."""
     from homeassistant.components.climate import ClimateEntityFeature
     from homeassistant.components.climate.const import ATTR_PRESET_MODE
+    from custom_components.climate_ip.climate import ClimateIP
 
     # 1. Set exactly two features that map through the dynamic loop
     base_climate_entity.coordinator.operations = [ATTR_PRESET_MODE, HA_ATTR_TEMPERATURE]
     base_climate_entity.coordinator.swing_modes = []
 
-    # 2. Trigger O(1) Cache Rebuild
-    base_climate_entity._sync_data_from_coordinator()
+    # 2. Re-instantiate entity to trigger __init__ static feature resolution
+    entity = ClimateIP(
+        base_climate_entity.coordinator,
+        base_climate_entity.entity_description,
+        base_climate_entity._config,
+    )
 
     # 3. Strict bitwise equality assertion (kills &= mutants)
     expected_features = ClimateEntityFeature.PRESET_MODE | ClimateEntityFeature.TARGET_TEMPERATURE
-    assert base_climate_entity.supported_features == expected_features
+    assert entity.supported_features == expected_features
 
 
 # --- extra_state_attributes property (2 mutants: lines 411, 419) ---

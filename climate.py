@@ -175,8 +175,17 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         self._attr_unique_id = str(self.coordinator.unique_id)
         self._attr_device_info = self.coordinator.device_info
         
+        # Feature Flag Resolution (Static Run-Once)
+        features = ClimateEntityFeature(0)
+        ops = self.coordinator.operations
+        for attr, feature in SUPPORTED_FEATURES_MAP.items():
+            if attr in ops:
+                features |= feature
+        if ATTR_POWER in ops:
+            features |= ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
+        self._attr_supported_features = features
+
         # Pre-calculated State Attributes ($O(1)$ enforce)
-        self._attr_supported_features = ClimateEntityFeature(0)
         self._attr_extra_state_attributes: dict[str, Any] = {}
         self._attr_min_temp: float = DEFAULT_CLIMATE_IP_TEMP_MIN
         self._attr_max_temp: float = DEFAULT_CLIMATE_IP_TEMP_MAX
@@ -227,19 +236,6 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             k: v for k, v in self.coordinator.state_attributes.items() if k not in core_attrs
         }
 
-        # 2. FEATURE FLAG RESOLUTION (Strict Enum adherence, pre-calculated)
-        features = ClimateEntityFeature(0)
-        ops = self.coordinator.operations
-        
-        for attr, feature in SUPPORTED_FEATURES_MAP.items():
-            if attr in ops:
-                # We defer swing evaluation until after checking swing_modes below, 
-                # but safely evaluate existence here.
-                features |= feature
-        
-        if ATTR_POWER in ops:
-            features |= ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
-
         if state:
             prev_target = getattr(self, "_attr_target_temperature", None)
             self._attr_hvac_mode = state.hvac_mode or HVACMode.OFF
@@ -252,13 +248,9 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             self._attr_swing_modes = state.swing_modes
             self._attr_preset_modes = state.preset_modes
 
-            # Post-process Swing Mode Feature based on actual loaded modes
-            if ATTR_SWING_MODE in ops and not self._attr_swing_modes:
-                features &= ~ClimateEntityFeature.SWING_MODE
-
             # Pre-calculate HVAC modes array (including OFF logic)
             modes = list(state.hvac_modes)
-            if ClimateEntityFeature.TURN_OFF in features and HVACMode.OFF not in modes:
+            if ClimateEntityFeature.TURN_OFF in self._attr_supported_features and HVACMode.OFF not in modes:
                 modes.append(HVACMode.OFF)
             self._attr_hvac_modes = modes
 
@@ -273,8 +265,6 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             self._attr_swing_mode = None
             self._attr_preset_mode = None
             # Leave modes intact on brief drops to prevent UI flicker
-
-        self._attr_supported_features = features
 
     @property
     def log_prefix(self) -> str:
