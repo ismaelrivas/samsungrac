@@ -139,7 +139,6 @@ async def async_setup_entry(
                 coordinator,
                 CLIMATE_ENTITY_DESCRIPTION,
                 dict(entry.data),
-                entry.unique_id,
             )
         )
     if not entities:
@@ -149,16 +148,13 @@ async def async_setup_entry(
         return
     async_add_entities(entities, update_before_add=True)
 
-@dataclass(frozen=True, kw_only=True)
-class ClimateIPEntityDescription(ClimateEntityDescription):
-    """Class describing ClimateIP entities."""
-    key: str
-    translation_key: str | None = None
+# Alias for backwards compatibility with entity description typing
+ClimateIPEntityDescription = ClimateEntityDescription
 
 class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
     # pylint: disable=import-outside-toplevel,abstract-method
     """Representation of a climate_ip climate device using a coordinator."""
-    entity_description: ClimateIPEntityDescription
+    entity_description: ClimateEntityDescription
     _attr_has_entity_name = True
     _attr_name = None
     _attr_hvac_mode: HVACMode | None
@@ -167,25 +163,22 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
     _attr_fan_mode: str | None
     _attr_swing_mode: str | None
     _attr_preset_mode: str | None
-    _attr_hvac_modes: list[HVACMode] = []
-    _attr_fan_modes: list[str] = []
-    _attr_swing_modes: list[str] = []
-    _attr_preset_modes: list[str] = []
+    _attr_hvac_modes: list[HVACMode]
+    _attr_fan_modes: list[str]
+    _attr_swing_modes: list[str]
+    _attr_preset_modes: list[str]
     _config: dict[str, Any]
-    _main_unique_id: str
     
     def __init__(
         self,
         coordinator: SamsungClimateCoordinator,
-        description: ClimateIPEntityDescription,
+        description: ClimateEntityDescription,
         config: dict[str, Any],
-        main_unique_id: str | None = None,
     ) -> None:
         """Initialize the climate device."""
         super().__init__(coordinator)
         self.entity_description = description
         self._config = config
-        self._main_unique_id = main_unique_id or str(coordinator.unique_id)
         self._attr_unique_id = str(self.coordinator.unique_id)
         self._attr_device_info = self.coordinator.device_info
         
@@ -197,8 +190,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
         options_dict = self.coordinator.entry.options
         configured_step = options_dict.get(
-            CONF_TARGET_TEMP_STEP,
-            self._config.get(CONF_TARGET_TEMP_STEP, self._config.get(CONF_TEMP_STEP)),
+            CONF_TARGET_TEMP_STEP, self._config.get(CONF_TARGET_TEMP_STEP)
         )
 
         # Defensive parsing of temperature step
@@ -341,9 +333,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             setattr(self, local_attr, mode_value)
         self._apply_optimistic_corrections(corrections)
         self.async_write_ha_state()
-        self.hass.async_create_task(
-            self.coordinator.async_set_property(attr_name, mode_value, corrections)
-        )
+        await self.coordinator.async_set_property(attr_name, mode_value, corrections)
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
         temp: float | None = kwargs.get(const.ATTR_TEMPERATURE)
@@ -378,7 +368,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         _LOGGER.debug(
             "%s Setting property %s to %s", self.log_prefix, key, value
         )  # pragma: no mutate
-        self.hass.async_create_task(self.coordinator.async_set_property(key, value))
+        await self.coordinator.async_set_property(key, value)
         self.async_write_ha_state()
     async def async_turn_on(self) -> None:
         """Turn the climate device on."""

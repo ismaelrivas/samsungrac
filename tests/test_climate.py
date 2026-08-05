@@ -209,34 +209,18 @@ async def test_climate_init_options_priority_and_halves(hass: HomeAssistant) -> 
 
 
 
-async def test_climate_main_unique_id_fallback(hass: HomeAssistant) -> None:
-    """Verify that _main_unique_id uses the provided value or falls back safely to the coordinator's unique_id."""
+async def test_climate_unique_id(hass: HomeAssistant) -> None:
+    """Verify that unique_id correctly reflects the coordinator's unique_id."""
     mock_coordinator = MagicMock()
     mock_coordinator.unique_id = "coord_id_123"
     description = ClimateIPEntityDescription(key="samsung_ac")
 
-    # Case 1: main_unique_id is provided explicitly
-    entity_explicit = ClimateIP(
+    entity = ClimateIP(
         coordinator=mock_coordinator,
         description=description,
         config={},
-        main_unique_id="explicit_id_456",
     )
-    assert entity_explicit._main_unique_id == "explicit_id_456", (
-        "Explicit main_unique_id was not respected"
-    )
-
-    # Case 2: Not provided (None), must perform fallback
-    entity_fallback = ClimateIP(
-        coordinator=mock_coordinator,
-        description=description,
-        config={},
-        main_unique_id=None,
-    )
-    assert entity_fallback._main_unique_id == "coord_id_123", (
-        "Fallback to coordinator.unique_id failed"
-    )
-    assert entity_fallback.unique_id == "coord_id_123", (
+    assert entity.unique_id == "coord_id_123", (
         "The unique_id property does not match the coordinator"
     )
 
@@ -616,10 +600,10 @@ def test_climate_invalid_temp_step_fallback(
     """Kill mutants in __init__ for invalid temp step configuration."""
     import logging
     from custom_components.climate_ip.climate import ClimateIP
-    from custom_components.climate_ip.const import CONF_TEMP_STEP, DEFAULT_TARGET_TEMP_STEP
+    from custom_components.climate_ip.const import CONF_TARGET_TEMP_STEP, DEFAULT_TARGET_TEMP_STEP
 
     # 1. Inject invalid string to force the ValueError/TypeError branch
-    base_climate_entity._config[CONF_TEMP_STEP] = "invalid_string"
+    base_climate_entity._config[CONF_TARGET_TEMP_STEP] = "invalid_string"
 
     # 2. Capture logs and re-instantiate
     with caplog.at_level(logging.WARNING):
@@ -797,13 +781,13 @@ async def test_modern_async_setup_entry_success() -> None:
     
     assert mock_climate_class.call_count == 2
     
-    # Verify the signature matches the new 4-arg constructor:
-    # ClimateIP(coordinator, description, config, main_unique_id)
+    # Verify the signature matches the 3-arg constructor:
+    # ClimateIP(coordinator, description, config)
     first_call_args = mock_climate_class.call_args_list[0].args
+    assert len(first_call_args) == 3
     assert first_call_args[0] == coord_1
     assert first_call_args[1].key == "samsung_ac"
     assert first_call_args[2] == {"conf_key": "conf_val"}
-    assert first_call_args[3] == "main_entry_id"
     
     async_add_entities.assert_called_once()
     assert len(async_add_entities.call_args[0][0]) == 2
