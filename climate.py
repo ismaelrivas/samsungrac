@@ -132,7 +132,6 @@ async def async_setup_entry(
             ClimateIP(
                 coordinator,
                 CLIMATE_ENTITY_DESCRIPTION,
-                dict(entry.data),
             )
         )
     if not entities:
@@ -166,7 +165,6 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         self,
         coordinator: SamsungClimateCoordinator,
         description: ClimateEntityDescription,
-        config: dict[str, Any],
     ) -> None:
         """Initialize the climate device."""
         super().__init__(coordinator)

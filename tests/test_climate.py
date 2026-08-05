@@ -46,7 +46,7 @@ def base_climate_entity(hass: HomeAssistant) -> ClimateIP:
     mock_coord.data = MagicMock()
 
     desc = ClimateIPEntityDescription(key="samsung_ac", translation_key="samsung_ac")
-    entity = ClimateIP(coordinator=mock_coord, description=desc, config={})
+    entity = ClimateIP(coordinator=mock_coord, description=desc)
     entity.hass = hass
     entity.async_write_ha_state = MagicMock()
     return entity
@@ -114,7 +114,7 @@ def test_climate_translation_key_and_device_info(hass: HomeAssistant) -> None:
         translation_key="samsung_ac",
     )
     climate = ClimateIP(
-        coordinator=mock_coordinator, description=description, config={}
+        coordinator=mock_coordinator, description=description
     )
     climate.hass = hass
 
@@ -139,7 +139,7 @@ async def test_climate_init_options_priority_and_halves(hass: HomeAssistant) -> 
     description = ClimateIPEntityDescription(key="samsung_ac")
 
     entity = ClimateIP(
-        coordinator=mock_coordinator, description=description, config=config
+        coordinator=mock_coordinator, description=description
     )
 
     # Lethal Assertions
@@ -162,7 +162,6 @@ async def test_climate_unique_id(hass: HomeAssistant) -> None:
     entity = ClimateIP(
         coordinator=mock_coordinator,
         description=description,
-        config={},
     )
     assert entity.unique_id == "coord_id_123", (
         "The unique_id property does not match the coordinator"
@@ -529,7 +528,6 @@ def test_climate_invalid_temp_step_fallback(
         entity = ClimateIP(
             base_climate_entity.coordinator,
             base_climate_entity.entity_description,
-            {},
         )
 
         # 3. Assert mathematical fallback
@@ -555,7 +553,6 @@ def test_climate_supported_features_bitwise_strict_accumulation(
     entity = ClimateIP(
         base_climate_entity.coordinator,
         base_climate_entity.entity_description,
-        {},
     )
 
     # 3. Strict bitwise equality assertion (kills &= mutants)

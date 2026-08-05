@@ -48,8 +48,7 @@ async def test_set_property_action(hass: HomeAssistant) -> None:
     description = ClimateIPEntityDescription(
         key="samsung_ac", translation_key="samsung_ac"
     )
-    config = {"name": "Test AC", "temp_step": 1.0}
-    entity = ClimateIP(mock_coordinator, description, config)
+    entity = ClimateIP(mock_coordinator, description)
     entity.hass = hass
     entity.entity_id = "climate.test_ac"
     # Mock HA state writing to avoid "Frame helper not set up" errors in unit tests
