@@ -133,6 +133,11 @@ class YamlStatePoller:
         """Register a pending update to shield the UI from stale network polling echoes."""
         self._pending_updates[property_id] = (value, time.time())
 
+    def clear_pending_updates(self, keys: list[str]) -> None:
+        """Clear specific pending updates (anti-flicker locks) instantly."""
+        for key in keys:
+            self._pending_updates.pop(key, None)
+
     def _clear_state_cache(self) -> None:
         """Clear internal state cache buffer to prevent stale data (anti-ghosting)."""
         self._cached_device_state = None

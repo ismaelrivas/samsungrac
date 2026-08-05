@@ -70,20 +70,6 @@ async def test_turn_on_dry_helper(base_climate_entity: ClimateIP) -> None:
         mock_helper.assert_awaited_once_with(ATTR_POWER, STATE_OFF, None)
 
 
-async def test_optimistic_turn_off(base_climate_entity: ClimateIP) -> None:
-    """Verify that turning off predicts state immediately (predict and correct)."""
-    base_climate_entity.coordinator.operations = [ATTR_POWER]
-    base_climate_entity.coordinator.async_predict_and_correct = AsyncMock(
-        return_value=({"power": "off"}, {ATTR_HVAC_MODE: HVACMode.OFF})
-    )
-    base_climate_entity.entity_id = "climate.test_ac"
-    base_climate_entity._attr_hvac_mode = HVACMode.COOL
-
-    with patch.object(base_climate_entity, "async_write_ha_state"):
-        await base_climate_entity.async_turn_off()
-
-    assert base_climate_entity.hvac_mode == HVACMode.OFF
-
 
 # ---------------------------------------------------------------------------
 # Phase 4: Zombie code removal verification
@@ -139,49 +125,7 @@ def test_climate_translation_key_and_device_info(hass: HomeAssistant) -> None:
     assert climate.device_info == {"identifiers": {("climate_ip", "test_unique_id")}}
 
 
-async def test_auto_mode_correction_revert(base_climate_entity: ClimateIP) -> None:
-    """Test that a PUSH update correctly reverts an incorrect optimistic state."""
-    # This test ensures that if HA predicts "low" but the device says "auto",
-    # the state machine eventually converges on the device truth.
-    mock_data = MagicMock()
-    mock_data.fan_mode = "auto"
-    mock_data.fan_modes = ["auto", "low", "medium", "high"]
-    mock_data.hvac_mode = HVACMode.COOL
-    mock_data.hvac_modes = [HVACMode.COOL, HVACMode.OFF]
-    mock_data.target_temperature = 24
-    mock_data.current_temperature = 22
-    mock_data.swing_mode = None
-    mock_data.swing_modes = []
-    mock_data.preset_mode = None
-    mock_data.preset_modes = []
-    base_climate_entity.coordinator.data = mock_data
-    base_climate_entity.coordinator.unique_id = "test_flicker"
-    base_climate_entity.coordinator.operations = ["fan"]
-    base_climate_entity.coordinator.log_prefix = "[FLICKER]"
-    base_climate_entity.coordinator.last_update_success = True
 
-    base_climate_entity.entity_id = "climate.flicker_ac"
-    base_climate_entity._attr_fan_mode = "low"
-    base_climate_entity.coordinator.async_set_property.return_value = True
-
-    with patch.object(base_climate_entity, "async_write_ha_state"):
-        await base_climate_entity.async_set_fan_mode("low")
-
-    # Verify optimistic prediction
-    assert base_climate_entity.fan_mode == "low"
-    assert base_climate_entity._attr_fan_mode == "low"
-
-    # 3. Device PUSH/POLL update arrives: It says "auto" (Hardware truth)
-    mock_data.fan_mode = "auto"
-
-    # Trigger entity update
-    with patch.object(base_climate_entity, "async_write_ha_state") as mock_write:
-        base_climate_entity._handle_coordinator_update()
-
-    # 4. Verify Reconstruction: It should have reverted to "auto"
-    assert base_climate_entity.fan_mode == "auto"
-    assert base_climate_entity._attr_fan_mode == "auto"
-    mock_write.assert_called()
 
 
 async def test_climate_init_options_priority_and_halves(hass: HomeAssistant) -> None:
@@ -222,35 +166,6 @@ async def test_climate_unique_id(hass: HomeAssistant) -> None:
     )
     assert entity.unique_id == "coord_id_123", (
         "The unique_id property does not match the coordinator"
-    )
-
-
-async def test_climate_optimistic_side_effects(base_climate_entity: ClimateIP) -> None:
-    """Verify that _apply_optimistic_corrections applies side effects correctly."""
-    base_climate_entity.coordinator.unique_id = "coord_side_effects"
-
-    # Simulate that when turning on, the device also corrects the fan_mode to "auto"
-    base_climate_entity.coordinator.async_predict_and_correct = AsyncMock(
-        return_value=({}, {"fan_mode": "auto"})
-    )
-
-    # Initial state
-    base_climate_entity._attr_fan_mode = "low"
-
-    with patch.object(base_climate_entity, "async_write_ha_state"):
-        await base_climate_entity.async_set_hvac_mode(HVACMode.COOL)
-
-    # Lethal Assertion for Mutant 1 and 10: The side effect MUST be applied
-    assert base_climate_entity.fan_mode == "auto", (
-        "Optimistic corrections were not applied"
-    )
-
-    # Lethal Assertion for Mutants 2-5 and 15-20: Exact arguments AND await execution MUST be present
-    base_climate_entity.coordinator.async_predict_and_correct.assert_awaited_once_with(
-        base_climate_entity.coordinator.data, "hvac_mode", HVACMode.COOL
-    )
-    base_climate_entity.coordinator.async_set_property.assert_called_once_with(
-        "hvac_mode", HVACMode.COOL, {"fan_mode": "auto"}
     )
 
 

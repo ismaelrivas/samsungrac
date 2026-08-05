@@ -1160,60 +1160,6 @@ async def test_coordinator_success_path_no_refresh(hass: HomeAssistant) -> None:
     coordinator.async_request_refresh.assert_not_awaited()
 
 
-async def test_async_predict_and_correct_supported(hass: HomeAssistant) -> None:
-    """Test state prediction when supported by controller."""
-    from homeassistant.components.climate import HVACMode
-    from unittest.mock import MagicMock, AsyncMock, patch
-
-    mock_controller = MagicMock()
-    mock_controller.async_predict_and_correct_state = AsyncMock(
-        return_value=("fake_flags", {"temp": 24})
-    )
-    mock_controller.climate_state = MagicMock()
-
-    mock_entry = MagicMock()
-    mock_entry.options = {}
-    mock_entry.data = {}
-    coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
-
-    with patch.object(coordinator, "async_set_updated_data") as mock_set:
-        flags, corrections = await coordinator.async_predict_and_correct(
-            {"fake": "state"}, "hvac_mode", HVACMode.HEAT
-        )
-
-        # Verify enum unwrapped
-        mock_controller.async_predict_and_correct_state.assert_awaited_once_with(
-            {"fake": "state"}, "hvac_mode", "heat"
-        )
-
-        # Verify coordinator pushed state
-        mock_set.assert_called_once_with(mock_controller.climate_state)
-
-        assert flags == "fake_flags"
-        assert corrections == {"temp": 24}
-
-
-async def test_async_predict_and_correct_unsupported(hass: HomeAssistant) -> None:
-    """Test state prediction when not supported by controller."""
-    from homeassistant.components.climate.const import ClimateEntityFeature
-    from unittest.mock import MagicMock
-
-    mock_controller = MagicMock()
-    # Explicitly remove the method from the mock
-    del mock_controller.async_predict_and_correct_state
-    mock_controller.log_prefix = "[Test]"
-
-    mock_entry = MagicMock()
-    mock_entry.options = {}
-    mock_entry.data = {}
-    coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
-
-    with pytest.raises(AttributeError):
-        await coordinator.async_predict_and_correct(
-            {"fake": "state"}, "hvac_mode", "heat"
-        )
-
-
 async def test_coordinator_getters(hass: HomeAssistant) -> None:
     """Test get_property and get_property_object getters."""
     from unittest.mock import MagicMock
@@ -1485,33 +1431,6 @@ async def test_locked_set_property_mutants(hass: HomeAssistant) -> None:
         res_false = await coordinator._locked_set_property("fan_mode", "high", "dev_1")
         assert res_false is False
 
-@pytest.mark.asyncio
-async def test_predict_and_correct_strict_args(hass: HomeAssistant) -> None:
-    """Aniquila la pérdida del argumento current_state (Mutante L482)."""
-    mock_controller = MagicMock()
-    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(["mock_flag"], {"mock": "corr"}))
-    
-    mock_entry = MagicMock()
-    mock_entry.options = {}
-    mock_entry.data = {}
-    
-    with patch("custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__", return_value=None):
-        from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
-        coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
-        coordinator._create_device_state = MagicMock(return_value="mock_state")
-        coordinator.async_set_updated_data = MagicMock()
-
-        current_fake_state = {"power": "on"}
-        # Ejecutamos con una clase genérica sin usar el Enum de HA para forzar la firma
-        await coordinator.async_predict_and_correct(current_fake_state, "power", "off")
-
-        # ASSERTION ESTRICTA: Falla si el mutante eliminó current_fake_state
-        mock_controller.async_predict_and_correct_state.assert_awaited_once_with(
-            current_fake_state, "power", "off"
-        )
-
-
-
 
 @pytest.mark.asyncio
 async def test_debouncer_exact_time_boundary_mutant():
@@ -1569,29 +1488,6 @@ async def test_sniper_locked_set_property_args_and_bools(hass: HomeAssistant) ->
         assert res_false is False
 
 
-@pytest.mark.asyncio
-async def test_sniper_predict_and_correct_strict_state_arg(hass: HomeAssistant) -> None:
-    """Aniquila la pérdida del argumento current_state en async_predict_and_correct."""
-    mock_controller = MagicMock()
-    mock_controller.poll = False  # Evita el cálculo timedelta y el TypeError
-    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(["mock_flag"], {"mock": "corr"}))
-    
-    mock_entry = MagicMock()
-    mock_entry.options = {}
-    mock_entry.data = {}
-    
-    with patch("custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__", return_value=None):
-        from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
-        coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
-        coordinator._create_device_state = MagicMock(return_value="mock_state")
-        coordinator.async_set_updated_data = MagicMock()
-
-        current_fake_state = {"power": "on"}
-        await coordinator.async_predict_and_correct(current_fake_state, "power", "off")
-
-        mock_controller.async_predict_and_correct_state.assert_awaited_once_with(
-            current_fake_state, "power", "off"
-        )
 
 @pytest.mark.asyncio
 async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistant):
@@ -1738,24 +1634,3 @@ async def test_sniper_async_set_property_debouncer_args(hass: HomeAssistant):
         args, _ = coordinator.debouncer.async_execute.call_args
         assert len(args) == 5, f"Mutante cazado: Faltan argumentos. Llegaron: {args}"
         assert args[3] == "cool"
-
-
-@pytest.mark.asyncio
-async def test_sniper_predict_and_correct_strict_args_len(hass: HomeAssistant):
-    """Aniquila el mutante L501 que elimina el parámetro 'current_state'."""
-    mock_controller = MagicMock()
-    mock_controller.poll = False
-    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(["flag"], {}))
-    
-    with patch("custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__", return_value=None):
-        from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
-        coordinator = SamsungClimateCoordinator(hass, mock_controller, MagicMock(options={}, data={}))
-        coordinator._create_device_state = MagicMock()
-        coordinator.async_set_updated_data = MagicMock()
-
-        current_state = {"power": "on"}
-        await coordinator.async_predict_and_correct(current_state, "power", "off")
-
-        args, _ = mock_controller.async_predict_and_correct_state.call_args
-        assert len(args) == 3, f"Mutante cazado: async_predict_and_correct_state recibió {len(args)} args en vez de 3"
-        assert args[0] is current_state

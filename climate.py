@@ -59,14 +59,7 @@ SUPPORTED_FEATURES_MAP: Final[dict[str, ClimateEntityFeature]] = {
     ATTR_SWING_MODE: ClimateEntityFeature.SWING_MODE,
     ATTR_PRESET_MODE: ClimateEntityFeature.PRESET_MODE,
 }
-# Strict map for optimistic predictions (removes dynamic hasattr attack vector)
-ALLOWED_OPTIMISTIC_CORRECTIONS: Final[dict[str, str]] = {
-    const.ATTR_TEMPERATURE: "_attr_target_temperature",
-    ATTR_HVAC_MODE: "_attr_hvac_mode",
-    ATTR_FAN_MODE: "_attr_fan_mode",
-    ATTR_SWING_MODE: "_attr_swing_mode",
-    ATTR_PRESET_MODE: "_attr_preset_mode",
-}
+
 CLIMATE_ENTITY_DESCRIPTION: Final[ClimateEntityDescription] = ClimateEntityDescription(
     key="samsung_ac",
     translation_key="samsung_ac",
@@ -306,45 +299,22 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         """Return device information."""
         return self._attr_device_info
     
-    def _apply_optimistic_corrections(self, corrections: dict[str, Any] | None) -> None:
-        """Apply predicted corrections strictly using ALLOWED_OPTIMISTIC_CORRECTIONS map."""
-        if not corrections:
-            return
-        _LOGGER.debug(
-            "%s Applying optimistic corrections: %s", self.log_prefix, corrections
-        )  # pragma: no mutate
-        for prop, value in corrections.items():
-            if target_attr := ALLOWED_OPTIMISTIC_CORRECTIONS.get(prop):
-                setattr(self, target_attr, value)
-            else:
-                _LOGGER.debug(
-                    "%s Ignoring unmapped optimistic correction for property: %s",
-                    self.log_prefix,
-                    prop,
-                )  # pragma: no mutate
     async def _async_set_climate_mode(
-        self, attr_name: str, mode_value: Any, local_attr: str | None
+        self, attr_name: str, mode_value: Any
     ) -> None:
         """Helper to unify the logic for setting hvac, fan, swing, and preset modes."""
-        _, corrections = await self.coordinator.async_predict_and_correct(
-            self.coordinator.data, attr_name, mode_value
-        )
-        if local_attr and hasattr(self, local_attr):
-            setattr(self, local_attr, mode_value)
-        self._apply_optimistic_corrections(corrections)
-        self.async_write_ha_state()
-        await self.coordinator.async_set_property(attr_name, mode_value, corrections)
+        await self.coordinator.async_set_property(attr_name, mode_value)
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
         temp: float | None = kwargs.get(const.ATTR_TEMPERATURE)
         _LOGGER.debug("%s [Forensic] async_set_temperature explicitly called with temp=%s, kwargs=%s", self.log_prefix, temp, kwargs) # pragma: no mutate
         if temp is not None:
             await self._async_set_climate_mode(
-                const.ATTR_TEMPERATURE, temp, "_attr_target_temperature"
+                const.ATTR_TEMPERATURE, temp
             )
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
-        await self._async_set_climate_mode(ATTR_HVAC_MODE, hvac_mode, "_attr_hvac_mode")
+        await self._async_set_climate_mode(ATTR_HVAC_MODE, hvac_mode)
     async def async_set_fan_mode(self, fan_mode: str) -> None:
         """Set new target fan mode."""
         if fan_mode not in self.fan_modes:
@@ -352,16 +322,16 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             _LOGGER.warning("%s Requested fan mode '%s' is not available. Ignoring request.", self.log_prefix, fan_mode)  # pragma: no mutate
             # fmt: on
             return
-        await self._async_set_climate_mode(ATTR_FAN_MODE, fan_mode, "_attr_fan_mode")
+        await self._async_set_climate_mode(ATTR_FAN_MODE, fan_mode)
     async def async_set_swing_mode(self, swing_mode: str) -> None:
         """Set new target swing operation."""
         await self._async_set_climate_mode(
-            ATTR_SWING_MODE, swing_mode, "_attr_swing_mode"
+            ATTR_SWING_MODE, swing_mode
         )
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set new target preset mode."""
         await self._async_set_climate_mode(
-            ATTR_PRESET_MODE, preset_mode, "_attr_preset_mode"
+            ATTR_PRESET_MODE, preset_mode
         )
     async def async_set_property(self, key: str, value: Any) -> None:
         """Set a custom property on the device."""
@@ -369,13 +339,12 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             "%s Setting property %s to %s", self.log_prefix, key, value
         )  # pragma: no mutate
         await self.coordinator.async_set_property(key, value)
-        self.async_write_ha_state()
     async def async_turn_on(self) -> None:
         """Turn the climate device on."""
-        await self._async_set_climate_mode(ATTR_POWER, const.STATE_ON, None)
+        await self._async_set_climate_mode(ATTR_POWER, const.STATE_ON)
     async def async_turn_off(self) -> None:
         """Turn the climate device off."""
-        await self._async_set_climate_mode(ATTR_POWER, const.STATE_OFF, None)
+        await self._async_set_climate_mode(ATTR_POWER, const.STATE_OFF)
     async def async_service_set_property(self, **kwargs: Any) -> None:
         """Set a property on the device via action call."""
         key: str | None = kwargs.get("key")

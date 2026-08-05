@@ -488,6 +488,10 @@ class YamlController(ClimateController):
             new_data
         )
 
+    async def async_clear_pending_updates(self, keys: list[str]) -> None:
+        """Clear specific pending updates (anti-flicker locks) on failure."""
+        self.poller.clear_pending_updates(keys)
+
     async def async_predict_and_correct_state(
         self, current_hass_state: Any, property_name: str, new_value: Any
     ) -> tuple[ClimateEntityFeature, dict[str, Any]]:

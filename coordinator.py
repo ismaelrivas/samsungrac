@@ -438,19 +438,26 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         self,
         property_name: str,
         new_value: Any,
-        corrections: dict[str, Any] | None = None,
         device_id: str | None = None,
     ) -> None:
-        """Set a property on the controller. Optimistic state is handled by the entity."""
+        """Set a property on the controller with optimistic prediction and atomic rollback."""
+        # 1. Predict (Activates anti-flicker locks in the controller)
+        pred_val = new_value.value if isinstance(new_value, HVACMode) else new_value
+        _, corrections = await self.controller.async_predict_and_correct_state(
+            self.data, property_name, pred_val
+        )
+
+        # 2. Push the fast-tracked predicted state through the coordinator
+        predicted_state = self._create_device_state()
+        self.async_set_updated_data(predicted_state)
+
+        properties_to_set = {property_name: new_value}
+        if corrections:
+            properties_to_set.update(corrections)
+
+        _LOGGER.debug("%s Dispatching commands to controller: %s", self.log_prefix, properties_to_set)  # pragma: no mutate
+
         try:
-            properties_to_set = {property_name: new_value}
-            if corrections:
-                properties_to_set.update(corrections)
-
-
-            _LOGGER.debug("%s Dispatching commands to controller: %s", self.log_prefix, properties_to_set)  # pragma: no mutate
-
-
             results = []
             for prop, val in properties_to_set.items():
                 if isinstance(val, HVACMode):
@@ -463,10 +470,12 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
             if not all(results):
                 _LOGGER.debug("%s Not all properties were set successfully. Requesting sync refresh to revert state.", self.log_prefix)  # pragma: no mutate
+                await self.controller.async_clear_pending_updates(list(properties_to_set.keys()))
                 await self.async_request_refresh()
 
         except (CannotConnect, asyncio.TimeoutError, OSError) as err:
             _LOGGER.error("%s Network error setting properties: %s", self.log_prefix, type(err).__name__)  # pragma: no mutate
+            await self.controller.async_clear_pending_updates(list(properties_to_set.keys()))
             await self.async_request_refresh()
             raise HomeAssistantError(
                 f"Network error setting property {property_name}: {err}"
@@ -474,6 +483,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
         except (ValueError, TypeError, KeyError) as err:
             _LOGGER.error("%s Data error setting properties: %s", self.log_prefix, err, exc_info=True)  # pragma: no mutate
+            await self.controller.async_clear_pending_updates(list(properties_to_set.keys()))
             await self.async_request_refresh()
             raise HomeAssistantError(
                 f"Data error setting property {property_name}: {err}"
@@ -482,31 +492,11 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         except Exception as err:  # pylint: disable=broad-exception-caught
             _LOGGER.error("%s Error setting properties: %s", self.log_prefix, err, exc_info=True)  # pragma: no mutate
             # Revert state on failure
+            await self.controller.async_clear_pending_updates(list(properties_to_set.keys()))
             await self.async_request_refresh()
             raise HomeAssistantError(
                 f"Failed to set property {property_name}: {err}"
             ) from err  # pragma: no mutate
-
-    async def async_predict_and_correct(
-        self,
-        current_state: Any,
-        property_name: str,
-        new_value: Any,
-    ) -> tuple[Any, dict[str, Any]]:
-        """Pass through to the controller's prediction method."""
-        if isinstance(new_value, HVACMode):
-            new_value = new_value.value
-            
-        changed_flags, corrections = await self.controller.async_predict_and_correct_state(
-            current_state, property_name, new_value
-        )
-
-        # Push the fast-tracked predicted state through the coordinator
-        # This triggers all entities to immediately see new valid modes/lists.
-        predicted_state = self._create_device_state()
-        self.async_set_updated_data(predicted_state)
-
-        return changed_flags, corrections
 
     @property
     def log_prefix(self) -> str:
