@@ -7,11 +7,11 @@ import pytest
 import voluptuous as vol
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 
-from custom_components.climate_ip.config_flow import (
+from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+from custom_components.climate_ip.const import (
     CONF_DEVICE_ID,
     CONF_NAME,
     CONF_POLL_INTERVAL,
-    ClimateIpConfigFlow,
 )
 from custom_components.climate_ip.const import (
     CONF_DEVICE_TYPE,
@@ -95,7 +95,6 @@ async def test_options_flow_empty_defaults(hass):
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     from custom_components.climate_ip.config_flow import (
-        DEFAULT_POLL_INTERVAL,
         OptionsFlowHandler,
     )
     from custom_components.climate_ip.const import (
@@ -105,6 +104,7 @@ async def test_options_flow_empty_defaults(hass):
         CONN_METHOD_AIOHTTP,
         DEFAULT_CONF_TEMP_UNIT,
         DEFAULT_TARGET_TEMP_STEP,
+        DEFAULT_POLL_INTERVAL,
         DOMAIN,
     )
 

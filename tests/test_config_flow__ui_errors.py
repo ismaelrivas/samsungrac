@@ -11,16 +11,16 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import AbortFlow, FlowResultType
 
 from custom_components.climate_ip.config_flow import (
-    CONF_DEVICE_ID,
-    CONF_DISCOVERED_DEVICES,
-    CONF_SELECTED_DEVICES,
     ClimateIpConfigFlow,
     OptionsFlowHandler,
 )
 from custom_components.climate_ip.const import (
     CONF_CERT,
+    CONF_DEVICE_ID,
     CONF_DEVICE_TYPE,
+    CONF_DISCOVERED_DEVICES,
     CONF_POLL_INTERVAL,
+    CONF_SELECTED_DEVICES,
     DEVICE_TYPE_MIM_H03,
     DEVICE_TYPE_SAMSUNG_2878,
     DEVICE_TYPE_SAMSUNG_8888,
@@ -199,7 +199,7 @@ async def test_initiate_pairing_and_discover_uuid_mutants():
     flow.context = {"unique_id": "test"}
 
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_ctrl_cls:
         mock_ctrl = mock_ctrl_cls.return_value
         mock_ctrl.initialize = AsyncMock(return_value=True)
@@ -216,7 +216,7 @@ async def test_initiate_pairing_and_discover_uuid_mutants():
 
     with (
         patch(
-            "custom_components.climate_ip.config_flow.YamlController"
+            "custom_components.climate_ip.controller_yaml.YamlController"
         ) as mock_ctrl_cls,
         patch.object(
             flow, "_async_fallback_raw_discovery", new_callable=AsyncMock
@@ -239,7 +239,7 @@ async def test_discover_uuid_missing_discovered_devices_attr(hass: HomeAssistant
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
 
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_ctrl_cls:
         mock_ctrl = mock_ctrl_cls.return_value
         mock_ctrl.initialize = AsyncMock(return_value=True)
@@ -395,10 +395,11 @@ async def test_rest_api_aborts_if_already_configured_normal_flow(hass):
     flow.context = {}
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_session:
         mock_get = AsyncMock()
-        mock_get.__aenter__.return_value.status = 200
+        mock_get.status = 200
+        mock_get.__aenter__.return_value = mock_get
         mock_session.return_value.get.return_value = mock_get
 
         with patch.object(
@@ -654,7 +655,7 @@ async def test_test_connection_safe_cannot_connect_error_key(hass):
     }
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_sess:
         mock_sess.return_value.get.side_effect = CannotConnect("refused")
 
@@ -676,7 +677,7 @@ async def test_test_connection_safe_timeout_error_key(hass):
     }
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_sess:
         mock_sess.return_value.get.side_effect = TimeoutError("connection timed out")
 
@@ -699,7 +700,7 @@ async def test_test_connection_safe_auth_error_key(hass):
     }
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_sess:
         mock_sess.return_value.get.side_effect = AuthError("token rejected")
 
@@ -722,7 +723,7 @@ async def test_test_connection_safe_unknown_exception_key(hass):
     }
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_sess:
         mock_sess.return_value.get.side_effect = OSError("network failure")
 
@@ -744,7 +745,7 @@ async def test_test_connection_safe_abortflow_propagates(hass):
     }
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_sess:
         mock_sess.return_value.get.side_effect = AbortFlow("already_configured")
 

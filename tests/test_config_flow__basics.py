@@ -198,9 +198,9 @@ async def test_step_samsung_8888(hass, mock_setup_entry):  # pylint: disable=unu
 
     with (
         patch(
-            "custom_components.climate_ip.config_flow.YamlController"
+            "custom_components.climate_ip.controller_yaml.YamlController"
         ) as mock_controller_class,
-        patch("custom_components.climate_ip.config_flow.async_get_clientsession"),
+        patch("homeassistant.helpers.aiohttp_client.async_get_clientsession"),
     ):
         mock_controller_instance = mock_controller_class.return_value
         mock_controller_instance.initialize = AsyncMock(return_value=True)
@@ -270,7 +270,7 @@ async def test_step_reauth_rest_api(hass: HomeAssistant) -> None:
     assert result2["step_id"] == "rest_api"
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_session:
 
         class MockResponseCtx:  # pylint: disable=missing-class-docstring,too-few-public-methods
@@ -326,7 +326,7 @@ async def test_reauth_failure_handling(hass: HomeAssistant) -> None:
     await flow.async_step_reauth_confirm({})
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_session:
 
         class MockResponseCtx:  # pylint: disable=missing-class-docstring,too-few-public-methods
@@ -464,9 +464,9 @@ async def test_mim_h03_empty_list(hass: HomeAssistant) -> None:
 
     with (
         patch(
-            "custom_components.climate_ip.config_flow.YamlController"
+            "custom_components.climate_ip.controller_yaml.YamlController"
         ) as mock_controller_class,
-        patch("custom_components.climate_ip.config_flow.async_get_clientsession"),
+        patch("homeassistant.helpers.aiohttp_client.async_get_clientsession"),
     ):
         mock_controller_instance = mock_controller_class.return_value
         mock_controller_instance.initialize = AsyncMock(return_value=True)
@@ -621,7 +621,7 @@ async def test_mac_arp_miss_samsung_devices(hass: HomeAssistant) -> None:
     # 2. Mock asyncio.open_connection to raise OSError (Firewall/Port blocked)
     with (
         patch(
-            "custom_components.climate_ip.config_flow.async_get_mac_address",
+            "custom_components.climate_ip.helpers.async_get_mac_address",
             return_value=None,
         ),
         patch("asyncio.open_connection", side_effect=OSError("Firewall blocked")),
@@ -1336,7 +1336,7 @@ async def test_resolve_mac_and_set_unique_id(hass: HomeAssistant) -> None:
         # 2. MAC not provided, discovered immediately
         flow.flow_data.clear()
         with patch(
-            "custom_components.climate_ip.config_flow.async_get_mac_address",
+            "custom_components.climate_ip.helpers.async_get_mac_address",
             return_value="11:22:33:44:55:66",
         ):
             result = await flow._async_resolve_mac_and_set_unique_id(
@@ -1349,7 +1349,7 @@ async def test_resolve_mac_and_set_unique_id(hass: HomeAssistant) -> None:
         flow.flow_data.clear()
         with (
             patch(
-                "custom_components.climate_ip.config_flow.async_get_mac_address",
+                "custom_components.climate_ip.helpers.async_get_mac_address",
                 side_effect=[None, "11:22:33:44:55:66"],
             ) as mock_get_mac,
             patch.object(flow, "_async_force_arp_update") as mock_arp,
@@ -1369,7 +1369,7 @@ async def test_resolve_mac_and_set_unique_id(hass: HomeAssistant) -> None:
         flow.flow_data.clear()
         with (
             patch(
-                "custom_components.climate_ip.config_flow.async_get_mac_address",
+                "custom_components.climate_ip.helpers.async_get_mac_address",
                 return_value=None,
             ),
             patch.object(flow, "_async_force_arp_update") as mock_arp,
@@ -1393,7 +1393,7 @@ async def test_resolve_mac_mutants_coverage(hass: HomeAssistant) -> None:
     # Case 1: Standard MAC resolution and unique ID setting
     with (
         patch(
-            "custom_components.climate_ip.config_flow.async_get_mac_address",
+            "custom_components.climate_ip.helpers.async_get_mac_address",
             return_value="aa:bb:cc:dd:ee:ff",
         ) as mock_get_mac,
         patch.object(flow, "async_set_unique_id") as mock_set_unique_id,
@@ -1414,7 +1414,7 @@ async def test_resolve_mac_mutants_coverage(hass: HomeAssistant) -> None:
     flow.reauth_entry = MagicMock()
     with (
         patch(
-            "custom_components.climate_ip.config_flow.async_get_mac_address",
+            "custom_components.climate_ip.helpers.async_get_mac_address",
             return_value="aa:bb:cc:dd:ee:ff",
         ),
         patch.object(flow, "async_set_unique_id"),
@@ -1430,7 +1430,7 @@ async def test_resolve_mac_mutants_coverage(hass: HomeAssistant) -> None:
     flow.context["source"] = "reconfigure"
     with (
         patch(
-            "custom_components.climate_ip.config_flow.async_get_mac_address",
+            "custom_components.climate_ip.helpers.async_get_mac_address",
             return_value="aa:bb:cc:dd:ee:ff",
         ),
         patch.object(flow, "async_set_unique_id"),
@@ -1458,7 +1458,7 @@ async def test_validate_cert_path_mutants_coverage(hass: HomeAssistant) -> None:
     expected_dir = os.path.dirname(cf.__file__)
 
     with patch(
-        "custom_components.climate_ip.config_flow.resolve_cert_path"
+        "custom_components.climate_ip.helpers.resolve_cert_path"
     ) as mock_resolve:
         mock_resolve.return_value = "/dummy/resolved/path.pem"
         with patch("os.path.exists", return_value=True):
@@ -2325,7 +2325,7 @@ async def test_async_step_discover_uuid_mutants(hass: HomeAssistant) -> None:
         mock_unique_id.return_value = "test_unique_123"  # Kill mutmut_2
 
         with patch(
-            "custom_components.climate_ip.config_flow.YamlController"
+            "custom_components.climate_ip.controller_yaml.YamlController"
         ) as mock_controller_class:
             mock_controller = AsyncMock()
             mock_controller.initialize.return_value = True
@@ -2380,7 +2380,7 @@ async def test_async_step_discover_uuid_mutants(hass: HomeAssistant) -> None:
     flow2.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03}
 
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_controller_class2:
         mock_controller2 = AsyncMock()
         mock_controller2.initialize.return_value = True
@@ -2419,7 +2419,7 @@ async def test_async_step_discover_uuid_mutants(hass: HomeAssistant) -> None:
     flow3.reauth_entry = MagicMock()  # Set reauth_entry to truthy to kill mutmut 113
 
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_controller_class3:
         mock_controller3 = AsyncMock()
         mock_controller3.initialize.return_value = True
@@ -2503,7 +2503,7 @@ async def test_async_step_discover_uuid_mutants(hass: HomeAssistant) -> None:
     }
 
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_controller_class5:
         mock_controller5 = AsyncMock()
         mock_controller5.initialize.return_value = True
@@ -2569,7 +2569,7 @@ async def test_async_step_discover_uuid_mutants(hass: HomeAssistant) -> None:
     flow6.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
 
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_controller_class6:
         mock_controller6 = AsyncMock()
         mock_controller6.initialize.return_value = True
@@ -2619,7 +2619,7 @@ async def test_async_step_discover_uuid_mutants(hass: HomeAssistant) -> None:
     flow7.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
 
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_controller_class7:
         mock_controller7 = AsyncMock()
         mock_controller7.initialize.return_value = True
@@ -2681,7 +2681,7 @@ async def test_async_step_discover_uuid_mutants(hass: HomeAssistant) -> None:
     flow8.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
 
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_controller_class8:
         mock_controller8 = AsyncMock()
         # Asymmetric test to kill mutmut 195 (or -> and):
@@ -2708,7 +2708,7 @@ async def test_async_step_discover_uuid_mutants(hass: HomeAssistant) -> None:
     flow4.reauth_entry = None  # Falsey
 
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_controller_class4:
         mock_controller4 = AsyncMock()
         mock_controller4.initialize.return_value = True
@@ -2735,7 +2735,7 @@ async def test_async_step_discover_uuid_mutants(hass: HomeAssistant) -> None:
     flow9.hass = hass
     flow9.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_controller_class9:
         mock_controller9 = AsyncMock()
         mock_controller9.initialize.return_value = False
@@ -2750,7 +2750,7 @@ async def test_async_step_discover_uuid_mutants(hass: HomeAssistant) -> None:
     flow10.hass = hass
     flow10.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_controller_class10:
         mock_controller10 = AsyncMock()
         mock_controller10.async_get_status.side_effect = InvalidHeaderError("Test")
@@ -2767,7 +2767,7 @@ async def test_async_step_discover_uuid_mutants(hass: HomeAssistant) -> None:
     flow11.hass = hass
     flow11.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_controller_class11:
         mock_controller11 = AsyncMock()
         mock_controller11.initialize.return_value = True
@@ -2789,7 +2789,7 @@ async def test_async_step_discover_uuid_mutants(hass: HomeAssistant) -> None:
     flow12.hass = hass
     flow12.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03}
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_controller_class12:
         mock_controller12 = AsyncMock()
         mock_controller12.initialize.return_value = True
@@ -2818,7 +2818,7 @@ async def test_async_step_discover_uuid_mutants(hass: HomeAssistant) -> None:
     flow13.hass = hass
     flow13.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03}
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_controller_class13:
         mock_controller13 = AsyncMock()
         mock_controller13.initialize.return_value = True
@@ -2849,7 +2849,7 @@ async def test_async_step_discover_uuid_mutants(hass: HomeAssistant) -> None:
     flow14.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03}
     flow14.reauth_entry = MagicMock()  # Truthy
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_controller_class14:
         mock_controller14 = AsyncMock()
         mock_controller14.initialize.return_value = True
@@ -2873,7 +2873,7 @@ async def test_async_step_discover_uuid_mutants(hass: HomeAssistant) -> None:
     flow15.hass = hass
     flow15.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03}
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_controller_class15:
         mock_controller15 = AsyncMock()
         mock_controller15.initialize.return_value = True
@@ -2908,7 +2908,7 @@ async def test_async_step_discover_uuid_mutants(hass: HomeAssistant) -> None:
         CONF_CONFIG_FILE: "custom.yaml",
     }
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_controller_class16:
         mock_controller16 = AsyncMock()
         mock_controller16.initialize.return_value = True
@@ -3347,7 +3347,7 @@ async def test_test_connection_safe_untested_paths(hass: HomeAssistant) -> None:
     }
     # Mock async_get_clientsession to throw a catastrophic error
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession",
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession",
         side_effect=Exception("Catastrophic Core Failure"),
     ):
         try:
@@ -3383,7 +3383,7 @@ async def test_async_step_select_devices_comprehensive(hass: HomeAssistant) -> N
 
     # Asalto 1: Sin input de usuario -> Debe mostrar el formulario inicial
     with patch(
-        "custom_components.climate_ip.config_flow.cv.multi_select"
+        "custom_components.climate_ip.config_flow_discovery.cv.multi_select"
     ) as mock_multi:
         mock_multi.return_value = str
         res1 = await flow.async_step_select_devices()
@@ -3621,7 +3621,7 @@ async def test_test_connection_safe_2878_branch(hass: HomeAssistant) -> None:
 
     # Escenario A: Fallo en la inicialización del controlador (Kills mutants de inyección de unique_id)
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_ctrl_cls:
         mock_ctrl = MagicMock()
         mock_ctrl.initialize = AsyncMock(return_value=False)
@@ -3642,7 +3642,7 @@ async def test_test_connection_safe_2878_branch(hass: HomeAssistant) -> None:
     # Escenario A.2: unique_id ya presente en config_data (Kills mutant de if "unique_id" in config_data)
     flow.flow_data["unique_id"] = "PRE_EXISTING_ID"
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_ctrl_cls:
         mock_ctrl = MagicMock()
         mock_ctrl.initialize = AsyncMock(return_value=False)
@@ -3662,7 +3662,7 @@ async def test_test_connection_safe_2878_branch(hass: HomeAssistant) -> None:
 
     # Escenario B: Éxito en la conexión y lectura de estado
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_ctrl_cls:
         mock_ctrl = MagicMock()
         mock_ctrl.initialize = AsyncMock(return_value=True)
@@ -3692,7 +3692,7 @@ async def test_test_connection_safe_2878_branch(hass: HomeAssistant) -> None:
 
     # Escenario C: El estado devuelve None o no hay state_getter
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_ctrl_cls:
         mock_ctrl = MagicMock()
         mock_ctrl.initialize = AsyncMock(return_value=True)
@@ -3907,11 +3907,12 @@ async def test_test_connection_safe_8888_strict_kwargs(hass: HomeAssistant) -> N
     }
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_session_func:
         mock_session = MagicMock()
         mock_get = MagicMock()
-        mock_get.__aenter__.return_value.status = 200
+        mock_get.status = 200
+        mock_get.__aenter__.return_value = mock_get
         mock_session.get.return_value = mock_get
         mock_session_func.return_value = mock_session
 
@@ -3945,11 +3946,12 @@ async def test_test_connection_safe_8888_strict_kwargs(hass: HomeAssistant) -> N
     # Escenario A.2: Sin token (mata mutantes 13, 15, 16 forzando fallback exacto a "")
     flow.flow_data.pop(CONF_TOKEN, None)
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_session_func:
         mock_session = MagicMock()
         mock_get = MagicMock()
-        mock_get.__aenter__.return_value.status = 200
+        mock_get.status = 200
+        mock_get.__aenter__.return_value = mock_get
         mock_session.get.return_value = mock_get
         mock_session_func.return_value = mock_session
 
@@ -3970,10 +3972,10 @@ async def test_test_connection_safe_8888_strict_kwargs(hass: HomeAssistant) -> N
     flow.flow_data[CONF_CERT] = "valid_cert.pem"
     with (
         patch(
-            "custom_components.climate_ip.config_flow.async_get_clientsession"
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession"
         ) as mock_session_func_cert,
         patch(
-            "custom_components.climate_ip.config_flow.resolve_cert_path",
+            "custom_components.climate_ip.helpers.resolve_cert_path",
             return_value="/fake/valid_cert.pem",
         ) as mock_resolve,
         patch("os.path.exists", return_value=True) as mock_exists,
@@ -4012,11 +4014,12 @@ async def test_test_connection_safe_8888_strict_kwargs(hass: HomeAssistant) -> N
     # Escenario A.3: Sin cert provisto en flow_data (mata mutantes 34, 36, 37)
     flow.flow_data.pop(CONF_CERT, None)
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_session_func:
         mock_session = MagicMock()
         mock_get = MagicMock()
-        mock_get.__aenter__.return_value.status = 200
+        mock_get.status = 200
+        mock_get.__aenter__.return_value = mock_get
         mock_session.get.return_value = mock_get
         mock_session_func.return_value = mock_session
 
@@ -4047,7 +4050,7 @@ async def test_rest_api_strict_token_sanitization(hass: HomeAssistant) -> None:
     # Vector 1: El sanitizador devuelve string vacío (Kills mutants de == "")
     flow.flow_data = {"device_type": "dummy"}
     with patch(
-        "custom_components.climate_ip.config_flow.sanitize_token", return_value=""
+        "custom_components.climate_ip.helpers.sanitize_token", return_value=""
     ):
         try:
             async with asyncio.timeout(0.5):
@@ -4059,7 +4062,7 @@ async def test_rest_api_strict_token_sanitization(hass: HomeAssistant) -> None:
 
     # Vector 2: El sanitizador devuelve None (Kills mutants de is None)
     with patch(
-        "custom_components.climate_ip.config_flow.sanitize_token", return_value=None
+        "custom_components.climate_ip.helpers.sanitize_token", return_value=None
     ):
         try:
             async with asyncio.timeout(0.5):
@@ -4088,15 +4091,16 @@ async def test_rest_api_strict_token_sanitization(hass: HomeAssistant) -> None:
     # Vector 4: Token válido asigna safe_token a flow.flow_data[CONF_TOKEN] y no None
     with (
         patch(
-            "custom_components.climate_ip.config_flow.sanitize_token",
+            "custom_components.climate_ip.helpers.sanitize_token",
             return_value="clean_token",
         ),
         patch(
-            "custom_components.climate_ip.config_flow.async_get_clientsession"
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession"
         ) as mock_sess,
     ):
         mock_get = AsyncMock()
-        mock_get.__aenter__.return_value.status = 200
+        mock_get.status = 200
+        mock_get.__aenter__.return_value = mock_get
         mock_sess.return_value.get.return_value = mock_get
         with (
             patch.object(flow, "async_set_unique_id"),
@@ -4391,11 +4395,12 @@ async def test_rest_api_strict_headers_and_fallback(hass: HomeAssistant) -> None
     flow.DEBUG_ME = True
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_session_func:
         mock_session = MagicMock()
         mock_get = MagicMock()
-        mock_get.__aenter__.return_value.status = 200
+        mock_get.status = 200
+        mock_get.__aenter__.return_value = mock_get
         mock_session.get.return_value = mock_get
         mock_session_func.return_value = mock_session
 
@@ -4652,11 +4657,12 @@ async def test_rest_api_strict_dict_assignments(hass: HomeAssistant) -> None:
 
     # Parcheamos la conexión para que devuelva OK si llegara a intentar conectar (no debería)
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_session_func:
         mock_session = MagicMock()
         mock_get = MagicMock()
-        mock_get.__aenter__.return_value.status = 200
+        mock_get.status = 200
+        mock_get.__aenter__.return_value = mock_get
         mock_session.get.return_value = mock_get
         mock_session_func.return_value = mock_session
 
@@ -5061,7 +5067,7 @@ async def test_form_schemas_types_and_defaults(hass):
     flow2.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_session_func:
         # Cause auth error
         mock_session_func.return_value.get.return_value.__aenter__.return_value.status = 401
@@ -5177,7 +5183,7 @@ async def test_trampa2_placeholders_and_step_ids(hass):
         CONF_MAC: "AA:BB:CC",
     }
     with patch(
-        "custom_components.climate_ip.config_flow.validate_poll_interval",
+        "custom_components.climate_ip.helpers.validate_poll_interval",
         return_value=10,
     ):
         with patch(
@@ -5373,7 +5379,7 @@ async def test_discovery_missing_attributes(hass: HomeAssistant) -> None:
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
 
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController"
+        "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_controller_class:
         mock_controller = AsyncMock()
         mock_controller.initialize.return_value = True
@@ -5492,10 +5498,11 @@ async def test_rest_api_clientsession_receives_hass(hass: HomeAssistant) -> None
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_sess:
         mock_get = AsyncMock()
-        mock_get.__aenter__.return_value.status = 200
+        mock_get.status = 200
+        mock_get.__aenter__.return_value = mock_get
         mock_sess.return_value.get.return_value = mock_get
         with (
             patch.object(flow, "async_set_unique_id"),
@@ -5541,10 +5548,11 @@ async def test_rest_api_ipv6_url_has_brackets(hass: HomeAssistant) -> None:
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_sess:
         mock_get = AsyncMock()
-        mock_get.__aenter__.return_value.status = 200
+        mock_get.status = 200
+        mock_get.__aenter__.return_value = mock_get
         mock_sess.return_value.get.return_value = mock_get
         with (
             patch.object(flow, "async_set_unique_id"),
@@ -5589,10 +5597,11 @@ async def test_rest_api_no_mac_abort_reason(hass: HomeAssistant) -> None:
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_sess:
         mock_get = AsyncMock()
-        mock_get.__aenter__.return_value.status = 200
+        mock_get.status = 200
+        mock_get.__aenter__.return_value = mock_get
         mock_sess.return_value.get.return_value = mock_get
         # No CONF_DEVICE_ID ni CONF_MAC → unique_id = "" → abort
         try:
@@ -5990,10 +5999,10 @@ async def test_yaml_controller_instantiation_strict(hass: HomeAssistant) -> None
 
     with (
         patch(
-            "custom_components.climate_ip.config_flow.YamlController"
+            "custom_components.climate_ip.controller_yaml.YamlController"
         ) as mock_ctrl_class,
         patch(
-            "custom_components.climate_ip.config_flow.async_get_clientsession"
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession"
         ) as mock_sess,
     ):
         mock_sess_instance = MagicMock()
@@ -6064,7 +6073,7 @@ async def test_test_connection_safe_8888_failure_dict_strict(
     }
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_sess:
         mock_get = AsyncMock()
         mock_get.__aenter__.return_value.status = 403  # Falla → no 200
@@ -6129,10 +6138,11 @@ async def test_rest_api_unique_id_empty_fallback_strict(hass: HomeAssistant) -> 
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_sess:
         mock_get = AsyncMock()
-        mock_get.__aenter__.return_value.status = 200
+        mock_get.status = 200
+        mock_get.__aenter__.return_value = mock_get
         mock_sess.return_value.get.return_value = mock_get
 
         # Sin CONF_DEVICE_ID ni CONF_MAC → unique_id = "" → debe abortar
@@ -6170,7 +6180,7 @@ async def test_rest_api_errors_base_unknown_error_strict(hass: HomeAssistant) ->
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_sess:
         # Forzamos excepción genérica (no AbortFlow) dentro del bloque try de async_step_rest_api
         mock_sess.side_effect = Exception("Red caída")
@@ -6577,7 +6587,7 @@ async def test_test_connection_safe_exceptions(hass: HomeAssistant) -> None:
 
     # 1. CannotConnect
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession",
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession",
         side_effect=CannotConnect("Connection refused at port 8888"),
     ):
         try:
@@ -6593,7 +6603,7 @@ async def test_test_connection_safe_exceptions(hass: HomeAssistant) -> None:
 
     # 2. TimeoutError
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession",
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession",
         side_effect=TimeoutError("8888 connection timeout"),
     ):
         try:
@@ -6609,7 +6619,7 @@ async def test_test_connection_safe_exceptions(hass: HomeAssistant) -> None:
 
     # 3. AuthError
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession",
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession",
         side_effect=AuthError("401 Unauthorized"),
     ):
         try:
@@ -6625,7 +6635,7 @@ async def test_test_connection_safe_exceptions(hass: HomeAssistant) -> None:
 
     # 4. Exception generico
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession",
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession",
         side_effect=RuntimeError("Generic connection error"),
     ):
         try:

@@ -419,7 +419,7 @@ def block_unmocked_network_io(monkeypatch):
 
     # 2. Bloquear resolución ARP/MAC no mockeada
     monkeypatch.setattr(
-        "custom_components.climate_ip.config_flow.async_get_mac_address",
+        "custom_components.climate_ip.helpers.async_get_mac_address",
         AsyncMock(return_value=None),
     )
 
@@ -428,6 +428,6 @@ def block_unmocked_network_io(monkeypatch):
         return False
 
     monkeypatch.setattr(
-        "custom_components.climate_ip.config_flow.YamlController.initialize",
+        "custom_components.climate_ip.controller_yaml.YamlController.initialize",
         immediate_controller_init_fail,
     )

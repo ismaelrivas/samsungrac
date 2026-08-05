@@ -24,7 +24,7 @@ async def test_resolve_mac_skips_arp_if_in_cache(hass_mock):
 
     with (
         patch(
-            "custom_components.climate_ip.config_flow.async_get_mac_address",
+            "custom_components.climate_ip.config_flow_helpers.async_get_mac_address",
             new_callable=AsyncMock,
         ) as mock_get_mac,
         patch.object(
@@ -58,7 +58,7 @@ async def test_resolve_mac_forces_arp_if_not_in_cache(hass_mock):
 
     with (
         patch(
-            "custom_components.climate_ip.config_flow.async_get_mac_address",
+            "custom_components.climate_ip.config_flow_helpers.async_get_mac_address",
             new_callable=AsyncMock,
         ) as mock_get_mac,
         patch.object(

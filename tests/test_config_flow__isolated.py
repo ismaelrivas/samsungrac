@@ -73,10 +73,10 @@ async def test_connection_safe_ssl_mutant(hass):
 
     with (
         patch(
-            "custom_components.climate_ip.config_flow.ssl.create_default_context"
+            "custom_components.climate_ip.config_flow_helpers.ssl.create_default_context"
         ) as mock_ssl,
         patch(
-            "custom_components.climate_ip.config_flow.async_get_clientsession"
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession"
         ) as mock_session,
     ):
         mock_context = MagicMock()
@@ -152,7 +152,7 @@ async def test_await_button_fallbacks():
     flow.task.result.return_value = {"ok": True}
 
     with patch(
-        "custom_components.climate_ip.config_flow.sanitize_token", return_value=False
+        "custom_components.climate_ip.helpers.sanitize_token", return_value=False
     ):
         try:
             async with asyncio.timeout(0.5):
@@ -191,7 +191,7 @@ async def test_fallback_raw_discovery_controller_mutant(hass):
     flow.flow_data = {}
 
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController",
+        "custom_components.climate_ip.controller_yaml.YamlController",
         side_effect=Exception("Boom"),
     ):
         try:
@@ -214,7 +214,7 @@ async def test_connection_safe_unique_id_empty_fallback():
         CONF_IP_ADDRESS: "1.1.1.1",
     }
 
-    with patch("custom_components.climate_ip.config_flow.YamlController") as mock_yaml:
+    with patch("custom_components.climate_ip.controller_yaml.YamlController") as mock_yaml:
         mock_ctrl = mock_yaml.return_value
         mock_ctrl.initialize = AsyncMock(return_value=True)
         mock_ctrl.async_get_status = AsyncMock(return_value=True)
@@ -246,7 +246,7 @@ async def test_await_button_token_missing_fallback():
     flow.task.done.return_value = True
     flow.task.result.return_value = {"ok": True}
 
-    with patch("custom_components.climate_ip.config_flow.sanitize_token") as mock_san:
+    with patch("custom_components.climate_ip.helpers.sanitize_token") as mock_san:
         mock_san.return_value = False
         try:
             async with asyncio.timeout(0.5):
@@ -345,7 +345,7 @@ async def test_discover_uuid_controller_init_none_is_correct_start():
     flow.hass = MagicMock()
 
     with patch(
-        "custom_components.climate_ip.config_flow.YamlController",
+        "custom_components.climate_ip.controller_yaml.YamlController",
         side_effect=Exception("Constructor Crash"),
     ):
         try:
@@ -367,7 +367,7 @@ async def test_discover_uuid_hasattr_exact_attribute_name():
     }
     flow.hass = MagicMock()
 
-    with patch("custom_components.climate_ip.config_flow.YamlController") as mock_yaml:
+    with patch("custom_components.climate_ip.controller_yaml.YamlController") as mock_yaml:
         mock_ctrl = MagicMock(
             spec=[
                 "initialize",
@@ -414,7 +414,7 @@ async def test_discover_uuid_invalid_header_controller_shutdown():
     }
     flow.hass = MagicMock()
 
-    with patch("custom_components.climate_ip.config_flow.YamlController") as mock_yaml:
+    with patch("custom_components.climate_ip.controller_yaml.YamlController") as mock_yaml:
         mock_ctrl = MagicMock()
         mock_ctrl.initialize = AsyncMock(side_effect=InvalidHeaderError("bad header"))
         mock_ctrl.async_shutdown = AsyncMock()

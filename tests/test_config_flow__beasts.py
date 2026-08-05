@@ -17,8 +17,8 @@ from custom_components.climate_ip.const import (
     GLOBAL_HTTP_TIMEOUT,
 )
 from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN, CONF_MAC
-from custom_components.climate_ip.config_flow import (
-    ClimateIpConfigFlow,
+from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+from custom_components.climate_ip.const import (
     CONF_DEVICE_ID,
     CONF_POLL_INTERVAL,
 )
@@ -35,7 +35,7 @@ async def test_rest_api_token_sanitization_mutants():
     # Si simulamos que sanitize_token falla porque recibe "XXXX" (algo falso),
     # comprobaremos que lanza error de formato en vez de aceptarlo.
     with patch(
-        "custom_components.climate_ip.config_flow.sanitize_token", return_value=False
+        "custom_components.climate_ip.helpers.sanitize_token", return_value=False
     ):
         # Le pasamos un token falso para que falle sanitize_token
         result = await flow.async_step_rest_api({CONF_TOKEN: "XXXX"})
@@ -63,11 +63,12 @@ async def test_rest_api_device_mapping_mutants():
 
     # Mock validate_poll para pasar directo al chequeo de REST
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_session:
         # Mock HTTP 200 para evitar exception de CannotConnect
         mock_get = AsyncMock()
-        mock_get.__aenter__.return_value.status = 200
+        mock_get.status = 200
+        mock_get.__aenter__.return_value = mock_get
         mock_session.return_value.get.return_value = mock_get
 
         # Mock unique ID fallback
@@ -99,10 +100,11 @@ async def test_rest_api_unique_id_logic_mutants():
     }
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_session:
         mock_get = AsyncMock()
-        mock_get.__aenter__.return_value.status = 200
+        mock_get.status = 200
+        mock_get.__aenter__.return_value = mock_get
         mock_session.return_value.get.return_value = mock_get
 
         # 1. Prioridad: Device ID (M78, M80)
@@ -280,7 +282,7 @@ async def test_rest_api_schema_invalid_poll_interval_except_branch():
 
     # Parcheamos DEFAULT_POLL_INTERVAL a un valor inválido para forzar el except
     with patch(
-        "custom_components.climate_ip.config_flow.DEFAULT_POLL_INTERVAL", "invalid"
+        "custom_components.climate_ip.config_flow_schemas.DEFAULT_POLL_INTERVAL", "invalid"
     ):
         schema = flow._get_rest_api_schema()
 
@@ -530,7 +532,7 @@ async def test_rest_api_empty_token_and_reauth_abort():
     # 1. Verify mutant M8 kill (Token vacío fallback a "XXXX")
     # If mutmut cambia raw_token = "" a "XXXX", el 'if raw_token:' se cumple y llama a sanitize.
     with patch(
-        "custom_components.climate_ip.config_flow.sanitize_token"
+        "custom_components.climate_ip.helpers.sanitize_token"
     ) as mock_sanitize:
         await flow.async_step_rest_api({})
         # En el código original raw_token="", así que NO debe llamar a sanitize_token
@@ -544,10 +546,11 @@ async def test_rest_api_empty_token_and_reauth_abort():
     flow.reauth_entry = MagicMock()  # Está en reauth (NOT None)
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_session:
         mock_get = AsyncMock()
-        mock_get.__aenter__.return_value.status = 200
+        mock_get.status = 200
+        mock_get.__aenter__.return_value = mock_get
         mock_session.return_value.get.return_value = mock_get
         with (
             patch.object(flow, "_abort_if_unique_id_configured") as mock_abort,
@@ -662,10 +665,11 @@ async def test_test_connection_safe_strict_timeout(hass: HomeAssistant) -> None:
     }
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_sess:
         mock_get = AsyncMock()
-        mock_get.__aenter__.return_value.status = 200
+        mock_get.status = 200
+        mock_get.__aenter__.return_value = mock_get
         mock_sess.return_value.get.return_value = mock_get
 
         try:
@@ -821,7 +825,7 @@ async def test_rest_api_broad_exception_base_error(hass: HomeAssistant) -> None:
     }
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession",
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession",
         side_effect=Exception("Boom"),
     ):
         res = await flow.async_step_rest_api({CONF_IP_ADDRESS: "1.1.1.1"})
@@ -846,10 +850,11 @@ async def test_rest_api_unique_id_empty_fallback(hass: HomeAssistant) -> None:
     # SIN DEVICE_ID NI MAC EN FLOW_DATA
 
     with patch(
-        "custom_components.climate_ip.config_flow.async_get_clientsession"
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_sess:
         mock_get = AsyncMock()
-        mock_get.__aenter__.return_value.status = 200
+        mock_get.status = 200
+        mock_get.__aenter__.return_value = mock_get
         mock_sess.return_value.get.return_value = mock_get
 
         res = await flow.async_step_rest_api({CONF_IP_ADDRESS: "1.1.1.1"})
