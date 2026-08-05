@@ -277,6 +277,14 @@ async def test_async_update_state_device_discovery():
 #     ].calculate_value_from_state.side_effect = Exception("Boom")
 #     pass
 
+def test_clear_pending_updates():
+    poller = YamlStatePoller(MagicMock())
+    poller.register_pending_update("target_temp", 22)
+    assert "target_temp" in poller._pending_updates
+    
+    poller.clear_pending_updates(["target_temp"])
+    assert "target_temp" not in poller._pending_updates
+
 
 def test_device_key_from_template_regex():
     """Kills mutants que alteran el patrón Regex de búsqueda de estado."""

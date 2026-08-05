@@ -140,13 +140,14 @@ async def test_async_step_discover_uuid_blind_device():
     flow.hass = MagicMock()
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888}
     flow.reauth_entry = None
-    flow.source = "user"
+    flow.context = {"source": "user"}
 
     with patch.object(flow, "_async_init_discovery_controller") as mock_init:
         mock_ctrl = MagicMock()
         mock_ctrl.discovered_devices = []
         mock_ctrl.unique_id = "BLIND_UNIQUE_123"
         mock_ctrl.device_id = "BLIND_DEV_123"
+        mock_ctrl.async_shutdown = AsyncMock()
         mock_init.return_value = mock_ctrl
 
         with (
@@ -174,7 +175,7 @@ async def test_async_step_select_devices_flow():
         "unique_id": "MAIN_UID",
     }
     flow.reauth_entry = None
-    flow.source = "user"
+    flow.context = {"source": "user"}
 
     # Step 1: Initial call (no user_input -> return form)
     res_form = await flow.async_step_select_devices()

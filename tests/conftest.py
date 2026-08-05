@@ -431,3 +431,33 @@ def block_unmocked_network_io(monkeypatch):
         "custom_components.climate_ip.controller_yaml.YamlController.initialize",
         immediate_controller_init_fail,
     )
+
+    # 4. Fail-fast para aiohttp HTTP requests no mockeados
+    async def immediate_aiohttp_fail(*args, **kwargs):
+        raise OSError("FAIL-FAST: Unmocked aiohttp HTTP request intercepted.")
+
+    mock_get_cm = MagicMock()
+    mock_get_cm.__aenter__ = AsyncMock(side_effect=immediate_aiohttp_fail)
+    mock_get_cm.__aexit__ = AsyncMock(return_value=None)
+
+    mock_post_cm = MagicMock()
+    mock_post_cm.__aenter__ = AsyncMock(side_effect=immediate_aiohttp_fail)
+    mock_post_cm.__aexit__ = AsyncMock(return_value=None)
+
+    mock_aiohttp_session = MagicMock()
+    mock_aiohttp_session.get.return_value = mock_get_cm
+    mock_aiohttp_session.post.return_value = mock_post_cm
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+        lambda hass: mock_aiohttp_session,
+    )
+
+    # 5. Fail-fast para requests HTTP no mockeados
+    def immediate_requests_fail(*args, **kwargs):
+        raise OSError("FAIL-FAST: Unmocked requests HTTP request intercepted.")
+
+    try:
+        monkeypatch.setattr("requests.sessions.Session.request", immediate_requests_fail)
+    except Exception:
+        pass

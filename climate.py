@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
-from homeassistant.components import climate as ha_climate
 from homeassistant.components.climate import (
     ATTR_CURRENT_TEMPERATURE,
     ATTR_FAN_MODE,
@@ -299,11 +298,6 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         """Return device information."""
         return self._attr_device_info
 
-    async def _async_set_climate_mode(
-        self, attr_name: str, mode_value: Any
-    ) -> None:
-        """Helper to unify the logic for setting hvac, fan, swing, and preset modes."""
-        await self.coordinator.async_set_property(attr_name, mode_value)
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature and handle optional hvac_mode."""
         temp: float | None = kwargs.get(const.ATTR_TEMPERATURE)
@@ -318,12 +312,12 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             await self.async_set_hvac_mode(hvac_mode)
 
         if temp is not None:
-            await self._async_set_climate_mode(
+            await self.coordinator.async_set_property(
                 const.ATTR_TEMPERATURE, temp
             )
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
-        await self._async_set_climate_mode(ATTR_HVAC_MODE, hvac_mode)
+        await self.coordinator.async_set_property(ATTR_HVAC_MODE, hvac_mode)
     async def async_set_fan_mode(self, fan_mode: str) -> None:
         """Set new target fan mode."""
         if fan_mode not in self.fan_modes:
@@ -331,15 +325,15 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             _LOGGER.warning("%s Requested fan mode '%s' is not available. Ignoring request.", self.log_prefix, fan_mode)  # pragma: no mutate
             # fmt: on
             return
-        await self._async_set_climate_mode(ATTR_FAN_MODE, fan_mode)
+        await self.coordinator.async_set_property(ATTR_FAN_MODE, fan_mode)
     async def async_set_swing_mode(self, swing_mode: str) -> None:
         """Set new target swing operation."""
-        await self._async_set_climate_mode(
+        await self.coordinator.async_set_property(
             ATTR_SWING_MODE, swing_mode
         )
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set new target preset mode."""
-        await self._async_set_climate_mode(
+        await self.coordinator.async_set_property(
             ATTR_PRESET_MODE, preset_mode
         )
     async def async_set_property(self, key: str, value: Any) -> None:
@@ -350,10 +344,10 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         await self.coordinator.async_set_property(key, value)
     async def async_turn_on(self) -> None:
         """Turn the climate device on."""
-        await self._async_set_climate_mode(ATTR_POWER, const.STATE_ON)
+        await self.coordinator.async_set_property(ATTR_POWER, const.STATE_ON)
     async def async_turn_off(self) -> None:
         """Turn the climate device off."""
-        await self._async_set_climate_mode(ATTR_POWER, const.STATE_OFF)
+        await self.coordinator.async_set_property(ATTR_POWER, const.STATE_OFF)
     async def async_service_set_property(self, **kwargs: Any) -> None:
         """Set a property on the device via action call."""
         key: str | None = kwargs.get("key")

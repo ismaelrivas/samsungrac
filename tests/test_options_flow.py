@@ -50,6 +50,7 @@ async def test_options_flow_empty_defaults(hass):
 
     result = await flow.async_step_init()
     assert result["type"] == "form", f"Expected form but got: {result}"
+    assert result["step_id"] == "init"
     schema = result["data_schema"]
 
     conn_key, _ = get_schema_marker(schema, CONF_CONN_METHOD)
@@ -97,6 +98,8 @@ async def test_options_flow_invalid_poll_interval(hass):
 
     result = await flow.async_step_init({CONF_POLL_INTERVAL: "invalid"})
     assert result["type"] == "form"
+    assert result["step_id"] == "init"
+    assert result.get("data_schema") is not None
     assert result["errors"] == {CONF_POLL_INTERVAL: "invalid_poll_interval"}
 
 
@@ -120,6 +123,7 @@ async def test_options_flow_success_valid_input(hass):
         }
     )
     assert result["type"] == "create_entry"
+    assert result["title"] == ""
     assert result["data"][CONF_POLL_INTERVAL] == 120
     assert result["data"][CONF_TARGET_TEMP_STEP] == 0.5
 
