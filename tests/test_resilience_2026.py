@@ -87,10 +87,18 @@ async def test_switch_connection_engine_on_error(hass, coordinator):
     coordinator.controller.async_get_status.side_effect = InvalidHeaderError("Garbage")
     from custom_components.climate_ip.const import CONF_CONN_METHOD, CONN_METHOD_RAW
 
-    with patch.object(hass.config_entries, "async_update_entry") as mock_update_entry:
+    bg_tasks = []
+    def _capture_bg_task(hass, coro, name=None):
+        bg_tasks.append(coro)
+        return MagicMock()
+
+    with patch.object(coordinator.config_entry, "async_create_background_task", side_effect=_capture_bg_task), \
+         patch.object(hass.config_entries, "async_update_entry") as mock_update_entry:
         try:
             await coordinator._async_update_data()
         except UpdateFailed as err:
+            for coro in bg_tasks:
+                await coro
             assert "Switching" in str(err)
 
             expected_options = dict(coordinator.entry.options)

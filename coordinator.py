@@ -39,6 +39,18 @@ _LOGGER = logging.getLogger(__name__)
 HARDWARE_BREATHING_ROOM_SEC: float = 1.0
 
 
+def _dispatch_to_loop(hass: HomeAssistant, func: Callable[[], None]) -> None:
+    """Execute func directly if on main thread or in mock test loop, else delegate via call_soon_threadsafe."""
+    try:
+        running_loop = asyncio.get_running_loop()
+        if hass.loop is running_loop or not isinstance(hass.loop, asyncio.AbstractEventLoop):
+            func()
+            return
+    except RuntimeError:
+        pass
+    hass.loop.call_soon_threadsafe(func)
+
+
 class PropertyDebouncer:
     """Debounces outgoing commands per property to shield hardware from request flooding."""
 
@@ -148,11 +160,14 @@ class PropertyDebouncer:
                         )  # pragma: no mutate
                         await self.coordinator.async_request_refresh()
 
-                self.coordinator.config_entry.async_create_background_task(
-                    self.hass,
-                    _task_runner(),
-                    name=f"samsung_ac_debouncer_{self.coordinator.unique_id}_{prop}",
-                )
+                def _schedule_task() -> None:
+                    self.coordinator.config_entry.async_create_background_task(
+                        self.hass,
+                        _task_runner(),
+                        name=f"samsung_ac_debouncer_{self.coordinator.unique_id}_{prop}",
+                    )
+
+                _dispatch_to_loop(self.hass, _schedule_task)
 
         self._timers[property_name] = async_call_later(
             self.hass, self.delay, _fire_delayed
@@ -255,12 +270,15 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     @callback
     def _async_save_new_token(self, new_token: str) -> None:
         """Callback to save the renewed token from the network layer."""
-        new_data = dict(self.entry.data)  # pragma: no mutate
-        new_data["token"] = new_token
-        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
-        _LOGGER.info(
-            "%s Persisted new network token to Config Entry.", self.log_prefix
-        )  # pragma: no mutate
+        def _update_token() -> None:
+            new_data = dict(self.entry.data)  # pragma: no mutate
+            new_data["token"] = new_token
+            self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+            _LOGGER.info(
+                "%s Persisted new network token to Config Entry.", self.log_prefix
+            )  # pragma: no mutate
+
+        _dispatch_to_loop(self.hass, _update_token)
 
     def _get_current_state(self) -> Any:
         """Callback for the controller to get the current cached state."""
@@ -269,13 +287,16 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     @callback
     def _async_save_ssl_config(self, ssl_config: dict[str, Any]) -> None:
         """Callback to save SSL configuration to the config entry."""
-        current_data = dict(self.entry.data)  # pragma: no mutate
-        if current_data.get("_ssl_config_2878") != ssl_config:
-            current_data["_ssl_config_2878"] = ssl_config
-            self.hass.config_entries.async_update_entry(self.entry, data=current_data)
-            _LOGGER.info(
-                "%s Persisted SSL config to ConfigEntry data.", self.log_prefix
-            )  # pragma: no mutate
+        def _update_ssl() -> None:
+            current_data = dict(self.entry.data)  # pragma: no mutate
+            if current_data.get("_ssl_config_2878") != ssl_config:
+                current_data["_ssl_config_2878"] = ssl_config
+                self.hass.config_entries.async_update_entry(self.entry, data=current_data)
+                _LOGGER.info(
+                    "%s Persisted SSL config to ConfigEntry data.", self.log_prefix
+                )  # pragma: no mutate
+
+        _dispatch_to_loop(self.hass, _update_ssl)
 
     async def _async_request_refresh(self) -> None:
         """Callback to request an immediate data refresh."""
@@ -322,7 +343,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                     self._async_switch_to_raw_engine(),
                     "auto_heal_raw",
                 )
-                raise UpdateFailed("Auto-healing in progress") from err
+                raise UpdateFailed("Auto-healing in progress: Switching to RAW engine") from err
 
             _LOGGER.error(
                 "%s Invalid header error persists even on the RAW engine. Auto-healing failed: %s",
