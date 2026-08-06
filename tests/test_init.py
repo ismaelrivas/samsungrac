@@ -440,6 +440,7 @@ async def test_setup_entry_total_initialization_failure(hass: HomeAssistant) -> 
     ):
         # Simulate a critical network or validation failure in the controller
         mock_yaml_class.return_value.initialize = AsyncMock(return_value=False)
+        mock_yaml_class.return_value.async_shutdown = AsyncMock()
 
         # Execute for standalone
         with pytest.raises(ConfigEntryNotReady, match="No coordinators could be set up"):
@@ -473,10 +474,12 @@ async def test_setup_entry_multi_device_partial_failure(hass: HomeAssistant) -> 
         # Force Zone A to fail, but Zone B to succeed
         mock_instance_1 = MagicMock()
         mock_instance_1.initialize = AsyncMock(return_value=False)
+        mock_instance_1.async_shutdown = AsyncMock()
         mock_instance_1.log_prefix = "[Zone A]"
 
         mock_instance_2 = MagicMock()
         mock_instance_2.initialize = AsyncMock(return_value=True)
+        mock_instance_2.async_shutdown = AsyncMock()
         mock_instance_2.log_prefix = "[Zone B]"
 
         # side_effect returns the mocks in order for each loop iteration
@@ -584,6 +587,7 @@ async def test_async_setup_entry_controller_transient_network_error(hass: HomeAs
     ):
         mock_instance = mock_yaml_class.return_value
         mock_instance.initialize = AsyncMock(side_effect=TimeoutError("Connection timed out"))
+        mock_instance.async_shutdown = AsyncMock()
 
         with pytest.raises(ConfigEntryNotReady):
             await async_setup_entry(hass, mock_entry)

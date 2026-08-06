@@ -13,9 +13,9 @@ from homeassistant.helpers.device_registry import DeviceEntry
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .const import (
-    CONF_DEVICE_ID,
     CONF_DEVICE_TYPE,
     CONF_DEVICES,
+    CONF_SUBDEVICE_ID,
     CONFIG_ENTRY_VERSION,
     DOMAIN,
     MAIN_DEVICE_ID,
@@ -42,19 +42,23 @@ PLATFORMS: list[Platform] = [
 def _get_config_value(entry: ConfigEntry, key: str, default: Any = None) -> Any:
     """Extract configuration value prioritizing options over entry data."""
     val = entry.options.get(key)
-    if val is not None and val != "":
+    if val is not None:
         return val
     return entry.data.get(key, default)
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -> bool:
     """Migrate old config entry to new version."""
-    _LOGGER.debug("Migrating climate_ip config entry from version %s to %s", entry.version, CONFIG_ENTRY_VERSION)
+    _LOGGER.debug(
+        "Migrating climate_ip config entry from version %s to %s",
+        entry.version,
+        CONFIG_ENTRY_VERSION,
+    )
 
     if entry.version > CONFIG_ENTRY_VERSION:
         # Guard against downgrades.
         _LOGGER.error(
-            "Config entry version %s is newer than the integration supports (%s). Please update the integration.",
+            "Config entry version %s is newer than integration supports (%s). Update integration.",
             entry.version,
             CONFIG_ENTRY_VERSION,
         )
@@ -73,6 +77,17 @@ async def async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None
     await hass.config_entries.async_reload(entry.entry_id)
 
 
+async def _async_safe_shutdown(target: Any) -> None:
+    """Safely shut down a controller or coordinator if async_shutdown exists and is awaitable."""
+    if hasattr(target, "async_shutdown"):
+        try:
+            res = target.async_shutdown()
+            if asyncio.iscoroutine(res) or hasattr(res, "__await__"):
+                await res
+        except Exception as ex:  # pylint: disable=broad-exception-caught
+            _LOGGER.warning("Error during safe shutdown of %s: %s", target, ex)
+
+
 async def _async_setup_single_device(
     device_id: str,
     device_name: str,
@@ -89,51 +104,47 @@ async def _async_setup_single_device(
             device_name,
             ex,
         )
-        await controller.async_shutdown()
+        await _async_safe_shutdown(controller)
         return device_id, None
 
     if not initialized:
-        _LOGGER.debug("%s Failed to initialize controller for %s", controller.log_prefix, device_name, exc_info=True)
-        await controller.async_shutdown()
+        _LOGGER.debug(
+            "%s Failed to initialize controller for %s",
+            controller.log_prefix,
+            device_name,
+            exc_info=True,
+        )
+        await _async_safe_shutdown(controller)
         return device_id, None
 
     try:
         await coordinator.async_config_entry_first_refresh()
     except ConfigEntryAuthFailed:
-        await controller.async_shutdown()
+        await _async_safe_shutdown(controller)
         raise
     except (TimeoutError, ConnectionRefusedError, OSError, UpdateFailed) as ex:
-        _LOGGER.error("%s Initial connection failed for %s: %s", controller.log_prefix, device_name, ex)
-        await controller.async_shutdown()
+        _LOGGER.error(
+            "%s Initial connection failed for %s: %s",
+            controller.log_prefix,
+            device_name,
+            ex,
+        )
+        await _async_safe_shutdown(controller)
         return device_id, None
 
     return device_id, coordinator
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -> bool:  # pylint: disable=import-outside-toplevel,too-many-locals,too-many-branches,too-many-statements
-    """Set up Samsung Climate IP from a config entry."""
-
-    device_type = _get_config_value(entry, CONF_DEVICE_TYPE)
-    mac = _get_config_value(entry, CONF_MAC, DEFAULT_UNKNOWN)
-    ip_address = _get_config_value(entry, CONF_IP_ADDRESS, DEFAULT_UNKNOWN)
-
-    # Use the official session manager.
-    session = async_get_clientsession(hass)
-
-    _LOGGER.info("Starting setup for device %s at %s (Device Type: %s)", mac, ip_address, device_type)
-
-    devices_config = _get_config_value(entry, CONF_DEVICES)
-
-    # Normalize: If no sub-devices are defined, create a synthetic list for the main unit
-    if not devices_config:
-        devices_config = [{"id": MAIN_DEVICE_ID, CONF_NAME: _get_config_value(entry, CONF_NAME, entry.title)}]
-
-    _LOGGER.debug("Climate IP setup. devices_config: %s", devices_config)
-
-    # Pass 1: Instantiate controllers and coordinators
+def _build_device_setup_tasks(
+    hass: HomeAssistant,
+    entry: ClimateIPConfigEntry,
+    devices_config: list[dict[str, Any]],
+    session: Any,
+) -> list[Any]:
+    """Build list of concurrent setup tasks for sub-devices."""
     setup_tasks = []
     for device_info in devices_config:
-        device_id = device_info.get("id")
+        device_id = device_info.get(CONF_SUBDEVICE_ID)
         device_name = device_info.get(CONF_NAME)
 
         if device_id == WIFI_KIT_MGMT_ID:
@@ -155,29 +166,89 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
         )
 
         setup_tasks.append(
-            _async_setup_single_device(device_id, device_name or DEFAULT_UNKNOWN, controller, coordinator)
+            _async_setup_single_device(
+                device_id, device_name or DEFAULT_UNKNOWN, controller, coordinator
+            )
         )
+    return setup_tasks
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -> bool:
+    """Set up Samsung Climate IP from a config entry."""
+
+    device_type = _get_config_value(entry, CONF_DEVICE_TYPE)
+    mac = _get_config_value(entry, CONF_MAC, None)
+    ip_address = _get_config_value(entry, CONF_IP_ADDRESS, DEFAULT_UNKNOWN)
+
+    # Use the official session manager.
+    session = async_get_clientsession(hass)
+
+    _LOGGER.info(
+        "Starting setup for device %s at %s (Device Type: %s)",
+        mac,
+        ip_address,
+        device_type,
+    )
+
+    devices_config = _get_config_value(entry, CONF_DEVICES)
+
+    # Normalize: If no sub-devices are defined, create a synthetic list for the main unit
+    if not devices_config:
+        devices_config = [
+            {
+                CONF_SUBDEVICE_ID: MAIN_DEVICE_ID,
+                CONF_NAME: _get_config_value(entry, CONF_NAME, entry.title),
+            }
+        ]
+
+    _LOGGER.debug("Climate IP setup. devices_config: %s", devices_config)
+
+    # Pass 1: Instantiate controllers and coordinators
+    setup_tasks = _build_device_setup_tasks(hass, entry, devices_config, session)
 
     # Pass 2: Concurrent bootstrapping using asyncio.gather
     results = await asyncio.gather(*setup_tasks, return_exceptions=True)
 
     coordinators: dict[str, SamsungClimateCoordinator] = {}
+    fatal_exception: Exception | None = None
+
     for result in results:
-        if isinstance(result, ConfigEntryAuthFailed):
-            raise result
         if isinstance(result, Exception):
-            _LOGGER.error("Device setup task raised unexpected exception: %s", result)
+            if not fatal_exception:
+                fatal_exception = result
+            _LOGGER.error("Device setup task raised fatal exception: %s", result)
             continue
+
         if isinstance(result, tuple):
             dev_id, coord = result
             if coord is not None:
                 coordinators[dev_id] = coord
 
+    # 4. ROLLBACK CHECK: Tear down successfully booted orphans if a sibling failed fatally
+    if fatal_exception is not None:
+        if coordinators:
+            _LOGGER.error(
+                "Rolling back %d booted coordinators due to sibling fatal exception: %s",
+                len(coordinators),
+                fatal_exception,
+            )
+            for dev_id, coord in coordinators.items():
+                try:
+                    await _async_safe_shutdown(coord)
+                except Exception as ex:
+                    _LOGGER.error(
+                        "Failed clean shutdown for device %s during rollback: %s",
+                        dev_id,
+                        ex,
+                    )
+        raise fatal_exception
+
+    # 5. EMPTY CHECK
     if not coordinators:
         _LOGGER.error("No coordinators could be set up for entry %s", entry.title)
         raise ConfigEntryNotReady(f"No coordinators could be set up for entry {entry.title}")
 
-    # Contract strictly fulfilled: runtime_data is ALWAYS a dict
+    # 6. SUCCESS: Contract strictly fulfilled: runtime_data is ALWAYS a dict
     entry.runtime_data = coordinators
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -204,9 +275,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -
             for device_id, coordinator in entry.runtime_data.items():
                 _LOGGER.debug("Executing async_shutdown for device ID: %s", device_id)
                 try:
-                    await coordinator.async_shutdown()
+                    await _async_safe_shutdown(coordinator)
                 except Exception as ex:
-                    _LOGGER.error("Failed to cleanly shutdown coordinator for device %s: %s", device_id, ex)
+                    _LOGGER.error(
+                        "Failed to cleanly shutdown coordinator for device %s: %s",
+                        device_id,
+                        ex,
+                    )
 
             # 3. PURGE MEMORY FOOTPRINT
             entry.runtime_data.clear()
@@ -215,14 +290,23 @@ async def async_unload_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -
         other_active_entries = [
             e
             for e in hass.config_entries.async_entries(DOMAIN)
-            if e.entry_id != entry.entry_id and e.state == ConfigEntryState.LOADED
+            if e.entry_id != entry.entry_id
+            and e.state
+            in (
+                ConfigEntryState.LOADED,
+                ConfigEntryState.SETUP_IN_PROGRESS,
+                ConfigEntryState.SETUP_RETRY,
+            )
         ]
         if not other_active_entries:
             clear_yaml_cache()
 
         _LOGGER.info("Teardown complete. Config entry %s fully unloaded.", entry.entry_id)
     else:
-        _LOGGER.warning("Platform unload failed for entry %s. Aborting teardown to prevent unstable state.", entry.entry_id)
+        _LOGGER.warning(
+            "Platform unload failed for entry %s. Aborting teardown to prevent unstable state.",
+            entry.entry_id,
+        )
 
     return unload_ok
 
