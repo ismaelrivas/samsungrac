@@ -208,6 +208,25 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         else:
             self._attr_precision = PRECISION_WHOLE
 
+        # Cache static hardware temperature boundaries
+        min_prop = self.coordinator.controller.get_property_object(ATTR_MIN_TEMP)
+        if min_prop and min_prop.value is not None:
+            try:
+                self._attr_min_temp = float(min_prop.value)
+            except (ValueError, TypeError):
+                self._attr_min_temp = float(DEFAULT_CLIMATE_IP_TEMP_MIN)
+        else:
+            self._attr_min_temp = float(DEFAULT_CLIMATE_IP_TEMP_MIN)
+
+        max_prop = self.coordinator.controller.get_property_object(ATTR_MAX_TEMP)
+        if max_prop and max_prop.value is not None:
+            try:
+                self._attr_max_temp = float(max_prop.value)
+            except (ValueError, TypeError):
+                self._attr_max_temp = float(DEFAULT_CLIMATE_IP_TEMP_MAX)
+        else:
+            self._attr_max_temp = float(DEFAULT_CLIMATE_IP_TEMP_MAX)
+
     @property
     def hvac_mode(self) -> HVACMode | str | None:
         if not self.coordinator.data:
@@ -265,14 +284,6 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
     @property
     def preset_modes(self) -> list[str]:
         return list(self.coordinator.data.preset_modes) if self.coordinator.data else []
-
-    @property
-    def min_temp(self) -> float:
-        return self._resolve_numeric_boundary(ATTR_MIN_TEMP, DEFAULT_CLIMATE_IP_TEMP_MIN)
-
-    @property
-    def max_temp(self) -> float:
-        return self._resolve_numeric_boundary(ATTR_MAX_TEMP, DEFAULT_CLIMATE_IP_TEMP_MAX)
 
     @property
     def log_prefix(self) -> str:
@@ -341,20 +352,4 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             "%s Action set_property called: %s = %s", self.log_prefix, key, value
         )  # pragma: no mutate
         await self.coordinator.async_set_property(key, value)
-        await self.coordinator.async_request_refresh()
-    
-    @property
-    def temperature_unit(self) -> str:
-        """Return the temperature unit."""
-        return self.hass.config.units.temperature_unit
-
-    def _resolve_numeric_boundary(self, prop_key: str, default_val: float) -> float:
-        """Safely resolve numeric boundaries avoiding hot-path overhead."""
-        prop_obj = self.coordinator.controller.get_property_object(prop_key)
-        if not prop_obj or prop_obj.value is None:
-            return float(default_val)
-        try:
-            return float(prop_obj.value)
-        except (ValueError, TypeError):
-            return float(default_val)
 

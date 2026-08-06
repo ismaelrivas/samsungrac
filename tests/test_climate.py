@@ -404,7 +404,6 @@ async def test_async_service_set_property_valid_key_kills_mutants(
     base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(
         "beep", "on"
     )
-    base_climate_entity.coordinator.async_request_refresh.assert_awaited_once()
 
 
 async def test_async_service_set_property_missing_key_is_noop(
@@ -549,19 +548,26 @@ def test_climate_extra_state_attributes_filtering(
 # --- min_temp property (6 mutants: lines 452-458) ---
 
 
-def test_climate_min_temp_from_coordinator_property(
-    base_climate_entity: ClimateIP,
-) -> None:
+def test_climate_min_temp_from_coordinator_property(hass: HomeAssistant) -> None:
     """Kill mutants 1, 3, 5 in min_temp when coordinator property object is valid."""
     from homeassistant.components.climate.const import ATTR_MIN_TEMP
 
+    mock_coord = MagicMock(spec=SamsungClimateCoordinator)
+    mock_coord.unique_id = "test_min_temp_id"
+    mock_coord.entry = MagicMock(options={})
+    mock_coord.device_info = MagicMock()
+    mock_coord.controller = MagicMock()
+    mock_coord.controller.operations = []
+
     mock_prop = MagicMock()
     mock_prop.value = "17.5"
-    base_climate_entity.coordinator.controller.get_property_object.side_effect = lambda key: (
+    mock_coord.controller.get_property_object.side_effect = lambda key: (
         mock_prop if key == ATTR_MIN_TEMP else None
     )
 
-    assert base_climate_entity.min_temp == 17.5
+    desc = ClimateEntityDescription(key="samsung_ac")
+    entity = ClimateIP(coordinator=mock_coord, description=desc)
+    assert entity.min_temp == 17.5
 
 
 def test_climate_min_temp_fallback_on_none_prop(base_climate_entity: ClimateIP) -> None:
@@ -589,19 +595,26 @@ def test_climate_min_temp_fallback_on_invalid_value(
 # --- max_temp property (6 mutants: lines 463-469) ---
 
 
-def test_climate_max_temp_from_coordinator_property(
-    base_climate_entity: ClimateIP,
-) -> None:
+def test_climate_max_temp_from_coordinator_property(hass: HomeAssistant) -> None:
     """Kill mutants 1, 3, 5 in max_temp when coordinator property object is valid."""
     from homeassistant.components.climate.const import ATTR_MAX_TEMP
 
+    mock_coord = MagicMock(spec=SamsungClimateCoordinator)
+    mock_coord.unique_id = "test_max_temp_id"
+    mock_coord.entry = MagicMock(options={})
+    mock_coord.device_info = MagicMock()
+    mock_coord.controller = MagicMock()
+    mock_coord.controller.operations = []
+
     mock_prop = MagicMock()
     mock_prop.value = "31.0"
-    base_climate_entity.coordinator.controller.get_property_object.side_effect = lambda key: (
+    mock_coord.controller.get_property_object.side_effect = lambda key: (
         mock_prop if key == ATTR_MAX_TEMP else None
     )
 
-    assert base_climate_entity.max_temp == 31.0
+    desc = ClimateEntityDescription(key="samsung_ac")
+    entity = ClimateIP(coordinator=mock_coord, description=desc)
+    assert entity.max_temp == 31.0
 
 
 def test_climate_max_temp_fallback_on_none_prop(base_climate_entity: ClimateIP) -> None:
