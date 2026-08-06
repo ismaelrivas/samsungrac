@@ -30,6 +30,7 @@ from .config_flow_discovery import ConfigFlowDiscoveryMixin
 from .config_flow_helpers import ConfigFlowHelpersMixin
 from .config_flow_schemas import ConfigFlowSchemasMixin
 from .const import (
+    CONFIG_ENTRY_VERSION,
     CONF_CERT,
     CONF_CONFIG_FILE,
     CONF_DEVICE_ID,
@@ -72,7 +73,7 @@ class ClimateIpConfigFlow(
     MIM-H03 heatpumps and SmartThings cloud devices.
     """
 
-    VERSION = 2
+    VERSION = CONFIG_ENTRY_VERSION
 
     def __init__(self) -> None:
         """Initialize the config flow variables."""

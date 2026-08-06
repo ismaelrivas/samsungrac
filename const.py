@@ -21,6 +21,10 @@ CONF_ENABLE_POLLING = "enable_polling"
 DEFAULT_ENABLE_POLLING = True
 
 # --- Configuration Flow and Entry Keys ---
+CONFIG_ENTRY_VERSION = 2
+MAIN_DEVICE_ID = "main"
+WIFI_KIT_MGMT_ID = "0"
+
 CONF_DEVICE_TYPE = "device_type"
 CONF_CONFIG_FILE = "config_file"
 CONF_DISCOVERED_DEVICES = "discovered_devices"

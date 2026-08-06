@@ -18,7 +18,6 @@ from custom_components.climate_ip import (
     CONFIG_ENTRY_VERSION,
     async_migrate_entry,
     async_remove_config_entry_device,
-    async_setup,
     async_setup_entry,
     async_unload_entry,
     async_update_listener,
@@ -33,14 +32,6 @@ from custom_components.climate_ip.const import (
 )
 from custom_components.climate_ip.controller_yaml import YamlController
 from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878
-
-
-async def test_async_setup(hass: HomeAssistant) -> None:
-    """Test that the component sets up correctly."""
-    # The reload action was removed in Phase 1.3, so we only test
-    # that async_setup successfully executes and returns True.
-    result = await async_setup(hass, {})
-    assert result is True
 
 
 async def test_unload_entry(hass: HomeAssistant) -> None:
@@ -489,7 +480,7 @@ async def test_setup_entry_multi_device_branch_and_unique_id_logic(
 
 
 async def test_setup_entry_total_initialization_failure(hass: HomeAssistant) -> None:
-    """Verify that async_setup_entry aborts and returns False if no controller initializes."""
+    """Verify that async_setup_entry raises ConfigEntryNotReady if no controller initializes."""
 
     mock_entry = MagicMock()
     mock_entry.data = {"ip_address": "192.168.1.100"}  # Standalone
@@ -503,21 +494,13 @@ async def test_setup_entry_total_initialization_failure(hass: HomeAssistant) -> 
         mock_yaml_class.return_value.initialize = AsyncMock(return_value=False)
 
         # Execute for standalone
-        result_standalone = await async_setup_entry(hass, mock_entry)
-
-        # Lethal Assertion (Mutant 82):
-        assert result_standalone is False, (
-            "Standalone did not return False on a total failure"
-        )
+        with pytest.raises(ConfigEntryNotReady, match="No coordinators could be set up"):
+            await async_setup_entry(hass, mock_entry)
 
         # Now test the multi-device branch
         mock_entry.data["devices"] = [{"id": "1", "name": "Zone A"}]
-        result_multi = await async_setup_entry(hass, mock_entry)
-
-        # Lethal Assertion (Mutant 70):
-        assert result_multi is False, (
-            "Multi-device did not return False on a total failure"
-        )
+        with pytest.raises(ConfigEntryNotReady, match="No coordinators could be set up"):
+            await async_setup_entry(hass, mock_entry)
 
 
 async def test_setup_entry_multi_device_partial_failure(hass: HomeAssistant) -> None:

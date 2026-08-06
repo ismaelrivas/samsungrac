@@ -6,7 +6,7 @@ from typing import Any
 import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_MAC, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
@@ -17,7 +17,11 @@ from .const import (
     CONF_DEVICE_ID,
     CONF_DEVICE_TYPE,
     CONF_DEVICES,
+    CONFIG_ENTRY_VERSION,
     DEVICE_TYPE_TO_CONFIG_FILE,
+    DOMAIN,
+    MAIN_DEVICE_ID,
+    WIFI_KIT_MGMT_ID,
 )
 from .controller_yaml import YamlController
 from .controller_yaml_config import clear_yaml_cache
@@ -32,9 +36,6 @@ from .samsung_2878 import ConnectionSamsung2878  # noqa: F401
 
 _LOGGER = logging.getLogger(__name__)
 
-# type ClimateIPConfigEntry = (  # pylint: disable=import-outside-toplevel,invalid-name
-#     ConfigEntry[SamsungClimateCoordinator | dict[str, SamsungClimateCoordinator]]
-# )
 type ClimateIPConfigEntry = ConfigEntry[dict[str, SamsungClimateCoordinator]]
 
 PLATFORMS: list[Platform] = [
@@ -43,7 +44,6 @@ PLATFORMS: list[Platform] = [
     Platform.SWITCH,
     Platform.BINARY_SENSOR,
 ]
-CONFIG_ENTRY_VERSION = 2  # Must match ConfigFlow.VERSION in config_flow.py
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -> bool:
@@ -86,13 +86,6 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) 
     return True
 
 
-async def async_setup(_hass: HomeAssistant, _typing_config: dict[str, Any]) -> bool:
-    """Set up the Climate IP component."""
-    # Custom reload action removed as per HA Core standards.
-    # Users should use the native UI reload feature for Config Entries.
-    return True
-
-
 async def async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle options update."""
     # This is called when the user changes options in the UI.
@@ -126,13 +119,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
     # fmt: on
 
     devices_config = runtime_config.get(CONF_DEVICES)
-    _LOGGER.debug(
-        "Climate IP setup. devices_config: %s", devices_config
-    )  # pragma: no mutate
 
     # Normalize: If no sub-devices are defined, create a synthetic list for the main unit
     if not devices_config:
-        devices_config = [{"id": "main", "name": entry.data.get("name", entry.title)}]
+        devices_config = [{"id": MAIN_DEVICE_ID, "name": entry.data.get("name", entry.title)}]
 
     _LOGGER.debug("Climate IP setup. devices_config: %s", devices_config)
 
@@ -143,7 +133,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
         device_name = device_info.get("name")
         device_uuid = device_info.get("uuid")
 
-        if device_id == "0":
+        if device_id == WIFI_KIT_MGMT_ID:
             _LOGGER.debug("Skipping Wifi-kit management device (ID 0)")
             continue
 
@@ -154,7 +144,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
             device_config_data["name"] = device_name
 
         # Unique ID generation logic
-        if device_id != "main":
+        if device_id != MAIN_DEVICE_ID:
             device_config_data[CONF_DEVICE_ID] = device_id
             base_unique_id = device_uuid or entry.unique_id
             if base_unique_id and f"_{device_id}" not in str(base_unique_id):
@@ -191,8 +181,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
             hass,
             controller,
             entry,
-            device_info=device_info if device_id != "main" else None,
-            parent_unique_id=entry.unique_id if device_id != "main" else None,
+            device_info=device_info if device_id != MAIN_DEVICE_ID else None,
+            parent_unique_id=entry.unique_id if device_id != MAIN_DEVICE_ID else None,
         )
 
         try:
@@ -207,7 +197,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
 
     if not coordinators:
         _LOGGER.error("No coordinators could be set up for entry %s", entry.title)
-        return False
+        raise ConfigEntryNotReady(f"No coordinators could be set up for entry {entry.title}")
 
     # Contract strictly fulfilled: runtime_data is ALWAYS a dict
     entry.runtime_data = coordinators
@@ -229,9 +219,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
-        # Clear the YAML cache to prevent memory drift across reloads
-        clear_yaml_cache()
-
         # 2. TERMINATE BACKGROUND TASKS
         # Safely shut down all coordinators and underlying socket/aiohttp connections
         if entry.runtime_data:
@@ -250,7 +237,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -
             # Explicitly clear the dictionary to drop controller references immediately, 
             # ensuring no dangling pointers prevent garbage collection.
             entry.runtime_data.clear()
-        
+
+        # Clear the YAML cache only if this is the last active config entry for climate_ip
+        other_active_entries = [
+            e
+            for e in hass.config_entries.async_entries(DOMAIN)
+            if e.entry_id != entry.entry_id and e.state == ConfigEntryState.LOADED
+        ]
+        if not other_active_entries:
+            clear_yaml_cache()
+
         _LOGGER.info("Teardown complete. Config entry %s fully unloaded.", entry.entry_id)  # pragma: no mutate
     else:
         _LOGGER.warning("Platform unload failed for entry %s. Aborting teardown to prevent unstable state.", entry.entry_id)  # pragma: no mutate
