@@ -2,7 +2,6 @@
 """Raw socket connection engine for Samsung devices on port 8888."""
 
 import asyncio
-import errno
 import logging
 import time
 from pathlib import Path
@@ -118,6 +117,7 @@ class ConnectionRaw8888(Connection):
         self._cert: str | None = self._resolve_cert_path(config.get(CONF_CERT))
         self._controller: "ClimateController | None" = None
         self._client: Samsung8888Client | None = None
+        self._internal_shared_client: Samsung8888Client | None = None
         self._params: dict[str, Any] = {}
         self._connection_template: Template | None = None
         self.condition_template: Template | None = None
@@ -161,12 +161,16 @@ class ConnectionRaw8888(Connection):
             raise CannotConnect("Host/IP address not provided for RAW connection")  # pragma: no mutate
 
         if self._controller:
-            # FAIL-FAST: Acceso directo.
-            if self._controller.shared_raw_client is None:
-                self._controller.shared_raw_client = Samsung8888Client(
+            client = getattr(self._controller, "shared_raw_client", None)
+            if client is None:
+                client = Samsung8888Client(
                     self._host, port, self._cert, log_prefix=self.log_prefix
                 )
-            return self._controller.shared_raw_client
+                if hasattr(self._controller, "shared_raw_client"):
+                    self._controller.shared_raw_client = client
+                else:
+                    self._internal_shared_client = client
+            return client
 
         if self._client is None:
             self._client = Samsung8888Client(
@@ -179,10 +183,6 @@ class ConnectionRaw8888(Connection):
         """Generate a consistent log prefix."""
         if self._controller and self._controller.unique_id:
             return self._controller.log_prefix
-        mac = str(self._config.get(CONF_MAC, ""))
-        if mac:
-            duid = mac.replace(":", "")
-            return f"[{duid[-6:]}]"
         return f"[{self._host or 'NO_IP'}]"
 
     @property
@@ -219,9 +219,13 @@ class ConnectionRaw8888(Connection):
             dev_id = self._controller.device_id
             
             # Evaluación estricta: propiedad pública primero, diccionario de fallback segundo.
+            ctrl_config = getattr(self._controller, "config", None)
+            if not isinstance(ctrl_config, dict):
+                ctrl_config = getattr(self._controller, "_config", {}) or {}
+
             current_token = (
                 self._controller.token 
-                or str(self._controller._config.get(CONF_TOKEN, "")) 
+                or str(ctrl_config.get(CONF_TOKEN, "")) 
                 or current_token
             )
 
@@ -279,9 +283,11 @@ class ConnectionRaw8888(Connection):
 
         client_to_close = None
         if self._controller:
-            # FAIL-FAST: Acceso directo.
-            client_to_close = self._controller.shared_raw_client
-            self._controller.shared_raw_client = None
+            client_to_close = getattr(self._controller, "shared_raw_client", None)
+            if hasattr(self._controller, "shared_raw_client"):
+                self._controller.shared_raw_client = None
+            else:
+                self._internal_shared_client = None
         else:
             client_to_close = self._client
             self._client = None
@@ -350,40 +356,6 @@ class ConnectionRaw8888(Connection):
 
         return formatted_url, path, body, req_headers
 
-    @staticmethod
-    def _map_connection_error(e: Exception) -> str:
-        """Map standard network exceptions to human readable strings."""
-        cause = getattr(e, "__cause__", None) or getattr(e, "__context__", None)
-        err_no = getattr(e, "errno", None) or getattr(cause, "errno", None)
-        err_str = str(e).lower()
-
-        if (
-            err_no == errno.ECONNREFUSED
-            or isinstance(e, ConnectionRefusedError)
-            or isinstance(cause, ConnectionRefusedError)
-            or "refused" in err_str
-        ):
-            return "Connection refused (device unreachable or offline)"
-
-        if (
-            err_no == errno.ETIMEDOUT
-            or isinstance(e, (TimeoutError, asyncio.TimeoutError))
-            or isinstance(cause, (TimeoutError, asyncio.TimeoutError))
-            or "timed out" in err_str
-            or "etimedout" in err_str
-        ):
-            return "Connection timed out"
-
-        if (
-            err_no in (errno.EHOSTUNREACH, errno.ENETUNREACH)
-            or "unreachable" in err_str
-        ):
-            return "Host or network unreachable"
-
-        if "name or service not known" in err_str or "nodename" in err_str:
-            return "Host not found (DNS error)"
-
-        return f"Connection error: {e}"
 
     async def async_execute(
         self,
@@ -431,10 +403,10 @@ class ConnectionRaw8888(Connection):
             
             return resp, None
 
-        except CannotConnect as e:
+        except CannotConnect:
             if _is_probe:
                 return None, None
-            raise CannotConnect(self._map_connection_error(e)) from e  # pragma: no mutate
+            raise
         except AuthError as exc:
             raise AuthError("Invalid token") from exc  # pragma: no mutate
         except (asyncio.TimeoutError, TimeoutError, OSError) as e:
@@ -456,10 +428,17 @@ class ConnectionRaw8888(Connection):
             finally:
                 self._client = None
 
-        if self._controller and self._controller.shared_raw_client:
+        shared_client = (
+            getattr(self._controller, "shared_raw_client", None)
+            if self._controller
+            else getattr(self, "_internal_shared_client", None)
+        )
+        if shared_client:
             try:
-                await self._controller.shared_raw_client.close()
+                await shared_client.close()
             except (asyncio.TimeoutError, OSError) as e:  # pragma: no mutate
                 _LOGGER.debug("%s [RAW] Ignored error during cleanup: %s", self.log_prefix, e)
             finally:
-                self._controller.shared_raw_client = None
+                if self._controller and hasattr(self._controller, "shared_raw_client"):
+                    self._controller.shared_raw_client = None
+                self._internal_shared_client = None

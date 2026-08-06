@@ -640,7 +640,7 @@ async def test_async_execute_exceptions(connection_config, mock_logger, mock_has
             mock_client.request.side_effect = LibConnError("Connection refused")
             with pytest.raises(
                 CannotConnect,
-                match=r"Connection refused \(device unreachable or offline\)",
+                match="Connection refused",
             ):
                 await conn.async_execute("GET", "/x", None, None)
 
@@ -649,39 +649,39 @@ async def test_async_execute_exceptions(connection_config, mock_logger, mock_has
             mock_client.request.side_effect = LibConnError("Connection refused by peer")
             with pytest.raises(
                 CannotConnect,
-                match=r"Connection refused \(device unreachable or offline\)",
+                match="Connection refused by peer",
             ):
                 await conn.async_execute("GET", "/x", None, None)
 
             # Timeout
             mock_client.close.reset_mock()
             mock_client.request.side_effect = LibConnError("timed out")
-            with pytest.raises(CannotConnect, match="Connection timed out"):
+            with pytest.raises(CannotConnect, match="timed out"):
                 await conn.async_execute("GET", "/x", None, None)
 
             # ETIMEDOUT
             mock_client.close.reset_mock()
             mock_client.request.side_effect = LibConnError("etimedout")
-            with pytest.raises(CannotConnect, match="Connection timed out"):
+            with pytest.raises(CannotConnect, match="etimedout"):
                 await conn.async_execute("GET", "/x", None, None)
 
             # DNS Error
             mock_client.close.reset_mock()
             mock_client.request.side_effect = LibConnError("Name or service not known")
-            with pytest.raises(CannotConnect, match=r"Host not found \(DNS error\)"):
+            with pytest.raises(CannotConnect, match="Name or service not known"):
                 await conn.async_execute("GET", "/x", None, None)
 
             # DNS Error nodename
             mock_client.close.reset_mock()
             mock_client.request.side_effect = LibConnError("nodename")
-            with pytest.raises(CannotConnect, match=r"Host not found \(DNS error\)"):
+            with pytest.raises(CannotConnect, match="nodename"):
                 await conn.async_execute("GET", "/x", None, None)
 
             # Other Error
             mock_client.close.reset_mock()
             mock_client.request.side_effect = LibConnError("some other error")
             with pytest.raises(
-                CannotConnect, match="Connection error: some other error"
+                CannotConnect, match="some other error"
             ):
                 await conn.async_execute("GET", "/x", None, None)
 
@@ -909,18 +909,12 @@ async def test_log_prefix(connection_config, mock_logger, mock_hass):
         conn1.set_controller_ref(mock_controller)
         assert conn1.log_prefix == "[CTRL_LOG_PREFIX]"
 
-        # 2. MAC configured with 16-character DUID string (8 octets: 11:22:33:44:55:66:77:88)
-        # duid becomes "1122334455667788" (16 chars), duid[-6:] yields "667788" while duid[+6:] yields "334455667788"
-        config_mac = {CONF_MAC: "11:22:33:44:55:66:77:88"}
-        conn_mac = ConnectionRaw8888(config_mac, mock_logger, mock_hass, None, None)
-        assert conn_mac.log_prefix == "[667788]"
-
-        # 3. Host configured, no MAC, no controller
+        # 2. Host configured, no controller
         config_host = {CONF_IP_ADDRESS: "192.168.1.100"}
         conn_host = ConnectionRaw8888(config_host, mock_logger, mock_hass, None, None)
         assert conn_host.log_prefix == "[192.168.1.100]"
 
-        # 4. Fallback no MAC, no host, no controller
+        # 3. Fallback no host, no controller
         conn_none = ConnectionRaw8888({}, mock_logger, mock_hass, None, None)
         assert conn_none.log_prefix == "[NO_IP]"
 
