@@ -1368,19 +1368,18 @@ async def test_coordinator_handles_missing_poller_safely(hass: HomeAssistant) ->
             await coordinator._async_update_data()
 
 def test_debouncer_cancel_all_strict_none():
-    """Aniquila el mutante Untested de la línea 61 (self._global_timer = None)."""
+    """Verify that cancel_all cancels all timers in _timers dict and clears pending payloads."""
     mock_coordinator = MagicMock()
     debouncer = PropertyDebouncer(mock_coordinator)
     
     mock_timer = MagicMock()
-    debouncer._global_timer = mock_timer
+    debouncer._timers["dummy"] = mock_timer
     debouncer._pending_payloads["dummy"] = ("func", (), {})
     
     debouncer.cancel_all()
     
     mock_timer.cancel.assert_called_once()
-    # Verifica estrictamente que el valor es None (y no "")
-    assert debouncer._global_timer is None
+    assert len(debouncer._timers) == 0
     assert len(debouncer._pending_payloads) == 0
 
 
@@ -1603,8 +1602,8 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
     debouncer = PropertyDebouncer(mock_coordinator, delay=10.0)
     
     mock_existing_timer = MagicMock()
-    debouncer._global_timer = mock_existing_timer
-    debouncer._global_last_execution = time.time()  
+    debouncer._timers["prop_success"] = mock_existing_timer
+    debouncer._last_activities["prop_success"] = time.time()  
     
     async def dummy_success(): pass
     
@@ -1625,11 +1624,12 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
     callback_fire_delayed = mock_coordinator.hass.loop.call_later.call_args[0][1]
     
     with patch("custom_components.climate_ip.coordinator._LOGGER.debug") as mock_debug:
-        callback_fire_delayed()
+        callback_fire_delayed("prop_net")
+        callback_fire_delayed("prop_gen")
         assert len(created_tasks) > 0
         
-        # Al usar nuestro fixture bypass_sleeps, esta tarea asíncrona no se colgará
-        await created_tasks[-1]
+        for task in created_tasks:
+            await task
         
         assert mock_coordinator.async_request_refresh.await_count == 2
         
@@ -1735,3 +1735,54 @@ async def test_sniper_async_set_property_debouncer_args(hass: HomeAssistant):
         args, _ = coordinator.debouncer.async_execute.call_args
         assert len(args) == 5, f"Mutante cazado: Faltan argumentos. Llegaron: {args}"
         assert args[3] == "cool", f"Mutante cazado: Faltan argumentos. Llegaron: {args}"
+
+
+@pytest.mark.asyncio
+async def test_debouncer_immediate_turn_off() -> None:
+    """Test that turn-off commands cancel pending timers and execute immediately."""
+    mock_coordinator = MagicMock()
+    mock_coordinator.hass.loop.call_later = MagicMock()
+    debouncer = PropertyDebouncer(mock_coordinator, delay=10.0)
+
+    mock_func = AsyncMock(return_value=True)
+
+    # 1. Execute a command to trigger trailing window for temperature
+    await debouncer.async_execute("temperature", mock_func, "temperature", "22.0")
+    assert debouncer._last_activities.get("temperature", 0) > 0
+
+    # 2. Queue a rapid command for temperature within trailing window
+    await debouncer.async_execute("temperature", mock_func, "temperature", "20.0")
+    assert "temperature" in debouncer._pending_payloads
+
+    # 3. Issue turn-off command
+    off_mock = AsyncMock(return_value=True)
+    await debouncer.async_execute("hvac_mode", off_mock, "hvac_mode", "off")
+
+    # 4. Pending payloads should be cleared and off command executed immediately
+    assert len(debouncer._pending_payloads) == 0
+    off_mock.assert_called_once_with("hvac_mode", "off")
+
+
+@pytest.mark.asyncio
+async def test_debouncer_per_property_independence() -> None:
+    """Test that each property has an independent debouncer window."""
+    mock_coordinator = MagicMock()
+    mock_coordinator.hass.loop.call_later = MagicMock()
+    debouncer = PropertyDebouncer(mock_coordinator, delay=3.0)
+
+    func_hvac = AsyncMock(return_value=True)
+    func_temp = AsyncMock(return_value=True)
+
+    # First hvac_mode command -> immediate
+    await debouncer.async_execute("hvac_mode", func_hvac, "hvac_mode", "heat")
+    func_hvac.assert_called_once_with("hvac_mode", "heat")
+
+    # First temperature command (even if 0.1s later) -> immediate because temperature itself was not modified in 3s
+    await debouncer.async_execute("temperature", func_temp, "temperature", "22.0")
+    func_temp.assert_called_once_with("temperature", "22.0")
+
+    # Second temperature command (0.1s later) -> rapid, queued with 3s timer for temperature
+    func_temp_2 = AsyncMock(return_value=True)
+    await debouncer.async_execute("temperature", func_temp_2, "temperature", "20.0")
+    assert "temperature" in debouncer._pending_payloads
+    assert debouncer._pending_payloads["temperature"][1] == ("temperature", "20.0")

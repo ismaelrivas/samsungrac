@@ -45,9 +45,9 @@ class PropertyDebouncer:
         """Initialize the property debouncer."""
         self.coordinator = coordinator
         self.delay = delay
-        self._global_timer: asyncio.TimerHandle | None = None
+        self._timers: dict[str, asyncio.TimerHandle] = {}
         self._pending_payloads: dict[str, tuple[Any, tuple, dict]] = {}
-        self._global_last_execution: float = 0.0
+        self._last_activities: dict[str, float] = {}
 
     @property
     def hass(self) -> HomeAssistant:
@@ -56,26 +56,44 @@ class PropertyDebouncer:
 
     def cancel_all(self) -> None:
         """Cancel all active timers and clear pending payloads."""
-        if self._global_timer:
-            self._global_timer.cancel()
-            self._global_timer = None
+        for timer in self._timers.values():
+            if timer:
+                timer.cancel()
+        self._timers.clear()
         self._pending_payloads.clear()
 
     async def async_execute(
         self, property_name: str, coroutine_func: Any, *args: Any, **kwargs: Any
     ) -> bool:
-        """Execute a command with trailing debouncing."""
+        """Execute a command with trailing debouncing per property."""
         now = time.time()
-        # Use global execution time to debounce cross-property spams (Mode + Temp)
-        last_exec = self._global_last_execution
+        last_activity = self._last_activities.get(property_name, 0.0)
 
-        # Immediate execution if outside the trailing window
-        if now - last_exec >= self.delay:
-            if self._global_timer:
-                self._global_timer.cancel()
-                self._global_timer = None
+        # Immediate execution for turn-off commands (aborts any pending debounced commands across all properties)
+        val = kwargs.get("val") if "val" in kwargs else (args[1] if len(args) > 1 else None)
+        val_str = str(val).lower() if val is not None else ""
+        is_turn_off = (
+            (property_name in ("hvac_mode", "power") and val_str in ("off", "hvacmode.off"))
+            or val_str == "off"
+        )
+
+        if is_turn_off:
+            _LOGGER.debug(
+                "[Debouncer] Immediate turn-off requested for '%s'. Aborting all pending commands.",
+                property_name,
+            )
+            self.cancel_all()
+            self._last_activities[property_name] = now
+            return await coroutine_func(*args, **kwargs)
+
+        # Immediate execution if this specific property has not been modified within trailing window
+        if now - last_activity >= self.delay:
+            if property_name in self._timers:
+                timer = self._timers.pop(property_name)
+                if timer:
+                    timer.cancel()
             self._pending_payloads.pop(property_name, None)
-            self._global_last_execution = now
+            self._last_activities[property_name] = now
             _LOGGER.debug(
                 "[Debouncer] Immediate execution for property '%s' with args=%s, kwargs=%s",
                 property_name,
@@ -84,54 +102,56 @@ class PropertyDebouncer:
             )  # pragma: no mutate
             return await coroutine_func(*args, **kwargs)
 
-        # Enqueue / replace rapid command within trailing window
-        if self._global_timer:
-            self._global_timer.cancel()
-            self._global_timer = None
+        # Rapid command for this property within trailing window: update timestamp and reset timer
+        self._last_activities[property_name] = now
+        if property_name in self._timers:
+            timer = self._timers.pop(property_name)
+            if timer:
+                timer.cancel()
             _LOGGER.debug(
-                "[Debouncer] Replacing pending queued command and extending global timer"
+                "[Debouncer] Resetting %.1fs countdown timer for property '%s'", self.delay, property_name
             )  # pragma: no mutate
 
         self._pending_payloads[property_name] = (coroutine_func, args, kwargs)
 
-        def _fire_delayed() -> None:
-            self._global_timer = None
-            payloads = dict(self._pending_payloads)
-            self._pending_payloads.clear()
-            
-            if payloads:
-                self._global_last_execution = time.time()
+        def _fire_delayed(prop: str) -> None:
+            self._timers.pop(prop, None)
+            payload = self._pending_payloads.pop(prop, None)
+
+            if payload:
+                func, p_args, p_kwargs = payload
+                exec_time = time.time()
+                self._last_activities[prop] = exec_time
                 _LOGGER.debug(
-                    "[Debouncer] Executing delayed queued commands for: %s", list(payloads.keys())
+                    "[Debouncer] Executing delayed queued command for property: '%s'", prop
                 )  # pragma: no mutate
 
                 async def _task_runner() -> None:
-                    for prop, (func, p_args, p_kwargs) in payloads.items():
-                        try:
-                            await func(*p_args, **p_kwargs)
-                        except (UpdateFailed, CannotConnect, asyncio.TimeoutError, OSError) as err:
-                            _LOGGER.debug(
-                                "[Debouncer] Network error executing delayed command for '%s': %s",
-                                prop,
-                                err,
-                                exc_info=True,
-                            )  # pragma: no mutate
-                            await self.coordinator.async_request_refresh()
-                        except Exception as err:  # pylint: disable=broad-exception-caught
-                            _LOGGER.debug(
-                                "[Debouncer] Error executing delayed command for '%s': %s",
-                                prop,
-                                err,
-                                exc_info=True,
-                            )  # pragma: no mutate
-                            await self.coordinator.async_request_refresh()
+                    try:
+                        await func(*p_args, **p_kwargs)
+                    except (UpdateFailed, CannotConnect, asyncio.TimeoutError, OSError) as err:
+                        _LOGGER.debug(
+                            "[Debouncer] Network error executing delayed command for '%s': %s",
+                            prop,
+                            err,
+                            exc_info=True,
+                        )  # pragma: no mutate
+                        await self.coordinator.async_request_refresh()
+                    except Exception as err:  # pylint: disable=broad-exception-caught
+                        _LOGGER.debug(
+                            "[Debouncer] Error executing delayed command for '%s': %s",
+                            prop,
+                            err,
+                            exc_info=True,
+                        )  # pragma: no mutate
+                        await self.coordinator.async_request_refresh()
 
                 self.hass.async_create_task(
                     _task_runner(),
-                    name=f"samsung_ac_debouncer_{self.coordinator.unique_id}"
+                    name=f"samsung_ac_debouncer_{self.coordinator.unique_id}_{prop}"
                 )
 
-        self._global_timer = self.hass.loop.call_later(self.delay, _fire_delayed)
+        self._timers[property_name] = self.hass.loop.call_later(self.delay, _fire_delayed, property_name)
         _LOGGER.debug(
             "[Debouncer] Queued command for property '%s' with %.1fs delay", property_name, self.delay
         )  # pragma: no mutate
