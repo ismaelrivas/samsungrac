@@ -46,6 +46,7 @@ from .const import (
     DEFAULT_CONF_TEMP_UNIT,
     DEVICE_TYPE_SAMSUNG_2878,
     DEVICE_TYPE_TO_CONFIG_FILE,
+    MAIN_DEVICE_ID,
 )
 from .controller import ClimateController, register_controller
 
@@ -73,12 +74,22 @@ class YamlController(ClimateController):
         hass: HomeAssistant | None = None,
         session: aiohttp.ClientSession | None = None,
         config_entry: ConfigEntry | None = None,
+        device_id: str | None = None,
     ) -> None:
         """Initialize the YAML controller from a config dictionary or ConfigEntry."""
         if config is None and config_entry is not None:
             config = {**config_entry.data, **config_entry.options}
-            config["unique_id"] = config_entry.unique_id
             config["entry_id"] = config_entry.entry_id
+            
+            # Reconstruct unique_id with device_id suffix for sub-devices
+            base_unique_id = config_entry.unique_id
+            if device_id and device_id != MAIN_DEVICE_ID:
+                config["unique_id"] = f"{base_unique_id}_{device_id}" if base_unique_id else f"Unknown_{device_id}"
+            else:
+                config["unique_id"] = base_unique_id
+                
+            if device_id:
+                config[CONF_DEVICE_ID] = device_id
             device_type = config.get(CONF_DEVICE_TYPE)
             if device_type:
                 config[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE.get(device_type)

@@ -191,3 +191,13 @@ class Connection:
         """Create a copy of connection object updated from a YAML configuration node."""
         # pylint: disable=unused-argument
         return self
+
+# Explicitly import connection classes at the very bottom of the module.
+# This guarantees that the decorators execute and populate the CLIMATE_IP_CONNECTIONS
+# registry whenever `connection.py` is loaded, while strictly avoiding circular imports.
+# (Moved here from __init__.py / controller_yaml_config.py)
+from .connection_aiohttp import ConnectionAiohttp8888  # noqa: F401, E402
+from .connection_raw import ConnectionRaw8888  # noqa: F401, E402
+from .connection_request import ConnectionRequest, ConnectionRequestPrint  # noqa: F401, E402
+from .connection_request_tls_auto import ConnectionRequestTlsAuto  # noqa: F401, E402
+from .samsung_2878 import ConnectionSamsung2878  # noqa: F401, E402

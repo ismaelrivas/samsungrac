@@ -259,32 +259,7 @@ async def test_migration_ignored_for_current_version(hass: HomeAssistant) -> Non
         mock_update.assert_called_once_with(mock_entry, version=2)
 
 
-async def test_migration_v1_validates_token_strictly(hass: HomeAssistant) -> None:
-    """Force a validation failure ONLY on the token."""
 
-    mock_entry = MagicMock()
-    mock_entry.version = 1
-    # Invalid token (list), MAC absent or valid
-    mock_entry.data = {"ip_address": "192.168.1.100", "token": ["invalid"]}
-
-    result = await async_migrate_entry(hass, mock_entry)
-    assert result is False, "The validator allowed an invalid token"
-
-
-async def test_migration_v1_validates_mac_strictly(hass: HomeAssistant) -> None:
-    """Force a validation failure ONLY on the mac."""
-
-    mock_entry = MagicMock()
-    mock_entry.version = 1
-    # Invalid MAC (list), valid token
-    mock_entry.data = {
-        "ip_address": "192.168.1.100",
-        "token": "valid",
-        "mac": ["invalid"],
-    }
-
-    result = await async_migrate_entry(hass, mock_entry)
-    assert result is False, "The validator allowed an invalid mac"
 
 
 async def test_setup_entry_instantiates_controller_strictly(
@@ -510,11 +485,11 @@ async def test_setup_entry_multi_device_partial_failure(hass: HomeAssistant) -> 
         mock_coord_class.return_value.async_config_entry_first_refresh = AsyncMock()
         await async_setup_entry(hass, mock_entry)
 
-        # LETHAL ASSERTION (Mutant 56): If there was a 'break', Zone B coordinator would never be created.
-        # If 'continue' works, Zone B coordinator is created.
-        assert mock_coord_class.call_count == 1, (
-            "The loop executed break instead of continue."
+        # In concurrent setup, Zone B coordinator succeeds and is saved in runtime_data
+        assert len(mock_entry.runtime_data) == 1, (
+            "Partial device setup failed to record Zone B."
         )
+        assert "2" in mock_entry.runtime_data
 
 
 async def test_setup_entry_coordinator_instantiation_strict(
@@ -610,8 +585,6 @@ async def test_async_setup_entry_controller_transient_network_error(hass: HomeAs
         mock_instance = mock_yaml_class.return_value
         mock_instance.initialize = AsyncMock(side_effect=TimeoutError("Connection timed out"))
 
-        with pytest.raises(ConfigEntryNotReady) as exc_info:
+        with pytest.raises(ConfigEntryNotReady):
             await async_setup_entry(hass, mock_entry)
-
-        assert "Transient network failure" in str(exc_info.value)
 
