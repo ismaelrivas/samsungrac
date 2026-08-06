@@ -96,7 +96,6 @@ class ConnectionRaw8888(Connection):
         """Return diagnostic information about the raw socket connection."""
         return {
             "is_connected": self._is_connected,  # pragma: no mutate
-            "reconnect_retries": self._reconnect_retries,  # pragma: no mutate
             "engine": "raw_socket",  # pragma: no mutate
         }
 
@@ -125,7 +124,6 @@ class ConnectionRaw8888(Connection):
         self._keep_alive = config.get(CONF_KEEP_ALIVE, True)
 
         self._is_connected: bool = False
-        self._reconnect_retries: int = 0
 
     @staticmethod
     def _resolve_cert_path(cert_file: Any) -> str | None:
@@ -196,6 +194,16 @@ class ConnectionRaw8888(Connection):
         """Return True indicating this connection type supports push updates."""
         return False
 
+    @property
+    def connection_template(self) -> Template | None:
+        """Return the embedded connection template."""
+        return self._connection_template
+
+    @property
+    def params(self) -> dict[str, Any]:
+        """Return the embedded connection parameters."""
+        return self._params
+
     def execute(
         self,
         template: Template | None,
@@ -245,8 +253,9 @@ class ConnectionRaw8888(Connection):
         if device_state is not None and not self._embedded_command.check_execute_condition(device_state):
             return
 
-        embedded_template = self._embedded_command._connection_template
-        embedded_params = self._embedded_command._params.copy()
+        embedded_template = self._embedded_command.connection_template
+        raw_params = self._embedded_command.params
+        embedded_params = dict(raw_params) if raw_params else {}
 
         if embedded_template:
             # CRITICAL FIX: 'await' es obligatorio para métodos asíncronos nativos de HA
@@ -379,8 +388,8 @@ class ConnectionRaw8888(Connection):
             raise CannotConnect(self._map_connection_error(e)) from e  # pragma: no mutate
         except AuthError as exc:
             raise AuthError("Invalid token") from exc  # pragma: no mutate
-        except (asyncio.TimeoutError, OSError, ValueError, TypeError) as e:
-            raise CannotConnect(f"Unexpected error: {e}") from e  # pragma: no mutate
+        except (asyncio.TimeoutError, TimeoutError, OSError) as e:
+            raise CannotConnect(f"Connection failed: {e}") from e  # pragma: no mutate
 
     async def close(self) -> None:
         """Close the connection and release resources safely."""

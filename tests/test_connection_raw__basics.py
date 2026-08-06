@@ -175,17 +175,14 @@ async def test_get_diagnostics(connection_config, mock_logger, mock_hass):
         diag = conn.get_diagnostics()
         assert diag == {
             "is_connected": False,
-            "reconnect_retries": 0,
             "engine": "raw_socket",
         }
 
         # Test custom values
         conn._is_connected = True
-        conn._reconnect_retries = 5
         diag_custom = conn.get_diagnostics()
         assert diag_custom == {
             "is_connected": True,
-            "reconnect_retries": 5,
             "engine": "raw_socket",
         }
 
@@ -459,12 +456,14 @@ async def test_async_execute_embedded_command(
         # 1. Condition True
         mock_emb = MagicMock()
         mock_emb.check_execute_condition.return_value = True
-        mock_emb._params = {
+        mock_emb.params = {
             "url": "/emb___CLIMATE_IP_MAC__",
             "method": "POST",
             "json": {"auth": "__CLIMATE_IP_TOKEN__"},
             "headers": {"X-Emb": "__DEVICE_ID__"},
         }
+        mock_emb.connection_template = None
+        mock_emb._params = mock_emb.params
         mock_emb._connection_template = None
         mock_emb.async_execute = AsyncMock()
         conn._embedded_command = mock_emb
@@ -696,7 +695,7 @@ async def test_async_execute_exceptions(connection_config, mock_logger, mock_has
             # General Exception
             mock_client.close.reset_mock()
             mock_client.request.side_effect = TypeError("General error")
-            with pytest.raises(CannotConnect, match="Unexpected error"):
+            with pytest.raises(TypeError, match="General error"):
                 await conn.async_execute("GET", "/x", None, None)
 
 
@@ -765,8 +764,10 @@ async def test_async_execute_mutants_coverage(
 
         # Test embedded command raising Exception
         conn._embedded_command = MagicMock()
+        conn._embedded_command.connection_template = None
+        conn._embedded_command.params = {"url": "/emb", "method": "GET"}
         conn._embedded_command._connection_template = None
-        conn._embedded_command._params = {"url": "/emb", "method": "GET"}
+        conn._embedded_command._params = conn._embedded_command.params
         conn._embedded_command.check_execute_condition = MagicMock(return_value=True)
         # Use an AsyncMock with side_effect to simulate standard failure in an awaitable
         conn._embedded_command.async_execute = AsyncMock(side_effect=TypeError("Emb failed"))
@@ -795,10 +796,12 @@ async def test_async_execute_embedded_and_path(
 
         # Test embedded template async_render, format_placeholders, and url fallback
         conn._embedded_command = MagicMock()
+        conn._embedded_command.params = {}
         conn._embedded_command._params = {}
 
         mock_template = MagicMock()
         mock_template.async_render = AsyncMock(return_value='{"method": "POST"}')
+        conn._embedded_command.connection_template = mock_template
         conn._embedded_command._connection_template = mock_template
         conn._embedded_command.check_execute_condition = MagicMock(return_value=True)
         conn._embedded_command.async_execute = AsyncMock(return_value=(None, None))
@@ -824,6 +827,7 @@ async def test_async_execute_embedded_and_path(
         mock_template.async_render = AsyncMock(return_value=(
             '{"url": "/emb/__DEVICE_ID__/__CLIMATE_IP_HOST__", "method": "GET"}'
         ))
+        conn._embedded_command.connection_template = mock_template
         conn._embedded_command._connection_template = mock_template
         conn._embedded_command.async_execute.reset_mock()
 
