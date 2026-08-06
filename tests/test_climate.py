@@ -62,13 +62,13 @@ def test_00_climate_defensive_init_properties(base_climate_entity: ClimateIP) ->
     with an AssertionError before hitting the event loop or async integrations.
     """
     assert base_climate_entity._attr_unique_id is not None, "unique_id MUST NOT be None"
-    assert base_climate_entity._attr_min_temp is not None, "min_temp MUST NOT be None"
-    assert base_climate_entity._attr_max_temp is not None, "max_temp MUST NOT be None"
+    assert base_climate_entity.min_temp is not None, "min_temp MUST NOT be None"
+    assert base_climate_entity.max_temp is not None, "max_temp MUST NOT be None"
     assert base_climate_entity._attr_target_temperature_step is not None, "step MUST NOT be None"
-    assert isinstance(base_climate_entity._attr_hvac_modes, list), "hvac_modes MUST be a list"
-    assert base_climate_entity._attr_fan_modes is not None, "fan_modes MUST NOT be None"
-    assert base_climate_entity._attr_swing_modes is not None, "swing_modes MUST NOT be None"
-    assert base_climate_entity._attr_preset_modes is not None, "preset_modes MUST NOT be None"
+    assert isinstance(base_climate_entity.hvac_modes, list), "hvac_modes MUST be a list"
+    assert base_climate_entity.fan_modes is not None, "fan_modes MUST NOT be None"
+    assert base_climate_entity.swing_modes is not None, "swing_modes MUST NOT be None"
+    assert base_climate_entity.preset_modes is not None, "preset_modes MUST NOT be None"
 
 
 def test_01_climate_defensive_sync_none_fallback() -> None:
@@ -89,10 +89,10 @@ def test_01_climate_defensive_sync_none_fallback() -> None:
     
     entity = ClimateIP(coordinator=mock_coord, description=desc)
     
-    assert isinstance(entity._attr_hvac_modes, list), "hvac_modes MUST be a list"
-    assert isinstance(entity._attr_fan_modes, list), "fan_modes MUST be a list"
-    assert isinstance(entity._attr_swing_modes, list), "swing_modes MUST be a list"
-    assert isinstance(entity._attr_preset_modes, list), "preset_modes MUST be a list"
+    assert isinstance(entity.hvac_modes, list), "hvac_modes MUST be a list"
+    assert isinstance(entity.fan_modes, list), "fan_modes MUST be a list"
+    assert isinstance(entity.swing_modes, list), "swing_modes MUST be a list"
+    assert isinstance(entity.preset_modes, list), "preset_modes MUST be a list"
 
 
 async def test_turn_on_dry_helper(base_climate_entity: ClimateIP) -> None:
@@ -234,9 +234,6 @@ async def test_climate_sync_data_full(base_climate_entity: ClimateIP) -> None:
 
     base_climate_entity.coordinator.data = mock_state
 
-    # Entity __init__ calls _sync_data_from_coordinator, but let's call it explicitly to be sure
-    base_climate_entity._sync_data_from_coordinator()
-
     # Lethal Assertions for Mutants 2, 11, 12
     assert base_climate_entity.hvac_mode == HVACMode.HEAT, (
         "hvac_mode was not synchronized"
@@ -269,26 +266,11 @@ async def test_climate_sync_data_full(base_climate_entity: ClimateIP) -> None:
 
 
 async def test_climate_sync_data_none(base_climate_entity: ClimateIP) -> None:
-    """Verify that _sync_data_from_coordinator falls back correctly when state is None."""
+    """Verify that dynamic properties fall back correctly when state is None."""
     base_climate_entity.coordinator.unique_id = "test_sync_none"
     base_climate_entity.coordinator.data = None
 
-    # Force initial values to non-None/non-empty to test the reset
-    base_climate_entity._attr_hvac_mode = "dummy"
-    base_climate_entity._attr_target_temperature = 99.0
-    base_climate_entity._attr_current_temperature = 99.0
-    base_climate_entity._attr_fan_mode = "dummy"
-    base_climate_entity._attr_swing_mode = "dummy"
-    base_climate_entity._attr_preset_mode = "dummy"
-    base_climate_entity._attr_hvac_modes = ["dummy"]
-    base_climate_entity._attr_fan_modes = ["dummy"]
-    base_climate_entity._attr_swing_modes = ["dummy"]
-    base_climate_entity._attr_preset_modes = ["dummy"]
-
-    # Trigger the fallback block
-    base_climate_entity._sync_data_from_coordinator()
-
-    # Lethal Assertions for Mutants 13-19: Must be strictly None or []
+    # Lethal Assertions: Must be strictly None or []
     assert base_climate_entity.hvac_mode is None, "hvac_mode did not reset to None"
     assert base_climate_entity.target_temperature is None, (
         "target_temperature did not reset to None"
@@ -299,10 +281,10 @@ async def test_climate_sync_data_none(base_climate_entity: ClimateIP) -> None:
     assert base_climate_entity.fan_mode is None, "fan_mode did not reset to None"
     assert base_climate_entity.swing_mode is None, "swing_mode did not reset to None"
     assert base_climate_entity.preset_mode is None, "preset_mode did not reset to None"
-    assert base_climate_entity.hvac_modes == ["dummy"], "hvac_modes should not reset when offline"
-    assert base_climate_entity.fan_modes == ["dummy"], "fan_modes should not reset when offline"
-    assert base_climate_entity.swing_modes == ["dummy"], "swing_modes should not reset when offline"
-    assert base_climate_entity.preset_modes == ["dummy"], "preset_modes should not reset when offline"
+    assert base_climate_entity.hvac_modes == [], "hvac_modes should be empty when data is None"
+    assert base_climate_entity.fan_modes == [], "fan_modes should be empty when data is None"
+    assert base_climate_entity.swing_modes == [], "swing_modes should be empty when data is None"
+    assert base_climate_entity.preset_modes == [], "preset_modes should be empty when data is None"
 
 
 async def test_public_async_set_hvac_mode_behavior(
@@ -327,7 +309,7 @@ async def test_public_async_set_fan_mode_behavior(
     base_climate_entity.coordinator.async_set_property = AsyncMock()
 
     # Prerequisite: The mode must exist in available options or the function's guard will abort
-    base_climate_entity._attr_fan_modes = ["low", "high"]
+    base_climate_entity.coordinator.data.fan_modes = ["low", "high"]
 
     # Execute the public API
     await base_climate_entity.async_set_fan_mode("high")
@@ -383,7 +365,7 @@ async def test_async_set_swing_mode_strict_args_kills_mutants(
 ) -> None:
     """Kill mutants in async_set_swing_mode."""
     base_climate_entity.coordinator.async_set_property = AsyncMock()
-    base_climate_entity._attr_swing_modes = ["vertical", "horizontal"]
+    base_climate_entity.coordinator.data.swing_modes = ["vertical", "horizontal"]
 
     await base_climate_entity.async_set_swing_mode("vertical")
 
@@ -555,7 +537,6 @@ def test_climate_extra_state_attributes_filtering(
         "custom_attribute_2": 42,
     }
 
-    base_climate_entity._sync_data_from_coordinator()
     extra_attrs = base_climate_entity.extra_state_attributes
 
     # Must only contain non-core attributes
@@ -580,7 +561,6 @@ def test_climate_min_temp_from_coordinator_property(
         mock_prop if key == ATTR_MIN_TEMP else None
     )
 
-    base_climate_entity._sync_data_from_coordinator()
     assert base_climate_entity.min_temp == 17.5
 
 
@@ -590,7 +570,6 @@ def test_climate_min_temp_fallback_on_none_prop(base_climate_entity: ClimateIP) 
 
     base_climate_entity.coordinator.controller.get_property_object.return_value = None
 
-    base_climate_entity._sync_data_from_coordinator()
     assert base_climate_entity.min_temp == float(DEFAULT_CLIMATE_IP_TEMP_MIN)
 
 
@@ -604,7 +583,6 @@ def test_climate_min_temp_fallback_on_invalid_value(
     mock_prop.value = "invalid_number"
     base_climate_entity.coordinator.controller.get_property_object.return_value = mock_prop
 
-    base_climate_entity._sync_data_from_coordinator()
     assert base_climate_entity.min_temp == float(DEFAULT_CLIMATE_IP_TEMP_MIN)
 
 
@@ -623,7 +601,6 @@ def test_climate_max_temp_from_coordinator_property(
         mock_prop if key == ATTR_MAX_TEMP else None
     )
 
-    base_climate_entity._sync_data_from_coordinator()
     assert base_climate_entity.max_temp == 31.0
 
 
@@ -633,7 +610,6 @@ def test_climate_max_temp_fallback_on_none_prop(base_climate_entity: ClimateIP) 
 
     base_climate_entity.coordinator.controller.get_property_object.return_value = None
 
-    base_climate_entity._sync_data_from_coordinator()
     assert base_climate_entity.max_temp == float(DEFAULT_CLIMATE_IP_TEMP_MAX)
 
 
@@ -647,7 +623,6 @@ def test_climate_max_temp_fallback_on_invalid_value(
     mock_prop.value = "invalid_number"
     base_climate_entity.coordinator.controller.get_property_object.return_value = mock_prop
 
-    base_climate_entity._sync_data_from_coordinator()
     assert base_climate_entity.max_temp == float(DEFAULT_CLIMATE_IP_TEMP_MAX)
 
 
