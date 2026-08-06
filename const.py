@@ -19,6 +19,9 @@ MIN_POLL_INTERVAL = 5
 MAX_POLL_INTERVAL = 21600
 CONF_ENABLE_POLLING = "enable_polling"
 DEFAULT_ENABLE_POLLING = True
+CONF_KEEP_ALIVE = "keep_alive"
+CONF_INSECURE_SSL = "insecure_ssl"
+CONF_USE_HTTP = "use_http"
 
 # --- Configuration Flow and Entry Keys ---
 CONFIG_ENTRY_VERSION = 2

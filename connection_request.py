@@ -34,6 +34,8 @@ from requests.packages.urllib3.exceptions import (  # type: ignore[import-untype
 from .connection import Connection, _HOST_LOCKS, register_connection
 from .const import (
     CONF_CERT,
+    CONF_INSECURE_SSL,
+    CONF_KEEP_ALIVE,
     CONFIG_DEVICE_CONDITION_TEMPLATE,
     CONFIG_DEVICE_CONNECTION,
     CONFIG_DEVICE_CONNECTION_PARAMS,
@@ -135,7 +137,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
             self._session.mount("https://", SamsungHTTPAdapter())
 
         # Read keep_alive setting
-        self._keep_alive = hass_config.get("keep_alive", True) if hass_config else True
+        self._keep_alive = hass_config.get(CONF_KEEP_ALIVE, True) if hass_config else True
 
         # Registry for child connections (embedded commands) to propagate session updates
         self._children: list["ConnectionRequestBase"] = []
@@ -233,7 +235,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
 
         return {
             "engine": "requests_sync",
-            "insecure_ssl": insecure_ssl,
+            CONF_INSECURE_SSL: insecure_ssl,
             "timeout": socket_timeout,
             "keep_alive_fallback_active": force_close,
         }
@@ -363,8 +365,8 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
 
         if node:
             self._params.update(node.get(CONFIG_DEVICE_CONNECTION_PARAMS, {}))
-            if "keep_alive" in node:
-                self._keep_alive = node["keep_alive"]
+            if CONF_KEEP_ALIVE in node:
+                self._keep_alive = node[CONF_KEEP_ALIVE]
             if CONFIG_DEVICE_CONNECTION in node:
                 # pylint: disable=import-outside-toplevel,assignment-from-none
                 self._embedded_command = self.create_updated(  # type: ignore[assignment]

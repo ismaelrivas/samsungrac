@@ -20,6 +20,7 @@ from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 from .connection import Connection, register_connection
 from .const import (
     CONF_CERT,
+    CONF_KEEP_ALIVE,
     CONFIG_DEVICE_CONDITION_TEMPLATE,
     CONFIG_DEVICE_CONNECTION,
     CONFIG_DEVICE_CONNECTION_PARAMS,
@@ -48,8 +49,8 @@ class ConnectionRaw8888(Connection):
         if not node:
             return False
 
-        if "keep_alive" in node:
-            self._keep_alive = node["keep_alive"]
+        if CONF_KEEP_ALIVE in node:
+            self._keep_alive = node[CONF_KEEP_ALIVE]
         self._params.update(node.get("params", {}))
         return True
 
@@ -69,8 +70,8 @@ class ConnectionRaw8888(Connection):
         if not yaml_node:
             return new_conn
 
-        if "keep_alive" in yaml_node:
-            new_conn._keep_alive = yaml_node["keep_alive"]
+        if CONF_KEEP_ALIVE in yaml_node:
+            new_conn._keep_alive = yaml_node[CONF_KEEP_ALIVE]
 
         template_str = yaml_node.get(CONFIG_DEVICE_CONNECTION_TEMPLATE)
         if template_str:
@@ -121,7 +122,7 @@ class ConnectionRaw8888(Connection):
         self._connection_template: Template | None = None
         self.condition_template: Template | None = None
         self._embedded_command: ConnectionRaw8888 | None = None
-        self._keep_alive = config.get("keep_alive", True)
+        self._keep_alive = config.get(CONF_KEEP_ALIVE, True)
 
         self._is_connected: bool = False
         self._reconnect_retries: int = 0

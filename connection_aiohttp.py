@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import ssl
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
 from aiohttp.hdrs import AUTHORIZATION, CONNECTION, CONTENT_TYPE
@@ -27,6 +27,9 @@ if TYPE_CHECKING:
 from .connection import Connection, register_connection
 from .const import (
     CONF_CERT,
+    CONF_INSECURE_SSL,
+    CONF_KEEP_ALIVE,
+    CONF_USE_HTTP,
     CONFIG_DEVICE_CONDITION_TEMPLATE,
     CONFIG_DEVICE_CONNECTION,
     CONFIG_DEVICE_CONNECTION_PARAMS,
@@ -102,7 +105,7 @@ class ConnectionAiohttp8888(Connection):
         self.condition_template: Template | None = None
         self._embedded_command: "ConnectionAiohttp8888" | None = None
 
-        self._keep_alive: bool = config.get("keep_alive", True)
+        self._keep_alive: bool = config.get(CONF_KEEP_ALIVE, True)
 
         if not self._token:
             err_msg = "[aiohttp_init] aiohttp engine started without a token. This will fail."
@@ -166,7 +169,7 @@ class ConnectionAiohttp8888(Connection):
              - If insecure_ssl=False (Cloud default), returns None (aiohttp default strict).
         """
         # Read insecure_ssl. It comes from 'config' passed to __init__.
-        insecure_ssl = self._config.get("insecure_ssl", False)
+        insecure_ssl = self._config.get(CONF_INSECURE_SSL, False)
         has_cert = bool(
             self._cert_path
             and await self._hass.async_add_executor_job(
@@ -204,8 +207,8 @@ class ConnectionAiohttp8888(Connection):
 
     def load_from_yaml(self, node: dict[str, Any] | None, connection_base: 'Connection') -> bool:
         """Load configuration from yaml node dictionary."""
-        if node and "keep_alive" in node:
-            self._keep_alive = node["keep_alive"]
+        if node and CONF_KEEP_ALIVE in node:
+            self._keep_alive = node[CONF_KEEP_ALIVE]
         return True
 
     def create_updated(
@@ -227,8 +230,8 @@ class ConnectionAiohttp8888(Connection):
         new_connection._shared_state = self._shared_state
 
         if yaml_node is not None:
-            if "keep_alive" in yaml_node:
-                new_connection._keep_alive = yaml_node["keep_alive"]
+            if CONF_KEEP_ALIVE in yaml_node:
+                new_connection._keep_alive = yaml_node[CONF_KEEP_ALIVE]
 
             if CONFIG_DEVICE_CONNECTION_TEMPLATE in yaml_node:
                 new_connection._connection_template = Template(
@@ -295,7 +298,7 @@ class ConnectionAiohttp8888(Connection):
             }
 
             # Use the shared state's SSL context, skip for plain HTTP test mode
-            if not self._config.get("use_http", False):
+            if not self._config.get(CONF_USE_HTTP, False):
                 if self._shared_state.ssl_context is None:
                     self._shared_state.ssl_context = await self._create_ssl_context()
 
@@ -311,7 +314,7 @@ class ConnectionAiohttp8888(Connection):
                 # Generalize Probe URL
                 port = self._config.get(CONF_PORT, DEFAULT_PORT)
                 protocol = (
-                    "http" if self._config.get("use_http", False) else "https"
+                    "http" if self._config.get(CONF_USE_HTTP, False) else "https"
                 )
                 probe_url = f"{protocol}://{self._ip_address}:{port}/devices"
                 if (
@@ -465,7 +468,7 @@ class ConnectionAiohttp8888(Connection):
             ssl_context = self._shared_state.ssl_context
 
             # For plain HTTP test mode, use a simple connector with no SSL
-            if self._config.get("use_http") is True:
+            if self._config.get(CONF_USE_HTTP) is True:
                 connector = aiohttp.TCPConnector(keepalive_timeout=75, limit=1)
             else:
                 connector = aiohttp.TCPConnector(
@@ -499,7 +502,7 @@ class ConnectionAiohttp8888(Connection):
             url = url.replace(f":{DEFAULT_PORT}/", f":{port}/")
 
         # Mutmut odia el `if dict.get(key, False):`. Lo blindamos asertando el tipo booleano.
-        if bool(self._config.get("use_http", False)) is True:
+        if bool(self._config.get(CONF_USE_HTTP, False)) is True:
             url = url.replace("https://", "http://")
 
         return url
