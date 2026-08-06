@@ -48,9 +48,7 @@ PLATFORMS: list[Platform] = [
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -> bool:
     """Migrate old config entry to new version."""
-    # fmt: off
-    _LOGGER.debug("Migrating climate_ip config entry from version %s to %s", entry.version, CONFIG_ENTRY_VERSION)  # pragma: no mutate
-    # fmt: on
+    _LOGGER.debug("Migrating climate_ip config entry from version %s to %s", entry.version, CONFIG_ENTRY_VERSION)
 
     if entry.version == 1:
         # v1 → v2: Validating schema to ensure integrity.
@@ -66,20 +64,14 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) 
         try:
             v2_schema(dict(entry.data))
         except vol.Invalid as err:
-            # fmt: off
-            _LOGGER.error("Migration failed: v1 payload structurally invalid - %s", err)  # pragma: no mutate
-            # fmt: on
+            _LOGGER.error("Migration failed: v1 payload structurally invalid - %s", err)
             return False
 
-        # fmt: off
-        _LOGGER.info("Config entry migration v1 → v2 complete (schema validated).")  # pragma: no mutate
-        # fmt: on
+        _LOGGER.info("Config entry migration v1 → v2 complete (schema validated).")
 
     if entry.version > CONFIG_ENTRY_VERSION:
         # This should not happen in normal operation, but guard against downgrades.
-        # fmt: off
-        _LOGGER.error("Config entry version %s is newer than the integration supports (%s). Please update the integration.", entry.version, CONFIG_ENTRY_VERSION)  # pragma: no mutate
-        # fmt: on
+        _LOGGER.error("Config entry version %s is newer than the integration supports (%s). Please update the integration.", entry.version, CONFIG_ENTRY_VERSION)
         return False
 
     hass.config_entries.async_update_entry(entry, version=CONFIG_ENTRY_VERSION)
@@ -90,10 +82,10 @@ async def async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None
     """Handle options update."""
     # This is called when the user changes options in the UI.
     # Reloading the entry triggers async_unload_entry, which performs the definitive cleanup.
-    _LOGGER.debug(  # pragma: no mutate
-        "Configuration options updated, reloading climate_ip integration for entry %s",  # pragma: no mutate
-        entry.entry_id,  # pragma: no mutate
-    )  # pragma: no mutate
+    _LOGGER.debug(
+        "Configuration options updated, reloading climate_ip integration for entry %s",
+        entry.entry_id,
+  )
     await hass.config_entries.async_reload(entry.entry_id)
 
 
@@ -114,9 +106,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
     # in the request itself or at the coordinator interval level.
     session = async_get_clientsession(hass)
 
-    # fmt: off
-    _LOGGER.info("Starting setup for device %s at %s (Device Type: %s)", runtime_config.get(CONF_MAC, "Unknown"), runtime_config.get("ip_address", "Unknown"), device_type)  # pragma: no mutate
-    # fmt: on
+    _LOGGER.info("Starting setup for device %s at %s (Device Type: %s)", runtime_config.get(CONF_MAC, "Unknown"), runtime_config.get("ip_address", "Unknown"), device_type)
 
     devices_config = runtime_config.get(CONF_DEVICES)
 
@@ -212,7 +202,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
 
 async def async_unload_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -> bool:
     """Unload a config entry."""
-    _LOGGER.debug("Unloading entry: %s", entry.entry_id)  # pragma: no mutate
+    _LOGGER.debug("Unloading entry: %s", entry.entry_id)
 
     # 1. UNLOAD PLATFORMS FIRST
     # Halt all entity polling and state updates before severing the network connection.
@@ -222,16 +212,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -
         # 2. TERMINATE BACKGROUND TASKS
         # Safely shut down all coordinators and underlying socket/aiohttp connections
         if entry.runtime_data:
-            _LOGGER.debug(  # pragma: no mutate
+            _LOGGER.debug(
                 "Terminating active connections and coordinators for entry %s", entry.entry_id
-            )  # pragma: no mutate
+            )
             for device_id, coordinator in entry.runtime_data.items():
-                _LOGGER.debug("Executing async_shutdown for device ID: %s", device_id)  # pragma: no mutate
+                _LOGGER.debug("Executing async_shutdown for device ID: %s", device_id)
                 try:
                     await coordinator.async_shutdown()
                 except Exception as ex:
                     # Fail-fast: Log the teardown failure but do not halt the unload sequence
-                    _LOGGER.error("Failed to cleanly shutdown coordinator for device %s: %s", device_id, ex)  # pragma: no mutate
+                    _LOGGER.error("Failed to cleanly shutdown coordinator for device %s: %s", device_id, ex)
 
             # 3. PURGE MEMORY FOOTPRINT
             # Explicitly clear the dictionary to drop controller references immediately, 
@@ -247,9 +237,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -
         if not other_active_entries:
             clear_yaml_cache()
 
-        _LOGGER.info("Teardown complete. Config entry %s fully unloaded.", entry.entry_id)  # pragma: no mutate
+        _LOGGER.info("Teardown complete. Config entry %s fully unloaded.", entry.entry_id)
     else:
-        _LOGGER.warning("Platform unload failed for entry %s. Aborting teardown to prevent unstable state.", entry.entry_id)  # pragma: no mutate
+        _LOGGER.warning("Platform unload failed for entry %s. Aborting teardown to prevent unstable state.", entry.entry_id)
 
     return unload_ok
 
@@ -258,11 +248,11 @@ async def async_remove_config_entry_device(
     _hass: HomeAssistant, entry: ClimateIPConfigEntry, device_entry: Any
 ) -> bool:
     """Remove a config entry from a device."""
-    _LOGGER.debug(  # pragma: no mutate
-        "Removing device %s from config entry %s",  # pragma: no mutate
-        device_entry.id,  # pragma: no mutate
-        entry.entry_id,  # pragma: no mutate
-    )  # pragma: no mutate
+    _LOGGER.debug(
+        "Removing device %s from config entry %s",
+        device_entry.id,
+        entry.entry_id,
+    )
     # If the user removes a device from the integrations page, this allows HA to delete it
     # from the Device Registry if the integration confirms it's okay (returning True).
     # Since we dynamically re-add devices upon startup if they exist, returning True is safe
