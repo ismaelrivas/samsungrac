@@ -325,14 +325,6 @@ class YamlController(ClimateController):
 
     def get_property_object(self, property_name: str) -> Any | None:
         """Return the property object (not just its value) by name."""
-        _LOGGER.debug(
-            "%s [DEBUG DUMP] property_name='%s', operations=%s, properties=%s, sensors=%s",
-            self.log_prefix,
-            property_name,
-            list(self.loader.operations.keys()),
-            list(self.loader.properties.keys()),
-            list(self.loader.sensors.keys())
-        )
         if property_name in self.loader.operations:
             return self.loader.operations[property_name]
         if property_name in self.loader.properties:

@@ -286,6 +286,11 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         return list(self.coordinator.data.preset_modes) if self.coordinator.data else []
 
     @property
+    def temperature_unit(self) -> str:
+        """Return the temperature unit."""
+        return self.hass.config.units.temperature_unit
+
+    @property
     def log_prefix(self) -> str:
         """Return the log prefix from the coordinator for consistency."""
         return self.coordinator.log_prefix

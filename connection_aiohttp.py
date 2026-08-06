@@ -85,9 +85,6 @@ class ConnectionAiohttp8888(Connection):
         session: aiohttp.ClientSession,
         ip_address: str,
     ) -> None:
-        """Initialize the aiohttp connection engine."""
-        init_debug_msg = "[aiohttp_init] Initializing ConnectionAiohttp8888. IP: %s"
-        _LOGGER.debug(init_debug_msg, ip_address)
         super().__init__(config, logger)
         self._hass = hass
         self._controller: 'YamlController' | None = None  # Initialize controller reference
