@@ -2,6 +2,7 @@
 """Raw socket connection engine for Samsung devices on port 8888."""
 
 import asyncio
+import errno
 import logging
 import time
 from pathlib import Path
@@ -258,8 +259,7 @@ class ConnectionRaw8888(Connection):
         embedded_params = dict(raw_params) if raw_params else {}
 
         if embedded_template:
-            # CRITICAL FIX: 'await' es obligatorio para métodos asíncronos nativos de HA
-            embedded_params_str = await embedded_template.async_render(variables=None)
+            embedded_params_str = embedded_template.async_render(parse_result=False)
             embedded_params = json_loads(str(embedded_params_str))
         elif not embedded_params:
             return
@@ -328,15 +328,38 @@ class ConnectionRaw8888(Connection):
 
     @staticmethod
     def _map_connection_error(e: Exception) -> str:
-        """Translate OS/Socket exceptions to standardized core states."""
+        """Map standard network exceptions to human readable strings."""
+        cause = getattr(e, "__cause__", None) or getattr(e, "__context__", None)
+        err_no = getattr(e, "errno", None) or getattr(cause, "errno", None)
         err_str = str(e).lower()
-        if "111" in err_str or "refused" in err_str:  # pragma: no mutate
-            return "Connection refused (device unreachable or offline)"  # pragma: no mutate
-        if "timed out" in err_str or "etimedout" in err_str:  # pragma: no mutate
-            return "Connection timed out"  # pragma: no mutate
-        if "name or service not known" in err_str or "nodename" in err_str:  # pragma: no mutate
-            return "Host not found (DNS error)"  # pragma: no mutate
-        return f"Connection error: {e}"  # pragma: no mutate
+
+        if (
+            err_no == errno.ECONNREFUSED
+            or isinstance(e, ConnectionRefusedError)
+            or isinstance(cause, ConnectionRefusedError)
+            or "refused" in err_str
+        ):
+            return "Connection refused (device unreachable or offline)"
+
+        if (
+            err_no == errno.ETIMEDOUT
+            or isinstance(e, (TimeoutError, asyncio.TimeoutError))
+            or isinstance(cause, (TimeoutError, asyncio.TimeoutError))
+            or "timed out" in err_str
+            or "etimedout" in err_str
+        ):
+            return "Connection timed out"
+
+        if (
+            err_no in (errno.EHOSTUNREACH, errno.ENETUNREACH)
+            or "unreachable" in err_str
+        ):
+            return "Host or network unreachable"
+
+        if "name or service not known" in err_str or "nodename" in err_str:
+            return "Host not found (DNS error)"
+
+        return f"Connection error: {e}"
 
     async def async_execute(
         self,
@@ -360,7 +383,8 @@ class ConnectionRaw8888(Connection):
         except Exception as e:
             raise CannotConnect(f"Embedded command failed: {e}") from e  # pragma: no mutate
 
-        start_time = time.perf_counter()
+        debug_enabled = _LOGGER.isEnabledFor(logging.DEBUG)
+        start_time = time.perf_counter() if debug_enabled else 0.0
 
         await self._handle_periodic_reset(_is_poll)
 
@@ -377,8 +401,9 @@ class ConnectionRaw8888(Connection):
             if err:
                 raise CannotConnect(f"API Error: {err}")  # pragma: no mutate
             
-            elapsed = time.perf_counter() - start_time  # pragma: no mutate
-            _LOGGER.debug("%s [RAW] Request completed in %.3f seconds", self.log_prefix, elapsed)  # pragma: no mutate
+            if debug_enabled:
+                elapsed = time.perf_counter() - start_time  # pragma: no mutate
+                _LOGGER.debug("%s [RAW] Request completed in %.3f seconds", self.log_prefix, elapsed)  # pragma: no mutate
             
             return resp, None
 

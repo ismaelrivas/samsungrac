@@ -800,7 +800,7 @@ async def test_async_execute_embedded_and_path(
         conn._embedded_command._params = {}
 
         mock_template = MagicMock()
-        mock_template.async_render = AsyncMock(return_value='{"method": "POST"}')
+        mock_template.async_render = MagicMock(return_value='{"method": "POST"}')
         conn._embedded_command.connection_template = mock_template
         conn._embedded_command._connection_template = mock_template
         conn._embedded_command.check_execute_condition = MagicMock(return_value=True)
@@ -824,7 +824,7 @@ async def test_async_execute_embedded_and_path(
 
         # Test embedded params replacement (second pass)
         # DO NOT delete async_render, just reconfigure the return value
-        mock_template.async_render = AsyncMock(return_value=(
+        mock_template.async_render = MagicMock(return_value=(
             '{"url": "/emb/__DEVICE_ID__/__CLIMATE_IP_HOST__", "method": "GET"}'
         ))
         conn._embedded_command.connection_template = mock_template
