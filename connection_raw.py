@@ -161,14 +161,13 @@ class ConnectionRaw8888(Connection):
 
     async def async_get_client(self) -> Samsung8888Client:
         """Get the raw client, initializing it if necessary (shared or standalone)."""
-        port = self._extract_port(self._params.get("url"))
-
         if not self._host:
             raise CannotConnect("Host/IP address not provided for RAW connection")  # pragma: no mutate
 
         if self._controller:
             client = getattr(self._controller, "shared_raw_client", None)
             if client is None:
+                port = self._extract_port(self._params.get("url"))
                 client = Samsung8888Client(
                     self._host, port, self._cert, log_prefix=self.log_prefix
                 )
@@ -179,6 +178,7 @@ class ConnectionRaw8888(Connection):
             return client
 
         if self._client is None:
+            port = self._extract_port(self._params.get("url"))
             self._client = Samsung8888Client(
                 self._host, port, self._cert, log_prefix=self.log_prefix
             )
@@ -243,14 +243,13 @@ class ConnectionRaw8888(Connection):
         url: str | None,
         headers: dict[str, str] | None,
         device_state: dict[str, Any] | None,
-        current_token: str | None,
-        host: str,
-        dev_id: str | None,
-        mac: str,
+        auth_ctx: tuple[str | None, str, str | None, str],
     ) -> None:
         """Evaluate and execute embedded pre-flight commands if conditions are met."""
         if not self._embedded_command:
             return
+
+        current_token, host, dev_id, mac = auth_ctx
 
         if device_state is not None and not self._embedded_command.check_execute_condition(device_state):
             return
@@ -312,42 +311,36 @@ class ConnectionRaw8888(Connection):
     def _format_request_url(
         self,
         url: str | None,
-        token: str | None,
-        host: str,
-        dev_id: str | None,
-        mac: str,
+        auth_ctx: tuple[str | None, str, str | None, str],
     ) -> str:
         """Format request URL with placeholders."""
-        return format_placeholders(url, token, host, dev_id, mac)
+        current_token, host, dev_id, mac = auth_ctx
+        return format_placeholders(url, current_token, host, dev_id, mac)
 
     def _format_request_body(
         self,
         data: Any,
-        token: str | None,
-        host: str,
-        dev_id: str | None,
-        mac: str,
+        auth_ctx: tuple[str | None, str, str | None, str],
     ) -> Any:
         """Format request data body into dictionary or JSON representation."""
-        data = format_placeholders(data, token, host, dev_id, mac)
+        current_token, host, dev_id, mac = auth_ctx
+        data = format_placeholders(data, current_token, host, dev_id, mac)
         return data if isinstance(data, dict) else (json_loads(data) if data else None)
 
     def _format_request_headers(
         self,
         headers: dict[str, str] | None,
-        token: str | None,
-        host: str,
-        dev_id: str | None,
-        mac: str,
+        auth_ctx: tuple[str | None, str, str | None, str],
     ) -> dict[str, str]:
         """Format request headers and inject authentication credentials."""
+        current_token, host, dev_id, mac = auth_ctx
         req_headers = headers.copy() if headers else {}
-        req_headers = format_placeholders(req_headers, token, host, dev_id, mac)
+        req_headers = format_placeholders(req_headers, current_token, host, dev_id, mac)
 
-        if not token:
+        if not current_token:
             raise AuthError("Token not configured for the raw engine")  # pragma: no mutate
 
-        req_headers.setdefault(HEADER_AUTH, f"Bearer {token}")  # pragma: no mutate
+        req_headers.setdefault(HEADER_AUTH, f"Bearer {current_token}")  # pragma: no mutate
         req_headers.setdefault(HEADER_CONTENT_TYPE, HEADER_VALUE_JSON)  # pragma: no mutate
 
         return req_headers
@@ -357,16 +350,13 @@ class ConnectionRaw8888(Connection):
         url: str | None,
         data: Any,
         headers: dict[str, str] | None,
-        current_token: str | None,
-        host: str,
-        dev_id: str | None,
-        mac: str,
+        auth_ctx: tuple[str | None, str, str | None, str],
     ) -> tuple[str, str, Any, dict[str, str]]:
         """Assemble fully materialized network vectors."""
-        formatted_url = self._format_request_url(url, current_token, host, dev_id, mac)
+        formatted_url = self._format_request_url(url, auth_ctx)
         path = str(urlparse(formatted_url).path) if formatted_url else ""
-        body = self._format_request_body(data, current_token, host, dev_id, mac)
-        req_headers = self._format_request_headers(headers, current_token, host, dev_id, mac)
+        body = self._format_request_body(data, auth_ctx)
+        req_headers = self._format_request_headers(headers, auth_ctx)
 
         return formatted_url, path, body, req_headers
 
@@ -382,11 +372,11 @@ class ConnectionRaw8888(Connection):
         _is_poll: bool = False,  # pragma: no mutate
     ) -> tuple[str | None, dict[str, Any] | None]:
         """Orchestrates the execution of commands, including embedded ones."""
-        current_token, host, dev_id, mac = self._get_token_and_ids()
+        auth_ctx = self._get_token_and_ids()
 
         try:
             await self._async_handle_embedded_command(
-                method, url, headers, device_state, current_token, host, dev_id, mac
+                method, url, headers, device_state, auth_ctx
             )
         except (CannotConnect, AuthError):
             raise  # pragma: no mutate
@@ -397,18 +387,24 @@ class ConnectionRaw8888(Connection):
 
         # Delegate the actual raw socket dispatch
         return await self._async_execute_request(
-            method, url, data, headers, current_token, host, dev_id, mac, _is_probe
+            method, url, data, headers, auth_ctx, _is_probe
         )
 
     async def _async_execute_request(
-        self, method, url, data, headers, current_token, host, dev_id, mac, _is_probe
-    ):
+        self,
+        method: str,
+        url: str | None,
+        data: Any,
+        headers: dict[str, str] | None,
+        auth_ctx: tuple[str | None, str, str | None, str],
+        _is_probe: bool,
+    ) -> tuple[str | None, dict[str, Any] | None]:
         """Dispatches the raw socket request."""
         debug_enabled = _LOGGER.isEnabledFor(logging.DEBUG)
         start_time = time.perf_counter() if debug_enabled else 0.0
 
         url, path, body, req_headers = self._prepare_request_payload(
-            url, data, headers, current_token, host, dev_id, mac
+            url, data, headers, auth_ctx
         )
 
         client = await self.async_get_client()
