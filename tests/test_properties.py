@@ -2292,3 +2292,24 @@ async def test_getjsonstatus_calculate_value_json_strict(mock_connection, mock_c
     assert result == {"strict_key": "strict_value", "is_active": True}
 
 
+def test_samsungrac_sensor_validation_templates() -> None:
+    """Verify that samsungrac.yaml sensor validation_templates properly validate option presence."""
+    from jinja2 import Template
+
+    tmpl_outdoor = Template(
+        "{% if 'Mode' in device_state and 'options' in device_state.Mode and 'OutdoorTemp_' in (device_state.Mode.options | string) %}valid{% endif %}"
+    )
+    tmpl_filter = Template(
+        "{% if 'Mode' in device_state and 'options' in device_state.Mode and 'FilterCleanAlarm_' in (device_state.Mode.options | string) %}valid{% endif %}"
+    )
+
+    state_valid = {"Mode": {"options": ["Comode_Off", "OutdoorTemp_63", "FilterCleanAlarm_0"]}}
+    state_invalid = {"Mode": {"options": ["Comode_Off", "Spi_Off"]}}
+
+    assert tmpl_outdoor.render(device_state=state_valid) == "valid"
+    assert tmpl_outdoor.render(device_state=state_invalid) == ""
+
+    assert tmpl_filter.render(device_state=state_valid) == "valid"
+    assert tmpl_filter.render(device_state=state_invalid) == ""
+
+

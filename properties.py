@@ -264,10 +264,17 @@ class DeviceProperty:
         """Return the state node path mapped in the device state structure."""
         return self._state_node
 
+    @property
+    def value_is_string(self) -> bool:
+        """Return True if the property value should be treated as a string."""
+        return getattr(self, "_type", None) in ("string", "enum") or self.device_class in ("enum", "problem")
+
     def load_from_yaml(self, node: dict[str, Any] | None) -> bool:
         """Load configuration from a YAML node dictionary."""
         if node is None:
             return False
+
+        self._type = node.get("type")
 
         if state_node := node.get("state_node"):
             self._state_node = state_node
