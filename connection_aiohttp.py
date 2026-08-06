@@ -1,6 +1,4 @@
-# pylint: disable=duplicate-code,no-else-return,too-many-branches,too-many-instance-attributes,too-many-locals,too-many-nested-blocks,too-many-positional-arguments,too-many-statements
-# custom_components/climate_ip/connection_aiohttp.py
-# pylint: disable=line-too-long
+# pylint: disable=duplicate-code,no-else-return,line-too-long
 """
 Asynchronous connection engine for modern Samsung devices (port 8888) using aiohttp.
 This engine implements HTTP Keep-Alive for low latency and correct mTLS.
@@ -103,7 +101,6 @@ class ConnectionAiohttp8888(Connection):
         self._embedded_command: "ConnectionAiohttp8888" | None = (
             None  # pragma: no mutate
         )
-        self._ssl_context: ssl.SSLContext | None = None
 
         self._keep_alive: bool = config.get("keep_alive", True)
 
@@ -131,6 +128,11 @@ class ConnectionAiohttp8888(Connection):
         return f"[{self._ip_address or 'NO_IP'}]"
 
     @property
+    def _ssl_context(self) -> ssl.SSLContext | None:
+        """Return the shared SSL context."""
+        return self._shared_state.ssl_context
+
+    @property
     def _resolved_target(self) -> tuple[str, str]:
         """Resuelve de forma estricta y centralizada el Host y la MAC address."""
         raw_host = self._ip_address or self._params.get(CONF_HOST)
@@ -140,6 +142,16 @@ class ConnectionAiohttp8888(Connection):
         mac = str(raw_mac) if raw_mac is not None else ""
 
         return host, mac
+
+    @property
+    def _auth_context(self) -> tuple[str | None, str | None]:
+        """Centralized resolution of active token and device_id."""
+        token = self._token
+        dev_id = None
+        if self._controller is not None:
+            token = self._controller._config.get(CONF_TOKEN, self._token)
+            dev_id = self._controller.device_id
+        return token, dev_id
 
     def set_controller_ref(self, controller: Any) -> None:
         """Allows the property to set a reference to the main controller."""
@@ -228,7 +240,7 @@ class ConnectionAiohttp8888(Connection):
             if CONFIG_DEVICE_CONNECTION_TEMPLATE in yaml_node:
                 new_connection._connection_template = Template(
                     yaml_node[CONFIG_DEVICE_CONNECTION_TEMPLATE],
-                    getattr(self, "_hass", None),  # pragma: no mutate
+                    self._hass,  # pragma: no mutate
                 )
             elif CONFIG_DEVICE_CONNECTION_PARAMS in yaml_node:
                 # Explicit extraction to prevent None-unpacking errors
@@ -253,7 +265,7 @@ class ConnectionAiohttp8888(Connection):
                     if new_connection._embedded_command is not None:
                         new_connection._embedded_command.condition_template = Template(
                             condition_str,
-                            getattr(self, "_hass", None),  # pragma: no mutate
+                            self._hass,  # pragma: no mutate
                         )
         # pylint: enable=protected-access
 
@@ -284,11 +296,7 @@ class ConnectionAiohttp8888(Connection):
             if self._shared_state.initialized:
                 return None
 
-            current_token = self._token  # pragma: no mutate
-            if self._controller:
-                current_token = self._controller._config.get(
-                    CONF_TOKEN, self._token
-                )  # pragma: no mutate
+            current_token, _ = self._auth_context
             probe_headers = {
                 "Authorization": f"Bearer {current_token}"
             }  # pragma: no mutate
@@ -491,14 +499,7 @@ class ConnectionAiohttp8888(Connection):
         """
         # Host and MAC: Centralized resolution under Zero Trust doctrine
         host, mac = self._resolved_target
-
-        token = self._token  # pragma: no mutate
-        dev_id = None  # pragma: no mutate
-
-        if self._controller is not None:
-            token = self._controller._config.get(CONF_TOKEN, self._token)
-            # Fail-Fast: Assume controller contract strictly exposes device_id
-            dev_id = self._controller.device_id
+        token, dev_id = self._auth_context
 
         url = format_placeholders(url, token, host, dev_id, mac)  # pragma: no mutate
 
@@ -583,12 +584,8 @@ class ConnectionAiohttp8888(Connection):
         Executes a command asynchronously using aiohttp.
         It uses the "memorized" connection logic (HTTPS only).
         """
-        current_token = self._token
+        current_token, dev_id = self._auth_context
         host, mac = self._resolved_target
-        dev_id = None
-        if self._controller is not None:
-            current_token = self._controller._config.get(CONF_TOKEN, self._token)
-            dev_id = self._controller.device_id
 
         req_headers = self._prepare_request_headers(
             headers, current_token, host, dev_id, mac
@@ -725,7 +722,7 @@ class ConnectionAiohttp8888(Connection):
             _LOGGER.error(err_msg, self.log_prefix, clean_e)  # pragma: no mutate
             exc_msg = f"Connection error: {clean_e}"  # pragma: no mutate
             raise CannotConnect(exc_msg) from e  # pragma: no mutate
-        except (ValueError, TypeError, KeyError, UnicodeDecodeError) as e:
+        except (ValueError, KeyError, UnicodeDecodeError) as e:
             err_msg = "%s [aiohttp] Unexpected data parsing error: %s"  # pragma: no mutate
             _LOGGER.error(
                 err_msg, self.log_prefix, e, exc_info=True
@@ -785,8 +782,9 @@ class ConnectionAiohttp8888(Connection):
 
                 if embedded_template is not None:
                     if hasattr(embedded_template, "async_render"):
+                        res = embedded_template.async_render()
                         embedded_params_str = (
-                            await embedded_template.async_render()
+                            await res if inspect.isawaitable(res) else res
                         )
                     else:
                         embedded_params_str = embedded_template.render()
@@ -847,7 +845,6 @@ class ConnectionAiohttp8888(Connection):
             asyncio.TimeoutError,
             OSError,
             ValueError,
-            TypeError,
         ) as e:
             err_msg = "%s [async_execute] Embedded command failed: %s"  # pragma: no mutate
             _LOGGER.error(
@@ -870,15 +867,7 @@ class ConnectionAiohttp8888(Connection):
         """
         # Resolve variables for placeholder replacement early for embedded logging
         host, mac = self._resolved_target
-
-        token = self._token  # pragma: no mutate
-        dev_id = None  # pragma: no mutate
-
-        if self._controller is not None:
-            token = self._controller._config.get(
-                CONF_TOKEN, self._token
-            )  # pragma: no mutate
-            dev_id = self._controller.device_id
+        token, dev_id = self._auth_context
 
         # Ensure initialization before any execution
         probe_response_text = await self._try_connection()
