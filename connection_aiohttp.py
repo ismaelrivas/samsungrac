@@ -64,6 +64,7 @@ DEFAULT_PORT = "8888"
 DEFAULT_SSL_CIPHERS = "ALL:@SECLEVEL=0"
 HEADER_VALUE_JSON = "application/json"
 HEADER_VALUE_CLOSE = "close"
+KEEPALIVE_TIMEOUT = 75
 
 
 @register_connection
@@ -92,7 +93,8 @@ class ConnectionAiohttp8888(Connection):
         self._session = session
         self._ip_address = ip_address
         self._token: str | None = config.get(CONF_TOKEN)
-        self._cert_path: str | None = self._resolve_cert_path(config.get(CONF_CERT))
+        self._raw_cert_path: str | None = config.get(CONF_CERT)
+        self._cert_path: str | None = None
 
         # Strict object to share initialization state across all copies.
         # The Lock prevents race conditions during the first initialization.
@@ -170,6 +172,12 @@ class ConnectionAiohttp8888(Connection):
         """
         # Read insecure_ssl. It comes from 'config' passed to __init__.
         insecure_ssl = self._config.get(CONF_INSECURE_SSL, False)
+
+        if self._cert_path is None and self._raw_cert_path is not None:
+            self._cert_path = await self._hass.async_add_executor_job(
+                self._resolve_cert_path, self._raw_cert_path
+            )
+
         has_cert = bool(
             self._cert_path
             and await self._hass.async_add_executor_job(
@@ -312,29 +320,25 @@ class ConnectionAiohttp8888(Connection):
                 _LOGGER.debug(debug_msg, self.log_prefix)
 
                 # Generalize Probe URL
-                port = self._config.get(CONF_PORT, DEFAULT_PORT)
-                protocol = (
-                    "http" if self._config.get(CONF_USE_HTTP, False) else "https"
-                )
-                probe_url = f"{protocol}://{self._ip_address}:{port}/devices"
+                url_path = "/devices"
                 if (
                     self._params
                     and self._params.get("url")
                     and str(self._params.get("url")).startswith("http")
                 ):
-                    probe_url = str(self._params.get("url"))
+                    url_path = str(self._params.get("url"))
                     debug_msg = "%s [aiohttp_probe] Detected absolute URL, probing: %s"
                     _LOGGER.debug(
-                        debug_msg, self.log_prefix, probe_url
+                        debug_msg, self.log_prefix, url_path
                     )
 
-                probe_url = self._format_url(probe_url)
+                probe_url = self._build_full_url(url_path)
 
                 # CRITICAL FIX: Do NOT access self._session directly — it may be None
                 # when keep_alive=False. Always go through _get_session() which handles
                 # both a HA-shared session and a locally-created one.
                 test_ssl_ctx = (
-                    False if protocol == "http" else self._shared_state.ssl_context
+                    False if probe_url.startswith("http://") else self._shared_state.ssl_context
                 )
                 probe_session = await self._get_session()
                 async with probe_session.request(
@@ -422,16 +426,7 @@ class ConnectionAiohttp8888(Connection):
                 error_msg = "Device failed to provide response body (missing Content-Length/Close)"
                 raise InvalidHeaderError(error_msg) from e
 
-            except (aiohttp.ClientError, ValueError, RuntimeError) as e:
-                # Detect malformed header error
-                if "Invalid header token" in str(e):
-                    err_msg = "%s [aiohttp_probe] Malformed header error detected! The device does not comply with the HTTP standard. The integration will automatically switch to the 'Robust (raw socket)' connection engine."
-                    _LOGGER.error(err_msg, self.log_prefix)
-                    error_msg = (
-                        "Malformed HTTP headers from device"
-                    )
-                    raise InvalidHeaderError(error_msg) from e
-
+            except (aiohttp.ClientError, ValueError) as e:
                 warn_msg = "%s [aiohttp_probe] Initial probe with HTTPS (mTLS) failed: %s."
                 _LOGGER.warning(
                     warn_msg, self.log_prefix, e, exc_info=True
@@ -468,11 +463,11 @@ class ConnectionAiohttp8888(Connection):
             ssl_context = self._shared_state.ssl_context
 
             # For plain HTTP test mode, use a simple connector with no SSL
-            if self._config.get(CONF_USE_HTTP) is True:
-                connector = aiohttp.TCPConnector(keepalive_timeout=75, limit=1)
+            if self._config.get(CONF_USE_HTTP):
+                connector = aiohttp.TCPConnector(keepalive_timeout=KEEPALIVE_TIMEOUT, limit=1)
             else:
                 connector = aiohttp.TCPConnector(
-                    keepalive_timeout=75, ssl=ssl_context, limit=1
+                    keepalive_timeout=KEEPALIVE_TIMEOUT, ssl=ssl_context, limit=1
                 )  # type: ignore[arg-type]
 
             timeout = aiohttp.ClientTimeout(total=NETWORK_POLL_TIMEOUT, connect=GLOBAL_HTTP_TIMEOUT)
@@ -485,6 +480,18 @@ class ConnectionAiohttp8888(Connection):
             )
 
         return self._shared_state.local_session
+
+    def _build_full_url(self, url_path: str | None) -> str:
+        """Constructs the full URL, handling absolute URLs and standard relative paths."""
+        if url_path and url_path.startswith("http"):
+            full_url = url_path
+        else:
+            port = self._config.get(CONF_PORT, DEFAULT_PORT)
+            protocol = "http" if self._config.get(CONF_USE_HTTP, False) else "https"
+            path = url_path if url_path else ""
+            full_url = f"{protocol}://{self._ip_address}:{port}{path}"
+            
+        return self._format_url(full_url)
 
     def _format_url(self, url: str) -> str:
         """
@@ -502,7 +509,7 @@ class ConnectionAiohttp8888(Connection):
             url = url.replace(f":{DEFAULT_PORT}/", f":{port}/")
 
         # Mutmut odia el `if dict.get(key, False):`. Lo blindamos asertando el tipo booleano.
-        if bool(self._config.get(CONF_USE_HTTP, False)) is True:
+        if self._config.get(CONF_USE_HTTP, False):
             url = url.replace("https://", "http://")
 
         return url
@@ -587,16 +594,11 @@ class ConnectionAiohttp8888(Connection):
         ssl_context = self._shared_state.ssl_context
         # Detect if the path is actually an absolute URL (for SmartThings).
         if url_path and url_path.startswith("http"):
-            base_url = ""  # No base URL needed
             # Provide a default ssl_context (unverified) if one wasn't created via mTLS probe
             if not ssl_context:
                 ssl_context = await self._create_ssl_context()
-        else:
-            port = self._config.get(CONF_PORT, DEFAULT_PORT)
-            base_url = f"https://{self._ip_address}:{port}"
 
-        full_url = f"{base_url}{url_path}"
-        full_url = self._format_url(full_url)
+        full_url = self._build_full_url(url_path)
 
         # If the final URL is plain HTTP (e.g. test mode), don't use SSL
         if full_url.startswith("http://"):
@@ -637,13 +639,12 @@ class ConnectionAiohttp8888(Connection):
 
                 if response.status != 200:
                     if response.status in (401, 403):
-                        err_msg = "%s [aiohttp] Authentication error (status %d). Token: %s...%s"
+                        err_msg = "%s [aiohttp] Authentication error (status %d). Token: %s"
                         _LOGGER.error(
                             err_msg,
                             self.log_prefix,
                             response.status,
-                            current_token[:4],
-                            current_token[-4:],
+                            mask_sensitive_data(current_token),
                         )
                         exc_msg = "Device returned 401 Unauthorized during active command execution."
                         raise AuthError(exc_msg)
@@ -679,7 +680,6 @@ class ConnectionAiohttp8888(Connection):
             if not self._force_close_connection:
                 warn_msg = "%s [aiohttp] Timeout/Error detected (%s). The device likely violates HTTP protocol (missing Content-Length). Switching to 'Connection: close' mode for resilience."
                 _LOGGER.warning(warn_msg, self.log_prefix, clean_e)
-                self._force_close_connection = True
                 req_headers["Connection"] = "close"
 
                 # Retry immediately with the new header
@@ -720,19 +720,6 @@ class ConnectionAiohttp8888(Connection):
                 err_msg, self.log_prefix, e, exc_info=True
             )
             raise CannotConnect(f"Unexpected data parsing error: {e}") from e
-
-    def execute(
-        self,
-        template: Template | None,
-        value: Any,
-        device_state: dict[str, Any],
-        device_id: str | None = None,
-    ) -> None:
-        """Not implemented for async connections."""
-        exc_msg = (
-            "This connection is async-native. Use async_execute."
-        )
-        raise NotImplementedError(exc_msg)
 
     async def _execute_embedded_command(
         self,
@@ -777,7 +764,7 @@ class ConnectionAiohttp8888(Connection):
                         parse_result=False
                     )
                     embedded_params = json_loads(embedded_params_str)
-                elif bool(embedded_params) is True:
+                elif embedded_params:
                     debug_msg = "%s [async_execute] Embedded command has no connection_template, using _params directly."
                     _LOGGER.debug(
                         debug_msg, self.log_prefix
