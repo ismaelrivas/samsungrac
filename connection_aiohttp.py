@@ -342,13 +342,11 @@ class ConnectionAiohttp8888(Connection):
                 _LOGGER.debug(debug_msg, self.log_prefix)
 
                 # Generalize Probe URL
-                url_path = "/devices"
-                if (
-                    self._params
-                    and self._params.get("url")
-                    and str(self._params.get("url")).startswith("http")
-                ):
-                    url_path = str(self._params.get("url"))
+                url_path = ""
+                if self._params:
+                    url_path = self._params.get("probe_url") or self._params.get("url") or ""
+
+                if str(url_path).startswith("http"):
                     debug_msg = "%s [aiohttp_probe] Detected absolute URL, probing: %s"
                     _LOGGER.debug(
                         debug_msg, self.log_prefix, url_path
@@ -757,16 +755,8 @@ class ConnectionAiohttp8888(Connection):
                 _LOGGER.debug(debug_msg, self.log_prefix)
 
                 embedded_template = self._embedded_command.connection_template
-                if not isinstance(embedded_template, Template) and hasattr(self._embedded_command, "_connection_template"):
-                    embedded_template = getattr(self._embedded_command, "_connection_template", None)
-
                 raw_params = self._embedded_command.params
-                if not isinstance(raw_params, dict) and hasattr(self._embedded_command, "_params"):
-                    raw_params = getattr(self._embedded_command, "_params", {})
-
-                embedded_params = (
-                    dict(raw_params) if raw_params and isinstance(raw_params, dict) else {}
-                )
+                embedded_params = dict(raw_params) if raw_params else {}
 
                 if embedded_template is not None:
                     embedded_params_str = embedded_template.async_render(
@@ -886,7 +876,11 @@ class ConnectionAiohttp8888(Connection):
                     _LOGGER.debug(debug_msg, self.log_prefix, e)
 
         # Optimization: Reuse the probe response directly for the initial poll to eliminate duplicate requests
-        if probe_response_text and method == "GET" and url == "/devices":
+        probe_url_path = ""
+        if self._params:
+            probe_url_path = self._params.get("probe_url") or self._params.get("url") or ""
+
+        if probe_response_text and method == "GET" and url == probe_url_path:
             debug_msg = "%s [async_execute] OPTIMIZATION: Reusing probe response for initial poll."
             _LOGGER.debug(debug_msg, self.log_prefix)
             return probe_response_text, None

@@ -53,8 +53,8 @@ async def test_async_execute_with_embedded_command_condition_met(
         # Setup embedded command
         embedded_mock = AsyncMock()
         embedded_mock.check_execute_condition = MagicMock(return_value=True)
-        embedded_mock._params = {"url": "/embedded", "method": "GET"}
-        embedded_mock._connection_template = None
+        embedded_mock.params = {"url": "/embedded", "method": "GET"}
+        embedded_mock.connection_template = None
         embedded_mock.async_execute = AsyncMock()
 
         conn._embedded_command = embedded_mock
@@ -117,8 +117,8 @@ async def test_async_execute_with_embedded_command_no_condition(
 
         embedded_mock = MagicMock()
         embedded_mock.check_execute_condition = MagicMock(return_value=True)
-        embedded_mock._params = {"url": "/embedded"}
-        embedded_mock._connection_template = None
+        embedded_mock.params = {"url": "/embedded"}
+        embedded_mock.connection_template = None
         embedded_mock.async_execute = AsyncMock()
         conn._embedded_command = embedded_mock
 

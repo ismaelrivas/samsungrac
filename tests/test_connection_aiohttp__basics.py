@@ -821,10 +821,10 @@ async def test_async_execute_embedded_command_kwargs_strict(
     )
 
     embed_mock = AsyncMock()
-    embed_mock._params = {}
+    embed_mock.params = {}
     embed_mock.check_execute_condition.return_value = True
     # Simulamos un template que devuelve un JSON configurador
-    embed_mock._connection_template.async_render = MagicMock(
+    embed_mock.connection_template.async_render = MagicMock(
         return_value='{"method": "PUT", "url": "/embed", "json": {"key": "val"}, "headers": {"X": "Y"}}'
     )
     conn._embedded_command = embed_mock
@@ -1366,8 +1366,8 @@ async def test_embedded_command_without_template_uses_params_directly(
     # Valores ASIMÉTRICOS para detectar cualquier swap de clave
     embed_mock = AsyncMock()
     embed_mock.check_execute_condition.return_value = True
-    embed_mock._connection_template = None  # <--- Activa el branch _params
-    embed_mock._params = {
+    embed_mock.connection_template = None  # <--- Activa el branch _params
+    embed_mock.params = {
         "method": "DELETE",  # Valor distinto al "GET" del main → swap detectable
         "url": "/override_url",  # Valor distinto al "/main" → swap detectable
         "json": {"override": "yes"},  # Clave "json" → se serializa con json_dumps
@@ -1427,8 +1427,8 @@ async def test_embedded_command_without_template_and_empty_params_skips(
 
     embed_mock = AsyncMock()
     embed_mock.check_execute_condition.return_value = True
-    embed_mock._connection_template = None
-    embed_mock._params = {}  # <--- Vacío → bool({}) is False → entra al else: embedded_params = None
+    embed_mock.connection_template = None
+    embed_mock.params = {}  # <--- Vacío → bool({}) is False → entra al else: embedded_params = None
     conn._embedded_command = embed_mock
 
     await conn.async_execute("GET", "/main", None, {}, device_state={"state": "on"})
@@ -1467,9 +1467,9 @@ async def test_embedded_command_method_and_url_fallback_to_main(
 
     embed_mock = AsyncMock()
     embed_mock.check_execute_condition.return_value = True
-    embed_mock._connection_template = None
+    embed_mock.connection_template = None
     # _params SIN "method" ni "url" → deben heredarse del comando principal
-    embed_mock._params = {"json": {"action": "toggle"}}
+    embed_mock.params = {"json": {"action": "toggle"}}
     conn._embedded_command = embed_mock
 
     await conn.async_execute("PUT", "/main_url", None, {}, device_state={"state": "on"})
@@ -1523,11 +1523,11 @@ async def test_embedded_command_strict_fallbacks_to_main(
 
     embed_mock = AsyncMock()
     embed_mock.check_execute_condition.return_value = True
-    embed_mock._connection_template = None
+    embed_mock.connection_template = None
 
     # TRUCO: clave irrelevante para que bool(_params) sea True
     # pero omitimos 'method', 'url', 'json' y 'headers' intencionalmente
-    embed_mock._params = {"dummy_key": "force_execution"}
+    embed_mock.params = {"dummy_key": "force_execution"}
     conn._embedded_command = embed_mock
 
     # Ejecutamos el main con cabeceras NO vacías → si el fallback muta a None el test falla
@@ -1679,7 +1679,7 @@ async def test_try_connection_strict_http_mode(mock_logger, mock_hass):
     args, kwargs = mock_local_session.request.call_args
 
     # ASERCIONES MILIMÉTRICAS
-    assert args[1] == "http://192.168.1.50:1234/devices", (
+    assert args[1] == "http://192.168.1.50:1234", (
         f"Mutante alteró el protocolo o el puerto: {args[1]}"
     )
     assert kwargs["ssl"] is False, (
@@ -1953,7 +1953,7 @@ async def test_try_connection_strict_token_and_port(
     assert kwargs["headers"]["Authorization"] == "Bearer CTRL_TOK", (
         "Mutante rompió fallback del controller token"
     )
-    assert args[1] == "https://1.1.1.1:7777/devices", (
+    assert args[1] == "https://1.1.1.1:7777", (
         "Mutante rompió el puerto en _try_connection"
     )
 
@@ -2023,11 +2023,11 @@ async def test_async_execute_skips_optimization_on_mismatch(
         mock_req.return_value = ("REQ_OK", {})
 
         # Caso 1: Method incorrecto (POST en lugar de GET)
-        res1, _ = await conn.async_execute("POST", "/devices", None, {})
+        res1, _ = await conn.async_execute("POST", "", None, {})
         assert res1 == "REQ_OK", (
             "El mutante activó la optimización erróneamente para POST"
         )
-        mock_req.assert_called_with("POST", "/devices", None, {}, _is_poll=False)
+        mock_req.assert_called_with("POST", "", None, {}, _is_poll=False)
 
         mock_req.reset_mock()
 
