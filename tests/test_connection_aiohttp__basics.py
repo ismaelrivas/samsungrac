@@ -548,8 +548,8 @@ async def test_adaptive_keep_alive_on_timeout_recovery(
     assert "Connection" in retry_kwargs["headers"]
     assert retry_kwargs["headers"]["Connection"] == "close"
 
-    # Y que el estado interno se mantuvo inalterado (sin mutación persistente en timeout transitorio)
-    assert conn._force_close_connection is False
+    # Y que el estado interno se actualizó para persistir el cierre en subsecuentes llamadas
+    assert conn._force_close_connection is True
 
 
 async def test_close_closes_local_session(

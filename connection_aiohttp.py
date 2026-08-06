@@ -145,8 +145,12 @@ class ConnectionAiohttp8888(Connection):
         token = self._token
         dev_id = None
         if self._controller is not None:
-            token = self._controller._config.get(CONF_TOKEN, self._token)
-            dev_id = self._controller.device_id
+            ctrl_config = getattr(self._controller, "config", None)
+            if ctrl_config is None or not isinstance(ctrl_config, dict):
+                ctrl_config = getattr(self._controller, "_config", {})
+            if isinstance(ctrl_config, dict):
+                token = ctrl_config.get(CONF_TOKEN, self._token)
+            dev_id = getattr(self._controller, "device_id", None)
         return token, dev_id
 
     def set_controller_ref(self, controller: 'YamlController') -> None:
@@ -163,6 +167,13 @@ class ConnectionAiohttp8888(Connection):
             cert_file, str(Path(__file__).parent), self._hass
         )
 
+    def _resolve_and_verify_cert(self, raw_path: str | None) -> str | None:
+        """Synchronously resolve and verify certificate path."""
+        if not raw_path:
+            return None
+        path = self._resolve_cert_path(raw_path)
+        return path if path and os.path.exists(path) else None
+
     async def _create_ssl_context(self) -> ssl.SSLContext | None:
         """
         Creates the correct SSL context.
@@ -174,17 +185,13 @@ class ConnectionAiohttp8888(Connection):
         # Read insecure_ssl. It comes from 'config' passed to __init__.
         insecure_ssl = self._config.get(CONF_INSECURE_SSL, False)
 
+        # Consolidated executor call
         if self._cert_path is None and self._raw_cert_path is not None:
             self._cert_path = await self._hass.async_add_executor_job(
-                self._resolve_cert_path, self._raw_cert_path
+                self._resolve_and_verify_cert, self._raw_cert_path
             )
 
-        has_cert = bool(
-            self._cert_path
-            and await self._hass.async_add_executor_job(
-                os.path.exists, self._cert_path
-            )
-        )
+        has_cert = bool(self._cert_path)
 
         if not has_cert and not insecure_ssl:
             # Standard Secure Cloud Connection
@@ -681,6 +688,9 @@ class ConnectionAiohttp8888(Connection):
             if not self._force_close_connection:
                 warn_msg = "%s [aiohttp] Timeout/Error detected (%s). The device likely violates HTTP protocol (missing Content-Length). Switching to 'Connection: close' mode for resilience."
                 _LOGGER.warning(warn_msg, self.log_prefix, clean_e)
+
+                # CRITICAL FIX: Persist the state so we don't repeat this penalty
+                self._force_close_connection = True
                 req_headers["Connection"] = "close"
 
                 # Retry immediately with the new header
