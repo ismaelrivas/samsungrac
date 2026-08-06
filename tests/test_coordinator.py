@@ -593,10 +593,9 @@ async def test_coordinator_injected_callbacks(hass: HomeAssistant) -> None:
     )
 
     # Check request_refresh_callback
-    assert mock_controller.request_refresh_callback is not None
-    with patch.object(coordinator, "async_request_refresh") as mock_refresh:
-        await mock_controller.request_refresh_callback()
-        mock_refresh.assert_awaited_once()
+    assert (
+        mock_controller.request_refresh_callback == coordinator.async_request_refresh
+    )
 
     # Check on_connection_failed_callback
     assert mock_controller.on_connection_failed_callback is not None

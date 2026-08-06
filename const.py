@@ -41,6 +41,11 @@ CONF_TEMP_NATIVE_TARGET = "temp_native_target"
 CONF_TARGET_TEMP_STEP = "target_temperature_step"
 DEFAULT_TARGET_TEMP_STEP = 1.0
 
+CONF_TOKEN_KEY = "token"
+CONF_SSL_CONFIG_KEY = "_ssl_config_2878"
+MANUFACTURER_SAMSUNG = "Samsung"
+HARDWARE_BREATHING_ROOM_SEC = 1.0
+
 # --- Connection Method Constants (for Dual Engine) ---
 CONF_CONN_METHOD = "connection_method"
 CONN_METHOD_AIOHTTP = "aiohttp"

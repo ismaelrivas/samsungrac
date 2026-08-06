@@ -24,10 +24,14 @@ from .const import (
     CONF_ENABLE_POLLING,
     CONF_NAME,
     CONF_POLL_INTERVAL,
+    CONF_SSL_CONFIG_KEY,
+    CONF_TOKEN_KEY,
     CONN_METHOD_RAW,
     DEFAULT_ENABLE_POLLING,
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
+    HARDWARE_BREATHING_ROOM_SEC,
+    MANUFACTURER_SAMSUNG,
     NETWORK_POLL_TIMEOUT,
 )
 from .controller import ControllerInterface
@@ -35,8 +39,6 @@ from .exceptions import AuthError, CannotConnect, InvalidHeaderError
 from .state import ClimateIPDeviceState
 
 _LOGGER = logging.getLogger(__name__)
-
-HARDWARE_BREATHING_ROOM_SEC: float = 1.0
 
 
 def _dispatch_to_loop(hass: HomeAssistant, func: Callable[[], None]) -> None:
@@ -200,7 +202,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         self.controller.get_current_state_callback = self._get_current_state
         self.controller.on_push_update_callback = self.async_handle_push_update  # pragma: no mutate
         self.controller.on_ssl_config_updated = self._async_save_ssl_config
-        self.controller.request_refresh_callback = self._async_request_refresh
+        self.controller.request_refresh_callback = self.async_request_refresh
         self.controller.on_connection_failed_callback = self._async_on_connection_failed
         self.controller.on_offline_callback = self._async_handle_persistent_offline
 
@@ -252,7 +254,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             self.device_info = DeviceInfo(
                 identifiers={(DOMAIN, self.unique_id)},
                 name=final_name,
-                manufacturer="Samsung",
+                manufacturer=MANUFACTURER_SAMSUNG,
                 via_device=via_device,
             )  # pragma: no mutate
         else:
@@ -263,7 +265,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             self.device_info = DeviceInfo(
                 identifiers={(DOMAIN, self.unique_id)},
                 name=self.entry.data.get(CONF_NAME, f"Samsung AC {self.unique_id}"),
-                manufacturer="Samsung",
+                manufacturer=MANUFACTURER_SAMSUNG,
                 connections=conns,
             )  # pragma: no mutate
 
@@ -272,7 +274,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         """Callback to save the renewed token from the network layer."""
         def _update_token() -> None:
             new_data = dict(self.entry.data)  # pragma: no mutate
-            new_data["token"] = new_token
+            new_data[CONF_TOKEN_KEY] = new_token
             self.hass.config_entries.async_update_entry(self.entry, data=new_data)
             _LOGGER.info(
                 "%s Persisted new network token to Config Entry.", self.log_prefix
@@ -289,18 +291,14 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         """Callback to save SSL configuration to the config entry."""
         def _update_ssl() -> None:
             current_data = dict(self.entry.data)  # pragma: no mutate
-            if current_data.get("_ssl_config_2878") != ssl_config:
-                current_data["_ssl_config_2878"] = ssl_config
+            if current_data.get(CONF_SSL_CONFIG_KEY) != ssl_config:
+                current_data[CONF_SSL_CONFIG_KEY] = ssl_config
                 self.hass.config_entries.async_update_entry(self.entry, data=current_data)
                 _LOGGER.info(
                     "%s Persisted SSL config to ConfigEntry data.", self.log_prefix
                 )  # pragma: no mutate
 
         _dispatch_to_loop(self.hass, _update_ssl)
-
-    async def _async_request_refresh(self) -> None:
-        """Callback to request an immediate data refresh."""
-        await self.async_request_refresh()
 
     @callback
     def _async_on_connection_failed(self) -> None:
