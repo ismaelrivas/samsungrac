@@ -1334,15 +1334,15 @@ async def test_coordinator_clears_cache_on_critical_errors(
         with pytest.raises(UpdateFailed, match=expected_match):
             await coordinator._async_update_data()
 
-        # Verifica que se haya forzado la limpieza de caché (Línea 356/367)
-        mock_poller._clear_state_cache.assert_called_once()
+        # Verifica que se haya forzado la limpieza de caché
+        mock_controller.clear_state_cache.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_coordinator_handles_missing_poller_safely(hass: HomeAssistant) -> None:
     """
-    Aniquila los mutantes en la condición `hasattr(self.controller, "poller") and ...`.
-    Si el poller es None o no existe, no debe romper el flujo de excepciones.
+    Aniquila los mutantes en la condición `hasattr(self.controller, "clear_state_cache")`.
+    Si clear_state_cache no existe, no debe romper el flujo de excepciones.
     """
     from homeassistant.helpers.update_coordinator import UpdateFailed
 
@@ -1352,8 +1352,8 @@ async def test_coordinator_handles_missing_poller_safely(hass: HomeAssistant) ->
     mock_controller.log_prefix = "[NoPollerTest]"
     mock_controller.async_get_status = AsyncMock(side_effect=ValueError("No poller JSON error"))
     
-    # Eliminamos el atributo poller explícitamente para forzar la primera parte del condicional
-    del mock_controller.poller
+    # Eliminamos el atributo clear_state_cache explícitamente para forzar el condicional
+    del mock_controller.clear_state_cache
 
     mock_entry = MagicMock()
     mock_entry.options = {}

@@ -381,8 +381,9 @@ class ConnectionAiohttp8888(Connection):
                         200,
                         401,
                         403,
+                        404,
                         405,
-                    ):  # Added 405 for Method Not Allowed
+                    ):  # Added 404 and 405 for Not Found / Method Not Allowed
                         # Attempt to log the negotiated TLS version
                         transport = (
                             response.connection.transport

@@ -73,7 +73,7 @@ class PropertyDebouncer:
         val = kwargs.get("val") if "val" in kwargs else (args[1] if len(args) > 1 else None)
         val_str = str(val).lower() if val is not None else ""
         is_turn_off = (
-            (property_name in ("hvac_mode", "power") and val_str in ("off", "hvacmode.off"))
+            (property_name in ("hvac_mode", "power") and val_str in ("off", HVACMode.OFF.value))
             or val_str == "off"
         )
 
@@ -158,8 +158,6 @@ class PropertyDebouncer:
         return True
 
 
-CommandDebouncer = PropertyDebouncer
-
 
 class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     """Manages data fetching for Samsung Climate devices."""
@@ -239,9 +237,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 "%s Network layer declared device offline. Forcing UpdateFailed.",
                 self.log_prefix,
             )  # pragma: no mutate
-            if hasattr(self.controller, "poller") and self.controller.poller:  # pragma: no mutate
-                if hasattr(self.controller.poller, "_clear_state_cache"):  # pragma: no mutate
-                    self.controller.poller._clear_state_cache()
+            if hasattr(self.controller, "clear_state_cache"):  # pragma: no mutate
+                self.controller.clear_state_cache()
             self.async_set_update_error(UpdateFailed(f"Device offline: {reason}"))
 
         self.controller.on_offline_callback = _handle_persistent_offline
@@ -310,11 +307,6 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 connections=conns,
             )  # pragma: no mutate
 
-    @callback
-    def async_set_updated_data(self, data: Any) -> None:
-        """Intercept data update to trigger listeners."""
-        super().async_set_updated_data(data)  # pragma: no mutate
-
     async def _async_update_data(self) -> Any:
         """Fetch the latest state from the device."""
         try:
@@ -347,9 +339,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             raise UpdateFailed(f"Data parsing failed on RAW engine: {err}") from err
 
         except (AuthError, ConfigEntryAuthFailed) as err:
-            if hasattr(self.controller, "poller") and self.controller.poller:  # pragma: no mutate
-                if hasattr(self.controller.poller, "_clear_state_cache"):  # pragma: no mutate
-                    self.controller.poller._clear_state_cache()
+            if hasattr(self.controller, "clear_state_cache"):  # pragma: no mutate
+                self.controller.clear_state_cache()
             raise ConfigEntryAuthFailed(
                 f"Authentication failed: {err}"
             ) from err  # pragma: no mutate
@@ -364,9 +355,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             asyncio.TimeoutError,
             OSError,
         ) as err:
-            if hasattr(self.controller, "poller") and self.controller.poller:  # pragma: no mutate
-                if hasattr(self.controller.poller, "_clear_state_cache"):  # pragma: no mutate
-                    self.controller.poller._clear_state_cache()
+            if hasattr(self.controller, "clear_state_cache"):  # pragma: no mutate
+                self.controller.clear_state_cache()
 
             _LOGGER.debug(
                 "%s Network error during state update: %s",
@@ -378,9 +368,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             ) from err  # pragma: no mutate
 
         except (ValueError, TypeError, KeyError) as err:
-            if hasattr(self.controller, "poller") and self.controller.poller:  # pragma: no mutate
-                if hasattr(self.controller.poller, "_clear_state_cache"):  # pragma: no mutate
-                    self.controller.poller._clear_state_cache()
+            if hasattr(self.controller, "clear_state_cache"):  # pragma: no mutate
+                self.controller.clear_state_cache()
 
             _LOGGER.error(
                 "%s Data parsing error during update: %s",
@@ -393,9 +382,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             ) from err  # pragma: no mutate
 
         except Exception as err:  # pylint: disable=broad-exception-caught
-            if hasattr(self.controller, "poller") and self.controller.poller:  # pragma: no mutate
-                if hasattr(self.controller.poller, "_clear_state_cache"):  # pragma: no mutate
-                    self.controller.poller._clear_state_cache()
+            if hasattr(self.controller, "clear_state_cache"):  # pragma: no mutate
+                self.controller.clear_state_cache()
 
             _LOGGER.critical(
                 "%s Fatal unexpected error during update: %s",
