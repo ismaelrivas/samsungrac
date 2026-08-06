@@ -10,10 +10,8 @@ from homeassistant.core import HomeAssistant
 
 async def test_set_property_action(hass: HomeAssistant) -> None:
     """Test that set_property action correctly calls the entity method."""
-    from custom_components.climate_ip.climate import (
-        ClimateIP,
-        ClimateIPEntityDescription,
-    )
+    from homeassistant.components.climate import ClimateEntityDescription
+    from custom_components.climate_ip.climate import ClimateIP
     from custom_components.climate_ip.coordinator import (
         SamsungClimateCoordinator,
     )
@@ -47,7 +45,7 @@ async def test_set_property_action(hass: HomeAssistant) -> None:
     mock_coordinator.register_entity = MagicMock()
     mock_coordinator.coordinator = None
 
-    description = ClimateIPEntityDescription(
+    description = ClimateEntityDescription(
         key="samsung_ac", translation_key="samsung_ac"
     )
     entity = ClimateIP(mock_coordinator, description)
@@ -60,7 +58,7 @@ async def test_set_property_action(hass: HomeAssistant) -> None:
     # Here we just verify the entity method exists and behaves as expected when called
     # with common parameters from actions.yaml
     hass.async_create_task.side_effect = lambda coro, **kw: asyncio.create_task(coro)
-    await entity.async_set_property("AC_FUN_POWER", "On")
+    await entity.async_service_set_property(key="AC_FUN_POWER", value="On")
     await asyncio.sleep(0)
 
     # Verify it delegated to the coordinator

@@ -4,7 +4,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
-from homeassistant.components.climate import HVACMode, ATTR_HVAC_MODE, ATTR_FAN_MODE
+from homeassistant.components.climate import HVACMode, ATTR_HVAC_MODE, ATTR_FAN_MODE, ClimateEntityDescription
 from homeassistant.const import (
     STATE_OFF,
     STATE_ON,
@@ -20,7 +20,6 @@ from homeassistant.helpers.issue_registry import IssueSeverity
 
 from custom_components.climate_ip.climate import (
     ClimateIP,
-    ClimateIPEntityDescription,
     ATTR_SWING_MODE,
     ATTR_PRESET_MODE,
     async_setup_entry,
@@ -49,7 +48,7 @@ def base_climate_entity(hass: HomeAssistant) -> ClimateIP:
     mock_coord.controller.state_attributes = {}
     mock_coord.controller.get_property_object.return_value = None
 
-    desc = ClimateIPEntityDescription(key="samsung_ac", translation_key="samsung_ac")
+    desc = ClimateEntityDescription(key="samsung_ac", translation_key="samsung_ac")
     entity = ClimateIP(coordinator=mock_coord, description=desc)
     entity.hass = hass
     entity.async_write_ha_state = MagicMock()
@@ -86,7 +85,7 @@ def test_01_climate_defensive_sync_none_fallback() -> None:
     mock_coord.controller = MagicMock()
     mock_coord.controller.operations = []
     mock_coord.controller.state_attributes = {}
-    desc = ClimateIPEntityDescription(key="samsung_ac", translation_key="samsung_ac")
+    desc = ClimateEntityDescription(key="samsung_ac", translation_key="samsung_ac")
     
     entity = ClimateIP(coordinator=mock_coord, description=desc)
     
@@ -156,7 +155,7 @@ def test_climate_translation_key_and_device_info(hass: HomeAssistant) -> None:
     mock_coordinator.device_info = {"identifiers": {("climate_ip", "test_unique_id")}}
     mock_coordinator.entry = MagicMock(options={})  # FIX: Add missing entry options
 
-    description = ClimateIPEntityDescription(
+    description = ClimateEntityDescription(
         key="samsung_ac",
         translation_key="samsung_ac",
     )
@@ -183,7 +182,7 @@ async def test_climate_init_options_priority_and_halves(hass: HomeAssistant) -> 
 
     # Inject config (Priority 2 and 3) with different values to verify they are ignored
     config = {CONF_TARGET_TEMP_STEP: 1.0, CONF_TEMP_STEP: 2.0}
-    description = ClimateIPEntityDescription(key="samsung_ac")
+    description = ClimateEntityDescription(key="samsung_ac")
 
     entity = ClimateIP(
         coordinator=mock_coordinator, description=description
@@ -204,7 +203,7 @@ async def test_climate_unique_id(hass: HomeAssistant) -> None:
     """Verify that unique_id correctly reflects the coordinator's unique_id."""
     mock_coordinator = MagicMock()
     mock_coordinator.unique_id = "coord_id_123"
-    description = ClimateIPEntityDescription(key="samsung_ac")
+    description = ClimateEntityDescription(key="samsung_ac")
 
     entity = ClimateIP(
         coordinator=mock_coordinator,
@@ -463,21 +462,6 @@ async def test_async_setup_platform_already_imported_skips_task(
     mock_create_task.assert_not_called()
 
 
-@pytest.mark.asyncio
-async def test_async_set_property_strict_args(base_climate_entity: ClimateIP):
-    """
-    Kills mutants 1-4 en async_set_property.
-    Asegura la delegación exacta de clave/valor al coordinador.
-    """
-    base_climate_entity.coordinator.async_set_property = AsyncMock()
-
-    # Inject valores específicos para evitar falsos positivos con defaults
-    await base_climate_entity.async_set_property("power_mode", "turbo")
-
-    # We assert la firma exacta hacia el coordinador
-    base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(
-        "power_mode", "turbo"
-    )
 
 
 
@@ -489,30 +473,15 @@ async def test_async_set_property_strict_args(base_climate_entity: ClimateIP):
 # --- available property (5 mutants: lines 298-300) ---
 
 
-def test_climate_available_no_coordinator(base_climate_entity: ClimateIP) -> None:
-    """Kill mutants 1-3 in available: returns False when coordinator is None."""
-    base_climate_entity.coordinator = None
-    assert base_climate_entity.available is False
-
-
 def test_climate_available_last_update_failed(base_climate_entity: ClimateIP) -> None:
-    """Kill mutants in available: returns False when last_update_success is False."""
+    """Verify available returns False when last_update_success is False."""
     base_climate_entity.coordinator.last_update_success = False
-    base_climate_entity.coordinator.data = MagicMock()
-    assert base_climate_entity.available is False
-
-
-def test_climate_available_data_none(base_climate_entity: ClimateIP) -> None:
-    """Kill mutants in available: returns False when data is None."""
-    base_climate_entity.coordinator.last_update_success = True
-    base_climate_entity.coordinator.data = None
     assert base_climate_entity.available is False
 
 
 def test_climate_available_success(base_climate_entity: ClimateIP) -> None:
-    """Kill mutants in available: returns True when coordinator, last_update_success and data are valid."""
+    """Verify available returns True when last_update_success is True."""
     base_climate_entity.coordinator.last_update_success = True
-    base_climate_entity.coordinator.data = MagicMock()
     assert base_climate_entity.available is True
 
 

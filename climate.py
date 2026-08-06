@@ -21,8 +21,19 @@ from homeassistant.components.climate.const import (
     ATTR_MAX_TEMP,
     ATTR_MIN_TEMP,
 )
+from homeassistant.const import (
+    ATTR_TEMPERATURE,
+    CONF_DEBUG,
+    CONF_IP_ADDRESS,
+    CONF_MAC,
+    CONF_TOKEN,
+    PRECISION_HALVES,
+    PRECISION_TENTHS,
+    PRECISION_WHOLE,
+    STATE_OFF,
+    STATE_ON,
+)
 from homeassistant.config_entries import SOURCE_IMPORT
-from homeassistant import const
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -54,7 +65,7 @@ from .controller import ATTR_POWER
 from .coordinator import SamsungClimateCoordinator
 _LOGGER = logging.getLogger(__name__)
 SUPPORTED_FEATURES_MAP: Final[dict[str, ClimateEntityFeature]] = {
-    const.ATTR_TEMPERATURE: ClimateEntityFeature.TARGET_TEMPERATURE,
+    ATTR_TEMPERATURE: ClimateEntityFeature.TARGET_TEMPERATURE,
     ATTR_FAN_MODE: ClimateEntityFeature.FAN_MODE,
     ATTR_SWING_MODE: ClimateEntityFeature.SWING_MODE,
     ATTR_PRESET_MODE: ClimateEntityFeature.PRESET_MODE,
@@ -67,14 +78,14 @@ CLIMATE_ENTITY_DESCRIPTION: Final[ClimateEntityDescription] = ClimateEntityDescr
 # Legacy platform schema for YAML import.
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
-        vol.Required(const.CONF_IP_ADDRESS): cv.string,
-        vol.Optional(const.CONF_TOKEN): cv.string,
-        vol.Optional(const.CONF_MAC): cv.string,
+        vol.Required(CONF_IP_ADDRESS): cv.string,
+        vol.Optional(CONF_TOKEN): cv.string,
+        vol.Optional(CONF_MAC): cv.string,
         vol.Optional(CONFIG_DEVICE_NAME): cv.string,
         vol.Optional(CONF_CERT, default=DEFAULT_CONF_CERT_FILE): cv.string,
         vol.Optional(CONF_CONFIG_FILE, default=DEFAULT_CONF_CONFIG_FILE): cv.string,
         vol.Optional(CONF_CONTROLLER, default=DEFAULT_CONF_CONTROLLER): cv.string,
-        vol.Optional(const.CONF_DEBUG, default=False): cv.boolean,
+        vol.Optional(CONF_DEBUG, default=False): cv.boolean,
         vol.Optional(CONFIG_DEVICE_POLL, default=""): cv.string,
         vol.Optional(
             CONFIG_DEVICE_UPDATE_DELAY, default=DEFAULT_UPDATE_DELAY
@@ -139,9 +150,6 @@ async def async_setup_entry(
         )
         return
     async_add_entities(entities, update_before_add=True)
-
-# Alias for backwards compatibility with entity description typing
-ClimateIPEntityDescription = ClimateEntityDescription
 
 class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
     # pylint: disable=import-outside-toplevel,abstract-method
@@ -208,12 +216,12 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         
         self._attr_target_temperature_step = int(step) if step.is_integer() else step
         
-        if step < const.PRECISION_HALVES:
-            self._attr_precision = const.PRECISION_TENTHS
-        elif step == const.PRECISION_HALVES:
-            self._attr_precision = const.PRECISION_HALVES
+        if step < PRECISION_HALVES:
+            self._attr_precision = PRECISION_TENTHS
+        elif step == PRECISION_HALVES:
+            self._attr_precision = PRECISION_HALVES
         else:
-            self._attr_precision = const.PRECISION_WHOLE
+            self._attr_precision = PRECISION_WHOLE
 
         # Strict Instance Initialization (Eradicating OOP Distrust)
         self._attr_hvac_mode = None
@@ -238,7 +246,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         self._attr_max_temp = self._resolve_numeric_boundary(ATTR_MAX_TEMP, DEFAULT_CLIMATE_IP_TEMP_MAX)
 
         core_attrs = {
-            const.ATTR_TEMPERATURE, ATTR_CURRENT_TEMPERATURE,
+            ATTR_TEMPERATURE, ATTR_CURRENT_TEMPERATURE,
             ATTR_HVAC_MODE, ATTR_FAN_MODE, ATTR_SWING_MODE, ATTR_PRESET_MODE,
         }
         self._attr_extra_state_attributes = {
@@ -285,22 +293,10 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         """Handle updated data from the coordinator and update the entity state."""
         self._sync_data_from_coordinator()
         super()._handle_coordinator_update()
-    @property
-    def available(self) -> bool:
-        """Return True if entity is available based on coordinator truth."""
-        if not self.coordinator:
-            return False
-        return self.coordinator.last_update_success and (
-            self.coordinator.data is not None
-        )
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return device information."""
-        return self._attr_device_info
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature and handle optional hvac_mode."""
-        temp: float | None = kwargs.get(const.ATTR_TEMPERATURE)
+        temp: float | None = kwargs.get(ATTR_TEMPERATURE)
         hvac_mode: HVACMode | None = kwargs.get(ATTR_HVAC_MODE)
 
         _LOGGER.debug(
@@ -313,7 +309,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
         if temp is not None:
             await self.coordinator.async_set_property(
-                const.ATTR_TEMPERATURE, temp
+                ATTR_TEMPERATURE, temp
             )
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
@@ -336,18 +332,12 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         await self.coordinator.async_set_property(
             ATTR_PRESET_MODE, preset_mode
         )
-    async def async_set_property(self, key: str, value: Any) -> None:
-        """Set a custom property on the device."""
-        _LOGGER.debug(
-            "%s Setting property %s to %s", self.log_prefix, key, value
-        )  # pragma: no mutate
-        await self.coordinator.async_set_property(key, value)
     async def async_turn_on(self) -> None:
         """Turn the climate device on."""
-        await self.coordinator.async_set_property(ATTR_POWER, const.STATE_ON)
+        await self.coordinator.async_set_property(ATTR_POWER, STATE_ON)
     async def async_turn_off(self) -> None:
         """Turn the climate device off."""
-        await self.coordinator.async_set_property(ATTR_POWER, const.STATE_OFF)
+        await self.coordinator.async_set_property(ATTR_POWER, STATE_OFF)
     async def async_service_set_property(self, **kwargs: Any) -> None:
         """Set a property on the device via action call."""
         key: str | None = kwargs.get("key")
