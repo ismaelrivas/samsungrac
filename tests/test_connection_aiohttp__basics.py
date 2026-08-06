@@ -450,7 +450,7 @@ async def test_adaptive_keep_alive_fallback(
 
     # Al ejecutar, DEBE inyectar el header de cierre
     await conn._async_execute_request(
-        method="GET", url_path="/test", data=None, headers={}
+        "GET", "https://192.168.1.100:8888/test", None, {}
     )
 
     _, kwargs = mock_session.request.call_args
@@ -538,7 +538,7 @@ async def test_adaptive_keep_alive_on_timeout_recovery(
         mock_context,  # Segunda vez funciona
     ]
 
-    await conn._async_execute_request("GET", "/test", None, {})
+    await conn._async_execute_request("GET", "https://192.168.1.100:8888/test", None, {})
 
     # Verificamos que reintentó
     assert mock_session.request.call_count == 2
@@ -628,7 +628,7 @@ async def test_execution_uses_controller_token_priority(
         mock_context.__aenter__.return_value = mock_response
         mock_session.request.return_value = mock_context
 
-        await conn._async_execute_request("GET", "/test", None, {})
+        await conn._async_execute_request("GET", "https://192.168.1.100:8888/test", None, {})
 
         # ASERCIÓN ESTRICTA
         _, kwargs = mock_session.request.call_args
@@ -660,7 +660,7 @@ async def test_http_1_0_forces_connection_close(
         mock_context.__aenter__.return_value = mock_response
         mock_session.request.return_value = mock_context
 
-        await conn._async_execute_request("GET", "/test", None, {})
+        await conn._async_execute_request("GET", "https://192.168.1.100:8888/test", None, {})
 
         assert conn._force_close_connection is True, (
             "El mutante alteró la validación minor >= 1 de HTTP"
@@ -723,7 +723,7 @@ async def test_async_execute_request_respects_custom_headers(
         "Content-Type": "text/xml",
     }
 
-    await conn._async_execute_request("GET", "/test", None, headers=custom_headers)
+    await conn._async_execute_request("GET", "https://1.1.1.1:8888/test", None, headers=custom_headers)
 
     _, kwargs = mock_session.request.call_args
     assert kwargs["headers"]["Authorization"] == "Bearer TOKEN_CUSTOM", (
@@ -758,7 +758,7 @@ async def test_retry_request_kwargs_strict(mock_session, mock_logger, mock_hass)
         mock_context_success,
     ]
 
-    await conn._async_execute_request("POST", "/test", "payload_secreto", {"H": "1"})
+    await conn._async_execute_request("POST", "https://1.1.1.1:8888/test", "payload_secreto", {"H": "1"})
 
     assert mock_session.request.call_count == 2
     retry_args, retry_kwargs = mock_session.request.call_args_list[1]
@@ -870,7 +870,7 @@ async def test_async_execute_delegates_to_request_strictly(mock_logger, mock_has
         await conn.async_execute("PATCH", "/main", "payload", {"H": "1"}, _is_poll=True)
 
         mock_req.assert_called_once_with(
-            "PATCH", "/main", "payload", {"H": "1"}
+            "PATCH", "https://1.1.1.1:8888/main", "payload", {"H": "1"}
         )
 
 
@@ -897,7 +897,7 @@ async def test_controller_fallback_to_base_token(mock_session, mock_logger, mock
     mock_controller._config = {}  # Diccionario vacío, fuerza el fallback a BASE_TOKEN
     conn.set_controller_ref(mock_controller)
 
-    await conn._async_execute_request("GET", "/test", None, {})
+    await conn._async_execute_request("GET", "https://192.168.1.100:8888/test", None, {})
 
     _, kwargs = mock_session.request.call_args
     assert kwargs["headers"]["Authorization"] == "Bearer BASE_TOKEN"
@@ -1734,7 +1734,7 @@ async def test_async_execute_request_http_version_detection(
     mock_ctx.__aenter__.return_value = mock_response
     mock_session.request.return_value = mock_ctx
 
-    await conn._async_execute_request("GET", "/test", None, {})
+    await conn._async_execute_request("GET", "https://1.1.1.1:8888/test", None, {})
 
     assert conn._force_close_connection is expected_forced, (
         f"Fallo en HTTP/{major}.{minor} (start_forced={start_forced}): "
@@ -1772,7 +1772,7 @@ async def test_async_execute_request_strict_kwargs(
     mock_session.request.return_value = mock_ctx
 
     await conn._async_execute_request(
-        "PATCH", "/strict_url", "strict_payload", {"Header": "Strict"}
+        "PATCH", "https://1.1.1.1:8888/strict_url", "strict_payload", {"Header": "Strict"}
     )
 
     mock_session.request.assert_called_once()
@@ -1831,7 +1831,7 @@ async def test_async_execute_request_none_http_version(
     mock_ctx.__aenter__.return_value = mock_response
     mock_session.request.return_value = mock_ctx
 
-    await conn._async_execute_request("GET", "/test", None, {})
+    await conn._async_execute_request("GET", "https://1.1.1.1:8888/test", None, {})
 
     # ASERCIÓN MILIMÉTRICA
     assert conn._force_close_connection is True, (
@@ -1990,7 +1990,7 @@ async def test_async_execute_request_header_placeholders(
         "X-Tok": "__CLIMATE_IP_TOKEN__",
     }
 
-    await conn._async_execute_request("GET", "/test", None, custom_headers)
+    await conn._async_execute_request("GET", "https://1.1.1.1:8888/test", None, custom_headers)
 
     _, kwargs = mock_session.request.call_args
     assert kwargs["headers"]["X-Mac"] == "AA:BB", "Mutante rompió placeholder {mac}"
@@ -2027,7 +2027,7 @@ async def test_async_execute_skips_optimization_on_mismatch(
         assert res1 == "REQ_OK", (
             "El mutante activó la optimización erróneamente para POST"
         )
-        mock_req.assert_called_with("POST", "", None, {})
+        mock_req.assert_called_with("POST", "https://1.1.1.1:8888", None, {})
 
         mock_req.reset_mock()
 
@@ -2036,7 +2036,7 @@ async def test_async_execute_skips_optimization_on_mismatch(
         assert res2 == "REQ_OK", (
             "El mutante activó la optimización erróneamente para URL distinta"
         )
-        mock_req.assert_called_with("GET", "/other", None, {})
+        mock_req.assert_called_with("GET", "https://1.1.1.1:8888/other", None, {})
 
 
 # ====================================================================================

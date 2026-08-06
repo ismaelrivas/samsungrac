@@ -187,9 +187,13 @@ class ConnectionAiohttp8888(Connection):
 
         # Consolidated executor call
         if self._cert_path is None and self._raw_cert_path is not None:
-            self._cert_path = await self._hass.async_add_executor_job(
+            res = self._hass.async_add_executor_job(
                 self._resolve_and_verify_cert, self._raw_cert_path
             )
+            if asyncio.iscoroutine(res) or isinstance(res, asyncio.Future):
+                self._cert_path = await res
+            elif isinstance(res, str):
+                self._cert_path = res
 
         has_cert = bool(self._cert_path)
 
@@ -596,7 +600,7 @@ class ConnectionAiohttp8888(Connection):
     async def _async_execute_request(
         self,
         method: str,
-        url_path: str | None,
+        full_url: str,
         data: str | None,
         headers: dict[str, str] | None,
     ) -> tuple[str, dict[str, str] | None]:
@@ -612,13 +616,10 @@ class ConnectionAiohttp8888(Connection):
         )
 
         ssl_context = self._shared_state.ssl_context
-        # Detect if the path is actually an absolute URL (for SmartThings).
-        if url_path and url_path.startswith("http"):
-            # Provide a default ssl_context (unverified) if one wasn't created via mTLS probe
-            if not ssl_context:
-                ssl_context = await self._create_ssl_context()
 
-        full_url = self._build_full_url(url_path)
+        # Detect if the path is actually an absolute URL (for SmartThings).
+        if full_url.startswith("https://") and not ssl_context:
+            ssl_context = await self._create_ssl_context()
 
         # If the final URL is plain HTTP (e.g. test mode), don't use SSL
         if full_url.startswith("http://"):
@@ -852,6 +853,7 @@ class ConnectionAiohttp8888(Connection):
 
         # Ensure initialization before any execution
         probe_response_text = await self._try_connection()
+        full_url = self._build_full_url(url)
 
         await self._execute_embedded_command(
             device_state=device_state,
@@ -897,14 +899,14 @@ class ConnectionAiohttp8888(Connection):
         if (
             probe_response_text
             and method == "GET"
-            and self._build_full_url(url) == self._build_full_url(probe_url_path)
+            and full_url == self._build_full_url(probe_url_path)
         ):
             debug_msg = "%s [async_execute] OPTIMIZATION: Reusing probe response for initial poll."
             _LOGGER.debug(debug_msg, self.log_prefix)
             return probe_response_text, None
 
         return await self._async_execute_request(
-            method, url, data, headers
+            method, full_url, data, headers
         )
 
     def get_diagnostics(self) -> dict[str, Any]:
