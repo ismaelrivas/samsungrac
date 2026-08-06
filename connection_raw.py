@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from .controller import ClimateController
 
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
+from homeassistant.core import HomeAssistant
 
 from .connection import Connection, register_connection
 from .const import (
@@ -105,14 +106,13 @@ class ConnectionRaw8888(Connection):
         self,
         config: dict[str, Any],
         logger: logging.Logger,
-        hass: Any,
-        session: Any,
-        ip_address: str | None,
+        hass: HomeAssistant,
+        session: Any | None = None,
+        ip_address: str | None = None,
     ) -> None:
         """Initialize the connection."""
         super().__init__(config, logger)
         self._hass = hass
-        _ = session  # pragma: no mutate
 
         self._host: str = ip_address or cast(str, config.get(CONF_IP_ADDRESS, ""))
         self._cert: str | None = self._resolve_cert_path(config.get(CONF_CERT))
@@ -205,15 +205,6 @@ class ConnectionRaw8888(Connection):
         """Return the embedded connection parameters."""
         return self._params
 
-    def execute(
-        self,
-        template: Template | None,
-        value: Any,
-        device_state: dict[str, Any],
-        device_id: str | None = None,
-    ) -> None:
-        """Not implemented for async connections."""
-        raise NotImplementedError("This connection is async-native. Use async_execute.")  # pragma: no mutate
 
     def _get_token_and_ids(self) -> tuple[str | None, str, str | None, str]:
         """Resolve credentials strictly without OO-distrust."""
@@ -298,6 +289,49 @@ class ConnectionRaw8888(Connection):
         if client_to_close:
             await client_to_close.close()
 
+    def _format_request_url(
+        self,
+        url: str | None,
+        token: str | None,
+        host: str,
+        dev_id: str | None,
+        mac: str,
+    ) -> str:
+        """Format request URL with placeholders."""
+        return format_placeholders(url, token, host, dev_id, mac)
+
+    def _format_request_body(
+        self,
+        data: Any,
+        token: str | None,
+        host: str,
+        dev_id: str | None,
+        mac: str,
+    ) -> Any:
+        """Format request data body into dictionary or JSON representation."""
+        data = format_placeholders(data, token, host, dev_id, mac)
+        return data if isinstance(data, dict) else (json_loads(data) if data else None)
+
+    def _format_request_headers(
+        self,
+        headers: dict[str, str] | None,
+        token: str | None,
+        host: str,
+        dev_id: str | None,
+        mac: str,
+    ) -> dict[str, str]:
+        """Format request headers and inject authentication credentials."""
+        req_headers = headers.copy() if headers else {}
+        req_headers = format_placeholders(req_headers, token, host, dev_id, mac)
+
+        if not token:
+            raise AuthError("Token not configured for the raw engine")  # pragma: no mutate
+
+        req_headers.setdefault("Authorization", f"Bearer {token}")  # pragma: no mutate
+        req_headers.setdefault("Content-Type", "application/json")  # pragma: no mutate
+
+        return req_headers
+
     def _prepare_request_payload(
         self,
         url: str | None,
@@ -309,22 +343,12 @@ class ConnectionRaw8888(Connection):
         mac: str,
     ) -> tuple[str, str, Any, dict[str, str]]:
         """Assemble fully materialized network vectors."""
-        url = format_placeholders(url, current_token, host, dev_id, mac)
-        path = str(urlparse(url).path) if url else ""
+        formatted_url = self._format_request_url(url, current_token, host, dev_id, mac)
+        path = str(urlparse(formatted_url).path) if formatted_url else ""
+        body = self._format_request_body(data, current_token, host, dev_id, mac)
+        req_headers = self._format_request_headers(headers, current_token, host, dev_id, mac)
 
-        data = format_placeholders(data, current_token, host, dev_id, mac)
-        body = data if isinstance(data, dict) else (json_loads(data) if data else None)
-
-        req_headers = headers.copy() if headers else {}
-        req_headers = format_placeholders(req_headers, current_token, host, dev_id, mac)
-
-        if not current_token:
-            raise AuthError("Token not configured for the raw engine")  # pragma: no mutate
-
-        req_headers.setdefault("Authorization", f"Bearer {current_token}")  # pragma: no mutate
-        req_headers.setdefault("Content-Type", "application/json")  # pragma: no mutate
-
-        return url, path, body, req_headers
+        return formatted_url, path, body, req_headers
 
     @staticmethod
     def _map_connection_error(e: Exception) -> str:
@@ -421,21 +445,21 @@ class ConnectionRaw8888(Connection):
         if self._embedded_command:
             try:
                 await self._embedded_command.close()
-            except (asyncio.TimeoutError, OSError):  # pragma: no mutate
-                pass  # pragma: no mutate
+            except (asyncio.TimeoutError, OSError) as e:  # pragma: no mutate
+                _LOGGER.debug("%s [RAW] Ignored error during cleanup: %s", self.log_prefix, e)
 
         if self._client:
             try:
                 await self._client.close()
-            except (asyncio.TimeoutError, OSError):  # pragma: no mutate
-                pass  # pragma: no mutate
+            except (asyncio.TimeoutError, OSError) as e:  # pragma: no mutate
+                _LOGGER.debug("%s [RAW] Ignored error during cleanup: %s", self.log_prefix, e)
             finally:
                 self._client = None
 
         if self._controller and self._controller.shared_raw_client:
             try:
                 await self._controller.shared_raw_client.close()
-            except (asyncio.TimeoutError, OSError):  # pragma: no mutate
-                pass  # pragma: no mutate
+            except (asyncio.TimeoutError, OSError) as e:  # pragma: no mutate
+                _LOGGER.debug("%s [RAW] Ignored error during cleanup: %s", self.log_prefix, e)
             finally:
                 self._controller.shared_raw_client = None
