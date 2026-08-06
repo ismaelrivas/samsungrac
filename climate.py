@@ -209,23 +209,22 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             self._attr_precision = PRECISION_WHOLE
 
         # Cache static hardware temperature boundaries
-        min_prop = self.coordinator.controller.get_property_object(ATTR_MIN_TEMP)
-        if min_prop and min_prop.value is not None:
-            try:
-                self._attr_min_temp = float(min_prop.value)
-            except (ValueError, TypeError):
-                self._attr_min_temp = float(DEFAULT_CLIMATE_IP_TEMP_MIN)
-        else:
-            self._attr_min_temp = float(DEFAULT_CLIMATE_IP_TEMP_MIN)
+        self._attr_min_temp = self._extract_float_boundary(
+            self.coordinator.controller, ATTR_MIN_TEMP, DEFAULT_CLIMATE_IP_TEMP_MIN
+        )
+        self._attr_max_temp = self._extract_float_boundary(
+            self.coordinator.controller, ATTR_MAX_TEMP, DEFAULT_CLIMATE_IP_TEMP_MAX
+        )
 
-        max_prop = self.coordinator.controller.get_property_object(ATTR_MAX_TEMP)
-        if max_prop and max_prop.value is not None:
+    def _extract_float_boundary(self, controller: Any, prop_key: str, default_val: float) -> float:
+        """Extract and cast numeric boundaries safely."""
+        prop = controller.get_property_object(prop_key)
+        if prop and prop.value is not None:
             try:
-                self._attr_max_temp = float(max_prop.value)
+                return float(prop.value)
             except (ValueError, TypeError):
-                self._attr_max_temp = float(DEFAULT_CLIMATE_IP_TEMP_MAX)
-        else:
-            self._attr_max_temp = float(DEFAULT_CLIMATE_IP_TEMP_MAX)
+                pass
+        return float(default_val)
 
     @property
     def hvac_mode(self) -> HVACMode | str | None:
@@ -275,15 +274,15 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
     @property
     def fan_modes(self) -> list[str]:
-        return list(self.coordinator.data.fan_modes) if self.coordinator.data else []
+        return self.coordinator.data.fan_modes if self.coordinator.data else []
 
     @property
     def swing_modes(self) -> list[str]:
-        return list(self.coordinator.data.swing_modes) if self.coordinator.data else []
+        return self.coordinator.data.swing_modes if self.coordinator.data else []
 
     @property
     def preset_modes(self) -> list[str]:
-        return list(self.coordinator.data.preset_modes) if self.coordinator.data else []
+        return self.coordinator.data.preset_modes if self.coordinator.data else []
 
     @property
     def temperature_unit(self) -> str:
