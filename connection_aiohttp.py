@@ -237,6 +237,7 @@ class ConnectionAiohttp8888(Connection):
         new_connection._params = {}
         new_connection._controller = self._controller
         new_connection._shared_state = self._shared_state
+        new_connection._force_close_connection = self._force_close_connection
 
         if yaml_node is not None:
             if CONF_KEEP_ALIVE in yaml_node:
@@ -295,6 +296,16 @@ class ConnectionAiohttp8888(Connection):
     def params(self) -> dict[str, Any]:
         """Return the embedded connection parameters."""
         return self._params
+
+    def _format_connector_error(self, e: aiohttp.ClientConnectorError) -> str:
+        """Format a clean error message from a ClientConnectorError."""
+        try:
+            host = e.host
+            port = e.port
+        except AttributeError:
+            host, port = "?", "?"
+        reason = str(e.os_error) if getattr(e, "os_error", None) else type(e).__name__
+        return f"Cannot connect to {host}:{port} ({reason})"
 
     async def _try_connection(self) -> str | None:
         """
@@ -366,30 +377,28 @@ class ConnectionAiohttp8888(Connection):
                         405,
                     ):  # Added 405 for Method Not Allowed
                         # Attempt to log the negotiated TLS version
-                        try:
-                            transport = (
-                                response.connection.transport
-                                if response.connection
-                                else None
-                            )
-                            ssl_obj = (
-                                transport.get_extra_info("ssl_object")
-                                if transport
-                                else None
-                            )
-                            negotiated_tls = ssl_obj.version() if ssl_obj else "Unknown"
-                            info_msg = "%s [aiohttp] Connection successful. Status: %s. Negotiated TLS: %s"
-                            _LOGGER.info(
-                                info_msg,
-                                self.log_prefix,
-                                response.status,
-                                negotiated_tls,
-                            )
-                        except (AttributeError, KeyError, TypeError):
-                            info_msg = "%s [aiohttp] Connection successful and memorized. Status: %s"
-                            _LOGGER.info(
-                                info_msg, self.log_prefix, response.status
-                            )
+                        transport = (
+                            response.connection.transport
+                            if response.connection is not None
+                            else None
+                        )
+                        ssl_obj = (
+                            transport.get_extra_info("ssl_object")
+                            if transport is not None
+                            else None
+                        )
+                        negotiated_tls = (
+                            ssl_obj.version()
+                            if ssl_obj is not None and hasattr(ssl_obj, "version")
+                            else "Unknown"
+                        )
+                        info_msg = "%s [aiohttp] Connection successful. Status: %s. Negotiated TLS: %s"
+                        _LOGGER.info(
+                            info_msg,
+                            self.log_prefix,
+                            response.status,
+                            negotiated_tls,
+                        )
 
                         self._shared_state.initialized = True
 
@@ -408,15 +417,7 @@ class ConnectionAiohttp8888(Connection):
             except aiohttp.ClientConnectorError as e:
                 # Log as warning (not error) because it's expected when AC is offline.
                 # Build a clean, readable message from the structured attributes of the exception.
-                host = getattr(e, "host", "?")
-                port = getattr(e, "port", "?")
-                os_err = getattr(e, "os_error", None)
-                reason = (
-                    str(os_err) if os_err else type(e).__name__
-                )
-                clean_msg = (
-                    f"Cannot connect to {host}:{port} ({reason})"
-                )
+                clean_msg = self._format_connector_error(e)
                 warn_msg = "%s [aiohttp_probe] Device is unreachable (offline): %s"
                 _LOGGER.warning(
                     warn_msg, self.log_prefix, clean_msg
@@ -675,15 +676,7 @@ class ConnectionAiohttp8888(Connection):
         ) as e:
             # Adaptive recovery on timeout/connection drop
             if isinstance(e, aiohttp.ClientConnectorError):
-                host = getattr(e, "host", "?")
-                port = getattr(e, "port", "?")
-                os_err = getattr(e, "os_error", None)
-                reason = (
-                    str(os_err) if os_err else type(e).__name__
-                )
-                clean_e = (
-                    f"Cannot connect to {host}:{port} ({reason})"
-                )
+                clean_e = self._format_connector_error(e)
             else:
                 clean_e = str(e)
 

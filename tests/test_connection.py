@@ -250,11 +250,11 @@ def test_check_execute_condition():
     mock_async_tmpl.async_render.return_value = "0"
     assert conn.check_execute_condition({"state": "off"}) is False
 
-    # 4. Render raises Exception -> logs error and returns True
+    # 4. Render raises Exception -> logs error and returns False
     mock_err_tmpl = MagicMock()
     mock_err_tmpl.async_render.side_effect = RuntimeError("Template syntax error")
     conn.condition_template = mock_err_tmpl
-    assert conn.check_execute_condition({"state": "on"}) is True
+    assert conn.check_execute_condition({"state": "on"}) is False
 
 def test_check_execute_condition_default_logger():
     """Kills logger fallback / logical mutation mutants in check_execute_condition when logger is None."""
