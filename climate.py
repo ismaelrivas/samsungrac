@@ -1,17 +1,14 @@
 """Support for Samsung AC devices using climate_ip."""
 # pylint: disable=import-outside-toplevel,too-many-instance-attributes,too-many-public-methods
 import logging
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
-import homeassistant.helpers.config_validation as cv
-import voluptuous as vol
+
 from homeassistant.components.climate import (
     ATTR_CURRENT_TEMPERATURE,
     ATTR_FAN_MODE,
     ATTR_HVAC_MODE,
     ATTR_PRESET_MODE,
     ATTR_SWING_MODE,
-    PLATFORM_SCHEMA,
     ClimateEntity,
     ClimateEntityDescription,
     ClimateEntityFeature,
@@ -23,47 +20,30 @@ from homeassistant.components.climate.const import (
 )
 from homeassistant.const import (
     ATTR_TEMPERATURE,
-    CONF_DEBUG,
-    CONF_IP_ADDRESS,
-    CONF_MAC,
-    CONF_TOKEN,
     PRECISION_HALVES,
     PRECISION_TENTHS,
     PRECISION_WHOLE,
     STATE_OFF,
     STATE_ON,
 )
-from homeassistant.config_entries import SOURCE_IMPORT
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.issue_registry import IssueSeverity, async_create_issue
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
 if TYPE_CHECKING:
     from . import ClimateIPConfigEntry
+
 from .const import (
-    CONF_CERT,
-    CONF_CONFIG_FILE,
-    CONF_CONTROLLER,
-    CONF_DEVICE_ID,
-    CONF_DEVICES,
     CONF_TARGET_TEMP_STEP,
-    CONF_TEMP_STEP,
-    CONFIG_DEVICE_NAME,
-    CONFIG_DEVICE_POLL,
-    CONFIG_DEVICE_UPDATE_DELAY,
     DEFAULT_CLIMATE_IP_TEMP_MAX,
     DEFAULT_CLIMATE_IP_TEMP_MIN,
-    DEFAULT_CONF_CERT_FILE,
-    DEFAULT_CONF_CONFIG_FILE,
-    DEFAULT_CONF_CONTROLLER,
     DEFAULT_TARGET_TEMP_STEP,
-    DEFAULT_UPDATE_DELAY,
-    DOMAIN,
 )
 from .controller import ATTR_POWER
 from .coordinator import SamsungClimateCoordinator
+
 _LOGGER = logging.getLogger(__name__)
+
 SUPPORTED_FEATURES_MAP: Final[dict[str, ClimateEntityFeature]] = {
     ATTR_TEMPERATURE: ClimateEntityFeature.TARGET_TEMPERATURE,
     ATTR_FAN_MODE: ClimateEntityFeature.FAN_MODE,
@@ -75,58 +55,8 @@ CLIMATE_ENTITY_DESCRIPTION: Final[ClimateEntityDescription] = ClimateEntityDescr
     key="samsung_ac",
     translation_key="samsung_ac",
 )
-# Legacy platform schema for YAML import.
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
-    {
-        vol.Required(CONF_IP_ADDRESS): cv.string,
-        vol.Optional(CONF_TOKEN): cv.string,
-        vol.Optional(CONF_MAC): cv.string,
-        vol.Optional(CONFIG_DEVICE_NAME): cv.string,
-        vol.Optional(CONF_CERT, default=DEFAULT_CONF_CERT_FILE): cv.string,
-        vol.Optional(CONF_CONFIG_FILE, default=DEFAULT_CONF_CONFIG_FILE): cv.string,
-        vol.Optional(CONF_CONTROLLER, default=DEFAULT_CONF_CONTROLLER): cv.string,
-        vol.Optional(CONF_DEBUG, default=False): cv.boolean,
-        vol.Optional(CONFIG_DEVICE_POLL, default=""): cv.string,
-        vol.Optional(
-            CONFIG_DEVICE_UPDATE_DELAY, default=DEFAULT_UPDATE_DELAY
-        ): cv.positive_float,
-        vol.Optional(CONF_DEVICE_ID): cv.string,
-        vol.Optional(CONF_TEMP_STEP, default=1.0): vol.Coerce(float),
-    }
-)
-async def async_setup_platform(
-    _hass: HomeAssistant,
-    config: dict[str, Any],
-    _add_entities: AddEntitiesCallback,
-    _discovery_info: dict[str, Any] | None = None,
-) -> None:
-    """Import YAML platform configuration to a Config Flow."""
-    async_create_issue(
-        _hass,
-        DOMAIN,
-        "deprecated_yaml",
-        breaks_in_ha_version="2026.0.0",
-        is_fixable=False,
-        issue_domain=DOMAIN,
-        severity=IssueSeverity.WARNING,
-        translation_key="deprecated_yaml",
-    )
-    # fmt: off
-    _LOGGER.warning("Configuration of 'climate_ip' via YAML is deprecated and will be removed in a future version. Your configuration has been automatically imported into the UI (Config Entries)")  # pragma: no mutate
-    # fmt: on
-    # Anti-loop guard: skip if this entry was already imported from YAML
-    current_entries = _hass.config_entries.async_entries(DOMAIN)
-    if any(entry.source == SOURCE_IMPORT for entry in current_entries):
-        _LOGGER.debug(
-            "YAML setup suppressed: Entry already imported previously."
-        )  # pragma: no mutate
-        return
-    _hass.async_create_task(
-        _hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": SOURCE_IMPORT}, data=config
-        ),
-        name="climate_ip_yaml_import",
-    )
+
+
 async def async_setup_entry(
     _hass: HomeAssistant,
     entry: "ClimateIPConfigEntry",

@@ -23,9 +23,6 @@ from custom_components.climate_ip.climate import (
     ATTR_SWING_MODE,
     ATTR_PRESET_MODE,
     async_setup_entry,
-    async_setup_platform,
-    DOMAIN,
-    CONF_DEVICES,
 )
 from custom_components.climate_ip.const import CONF_TARGET_TEMP_STEP, CONF_TEMP_STEP
 from custom_components.climate_ip.controller import ATTR_POWER
@@ -422,25 +419,7 @@ async def test_async_service_set_property_missing_key_is_noop(
 
 
 
-async def test_async_setup_platform_already_imported_skips_task(
-    hass: "HomeAssistant",
-) -> None:
-    """Kill mutants that remove or invert the SOURCE_IMPORT anti-loop guard.
 
-    When an existing SOURCE_IMPORT entry exists, async_create_task must NOT
-    be called (early return path).
-    """
-    existing_entry = MagicMock()
-    existing_entry.source = SOURCE_IMPORT
-
-    with (
-        patch("homeassistant.helpers.issue_registry.async_create_issue"),
-        patch.object(hass, "async_create_task") as mock_create_task,
-    ):
-        hass.config_entries.async_entries.return_value = [existing_entry]
-        await async_setup_platform(hass, {}, MagicMock())
-
-    mock_create_task.assert_not_called()
 
 
 
@@ -694,52 +673,6 @@ async def test_modern_async_setup_entry_empty() -> None:
     )
 
 
-@pytest.mark.asyncio
-async def test_modern_async_setup_platform_kills_mutants(hass: HomeAssistant) -> None:
-    """Kill mutants in async_setup_platform (issue creation and task init)."""
-    from homeassistant.helpers.issue_registry import IssueSeverity
-    from homeassistant.config_entries import SOURCE_IMPORT
-    from custom_components.climate_ip.climate import async_setup_platform
-    
-    config = {"ip_address": "192.168.1.100"}
-    DOMAIN = "climate_ip"
-    
-    # Mock the entries to return empty (not imported yet)
-    hass.config_entries = MagicMock()
-    hass.config_entries.async_entries.return_value = []
-    
-    # Mock the flow init
-    mock_flow_init = MagicMock(return_value="sentinel_task")
-    hass.config_entries.flow.async_init = mock_flow_init
-    hass.async_create_task = MagicMock()
 
-    with patch("custom_components.climate_ip.climate.async_create_issue") as mock_issue:
-        await async_setup_platform(hass, config, MagicMock())
-
-    # KILLS mutants altering async_create_issue kwargs
-    mock_issue.assert_called_once_with(
-        hass,
-        DOMAIN,
-        "deprecated_yaml",
-        breaks_in_ha_version="2026.0.0",
-        is_fixable=False,
-        issue_domain=DOMAIN,
-        severity=IssueSeverity.WARNING,
-        translation_key="deprecated_yaml",
-    )
-    
-    # KILLS mutant altering async_entries(DOMAIN)
-    hass.config_entries.async_entries.assert_called_once_with(DOMAIN)
-    
-    # KILLS mutants altering async_init args
-    mock_flow_init.assert_called_once_with(
-        DOMAIN, context={"source": SOURCE_IMPORT}, data=config
-    )
-    
-    # KILLS mutant altering async_create_task name
-    hass.async_create_task.assert_called_once_with(
-        "sentinel_task",
-        name="climate_ip_yaml_import",
-    )
 
 
