@@ -173,7 +173,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         
         # Feature Flag Resolution (Static Run-Once)
         features = ClimateEntityFeature(0)
-        ops = self.coordinator.operations
+        ops = self.coordinator.controller.operations
         for attr, feature in SUPPORTED_FEATURES_MAP.items():
             if attr in ops:
                 features |= feature
@@ -242,7 +242,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             ATTR_HVAC_MODE, ATTR_FAN_MODE, ATTR_SWING_MODE, ATTR_PRESET_MODE,
         }
         self._attr_extra_state_attributes = {
-            k: v for k, v in self.coordinator.state_attributes.items() if k not in core_attrs
+            k: v for k, v in self.coordinator.controller.state_attributes.items() if k not in core_attrs
         }
 
         if state:
@@ -370,7 +370,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
     def _resolve_numeric_boundary(self, prop_key: str, default_val: float) -> float:
         """Safely resolve numeric boundaries avoiding hot-path overhead."""
-        prop_obj = self.coordinator.get_property_object(prop_key)
+        prop_obj = self.coordinator.controller.get_property_object(prop_key)
         if not prop_obj or prop_obj.value is None:
             return float(default_val)
         try:

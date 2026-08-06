@@ -1246,28 +1246,6 @@ async def test_coordinator_success_path_no_refresh(hass: HomeAssistant) -> None:
     # LETHAL ASSERTION: If success mutated to False or None, this will fail.
     coordinator.async_request_refresh.assert_not_awaited()
 
-
-async def test_coordinator_getters(hass: HomeAssistant) -> None:
-    """Test get_property and get_property_object getters."""
-    from unittest.mock import MagicMock
-
-    mock_controller = MagicMock()
-    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
-    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
-    mock_controller.get_property.return_value = "property_value"
-    mock_controller.get_property_object.return_value = {"object": "value"}
-
-    mock_entry = MagicMock()
-    mock_entry.options = {}
-    mock_entry.data = {}
-    coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
-
-    assert coordinator.get_property("some_prop") == "property_value"
-    mock_controller.get_property.assert_called_once_with("some_prop")
-
-    assert coordinator.get_property_object("some_obj") == {"object": "value"}
-    mock_controller.get_property_object.assert_called_once_with("some_obj")
-
 @pytest.mark.asyncio
 async def test_coordinator_auto_healing_fails_when_already_raw(hass: HomeAssistant) -> None:
     """

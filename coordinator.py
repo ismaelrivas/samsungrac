@@ -515,45 +515,6 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     def unique_id(self) -> str:
         """Return the unique ID from the controller."""
         return self.controller.unique_id
-
-    @property
-    def operations(self) -> list[str]:
-        """Return the list of settable operations."""
-        return self.controller.operations
-
-    @property
-    def attributes(self) -> list[str]:
-        """Return the list of read-only attributes."""
-        return self.controller.attributes
-
-    @property
-    def is_push_device(self) -> bool:
-        """Return True if the device uses push-based updates."""
-        return self.controller.is_push_device
-
-    @property
-    def state_attributes(self) -> dict[str, Any]:
-        """Return the state attributes from the controller."""
-        return self.controller.state_attributes
-
-    @property
-    def poll(self) -> bool:
-        """Return the polling state from the controller."""
-        return self.controller.poll
-
-    @property
-    def temperature_unit(self) -> str:
-        """Return the temperature unit from the controller."""
-        return self.controller.temperature_unit
-
-    def get_property(self, property_name: str) -> Any:
-        """Return a property value from the controller."""
-        return self.controller.get_property(property_name)
-
-    def get_property_object(self, property_name: str) -> Any:
-        """Return the property object from the controller."""
-        return self.controller.get_property_object(property_name)
-
     async def async_shutdown(self) -> None:
         """Shut down the coordinator and its controller.
 

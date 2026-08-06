@@ -44,6 +44,10 @@ def base_climate_entity(hass: HomeAssistant) -> ClimateIP:
     mock_coord.async_request_refresh = AsyncMock()
     mock_coord.device_info = MagicMock()
     mock_coord.data = MagicMock()
+    mock_coord.controller = MagicMock()
+    mock_coord.controller.operations = []
+    mock_coord.controller.state_attributes = {}
+    mock_coord.controller.get_property_object.return_value = None
 
     desc = ClimateIPEntityDescription(key="samsung_ac", translation_key="samsung_ac")
     entity = ClimateIP(coordinator=mock_coord, description=desc)
@@ -79,6 +83,9 @@ def test_01_climate_defensive_sync_none_fallback() -> None:
     mock_coord.unique_id = "defensive_id"
     mock_coord.entry = MagicMock(options={})
     mock_coord.device_info = MagicMock()
+    mock_coord.controller = MagicMock()
+    mock_coord.controller.operations = []
+    mock_coord.controller.state_attributes = {}
     desc = ClimateIPEntityDescription(key="samsung_ac", translation_key="samsung_ac")
     
     entity = ClimateIP(coordinator=mock_coord, description=desc)
@@ -91,7 +98,7 @@ def test_01_climate_defensive_sync_none_fallback() -> None:
 
 async def test_turn_on_dry_helper(base_climate_entity: ClimateIP) -> None:
     """Test that turn_on and turn_off delegate to coordinator.async_set_property."""
-    base_climate_entity.coordinator.operations = [ATTR_POWER]
+    base_climate_entity.coordinator.controller.operations = [ATTR_POWER]
     base_climate_entity.coordinator.async_set_property = AsyncMock()
 
     # Test turn on
@@ -141,7 +148,9 @@ def test_climate_translation_key_and_device_info(hass: HomeAssistant) -> None:
     """Test that ClimateIP correctly maps translation_key and device_info."""
     mock_coordinator = MagicMock(spec=SamsungClimateCoordinator)
     mock_coordinator.unique_id = "test_unique_id"
-    mock_coordinator.operations = ["power"]
+    mock_coordinator.controller = MagicMock()
+    mock_coordinator.controller.operations = ["power"]
+    mock_coordinator.controller.state_attributes = {}
     mock_coordinator.log_prefix = "[TEST]"
     mock_coordinator.data = MagicMock()
     mock_coordinator.device_info = {"identifiers": {("climate_ip", "test_unique_id")}}
@@ -545,7 +554,7 @@ def test_climate_supported_features_bitwise_strict_accumulation(
     from custom_components.climate_ip.climate import ClimateIP
 
     # 1. Set exactly two features that map through the dynamic loop
-    base_climate_entity.coordinator.operations = [ATTR_PRESET_MODE, HA_ATTR_TEMPERATURE]
+    base_climate_entity.coordinator.controller.operations = [ATTR_PRESET_MODE, HA_ATTR_TEMPERATURE]
     base_climate_entity.coordinator.swing_modes = []
 
     # 2. Re-instantiate entity to trigger __init__ static feature resolution
@@ -570,7 +579,7 @@ def test_climate_extra_state_attributes_filtering(
     Mutant 1 replaces core_attrs set with None (causes TypeError on iteration).
     Mutant 2 changes 'if k not in core_attrs' to 'if k in core_attrs'.
     """
-    base_climate_entity.coordinator.state_attributes = {
+    base_climate_entity.coordinator.controller.state_attributes = {
         HA_ATTR_TEMPERATURE: 22.0,
         ATTR_HVAC_MODE: HVACMode.COOL,
         "custom_attribute_1": "value1",
@@ -598,7 +607,7 @@ def test_climate_min_temp_from_coordinator_property(
 
     mock_prop = MagicMock()
     mock_prop.value = "17.5"
-    base_climate_entity.coordinator.get_property_object.side_effect = lambda key: (
+    base_climate_entity.coordinator.controller.get_property_object.side_effect = lambda key: (
         mock_prop if key == ATTR_MIN_TEMP else None
     )
 
@@ -610,7 +619,7 @@ def test_climate_min_temp_fallback_on_none_prop(base_climate_entity: ClimateIP) 
     """Kill mutants 2, 4, 6 in min_temp when get_property_object returns None."""
     from custom_components.climate_ip.const import DEFAULT_CLIMATE_IP_TEMP_MIN
 
-    base_climate_entity.coordinator.get_property_object.return_value = None
+    base_climate_entity.coordinator.controller.get_property_object.return_value = None
 
     base_climate_entity._sync_data_from_coordinator()
     assert base_climate_entity.min_temp == float(DEFAULT_CLIMATE_IP_TEMP_MIN)
@@ -624,7 +633,7 @@ def test_climate_min_temp_fallback_on_invalid_value(
 
     mock_prop = MagicMock()
     mock_prop.value = "invalid_number"
-    base_climate_entity.coordinator.get_property_object.return_value = mock_prop
+    base_climate_entity.coordinator.controller.get_property_object.return_value = mock_prop
 
     base_climate_entity._sync_data_from_coordinator()
     assert base_climate_entity.min_temp == float(DEFAULT_CLIMATE_IP_TEMP_MIN)
@@ -641,7 +650,7 @@ def test_climate_max_temp_from_coordinator_property(
 
     mock_prop = MagicMock()
     mock_prop.value = "31.0"
-    base_climate_entity.coordinator.get_property_object.side_effect = lambda key: (
+    base_climate_entity.coordinator.controller.get_property_object.side_effect = lambda key: (
         mock_prop if key == ATTR_MAX_TEMP else None
     )
 
@@ -653,7 +662,7 @@ def test_climate_max_temp_fallback_on_none_prop(base_climate_entity: ClimateIP) 
     """Kill mutants 2, 4, 6 in max_temp when get_property_object returns None."""
     from custom_components.climate_ip.const import DEFAULT_CLIMATE_IP_TEMP_MAX
 
-    base_climate_entity.coordinator.get_property_object.return_value = None
+    base_climate_entity.coordinator.controller.get_property_object.return_value = None
 
     base_climate_entity._sync_data_from_coordinator()
     assert base_climate_entity.max_temp == float(DEFAULT_CLIMATE_IP_TEMP_MAX)
@@ -667,7 +676,7 @@ def test_climate_max_temp_fallback_on_invalid_value(
 
     mock_prop = MagicMock()
     mock_prop.value = "invalid_number"
-    base_climate_entity.coordinator.get_property_object.return_value = mock_prop
+    base_climate_entity.coordinator.controller.get_property_object.return_value = mock_prop
 
     base_climate_entity._sync_data_from_coordinator()
     assert base_climate_entity.max_temp == float(DEFAULT_CLIMATE_IP_TEMP_MAX)

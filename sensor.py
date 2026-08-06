@@ -141,7 +141,7 @@ class ClimateIpSensor(CoordinatorEntity[SamsungClimateCoordinator], SensorEntity
 
     def _update_state(self) -> None:
         """Update the state of the sensor from the coordinator data."""
-        value = self.coordinator.get_property(self.entity_description.key)
+        value = self.coordinator.controller.get_property(self.entity_description.key)
 
         if value is None or value == const.STATE_UNKNOWN:
             self._attr_native_value = None

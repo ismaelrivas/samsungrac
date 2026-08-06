@@ -72,7 +72,7 @@ def test_update_state_strict_get_property_call(
     Asegura que get_property reciba exactamente description.key.
     """
     base_sensor_entity._update_state()
-    base_sensor_entity.coordinator.get_property.assert_called_once_with("target_temp")
+    base_sensor_entity.coordinator.controller.get_property.assert_called_once_with("target_temp")
 
 
 @patch("custom_components.climate_ip.sensor._LOGGER.warning")
@@ -84,7 +84,7 @@ def test_update_state_unknown_no_exception_path(
     If mutant vive, la ejecución pasará a intentar hacer float(STATE_UNKNOWN),
     detonando un ValueError interno y llamando al logger.
     """
-    base_sensor_entity.coordinator.get_property.return_value = STATE_UNKNOWN
+    base_sensor_entity.coordinator.controller.get_property.return_value = STATE_UNKNOWN
     base_sensor_entity._update_state()
 
     assert base_sensor_entity._attr_native_value is None
@@ -94,7 +94,7 @@ def test_update_state_unknown_no_exception_path(
 
 def test_update_state_string_property(base_sensor_entity: ClimateIpSensor) -> None:
     """Verifica asignación de cadenas literales sin parseo matemático."""
-    base_sensor_entity.coordinator.get_property.return_value = "auto_mode"
+    base_sensor_entity.coordinator.controller.get_property.return_value = "auto_mode"
     base_sensor_entity._property.value_is_string = True
 
     base_sensor_entity._update_state()
@@ -105,7 +105,7 @@ def test_update_state_unique_id_property(base_sensor_entity: ClimateIpSensor) ->
     """Verifica bypass de parseo para propiedades de UniqueId."""
     base_sensor_entity._property.__class__ = UniqueIdProperty
     base_sensor_entity._property.value_is_string = False
-    base_sensor_entity.coordinator.get_property.return_value = "00:11:22:33:AA:BB"
+    base_sensor_entity.coordinator.controller.get_property.return_value = "00:11:22:33:AA:BB"
 
     base_sensor_entity._update_state()
     assert base_sensor_entity.native_value == "00:11:22:33:AA:BB"
@@ -116,7 +116,7 @@ def test_update_state_valid_float(base_sensor_entity: ClimateIpSensor) -> None:
     Kills mutants 10 y 11.
     Evalúa estrictamente la rama del try donde la conversión a float debe ser exitosa.
     """
-    base_sensor_entity.coordinator.get_property.return_value = "23.7"
+    base_sensor_entity.coordinator.controller.get_property.return_value = "23.7"
     base_sensor_entity._property.value_is_string = False
     # No es UniqueIdProperty
 
@@ -137,7 +137,7 @@ def test_update_state_float_parsing_failure(
     base_sensor_entity._property.value_is_string = False
 
     # Inject una cadena corrupta que detonará ValueError
-    base_sensor_entity.coordinator.get_property.return_value = "not_a_number"
+    base_sensor_entity.coordinator.controller.get_property.return_value = "not_a_number"
 
     # Forzamos un valor previo conocido que NO sea None ni un string vacío
     base_sensor_entity._attr_native_value = 50.0
