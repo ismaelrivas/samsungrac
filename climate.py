@@ -26,7 +26,7 @@ from homeassistant.const import (
     STATE_OFF,
     STATE_ON,
 )
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -218,11 +218,6 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
     def temperature_unit(self) -> str:
         """Return the temperature unit."""
         return self.hass.config.units.temperature_unit
-    
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator and update the entity state."""
-        super()._handle_coordinator_update()
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature and handle optional hvac_mode."""
