@@ -546,7 +546,7 @@ class YamlStatePoller:
             try:
                 prop.apply_optimistic_cascades(device_state, value, dev_val)
             except Exception as e:  # pylint: disable=broad-exception-caught
-                _LOGGER.debug("%s apply_optimistic_cascades failed: %s", self.controller.log_prefix, getattr(prop, "id", "unknown"), e) # pragma: no mutate
+                _LOGGER.debug("%s [Prop %s] apply_optimistic_cascades failed: %s", self.controller.log_prefix, getattr(prop, "id", "unknown"), e)  # pragma: no mutate
         elif hasattr(prop, "set_device_state_for_values"):
             try:
                 prop.set_device_state_for_values(device_state)

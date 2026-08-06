@@ -27,7 +27,13 @@ def mock_logger():
 @pytest.fixture
 def mock_hass():
     """Return a mock HomeAssistant instance."""
-    return MagicMock()
+    hass = MagicMock()
+
+    async def async_add_executor_job(target, *args):
+        return target(*args)
+
+    hass.async_add_executor_job = AsyncMock(side_effect=async_add_executor_job)
+    return hass
 
 
 @pytest.fixture
@@ -815,9 +821,10 @@ async def test_async_execute_embedded_command_kwargs_strict(
     )
 
     embed_mock = AsyncMock()
+    embed_mock._params = {}
     embed_mock.check_execute_condition.return_value = True
     # Simulamos un template que devuelve un JSON configurador
-    embed_mock._connection_template.async_render = AsyncMock(
+    embed_mock._connection_template.async_render = MagicMock(
         return_value='{"method": "PUT", "url": "/embed", "json": {"key": "val"}, "headers": {"X": "Y"}}'
     )
     conn._embedded_command = embed_mock
@@ -2132,7 +2139,7 @@ async def test_async_execute_embedded_template_sync_render(
     )
 
     class SyncTemplate:
-        def render(self):
+        def async_render(self, parse_result=False):
             return '{"method": "POST", "url": "/sync_embed", "json": {"a": 1}}'
 
     embed_cmd._connection_template = SyncTemplate()

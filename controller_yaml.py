@@ -423,6 +423,17 @@ class YamlController(ClimateController):
         return {}
 
     @property
+    def pure_device_state(self) -> dict[str, Any]:
+        """Return the unmutated pure network state of the device."""
+        # pylint: disable=protected-access
+        if hasattr(self.poller, "_pure_network_state") and isinstance(self.poller._pure_network_state, dict) and self.poller._pure_network_state:
+            st = self.poller._pure_network_state
+            if "Devices" in st and isinstance(st["Devices"], list) and st["Devices"]:
+                return st["Devices"][0]
+            return st
+        return self.device_state
+
+    @property
     def device_state(self) -> dict[str, Any]:
         """Return the current unwrapped device state."""
         # pylint: disable=protected-access

@@ -157,6 +157,43 @@ class DeviceProperty:
         """Return the property ID."""
         return self._id
 
+    @property
+    def _raw_device_state(self) -> dict[str, Any]:
+        """Safely extract the raw JSON dictionary required by YAML templates."""
+        raw_dict = None
+        if self._controller and hasattr(self._controller, "pure_device_state"):
+            ctrl_pure = self._controller.pure_device_state
+            if isinstance(ctrl_pure, dict) and ctrl_pure:
+                raw_dict = ctrl_pure
+        if not raw_dict and self._controller and hasattr(self._controller, "device_state"):
+            ctrl_state = self._controller.device_state
+            if isinstance(ctrl_state, dict) and ctrl_state:
+                raw_dict = ctrl_state
+        if not raw_dict and self._status_getter and isinstance(self._status_getter.value, dict):
+            raw_dict = self._status_getter.value
+        if not raw_dict and self._controller and hasattr(self._controller, "get_property"):
+            status_prop = self._controller.get_property("status")
+            if status_prop and isinstance(status_prop.value, dict):
+                raw_dict = status_prop.value
+        if not raw_dict and isinstance(self._device_state, dict):
+            raw_dict = self._device_state
+        if not raw_dict:
+            import dataclasses
+
+            if dataclasses.is_dataclass(self._device_state):
+                raw_dict = dataclasses.asdict(self._device_state)
+            else:
+                raw_dict = {}
+
+        if (
+            isinstance(raw_dict, dict)
+            and "Devices" in raw_dict
+            and isinstance(raw_dict["Devices"], list)
+            and raw_dict["Devices"]
+        ):
+            return raw_dict["Devices"][0]
+        return raw_dict
+
     def is_valid(self, device_state: dict[str, Any] | None) -> bool:
         """Return True if this property is valid for the given device state."""
         self._device_state = device_state
@@ -164,7 +201,7 @@ class DeviceProperty:
             return True
 
         try:
-            v = self.validation_template.render(device_state=device_state)
+            v = self.validation_template.render(device_state=self._raw_device_state)
             result = str(v).lower() == "valid"
             return result
         except Exception as e:
@@ -583,9 +620,7 @@ class DeviceOperation(DeviceProperty):
             return False
 
         connection = self.get_connection(v)
-        current_full_state = getattr(self._controller, "device_state", None) or self._device_state
-        if not current_full_state and self._status_getter:
-            current_full_state = self._status_getter.value
+        current_full_state = self._raw_device_state
 
         if connection.is_async_native:
             try:
@@ -624,7 +659,17 @@ class DeviceOperation(DeviceProperty):
                     params.get("headers"),
                     device_state=current_full_state,
                 )
-                return response is not None
+                if response is not None:
+                    if self._controller and hasattr(self._controller, "poller") and hasattr(self._controller.poller, "_pure_network_state"):
+                        pure_state = getattr(self._controller.poller, "_pure_network_state", None)
+                        if isinstance(pure_state, dict):
+                            state_node = getattr(self, "_state_node", None) or self.id
+                            if hasattr(self._controller.poller, "_set_dict_value_by_path"):
+                                self._controller.poller._set_dict_value_by_path(pure_state, state_node, dev_value)
+                            if hasattr(self, "apply_optimistic_cascades"):
+                                self.apply_optimistic_cascades(pure_state, v, dev_value)
+                    return True
+                return False
             except (CannotConnect, AuthError) as e:
                 _LOGGER.warning(
                     "%s Failed to set value for %s: connection error: %s",
@@ -878,6 +923,28 @@ class ModeOperation(BasicDeviceOperation):
             list_attribute_name: self.values,
         }
 
+    def apply_optimistic_cascades(
+        self, state: dict[str, Any], value: Any, dev_val: Any
+    ) -> None:
+        """Optimistically cascade state changes for mode operations (e.g. hvac_mode -> power)."""
+        if self._id in (ATTR_HVAC_MODE, "hvac"):
+            if isinstance(state, dict):
+                target_nodes = [state]
+                if (
+                    "Devices" in state
+                    and isinstance(state["Devices"], list)
+                    and state["Devices"]
+                    and isinstance(state["Devices"][0], dict)
+                ):
+                    target_nodes.append(state["Devices"][0])
+                val_str = str(value).lower() if value is not None else ""
+                power_target = "Off" if val_str in ("off", STATE_OFF) else ("On" if val_str else None)
+                if power_target:
+                    for target in target_nodes:
+                        op_node = target.setdefault("Operation", {})
+                        if isinstance(op_node, dict):
+                            op_node["power"] = power_target
+
 
 @register_property
 class UniqueIdProperty(DeviceProperty):
@@ -909,6 +976,35 @@ class SwitchOperation(BasicDeviceOperation):
                 self._values_ha_to_dev_map[True] = self._values_ha_to_dev_map[STATE_ON]
             return True
         return False
+
+    def apply_optimistic_cascades(
+        self, state: dict[str, Any], value: Any, dev_val: Any
+    ) -> None:
+        """Optimistically cascade state changes for switch operations (e.g. power switch -> Operation.power)."""
+        if self._id in ("power", "power_switch", "switch"):
+            if isinstance(state, dict):
+                target_nodes = [state]
+                if (
+                    "Devices" in state
+                    and isinstance(state["Devices"], list)
+                    and state["Devices"]
+                    and isinstance(state["Devices"][0], dict)
+                ):
+                    target_nodes.append(state["Devices"][0])
+                val_str = str(value).lower() if value is not None else ""
+                power_target = None
+                if val_str in ("off", STATE_OFF, "false"):
+                    power_target = "Off"
+                elif val_str in ("on", STATE_ON, "true"):
+                    power_target = "On"
+                elif dev_val in ("Off", "On"):
+                    power_target = dev_val
+
+                if power_target:
+                    for target in target_nodes:
+                        op_node = target.setdefault("Operation", {})
+                        if isinstance(op_node, dict):
+                            op_node["power"] = power_target
 
 
 class BasicNumericOperation(DeviceOperation):

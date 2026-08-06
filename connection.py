@@ -1,9 +1,12 @@
 """Base connection class and registry for climate_ip connections."""
 
 import asyncio
+import dataclasses
 import logging
 from abc import abstractmethod
 from typing import Any
+
+from homeassistant.helpers.template import Template
 
 CLIMATE_IP_CONNECTIONS: list[type["Connection"]] = []
 
@@ -157,32 +160,72 @@ class Connection:
 
     def check_execute_condition(self, device_state: dict[str, Any] | None) -> bool:
         """Return True if the command should be executed for the given device state."""
-        _log = self._logger or logging.getLogger(__name__)  # pragma: no mutate
-        
+        _log = self._logger or logging.getLogger(__name__)
+
         condition = self._condition_template
         if condition is None:
             return True
-            
+
+        raw_state = device_state
+        if self._controller and hasattr(self._controller, "pure_device_state"):
+            ctrl_pure = self._controller.pure_device_state
+            if isinstance(ctrl_pure, dict) and ctrl_pure:
+                raw_state = ctrl_pure
+
+        if not isinstance(raw_state, dict):
+            _log.debug(
+                "%s Translating mapped Dataclass to RAW API dictionary for Jinja evaluation.",
+                self.log_prefix,
+            )
+            # 1. Try to fetch the live in-memory device_state from the controller
+            if self._controller and hasattr(self._controller, "device_state"):
+                ctrl_state = self._controller.device_state
+                if isinstance(ctrl_state, dict) and ctrl_state:
+                    raw_state = ctrl_state
+
+            # 2. Try to fetch the raw JSON dictionary from the status property
+            if not isinstance(raw_state, dict) and self._controller and hasattr(self._controller, "get_property"):
+                status_prop = self._controller.get_property("status")
+                if status_prop and isinstance(status_prop.value, dict):
+                    raw_state = status_prop.value
+
+            # 3. Fallback to dictionary conversion of the dataclass
+            if not isinstance(raw_state, dict):
+                if dataclasses.is_dataclass(device_state):
+                    raw_state = dataclasses.asdict(device_state)
+                elif hasattr(device_state, "__dict__"):
+                    raw_state = vars(device_state)
+                else:
+                    raw_state = {}
+
+        if (
+            isinstance(raw_state, dict)
+            and "Devices" in raw_state
+            and isinstance(raw_state["Devices"], list)
+            and raw_state["Devices"]
+        ):
+            raw_state = raw_state["Devices"][0]
+
         try:
             async_render = getattr(condition, "async_render", None)
             if callable(async_render):
-                rendered = async_render({"device_state": device_state})
+                rendered = async_render({"device_state": raw_state})
             else:
-                rendered = condition.render({"device_state": device_state})
+                rendered = condition.render({"device_state": raw_state})
             _log.debug(
                 "%s Execute condition result: %s",
                 self.log_prefix,
                 rendered,
-            )  # pragma: no mutate
+            )
             return str(rendered).strip() == "1"
         except Exception as e:  # pylint: disable=broad-except
             _log.error(
-                "%s Error evaluating execute condition, executing command anyway. Error: %s",
+                "%s Error evaluating execute condition, skipping command. Error: %s",
                 self.log_prefix,
                 e,
                 exc_info=True,
-            )  # pragma: no mutate
-            return True
+            )
+            return False
 
     def execute_legacy(  # pylint: disable=unused-argument
         self, template: Any, value: Any, device_state: Any, device_id: str | None = None
