@@ -450,7 +450,7 @@ async def test_adaptive_keep_alive_fallback(
 
     # Al ejecutar, DEBE inyectar el header de cierre
     await conn._async_execute_request(
-        method="GET", url_path="/test", data=None, headers={}, _is_poll=False
+        method="GET", url_path="/test", data=None, headers={}
     )
 
     _, kwargs = mock_session.request.call_args
@@ -870,7 +870,7 @@ async def test_async_execute_delegates_to_request_strictly(mock_logger, mock_has
         await conn.async_execute("PATCH", "/main", "payload", {"H": "1"}, _is_poll=True)
 
         mock_req.assert_called_once_with(
-            "PATCH", "/main", "payload", {"H": "1"}, _is_poll=True
+            "PATCH", "/main", "payload", {"H": "1"}
         )
 
 
@@ -2027,7 +2027,7 @@ async def test_async_execute_skips_optimization_on_mismatch(
         assert res1 == "REQ_OK", (
             "El mutante activó la optimización erróneamente para POST"
         )
-        mock_req.assert_called_with("POST", "", None, {}, _is_poll=False)
+        mock_req.assert_called_with("POST", "", None, {})
 
         mock_req.reset_mock()
 
@@ -2036,7 +2036,7 @@ async def test_async_execute_skips_optimization_on_mismatch(
         assert res2 == "REQ_OK", (
             "El mutante activó la optimización erróneamente para URL distinta"
         )
-        mock_req.assert_called_with("GET", "/other", None, {}, _is_poll=False)
+        mock_req.assert_called_with("GET", "/other", None, {})
 
 
 # ====================================================================================

@@ -61,7 +61,7 @@ _LOGGER = logging.getLogger(__name__)
 
 CONNECTION_TYPE_AIOHTTP_8888 = "samsung_8888_aiohttp"
 
-DEFAULT_PORT = "8888"
+DEFAULT_PORT = 8888
 DEFAULT_SSL_CIPHERS = "ALL:@SECLEVEL=0"
 HEADER_VALUE_JSON = "application/json"
 HEADER_VALUE_CLOSE = "close"
@@ -515,7 +515,7 @@ class ConnectionAiohttp8888(Connection):
         parsed_url = yarl.URL(url)
 
         # 3. Mutate port if it matches default and config specifies otherwise
-        if parsed_url.port == int(DEFAULT_PORT):
+        if parsed_url.port == DEFAULT_PORT:
             parsed_url = parsed_url.with_port(int(self._config.get(CONF_PORT, DEFAULT_PORT)))
 
         # 4. Mutate scheme if HTTP fallback is enabled
@@ -588,7 +588,6 @@ class ConnectionAiohttp8888(Connection):
         url_path: str | None,
         data: str | None,
         headers: dict[str, str] | None,
-        _is_poll: bool = False,
     ) -> tuple[str, dict[str, str] | None]:
         """
         Executes a command asynchronously using aiohttp.
@@ -744,15 +743,16 @@ class ConnectionAiohttp8888(Connection):
             if device_state is None:
                 warn_msg = "%s [async_execute] Embedded command found, but cannot check its condition (device_state is missing). Skipping."
                 _LOGGER.warning(warn_msg, self.log_prefix)
-            elif (
-                self._embedded_command.check_execute_condition(device_state)
-                is False
-            ):
-                debug_msg = "%s [async_execute] Embedded command condition not met. Skipping execution."
-                _LOGGER.debug(debug_msg, self.log_prefix)
             else:
-                debug_msg = "%s [async_execute] Embedded command condition met. Executing it before the main command."
-                _LOGGER.debug(debug_msg, self.log_prefix)
+                embedded_cond_result = (
+                    self._embedded_command.check_execute_condition(device_state)
+                )
+                if embedded_cond_result is not None and not embedded_cond_result:
+                    debug_msg = "%s [async_execute] Embedded command condition not met. Skipping execution."
+                    _LOGGER.debug(debug_msg, self.log_prefix)
+                else:
+                    debug_msg = "%s [async_execute] Embedded command condition met. Executing it before the main command."
+                    _LOGGER.debug(debug_msg, self.log_prefix)
 
                 embedded_template = self._embedded_command.connection_template
                 raw_params = self._embedded_command.params
@@ -827,7 +827,6 @@ class ConnectionAiohttp8888(Connection):
         data: Any,
         headers: dict[str, str] | None,  # Main command's headers
         device_state: dict[str, Any] | None = None,  # Pass device state for conditions
-        _is_probe: bool = False,
         _is_poll: bool = False,
     ) -> tuple[str | None, dict[str, Any] | None]:
         """
@@ -852,8 +851,9 @@ class ConnectionAiohttp8888(Connection):
         )
 
         # Execute the main command
-        if self.check_execute_condition(device_state) is False:
-            debug_msg = "%s [async_execute] Condition not met (template result false). Skipping execution."
+        condition_result = self.check_execute_condition(device_state)
+        if condition_result is not None and not condition_result:
+            debug_msg = "%s [async_execute] Condition not met. Skipping execution."
             _LOGGER.debug(debug_msg, self.log_prefix)
             return "{}", {}
 
@@ -880,13 +880,17 @@ class ConnectionAiohttp8888(Connection):
         if self._params:
             probe_url_path = self._params.get("probe_url") or self._params.get("url") or ""
 
-        if probe_response_text and method == "GET" and url == probe_url_path:
+        if (
+            probe_response_text
+            and method == "GET"
+            and self._build_full_url(url) == self._build_full_url(probe_url_path)
+        ):
             debug_msg = "%s [async_execute] OPTIMIZATION: Reusing probe response for initial poll."
             _LOGGER.debug(debug_msg, self.log_prefix)
             return probe_response_text, None
 
         return await self._async_execute_request(
-            method, url, data, headers, _is_poll=_is_poll
+            method, url, data, headers
         )
 
     def get_diagnostics(self) -> dict[str, Any]:

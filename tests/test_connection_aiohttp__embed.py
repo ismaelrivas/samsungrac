@@ -87,6 +87,8 @@ async def test_async_execute_with_embedded_command_condition_not_met(
 
         embedded_mock = AsyncMock()
         embedded_mock.check_execute_condition = MagicMock(return_value=False)
+        embedded_mock.params = {}
+        embedded_mock.connection_template = None
         conn._embedded_command = embedded_mock
 
         await conn.async_execute(
