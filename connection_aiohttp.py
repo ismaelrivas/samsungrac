@@ -143,7 +143,7 @@ class ConnectionAiohttp8888(Connection):
         dev_id = None
         if self._controller is not None:
             ctrl_config = getattr(self._controller, "config", None)
-            if ctrl_config is None or not isinstance(ctrl_config, dict):
+            if not isinstance(ctrl_config, dict):
                 ctrl_config = getattr(self._controller, "_config", {})
             if isinstance(ctrl_config, dict):
                 token = ctrl_config.get(CONF_TOKEN, self._token)
@@ -624,15 +624,16 @@ class ConnectionAiohttp8888(Connection):
             # Strict Serialization with Lock: ensures that requests are executed one by one
             # to prevent multiple concurrent connections and force reuse.
             async with self.async_lock:
-                debug_msg = "%s [aiohttp] Sending request -> Method: %s, URL: %s, Payload: %s, Close Mode: %s"
-                _LOGGER.debug(
-                    debug_msg,
-                    self.log_prefix,
-                    method,
-                    full_url,
-                    mask_sensitive_data(data),
-                    self._force_close_connection,
-                )
+                if _LOGGER.isEnabledFor(logging.DEBUG):
+                    debug_msg = "%s [aiohttp] Sending request -> Method: %s, URL: %s, Payload: %s, Close Mode: %s"
+                    _LOGGER.debug(
+                        debug_msg,
+                        self.log_prefix,
+                        method,
+                        full_url,
+                        mask_sensitive_data(data),
+                        self._force_close_connection,
+                    )
 
                 session = await self._get_session()
                 debug_msg = "%s [aiohttp] Using session ID: %s | SSL Context ID: %s"
@@ -935,7 +936,6 @@ class ConnectionAiohttp8888(Connection):
                 aiohttp.ClientError,
                 TimeoutError,
                 OSError,
-                AttributeError,
             ) as e:
                 warn_msg = "%s [aiohttp] Error closing embedded command: %s"
                 _LOGGER.warning(warn_msg, self.log_prefix, e)
