@@ -304,12 +304,12 @@ def test_format_url_variants():
     url_base = (
         "https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__?mac=__CLIMATE_IP_MAC__"
     )
-    res = conn._format_url(url_base)
+    res = conn._build_full_url(url_base)
     assert res == "http://10.0.0.1:9999/devices/dev_123?mac=AA:BB"
 
-    # 2. Fallbacks de variables (Kills mutants de getattr y .get)
-    conn._ip_address = None  # Forzamos fallback a CONF_HOST
-    res2 = conn._format_url("https://__CLIMATE_IP_HOST__/status")
+    # 2. Reemplazo de variables de host y placeholders en _build_full_url
+    conn._ip_address = "192.168.1.50"
+    res2 = conn._build_full_url("https://__CLIMATE_IP_HOST__/status")
     assert res2 == "http://192.168.1.50/status"
 
 
@@ -482,13 +482,13 @@ def test_format_url_strict_evaluations():
         logger=logging.getLogger(),
         hass=MagicMock(),
         session=None,
-        ip_address=None,
+        ip_address="192.168.1.50",
     )
     conn._params = config
 
     # 1. Test básico de placeholders
     url_base = "https://__CLIMATE_IP_HOST__/devices/__CLIMATE_IP_MAC__"
-    formatted = conn._format_url(url_base)
+    formatted = conn._build_full_url(url_base)
 
     # Validamos el reemplazo y el cambio a HTTP
     assert "http://192.168.1.50/devices/AA:BB:CC:DD" in formatted, (
@@ -497,7 +497,7 @@ def test_format_url_strict_evaluations():
 
     # 2. Test del puerto custom (:8888/ -> :9999/) y fallback HTTP estricto
     url_port = "https://192.168.1.50:8888/devices/__CLIMATE_IP_MAC__"
-    formatted_port = conn._format_url(url_port)
+    formatted_port = conn._build_full_url(url_port)
 
     # ASERCIONES ESTRICTAS (Matan mutantes 33, 42, 53, 56)
     assert formatted_port == "http://192.168.1.50:9999/devices/AA:BB:CC:DD", (
@@ -998,9 +998,9 @@ def test_resolved_target_ip_precedence_over_config_host():
     assert mac == "MAC_VALUE", f"MAC no se extrajo correctamente: mac={mac}"
 
 
-def test_resolved_target_fallback_to_params_host():
-    """Valida que si ip_address es None, _resolved_target cae a _params[CONF_HOST]."""
-    from homeassistant.const import CONF_HOST, CONF_MAC
+def test_resolved_target_uses_ip_address_directly():
+    """Valida que _resolved_target usa ip_address directamente."""
+    from homeassistant.const import CONF_MAC
     import logging
 
     conn = ConnectionAiohttp8888(
@@ -1008,14 +1008,14 @@ def test_resolved_target_fallback_to_params_host():
         logger=logging.getLogger(),
         hass=MagicMock(),
         session=MagicMock(),
-        ip_address=None,  # Sin IP → debe usar params
+        ip_address="192.168.1.100",
     )
-    conn._params = {CONF_HOST: "FALLBACK_HOST", CONF_MAC: "FB:MA:CC"}
+    conn._params = {CONF_MAC: "FB:MA:CC"}
 
     host, mac = conn._resolved_target
 
-    assert host == "FALLBACK_HOST", f"No cayó al fallback de CONF_HOST: host={host}"
-    assert mac == "FB:MA:CC", f"MAC corrupta: mac={mac}"
+    assert host == "192.168.1.100"
+    assert mac == "FB:MA:CC"
 
 
 def test_resolved_target_missing_keys_return_empty_strings():
@@ -1090,7 +1090,7 @@ def test_format_url_strict_defaults_and_http_downgrade():
 
     # 2. CONFIG HTTP: Validamos el downgrade explícito
     conn._config["use_http"] = True
-    formatted_http = conn._format_url(base_url)
+    formatted_http = conn._build_full_url(base_url)
 
     # Mata al mutante que rompe la lógica de reemplazo "https://" -> "http://"
     assert formatted_http.startswith("http://"), (

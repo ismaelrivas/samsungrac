@@ -131,12 +131,9 @@ class ConnectionAiohttp8888(Connection):
     @property
     def _resolved_target(self) -> tuple[str, str]:
         """Resuelve de forma estricta y centralizada el Host y la MAC address."""
-        raw_host = self._ip_address or self._params.get(CONF_HOST)
-        host = str(raw_host) if raw_host is not None else ""
-
+        host = str(self._ip_address) if self._ip_address is not None else ""
         raw_mac = self._params.get(CONF_MAC)
         mac = str(raw_mac) if raw_mac is not None else ""
-
         return host, mac
 
     @property
@@ -316,7 +313,7 @@ class ConnectionAiohttp8888(Connection):
             port = e.port
         except AttributeError:
             host, port = "?", "?"
-        reason = str(e.os_error) if getattr(e, "os_error", None) else type(e).__name__
+        reason = str(e.os_error) if e.os_error is not None else type(e).__name__
         return f"Cannot connect to {host}:{port} ({reason})"
 
     async def _try_connection(self) -> str | None:
@@ -510,12 +507,14 @@ class ConnectionAiohttp8888(Connection):
         """Constructs the full URL, handling absolute URLs and standard relative paths."""
         if url_path and url_path.startswith("http"):
             full_url = url_path
+            if self._config.get(CONF_USE_HTTP, False) and full_url.startswith("https://"):
+                full_url = "http://" + full_url[8:]
         else:
             port = self._config.get(CONF_PORT, DEFAULT_PORT)
             protocol = "http" if self._config.get(CONF_USE_HTTP, False) else "https"
             path = url_path if url_path else ""
             full_url = f"{protocol}://{self._ip_address}:{port}{path}"
-            
+
         return self._format_url(full_url)
 
     def _format_url(self, url: str) -> str:
@@ -532,10 +531,6 @@ class ConnectionAiohttp8888(Connection):
         # 3. Mutate port if it matches default and config specifies otherwise
         if parsed_url.port == DEFAULT_PORT:
             parsed_url = parsed_url.with_port(int(self._config.get(CONF_PORT, DEFAULT_PORT)))
-
-        # 4. Mutate scheme if HTTP fallback is enabled
-        if self._config.get(CONF_USE_HTTP, False) and parsed_url.scheme == "https":
-            parsed_url = parsed_url.with_scheme("http")
 
         return str(parsed_url)
 
