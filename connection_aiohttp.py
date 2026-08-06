@@ -245,6 +245,7 @@ class ConnectionAiohttp8888(Connection):
         new_connection._controller = self._controller
         new_connection._shared_state = self._shared_state
         new_connection._force_close_connection = self._force_close_connection
+        new_connection._cert_path = self._cert_path
 
         if yaml_node is not None:
             if CONF_KEEP_ALIVE in yaml_node:
@@ -392,11 +393,14 @@ class ConnectionAiohttp8888(Connection):
                             if transport is not None
                             else None
                         )
-                        negotiated_tls = (
-                            ssl_obj.version()
-                            if ssl_obj is not None and hasattr(ssl_obj, "version")
-                            else "Unknown"
-                        )
+                        if (
+                            ssl_obj is not None
+                            and not asyncio.iscoroutine(ssl_obj)
+                            and hasattr(ssl_obj, "version")
+                        ):
+                            negotiated_tls = ssl_obj.version()
+                        else:
+                            negotiated_tls = "Unknown"
                         info_msg = "%s [aiohttp] Connection successful. Status: %s. Negotiated TLS: %s"
                         _LOGGER.info(
                             info_msg,
@@ -964,6 +968,6 @@ class ConnectionAiohttp8888(Connection):
                 self._shared_state.ssl_context = None
                 if self._shared_state.local_session is not None:
                     self._shared_state.local_session = None
-        except (RuntimeError, ValueError) as e:
+        except RuntimeError as e:
             err_msg = "%s [aiohttp] Error locking/resetting shared state during close: %s"
             _LOGGER.error(err_msg, self.log_prefix, e)
