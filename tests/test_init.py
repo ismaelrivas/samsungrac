@@ -10,8 +10,10 @@ import aiohttp
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.climate_ip import (
     PLATFORMS,
@@ -591,4 +593,149 @@ async def test_async_setup_entry_controller_transient_network_error(hass: HomeAs
 
         with pytest.raises(ConfigEntryNotReady):
             await async_setup_entry(hass, mock_entry)
+
+
+async def test_setup_single_device_auth_and_refresh_failures(hass: HomeAssistant) -> None:
+    """Verify controller shutdown on auth failure and initial connection error during first refresh."""
+    mock_entry = MagicMock()
+    mock_entry.unique_id = "mac_123"
+    mock_entry.data = {
+        "ip_address": "192.168.1.50",
+        CONF_DEVICES: [{"id": "1", "name": "Zone Auth Fail"}],
+    }
+    mock_entry.options = {}
+
+    with (
+        patch("custom_components.climate_ip.YamlController") as mock_yaml_class,
+        patch("custom_components.climate_ip.SamsungClimateCoordinator") as mock_coord_class,
+        patch("custom_components.climate_ip.async_get_clientsession"),
+    ):
+        controller = mock_yaml_class.return_value
+        controller.initialize = AsyncMock(return_value=True)
+        controller.async_shutdown = AsyncMock()
+
+        coord = mock_coord_class.return_value
+        coord.async_config_entry_first_refresh = AsyncMock(side_effect=ConfigEntryAuthFailed("Invalid token"))
+
+        with pytest.raises(ConfigEntryAuthFailed):
+            await async_setup_entry(hass, mock_entry)
+
+        controller.async_shutdown.assert_awaited()
+
+        # Test UpdateFailed / Connection error branch
+        coord.async_config_entry_first_refresh = AsyncMock(side_effect=UpdateFailed("Conn error"))
+        with pytest.raises(ConfigEntryNotReady):
+            await async_setup_entry(hass, mock_entry)
+
+        assert controller.async_shutdown.await_count >= 2
+
+
+async def test_async_setup_entry_rollback_shuts_down_booted_coordinators(hass: HomeAssistant) -> None:
+    """Verify that a fatal exception in one sub-device rolls back and shuts down sibling booted coordinators."""
+    mock_entry = MagicMock()
+    mock_entry.unique_id = "multi_mac"
+    mock_entry.title = "Multi AC"
+    mock_entry.data = {
+        "ip_address": "192.168.1.100",
+        CONF_DEVICES: [{"id": "1", "name": "Zone Success"}, {"id": "2", "name": "Zone Auth Fail"}],
+    }
+    mock_entry.options = {}
+
+    with (
+        patch("custom_components.climate_ip.YamlController") as mock_yaml_class,
+        patch("custom_components.climate_ip.SamsungClimateCoordinator") as mock_coord_class,
+        patch("custom_components.climate_ip.async_get_clientsession"),
+    ):
+        ctrl1 = MagicMock()
+        ctrl1.initialize = AsyncMock(return_value=True)
+        ctrl1.async_shutdown = AsyncMock()
+        ctrl1.log_prefix = "[Z1]"
+
+        ctrl2 = MagicMock()
+        ctrl2.initialize = AsyncMock(return_value=True)
+        ctrl2.async_shutdown = AsyncMock()
+        ctrl2.log_prefix = "[Z2]"
+
+        mock_yaml_class.side_effect = [ctrl1, ctrl2]
+
+        coord1 = MagicMock()
+        coord1.async_config_entry_first_refresh = AsyncMock()
+        coord1.async_shutdown = AsyncMock()
+
+        coord2 = MagicMock()
+        coord2.async_config_entry_first_refresh = AsyncMock(side_effect=ConfigEntryAuthFailed("Auth error"))
+        coord2.async_shutdown = AsyncMock()
+
+        mock_coord_class.side_effect = [coord1, coord2]
+
+        with pytest.raises(ConfigEntryAuthFailed):
+            await async_setup_entry(hass, mock_entry)
+
+        coord1.async_shutdown.assert_awaited()
+
+
+async def test_rollback_shutdown_exception_handled(hass: HomeAssistant) -> None:
+    """Verify that an exception raised during rollback coordinator shutdown is caught and logged."""
+    mock_entry = MagicMock()
+    mock_entry.unique_id = "multi_mac_err"
+    mock_entry.title = "Multi AC Err"
+    mock_entry.data = {
+        "ip_address": "192.168.1.100",
+        CONF_DEVICES: [{"id": "1", "name": "Zone Success"}, {"id": "2", "name": "Zone Fatal"}],
+    }
+    mock_entry.options = {}
+
+    with (
+        patch("custom_components.climate_ip.YamlController") as mock_yaml_class,
+        patch("custom_components.climate_ip.SamsungClimateCoordinator") as mock_coord_class,
+        patch("custom_components.climate_ip.async_get_clientsession"),
+    ):
+        ctrl1 = MagicMock()
+        ctrl1.initialize = AsyncMock(return_value=True)
+        ctrl1.async_shutdown = AsyncMock()
+        ctrl1.log_prefix = "[Z1]"
+
+        ctrl2 = MagicMock()
+        ctrl2.initialize = AsyncMock(return_value=True)
+        ctrl2.async_shutdown = AsyncMock()
+        ctrl2.log_prefix = "[Z2]"
+
+        mock_yaml_class.side_effect = [ctrl1, ctrl2]
+
+        coord1 = MagicMock()
+        coord1.async_config_entry_first_refresh = AsyncMock()
+        coord1.async_shutdown = AsyncMock(side_effect=RuntimeError("Shutdown crash"))
+
+        coord2 = MagicMock()
+        coord2.async_config_entry_first_refresh = AsyncMock(side_effect=ConfigEntryAuthFailed("Fatal"))
+        coord2.async_shutdown = AsyncMock()
+
+        mock_coord_class.side_effect = [coord1, coord2]
+
+        with pytest.raises(ConfigEntryAuthFailed):
+            await async_setup_entry(hass, mock_entry)
+
+        coord1.async_shutdown.assert_awaited()
+
+
+async def test_unload_entry_with_entry_in_setup_retry_prevents_yaml_cache_clear(hass: HomeAssistant) -> None:
+    """Verify clear_yaml_cache is not called if another entry is in SETUP_RETRY state."""
+    mock_entry = MagicMock()
+    mock_entry.entry_id = "entry_unloading"
+    mock_entry.runtime_data = {"1": MagicMock(async_shutdown=AsyncMock(side_effect=RuntimeError("Teardown error")))}
+
+    other_entry = MagicMock()
+    other_entry.entry_id = "entry_retrying"
+    other_entry.state = ConfigEntryState.SETUP_RETRY
+
+    hass.config_entries.async_entries = MagicMock(return_value=[mock_entry, other_entry])
+
+    with (
+        patch.object(hass.config_entries, "async_unload_platforms", AsyncMock(return_value=True)),
+        patch("custom_components.climate_ip.clear_yaml_cache") as mock_clear_cache,
+    ):
+        result = await async_unload_entry(hass, mock_entry)
+        assert result is True
+        mock_clear_cache.assert_not_called()
+
 
