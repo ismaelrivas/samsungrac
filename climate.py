@@ -194,7 +194,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             except (ValueError, TypeError):
                 _LOGGER.warning(
                     "%s Invalid temp step configured (%s). Falling back to default.",
-                    self.log_prefix,
+                    self.coordinator.log_prefix,
                     configured_step,
                 )
                 step = float(DEFAULT_TARGET_TEMP_STEP)
@@ -288,11 +288,6 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
     def temperature_unit(self) -> str:
         """Return the temperature unit."""
         return self.hass.config.units.temperature_unit
-
-    @property
-    def log_prefix(self) -> str:
-        """Return the log prefix from the coordinator for consistency."""
-        return self.coordinator.log_prefix
     
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -306,7 +301,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
         _LOGGER.debug(
             "%s [Forensic] async_set_temperature called with temp=%s, hvac_mode=%s, kwargs=%s", 
-            self.log_prefix, temp, hvac_mode, kwargs
+            self.coordinator.log_prefix, temp, hvac_mode, kwargs
         )  # pragma: no mutate
 
         if hvac_mode is not None:
@@ -323,7 +318,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         """Set new target fan mode."""
         if fan_mode not in self.fan_modes:
             # fmt: off
-            _LOGGER.warning("%s Requested fan mode '%s' is not available. Ignoring request.", self.log_prefix, fan_mode)  # pragma: no mutate
+            _LOGGER.warning("%s Requested fan mode '%s' is not available. Ignoring request.", self.coordinator.log_prefix, fan_mode)  # pragma: no mutate
             # fmt: on
             return
         await self.coordinator.async_set_property(ATTR_FAN_MODE, fan_mode)
@@ -349,11 +344,11 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         value: Any | None = kwargs.get("value")
         if not key:
             _LOGGER.warning(
-                "%s set_property action called without a valid key.", self.log_prefix
+                "%s set_property action called without a valid key.", self.coordinator.log_prefix
             )  # pragma: no mutate
             return
         _LOGGER.debug(
-            "%s Action set_property called: %s = %s", self.log_prefix, key, value
+            "%s Action set_property called: %s = %s", self.coordinator.log_prefix, key, value
         )  # pragma: no mutate
         await self.coordinator.async_set_property(key, value)
 
