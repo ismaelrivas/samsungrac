@@ -1,4 +1,3 @@
-# pylint: disable=import-outside-toplevel,duplicate-code,line-too-long,protected-access,too-many-branches,too-many-instance-attributes,too-many-locals,too-many-nested-blocks,too-many-positional-arguments,too-many-statements,wrong-import-position
 """Raw socket connection engine for Samsung devices on port 8888."""
 
 import asyncio
@@ -35,6 +34,11 @@ _LOGGER = logging.getLogger(__name__)
 
 CONNECTION_TYPE_RAW_8888 = "samsung_8888_raw"  # pragma: no mutate
 
+DEFAULT_SCHEME_PORTS = {"https": 443, "http": 80}
+HEADER_AUTH = "Authorization"
+HEADER_CONTENT_TYPE = "Content-Type"
+HEADER_VALUE_JSON = "application/json"
+
 
 @register_connection
 class ConnectionRaw8888(Connection):
@@ -45,7 +49,7 @@ class ConnectionRaw8888(Connection):
         """Return True if this connection handles the given type string."""
         return type_str == CONNECTION_TYPE_RAW_8888
 
-    def load_from_yaml(self, node: dict[str, Any] | None, connection_base: Any) -> bool:
+    def load_from_yaml(self, node: dict[str, Any] | None, _connection_base: Any) -> bool:
         """Load configuration from yaml node dictionary."""
         if not node:
             return False
@@ -94,10 +98,13 @@ class ConnectionRaw8888(Connection):
         return new_conn
 
     def get_diagnostics(self) -> dict[str, Any]:
-        """Return diagnostic information about the raw socket connection."""
+        """Return diagnostic information about the raw connection."""
         return {
-            "is_connected": self._is_connected,  # pragma: no mutate
-            "engine": "raw_socket",  # pragma: no mutate
+            "is_connected": getattr(self, "_is_connected", False),
+            "engine": CONNECTION_TYPE_RAW_8888,
+            "keep_alive_enabled": getattr(self, "_keep_alive", False),
+            "has_embedded_command": self._embedded_command is not None,
+            "has_shared_client": getattr(self._controller, "shared_raw_client", None) is not None if self._controller else False,
         }
 
     # pylint: disable=too-many-arguments
@@ -150,8 +157,7 @@ class ConnectionRaw8888(Connection):
         parsed = urlparse(url)
         if parsed.port:
             return parsed.port
-        scheme_map = {"https": 443, "http": 80}  # pragma: no mutate
-        return scheme_map.get(parsed.scheme, 8888)  # pragma: no mutate
+        return DEFAULT_SCHEME_PORTS.get(parsed.scheme, 8888)  # pragma: no mutate
 
     async def async_get_client(self) -> Samsung8888Client:
         """Get the raw client, initializing it if necessary (shared or standalone)."""
@@ -276,24 +282,32 @@ class ConnectionRaw8888(Connection):
             device_state=device_state,
         )
 
+    def _get_active_clients(self) -> list[Any]:
+        """Yield all active raw socket clients associated with this connection."""
+        clients = []
+        if self._client:
+            clients.append(self._client)
+        if self._controller and getattr(self._controller, "shared_raw_client", None):
+            clients.append(self._controller.shared_raw_client)
+        elif getattr(self, "_internal_shared_client", None):
+            clients.append(self._internal_shared_client)
+        return clients
+
     async def _handle_periodic_reset(self, is_poll: bool) -> None:
         """Force close sockets on poll sweeps if keep-alive is disabled."""
         if not is_poll or self._keep_alive:
             return
 
-        client_to_close = None
-        if self._controller:
-            client_to_close = getattr(self._controller, "shared_raw_client", None)
-            if hasattr(self._controller, "shared_raw_client"):
-                self._controller.shared_raw_client = None
-            else:
-                self._internal_shared_client = None
-        else:
-            client_to_close = self._client
-            self._client = None
+        for client in self._get_active_clients():
+            try:
+                await client.close()
+            except (asyncio.TimeoutError, OSError) as e:  # pragma: no mutate
+                _LOGGER.debug("%s [RAW] Ignored error during reset: %s", self.log_prefix, e)
 
-        if client_to_close:
-            await client_to_close.close()
+        self._client = None
+        self._internal_shared_client = None
+        if self._controller and hasattr(self._controller, "shared_raw_client"):
+            self._controller.shared_raw_client = None
 
     def _format_request_url(
         self,
@@ -333,8 +347,8 @@ class ConnectionRaw8888(Connection):
         if not token:
             raise AuthError("Token not configured for the raw engine")  # pragma: no mutate
 
-        req_headers.setdefault("Authorization", f"Bearer {token}")  # pragma: no mutate
-        req_headers.setdefault("Content-Type", "application/json")  # pragma: no mutate
+        req_headers.setdefault(HEADER_AUTH, f"Bearer {token}")  # pragma: no mutate
+        req_headers.setdefault(HEADER_CONTENT_TYPE, HEADER_VALUE_JSON)  # pragma: no mutate
 
         return req_headers
 
@@ -367,7 +381,7 @@ class ConnectionRaw8888(Connection):
         _is_probe: bool = False,  # pragma: no mutate
         _is_poll: bool = False,  # pragma: no mutate
     ) -> tuple[str | None, dict[str, Any] | None]:
-        """Execute a command (including embedded commands) over raw sockets."""
+        """Orchestrates the execution of commands, including embedded ones."""
         current_token, host, dev_id, mac = self._get_token_and_ids()
 
         try:
@@ -379,28 +393,36 @@ class ConnectionRaw8888(Connection):
         except Exception as e:
             raise CannotConnect(f"Embedded command failed: {e}") from e  # pragma: no mutate
 
+        await self._handle_periodic_reset(_is_poll)
+
+        # Delegate the actual raw socket dispatch
+        return await self._async_execute_request(
+            method, url, data, headers, current_token, host, dev_id, mac, _is_probe
+        )
+
+    async def _async_execute_request(
+        self, method, url, data, headers, current_token, host, dev_id, mac, _is_probe
+    ):
+        """Dispatches the raw socket request."""
         debug_enabled = _LOGGER.isEnabledFor(logging.DEBUG)
         start_time = time.perf_counter() if debug_enabled else 0.0
-
-        await self._handle_periodic_reset(_is_poll)
 
         url, path, body, req_headers = self._prepare_request_payload(
             url, data, headers, current_token, host, dev_id, mac
         )
 
         client = await self.async_get_client()
-
         try:
             async with self.async_lock:
                 resp, err = await client.request(method, path, body, req_headers)
-            
+
             if err:
                 raise CannotConnect(f"API Error: {err}")  # pragma: no mutate
-            
+
             if debug_enabled:
                 elapsed = time.perf_counter() - start_time  # pragma: no mutate
                 _LOGGER.debug("%s [RAW] Request completed in %.3f seconds", self.log_prefix, elapsed)  # pragma: no mutate
-            
+
             return resp, None
 
         except CannotConnect:
@@ -418,27 +440,15 @@ class ConnectionRaw8888(Connection):
             try:
                 await self._embedded_command.close()
             except (asyncio.TimeoutError, OSError) as e:  # pragma: no mutate
-                _LOGGER.debug("%s [RAW] Ignored error during cleanup: %s", self.log_prefix, e)
+                _LOGGER.debug("%s [RAW] Ignored error closing embedded command: %s", self.log_prefix, e)
 
-        if self._client:
+        for client in self._get_active_clients():
             try:
-                await self._client.close()
+                await client.close()
             except (asyncio.TimeoutError, OSError) as e:  # pragma: no mutate
                 _LOGGER.debug("%s [RAW] Ignored error during cleanup: %s", self.log_prefix, e)
-            finally:
-                self._client = None
 
-        shared_client = (
-            getattr(self._controller, "shared_raw_client", None)
-            if self._controller
-            else getattr(self, "_internal_shared_client", None)
-        )
-        if shared_client:
-            try:
-                await shared_client.close()
-            except (asyncio.TimeoutError, OSError) as e:  # pragma: no mutate
-                _LOGGER.debug("%s [RAW] Ignored error during cleanup: %s", self.log_prefix, e)
-            finally:
-                if self._controller and hasattr(self._controller, "shared_raw_client"):
-                    self._controller.shared_raw_client = None
-                self._internal_shared_client = None
+        self._client = None
+        self._internal_shared_client = None
+        if self._controller and hasattr(self._controller, "shared_raw_client"):
+            self._controller.shared_raw_client = None

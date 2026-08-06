@@ -175,15 +175,27 @@ async def test_get_diagnostics(connection_config, mock_logger, mock_hass):
         diag = conn.get_diagnostics()
         assert diag == {
             "is_connected": False,
-            "engine": "raw_socket",
+            "engine": "samsung_8888_raw",
+            "keep_alive_enabled": True,
+            "has_embedded_command": False,
+            "has_shared_client": False,
         }
 
         # Test custom values
         conn._is_connected = True
+        conn._keep_alive = False
+        conn._embedded_command = MagicMock()
+        mock_controller = MagicMock()
+        mock_controller.shared_raw_client = MagicMock()
+        conn._controller = mock_controller
+
         diag_custom = conn.get_diagnostics()
         assert diag_custom == {
             "is_connected": True,
-            "engine": "raw_socket",
+            "engine": "samsung_8888_raw",
+            "keep_alive_enabled": False,
+            "has_embedded_command": True,
+            "has_shared_client": True,
         }
 
 
