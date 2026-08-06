@@ -799,12 +799,13 @@ class ConnectionAiohttp8888(Connection):
                     embedded_url = embedded_params.get("url", url)
                     embedded_method = embedded_params.get("method", method)
 
-                    debug_msg = "%s [async_execute] Executing embedded command with params: %s"
-                    _LOGGER.debug(
-                        debug_msg,
-                        self.log_prefix,
-                        mask_sensitive_data(embedded_params),
-                    )
+                    if _LOGGER.isEnabledFor(logging.DEBUG):
+                        debug_msg = "%s [async_execute] Executing embedded command with params: %s"
+                        _LOGGER.debug(
+                            debug_msg,
+                            self.log_prefix,
+                            mask_sensitive_data(embedded_params),
+                        )
 
                     await self._embedded_command.async_execute(
                         method=embedded_method,
@@ -822,13 +823,14 @@ class ConnectionAiohttp8888(Connection):
             aiohttp.ClientError,
             TimeoutError,
             OSError,
-            ValueError,
         ) as e:
             err_msg = "%s [async_execute] Embedded command failed: %s"
-            _LOGGER.error(
-                err_msg, self.log_prefix, e, exc_info=True
-            )
-            raise
+            _LOGGER.error(err_msg, self.log_prefix, e, exc_info=True)
+            raise CannotConnect(f"Embedded command network error: {e}") from e
+        except (ValueError, KeyError, UnicodeDecodeError) as e:
+            err_msg = "%s [async_execute] Embedded command payload parsing error: %s"
+            _LOGGER.error(err_msg, self.log_prefix, e, exc_info=True)
+            raise CannotConnect(f"Embedded command parsing error: {e}") from e
 
     async def async_execute(
         self,
