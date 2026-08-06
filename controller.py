@@ -118,8 +118,13 @@ class ClimateController(ABC, Generic[_T]):
     @property
     def log_prefix(self) -> str:
         """Standardized log prefix."""
-        ident = self.unique_id or self.name or "NO_ID"
-        return f"[{str(ident)[-6:]}]"
+        ident = str(self.unique_id or self.name or "NO_ID")
+        base_part, _, sub_part = ident.partition("_")
+        clean_mac = base_part.replace(":", "").replace("-", "")
+        mac_suffix = clean_mac[-6:] if clean_mac else "NO_ID"
+        if sub_part and sub_part not in ("main", "0", mac_suffix, clean_mac):
+            return f"[{mac_suffix}:{sub_part}]"
+        return f"[{mac_suffix}]"
 
     @property
     @abstractmethod

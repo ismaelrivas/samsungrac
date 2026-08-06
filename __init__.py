@@ -89,12 +89,18 @@ async def _async_safe_shutdown(target: Any) -> None:
 
 
 async def _async_setup_single_device(
+    hass: HomeAssistant,
+    entry: ClimateIPConfigEntry,
     device_id: str,
     device_name: str,
-    controller: YamlController,
-    coordinator: SamsungClimateCoordinator,
+    device_info: dict[str, Any] | None,
+    session: Any,
 ) -> tuple[str, SamsungClimateCoordinator | None]:
     """Initialize a single device controller and coordinator concurrently with resource safety."""
+    controller = YamlController(
+        config_entry=entry, device_id=device_id, logger=_LOGGER, hass=hass, session=session
+    )
+
     try:
         initialized = await controller.initialize()
     except (TimeoutError, ConnectionRefusedError, OSError) as ex:
@@ -116,6 +122,14 @@ async def _async_setup_single_device(
         )
         await _async_safe_shutdown(controller)
         return device_id, None
+
+    coordinator = SamsungClimateCoordinator(
+        hass,
+        controller,
+        entry,
+        device_info=device_info,
+        parent_unique_id=entry.unique_id if device_id != MAIN_DEVICE_ID else None,
+    )
 
     try:
         await coordinator.async_config_entry_first_refresh()
@@ -153,21 +167,14 @@ def _build_device_setup_tasks(
 
         _LOGGER.info("Setting up Samsung unit '%s' (ID %s)", device_name, device_id)
 
-        controller = YamlController(
-            config_entry=entry, device_id=device_id, logger=_LOGGER, hass=hass, session=session
-        )
-
-        coordinator = SamsungClimateCoordinator(
-            hass,
-            controller,
-            entry,
-            device_info=device_info if device_id != MAIN_DEVICE_ID else None,
-            parent_unique_id=entry.unique_id if device_id != MAIN_DEVICE_ID else None,
-        )
-
         setup_tasks.append(
             _async_setup_single_device(
-                device_id, device_name or DEFAULT_UNKNOWN, controller, coordinator
+                hass,
+                entry,
+                device_id,
+                device_name or DEFAULT_UNKNOWN,
+                device_info if device_id != MAIN_DEVICE_ID else None,
+                session,
             )
         )
     return setup_tasks
