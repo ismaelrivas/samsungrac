@@ -4,19 +4,20 @@ import asyncio
 import logging
 import time
 from datetime import timedelta
-from typing import Any
+from typing import Any, Callable
 
 from homeassistant.components.climate import HVACMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_MAC
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
 )
-from homeassistant.helpers import device_registry as dr
 
 from .const import (
     CONF_CONN_METHOD,
@@ -45,7 +46,7 @@ class PropertyDebouncer:
         """Initialize the property debouncer."""
         self.coordinator = coordinator
         self.delay = delay
-        self._timers: dict[str, asyncio.TimerHandle] = {}
+        self._timers: dict[str, Callable[[], None]] = {}
         self._pending_payloads: dict[str, tuple[Any, tuple, dict]] = {}
         self._last_activities: dict[str, float] = {}
 
@@ -56,9 +57,9 @@ class PropertyDebouncer:
 
     def cancel_all(self) -> None:
         """Cancel all active timers and clear pending payloads."""
-        for timer in self._timers.values():
-            if timer:
-                timer.cancel()
+        for unsub in self._timers.values():
+            if unsub:
+                unsub()
         self._timers.clear()
         self._pending_payloads.clear()
 
@@ -89,9 +90,9 @@ class PropertyDebouncer:
         # Immediate execution if this specific property has not been modified within trailing window
         if now - last_activity >= self.delay:
             if property_name in self._timers:
-                timer = self._timers.pop(property_name)
-                if timer:
-                    timer.cancel()
+                unsub = self._timers.pop(property_name)
+                if unsub:
+                    unsub()
             self._pending_payloads.pop(property_name, None)
             self._last_activities[property_name] = now
             _LOGGER.debug(
@@ -105,16 +106,17 @@ class PropertyDebouncer:
         # Rapid command for this property within trailing window: update timestamp and reset timer
         self._last_activities[property_name] = now
         if property_name in self._timers:
-            timer = self._timers.pop(property_name)
-            if timer:
-                timer.cancel()
+            unsub = self._timers.pop(property_name)
+            if unsub:
+                unsub()
             _LOGGER.debug(
                 "[Debouncer] Resetting %.1fs countdown timer for property '%s'", self.delay, property_name
             )  # pragma: no mutate
 
         self._pending_payloads[property_name] = (coroutine_func, args, kwargs)
 
-        def _fire_delayed(prop: str) -> None:
+        def _fire_delayed(prop_or_now: Any = None) -> None:
+            prop = prop_or_now if isinstance(prop_or_now, str) else property_name
             self._timers.pop(prop, None)
             payload = self._pending_payloads.pop(prop, None)
 
@@ -146,17 +148,19 @@ class PropertyDebouncer:
                         )  # pragma: no mutate
                         await self.coordinator.async_request_refresh()
 
-                self.hass.async_create_task(
+                self.coordinator.config_entry.async_create_background_task(
+                    self.hass,
                     _task_runner(),
-                    name=f"samsung_ac_debouncer_{self.coordinator.unique_id}_{prop}"
+                    name=f"samsung_ac_debouncer_{self.coordinator.unique_id}_{prop}",
                 )
 
-        self._timers[property_name] = self.hass.loop.call_later(self.delay, _fire_delayed, property_name)
+        self._timers[property_name] = async_call_later(
+            self.hass, self.delay, _fire_delayed
+        )
         _LOGGER.debug(
             "[Debouncer] Queued command for property '%s' with %.1fs delay", property_name, self.delay
         )  # pragma: no mutate
         return True
-
 
 
 class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
@@ -177,71 +181,13 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         self._global_network_lock = asyncio.Lock()
 
         # Inject callbacks into the controller to avoid circular dependencies.
-
-        def _save_new_token(new_token: str) -> None:
-            """Callback to save the renewed token from the network layer."""
-            def _update_token() -> None:
-                new_data = dict(self.entry.data)  # pragma: no mutate
-                new_data["token"] = new_token
-                self.hass.config_entries.async_update_entry(self.entry, data=new_data)
-                _LOGGER.info(
-                    "%s Persisted new network token to Config Entry.", self.log_prefix
-                )  # pragma: no mutate
-
-            # Delegate strictly to the main HA event loop
-            self.hass.loop.call_soon_threadsafe(_update_token)
-
-        self.controller.on_token_refreshed = _save_new_token
-
-        def _get_current_state() -> Any:
-            """Callback for the controller to get the current cached state."""
-            return self.data
-
-        self.controller.get_current_state_callback = _get_current_state
-
-        # Inject the push updates handler callback.
+        self.controller.on_token_refreshed = self._async_save_new_token
+        self.controller.get_current_state_callback = self._get_current_state
         self.controller.on_push_update_callback = self.async_handle_push_update  # pragma: no mutate
-
-        def _save_ssl_config(ssl_config: dict[str, Any]) -> None:
-            """Callback to save SSL configuration to the config entry."""
-            def _update_ssl() -> None:
-                current_data = dict(self.entry.data)  # pragma: no mutate
-                if current_data.get("_ssl_config_2878") != ssl_config:
-                    current_data["_ssl_config_2878"] = ssl_config
-                    self.hass.config_entries.async_update_entry(self.entry, data=current_data)
-                    _LOGGER.info(
-                        "%s Persisted SSL config to ConfigEntry data.", self.log_prefix
-                    )  # pragma: no mutate
-
-            # Delegate strictly to the main HA event loop
-            self.hass.loop.call_soon_threadsafe(_update_ssl)
-
-        self.controller.on_ssl_config_updated = _save_ssl_config
-
-        async def _request_refresh() -> None:
-            """Callback to request an immediate data refresh."""
-            await self.async_request_refresh()
-
-        self.controller.request_refresh_callback = _request_refresh
-
-        def _on_connection_failed() -> None:
-            """Callback when connection persistently fails."""
-            self.last_update_success = False
-            self.async_update_listeners()
-
-        self.controller.on_connection_failed_callback = _on_connection_failed
-
-        def _handle_persistent_offline(reason: str) -> None:
-            """Callback for the network layer to force UI unavailability immediately."""
-            _LOGGER.debug(
-                "%s Network layer declared device offline. Forcing UpdateFailed.",
-                self.log_prefix,
-            )  # pragma: no mutate
-            if hasattr(self.controller, "clear_state_cache"):  # pragma: no mutate
-                self.controller.clear_state_cache()
-            self.async_set_update_error(UpdateFailed(f"Device offline: {reason}"))
-
-        self.controller.on_offline_callback = _handle_persistent_offline
+        self.controller.on_ssl_config_updated = self._async_save_ssl_config
+        self.controller.request_refresh_callback = self._async_request_refresh
+        self.controller.on_connection_failed_callback = self._async_on_connection_failed
+        self.controller.on_offline_callback = self._async_handle_persistent_offline
 
         # Determine the update interval from options → data → default.
         enable_polling = entry.options.get(
@@ -262,7 +208,6 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             '%s Initializing coordinator with update interval: %s',
             self.log_prefix, update_interval
         )  # pragma: no mutate
-
 
         super().__init__(
             hass,
@@ -307,7 +252,59 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 connections=conns,
             )  # pragma: no mutate
 
-    async def _async_update_data(self) -> Any:
+    @callback
+    def _async_save_new_token(self, new_token: str) -> None:
+        """Callback to save the renewed token from the network layer."""
+        new_data = dict(self.entry.data)  # pragma: no mutate
+        new_data["token"] = new_token
+        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        _LOGGER.info(
+            "%s Persisted new network token to Config Entry.", self.log_prefix
+        )  # pragma: no mutate
+
+    def _get_current_state(self) -> Any:
+        """Callback for the controller to get the current cached state."""
+        return self.data
+
+    @callback
+    def _async_save_ssl_config(self, ssl_config: dict[str, Any]) -> None:
+        """Callback to save SSL configuration to the config entry."""
+        current_data = dict(self.entry.data)  # pragma: no mutate
+        if current_data.get("_ssl_config_2878") != ssl_config:
+            current_data["_ssl_config_2878"] = ssl_config
+            self.hass.config_entries.async_update_entry(self.entry, data=current_data)
+            _LOGGER.info(
+                "%s Persisted SSL config to ConfigEntry data.", self.log_prefix
+            )  # pragma: no mutate
+
+    async def _async_request_refresh(self) -> None:
+        """Callback to request an immediate data refresh."""
+        await self.async_request_refresh()
+
+    @callback
+    def _async_on_connection_failed(self) -> None:
+        """Callback when connection persistently fails."""
+        self.last_update_success = False
+        self.async_update_listeners()
+
+    @callback
+    def _async_handle_persistent_offline(self, reason: str) -> None:
+        """Callback for the network layer to force UI unavailability immediately."""
+        _LOGGER.debug(
+            "%s Network layer declared device offline. Forcing UpdateFailed.",
+            self.log_prefix,
+        )  # pragma: no mutate
+        if hasattr(self.controller, "clear_state_cache"):  # pragma: no mutate
+            self.controller.clear_state_cache()
+        self.async_set_update_error(UpdateFailed(f"Device offline: {reason}"))
+
+    async def _async_switch_to_raw_engine(self) -> None:
+        """Switch connection method option to RAW permanently and trigger reload."""
+        new_options = dict(self.entry.options)
+        new_options[CONF_CONN_METHOD] = CONN_METHOD_RAW
+        self.hass.config_entries.async_update_entry(self.entry, options=new_options)
+
+    async def _async_update_data(self) -> ClimateIPDeviceState:
         """Fetch the latest state from the device."""
         try:
             await asyncio.wait_for(
@@ -316,25 +313,21 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             return self._create_device_state()
 
         except InvalidHeaderError as err:
-            current_method = self.entry.options.get(CONF_CONN_METHOD)
-            
-            # Firewall: Only mutate and reload if NOT already in RAW
-            if current_method != CONN_METHOD_RAW:
+            if self.entry.options.get(CONF_CONN_METHOD) != CONN_METHOD_RAW:
                 _LOGGER.warning(
-                    "%s Malformed header error detected! Auto-healing: Switching permanently to the 'Robust (raw socket)' connection engine.", 
-                    self.log_prefix
+                    "%s Auto-healing to RAW mode triggered", self.log_prefix
                 )  # pragma: no mutate
-                new_options = dict(self.entry.options)
-                new_options[CONF_CONN_METHOD] = CONN_METHOD_RAW
-                self.hass.config_entries.async_update_entry(self.entry, options=new_options)
-                
-                raise UpdateFailed("Auto-healing triggered: Switching to 'Robust (Raw)' engine. Reload in progress.") from None  # pragma: no mutate
-            
-            # If already in RAW and an unexpected error occurs, fail gracefully without loops
+                self.config_entry.async_create_background_task(
+                    self.hass,
+                    self._async_switch_to_raw_engine(),
+                    "auto_heal_raw",
+                )
+                raise UpdateFailed("Auto-healing in progress") from err
+
             _LOGGER.error(
-                "%s Invalid header error persists even on the RAW engine. Auto-healing failed: %s", 
-                self.log_prefix, 
-                err
+                "%s Invalid header error persists even on the RAW engine. Auto-healing failed: %s",
+                self.log_prefix,
+                err,
             )  # pragma: no mutate
             raise UpdateFailed(f"Data parsing failed on RAW engine: {err}") from err
 
@@ -346,7 +339,6 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             ) from err  # pragma: no mutate
 
         except UpdateFailed:
-            # If a lower layer already raised a clean UpdateFailed, pass it through
             raise  # pragma: no mutate
 
         except (
@@ -399,13 +391,11 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     ) -> None:
         """Handle a state update received via push from the connection."""
         try:
-
             _LOGGER.debug(
                 "%s Push update received with data: %s",
                 self.log_prefix,
                 new_data
             )  # pragma: no mutate
-
 
             if new_data:
                 if await self.controller.async_merge_device_state(
@@ -414,18 +404,13 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                     updated_state = self._create_device_state()  # pragma: no mutate
                     self.async_set_updated_data(updated_state)  # pragma: no mutate
                 else:
-
                     _LOGGER.debug("Push update discarded by controller (validation failed or junk data).")  # pragma: no mutate
 
             else:
-
                 _LOGGER.debug("%s Push update did not contain state data, skipping processing", self.log_prefix)  # pragma: no mutate
 
-
         except Exception as err:  # pylint: disable=broad-exception-caught
-
             _LOGGER.error("%s Unexpected error during push update: %s", self.log_prefix, err, exc_info=True)  # pragma: no mutate
-
 
     def _create_device_state(self) -> ClimateIPDeviceState:
         """Fetch the strictly typed state representation directly from the controller."""
@@ -481,27 +466,23 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 await self.controller.async_clear_pending_updates(list(properties_to_set.keys()))
                 await self.async_request_refresh()
 
-        except (CannotConnect, asyncio.TimeoutError, OSError) as err:
-            _LOGGER.error("%s Network error setting properties: %s", self.log_prefix, type(err).__name__)  # pragma: no mutate
-            await self.controller.async_clear_pending_updates(list(properties_to_set.keys()))
-            await self.async_request_refresh()
-            raise HomeAssistantError(
-                f"Network error setting property {property_name}: {err}"
-            ) from err  # pragma: no mutate
-
-        except (ValueError, TypeError, KeyError) as err:
-            _LOGGER.error("%s Data error setting properties: %s", self.log_prefix, err, exc_info=True)  # pragma: no mutate
-            await self.controller.async_clear_pending_updates(list(properties_to_set.keys()))
-            await self.async_request_refresh()
-            raise HomeAssistantError(
-                f"Data error setting property {property_name}: {err}"
-            ) from err  # pragma: no mutate
-
         except Exception as err:  # pylint: disable=broad-exception-caught
-            _LOGGER.error("%s Error setting properties: %s", self.log_prefix, err, exc_info=True)  # pragma: no mutate
-            # Revert state on failure
             await self.controller.async_clear_pending_updates(list(properties_to_set.keys()))
             await self.async_request_refresh()
+
+            if isinstance(err, (CannotConnect, asyncio.TimeoutError, OSError)):
+                _LOGGER.error("%s Network error setting properties: %s", self.log_prefix, type(err).__name__)  # pragma: no mutate
+                raise HomeAssistantError(
+                    f"Network error setting property {property_name}: {err}"
+                ) from err  # pragma: no mutate
+
+            if isinstance(err, (ValueError, TypeError, KeyError)):
+                _LOGGER.error("%s Data error setting properties: %s", self.log_prefix, err, exc_info=True)  # pragma: no mutate
+                raise HomeAssistantError(
+                    f"Data error setting property {property_name}: {err}"
+                ) from err  # pragma: no mutate
+
+            _LOGGER.error("%s Error setting properties: %s", self.log_prefix, err, exc_info=True)  # pragma: no mutate
             raise HomeAssistantError(
                 f"Failed to set property {property_name}: {err}"
             ) from err  # pragma: no mutate

@@ -900,10 +900,19 @@ async def test_fallback_to_raw_engine_on_http_header_error(hass: HomeAssistant) 
 
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
 
+    bg_tasks = []
+    def _capture_bg_task(hass, coro, name=None):
+        bg_tasks.append(coro)
+        return MagicMock()
+    mock_entry.async_create_background_task.side_effect = _capture_bg_task
+
     with patch.object(hass.config_entries, "async_update_entry") as mock_update_entry:
         # The test demands the coordinator to abort cleanly
         with pytest.raises(UpdateFailed):
             await coordinator._async_update_data()
+
+        for coro in bg_tasks:
+            await coro
 
         # THIS ASSERTION KILLS MUTANT 24
         # Verify that before aborting, it modified config to use RAW
@@ -1378,7 +1387,7 @@ def test_debouncer_cancel_all_strict_none():
     
     debouncer.cancel_all()
     
-    mock_timer.cancel.assert_called_once()
+    mock_timer.assert_called_once()
     assert len(debouncer._timers) == 0
     assert len(debouncer._pending_payloads) == 0
 
@@ -1592,44 +1601,45 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
     mock_coordinator.unique_id = "test_123"
     
     created_tasks = []
-    def fake_create_task(coro, **kwargs):
+    def fake_create_task(hass, coro, name=None):
         created_tasks.append(coro)
         return coro
         
-    mock_coordinator.hass.async_create_task.side_effect = fake_create_task
-    mock_coordinator.hass.loop.call_later = MagicMock(return_value="mock_timer")
-    
-    debouncer = PropertyDebouncer(mock_coordinator, delay=10.0)
-    
-    mock_existing_timer = MagicMock()
-    debouncer._timers["prop_success"] = mock_existing_timer
-    debouncer._last_activities["prop_success"] = time.time()  
-    
-    async def dummy_success(): pass
-    
-    # Cubrir re-encolado
-    await debouncer.async_execute("prop_success", dummy_success)
-    mock_existing_timer.cancel.assert_called_once()
-    
-    # Excepciones que pasan kwargs
-    async def dummy_fail_network(*args, **kwargs):
-        raise CannotConnect("Network offline")
+    mock_coordinator.config_entry.async_create_background_task.side_effect = fake_create_task
+
+    with patch("custom_components.climate_ip.coordinator.async_call_later") as mock_async_call_later:
+        mock_async_call_later.return_value = MagicMock()
+        debouncer = PropertyDebouncer(mock_coordinator, delay=10.0)
         
-    async def dummy_fail_generic(*args, **kwargs):
-        raise ValueError("Generic boom")
+        mock_existing_timer = MagicMock()
+        debouncer._timers["prop_success"] = mock_existing_timer
+        debouncer._last_activities["prop_success"] = time.time()  
         
-    debouncer._pending_payloads["prop_net"] = (dummy_fail_network, ("arg1",), {"kw": 1})
-    debouncer._pending_payloads["prop_gen"] = (dummy_fail_generic, ("arg2",), {"kw": 2})
-    
-    callback_fire_delayed = mock_coordinator.hass.loop.call_later.call_args[0][1]
-    
-    with patch("custom_components.climate_ip.coordinator._LOGGER.debug") as mock_debug:
-        callback_fire_delayed("prop_net")
-        callback_fire_delayed("prop_gen")
-        assert len(created_tasks) > 0
+        async def dummy_success(): pass
         
-        for task in created_tasks:
-            await task
+        # Cubrir re-encolado
+        await debouncer.async_execute("prop_success", dummy_success)
+        mock_existing_timer.assert_called_once()
+        
+        # Excepciones que pasan kwargs
+        async def dummy_fail_network(*args, **kwargs):
+            raise CannotConnect("Network offline")
+            
+        async def dummy_fail_generic(*args, **kwargs):
+            raise ValueError("Generic boom")
+            
+        debouncer._pending_payloads["prop_net"] = (dummy_fail_network, ("arg1",), {"kw": 1})
+        debouncer._pending_payloads["prop_gen"] = (dummy_fail_generic, ("arg2",), {"kw": 2})
+        
+        callback_fire_delayed = mock_async_call_later.call_args[0][2]
+        
+        with patch("custom_components.climate_ip.coordinator._LOGGER.debug") as mock_debug:
+            callback_fire_delayed("prop_net")
+            callback_fire_delayed("prop_gen")
+            assert len(created_tasks) > 0
+            
+            for task in created_tasks:
+                await task
         
         assert mock_coordinator.async_request_refresh.await_count == 2
         
