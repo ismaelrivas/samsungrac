@@ -32,6 +32,7 @@ from homeassistant.const import (
     STATE_UNKNOWN,
     UnitOfTemperature,
 )
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.config_validation import PLATFORM_SCHEMA
 from homeassistant.helpers.update_coordinator import UpdateFailed
@@ -44,6 +45,7 @@ from .const import (
     CONF_TEMP_NATIVE_TARGET,
     DEFAULT_CONF_TEMP_UNIT,
     DEVICE_TYPE_SAMSUNG_2878,
+    DEVICE_TYPE_TO_CONFIG_FILE,
 )
 from .controller import ClimateController, register_controller
 
@@ -58,7 +60,6 @@ _LOGGER = logging.getLogger(__name__)
 CONST_CONTROLLER_TYPE = "yaml"
 
 
-
 @register_controller
 class YamlController(ClimateController):
     """YAML-based controller mapped as a clean Facade pattern over composition."""
@@ -67,16 +68,26 @@ class YamlController(ClimateController):
 
     def __init__(
         self,
-        config: dict[str, Any],
-        logger: logging.Logger,
+        config: dict[str, Any] | None = None,
+        logger: logging.Logger | None = None,
         hass: HomeAssistant | None = None,
         session: aiohttp.ClientSession | None = None,
+        config_entry: ConfigEntry | None = None,
     ) -> None:
-        """Initialize the YAML controller from a config dictionary.
+        """Initialize the YAML controller from a config dictionary or ConfigEntry."""
+        if config is None and config_entry is not None:
+            config = {**config_entry.data, **config_entry.options}
+            config["unique_id"] = config_entry.unique_id
+            config["entry_id"] = config_entry.entry_id
+            device_type = config.get(CONF_DEVICE_TYPE)
+            if device_type:
+                config[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE.get(device_type)
+        elif config is None:
+            config = {}
 
-        hass and session are passed explicitly to keep the config dict
-        serializable (safe for ConfigEntry storage and diagnostics).
-        """
+        if logger is None:
+            logger = _LOGGER
+
         super().__init__(config, logger)  # pragma: no mutate
         # 1. Pure dictionary clone — never mutate the caller's reference.
         self._config = dict(config)

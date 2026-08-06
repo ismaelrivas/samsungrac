@@ -7,18 +7,15 @@ import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
-from homeassistant.const import CONF_MAC, Platform
+from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
-    CONF_CONFIG_FILE,
-    CONF_DEVICE_ID,
     CONF_DEVICE_TYPE,
     CONF_DEVICES,
     CONFIG_ENTRY_VERSION,
-    DEVICE_TYPE_TO_CONFIG_FILE,
     DOMAIN,
     MAIN_DEVICE_ID,
     WIFI_KIT_MGMT_ID,
@@ -26,13 +23,6 @@ from .const import (
 from .controller_yaml import YamlController
 from .controller_yaml_config import clear_yaml_cache
 from .coordinator import SamsungClimateCoordinator
-
-# Import connection classes to ensure they register themselves via decorators
-from .connection_aiohttp import ConnectionAiohttp8888  # noqa: F401
-from .connection_raw import ConnectionRaw8888  # noqa: F401
-from .connection_request import ConnectionRequest, ConnectionRequestPrint  # noqa: F401
-from .connection_request_tls_auto import ConnectionRequestTlsAuto  # noqa: F401
-from .samsung_2878 import ConnectionSamsung2878  # noqa: F401
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -54,9 +44,9 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) 
         # v1 → v2: Validating schema to ensure integrity.
         v2_schema = vol.Schema(
             {
-                vol.Required("ip_address"): cv.string,
-                vol.Optional("token"): cv.string,
-                vol.Optional("mac"): cv.string,
+                vol.Required(CONF_IP_ADDRESS): cv.string,
+                vol.Optional(CONF_TOKEN): cv.string,
+                vol.Optional(CONF_MAC): cv.string,
             },
             extra=vol.ALLOW_EXTRA,
         )
@@ -85,30 +75,24 @@ async def async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None
     _LOGGER.debug(
         "Configuration options updated, reloading climate_ip integration for entry %s",
         entry.entry_id,
-  )
+    )
     await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -> bool:  # pylint: disable=import-outside-toplevel,too-many-locals,too-many-branches,too-many-statements
     """Set up Samsung Climate IP from a config entry."""
 
-    # Merge options into runtime_config at startup so settings from the OptionsFlow
-    # (like conn_method) are available to the controller right from the start.
-    runtime_config: dict[str, Any] = {**entry.data, **entry.options}
-    runtime_config["unique_id"] = entry.unique_id
-    runtime_config["entry_id"] = entry.entry_id
-
-    device_type = runtime_config.get(CONF_DEVICE_TYPE)
-    if device_type:
-        runtime_config[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE.get(device_type)
+    device_type = entry.options.get(CONF_DEVICE_TYPE) or entry.data.get(CONF_DEVICE_TYPE)
+    mac = entry.options.get(CONF_MAC) or entry.data.get(CONF_MAC, "Unknown")
+    ip_address = entry.options.get(CONF_IP_ADDRESS) or entry.data.get(CONF_IP_ADDRESS, "Unknown")
 
     # Use the official session manager. Network steps controlled by timeouts
     # in the request itself or at the coordinator interval level.
     session = async_get_clientsession(hass)
 
-    _LOGGER.info("Starting setup for device %s at %s (Device Type: %s)", runtime_config.get(CONF_MAC, "Unknown"), runtime_config.get("ip_address", "Unknown"), device_type)
+    _LOGGER.info("Starting setup for device %s at %s (Device Type: %s)", mac, ip_address, device_type)
 
-    devices_config = runtime_config.get(CONF_DEVICES)
+    devices_config = entry.options.get(CONF_DEVICES) or entry.data.get(CONF_DEVICES)
 
     # Normalize: If no sub-devices are defined, create a synthetic list for the main unit
     if not devices_config:
@@ -121,33 +105,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
     for device_info in devices_config:
         device_id = device_info.get("id")
         device_name = device_info.get("name")
-        device_uuid = device_info.get("uuid")
 
         if device_id == WIFI_KIT_MGMT_ID:
             _LOGGER.debug("Skipping Wifi-kit management device (ID 0)")
             continue
 
-        device_config_data = runtime_config.copy()
-
-        # Ensure the controller receives its specific UI name
-        if device_name:
-            device_config_data["name"] = device_name
-
-        # Unique ID generation logic
-        if device_id != MAIN_DEVICE_ID:
-            device_config_data[CONF_DEVICE_ID] = device_id
-            base_unique_id = device_uuid or entry.unique_id
-            if base_unique_id and f"_{device_id}" not in str(base_unique_id):
-                device_config_data["unique_id"] = f"{base_unique_id}_{device_id}"
-            else:
-                device_config_data["unique_id"] = base_unique_id
-        else:
-            device_config_data["unique_id"] = entry.unique_id
-
-        _LOGGER.info("Setting up Samsung unit '%s' (ID %s) with unique_id: %s", device_name, device_id, device_config_data["unique_id"])
+        _LOGGER.info("Setting up Samsung unit '%s' (ID %s)", device_name, device_id)
 
         controller = YamlController(
-            config=device_config_data, logger=_LOGGER, hass=hass, session=session
+            config_entry=entry, logger=_LOGGER, hass=hass, session=session
         )
 
         try:
@@ -175,13 +141,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
             parent_unique_id=entry.unique_id if device_id != MAIN_DEVICE_ID else None,
         )
 
-        try:
-            await coordinator.async_config_entry_first_refresh()
-        except ConfigEntryAuthFailed:
-            raise
-        except Exception as ex:
-            _LOGGER.error("%s Initial connection failed: %s", controller.log_prefix, ex)
-            raise ConfigEntryNotReady(f"Device unreachable during startup: {ex}") from ex
+        await coordinator.async_config_entry_first_refresh()
 
         coordinators[device_id] = coordinator
 

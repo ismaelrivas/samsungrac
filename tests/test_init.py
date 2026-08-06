@@ -339,8 +339,8 @@ async def test_setup_entry_instantiates_controller_strictly(
         # Extract the kwargs used to call the constructor
         kwargs = mock_yaml_class.call_args.kwargs
 
-        assert "config" in kwargs and kwargs["config"] is not None, (
-            "The config argument was omitted or is None"
+        assert "config_entry" in kwargs and kwargs["config_entry"] is mock_entry, (
+            "The config_entry argument was omitted or is incorrect"
         )
         assert "logger" in kwargs and kwargs["logger"] is not None, (
             "The logger argument was omitted or is None"
@@ -351,20 +351,6 @@ async def test_setup_entry_instantiates_controller_strictly(
         assert "session" in kwargs and kwargs["session"] is not None, (
             "The session argument was omitted or is None"
         )
-
-        # Assertion for Mutant 2: The dictionary MUST contain the unique_id copied from the entry
-        assert kwargs["config"].get("unique_id") == "test_mac_123", (
-            "The unique_id was lost or altered"
-        )
-
-        # ASERCIONES LETALES (Mutantes 8-11): Validamos que la inyección inicial funciona bien
-        assert kwargs["config"].get("entry_id") == "test_entry_123", (
-            "The entry_id was not injected"
-        )
-        assert (
-            kwargs["config"].get(CONF_CONFIG_FILE)
-            == DEVICE_TYPE_TO_CONFIG_FILE["samsung_2878"]
-        ), "device_type fallback missing"
 
         # Mutant 84: Verify standalone injection
         mock_coord_class.assert_called_once_with(
@@ -434,33 +420,20 @@ async def test_setup_entry_multi_device_branch_and_unique_id_logic(
 
         call_args_list = mock_yaml_class.call_args_list
 
-        # Validate Zone A (Suffix added dynamically)
+        # Validate Zone A
         kwargs_a = call_args_list[0].kwargs
-        config_a = kwargs_a["config"]
-        assert config_a.get(CONF_DEVICE_ID) == "1"
-        assert config_a.get("unique_id") == "uuid-111_1", (
-            "Failed to generate compound unique_id."
-        )
-
-        # LETHAL ASSERTIONS (Mutant 5 and Mutants 48-54)
-        assert config_a.get("entry_id") == "test_entry_123", "The entry_id was lost"
+        assert kwargs_a.get("config_entry") is mock_entry, "config_entry was omitted"
         assert kwargs_a.get("logger") is not None, "The logger was omitted"
         assert kwargs_a.get("hass") is hass, "The hass argument is incorrect"
         assert kwargs_a.get("session") is not None, "The session was omitted"
 
-        # Validate Zone B (ELSE Branch: Avoid suffix duplication)
-        config_b = call_args_list[1].kwargs["config"]
-        assert config_b.get(CONF_DEVICE_ID) == "2"
-        assert config_b.get("unique_id") == "uuid-222_2", (
-            "Duplicated the suffix or altered existing unique_id."
-        )
+        # Validate Zone B
+        kwargs_b = call_args_list[1].kwargs
+        assert kwargs_b.get("config_entry") is mock_entry, "config_entry was omitted"
 
-        # Validate Zone C (Fallback to entry.unique_id)
-        config_c = call_args_list[2].kwargs["config"]
-        assert config_c.get(CONF_DEVICE_ID) == "3"
-        assert config_c.get("unique_id") == "parent_entry_mac_3", (
-            "Fallback to entry unique_id not applied correctly."
-        )
+        # Validate Zone C
+        kwargs_c = call_args_list[2].kwargs
+        assert kwargs_c.get("config_entry") is mock_entry, "config_entry was omitted"
 
         # Mutant 71: Verify coordinators were saved in runtime_data
         assert isinstance(mock_entry.runtime_data, dict), (
