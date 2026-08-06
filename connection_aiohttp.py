@@ -1,4 +1,4 @@
-# pylint: disable=duplicate-code,import-outside-toplevel,no-else-return,too-many-branches,too-many-instance-attributes,too-many-locals,too-many-nested-blocks,too-many-positional-arguments,too-many-statements
+# pylint: disable=duplicate-code,no-else-return,too-many-branches,too-many-instance-attributes,too-many-locals,too-many-nested-blocks,too-many-positional-arguments,too-many-statements
 # custom_components/climate_ip/connection_aiohttp.py
 # pylint: disable=line-too-long
 """
@@ -7,7 +7,6 @@ This engine implements HTTP Keep-Alive for low latency and correct mTLS.
 """
 
 import asyncio
-import copy
 import inspect
 import logging
 from pathlib import Path
@@ -37,6 +36,7 @@ from .helpers import (
     async_create_samsung_ssl_context,
     format_placeholders,
     mask_sensitive_data,
+    resolve_cert_path,
 )
 
 
@@ -53,6 +53,14 @@ class AiohttpSharedState:
 _LOGGER = logging.getLogger(__name__)
 
 CONNECTION_TYPE_AIOHTTP_8888 = "samsung_8888_aiohttp"
+
+DEFAULT_PORT = "8888"
+DEFAULT_SSL_CIPHERS = "ALL:@SECLEVEL=0"
+HEADER_AUTHORIZATION = "Authorization"
+HEADER_CONTENT_TYPE = "Content-Type"
+HEADER_CONNECTION = "Connection"
+HEADER_VALUE_JSON = "application/json"
+HEADER_VALUE_CLOSE = "close"
 
 
 @register_connection
@@ -141,8 +149,6 @@ class ConnectionAiohttp8888(Connection):
 
     def _resolve_cert_path(self, cert_file: str | None) -> str | None:
         """Resolve the full path to the certificate file."""
-        from .helpers import resolve_cert_path
-
         return resolve_cert_path(
             cert_file, str(Path(__file__).parent), self._hass
         )  # pragma: no mutate
@@ -175,7 +181,7 @@ class ConnectionAiohttp8888(Connection):
 
             context = await async_create_samsung_ssl_context(
                 cert_path=self._cert_path if has_cert else None,
-                ciphers="ALL:@SECLEVEL=0",
+                ciphers=DEFAULT_SSL_CIPHERS,
                 verify_mode=ssl.CERT_NONE,
             )
             return context
@@ -204,7 +210,13 @@ class ConnectionAiohttp8888(Connection):
         Creates a new connection instance with updated parameters from YAML.
         """
         # pylint: disable=protected-access
-        new_connection = copy.copy(self)
+        new_connection = ConnectionAiohttp8888(
+            config=self._config,
+            logger=self._logger,
+            hass=self._hass,
+            session=self._session,
+            ip_address=self._ip_address,
+        )
         new_connection._params = {}
         new_connection._controller = self._controller
         new_connection._shared_state = self._shared_state
@@ -298,7 +310,7 @@ class ConnectionAiohttp8888(Connection):
                 _LOGGER.debug(debug_msg, self.log_prefix)  # pragma: no mutate
 
                 # Generalize Probe URL
-                port = self._config.get(CONF_PORT, "8888")  # pragma: no mutate
+                port = self._config.get(CONF_PORT, DEFAULT_PORT)  # pragma: no mutate
                 protocol = (
                     "http" if self._config.get("use_http", False) else "https"
                 )  # pragma: no mutate
@@ -491,15 +503,73 @@ class ConnectionAiohttp8888(Connection):
         url = format_placeholders(url, token, host, dev_id, mac)  # pragma: no mutate
 
         # Port validation without mutation false positives
-        if ":8888/" in url:
-            port = str(self._config.get(CONF_PORT, "8888"))
-            url = url.replace(":8888/", f":{port}/")
+        if f":{DEFAULT_PORT}/" in url:
+            port = str(self._config.get(CONF_PORT, DEFAULT_PORT))
+            url = url.replace(f":{DEFAULT_PORT}/", f":{port}/")
 
         # Mutmut odia el `if dict.get(key, False):`. Lo blindamos asertando el tipo booleano.
         if bool(self._config.get("use_http", False)) is True:  # pragma: no mutate
             url = url.replace("https://", "http://")
 
         return url
+
+    def _prepare_request_headers(
+        self,
+        headers: dict[str, str] | None,
+        current_token: str | None,
+        host: str,
+        dev_id: str | None,
+        mac: str,
+    ) -> dict[str, str]:
+        """Prepare and format headers for a request."""
+        req_headers = headers.copy() if headers is not None else {}
+        req_headers = format_placeholders(
+            req_headers, current_token, host, dev_id, mac
+        )  # pragma: no mutate
+
+        if not current_token:
+            err_msg = "%s [aiohttp] No token available! The request will fail."  # pragma: no mutate
+            _LOGGER.error(err_msg, self.log_prefix)  # pragma: no mutate
+            exc_msg = "Token not configured for the aiohttp engine"  # pragma: no mutate
+            raise AuthError(exc_msg)  # pragma: no mutate
+
+        if HEADER_AUTHORIZATION not in req_headers:  # pragma: no mutate
+            req_headers[HEADER_AUTHORIZATION] = f"Bearer {current_token}"
+        if HEADER_CONTENT_TYPE not in req_headers:
+            req_headers[HEADER_CONTENT_TYPE] = HEADER_VALUE_JSON
+
+        # Adaptive Keep-Alive Logic: If we previously detected stability issues, force Connection: close
+        if self._force_close_connection:
+            req_headers[HEADER_CONNECTION] = HEADER_VALUE_CLOSE
+
+        return req_headers
+
+    def _handle_http_version_fallback(self, response: aiohttp.ClientResponse) -> None:
+        """Adjust Keep-Alive strategy based on the server's HTTP version."""
+        if (
+            response.version
+            and response.version.major == 1
+            and response.version.minor >= 1
+        ):
+            if self._force_close_connection:
+                debug_msg = "%s [aiohttp] Server speaks HTTP/%s.%s. Re-enabling Keep-Alive."  # pragma: no mutate
+                _LOGGER.debug(  # pragma: no mutate
+                    debug_msg,  # pragma: no mutate
+                    self.log_prefix,  # pragma: no mutate
+                    response.version.major,  # pragma: no mutate
+                    response.version.minor,  # pragma: no mutate
+                )  # pragma: no mutate
+            self._force_close_connection = False
+        else:
+            if not self._force_close_connection and response.version:
+                debug_msg = "%s [aiohttp] Server speaks HTTP/%s.%s. Enforcing 'Connection: close'."  # pragma: no mutate
+                _LOGGER.debug(  # pragma: no mutate
+                    debug_msg,  # pragma: no mutate
+                    self.log_prefix,  # pragma: no mutate
+                    response.version.major,  # pragma: no mutate
+                    getattr(response.version, "minor", 0),  # pragma: no mutate
+                )  # pragma: no mutate
+            self._force_close_connection = True
 
     async def _async_execute_request(
         self,
@@ -513,38 +583,16 @@ class ConnectionAiohttp8888(Connection):
         Executes a command asynchronously using aiohttp.
         It uses the "memorized" connection logic (HTTPS only).
         """
-        req_headers = headers.copy() if headers is not None else {}
-
-        current_token = self._token  # pragma: no mutate
+        current_token = self._token
         host, mac = self._resolved_target
-
-        dev_id = None  # pragma: no mutate
-
+        dev_id = None
         if self._controller is not None:
-            current_token = self._controller._config.get(
-                CONF_TOKEN, self._token
-            )  # pragma: no mutate
+            current_token = self._controller._config.get(CONF_TOKEN, self._token)
             dev_id = self._controller.device_id
 
-        # CRITICAL FIX: Replace placeholders in headers as well
-        req_headers = format_placeholders(
-            req_headers, current_token, host, dev_id, mac
-        )  # pragma: no mutate
-
-        if not current_token:
-            err_msg = "%s [aiohttp] No token available! The request will fail."  # pragma: no mutate
-            _LOGGER.error(err_msg, self.log_prefix)  # pragma: no mutate
-            exc_msg = "Token not configured for the aiohttp engine"  # pragma: no mutate
-            raise AuthError(exc_msg)  # pragma: no mutate
-
-        if "Authorization" not in req_headers:  # pragma: no mutate
-            req_headers["Authorization"] = f"Bearer {current_token}"
-        if "Content-Type" not in req_headers:
-            req_headers["Content-Type"] = "application/json"
-
-        # Adaptive Keep-Alive Logic: If we previously detected stability issues, force Connection: close
-        if self._force_close_connection:
-            req_headers["Connection"] = "close"
+        req_headers = self._prepare_request_headers(
+            headers, current_token, host, dev_id, mac
+        )
 
         ssl_context = self._shared_state.ssl_context
         # Detect if the path is actually an absolute URL (for SmartThings).
@@ -554,7 +602,7 @@ class ConnectionAiohttp8888(Connection):
             if not ssl_context:
                 ssl_context = await self._create_ssl_context()
         else:
-            port = self._config.get(CONF_PORT, "8888")  # pragma: no mutate
+            port = self._config.get(CONF_PORT, DEFAULT_PORT)  # pragma: no mutate
             base_url = f"https://{self._ip_address}:{port}"
 
         full_url = f"{base_url}{url_path}"
@@ -595,30 +643,7 @@ class ConnectionAiohttp8888(Connection):
                     response_text = await response.text()  # pragma: no mutate
 
                 # HTTP Version Detection to adjust Keep-Alive
-                if (
-                    response.version
-                    and response.version.major == 1
-                    and response.version.minor >= 1
-                ):
-                    if self._force_close_connection:
-                        debug_msg = "%s [aiohttp] Server speaks HTTP/%s.%s. Re-enabling Keep-Alive."  # pragma: no mutate
-                        _LOGGER.debug(  # pragma: no mutate
-                            debug_msg,  # pragma: no mutate
-                            self.log_prefix,  # pragma: no mutate
-                            response.version.major,  # pragma: no mutate
-                            response.version.minor,  # pragma: no mutate
-                        )  # pragma: no mutate
-                    self._force_close_connection = False
-                else:
-                    if not self._force_close_connection and response.version:
-                        debug_msg = "%s [aiohttp] Server speaks HTTP/%s.%s. Enforcing 'Connection: close'."  # pragma: no mutate
-                        _LOGGER.debug(  # pragma: no mutate
-                            debug_msg,  # pragma: no mutate
-                            self.log_prefix,  # pragma: no mutate
-                            response.version.major,  # pragma: no mutate
-                            getattr(response.version, "minor", 0),  # pragma: no mutate
-                        )  # pragma: no mutate
-                    self._force_close_connection = True
+                self._handle_http_version_fallback(response)
 
                 if response.status != 200:
                     if response.status in (401, 403):
@@ -701,11 +726,11 @@ class ConnectionAiohttp8888(Connection):
             exc_msg = f"Connection error: {clean_e}"  # pragma: no mutate
             raise CannotConnect(exc_msg) from e  # pragma: no mutate
         except (ValueError, TypeError, KeyError, UnicodeDecodeError) as e:
-            err_msg = "%s [aiohttp] Unexpected data error: %s"  # pragma: no mutate
+            err_msg = "%s [aiohttp] Unexpected data parsing error: %s"  # pragma: no mutate
             _LOGGER.error(
                 err_msg, self.log_prefix, e, exc_info=True
             )  # pragma: no mutate
-            raise
+            raise CannotConnect(f"Unexpected data parsing error: {e}") from e
 
     def execute(
         self,
@@ -719,6 +744,116 @@ class ConnectionAiohttp8888(Connection):
             "This connection is async-native. Use async_execute."  # pragma: no mutate
         )
         raise NotImplementedError(exc_msg)
+
+    async def _execute_embedded_command(
+        self,
+        device_state: dict[str, Any] | None,
+        url: str | None,
+        method: str,
+        headers: dict[str, str] | None,
+        token: str | None,
+        host: str,
+        dev_id: str | None,
+        mac: str,
+    ) -> None:
+        """Evaluates and executes an embedded command if conditions are met."""
+        if self._embedded_command is None:
+            return
+
+        debug_msg = "%s [async_execute] Found embedded command."  # pragma: no mutate
+        _LOGGER.debug(debug_msg, self.log_prefix)  # pragma: no mutate
+        try:
+            if device_state is None:
+                warn_msg = "%s [async_execute] Embedded command found, but cannot check its condition (device_state is missing). Skipping."  # pragma: no mutate
+                _LOGGER.warning(warn_msg, self.log_prefix)  # pragma: no mutate
+            elif (
+                self._embedded_command.check_execute_condition(device_state)
+                is False
+            ):
+                debug_msg = "%s [async_execute] Embedded command condition not met. Skipping execution."  # pragma: no mutate
+                _LOGGER.debug(debug_msg, self.log_prefix)  # pragma: no mutate
+            else:
+                debug_msg = "%s [async_execute] Embedded command condition met. Executing it before the main command."  # pragma: no mutate
+                _LOGGER.debug(debug_msg, self.log_prefix)  # pragma: no mutate
+
+                embedded_template = (
+                    self._embedded_command._connection_template
+                )  # pragma: no mutate
+                embedded_params = (
+                    self._embedded_command._params or {}
+                )  # pragma: no mutate
+
+                if embedded_template is not None:
+                    if hasattr(embedded_template, "async_render"):
+                        embedded_params_str = (
+                            await embedded_template.async_render()
+                        )
+                    else:
+                        embedded_params_str = embedded_template.render()
+
+                    embedded_params = json_loads(embedded_params_str)
+                elif bool(embedded_params) is True:
+                    debug_msg = "%s [async_execute] Embedded command has no connection_template, using _params directly."  # pragma: no mutate
+                    _LOGGER.debug(
+                        debug_msg, self.log_prefix
+                    )  # pragma: no mutate
+                else:
+                    warn_msg = "%s [async_execute] Embedded command found but it has no connection_template or params."  # pragma: no mutate
+                    _LOGGER.warning(
+                        warn_msg, self.log_prefix
+                    )  # pragma: no mutate
+                    embedded_params = None
+
+                if embedded_params is not None:
+                    # CRITICAL FIX: Replace placeholders early for robust logging and execution
+                    embedded_params = format_placeholders(
+                        embedded_params, token, host, dev_id, mac
+                    )  # pragma: no mutate  # pragma: no mutate
+
+                    embedded_data = (
+                        json_dumps(embedded_params.get("json"))
+                        if "json" in embedded_params
+                        else None
+                    )
+                    embedded_url = embedded_params.get("url", url)
+                    embedded_method = embedded_params.get("method", method)
+
+                    debug_msg = "%s [async_execute] Executing embedded command with params: %s"  # pragma: no mutate
+                    _LOGGER.debug(
+                        debug_msg,
+                        self.log_prefix,
+                        mask_sensitive_data(embedded_params),
+                    )  # pragma: no mutate
+
+                    res = cast(
+                        Any,
+                        self._embedded_command.async_execute(
+                            method=embedded_method,
+                            url=embedded_url,
+                            data=embedded_data,
+                            headers=embedded_params.get("headers", headers),
+                            device_state=device_state,
+                        ),
+                    )
+                    if inspect.isawaitable(res):  # pragma: no mutate
+                        await res
+
+        except (CannotConnect, AuthError) as e:
+            warn_msg = "%s [async_execute] Embedded command failed due to connection error: %s"  # pragma: no mutate
+            _LOGGER.warning(warn_msg, self.log_prefix, e)  # pragma: no mutate
+            raise
+        except (
+            aiohttp.ClientError,
+            asyncio.TimeoutError,
+            OSError,
+            ValueError,
+            TypeError,
+        ) as e:
+            err_msg = "%s [async_execute] Embedded command failed: %s"  # pragma: no mutate
+            _LOGGER.error(
+                err_msg, self.log_prefix, e, exc_info=True
+            )  # pragma: no mutate
+            raise
 
     async def async_execute(
         self,
@@ -748,112 +883,19 @@ class ConnectionAiohttp8888(Connection):
         # Ensure initialization before any execution
         probe_response_text = await self._try_connection()
 
-        if self._embedded_command is not None:
-            debug_msg = (
-                "%s [async_execute] Found embedded command."  # pragma: no mutate
-            )
-            _LOGGER.debug(debug_msg, self.log_prefix)  # pragma: no mutate
-            try:
-                # Safe pattern: method extraction and callable check instead of hasattr()
-                embed_check_func = getattr(
-                    self._embedded_command, "check_execute_condition", None
-                )
-
-                if callable(embed_check_func) and device_state is not None:
-                    if embed_check_func(device_state) is False:
-                        debug_msg = "%s [async_execute] Embedded command condition not met. Skipping execution."  # pragma: no mutate
-                        _LOGGER.debug(debug_msg, self.log_prefix)  # pragma: no mutate
-                    else:
-                        debug_msg = "%s [async_execute] Embedded command condition met. Executing it before the main command."  # pragma: no mutate
-                        _LOGGER.debug(debug_msg, self.log_prefix)  # pragma: no mutate
-
-                        embedded_template = getattr(
-                            self._embedded_command, "_connection_template", None
-                        )  # pragma: no mutate
-                        embedded_params = getattr(
-                            self._embedded_command, "_params", {}
-                        )  # pragma: no mutate
-
-                        if embedded_template is not None:
-                            # Safe pattern for Template execution (supports both sync and async rendering)
-                            async_render_func = getattr(
-                                embedded_template, "async_render", None
-                            )  # pragma: no mutate
-                            if callable(async_render_func):
-                                embedded_params_str = await async_render_func()
-                            else:
-                                embedded_params_str = embedded_template.render()
-
-                            embedded_params = json_loads(embedded_params_str)
-                        elif bool(embedded_params) is True:
-                            debug_msg = "%s [async_execute] Embedded command has no connection_template, using _params directly."  # pragma: no mutate
-                            _LOGGER.debug(
-                                debug_msg, self.log_prefix
-                            )  # pragma: no mutate
-                        else:
-                            warn_msg = "%s [async_execute] Embedded command found but it has no connection_template or params."  # pragma: no mutate
-                            _LOGGER.warning(
-                                warn_msg, self.log_prefix
-                            )  # pragma: no mutate
-                            embedded_params = None
-
-                        if embedded_params is not None:
-                            # CRITICAL FIX: Replace placeholders early for robust logging and execution
-                            embedded_params = format_placeholders(
-                                embedded_params, token, host, dev_id, mac
-                            )  # pragma: no mutate  # pragma: no mutate
-
-                            embedded_data = (
-                                json_dumps(embedded_params.get("json"))
-                                if "json" in embedded_params
-                                else None
-                            )
-                            embedded_url = embedded_params.get("url", url)
-                            embedded_method = embedded_params.get("method", method)
-
-                            debug_msg = "%s [async_execute] Executing embedded command with params: %s"  # pragma: no mutate
-                            _LOGGER.debug(
-                                debug_msg,
-                                self.log_prefix,
-                                mask_sensitive_data(embedded_params),
-                            )  # pragma: no mutate
-
-                            res = cast(
-                                Any,
-                                self._embedded_command.async_execute(
-                                    method=embedded_method,
-                                    url=embedded_url,
-                                    data=embedded_data,
-                                    headers=embedded_params.get("headers", headers),
-                                    device_state=device_state,
-                                ),
-                            )
-                            if inspect.isawaitable(res):  # pragma: no mutate
-                                await res
-                else:
-                    warn_msg = "%s [async_execute] Embedded command found, but cannot check its condition (device_state is missing). Skipping."  # pragma: no mutate
-                    _LOGGER.warning(warn_msg, self.log_prefix)  # pragma: no mutate
-
-            except (CannotConnect, AuthError) as e:
-                warn_msg = "%s [async_execute] Embedded command failed due to connection error: %s"  # pragma: no mutate
-                _LOGGER.warning(warn_msg, self.log_prefix, e)  # pragma: no mutate
-                raise
-            except (
-                aiohttp.ClientError,
-                asyncio.TimeoutError,
-                OSError,
-                ValueError,
-                TypeError,
-            ) as e:
-                err_msg = "%s [async_execute] Embedded command failed: %s"  # pragma: no mutate
-                _LOGGER.error(
-                    err_msg, self.log_prefix, e, exc_info=True
-                )  # pragma: no mutate
-                raise
+        await self._execute_embedded_command(
+            device_state=device_state,
+            url=url,
+            method=method,
+            headers=headers,
+            token=token,
+            host=host,
+            dev_id=dev_id,
+            mac=mac,
+        )
 
         # Execute the main command
-        main_check_func = getattr(self, "check_execute_condition", None)
-        if callable(main_check_func) and main_check_func(device_state) is False:
+        if self.check_execute_condition(device_state) is False:
             debug_msg = "%s [async_execute] Condition not met (template result false). Skipping execution."  # pragma: no mutate
             _LOGGER.debug(debug_msg, self.log_prefix)  # pragma: no mutate
             return "{}", {}
@@ -869,11 +911,9 @@ class ConnectionAiohttp8888(Connection):
                 _LOGGER.debug(
                     debug_msg, self.log_prefix, id(local_session)
                 )  # pragma: no mutate
-                # Ensure the session close process is awaited and allowed to finish (Step 3.1)
+                # Ensure the session close process is awaited
                 try:
                     await local_session.close()
-                    # Yield control to the event loop so the transport can effectively close
-                    await asyncio.sleep(0.1)  # pragma: no mutate
                 except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
                     debug_msg = "%s [Periodic Reset] Error closing local session: %s"  # pragma: no mutate
                     _LOGGER.debug(debug_msg, self.log_prefix, e)  # pragma: no mutate
@@ -934,8 +974,6 @@ class ConnectionAiohttp8888(Connection):
             try:
                 if not local_session.closed:
                     await local_session.close()
-                    # Allow time for underlying socket to close completely (Step 3.1)
-                    await asyncio.sleep(0.1)
             except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
                 err_msg = (
                     "%s [aiohttp] Error closing local session: %s"  # pragma: no mutate

@@ -164,8 +164,11 @@ class Connection:
             return True
             
         try:
-            # ZERO DISTRUST: Modern HA templates always implement async_render
-            rendered = condition.async_render({"device_state": device_state})
+            async_render = getattr(condition, "async_render", None)
+            if callable(async_render):
+                rendered = async_render({"device_state": device_state})
+            else:
+                rendered = condition.render({"device_state": device_state})
             _log.debug(
                 "%s Execute condition result: %s",
                 self.log_prefix,

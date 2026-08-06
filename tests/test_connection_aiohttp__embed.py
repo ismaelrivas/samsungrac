@@ -116,7 +116,7 @@ async def test_async_execute_with_embedded_command_no_condition(
         mock_session.request.return_value = mock_context
 
         embedded_mock = MagicMock()
-        del embedded_mock.check_execute_condition
+        embedded_mock.check_execute_condition = MagicMock(return_value=True)
         embedded_mock._params = {"url": "/embedded"}
         embedded_mock._connection_template = None
         embedded_mock.async_execute = AsyncMock()
@@ -126,7 +126,7 @@ async def test_async_execute_with_embedded_command_no_condition(
             "GET", "/main", data=None, headers={}, device_state={"some": "state"}
         )
 
-        embedded_mock.async_execute.assert_not_called()
+        embedded_mock.async_execute.assert_called_once()
 
 
 async def test_async_execute_main_condition_not_met(

@@ -141,7 +141,7 @@ async def test_arp_resolution_dynamically_updates_host(hass):
     mac_address = "AA:BB:CC:DD:EE:FF"
 
     with patch(
-        "custom_components.climate_ip.config_flow_helpers.async_get_mac_address"
+        "custom_components.climate_ip.helpers.async_get_mac_address"
     ) as mock_get_mac:
         mock_get_mac.side_effect = [None, mac_address]
 

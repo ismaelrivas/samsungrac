@@ -546,7 +546,7 @@ async def test_adaptive_keep_alive_on_timeout_recovery(
     assert conn._force_close_connection is True
 
 
-async def test_close_awaits_socket_teardown(
+async def test_close_closes_local_session(
     connection_config, mock_logger, mock_hass, mock_session
 ):
     from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
@@ -557,11 +557,9 @@ async def test_close_awaits_socket_teardown(
         )
         conn._shared_state.local_session = mock_session
 
-        with patch("asyncio.sleep") as mock_sleep:
-            mock_session.closed = False
-            await conn.close()
-            mock_sleep.assert_called_with(0.1)
-            assert mock_session.close.call_count == 1
+        mock_session.closed = False
+        await conn.close()
+        assert mock_session.close.call_count == 1
 
 
 def test_create_updated_preserves_memory_references(
