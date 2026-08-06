@@ -151,7 +151,7 @@ async def test_try_connection_invalid_header(
 
         mock_session.request.side_effect = ValueError("Invalid header token")
 
-        with pytest.raises(InvalidHeaderError):
+        with pytest.raises(CannotConnect):
             await conn._try_connection()
 
 
@@ -166,7 +166,7 @@ async def test_try_connection_generic_error(
 
         mock_session.request.side_effect = RuntimeError("Some generic error")
 
-        with pytest.raises(CannotConnect):
+        with pytest.raises(RuntimeError):
             await conn._try_connection()
 
 

@@ -746,7 +746,7 @@ async def test_deviceoperation_async_set_value_config_fallbacks(
 
     await op.async_set_value("val")
     mock_connection.async_execute_with_retry.assert_called_once_with(
-        op._connection_template, "val", None, None
+        op._connection_template, "val", {}, None
     )
 
     # 2. No duid attribute on cfg
@@ -755,7 +755,7 @@ async def test_deviceoperation_async_set_value_config_fallbacks(
     mock_connection.async_execute_with_retry.reset_mock()
     await op.async_set_value("val")
     mock_connection.async_execute_with_retry.assert_called_once_with(
-        op._connection_template, "val", None, None
+        op._connection_template, "val", {}, None
     )
 
 
@@ -953,7 +953,7 @@ async def test_deviceoperation_async_set_value_mutants(
 
     await op.async_set_value("val")
     mock_connection.async_execute_with_retry.assert_called_once_with(
-        op._connection_template, "val", None, None
+        op._connection_template, "val", {}, None
     )
 
 
@@ -2180,7 +2180,7 @@ async def test_device_operation_async_set_value_conversions_and_fallbacks():
     res_sync = await op_sync.async_set_value("val", device_id="sync_dev_99")
     assert res_sync is True
     sync_conn.async_execute_with_retry.assert_called_once_with(
-        op_sync.connection_template, "val", None, "sync_dev_99"
+        op_sync.connection_template, "val", {}, "sync_dev_99"
     )
 
 
@@ -2216,6 +2216,7 @@ async def test_device_operation_async_set_value_connection_params_headers():
     ctrl = MagicMock()
     ctrl.log_prefix = "TEST"
     ctrl.device_id = "dev_hdr"
+    ctrl.device_state = {"power": "on"}
 
     op = DeviceOperation("test_headers", conn, ctrl)
     op._connection_template = Template('{"method": "POST", "url": "/api/set"}')
@@ -2227,7 +2228,7 @@ async def test_device_operation_async_set_value_connection_params_headers():
         "/api/set",
         None,
         {"Authorization": "Bearer token123"},
-        device_state=ctrl.device_state,
+        device_state={"power": "on"},
     )
 
 

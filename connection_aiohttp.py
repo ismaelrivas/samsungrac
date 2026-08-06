@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
+import yarl
 from aiohttp.hdrs import AUTHORIZATION, CONNECTION, CONTENT_TYPE
 
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_PORT, CONF_TOKEN
@@ -285,6 +286,16 @@ class ConnectionAiohttp8888(Connection):
         """Return True indicating this connection type supports push updates."""
         return False
 
+    @property
+    def connection_template(self) -> Template | None:
+        """Return the embedded connection template."""
+        return self._connection_template
+
+    @property
+    def params(self) -> dict[str, Any]:
+        """Return the embedded connection parameters."""
+        return self._params
+
     async def _try_connection(self) -> str | None:
         """
         Probes the connection (HTTPS mTLS ONLY)
@@ -494,25 +505,25 @@ class ConnectionAiohttp8888(Connection):
         return self._format_url(full_url)
 
     def _format_url(self, url: str) -> str:
-        """
-        Replaces placeholders in the URL with actual values from configuration.
-        """
-        # Host and MAC: Centralized resolution under Zero Trust doctrine
+        """Replaces placeholders and mutates URL scheme/port safely."""
         host, mac = self._resolved_target
         token, dev_id = self._auth_context
 
+        # 1. Resolve placeholders first
         url = format_placeholders(url, token, host, dev_id, mac)
 
-        # Port validation without mutation false positives
-        if f":{DEFAULT_PORT}/" in url:
-            port = str(self._config.get(CONF_PORT, DEFAULT_PORT))
-            url = url.replace(f":{DEFAULT_PORT}/", f":{port}/")
+        # 2. Parse URL safely
+        parsed_url = yarl.URL(url)
 
-        # Mutmut odia el `if dict.get(key, False):`. Lo blindamos asertando el tipo booleano.
-        if self._config.get(CONF_USE_HTTP, False):
-            url = url.replace("https://", "http://")
+        # 3. Mutate port if it matches default and config specifies otherwise
+        if parsed_url.port == int(DEFAULT_PORT):
+            parsed_url = parsed_url.with_port(int(self._config.get(CONF_PORT, DEFAULT_PORT)))
 
-        return url
+        # 4. Mutate scheme if HTTP fallback is enabled
+        if self._config.get(CONF_USE_HTTP, False) and parsed_url.scheme == "https":
+            parsed_url = parsed_url.with_scheme("http")
+
+        return str(parsed_url)
 
     def _prepare_request_headers(
         self,
@@ -752,11 +763,16 @@ class ConnectionAiohttp8888(Connection):
                 debug_msg = "%s [async_execute] Embedded command condition met. Executing it before the main command."
                 _LOGGER.debug(debug_msg, self.log_prefix)
 
-                embedded_template = (
-                    self._embedded_command._connection_template
-                )
+                embedded_template = self._embedded_command.connection_template
+                if not isinstance(embedded_template, Template) and hasattr(self._embedded_command, "_connection_template"):
+                    embedded_template = getattr(self._embedded_command, "_connection_template", None)
+
+                raw_params = self._embedded_command.params
+                if not isinstance(raw_params, dict) and hasattr(self._embedded_command, "_params"):
+                    raw_params = getattr(self._embedded_command, "_params", {})
+
                 embedded_params = (
-                    dict(self._embedded_command._params) if self._embedded_command._params else {}
+                    dict(raw_params) if raw_params and isinstance(raw_params, dict) else {}
                 )
 
                 if embedded_template is not None:
