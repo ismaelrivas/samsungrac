@@ -1,4 +1,5 @@
 """Support for Samsung AC devices using climate_ip."""
+
 import logging
 from typing import TYPE_CHECKING, Any, Final
 
@@ -82,12 +83,14 @@ async def async_setup_entry(
         return
     async_add_entities(entities)
 
+
 class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
     """Representation of a climate_ip climate device using a coordinator."""
+
     entity_description: ClimateEntityDescription
     _attr_has_entity_name = True
     _attr_name = None
-    
+
     def __init__(
         self,
         coordinator: SamsungClimateCoordinator,
@@ -98,7 +101,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         self.entity_description = description
         self._attr_unique_id = str(self.coordinator.unique_id)
         self._attr_device_info = self.coordinator.device_info
-        
+
         # Feature Flag Resolution (Static Run-Once)
         features = ClimateEntityFeature(0)
         ops = self.coordinator.controller.operations
@@ -128,9 +131,9 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
                     configured_step,
                 )
                 step = float(DEFAULT_TARGET_TEMP_STEP)
-        
+
         self._attr_target_temperature_step = int(step) if step.is_integer() else step
-        
+
         if step < PRECISION_HALVES:
             self._attr_precision = PRECISION_TENTHS
         elif step == PRECISION_HALVES:
@@ -191,7 +194,11 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
                 else HVACAction.IDLE
             )
 
-        if mode in (HVACMode.AUTO, HVACMode.HEAT_COOL) and current is not None and target is not None:
+        if (
+            mode in (HVACMode.AUTO, HVACMode.HEAT_COOL)
+            and current is not None
+            and target is not None
+        ):
             if current < (target - 0.5):
                 return HVACAction.HEATING
             if current > (target + 0.5):
@@ -201,11 +208,15 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
     @property
     def current_temperature(self) -> float | None:
-        return self.coordinator.data.current_temperature if self.coordinator.data else None
+        return (
+            self.coordinator.data.current_temperature if self.coordinator.data else None
+        )
 
     @property
     def target_temperature(self) -> float | None:
-        return self.coordinator.data.target_temperature if self.coordinator.data else None
+        return (
+            self.coordinator.data.target_temperature if self.coordinator.data else None
+        )
 
     @property
     def fan_mode(self) -> str | None:
@@ -222,7 +233,8 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {
-            k: v for k, v in self.coordinator.controller.state_attributes.items() 
+            k: v
+            for k, v in self.coordinator.controller.state_attributes.items()
             if k not in _CORE_ATTRIBUTES
         }
 
@@ -231,7 +243,10 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         if not self.coordinator.data:
             return []
         modes = list(self.coordinator.data.hvac_modes)
-        if ClimateEntityFeature.TURN_OFF in self._attr_supported_features and HVACMode.OFF not in modes:
+        if (
+            ClimateEntityFeature.TURN_OFF in self._attr_supported_features
+            and HVACMode.OFF not in modes
+        ):
             modes.append(HVACMode.OFF)
         return modes
 
@@ -320,7 +335,9 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             )
 
         _LOGGER.debug(
-            "%s Action set_property called: %s = %s", self.coordinator.log_prefix, key, value
+            "%s Action set_property called: %s = %s",
+            self.coordinator.log_prefix,
+            key,
+            value,
         )
         await self.coordinator.async_set_property(key, value)
-
