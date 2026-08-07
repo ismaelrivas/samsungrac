@@ -317,6 +317,17 @@ async def test_public_async_set_fan_mode_behavior(
     )
 
 
+async def test_async_set_fan_mode_invalid_raises_service_validation_error(
+    base_climate_entity: ClimateIP,
+) -> None:
+    """Verify that async_set_fan_mode raises ServiceValidationError for invalid mode."""
+    from homeassistant.exceptions import ServiceValidationError
+    base_climate_entity.coordinator.data.fan_modes = ["low", "high"]
+
+    with pytest.raises(ServiceValidationError, match="Requested fan mode 'turbo' is not available"):
+        await base_climate_entity.async_set_fan_mode("turbo")
+
+
 # ============================================================
 # PRECISION SIEGE TESTS — Batch 2: Kills 122 non-redundant mutants
 # ============================================================
@@ -335,6 +346,29 @@ async def test_async_set_temperature_with_valid_temp_kills_mutants(
     base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(
         HA_ATTR_TEMPERATURE, 21.0
     )
+
+
+async def test_async_set_temperature_hvac_mode_only(
+    base_climate_entity: ClimateIP,
+) -> None:
+    """Verify that async_set_temperature accepts hvac_mode alone without temperature."""
+    base_climate_entity.coordinator.async_set_property = AsyncMock()
+
+    await base_climate_entity.async_set_temperature(hvac_mode=HVACMode.COOL)
+
+    base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(
+        ATTR_HVAC_MODE, HVACMode.COOL
+    )
+
+
+async def test_async_set_temperature_both_missing_raises_service_validation_error(
+    base_climate_entity: ClimateIP,
+) -> None:
+    """Verify that async_set_temperature raises ServiceValidationError when both temperature and hvac_mode are missing."""
+    from homeassistant.exceptions import ServiceValidationError
+
+    with pytest.raises(ServiceValidationError, match="No temperature or HVAC mode provided"):
+        await base_climate_entity.async_set_temperature()
 
 
 async def test_async_set_temperature_with_hvac_mode(
@@ -371,6 +405,17 @@ async def test_async_set_swing_mode_strict_args_kills_mutants(
     )
 
 
+async def test_async_set_swing_mode_invalid_raises_service_validation_error(
+    base_climate_entity: ClimateIP,
+) -> None:
+    """Verify that async_set_swing_mode raises ServiceValidationError for invalid mode."""
+    from homeassistant.exceptions import ServiceValidationError
+    base_climate_entity.coordinator.data.swing_modes = ["vertical"]
+
+    with pytest.raises(ServiceValidationError, match="Requested swing mode 'invalid' is not available"):
+        await base_climate_entity.async_set_swing_mode("invalid")
+
+
 # --- async_set_preset_mode (8 mutants) ---
 
 
@@ -379,12 +424,24 @@ async def test_async_set_preset_mode_strict_args_kills_mutants(
 ) -> None:
     """Kill mutants in async_set_preset_mode."""
     base_climate_entity.coordinator.async_set_property = AsyncMock()
+    base_climate_entity.coordinator.data.preset_modes = ["sleep"]
 
     await base_climate_entity.async_set_preset_mode("sleep")
 
     base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(
         ATTR_PRESET_MODE, "sleep"
     )
+
+
+async def test_async_set_preset_mode_invalid_raises_service_validation_error(
+    base_climate_entity: ClimateIP,
+) -> None:
+    """Verify that async_set_preset_mode raises ServiceValidationError for invalid mode."""
+    from homeassistant.exceptions import ServiceValidationError
+    base_climate_entity.coordinator.data.preset_modes = ["sleep"]
+
+    with pytest.raises(ServiceValidationError, match="Requested preset mode 'invalid' is not available"):
+        await base_climate_entity.async_set_preset_mode("invalid")
 
 
 # --- async_service_set_property (4 mutants) ---
@@ -394,24 +451,25 @@ async def test_async_service_set_property_valid_key_kills_mutants(
     base_climate_entity: ClimateIP,
 ) -> None:
     """Kill mutants in async_service_set_property."""
+    base_climate_entity.coordinator.controller.operations = ["beep"]
     base_climate_entity.coordinator.async_set_property = AsyncMock()
 
-    await base_climate_entity.async_service_set_property(key="beep", value="on")
+    await base_climate_entity.async_service_set_property("beep", "on")
 
     base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(
         "beep", "on"
     )
 
 
-async def test_async_service_set_property_missing_key_is_noop(
+async def test_async_service_set_property_invalid_key_raises(
     base_climate_entity: ClimateIP,
 ) -> None:
-    """Complementary guard: when key is absent (None) the function must abort
-    before calling coordinator. Kills any mutant that removes the 'if not key' guard."""
-    await base_climate_entity.async_service_set_property(value="on")  # no 'key' kwarg
+    """Verify that async_service_set_property raises ServiceValidationError for unapproved key."""
+    from homeassistant.exceptions import ServiceValidationError
 
-    base_climate_entity.coordinator.async_set_property.assert_not_awaited()
-    base_climate_entity.coordinator.async_request_refresh.assert_not_awaited()
+    base_climate_entity.coordinator.controller.operations = ["beep"]
+    with pytest.raises(ServiceValidationError, match="is not a valid operation"):
+        await base_climate_entity.async_service_set_property("invalid_key", "on")
 
 
 # --- async_setup_entry — multi-device path (mutants 1-38) ---
@@ -654,7 +712,7 @@ async def test_modern_async_setup_entry_success() -> None:
     
     async_add_entities.assert_called_once()
     assert len(async_add_entities.call_args[0][0]) == 2
-    assert async_add_entities.call_args[1] == {"update_before_add": True}
+    assert async_add_entities.call_args[1] == {}
 
 @pytest.mark.asyncio
 async def test_modern_async_setup_entry_empty() -> None:

@@ -1,5 +1,5 @@
 """Support for Samsung AC devices using climate_ip."""
-# pylint: disable=import-outside-toplevel,too-many-public-methods
+# pylint: disable=import-outside-toplevel
 import logging
 from typing import TYPE_CHECKING, Any, Final
 
@@ -7,16 +7,14 @@ from homeassistant.components.climate import (
     ATTR_CURRENT_TEMPERATURE,
     ATTR_FAN_MODE,
     ATTR_HVAC_MODE,
+    ATTR_MAX_TEMP,
+    ATTR_MIN_TEMP,
     ATTR_PRESET_MODE,
     ATTR_SWING_MODE,
     ClimateEntity,
     ClimateEntityDescription,
     ClimateEntityFeature,
     HVACMode,
-)
-from homeassistant.components.climate.const import (
-    ATTR_MAX_TEMP,
-    ATTR_MIN_TEMP,
 )
 from homeassistant.const import (
     ATTR_TEMPERATURE,
@@ -27,6 +25,7 @@ from homeassistant.const import (
     STATE_ON,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -81,10 +80,9 @@ async def async_setup_entry(
             "No valid entities could be initialized from the provided coordinators."
         )
         return
-    async_add_entities(entities, update_before_add=True)
+    async_add_entities(entities)
 
 class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
-    # pylint: disable=import-outside-toplevel,abstract-method
     """Representation of a climate_ip climate device using a coordinator."""
     entity_description: ClimateEntityDescription
     _attr_has_entity_name = True
@@ -218,56 +216,63 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         return self.hass.config.units.temperature_unit
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
-        """Set new target temperature and handle optional hvac_mode."""
-        temp: float | None = kwargs.get(ATTR_TEMPERATURE)
-        hvac_mode: HVACMode | None = kwargs.get(ATTR_HVAC_MODE)
-
-        _LOGGER.debug(
-            "%s [Forensic] async_set_temperature called with temp=%s, hvac_mode=%s, kwargs=%s", 
-            self.coordinator.log_prefix, temp, hvac_mode, kwargs
-        )
-
+        """Set new target temperature and/or hvac mode."""
+        hvac_mode = kwargs.get(ATTR_HVAC_MODE)
         if hvac_mode is not None:
             await self.async_set_hvac_mode(hvac_mode)
 
-        if temp is not None:
-            await self.coordinator.async_set_property(
-                ATTR_TEMPERATURE, temp
+        temperature = kwargs.get(ATTR_TEMPERATURE)
+        if temperature is not None:
+            await self.coordinator.async_set_property(ATTR_TEMPERATURE, temperature)
+        elif hvac_mode is None:
+            # Only raise an error if BOTH parameters are missing
+            raise ServiceValidationError(
+                f"[{self.coordinator.log_prefix}] No temperature or HVAC mode provided in set_temperature action."
             )
+
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
         await self.coordinator.async_set_property(ATTR_HVAC_MODE, hvac_mode)
+
     async def async_set_fan_mode(self, fan_mode: str) -> None:
         """Set new target fan mode."""
         if fan_mode not in self.fan_modes:
-            _LOGGER.warning("%s Requested fan mode '%s' is not available. Ignoring request.", self.coordinator.log_prefix, fan_mode)
-            return
+            raise ServiceValidationError(
+                f"[{self.coordinator.log_prefix}] Requested fan mode '{fan_mode}' is not available."
+            )
         await self.coordinator.async_set_property(ATTR_FAN_MODE, fan_mode)
+
     async def async_set_swing_mode(self, swing_mode: str) -> None:
         """Set new target swing operation."""
-        await self.coordinator.async_set_property(
-            ATTR_SWING_MODE, swing_mode
-        )
+        if swing_mode not in self.swing_modes:
+            raise ServiceValidationError(
+                f"[{self.coordinator.log_prefix}] Requested swing mode '{swing_mode}' is not available."
+            )
+        await self.coordinator.async_set_property(ATTR_SWING_MODE, swing_mode)
+
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set new target preset mode."""
-        await self.coordinator.async_set_property(
-            ATTR_PRESET_MODE, preset_mode
-        )
+        if preset_mode not in self.preset_modes:
+            raise ServiceValidationError(
+                f"[{self.coordinator.log_prefix}] Requested preset mode '{preset_mode}' is not available."
+            )
+        await self.coordinator.async_set_property(ATTR_PRESET_MODE, preset_mode)
+
     async def async_turn_on(self) -> None:
         """Turn the climate device on."""
         await self.coordinator.async_set_property(ATTR_POWER, STATE_ON)
+
     async def async_turn_off(self) -> None:
         """Turn the climate device off."""
         await self.coordinator.async_set_property(ATTR_POWER, STATE_OFF)
-    async def async_service_set_property(self, **kwargs: Any) -> None:
-        """Set a property on the device via action call."""
-        key: str | None = kwargs.get("key")
-        value: Any | None = kwargs.get("value")
-        if not key:
-            _LOGGER.warning(
-                "%s set_property action called without a valid key.", self.coordinator.log_prefix
+
+    async def async_service_set_property(self, key: str, value: Any) -> None:
+        """Set a property on the device via action call with strict validation."""
+        if key not in self.coordinator.controller.operations:
+            raise ServiceValidationError(
+                f"Action set_property failed: '{key}' is not a valid operation for this device."
             )
-            return
+
         _LOGGER.debug(
             "%s Action set_property called: %s = %s", self.coordinator.log_prefix, key, value
         )

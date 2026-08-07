@@ -56,9 +56,9 @@ async def test_set_property_action(hass: HomeAssistant) -> None:
 
     # In a real HA environment, this would be triggered via hass.services.async_call
     # Here we just verify the entity method exists and behaves as expected when called
-    # with common parameters from actions.yaml
+    mock_coordinator.controller.operations = ["AC_FUN_POWER"]
     hass.async_create_task.side_effect = lambda coro, **kw: asyncio.create_task(coro)
-    await entity.async_service_set_property(key="AC_FUN_POWER", value="On")
+    await entity.async_service_set_property("AC_FUN_POWER", "On")
     await asyncio.sleep(0)
 
     # Verify it delegated to the coordinator
