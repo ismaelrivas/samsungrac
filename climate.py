@@ -23,7 +23,6 @@ from homeassistant.const import (
     PRECISION_WHOLE,
     STATE_OFF,
     STATE_ON,
-    UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
@@ -170,27 +169,40 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             return HVACAction.OFF
 
         hvac_mode = self.hvac_mode
+        current = self.current_temperature
+        target = self.target_temperature
 
-        # Dynamic heuristic for AUTO mode based on temperature delta
+        # Fallback to static mapping if temperature sensors are unavailable
+        if current is None or target is None:
+            action_map = {
+                HVACMode.COOL: HVACAction.COOLING,
+                HVACMode.HEAT: HVACAction.HEATING,
+                HVACMode.DRY: HVACAction.DRYING,
+                HVACMode.FAN_ONLY: HVACAction.FAN,
+            }
+            return action_map.get(hvac_mode, HVACAction.IDLE)
+
+        # Dynamic heuristic based on temperature delta (0.5 deadband)
         if hvac_mode in (HVACMode.AUTO, HVACMode.HEAT_COOL):
-            current = self.current_temperature
-            target = self.target_temperature
-            if current is not None and target is not None:
-                # Assume a 0.5 degree deadband to represent "within range" (IDLE)
-                if current < (target - 0.5):
-                    return HVACAction.HEATING
-                if current > (target + 0.5):
-                    return HVACAction.COOLING
+            if current < (target - 0.5):
+                return HVACAction.HEATING
+            if current > (target + 0.5):
+                return HVACAction.COOLING
             return HVACAction.IDLE
 
-        # Strict mapping for explicit modes
-        action_map = {
-            HVACMode.COOL: HVACAction.COOLING,
-            HVACMode.HEAT: HVACAction.HEATING,
-            HVACMode.DRY: HVACAction.DRYING,
-            HVACMode.FAN_ONLY: HVACAction.FAN,
-        }
-        return action_map.get(hvac_mode, HVACAction.IDLE)
+        if hvac_mode == HVACMode.COOL:
+            return HVACAction.COOLING if current > (target - 0.5) else HVACAction.IDLE
+
+        if hvac_mode == HVACMode.HEAT:
+            return HVACAction.HEATING if current < (target + 0.5) else HVACAction.IDLE
+
+        if hvac_mode == HVACMode.DRY:
+            return HVACAction.DRYING
+
+        if hvac_mode == HVACMode.FAN_ONLY:
+            return HVACAction.FAN
+
+        return HVACAction.IDLE
 
     @property
     def current_temperature(self) -> float | None:

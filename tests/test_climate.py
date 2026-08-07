@@ -313,6 +313,33 @@ async def test_hvac_action_dynamic_auto_heuristic(
     state.hvac_mode = HVACMode.OFF
     assert base_climate_entity.hvac_action == HVACAction.OFF
 
+    # COOL mode: active when current > target - 0.5, idle otherwise
+    state.hvac_mode = HVACMode.COOL
+    state.current_temperature = 25.0
+    state.target_temperature = 22.0
+    assert base_climate_entity.hvac_action == HVACAction.COOLING
+    state.current_temperature = 21.0
+    assert base_climate_entity.hvac_action == HVACAction.IDLE
+
+    # HEAT mode: active when current < target + 0.5, idle otherwise
+    state.hvac_mode = HVACMode.HEAT
+    state.current_temperature = 19.0
+    state.target_temperature = 22.0
+    assert base_climate_entity.hvac_action == HVACAction.HEATING
+    state.current_temperature = 23.0
+    assert base_climate_entity.hvac_action == HVACAction.IDLE
+
+    # DRY & FAN_ONLY modes
+    state.hvac_mode = HVACMode.DRY
+    assert base_climate_entity.hvac_action == HVACAction.DRYING
+    state.hvac_mode = HVACMode.FAN_ONLY
+    assert base_climate_entity.hvac_action == HVACAction.FAN
+
+    # Fallback to static mapping when temperature is None
+    state.current_temperature = None
+    state.hvac_mode = HVACMode.COOL
+    assert base_climate_entity.hvac_action == HVACAction.COOLING
+
 
 async def test_public_async_set_hvac_mode_behavior(
     base_climate_entity: ClimateIP,
