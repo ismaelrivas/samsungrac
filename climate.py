@@ -140,15 +140,15 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
         # Cache static hardware temperature boundaries
         self._attr_min_temp = self._extract_float_boundary(
-            self.coordinator.controller, ATTR_MIN_TEMP, DEFAULT_CLIMATE_IP_TEMP_MIN
+            ATTR_MIN_TEMP, DEFAULT_CLIMATE_IP_TEMP_MIN
         )
         self._attr_max_temp = self._extract_float_boundary(
-            self.coordinator.controller, ATTR_MAX_TEMP, DEFAULT_CLIMATE_IP_TEMP_MAX
+            ATTR_MAX_TEMP, DEFAULT_CLIMATE_IP_TEMP_MAX
         )
 
-    def _extract_float_boundary(self, controller: Any, prop_key: str, default_val: float) -> float:
+    def _extract_float_boundary(self, prop_key: str, default_val: float) -> float:
         """Extract and cast numeric boundaries safely."""
-        prop = controller.get_property_object(prop_key)
+        prop = self.coordinator.controller.get_property_object(prop_key)
         if prop and prop.value is not None:
             try:
                 return float(prop.value)
@@ -168,39 +168,34 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         if not self.coordinator.data or self.hvac_mode == HVACMode.OFF:
             return HVACAction.OFF
 
-        hvac_mode = self.hvac_mode
+        mode = self.hvac_mode
+        if mode == HVACMode.DRY:
+            return HVACAction.DRYING
+        if mode == HVACMode.FAN_ONLY:
+            return HVACAction.FAN
+
         current = self.current_temperature
         target = self.target_temperature
 
-        # Fallback to static mapping if temperature sensors are unavailable
-        if current is None or target is None:
-            action_map = {
-                HVACMode.COOL: HVACAction.COOLING,
-                HVACMode.HEAT: HVACAction.HEATING,
-                HVACMode.DRY: HVACAction.DRYING,
-                HVACMode.FAN_ONLY: HVACAction.FAN,
-            }
-            return action_map.get(hvac_mode, HVACAction.IDLE)
+        if mode == HVACMode.COOL:
+            return (
+                HVACAction.COOLING
+                if current is None or target is None or current > (target - 0.5)
+                else HVACAction.IDLE
+            )
 
-        # Dynamic heuristic based on temperature delta (0.5 deadband)
-        if hvac_mode in (HVACMode.AUTO, HVACMode.HEAT_COOL):
+        if mode == HVACMode.HEAT:
+            return (
+                HVACAction.HEATING
+                if current is None or target is None or current < (target + 0.5)
+                else HVACAction.IDLE
+            )
+
+        if mode in (HVACMode.AUTO, HVACMode.HEAT_COOL) and current is not None and target is not None:
             if current < (target - 0.5):
                 return HVACAction.HEATING
             if current > (target + 0.5):
                 return HVACAction.COOLING
-            return HVACAction.IDLE
-
-        if hvac_mode == HVACMode.COOL:
-            return HVACAction.COOLING if current > (target - 0.5) else HVACAction.IDLE
-
-        if hvac_mode == HVACMode.HEAT:
-            return HVACAction.HEATING if current < (target + 0.5) else HVACAction.IDLE
-
-        if hvac_mode == HVACMode.DRY:
-            return HVACAction.DRYING
-
-        if hvac_mode == HVACMode.FAN_ONLY:
-            return HVACAction.FAN
 
         return HVACAction.IDLE
 
