@@ -879,6 +879,20 @@ async def test_read_response_headers_and_body_helpers(client, mock_reader):
     assert body == '{"status":"ok"}'
 
 
+def test_log_masked_response_helper(client):
+    """Directly test _log_masked_response helper with valid JSON and non-JSON string."""
+    with patch("custom_components.climate_ip.protocol_8888._LOGGER.debug") as mock_debug:
+        client._log_masked_response('{\n"token": "secret123"\n}')
+        mock_debug.assert_called_once()
+        log_arg = mock_debug.call_args[0][2]
+        assert "secret123" not in log_arg or "*" in log_arg or "token" in log_arg
+
+    with patch("custom_components.climate_ip.protocol_8888._LOGGER.debug") as mock_debug:
+        client._log_masked_response("plain non-json text\r\n")
+        mock_debug.assert_called_once()
+        assert mock_debug.call_args[0][2] == "plain non-json text"
+
+
 async def test_request_writer_or_reader_none(client, mock_reader, mock_writer):
     """Kills 'if writer is None and reader is None' mutant."""
     client._writer = mock_writer

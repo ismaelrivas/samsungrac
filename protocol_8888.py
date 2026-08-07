@@ -106,11 +106,11 @@ class Samsung8888Client:
                         applied_opts.append(opt_name)
 
             if applied_opts:
-                _LOGGER.debug(  # pragma: no mutate
-                    "%s SSL Optimizations enabled: %s",  # pragma: no mutate
-                    self.log_prefix,  # pragma: no mutate
-                    ", ".join(applied_opts),  # pragma: no mutate
-                )  # pragma: no mutate
+                _LOGGER.debug(
+                    "%s SSL Optimizations enabled: %s",
+                    self.log_prefix,
+                    ", ".join(applied_opts),
+                )
         except Exception:  # pylint: disable=broad-exception-caught
             pass  # Ignore if options not supported on this platform.
 
@@ -119,21 +119,21 @@ class Samsung8888Client:
                 # Modern Python 3.9+ idiom for offloading blocking calls to a thread
                 await asyncio.to_thread(ctx.load_cert_chain, self.cert_path)
             except Exception as e:  # pylint: disable=broad-exception-caught
-                _LOGGER.warning(  # pragma: no mutate
-                    "%s Error loading certificate %s: %s",  # pragma: no mutate
-                    self.log_prefix,  # pragma: no mutate
-                    self.cert_path,  # pragma: no mutate
-                    e,  # pragma: no mutate
-                )  # pragma: no mutate
+                _LOGGER.warning(
+                    "%s Error loading certificate %s: %s",
+                    self.log_prefix,
+                    self.cert_path,
+                    e,
+                )
 
         max_ver = get_tls_version_name(getattr(ctx, "maximum_version", 0))
         min_ver = get_tls_version_name(getattr(ctx, "minimum_version", 0))
-        _LOGGER.debug(  # pragma: no mutate
-            "%s [protocol_8888] SSLContext configured. Min: %s, Max: %s",  # pragma: no mutate
-            self.log_prefix,  # pragma: no mutate
-            min_ver,  # pragma: no mutate
-            max_ver,  # pragma: no mutate
-        )  # pragma: no mutate
+        _LOGGER.debug(
+            "%s [protocol_8888] SSLContext configured. Min: %s, Max: %s",
+            self.log_prefix,
+            min_ver,
+            max_ver,
+        )
 
         return ctx
 
@@ -157,11 +157,11 @@ class Samsung8888Client:
             try:
                 ssl_obj = self._writer.get_extra_info("ssl_object")
                 negotiated_tls = ssl_obj.version() if ssl_obj else "Unknown"
-                _LOGGER.debug(  # pragma: no mutate
-                    "%s [Samsung8888Client] Connected successfully. Negotiated TLS: %s",  # pragma: no mutate
-                    self.log_prefix,  # pragma: no mutate
-                    negotiated_tls,  # pragma: no mutate
-                )  # pragma: no mutate
+                _LOGGER.debug(
+                    "%s [Samsung8888Client] Connected successfully. Negotiated TLS: %s",
+                    self.log_prefix,
+                    negotiated_tls,
+                )
             except Exception:  # pylint: disable=broad-exception-caught
                 pass
         except TimeoutError as exc:
@@ -173,10 +173,10 @@ class Samsung8888Client:
 
     async def close(self) -> None:
         """Close and clean up the socket writer and reader."""
-        _LOGGER.debug(  # pragma: no mutate
+        _LOGGER.debug(
             "%s [Samsung8888Client] Closing and cleaning up resources...",
-            self.log_prefix,  # pragma: no mutate
-        )  # pragma: no mutate
+            self.log_prefix,
+        )
 
         if self._writer:
             try:
@@ -185,29 +185,29 @@ class Samsung8888Client:
                     async with asyncio.timeout(SOCKET_CLOSE_TIMEOUT):
                         await self._writer.wait_closed()
                 except TimeoutError:
-                    _LOGGER.warning(  # pragma: no mutate
-                        "%s [Samsung8888Client] Timeout waiting for socket close, "  # pragma: no mutate
-                        "forcing abort (RST)",  # pragma: no mutate
-                        self.log_prefix,  # pragma: no mutate
-                    )  # pragma: no mutate
+                    _LOGGER.warning(
+                        "%s [Samsung8888Client] Timeout waiting for socket close, "
+                        "forcing abort (RST)",
+                        self.log_prefix,
+                    )
                     if self._writer.transport:
                         self._writer.transport.abort()
                 except Exception as e:  # pylint: disable=broad-exception-caught
-                    _LOGGER.warning(  # pragma: no mutate
+                    _LOGGER.warning(
                         "%s [Samsung8888Client] Error during wait_closed, "
-                        "forcing abort: %s",  # pragma: no mutate
-                        self.log_prefix,  # pragma: no mutate
-                        e,  # pragma: no mutate
-                    )  # pragma: no mutate
+                        "forcing abort: %s",
+                        self.log_prefix,
+                        e,
+                    )
                     if self._writer.transport:
                         self._writer.transport.abort()
 
             except Exception as e:  # pylint: disable=broad-exception-caught
-                _LOGGER.debug(  # pragma: no mutate
-                    "%s [Samsung8888Client] Error closing writer: %s",  # pragma: no mutate
-                    self.log_prefix,  # pragma: no mutate
-                    e,  # pragma: no mutate
-                )  # pragma: no mutate
+                _LOGGER.debug(
+                    "%s [Samsung8888Client] Error closing writer: %s",
+                    self.log_prefix,
+                    e,
+                )
             finally:
                 self._writer = None
                 self._reader = None
@@ -231,7 +231,7 @@ class Samsung8888Client:
             for k, v in headers.items():
                 req.append(f"{k}: {v}")
 
-        payload_bytes = json_dumps(body).encode("utf-8") if body else b""
+        payload_bytes = json_dumps(body).encode("utf-8") if body is not None else b""
         req.append(f"Content-Length: {len(payload_bytes)}")
 
         request_str = "\r\n".join(req) + "\r\n\r\n"
@@ -329,6 +329,9 @@ class Samsung8888Client:
             resp_body = ""  # Explicitly 0 — do not read.
         else:
             # Fallback: read until closed or timeout; extract first valid JSON object.
+            # Architectural Note: We intentionally use Python stdlib json.JSONDecoder().raw_decode
+            # here instead of homeassistant.util.json (orjson) because orjson does not support
+            # incremental stream parsing or raw_decode on un-framed raw TCP sockets.
             buffer = b""
             decoder = json.JSONDecoder()
 
@@ -357,15 +360,31 @@ class Samsung8888Client:
                             continue  # Not full JSON yet — keep reading.
 
             except TimeoutError:
-                _LOGGER.debug(  # pragma: no mutate
-                    "%s [RAW] Socket chunk read timed out (5.0s limit reached).",  # pragma: no mutate
-                    self.log_prefix,  # pragma: no mutate
-                )  # pragma: no mutate
+                _LOGGER.debug(
+                    "%s [RAW] Socket chunk read timed out (5.0s limit reached).",
+                    self.log_prefix,
+                )
 
             if not resp_body:
                 resp_body = buffer.decode("utf-8", "ignore")
 
         return resp_body
+
+    def _log_masked_response(self, resp_body: str) -> None:
+        """Compact, mask sensitive data, and log the response body."""
+        log_body = resp_body.replace("\r", "").replace("\n", "")
+        try:
+            json_obj = json_loads(resp_body)
+            masked_obj = mask_sensitive_data(json_obj)
+            log_body = json_dumps(masked_obj)
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass  # Keep cleaned string if not valid JSON.
+
+        _LOGGER.debug(
+            "%s Response body received: '%s'",
+            self.log_prefix,
+            log_body,
+        )
 
     async def request(
         self,
@@ -411,32 +430,19 @@ class Samsung8888Client:
                         reader, content_length, has_content_length_header
                     )
 
-                    _LOGGER.debug(  # pragma: no mutate
-                        "%s Headers received: %s",  # pragma: no mutate
-                        self.log_prefix,  # pragma: no mutate
-                        headers_received,  # pragma: no mutate
-                    )  # pragma: no mutate
-                    _LOGGER.debug(  # pragma: no mutate
-                        "%s Content-Length: %d, Content-Type: %s",  # pragma: no mutate
-                        self.log_prefix,  # pragma: no mutate
-                        content_length,  # pragma: no mutate
-                        content_type,  # pragma: no mutate
-                    )  # pragma: no mutate
+                    _LOGGER.debug(
+                        "%s Headers received: %s",
+                        self.log_prefix,
+                        headers_received,
+                    )
+                    _LOGGER.debug(
+                        "%s Content-Length: %d, Content-Type: %s",
+                        self.log_prefix,
+                        content_length,
+                        content_type,
+                    )
 
-                    # Compact and mask the body for logging.
-                    log_body = resp_body.replace("\r", "").replace("\n", "")
-                    try:
-                        json_obj = json_loads(resp_body)
-                        masked_obj = mask_sensitive_data(json_obj)
-                        log_body = json_dumps(masked_obj)
-                    except Exception:  # pylint: disable=broad-exception-caught
-                        pass  # Keep cleaned string if not valid JSON.
-
-                    _LOGGER.debug(  # pragma: no mutate
-                        "%s Response body received: '%s'",  # pragma: no mutate
-                        self.log_prefix,  # pragma: no mutate
-                        log_body,  # pragma: no mutate
-                    )  # pragma: no mutate
+                    self._log_masked_response(resp_body)
 
                     if status_code == 401:
                         raise AuthError("401 Unauthorized")
@@ -462,10 +468,10 @@ class Samsung8888Client:
                     await self.close()
                     raise
                 except asyncio.CancelledError:
-                    _LOGGER.debug(  # pragma: no mutate
-                        "%s [RAW] Request was cancelled by coordinator timeout. Closing socket.",  # pragma: no mutate
-                        self.log_prefix,  # pragma: no mutate
-                    )  # pragma: no mutate
+                    _LOGGER.debug(
+                        "%s [RAW] Request was cancelled by coordinator timeout. Closing socket.",
+                        self.log_prefix,
+                    )
                     await self.close()
                     raise
                 except ssl.SSLError as exc:
@@ -476,5 +482,5 @@ class Samsung8888Client:
                     await self.close()
                     raise  # Fail-fast: do not mask as a CannotConnect
 
-        return None, "No response"
+
 
