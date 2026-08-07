@@ -152,7 +152,7 @@ class YamlStatePoller:
 
             entries = self.controller.hass.config_entries.async_entries("smartthings")
             if not entries:
-                _LOGGER.debug(  # pragma: no mutate
+                _LOGGER.debug(
                     "%s [Auth] No Official SmartThings config entries found.",
                     self.controller.log_prefix,
                 )
@@ -173,14 +173,14 @@ class YamlStatePoller:
             masked = (
                 f"***{token[-6:]}" if token and len(token) > 6 else "None"
             )  # pragma: no mutate
-            _LOGGER.debug(  # pragma: no mutate
+            _LOGGER.debug(
                 "%s [Auth] OAuth2 session token validated. Token: %s",
                 self.controller.log_prefix,
                 masked,
             )
             return token
         except Exception as e:  # pylint: disable=broad-exception-caught
-            _LOGGER.error(  # pragma: no mutate
+            _LOGGER.error(
                 "%s [Auth] Error refreshing SmartThings token via OAuth2: %s",
                 self.controller.log_prefix,
                 e,
@@ -225,7 +225,6 @@ class YamlStatePoller:
                 severity=IssueSeverity.WARNING,
                 translation_key="connection_failed",
                 translation_placeholders={
-                    "name": "device_name",
                     "device_name": device_name,
                     "host": self.controller.ip_address
                     or self.controller.host
@@ -243,8 +242,35 @@ class YamlStatePoller:
                 self.controller.ip_address or self.controller.host or "Unknown",
             )
         except Exception as e:  # pylint: disable=broad-exception-caught
-            _LOGGER.debug(  # pragma: no mutate
+            _LOGGER.debug(
                 "%s Failed to create repair issue: %s",
+                self.controller.log_prefix,
+                e,
+                exc_info=True,
+            )
+    
+    def _try_delete_repair_issue(self) -> None:
+        """Delete the HA repair issue when the device is back online."""
+        if not self.controller.hass:
+            return
+            
+        try:
+            safe_device_id = self._device_identifier.replace(".", "_").replace(" ", "_")
+            issue_id = f"device_offline_{safe_device_id}"
+            
+            async_delete_issue(
+                self.controller.hass,
+                "climate_ip",
+                issue_id,
+            )
+            _LOGGER.debug(
+                "%s Cleared repair issue '%s' (connection recovered)",
+                self.controller.log_prefix,
+                issue_id,
+            )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            _LOGGER.debug(
+                "%s Failed to clear repair issue: %s",
                 self.controller.log_prefix,
                 e,
                 exc_info=True,
@@ -319,26 +345,6 @@ class YamlStatePoller:
                 )
             )
 
-            if self._consecutive_connection_errors > 0:
-                self._consecutive_connection_errors = 0
-                if getattr(self.controller, "hass", None):
-                    try:
-                        safe_device_id = self._device_identifier.replace(
-                            ".", "_"
-                        ).replace(" ", "_")
-                        async_delete_issue(
-                            self.controller.hass,
-                            "climate_ip",
-                            f"device_offline_{safe_device_id}",
-                        )
-                    except Exception as e:  # pylint: disable=broad-exception-caught
-                        _LOGGER.debug(  # pragma: no mutate
-                            "%s Failed to delete repair issue: %s",
-                            self.controller.log_prefix,
-                            e,
-                            exc_info=True,
-                        )
-
         except AuthError as exc:
             new_token = await self._refresh_smartthings_token()
             if new_token and new_token != self.controller.token:
@@ -358,7 +364,6 @@ class YamlStatePoller:
                             None, self.controller.debug
                         )
                     )
-                    self._consecutive_connection_errors = 0
                 except Exception as retry_exc:
                     self._clear_state_cache()
                     raise UpdateFailed(
@@ -410,6 +415,15 @@ class YamlStatePoller:
                 "Failed to get device state: No data received and no cache available"
             )
 
+        if self._consecutive_connection_errors > 0:
+            _LOGGER.info(
+                "%s Connection recovered after %d failure(s).",
+                self.controller.log_prefix,
+                self._consecutive_connection_errors,
+            )
+            self._try_delete_repair_issue()
+            self._consecutive_connection_errors = 0
+
         self._cached_device_state = full_device_state
         self._last_state_fetch_time = time.time()
 
@@ -455,7 +469,7 @@ class YamlStatePoller:
                 _LOGGER.exception(
                     "%s Error during initial device discovery",
                     self.controller.log_prefix,
-                )  # pragma: no mutate
+                )
 
         await self.async_update_properties_from_state(full_device_state)
         return self.controller.loader.state_getter.value
@@ -591,8 +605,8 @@ class YamlStatePoller:
                     self.controller.log_prefix,
                     getattr(prop, "id", "unknown"),
                     e,
-                    exc_info=True,  # pragma: no mutate
-                )  # pragma: no mutate
+                    exc_info=True,
+                )
 
         state_node = self._get_state_node_from_prop(prop)
         if state_node and isinstance(state_node, str):
@@ -608,7 +622,7 @@ class YamlStatePoller:
                     self.controller.log_prefix,
                     getattr(prop, "id", "unknown"),
                     e,
-                )  # pragma: no mutate
+                )
         elif hasattr(prop, "set_device_state_for_values"):
             try:
                 prop.set_device_state_for_values(device_state)
@@ -619,7 +633,7 @@ class YamlStatePoller:
                     getattr(prop, "id", "unknown"),
                     e,
                     exc_info=True,
-                )  # pragma: no mutate
+                )
 
     def _find_device_node(
         self, state_dict: dict[str, Any], id_map: dict[str, Any]
@@ -699,13 +713,13 @@ class YamlStatePoller:
                             global_evict = True
                             break
                     except Exception as e:  # pylint: disable=broad-exception-caught
-                        _LOGGER.debug(  # pragma: no mutate
-                            "%s Error evaluating global eviction for %s: %s",  # pragma: no mutate
-                            self.controller.log_prefix,  # pragma: no mutate
-                            getattr(op, "id", "unknown"),  # pragma: no mutate
-                            e,  # pragma: no mutate
-                            exc_info=True,  # pragma: no mutate
-                        )  # pragma: no mutate
+                        _LOGGER.debug(
+                            "%s Error evaluating global eviction for %s: %s",
+                            self.controller.log_prefix,
+                            getattr(op, "id", "unknown"),
+                            e,
+                            exc_info=True,
+                        )
 
         now = time.time()
 
@@ -726,7 +740,7 @@ class YamlStatePoller:
                     "%s [Forensic] Lock expired for %s",
                     self.controller.log_prefix,
                     prop_id,
-                )  # pragma: no mutate
+                )
                 continue
 
             op = props_by_id.get(prop_id)
@@ -744,8 +758,8 @@ class YamlStatePoller:
                             self.controller.log_prefix,
                             prop_id,
                             e,
-                            exc_info=True,  # pragma: no mutate
-                        )  # pragma: no mutate
+                            exc_info=True,
+                        )
 
                 # If REAL physical state matches UI, remove shield
                 can_release = True
@@ -774,7 +788,7 @@ class YamlStatePoller:
                     changed_keys,
                     device_key,
                     can_release,
-                )  # pragma: no mutate
+                )
 
                 # Race Condition Fix: We DO NOT use hardware_override to blindly drop locks when the device_key arrives.
                 # If the user clicks rapidly, the AC will push delayed states from OLD commands.
@@ -796,14 +810,14 @@ class YamlStatePoller:
                         prop_id,
                         self._values_match(pure_val, pend_val),
                         lock_age,
-                    )  # pragma: no mutate
+                    )
                     del self._pending_updates[prop_id]
                 else:
                     _LOGGER.debug(
                         "%s [Forensic] Lock enforced for %s.",
                         self.controller.log_prefix,
                         prop_id,
-                    )  # pragma: no mutate
+                    )
                     # Force UI to stay in expected state and update local variable
                     self._set_prop_value(op, pend_val)
 
@@ -841,7 +855,7 @@ class YamlStatePoller:
                         op.id,
                         op_value,
                         new_value,
-                    )  # pragma: no mutate
+                    )
                     self._set_prop_value(op, new_value)
                     corrections[op.id] = new_value
                     self._inject_value_into_state(op, device_to_process, new_value)
@@ -864,7 +878,7 @@ class YamlStatePoller:
                 "%s [Forensic] Prediction started. pending_updates=%s",
                 self.controller.log_prefix,
                 self._pending_updates,
-            )  # pragma: no mutate
+            )
 
         if full_device_state is None:
             st_getter = self.controller.loader.state_getter
@@ -943,7 +957,7 @@ class YamlStatePoller:
                 "%s [Forensic] Prediction ended. Corrections=%s",
                 self.controller.log_prefix,
                 corrections,
-            )  # pragma: no mutate
+            )
 
         return corrections
 
@@ -1014,7 +1028,7 @@ class YamlStatePoller:
             self.controller.log_prefix,
             property_name,
             new_value,
-        )  # pragma: no mutate
+        )
         self.register_pending_update(property_name, new_value)
 
         if (
@@ -1081,7 +1095,7 @@ class YamlStatePoller:
                 try:
                     await coro
                 except Exception as e:  # pylint: disable=broad-exception-caught
-                    _LOGGER.debug(  # pragma: no mutate
+                    _LOGGER.debug(
                         "%s Failed cleanup task: %s",
                         self.controller.log_prefix,
                         e,

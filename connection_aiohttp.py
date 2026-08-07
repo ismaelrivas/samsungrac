@@ -733,7 +733,7 @@ class ConnectionAiohttp8888(Connection):
             raise CannotConnect(exc_msg) from e
         except (ValueError, KeyError, UnicodeDecodeError) as e:
             err_msg = "%s [aiohttp] Unexpected data parsing error: %s"
-            _LOGGER.error(err_msg, self.log_prefix, e, exc_info=True)
+            _LOGGER.debug(err_msg, self.log_prefix, e, exc_info=True)
             raise CannotConnect(f"Unexpected data parsing error: {e}") from e
 
     async def _execute_embedded_command(

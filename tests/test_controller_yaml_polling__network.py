@@ -85,7 +85,6 @@ def test_try_create_repair_issue_flow(mock_async_create_issue, mock_logger_info)
         severity=IssueSeverity.WARNING,
         translation_key="connection_failed",
         translation_placeholders={
-            "name": "device_name",
             "device_name": "Test AC",
             "host": "192.168.1.100",
             "ip_address": "192.168.1.100",
@@ -193,7 +192,6 @@ def test_try_create_repair_issue_fallback_cascade(
         severity=IssueSeverity.WARNING,
         translation_key="connection_failed",
         translation_placeholders={
-            "name": "device_name",
             "device_name": expected_device_name_ph,
             "host": expected_ip_address_ph,
             "ip_address": expected_ip_address_ph,

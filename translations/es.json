@@ -164,7 +164,7 @@
   },
   "issues": {
     "connection_failed": {
-      "title": "{device_name} - {name} - desconectado ({ip_address})",
+      "title": "{device_name} - desconectado ({ip_address})",
       "description": "El dispositivo **{device_name}** en **{ip_address}** no está localizable. Verifica la alimentación y la conexión a tu red local."
     }
   },

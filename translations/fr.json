@@ -246,27 +246,27 @@
         "name": "Version Unité Extérieure"
       }
     },
-        "binary_sensor": {
-          "connectivity": {
-            "name": "Connectivité"
-          }
-        },
-        "switch": {
-          "purify": {
-            "name": "Purifier"
-          },
-          "auto_clean": {
-            "name": "Nettoyage Automatique"
-          },
-          "beep": {
-            "name": "Bip"
-          }
-        },
-        "issues": {
-          "connection_failed": {
-            "title": "{device_name} déconnecté ({ip_address})",
-            "description": "L'appareil {device_name} à {ip_address} est injoignable. Veuillez vérifier l'alimentation et la connexion réseau."
-          }
-        }
+    "binary_sensor": {
+      "connectivity": {
+        "name": "Connectivité"
+      }
+    },
+    "switch": {
+      "purify": {
+        "name": "Purifier"
+      },
+      "auto_clean": {
+        "name": "Nettoyage Automatique"
+      },
+      "beep": {
+        "name": "Bip"
+      }
+    },
+    "issues": {
+      "connection_failed": {
+        "title": "{device_name} déconnecté ({ip_address})",
+        "description": "L'appareil {device_name} à {ip_address} est injoignable. Veuillez vérifier l'alimentation et la connexion réseau."
       }
     }
+  }
+}

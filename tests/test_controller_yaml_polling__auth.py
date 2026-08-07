@@ -82,22 +82,26 @@ async def test_async_update_state_auth_refresh_flow():
         with patch.object(
             poller, "_update_all_connections_token"
         ) as mock_update_dispatch:
-            # Simulamos que venimos de un error de conexión para asertar el reseteo
-            poller._consecutive_connection_errors = 2
+            with patch.object(
+                poller, "_try_delete_repair_issue"
+            ) as mock_delete_issue:
+                # Simulamos que venimos de un error de conexión para asertar el reseteo
+                poller._consecutive_connection_errors = 2
 
-            result = await poller.async_update_state()
+                result = await poller.async_update_state()
 
-            # 1. We assert que el controlador recibió la nueva credencial
-            assert mock_controller.token == "NEW_TOKEN_999"
+                # 1. We assert que el controlador recibió la nueva credencial
+                assert mock_controller.token == "NEW_TOKEN_999"
 
-            # 2. We assert que se emitió la orden de actualizar las conexiones hijas
-            mock_update_dispatch.assert_called_once_with("NEW_TOKEN_999")
+                # 2. We assert que se emitió la orden de actualizar las conexiones hijas
+                mock_update_dispatch.assert_called_once_with("NEW_TOKEN_999")
 
-            # 3. We assert que el callback del usuario se llamó (Kills mutant and -> or)
-            mock_controller.on_token_refreshed.assert_called_once_with("NEW_TOKEN_999")
+                # 3. We assert que el callback del usuario se llamó (Kills mutant and -> or)
+                mock_controller.on_token_refreshed.assert_called_once_with("NEW_TOKEN_999")
 
-            # 4. We assert que el contador de errores se reseteó a 0 estrictamente
-            assert poller._consecutive_connection_errors == 0
+                # 4. We assert que se borró el repair issue y el contador de errores se reseteó a 0 estrictamente
+                mock_delete_issue.assert_called_once()
+                assert poller._consecutive_connection_errors == 0
 
             # 5. We assert que state_getter se llamó con los argumentos exactos (Mata debug = False -> True)
             mock_controller.loader.state_getter.async_update_state.assert_called_with(
