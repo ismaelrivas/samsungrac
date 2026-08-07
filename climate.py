@@ -1,5 +1,5 @@
 """Support for Samsung AC devices using climate_ip."""
-# pylint: disable=import-outside-toplevel,too-many-instance-attributes,too-many-public-methods
+# pylint: disable=import-outside-toplevel,too-many-public-methods
 import logging
 from typing import TYPE_CHECKING, Any, Final
 
@@ -56,6 +56,15 @@ CLIMATE_ENTITY_DESCRIPTION: Final[ClimateEntityDescription] = ClimateEntityDescr
     translation_key="samsung_ac",
 )
 
+_CORE_ATTRIBUTES: Final[set[str]] = {
+    ATTR_TEMPERATURE,
+    ATTR_CURRENT_TEMPERATURE,
+    ATTR_HVAC_MODE,
+    ATTR_FAN_MODE,
+    ATTR_SWING_MODE,
+    ATTR_PRESET_MODE,
+}
+
 
 async def async_setup_entry(
     _hass: HomeAssistant,
@@ -63,17 +72,10 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the climate entity from a config entry."""
-    # coordinators is now guaranteed by contract to be a dictionary
-    coordinators = entry.runtime_data
-    entities: list[ClimateIP] = []
-   
-    for device_id, coordinator in coordinators.items():
-        entities.append(
-            ClimateIP(
-                coordinator,
-                CLIMATE_ENTITY_DESCRIPTION,
-            )
-        )
+    entities = [
+        ClimateIP(coordinator, CLIMATE_ENTITY_DESCRIPTION)
+        for coordinator in entry.runtime_data.values()
+    ]
     if not entities:
         _LOGGER.error(
             "No valid entities could be initialized from the provided coordinators."
@@ -184,13 +186,9 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        core_attrs = {
-            ATTR_TEMPERATURE, ATTR_CURRENT_TEMPERATURE,
-            ATTR_HVAC_MODE, ATTR_FAN_MODE, ATTR_SWING_MODE, ATTR_PRESET_MODE,
-        }
         return {
             k: v for k, v in self.coordinator.controller.state_attributes.items() 
-            if k not in core_attrs
+            if k not in _CORE_ATTRIBUTES
         }
 
     @property
@@ -204,15 +202,15 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
     @property
     def fan_modes(self) -> list[str]:
-        return self.coordinator.data.fan_modes if self.coordinator.data else []
+        return list(self.coordinator.data.fan_modes) if self.coordinator.data else []
 
     @property
     def swing_modes(self) -> list[str]:
-        return self.coordinator.data.swing_modes if self.coordinator.data else []
+        return list(self.coordinator.data.swing_modes) if self.coordinator.data else []
 
     @property
     def preset_modes(self) -> list[str]:
-        return self.coordinator.data.preset_modes if self.coordinator.data else []
+        return list(self.coordinator.data.preset_modes) if self.coordinator.data else []
 
     @property
     def temperature_unit(self) -> str:
@@ -227,7 +225,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         _LOGGER.debug(
             "%s [Forensic] async_set_temperature called with temp=%s, hvac_mode=%s, kwargs=%s", 
             self.coordinator.log_prefix, temp, hvac_mode, kwargs
-        )  # pragma: no mutate
+        )
 
         if hvac_mode is not None:
             await self.async_set_hvac_mode(hvac_mode)
@@ -243,7 +241,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         """Set new target fan mode."""
         if fan_mode not in self.fan_modes:
             # fmt: off
-            _LOGGER.warning("%s Requested fan mode '%s' is not available. Ignoring request.", self.coordinator.log_prefix, fan_mode)  # pragma: no mutate
+            _LOGGER.warning("%s Requested fan mode '%s' is not available. Ignoring request.", self.coordinator.log_prefix, fan_mode)
             # fmt: on
             return
         await self.coordinator.async_set_property(ATTR_FAN_MODE, fan_mode)
@@ -270,10 +268,10 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         if not key:
             _LOGGER.warning(
                 "%s set_property action called without a valid key.", self.coordinator.log_prefix
-            )  # pragma: no mutate
+            )
             return
         _LOGGER.debug(
             "%s Action set_property called: %s = %s", self.coordinator.log_prefix, key, value
-        )  # pragma: no mutate
+        )
         await self.coordinator.async_set_property(key, value)
 
