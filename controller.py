@@ -188,11 +188,11 @@ class ClimateController(ABC, Generic[_T]):
     # =========================================================================
 
     def on_ssl_config_updated(self, ssl_config: dict[str, Any]) -> None:
-        """Callback invocado cuando la red negocia una nueva configuración SSL."""
+        """Callback invoked when the network negotiates a new SSL configuration."""
         pass
 
     async def on_push_update_callback(self, data: dict[str, Any]) -> None:
-        """Callback invocado cuando el dispositivo envía un push update."""
+        """Callback invoked when the device sends a push update."""
         pass
 
     async def request_refresh_callback(self) -> None:
@@ -200,11 +200,11 @@ class ClimateController(ABC, Generic[_T]):
         pass
 
     def on_offline_callback(self, reason: str) -> None:
-        """Callback invocado cuando el dispositivo es declarado offline."""
+        """Callback invoked when the device is declared offline."""
         pass
 
     def on_connection_failed_callback(self) -> None:
-        """Callback invocado en fallos críticos de conexión."""
+        """Callback invoked on critical connection failures."""
         pass
 
 

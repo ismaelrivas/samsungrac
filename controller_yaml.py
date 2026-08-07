@@ -472,8 +472,8 @@ class YamlController(ClimateController):
             raw_preset = self.get_property(ATTR_PRESET_MODE)
             preset_mode = str(raw_preset) if raw_preset is not None else None
 
-            # 2. Lavado y conversión a Tuplas Inmutables para las listas de modos
-            # Filtramos posibles nulos y forzamos el tipo estricto.
+            # 2. Sanitization and conversion to Immutable Tuples for mode lists
+            # Filter out potential nulls and enforce strict typing.
             raw_hvac_modes = self.get_property_all_values(ATTR_HVAC_MODE) or []
             hvac_modes_tuple = tuple(
                 HVACMode(str(m).lower()) for m in raw_hvac_modes if m is not None
@@ -489,7 +489,7 @@ class YamlController(ClimateController):
                 str(m) for m in (self.get_property_all_values(ATTR_PRESET_MODE) or [])
             )
 
-            # 3. Empaquetado estricto. La dataclass ahora recibe datos 100% puros.
+            # 3. Strict packaging. The dataclass now receives 100% pure data.
             return ClimateIPDeviceState(
                 hvac_mode=hvac_mode,
                 target_temperature=target_temp,
@@ -554,14 +554,6 @@ class YamlController(ClimateController):
         if self.connection is None:
             return False
 
-        # Avoid 'hasattr' to prevent fragile dynamic attribute checking.
-        # Intentamos acceder de forma directa y capturamos si la interfaz es incompatible.
-
-        # irp
-        # try:
-        #     return self.connection.is_push_supported
-        # except AttributeError:
-        #     return False
         return self.connection.is_push_supported
 
     @property

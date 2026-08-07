@@ -576,10 +576,10 @@ async def async_get_mac_address(ip_address: str) -> str | None:
         )
 
         try:
-            # Envolvemos la espera en un cortafuegos estricto de 2.0 segundos
+            # Wrap the wait in a strict 2.0-second firewall
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=2.0)
         except TimeoutError:
-            # Si el SO se cuelga, matamos el proceso para no dejar zombies
+            # If the OS hangs, kill the process to avoid leaving zombies
             with contextlib.suppress(OSError):
                 proc.kill()
             _LOGGER.debug(

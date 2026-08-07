@@ -130,7 +130,7 @@ class ConnectionAiohttp8888(Connection):
 
     @property
     def _resolved_target(self) -> tuple[str, str]:
-        """Resuelve de forma estricta y centralizada el Host y la MAC address."""
+        """Strictly and centrally resolve the Host and MAC address."""
         host = str(self._ip_address) if self._ip_address is not None else ""
         raw_mac = self._params.get(CONF_MAC)
         mac = str(raw_mac) if raw_mac is not None else ""
@@ -467,15 +467,15 @@ class ConnectionAiohttp8888(Connection):
         If keep_alive is True, returns the shared HA session.
         If keep_alive is False (or shared session is None), returns a dedicated local session.
         """
-        # 1. Lógica de sesión compartida (Keep-Alive)
+        # 1. Shared session logic (Keep-Alive)
         if self._keep_alive:
             if self._session is not None:
                 return self._session
-            # Si llegamos aquí, keep_alive es True pero no hay sesión.
+            # If we reach here, keep_alive is True but there is no session.
             warn_msg = "%s [aiohttp] keep_alive=True but shared session is None. Falling back to a temporary local session. Ensure hass and session are passed to YamlController explicitly."
             _LOGGER.warning(warn_msg, self.log_prefix)
 
-        # 2. Lógica de sesión local
+        # 2. Local session logic
         local_session = self._shared_state.local_session
 
         # Evaluate condition directly without intermediate variable allocation
@@ -931,7 +931,7 @@ class ConnectionAiohttp8888(Connection):
         # 1. Close internal embedded command (if any)
         if self._embedded_command is not None:
             try:
-                # Cero Desconfianza OO: Exigimos que cumpla la interfaz
+                # Zero-Trust OO: Enforce interface compliance
                 await self._embedded_command.close()
             except (
                 aiohttp.ClientError,

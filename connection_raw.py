@@ -226,8 +226,8 @@ class ConnectionRaw8888(Connection):
         current_token: str | None = str(self._config.get(CONF_TOKEN, "")) or None
 
         if self._controller:
-            # DOCTRINA FAIL-FAST: Acceso directo a propiedades formales.
-            # Si el controlador no las tiene, debe detonar AttributeError.
+            # FAIL-FAST DOCTRINE: Direct access to formal properties.
+            # If the controller lacks them, it must raise AttributeError.
             dev_id = self._controller.device_id
 
             # Evaluación estricta: propiedad pública primero, diccionario de fallback segundo.
