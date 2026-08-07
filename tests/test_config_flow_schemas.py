@@ -4,19 +4,16 @@ from unittest.mock import MagicMock
 
 import pytest
 import voluptuous as vol
-
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
+
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 from custom_components.climate_ip.const import (
     CONF_DEVICE_ID,
-    CONF_NAME,
-    CONF_POLL_INTERVAL,
-)
-from custom_components.climate_ip.const import (
     CONF_DEVICE_TYPE,
     CONF_ENABLE_POLLING,
+    CONF_NAME,
+    CONF_POLL_INTERVAL,
     DEVICE_TYPE_SAMSUNG_2878,
-    DEVICE_TYPE_SAMSUNG_8888,
     DEVICE_TYPE_SMARTTHINGS_HVAC,
 )
 
@@ -107,4 +104,3 @@ async def test_rest_api_schema_invalid_poll_interval():
     schema = flow._get_rest_api_schema()
     poll_key, _ = get_schema_marker(schema, CONF_POLL_INTERVAL)
     assert poll_key.default() == "invalid_val"
-

@@ -1,9 +1,11 @@
-import pytest
 import asyncio
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from custom_components.climate_ip.samsung_2878 import (
-    ConnectionSamsung2878,
     PROTOCOL_2878_DPLUG,
+    ConnectionSamsung2878,
 )
 
 

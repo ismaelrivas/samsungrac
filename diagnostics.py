@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 import re
-from typing import Any, TYPE_CHECKING
+from dataclasses import asdict
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.const import CONF_MAC
@@ -12,8 +12,8 @@ from homeassistant.core import HomeAssistant
 
 if TYPE_CHECKING:
     from . import ClimateIPConfigEntry
-from .coordinator import SamsungClimateCoordinator
 from .const import DOMAIN
+from .coordinator import SamsungClimateCoordinator
 
 # Keys containing sensitive data that must be redacted from diagnostic payloads.
 # Kept in sync with helpers.mask_sensitive_data — any new sensitive field should
@@ -43,7 +43,7 @@ RE_MAC_DUID = re.compile(
 )
 
 
-def _get_mac_threat_patterns(entry: "ClimateIPConfigEntry") -> set[str]:
+def _get_mac_threat_patterns(entry: ClimateIPConfigEntry) -> set[str]:
     """Extract MAC address and DUID variants to build threat patterns for substring redaction."""
     patterns: set[str] = set()
 
@@ -110,16 +110,16 @@ def _extract_controller_diagnostics(controller: Any) -> dict[str, Any]:
         return controller.connection_diagnostics
 
     if hasattr(controller, "get_diagnostics"):
-        get_diag = getattr(controller, "get_diagnostics")
+        get_diag = controller.get_diagnostics
         if callable(get_diag):
             res = get_diag()
             if isinstance(res, dict):
                 return res
 
     if hasattr(controller, "connection"):
-        conn = getattr(controller, "connection")
+        conn = controller.connection
         if hasattr(conn, "get_diagnostics"):
-            get_diag = getattr(conn, "get_diagnostics")
+            get_diag = conn.get_diagnostics
             if callable(get_diag):
                 res = get_diag()
                 if isinstance(res, dict):
@@ -152,7 +152,7 @@ def _extract_raw_device_state(coordinator: Any) -> dict[str, Any]:
 
 
 async def async_get_config_entry_diagnostics(
-    hass: HomeAssistant, entry: "ClimateIPConfigEntry"
+    hass: HomeAssistant, entry: ClimateIPConfigEntry
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
 
@@ -172,12 +172,16 @@ async def async_get_config_entry_diagnostics(
     diagnostics_data: dict[str, Any] = {
         "entry": filtered_entry_data,
         "bootstrapping": {
-            "total_devices_discovered": getattr(entry_data, "discovered_devices_count", 0),
-            "skipped_devices_missing_info": getattr(entry_data, "skipped_devices_count", 0),
+            "total_devices_discovered": getattr(
+                entry_data, "discovered_devices_count", 0
+            ),
+            "skipped_devices_missing_info": getattr(
+                entry_data, "skipped_devices_count", 0
+            ),
             "active_entities": (
                 len(entry_data.entities)
                 if hasattr(entry_data, "entities")
-                and isinstance(entry_data.entities, (list, set, dict))
+                and isinstance(entry_data.entities, list | set | dict)
                 else 0
             ),
         },
@@ -237,12 +241,14 @@ async def async_get_config_entry_diagnostics(
                 total_discovered += getattr(coordinator, "discovered_devices_count", 1)
                 total_skipped += getattr(coordinator, "skipped_devices_count", 0)
                 if hasattr(coordinator, "entities") and isinstance(
-                    coordinator.entities, (list, set, dict)
+                    coordinator.entities, list | set | dict
                 ):
                     total_entities += len(coordinator.entities)
 
         diagnostics_data["bootstrapping"]["total_devices_discovered"] = total_discovered
-        diagnostics_data["bootstrapping"]["skipped_devices_missing_info"] = total_skipped
+        diagnostics_data["bootstrapping"]["skipped_devices_missing_info"] = (
+            total_skipped
+        )
         diagnostics_data["bootstrapping"]["active_entities"] = total_entities
 
     # Apply Home Assistant's native async_redact_data to recursively clean

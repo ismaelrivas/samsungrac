@@ -1,16 +1,17 @@
-import pytest
-import time
 import copy
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 from custom_components.climate_ip.const import (
     CONF_DEVICE_TYPE,
-    DEVICE_TYPE_SAMSUNG_2878,
     CONFIG_DEVICE,
     DEVICE_TYPE_MIM_H03,
+    DEVICE_TYPE_SAMSUNG_2878,
 )
+from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 from custom_components.climate_ip.exceptions import AuthError, CannotConnect
 
 
@@ -96,7 +97,12 @@ def _helper_calculate_structured_state(self, full_device_state=None):
     props = getattr(loader, "properties", {}) if loader else {}
     sensors = getattr(loader, "sensors", {}) if loader else {}
     st_getter = getattr(loader, "state_getter", None)
-    all_p = ([st_getter] if st_getter else []) + list(ops.values()) + list(props.values()) + list(sensors.values())
+    all_p = (
+        ([st_getter] if st_getter else [])
+        + list(ops.values())
+        + list(props.values())
+        + list(sensors.values())
+    )
     for prop in all_p:
         prop_id = getattr(prop, "id", None)
         if prop_id and hasattr(prop, "calculate_value_from_state"):
@@ -143,7 +149,9 @@ async def test_sniper_build_device_state_from_props_2878_and_options():
 
 
 def test_sniper_calculate_structured_state_and_rebuild_attrs():
-    mock_controller = NakedObj(log_prefix="TEST", config={}, update_state_attributes=MagicMock())
+    mock_controller = NakedObj(
+        log_prefix="TEST", config={}, update_state_attributes=MagicMock()
+    )
     poller = YamlStatePoller(mock_controller)
 
     prop = NakedObj(id="hvac_mode")
@@ -295,16 +303,12 @@ async def test_sniper_update_properties_delegations():
 
     # Escenario A: < 15 segundos (Pasa por convert_hass_to_dev pero hace continue)
     poller._pending_updates = {"prop1": ("pending_val", time.time() - 5.0)}
-    with patch.object(
-        poller, "_get_state_node_from_prop", return_value="prop1_key"
-    ):
+    with patch.object(poller, "_get_state_node_from_prop", return_value="prop1_key"):
         await poller.async_update_properties_from_state({"dummy": "state_A"})
 
     # Escenario B: >= 15 segundos (Llama a async_update_state completo)
     poller._pending_updates = {"prop1": ("pending_val", time.time() - 20.0)}
-    with patch.object(
-        poller, "_get_state_node_from_prop", return_value="prop1_key"
-    ):
+    with patch.object(poller, "_get_state_node_from_prop", return_value="prop1_key"):
         await poller.async_update_properties_from_state({"dummy": "state_B"})
         assert prop.async_update_state.await_count >= 1
 
@@ -546,25 +550,27 @@ async def test_sniper_update_properties_pending_and_is_valid_mutations():
     poller._pending_updates = {"prop1": ("pending_val", time.time() - 5.0)}
 
     with patch.object(
-        poller, "_get_state_node_from_prop", side_effect=lambda p: getattr(p, "id", "key") + "_key"
+        poller,
+        "_get_state_node_from_prop",
+        side_effect=lambda p: getattr(p, "id", "key") + "_key",
     ) as mock_get_key:
         base_state = {"dummy": "state"}
         await poller.async_update_properties_from_state(base_state)
 
         # 1. Verificación de L534
         mock_get_key.assert_any_call(prop)
-        assert base_state.get("prop1_key") == "dev_pending_val", (
-            "Mutante L534: Falló la inyección por pasar None al key finder"
-        )
+        assert (
+            base_state.get("prop1_key") == "dev_pending_val"
+        ), "Mutante L534: Falló la inyección por pasar None al key finder"
 
         # 2. Verificación de L567
         op.is_valid.assert_called_once()
         args, _ = op.is_valid.call_args
         # Aseguramos que is_valid recibió el diccionario real y no un None introducido por mutmut
         assert args[0] is not None
-        assert args[0] == base_state, (
-            "Mutante L567: is_valid evaluado ciegamente con None"
-        )
+        assert (
+            args[0] == base_state
+        ), "Mutante L567: is_valid evaluado ciegamente con None"
 
 
 @pytest.mark.asyncio
@@ -602,9 +608,9 @@ async def test_sniper_async_update_state_network_and_discovery_strictness():
         )
 
         res = await poller.async_update_state()
-        assert res == {"cached": True}, (
-            "Mutante L328 sobrevivió: no respetó la barrera de <= 2 errores"
-        )
+        assert res == {
+            "cached": True
+        }, "Mutante L328 sobrevivió: no respetó la barrera de <= 2 errores"
         assert poller._consecutive_connection_errors == 2
 
         # --- PRUEBA 2: Matar los Mutantes L344 y L345 (Manipulación de strings de error) ---
@@ -618,9 +624,9 @@ async def test_sniper_async_update_state_network_and_discovery_strictness():
             await poller.async_update_state()
 
         assert poller._consecutive_connection_errors == 3
-        assert "Device unreachable: Timeout on backend" in str(exc_info.value), (
-            "Mutante L344/L345 sobrevivió: la razón del error fue corrupta"
-        )
+        assert "Device unreachable: Timeout on backend" in str(
+            exc_info.value
+        ), "Mutante L344/L345 sobrevivió: la razón del error fue corrupta"
 
     # --- PRUEBA 3: Configuración estricta (Sin Cambios) ---
     class StrictConfig(dict):
@@ -728,11 +734,11 @@ async def test_async_update_state_boundary_cache_fallback():
     mock_controller = DummyController()
     poller = YamlStatePoller(mock_controller)
 
-    from custom_components.climate_ip.exceptions import CannotConnect
     from custom_components.climate_ip.const import (
         CONF_DEVICE_TYPE,
         DEVICE_TYPE_SAMSUNG_2878,
     )
+    from custom_components.climate_ip.exceptions import CannotConnect
 
     # EVASIÓN: Forzamos el tipo 2878 para saltar el async_check_network_reachability
     mock_controller.config = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
@@ -761,12 +767,13 @@ async def test_async_update_state_mutant_split_index():
     mock_controller = DummyController()
     poller = YamlStatePoller(mock_controller)
 
-    from custom_components.climate_ip.exceptions import CannotConnect
     from homeassistant.helpers.update_coordinator import UpdateFailed
+
     from custom_components.climate_ip.const import (
         CONF_DEVICE_TYPE,
         DEVICE_TYPE_SAMSUNG_2878,
     )
+    from custom_components.climate_ip.exceptions import CannotConnect
 
     mock_controller.config = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
 
@@ -841,6 +848,6 @@ async def test_mutant_74_75_split_logic():
         await poller.async_update_state()
 
     # Producción original sacará estrictamente el último elemento después de los dos puntos.
-    assert str(exc_info.value) == "Device unreachable: Segment3", (
-        "Mutantes M74/M75 detectados en el formateo del log."
-    )
+    assert (
+        str(exc_info.value) == "Device unreachable: Segment3"
+    ), "Mutantes M74/M75 detectados en el formateo del log."

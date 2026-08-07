@@ -55,6 +55,6 @@ def test_iot_class_is_local_polling() -> None:
     manifest = json.loads(
         (Path(__file__).parent.parent / "manifest.json").read_text(encoding="utf-8")
     )
-    assert manifest["iot_class"] == "local_polling", (
-        f"Expected iot_class='local_polling', got '{manifest['iot_class']}'"
-    )
+    assert (
+        manifest["iot_class"] == "local_polling"
+    ), f"Expected iot_class='local_polling', got '{manifest['iot_class']}'"

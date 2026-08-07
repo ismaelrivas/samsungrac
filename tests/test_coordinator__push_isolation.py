@@ -6,8 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from homeassistant.components.climate import HVACMode
-
 
 # Mocking the entire coordinator and controller to test the interaction
 @pytest.mark.asyncio

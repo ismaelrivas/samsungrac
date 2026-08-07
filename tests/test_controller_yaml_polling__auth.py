@@ -19,7 +19,7 @@ class NakedObj:
         self.ip_address = "1.2.3.4"
         self.available = True
         self.device_id = "XXXX"
-        self.hass = __import__('unittest.mock').mock.MagicMock()
+        self.hass = __import__("unittest.mock").mock.MagicMock()
         self.__dict__.update(kwargs)
 
 

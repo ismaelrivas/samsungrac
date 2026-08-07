@@ -7,37 +7,11 @@ import logging
 import time
 from typing import Any, Protocol, runtime_checkable
 
-
-@runtime_checkable
-class YamlPropertyProtocol(Protocol):
-    """Protocol defining the interface for YAML properties and operations."""
-
-    id: str
-    value: Any
-
-    def convert_hass_to_dev(self, value: Any) -> Any:
-        ...
-
-    def set_device_state_for_values(self, state: dict[str, Any]) -> None:
-        ...
-
-    def calculate_value_from_state(self, state: dict[str, Any]) -> Any:
-        ...
-
-    def async_update_state(self, state: dict[str, Any], debug: bool) -> Any:
-        ...
-
-    def should_evict_all_locks(self, state: dict[str, Any], changed_keys: set[str]) -> bool:
-        ...
-
-    def apply_optimistic_cascades(self, state: dict[str, Any], value: Any, dev_val: Any) -> None:
-        ...
-
 from homeassistant.components.climate import (
-    ATTR_HVAC_MODE,
     ATTR_FAN_MODE,
-    ATTR_SWING_MODE,
+    ATTR_HVAC_MODE,
     ATTR_PRESET_MODE,
+    ATTR_SWING_MODE,
     ClimateEntityFeature,
 )
 from homeassistant.const import (
@@ -67,6 +41,30 @@ from .helpers import async_check_network_reachability, get_value_by_path
 from .state import ClimateIPDeviceState
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@runtime_checkable
+class YamlPropertyProtocol(Protocol):
+    """Protocol defining the interface for YAML properties and operations."""
+
+    id: str
+    value: Any
+
+    def convert_hass_to_dev(self, value: Any) -> Any: ...
+
+    def set_device_state_for_values(self, state: dict[str, Any]) -> None: ...
+
+    def calculate_value_from_state(self, state: dict[str, Any]) -> Any: ...
+
+    def async_update_state(self, state: dict[str, Any], debug: bool) -> Any: ...
+
+    def should_evict_all_locks(
+        self, state: dict[str, Any], changed_keys: set[str]
+    ) -> bool: ...
+
+    def apply_optimistic_cascades(
+        self, state: dict[str, Any], value: Any, dev_val: Any
+    ) -> None: ...
 
 
 class YamlStatePoller:
@@ -119,10 +117,10 @@ class YamlStatePoller:
         self._last_state_fetch_time: float = 0.0
         self._last_device_state: dict[str, Any] | None = None
         self._consecutive_connection_errors: int = 0
-        
+
         # 💥 ISOLATED PURE STATE: Stores network truth without UI pollution
         self._pure_device_state: dict[str, Any] | None = None
-        
+
         # Caches resolved state_nodes for properties
         self._prop_template_key_cache: dict[str, str | None] = {}
 
@@ -215,7 +213,9 @@ class YamlStatePoller:
         try:
             safe_device_id = self._device_identifier.replace(".", "_").replace(" ", "_")
             config_name = self.controller.config.get("name")
-            device_name = config_name if config_name else f"Samsung AC {self._device_identifier}"
+            device_name = (
+                config_name if config_name else f"Samsung AC {self._device_identifier}"
+            )
             async_create_issue(
                 self.controller.hass,
                 "climate_ip",
@@ -227,8 +227,12 @@ class YamlStatePoller:
                 translation_placeholders={
                     "name": "device_name",
                     "device_name": device_name,
-                    "host": self.controller.ip_address or self.controller.host or "Unknown",
-                    "ip_address": self.controller.ip_address or self.controller.host or "Unknown",
+                    "host": self.controller.ip_address
+                    or self.controller.host
+                    or "Unknown",
+                    "ip_address": self.controller.ip_address
+                    or self.controller.host
+                    or "Unknown",
                 },
             )
             _LOGGER.info(
@@ -240,7 +244,10 @@ class YamlStatePoller:
             )
         except Exception as e:  # pylint: disable=broad-exception-caught
             _LOGGER.debug(  # pragma: no mutate
-                "%s Failed to create repair issue: %s", self.controller.log_prefix, e, exc_info=True
+                "%s Failed to create repair issue: %s",
+                self.controller.log_prefix,
+                e,
+                exc_info=True,
             )
 
     def _update_all_connections_token(self, new_token: str) -> None:
@@ -259,7 +266,9 @@ class YamlStatePoller:
     async def async_get_status(self) -> dict[str, Any] | None:
         """Fetch status prioritizing memory state to shield from polling flicker."""
         now_ts = time.time()
-        if self._cached_device_state and (now_ts - self._last_state_fetch_time < self.CACHE_FRESHNESS_SEC):
+        if self._cached_device_state and (
+            now_ts - self._last_state_fetch_time < self.CACHE_FRESHNESS_SEC
+        ):
             st_getter = self.controller.loader.state_getter
             if st_getter and st_getter.value:  # pragma: no mutate
                 # Return RAM state injected with locks to lock the UI without flickering
@@ -267,7 +276,9 @@ class YamlStatePoller:
             return self._cached_device_state.copy()
 
         device_state = await self.async_update_state()
-        return copy.deepcopy(device_state) if device_state else None  # pragma: no mutate
+        return (
+            copy.deepcopy(device_state) if device_state else None
+        )  # pragma: no mutate
 
     def _requires_icmp_ping(self, device_type: str) -> bool:
         """Determine if this device type requires an ICMP ping before polling."""
@@ -276,7 +287,9 @@ class YamlStatePoller:
     async def _async_perform_icmp_check(self) -> None:
         """Perform ICMP ping connectivity check."""
         device_type = self.controller.config.get(CONF_DEVICE_TYPE)
-        if not self._requires_icmp_ping(device_type) or not getattr(self.controller, "ip_address", None):
+        if not self._requires_icmp_ping(device_type) or not getattr(
+            self.controller, "ip_address", None
+        ):
             return
 
         try:
@@ -284,7 +297,9 @@ class YamlStatePoller:
                 self.controller.ip_address, self.controller.log_prefix
             )
         except Exception as diag_err:
-            _LOGGER.debug("%s ICMP check failed: %s", self.controller.log_prefix, diag_err)
+            _LOGGER.debug(
+                "%s ICMP check failed: %s", self.controller.log_prefix, diag_err
+            )
             return
 
         if not network_reachable:
@@ -308,7 +323,9 @@ class YamlStatePoller:
                 self._consecutive_connection_errors = 0
                 if getattr(self.controller, "hass", None):
                     try:
-                        safe_device_id = self._device_identifier.replace(".", "_").replace(" ", "_")
+                        safe_device_id = self._device_identifier.replace(
+                            ".", "_"
+                        ).replace(" ", "_")
                         async_delete_issue(
                             self.controller.hass,
                             "climate_ip",
@@ -316,7 +333,10 @@ class YamlStatePoller:
                         )
                     except Exception as e:  # pylint: disable=broad-exception-caught
                         _LOGGER.debug(  # pragma: no mutate
-                            "%s Failed to delete repair issue: %s", self.controller.log_prefix, e, exc_info=True
+                            "%s Failed to delete repair issue: %s",
+                            self.controller.log_prefix,
+                            e,
+                            exc_info=True,
                         )
 
         except AuthError as exc:
@@ -326,7 +346,10 @@ class YamlStatePoller:
                     self.controller.token = new_token
                 self._update_all_connections_token(new_token)
 
-                if hasattr(self.controller, "on_token_refreshed") and self.controller.on_token_refreshed:
+                if (
+                    hasattr(self.controller, "on_token_refreshed")
+                    and self.controller.on_token_refreshed
+                ):
                     self.controller.on_token_refreshed(new_token)
 
                 try:
@@ -338,10 +361,14 @@ class YamlStatePoller:
                     self._consecutive_connection_errors = 0
                 except Exception as retry_exc:
                     self._clear_state_cache()
-                    raise UpdateFailed(f"Retry after token refresh failed: {retry_exc}") from retry_exc
+                    raise UpdateFailed(
+                        f"Retry after token refresh failed: {retry_exc}"
+                    ) from retry_exc
             else:
                 self._clear_state_cache()
-                raise ConfigEntryAuthFailed("Authentication failed. Please check tokens.") from exc
+                raise ConfigEntryAuthFailed(
+                    "Authentication failed. Please check tokens."
+                ) from exc
 
         except InvalidHeaderError:
             raise
@@ -350,7 +377,6 @@ class YamlStatePoller:
             RequestException,
             CannotConnect,
             TimeoutError,
-            asyncio.TimeoutError,
             ConnectionRefusedError,
             OSError,
         ) as e:
@@ -374,14 +400,19 @@ class YamlStatePoller:
             raise UpdateFailed(f"Device unreachable: {reason}") from e
 
         if full_device_state is None:
-            if getattr(self.controller, "available", True) and self._cached_device_state:
+            if (
+                getattr(self.controller, "available", True)
+                and self._cached_device_state
+            ):
                 return self._cached_device_state
             self._clear_state_cache()
-            raise UpdateFailed("Failed to get device state: No data received and no cache available")
+            raise UpdateFailed(
+                "Failed to get device state: No data received and no cache available"
+            )
 
         self._cached_device_state = full_device_state
         self._last_state_fetch_time = time.time()
-        
+
         # 💥 NETWORK TRUTH STORAGE: Isolated from UI pollution
         self._pure_network_state = copy.deepcopy(full_device_state)
 
@@ -407,25 +438,37 @@ class YamlStatePoller:
                         if device_to_discover:
                             id_path = id_map.get("id")
                             discovered_id = (
-                                get_value_by_path(device_to_discover, id_path) if id_path else None
+                                get_value_by_path(device_to_discover, id_path)
+                                if id_path
+                                else None
                             )
                             curr_dev_id = getattr(self.controller, "device_id", "")
-                            if discovered_id is not None and (not curr_dev_id or curr_dev_id == "0"):
+                            if discovered_id is not None and (
+                                not curr_dev_id or curr_dev_id == "0"
+                            ):
                                 if hasattr(self.controller, "device_id"):
                                     self.controller.device_id = str(discovered_id)
 
                 await self.controller.loader.async_finish_initialization()
 
-            except Exception as e:
-                _LOGGER.exception("%s Error during initial device discovery", self.controller.log_prefix)  # pragma: no mutate
+            except Exception:
+                _LOGGER.exception(
+                    "%s Error during initial device discovery",
+                    self.controller.log_prefix,
+                )  # pragma: no mutate
 
         await self.async_update_properties_from_state(full_device_state)
         return self.controller.loader.state_getter.value
 
-    def _discover_target_node(self, device_type: str, devices_list: list[Any]) -> dict[str, Any] | None:
+    def _discover_target_node(
+        self, device_type: str, devices_list: list[Any]
+    ) -> dict[str, Any] | None:
         """Isolate device-specific discovery logic."""
         if device_type == DEVICE_TYPE_MIM_H03:
-            return next((d for d in devices_list if d and d.get("id") != "0" and "Mode" in d), None)
+            return next(
+                (d for d in devices_list if d and d.get("id") != "0" and "Mode" in d),
+                None,
+            )
         return devices_list[0] if devices_list else None
 
     @staticmethod
@@ -433,8 +476,10 @@ class YamlStatePoller:
         """Check if two values match numerically (float cast) or string-wise (case-insensitive)."""
         if val1 is None or val2 is None:  # pragma: no mutate
             return val1 == val2  # pragma: no mutate
-        if hasattr(val1, "value") and not isinstance(val1, dict): val1 = val1.value  # pragma: no mutate
-        if hasattr(val2, "value") and not isinstance(val2, dict): val2 = val2.value  # pragma: no mutate
+        if hasattr(val1, "value") and not isinstance(val1, dict):
+            val1 = val1.value  # pragma: no mutate
+        if hasattr(val2, "value") and not isinstance(val2, dict):
+            val2 = val2.value  # pragma: no mutate
         try:
             return float(val1) == float(val2)
         except (ValueError, TypeError):
@@ -449,7 +494,9 @@ class YamlStatePoller:
         if prop_id in self._prop_template_key_cache:
             return self._prop_template_key_cache[prop_id]
 
-        state_node = getattr(prop, "state_node", None) or getattr(prop, "_state_node", None)  # pragma: no mutate
+        state_node = getattr(prop, "state_node", None) or getattr(
+            prop, "_state_node", None
+        )  # pragma: no mutate
         if state_node and isinstance(state_node, str):  # pragma: no mutate
             self._prop_template_key_cache[prop_id] = state_node
             return state_node
@@ -460,14 +507,18 @@ class YamlStatePoller:
             return None
 
         template_string = (
-            status_tmpl.template if hasattr(status_tmpl, "template") else str(status_tmpl)
+            status_tmpl.template
+            if hasattr(status_tmpl, "template")
+            else str(status_tmpl)
         )  # pragma: no mutate
         if not template_string:  # pragma: no mutate
             self._prop_template_key_cache[prop_id] = None
             return None
 
         template_string = (
-            status_tmpl.template if hasattr(status_tmpl, "template") else str(status_tmpl)
+            status_tmpl.template
+            if hasattr(status_tmpl, "template")
+            else str(status_tmpl)
         )
         if not template_string:
             self._prop_template_key_cache[prop_id] = None
@@ -476,12 +527,14 @@ class YamlStatePoller:
         self._prop_template_key_cache[prop_id] = None
         return None
 
-    def _set_dict_value_by_path(self, target_dict: dict[str, Any], path_str: str, value: Any) -> None:
+    def _set_dict_value_by_path(
+        self, target_dict: dict[str, Any], path_str: str, value: Any
+    ) -> None:
         """Inject a value into a nested dict using dot notation path."""
         parts = path_str.split(".")
         current: Any = target_dict
         for i, part in enumerate(parts):
-            is_last = (i == len(parts) - 1)
+            is_last = i == len(parts) - 1
             next_part = parts[i + 1] if not is_last else None
 
             if is_last:
@@ -513,13 +566,17 @@ class YamlStatePoller:
                 while len(current) <= idx:
                     current.append({})
                 if current[idx] is None:
-                    current[idx] = [] if (next_part and next_part.isdigit()) else {}  # pragma: no mutate
+                    current[idx] = (
+                        [] if (next_part and next_part.isdigit()) else {}
+                    )  # pragma: no mutate
                 current = current[idx]
                 continue
 
             return
 
-    def _inject_value_into_state(self, prop: YamlPropertyProtocol | Any, device_state: dict[str, Any], value: Any) -> None:
+    def _inject_value_into_state(
+        self, prop: YamlPropertyProtocol | Any, device_state: dict[str, Any], value: Any
+    ) -> None:
         """Safely inject an optimistic value into the raw device state using state_node & native converters."""
         if not isinstance(device_state, dict):
             return
@@ -534,7 +591,7 @@ class YamlStatePoller:
                     self.controller.log_prefix,
                     getattr(prop, "id", "unknown"),
                     e,
-                    exc_info=True, # pragma: no mutate
+                    exc_info=True,  # pragma: no mutate
                 )  # pragma: no mutate
 
         state_node = self._get_state_node_from_prop(prop)
@@ -546,19 +603,32 @@ class YamlStatePoller:
             try:
                 prop.apply_optimistic_cascades(device_state, value, dev_val)
             except Exception as e:  # pylint: disable=broad-exception-caught
-                _LOGGER.debug("%s [Prop %s] apply_optimistic_cascades failed: %s", self.controller.log_prefix, getattr(prop, "id", "unknown"), e)  # pragma: no mutate
+                _LOGGER.debug(
+                    "%s [Prop %s] apply_optimistic_cascades failed: %s",
+                    self.controller.log_prefix,
+                    getattr(prop, "id", "unknown"),
+                    e,
+                )  # pragma: no mutate
         elif hasattr(prop, "set_device_state_for_values"):
             try:
                 prop.set_device_state_for_values(device_state)
             except Exception as e:  # pylint: disable=broad-exception-caught
-                _LOGGER.debug("%s set_device_state_for_values failed for %s: %s", self.controller.log_prefix, getattr(prop, "id", "unknown"), e, exc_info=True)  # pragma: no mutate
+                _LOGGER.debug(
+                    "%s set_device_state_for_values failed for %s: %s",
+                    self.controller.log_prefix,
+                    getattr(prop, "id", "unknown"),
+                    e,
+                    exc_info=True,
+                )  # pragma: no mutate
 
-    def _find_device_node(self, state_dict: dict[str, Any], id_map: dict[str, Any]) -> dict[str, Any] | None:
+    def _find_device_node(
+        self, state_dict: dict[str, Any], id_map: dict[str, Any]
+    ) -> dict[str, Any] | None:
         """Find the matching device node in the state dictionary based on id_map."""
         devices_list = get_value_by_path(state_dict, id_map.get("path_to_devices"))
         if not devices_list:
             return None
-        
+
         target_id = str(getattr(self.controller, "device_id", ""))
         found = next(
             (
@@ -570,7 +640,9 @@ class YamlStatePoller:
         )
         return found if found else devices_list[0]
 
-    def _extract_device_nodes(self, full_device_state: dict[str, Any], pure_network_state: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    def _extract_device_nodes(
+        self, full_device_state: dict[str, Any], pure_network_state: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Extract the relevant device nodes based on YAML cache id_map."""
         device_to_process = full_device_state
         pure_device_to_process = pure_network_state
@@ -586,15 +658,21 @@ class YamlStatePoller:
                         if isinstance(found_device, dict):
                             device_to_process = found_device
 
-                        found_pure_device = self._find_device_node(pure_network_state, id_map)
+                        found_pure_device = self._find_device_node(
+                            pure_network_state, id_map
+                        )
                         if isinstance(found_pure_device, dict):
                             pure_device_to_process = found_pure_device
 
         except Exception as e:  # pylint: disable=broad-exception-caught
-            _LOGGER.debug("%s [Forensic] Failed to extract device node: %s", self.controller.log_prefix, e)
+            _LOGGER.debug(
+                "%s [Forensic] Failed to extract device node: %s",
+                self.controller.log_prefix,
+                e,
+            )
             device_to_process = full_device_state
             pure_device_to_process = pure_network_state
-            
+
         return device_to_process, pure_device_to_process
 
     def _apply_anti_flicker_locks(
@@ -603,19 +681,21 @@ class YamlStatePoller:
         device_to_process: dict[str, Any],
         pure_device_to_process: dict[str, Any],
         is_prediction: bool,
-        changed_keys: set[str] | None
+        changed_keys: set[str] | None,
     ) -> None:
         """Apply anti-flicker pending updates shielding UI from stale network data."""
         # ------------------- ANTI-FLICKER ENGINE (SHADOW STATE) -------------------
         # MUST RUN FIRST to inject optimistic locks into device_to_process BEFORE parsing properties
-        
+
         # Check for global evictions driven dynamically by property object metadata
         global_evict = False
         if changed_keys is not None:
             for op in all_properties:
                 if hasattr(op, "should_evict_all_locks"):
                     try:
-                        if op.should_evict_all_locks(pure_device_to_process, changed_keys):
+                        if op.should_evict_all_locks(
+                            pure_device_to_process, changed_keys
+                        ):
                             global_evict = True
                             break
                     except Exception as e:  # pylint: disable=broad-exception-caught
@@ -628,7 +708,7 @@ class YamlStatePoller:
                         )  # pragma: no mutate
 
         now = time.time()
-        
+
         props_by_id = {}
         for op in all_properties:
             op_id = getattr(op, "id", "")
@@ -642,13 +722,17 @@ class YamlStatePoller:
             # Extended TTL of 45s to process all AC queues without flickering
             if now - ts > self.LOCK_TTL_SEC:
                 del self._pending_updates[prop_id]
-                _LOGGER.debug("%s [Forensic] Lock expired for %s", self.controller.log_prefix, prop_id) # pragma: no mutate
+                _LOGGER.debug(
+                    "%s [Forensic] Lock expired for %s",
+                    self.controller.log_prefix,
+                    prop_id,
+                )  # pragma: no mutate
                 continue
-                
+
             op = props_by_id.get(prop_id)
             if op:
                 op_id = getattr(op, "id", "")
-                
+
                 pure_val = None
                 if hasattr(op, "calculate_value_from_state") and pure_device_to_process:
                     try:
@@ -680,25 +764,54 @@ class YamlStatePoller:
                         # Push update was for another property (e.g. Wind or Power), NOT for this property!
                         # Keep shield active until THIS property's device_key arrives in push update or poll.
                         can_release = False
-                        
-                _LOGGER.debug("%s [Forensic-Verbose] Eval %s: pend_val=%s, pure_val=%s, changed_keys=%s, device_key=%s, can_release=%s", self.controller.log_prefix, prop_id, pend_val, pure_val, changed_keys, device_key, can_release) # pragma: no mutate
+
+                _LOGGER.debug(
+                    "%s [Forensic-Verbose] Eval %s: pend_val=%s, pure_val=%s, changed_keys=%s, device_key=%s, can_release=%s",
+                    self.controller.log_prefix,
+                    prop_id,
+                    pend_val,
+                    pure_val,
+                    changed_keys,
+                    device_key,
+                    can_release,
+                )  # pragma: no mutate
 
                 # Race Condition Fix: We DO NOT use hardware_override to blindly drop locks when the device_key arrives.
-                # If the user clicks rapidly, the AC will push delayed states from OLD commands. 
+                # If the user clicks rapidly, the AC will push delayed states from OLD commands.
                 # If we blindly drop our NEW prediction just because a push update arrived, the UI will flicker back to the old state.
                 # We MUST enforce the lock until the AC pushes a value that MATCHES our prediction, OR 15s expires.
 
-                if not is_prediction and can_release and pure_val is not None and (self._values_match(pure_val, pend_val) or lock_age > self.LOCK_PHYSICAL_TIMEOUT_SEC):
-                    _LOGGER.debug("%s [Forensic] Lock released for %s. Match=%s, Age=%.1f", self.controller.log_prefix, prop_id, self._values_match(pure_val, pend_val), lock_age) # pragma: no mutate
+                if (
+                    not is_prediction
+                    and can_release
+                    and pure_val is not None
+                    and (
+                        self._values_match(pure_val, pend_val)
+                        or lock_age > self.LOCK_PHYSICAL_TIMEOUT_SEC
+                    )
+                ):
+                    _LOGGER.debug(
+                        "%s [Forensic] Lock released for %s. Match=%s, Age=%.1f",
+                        self.controller.log_prefix,
+                        prop_id,
+                        self._values_match(pure_val, pend_val),
+                        lock_age,
+                    )  # pragma: no mutate
                     del self._pending_updates[prop_id]
                 else:
-                    _LOGGER.debug("%s [Forensic] Lock enforced for %s.", self.controller.log_prefix, prop_id) # pragma: no mutate
+                    _LOGGER.debug(
+                        "%s [Forensic] Lock enforced for %s.",
+                        self.controller.log_prefix,
+                        prop_id,
+                    )  # pragma: no mutate
                     # Force UI to stay in expected state and update local variable
                     self._set_prop_value(op, pend_val)
-                        
+
                     self._inject_value_into_state(op, device_to_process, pend_val)
 
-    def _predict_dependency_cascades(self, device_to_process: dict[str, Any]) -> dict[str, Any]:
+    def _predict_dependency_cascades(
+        self, device_to_process: dict[str, Any]
+    ) -> dict[str, Any]:
         """Apply cascade logic to correct properties that become invalid (e.g. Fan mode when switching to Dry)."""
         corrections: dict[str, Any] = {}
         for _, op in list(self.controller.loader.operations.items()):
@@ -709,18 +822,26 @@ class YamlStatePoller:
                 continue
 
             op_value = self._get_prop_value(op)
-            
+
             op_values = None
             if hasattr(op, "get_valid_values"):
                 op_values = op.get_valid_values(device_to_process)
             elif hasattr(op, "values"):
-                op_values = list(op.values.keys()) if isinstance(op.values, dict) else op.values
+                op_values = (
+                    list(op.values.keys()) if isinstance(op.values, dict) else op.values
+                )
 
             if op_values and op_value is not None and op_value != STATE_UNKNOWN:
                 if op_value not in op_values:
                     # Injected predictive correction
                     new_value = op_values[0] if op_values else STATE_UNKNOWN
-                    _LOGGER.debug("%s [Forensic] Predictive correction for %s: %s -> %s", self.controller.log_prefix, op.id, op_value, new_value) # pragma: no mutate
+                    _LOGGER.debug(
+                        "%s [Forensic] Predictive correction for %s: %s -> %s",
+                        self.controller.log_prefix,
+                        op.id,
+                        op_value,
+                        new_value,
+                    )  # pragma: no mutate
                     self._set_prop_value(op, new_value)
                     corrections[op.id] = new_value
                     self._inject_value_into_state(op, device_to_process, new_value)
@@ -739,7 +860,11 @@ class YamlStatePoller:
             return {}
 
         if is_prediction:
-            _LOGGER.debug("%s [Forensic] Prediction started. pending_updates=%s", self.controller.log_prefix, self._pending_updates) # pragma: no mutate
+            _LOGGER.debug(
+                "%s [Forensic] Prediction started. pending_updates=%s",
+                self.controller.log_prefix,
+                self._pending_updates,
+            )  # pragma: no mutate
 
         if full_device_state is None:
             st_getter = self.controller.loader.state_getter
@@ -749,7 +874,9 @@ class YamlStatePoller:
                 return {}
 
         pure_device_to_process = getattr(self, "_pure_network_state", {})
-        device_to_process, pure_device_to_process = self._extract_device_nodes(full_device_state, pure_device_to_process)
+        device_to_process, pure_device_to_process = self._extract_device_nodes(
+            full_device_state, pure_device_to_process
+        )
 
         if not is_prediction:
             if (
@@ -760,15 +887,21 @@ class YamlStatePoller:
                 return {}
 
             self._last_device_state = copy.deepcopy(device_to_process)
-            
+
         all_properties = (
             list(self.controller.loader.operations.values())
             + list(self.controller.loader.properties.values())
             + list(self.controller.loader.sensors.values())
         )
 
-        self._apply_anti_flicker_locks(all_properties, device_to_process, pure_device_to_process, is_prediction, changed_keys)
-        
+        self._apply_anti_flicker_locks(
+            all_properties,
+            device_to_process,
+            pure_device_to_process,
+            is_prediction,
+            changed_keys,
+        )
+
         for prop in all_properties:
             # 1. Parse from state
             if hasattr(prop, "async_update_state"):
@@ -777,18 +910,22 @@ class YamlStatePoller:
                         device_to_process, getattr(self.controller, "debug", False)
                     )
                 except Exception as e:
-                    _LOGGER.debug("%s async_update_state on property failed: %s", self.controller.log_prefix, e)
+                    _LOGGER.debug(
+                        "%s async_update_state on property failed: %s",
+                        self.controller.log_prefix,
+                        e,
+                    )
 
             # 2. Re-enforce active anti-flicker locks on property values after parsing
             op_id = getattr(prop, "id", "")
             hass_attr = self._get_hass_attr_for_op_id(op_id)
-            
+
             lock_val = None
             if op_id in self._pending_updates:
                 lock_val = self._pending_updates[op_id][0]
             elif hass_attr in self._pending_updates:
                 lock_val = self._pending_updates[hass_attr][0]
-                
+
             if lock_val is not None:
                 self._set_prop_value(prop, lock_val)
 
@@ -801,10 +938,13 @@ class YamlStatePoller:
 
         self._rebuild_attributes()
 
-
         if is_prediction:
-            _LOGGER.debug("%s [Forensic] Prediction ended. Corrections=%s", self.controller.log_prefix, corrections) # pragma: no mutate
-            
+            _LOGGER.debug(
+                "%s [Forensic] Prediction ended. Corrections=%s",
+                self.controller.log_prefix,
+                corrections,
+            )  # pragma: no mutate
+
         return corrections
 
     def _rebuild_attributes(self) -> None:
@@ -827,11 +967,7 @@ class YamlStatePoller:
         """Map YAML operation IDs to HA Attributes for validation mapping."""
         return self.HASS_ATTR_MAP.get(op_id, op_id)
 
-
-
-    async def async_merge_device_state(
-        self, new_data: dict[str, Any]
-    ) -> bool:
+    async def async_merge_device_state(self, new_data: dict[str, Any]) -> bool:
         """Merge a partial state update (e.g. from a push notification) into the known state."""
         if not new_data:
             return False
@@ -839,13 +975,15 @@ class YamlStatePoller:
         st_getter = getattr(self.controller.loader, "state_getter", None)
         if not st_getter:
             return False
-            
+
         if getattr(self, "_pure_network_state", None) is None:
             self._pure_network_state = {}  # pragma: no mutate
-            
+
         if not self._pure_network_state:
             if st_getter.value:
-                self._pure_network_state = copy.deepcopy(st_getter.value)  # pragma: no mutate
+                self._pure_network_state = copy.deepcopy(
+                    st_getter.value
+                )  # pragma: no mutate
             else:
                 return False
 
@@ -871,7 +1009,12 @@ class YamlStatePoller:
     ) -> tuple[ClimateEntityFeature, dict[str, Any]]:
         """Predict the expected state after command natively bypassing abstraction leaks."""
         # 💥 CASCADE SHIELD: Register main command BEFORE predicting!
-        _LOGGER.debug("%s [Forensic] async_predict_and_correct_state started for %s=%s", self.controller.log_prefix, property_name, new_value) # pragma: no mutate
+        _LOGGER.debug(
+            "%s [Forensic] async_predict_and_correct_state started for %s=%s",
+            self.controller.log_prefix,
+            property_name,
+            new_value,
+        )  # pragma: no mutate
         self.register_pending_update(property_name, new_value)
 
         if (
@@ -881,7 +1024,9 @@ class YamlStatePoller:
             return ClimateEntityFeature(0), {}
 
         st_getter = self.controller.loader.state_getter
-        if not st_getter.value or not isinstance(st_getter.value, dict):  # pragma: no mutate
+        if not st_getter.value or not isinstance(
+            st_getter.value, dict
+        ):  # pragma: no mutate
             return ClimateEntityFeature(0), {}
 
         corrections: dict[str, Any] = {}
@@ -889,20 +1034,28 @@ class YamlStatePoller:
         prop_to_change = None  # pragma: no mutate
         for op in self.controller.loader.operations.values():
             op_id = getattr(op, "id", "")  # pragma: no mutate
-            if op_id == property_name or self._get_hass_attr_for_op_id(op_id) == property_name:  # pragma: no mutate
+            if (
+                op_id == property_name
+                or self._get_hass_attr_for_op_id(op_id) == property_name
+            ):  # pragma: no mutate
                 prop_to_change = op
                 break
 
         if not prop_to_change:
             return ClimateEntityFeature(0), {}
 
-
-        if new_value is not None and hasattr(new_value, "value") and not isinstance(new_value, dict):  # pragma: no mutate
+        if (
+            new_value is not None
+            and hasattr(new_value, "value")
+            and not isinstance(new_value, dict)
+        ):  # pragma: no mutate
             new_value = new_value.value
 
         self._set_prop_value(prop_to_change, new_value)
 
-        self._inject_value_into_state(prop_to_change, st_getter.value, new_value)  # pragma: no mutate
+        self._inject_value_into_state(
+            prop_to_change, st_getter.value, new_value
+        )  # pragma: no mutate
 
         # Predictive re-evaluation on memory (is_prediction flag prevents early shield removal)
         update_result = await self.async_update_properties_from_state(
@@ -915,7 +1068,7 @@ class YamlStatePoller:
                 self.register_pending_update(k, v)
 
         # 💥 CASCADE SHIELD: Do NOT register predictive corrections as hard locks.
-        # This allows dynamic predictions (like fan=auto in Dry mode) to automatically revert 
+        # This allows dynamic predictions (like fan=auto in Dry mode) to automatically revert
         # to their physical state (fan=medium) if the user swipes quickly to a mode like Cool.
         return ClimateEntityFeature(0), corrections
 
@@ -923,12 +1076,16 @@ class YamlStatePoller:
         """Shut down the poller and cleanly close any active connections."""
         conn = self.controller.loader.connection
         if conn:
+
             async def _try(coro):  # pylint: disable=invalid-name
                 try:
                     await coro
                 except Exception as e:  # pylint: disable=broad-exception-caught
                     _LOGGER.debug(  # pragma: no mutate
-                        "%s Failed cleanup task: %s", self.controller.log_prefix, e, exc_info=True
+                        "%s Failed cleanup task: %s",
+                        self.controller.log_prefix,
+                        e,
+                        exc_info=True,
                     )
 
             if hasattr(conn, "stop_listening"):

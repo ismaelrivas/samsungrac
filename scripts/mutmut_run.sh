@@ -88,7 +88,7 @@ cleanup_on_interrupt() {
     trap '' INT TERM EXIT ERR
     echo -e "\n\n 🛑 \033[31m[!] Abortado (SIGINT capturado en Bash).\033[0m"
     restore_git
-    pkill -KILL -P $$ 2>/dev/null || true 
+    pkill -KILL -P $$ 2>/dev/null || true
     exit 130
 }
 trap restore_git EXIT ERR

@@ -1,6 +1,7 @@
 """Dataclass for representing the immutable state of a climate device."""
 
 from dataclasses import dataclass, field
+
 from homeassistant.components.climate import HVACMode
 
 
@@ -29,15 +30,27 @@ class ClimateIPDeviceState:
         """Enforce strict type contracts and immutability validation."""
         # Validate HVAC Mode type explicitly (Fail-Fast)
         if self.hvac_mode is not None and not isinstance(self.hvac_mode, HVACMode):
-            raise TypeError(f"Expected HVACMode instance for hvac_mode, got {type(self.hvac_mode)}")  # pragma: no mutate
+            raise TypeError(
+                f"Expected HVACMode instance for hvac_mode, got {type(self.hvac_mode)}"
+            )  # pragma: no mutate
 
         # Validate Temperatures explicitly (Reject non-numeric strings or invalid objects)
-        if self.target_temperature is not None and not isinstance(self.target_temperature, (int, float)):
-            raise TypeError(f"Target temperature must be numeric, got {type(self.target_temperature)}")  # pragma: no mutate
-        
-        if self.current_temperature is not None and not isinstance(self.current_temperature, (int, float)):
-            raise TypeError(f"Current temperature must be numeric, got {type(self.current_temperature)}")  # pragma: no mutate
+        if self.target_temperature is not None and not isinstance(
+            self.target_temperature, int | float
+        ):
+            raise TypeError(
+                f"Target temperature must be numeric, got {type(self.target_temperature)}"
+            )  # pragma: no mutate
+
+        if self.current_temperature is not None and not isinstance(
+            self.current_temperature, int | float
+        ):
+            raise TypeError(
+                f"Current temperature must be numeric, got {type(self.current_temperature)}"
+            )  # pragma: no mutate
 
         # Ensure lists/tuples are correctly typed elements
         if any(not isinstance(m, HVACMode) for m in self.hvac_modes):
-            raise TypeError("All items in hvac_modes must be valid HVACMode instances.")  # pragma: no mutate
+            raise TypeError(
+                "All items in hvac_modes must be valid HVACMode instances."
+            )  # pragma: no mutate

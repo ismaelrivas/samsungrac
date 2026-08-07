@@ -14,24 +14,23 @@ recovery for protocol violations and adaptive timeout management.
 import asyncio
 import contextlib
 import logging
-from pathlib import Path
 import ssl
 import time
 import warnings
 from collections.abc import Generator
+from pathlib import Path
 from typing import Any
 
-from homeassistant.util.json import json_loads, JSON_DECODE_EXCEPTIONS
-from homeassistant.helpers.json import json_dumps
-
 import requests  # type: ignore[import-untyped]
+from homeassistant.helpers.json import json_dumps
+from homeassistant.util.json import JSON_DECODE_EXCEPTIONS, json_loads
 from jinja2 import Template
 from requests.adapters import HTTPAdapter  # type: ignore[import-untyped]
 from requests.packages.urllib3.exceptions import (  # type: ignore[import-untyped]  # pylint: disable=import-error
     InsecureRequestWarning,
 )
 
-from .connection import Connection, _HOST_LOCKS, register_connection
+from .connection import _HOST_LOCKS, Connection, register_connection
 from .const import (
     CONF_CERT,
     CONF_INSECURE_SSL,
@@ -43,9 +42,9 @@ from .const import (
 from .exceptions import AuthError, CannotConnect, RetryNextAttempt
 from .helpers import (
     create_samsung_ssl_context,
+    format_placeholders,
     mask_sensitive_data,
     tolerant_header_parsing,
-    format_placeholders,
 )
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -116,11 +115,11 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         self._hass = hass
         self._params: dict[str, Any] = {"timeout": 30}
         self._max_retries = 3
-        self._embedded_command: "ConnectionRequestBase | None" = (
+        self._embedded_command: ConnectionRequestBase | None = (
             None  # An optional nested command.
         )
         self._controller: Any = None  # Will be set by the property that creates this.
-        self._parent: "ConnectionRequestBase | None" = (
+        self._parent: ConnectionRequestBase | None = (
             None  # Reference to parent connection for upward propagation
         )
         logging.getLogger("urllib3.connectionpool").setLevel(logging.DEBUG)
@@ -137,10 +136,12 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
             self._session.mount("https://", SamsungHTTPAdapter())
 
         # Read keep_alive setting
-        self._keep_alive = hass_config.get(CONF_KEEP_ALIVE, True) if hass_config else True
+        self._keep_alive = (
+            hass_config.get(CONF_KEEP_ALIVE, True) if hass_config else True
+        )
 
         # Registry for child connections (embedded commands) to propagate session updates
-        self._children: list["ConnectionRequestBase"] = []
+        self._children: list[ConnectionRequestBase] = []
         self._force_close_connection = False
         self._keep_alive_broken = False
 
@@ -150,6 +151,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
             f"connection method for {self.log_prefix} to Modern "
             "(aiohttp) or Robust (raw socket).",
             DeprecationWarning,
+            stacklevel=2,
         )
 
     def set_controller_ref(self, controller: Any) -> None:
@@ -492,7 +494,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                             self, "_force_close_connection", False
                         ):
                             if (
-                                isinstance(current_timeout, (int, float))
+                                isinstance(current_timeout, int | float)
                                 and current_timeout > 12
                             ):
                                 _LOGGER.debug(

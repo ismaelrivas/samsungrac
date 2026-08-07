@@ -2,8 +2,8 @@
 """Test native Home Assistant actions from actions.yaml."""
 
 # pylint: disable=import-outside-toplevel
-from unittest.mock import AsyncMock, MagicMock
 import asyncio
+from unittest.mock import AsyncMock, MagicMock
 
 from homeassistant.core import HomeAssistant
 
@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant
 async def test_set_property_action(hass: HomeAssistant) -> None:
     """Test that set_property action correctly calls the entity method."""
     from homeassistant.components.climate import ClimateEntityDescription
+
     from custom_components.climate_ip.climate import ClimateIP
     from custom_components.climate_ip.coordinator import (
         SamsungClimateCoordinator,
@@ -20,7 +21,10 @@ async def test_set_property_action(hass: HomeAssistant) -> None:
     mock_coordinator.unique_id = "test_unique_id_001"
     mock_coordinator.log_prefix = "[ActionTest]"
     mock_coordinator.controller = MagicMock()
-    mock_coordinator.controller.operations = {"hvac_mode": MagicMock(), "fan_mode": MagicMock()}
+    mock_coordinator.controller.operations = {
+        "hvac_mode": MagicMock(),
+        "fan_mode": MagicMock(),
+    }
     mock_coordinator.controller.state_attributes = {}
     mock_coordinator.attributes = []
     mock_coordinator.is_push_device = False

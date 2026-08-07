@@ -126,9 +126,9 @@ async def test_request_success_and_payload_structure(client, mock_reader, mock_w
                 b"Content-Length: 13\r\n\r\n"
                 b'{"turn":"on"}'
             )
-            assert written_bytes == expected_payload, (
-                "Payload string mutation detected!"
-            )
+            assert (
+                written_bytes == expected_payload
+            ), "Payload string mutation detected!"
 
 
 async def test_request_chunked_fallback(client, mock_reader, mock_writer):
@@ -305,7 +305,7 @@ async def test_request_payload_non_ascii_utf8_bytes(client):
     assert len(payload_bytes) > len(payload_str)
 
     req_bytes = client._build_request_bytes("POST", "/api/control", body=body)
-    expected_cl = f"Content-Length: {len(payload_bytes)}\r\n".encode("utf-8")
+    expected_cl = f"Content-Length: {len(payload_bytes)}\r\n".encode()
     assert expected_cl in req_bytes
     assert req_bytes.endswith(payload_bytes)
 
@@ -846,9 +846,9 @@ async def test_request_fallback_raw_json_incremental_chunks(
                 # Mutant Killer: Assert the exact fallback timeout threshold was used
                 from unittest.mock import call
 
-                assert call(5.0) in mock_timeout.call_args_list, (
-                    "Fallback timeout mutation detected!"
-                )
+                assert (
+                    call(5.0) in mock_timeout.call_args_list
+                ), "Fallback timeout mutation detected!"
 
 
 async def test_read_response_headers_and_body_helpers(client, mock_reader):
@@ -881,13 +881,17 @@ async def test_read_response_headers_and_body_helpers(client, mock_reader):
 
 def test_log_masked_response_helper(client):
     """Directly test _log_masked_response helper with valid JSON and non-JSON string."""
-    with patch("custom_components.climate_ip.protocol_8888._LOGGER.debug") as mock_debug:
+    with patch(
+        "custom_components.climate_ip.protocol_8888._LOGGER.debug"
+    ) as mock_debug:
         client._log_masked_response('{\n"token": "secret123"\n}')
         mock_debug.assert_called_once()
         log_arg = mock_debug.call_args[0][2]
         assert "secret123" not in log_arg or "*" in log_arg or "token" in log_arg
 
-    with patch("custom_components.climate_ip.protocol_8888._LOGGER.debug") as mock_debug:
+    with patch(
+        "custom_components.climate_ip.protocol_8888._LOGGER.debug"
+    ) as mock_debug:
         client._log_masked_response("plain non-json text\r\n")
         mock_debug.assert_called_once()
         assert mock_debug.call_args[0][2] == "plain non-json text"
@@ -1077,7 +1081,9 @@ async def test_white_box_http_framing_casing_and_crlf(client, mock_reader, mock_
             assert "POST /devices HTTP/1.1\r\n" in written_str
 
 
-async def test_header_flag_and_content_length_scenarios(client, mock_reader, mock_writer):
+async def test_header_flag_and_content_length_scenarios(
+    client, mock_reader, mock_writer
+):
     """Test 3 distinct Content-Length stream scenarios: >0, ==0, and missing (fallback)."""
     with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
         with patch(

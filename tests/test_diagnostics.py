@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from unittest.mock import MagicMock
 
 import pytest
-
 from homeassistant.const import CONF_MAC
 
 from custom_components.climate_ip.const import DOMAIN
@@ -81,9 +80,9 @@ async def test_diagnostics_all_sensitive_keys_redacted(mock_hass, mock_entry):
     entry_data = result["entry"]["data"]
 
     for key in TO_REDACT:
-        assert entry_data[key] == "**REDACTED**", (
-            f"Key '{key}' in TO_REDACT was not redacted!"
-        )
+        assert (
+            entry_data[key] == "**REDACTED**"
+        ), f"Key '{key}' in TO_REDACT was not redacted!"
 
 
 async def test_diagnostics_single_coordinator(mock_hass, mock_entry):
@@ -355,7 +354,10 @@ async def test_diagnostics_bootstrapping_and_raw_state(mock_hass, mock_entry):
     mock_coordinator.devices = {"dev1": device1}
 
     mock_controller = MagicMock()
-    mock_controller.get_diagnostics.return_value = {"is_connected": True, "socket_status": "open"}
+    mock_controller.get_diagnostics.return_value = {
+        "is_connected": True,
+        "socket_status": "open",
+    }
     mock_coordinator.controller = mock_controller
 
     mock_entry.runtime_data = mock_coordinator
@@ -367,8 +369,13 @@ async def test_diagnostics_bootstrapping_and_raw_state(mock_hass, mock_entry):
         "skipped_devices_missing_info": 1,
         "active_entities": 2,
     }
-    assert result["connection_telemetry"] == {"is_connected": True, "socket_status": "open"}
-    assert result["raw_device_state"] == {"dev1": {"power": "on", "mac": "**REDACTED**"}}
+    assert result["connection_telemetry"] == {
+        "is_connected": True,
+        "socket_status": "open",
+    }
+    assert result["raw_device_state"] == {
+        "dev1": {"power": "on", "mac": "**REDACTED**"}
+    }
 
 
 async def test_diagnostics_controller_missing_methods(mock_hass) -> None:
@@ -481,8 +488,9 @@ async def test_diagnostics_multi_coordinator_bootstrapping_math(mock_hass, mock_
 
 async def test_get_mac_threat_patterns_conf_mac_vs_string(mock_hass):
     """Kill mutants 3, 4, 6, 7 in _get_mac_threat_patterns by isolating CONF_MAC vs 'mac' fallback key."""
-    from custom_components.climate_ip.diagnostics import _get_mac_threat_patterns
     from homeassistant.const import CONF_MAC
+
+    from custom_components.climate_ip.diagnostics import _get_mac_threat_patterns
 
     # Case 1: CONF_MAC present, "mac" missing
     entry1 = MagicMock()
@@ -541,7 +549,9 @@ def test_extract_raw_device_state_controller_fallbacks():
 
 async def test_diagnostics_top_level_keys_and_hass_data_fallback(mock_hass):
     """Kill mutants altering top-level dictionary keys and hass.data fallback in async_get_config_entry_diagnostics."""
-    from custom_components.climate_ip.diagnostics import async_get_config_entry_diagnostics
+    from custom_components.climate_ip.diagnostics import (
+        async_get_config_entry_diagnostics,
+    )
 
     entry = MagicMock()
     entry.entry_id = "entry_123"
@@ -574,7 +584,9 @@ async def test_diagnostics_top_level_keys_and_hass_data_fallback(mock_hass):
 
 async def test_diagnostics_single_coordinator_default_fallback_metrics(mock_hass):
     """Kill mutants 22, 26, 31, 35 in single coordinator getattr default fallback values."""
-    from custom_components.climate_ip.diagnostics import async_get_config_entry_diagnostics
+    from custom_components.climate_ip.diagnostics import (
+        async_get_config_entry_diagnostics,
+    )
 
     entry = MagicMock()
     entry.entry_id = "test_single_fallback"
@@ -601,9 +613,13 @@ async def test_diagnostics_single_coordinator_default_fallback_metrics(mock_hass
     assert boot.get("skipped_devices_missing_info") == 0
 
 
-async def test_diagnostics_multi_coordinator_default_fallback_metrics(mock_hass, mock_entry):
+async def test_diagnostics_multi_coordinator_default_fallback_metrics(
+    mock_hass, mock_entry
+):
     """Kill mutants 95 and 104 in multi-coordinator getattr default fallback values."""
-    from custom_components.climate_ip.diagnostics import async_get_config_entry_diagnostics
+    from custom_components.climate_ip.diagnostics import (
+        async_get_config_entry_diagnostics,
+    )
 
     coord1 = MagicMock(spec=SamsungClimateCoordinator)
     coord1.data = None
@@ -620,39 +636,44 @@ async def test_diagnostics_multi_coordinator_default_fallback_metrics(mock_hass,
     assert boot.get("total_devices_discovered") == 1
     assert boot.get("skipped_devices_missing_info") == 0
 
+
 import pytest
+
 from custom_components.climate_ip.diagnostics import (
     _deep_redact_substrings,
-    _get_mac_threat_patterns,
     _extract_controller_diagnostics,
     _extract_raw_device_state,
+    _get_mac_threat_patterns,
 )
 
 # ---------------------------------------------------------
 # ESCUADRÓN FRANCOTIRADOR: EJECUCIÓN DIRECTA (0.001s Kill)
 # ---------------------------------------------------------
 
+
 def test_sniper_deep_redact_substrings():
     """Mata mutantes de recursión y ordenación al instante."""
     patterns = {"AABBCCDDEEFF", "aa:bb:cc:dd:ee:ff"}
-    
+
     payload = {
         "mac_1": "AABBCCDDEEFF",
         "nested_list": ["My MAC is aa:bb:cc:dd:ee:ff"],
         "nested_tuple": ("AABBCCDDEEFF",),
-        "normal_string": "Hello World"
+        "normal_string": "Hello World",
     }
-    
+
     # Si un mutante rompe la recursión, esto lanza TypeError instantáneo
     res = _deep_redact_substrings(payload, patterns)
-    
+
     assert res["mac_1"] == "**REDACTED**"
     assert res["nested_list"][0] == "My MAC is **REDACTED**"
     assert res["nested_tuple"][0] == "**REDACTED**"
     assert res["normal_string"] == "Hello World"
 
+
 def test_sniper_get_mac_threat_patterns():
     """Mata mutantes aritméticos de formateo (los [i : i - 2])."""
+
     class MockEntry:
         data = {"mac": "AABBCCDDEEFF"}
         options = {}
@@ -661,7 +682,7 @@ def test_sniper_get_mac_threat_patterns():
 
     # Si un mutante cambia la partición del string, fallará aquí
     patterns = _get_mac_threat_patterns(MockEntry())
-    
+
     assert "AABBCCDDEEFF" in patterns
     assert "AA:BB:CC:DD:EE:FF" in patterns
     assert "AA-BB-CC-DD-EE-FF" in patterns
@@ -669,37 +690,41 @@ def test_sniper_get_mac_threat_patterns():
 
 def test_sniper_extract_controller_diagnostics():
     """Mata mutantes booleanos en la extracción del controlador."""
+
     class FakeController:
         connection_diagnostics = {"ping": 10}
-        
+
     res = _extract_controller_diagnostics(FakeController())
     assert res == {"ping": 10}
 
+
 def test_sniper_extract_raw_device_state():
     """Mata mutantes de bucles en la extracción de estado de dispositivos."""
+
     class FakeDevice:
         raw_state = {"temp": 22}
 
     class FakeCoordinator:
         devices = {"device_1": FakeDevice()}
-        
+
     res = _extract_raw_device_state(FakeCoordinator())
     assert "device_1" in res
     assert res["device_1"]["temp"] == 22
 
+
 def test_sniper_deep_redact_internals():
     """Mata timeouts en la lógica de ordenación, ignorecase y listas/tuplas."""
     from custom_components.climate_ip.diagnostics import _deep_redact_substrings
-    
+
     # Mutantes 7, 9, 10: reverse=True y key=len (el más largo primero)
     assert _deep_redact_substrings("xabcdy", {"ab", "abcd"}) == "x**REDACTED**y"
-    
+
     # Mutante 20: re.IGNORECASE
     assert _deep_redact_substrings("MAC_ADDRESS", {"mac_address"}) == "**REDACTED**"
-    
+
     # Mutante 12: result = None (rompe la sustitución base)
     assert _deep_redact_substrings("test", {"no_match"}) == "test"
-    
+
     # Mutantes 28, 29, 34: Listas y tuplas mutadas (quitando el 'v')
     assert _deep_redact_substrings(["secret"], {"secret"}) == ["**REDACTED**"]
     assert _deep_redact_substrings(("secret",), {"secret"}) == ("**REDACTED**",)
@@ -708,35 +733,39 @@ def test_sniper_deep_redact_internals():
 def test_sniper_mac_boundary():
     """Mata el mutante M47 (>= 5 en lugar de > 5)."""
     from custom_components.climate_ip.diagnostics import _get_mac_threat_patterns
+
     class MockEntry:
         data = {"mac": "12345"}  # Exactamente 5 caracteres
         title = ""
         unique_id = ""
         options = {}
-        
+
     assert "12345" not in _get_mac_threat_patterns(MockEntry())
-    
+
     class MockEntry6:
-        data = {"mac": "123456"} # Más de 5 caracteres
+        data = {"mac": "123456"}  # Más de 5 caracteres
         title = ""
         unique_id = ""
         options = {}
-        
+
     assert "123456" in _get_mac_threat_patterns(MockEntry6())
 
 
 def test_sniper_extractors_typeerrors():
     """Mata mutantes estructurales de hasattr (ej. hasattr('raw_state'))."""
-    from custom_components.climate_ip.diagnostics import _extract_controller_diagnostics, _extract_raw_device_state
-    
+    from custom_components.climate_ip.diagnostics import (
+        _extract_controller_diagnostics,
+        _extract_raw_device_state,
+    )
+
     class MockEmpty:
         pass
-        
+
     class MockCoordinator:
         controller = MockEmpty()
         devices = {}
-        
-    # Si mutmut cambia hasattr(ctrl, "raw_state") a hasattr("raw_state"), 
+
+    # Si mutmut cambia hasattr(ctrl, "raw_state") a hasattr("raw_state"),
     # Python lanzará TypeError inmediatamente, matando al mutante sin usar syrupy.
     assert _extract_controller_diagnostics(MockEmpty()) == {}
     assert _extract_raw_device_state(MockCoordinator()) == {}

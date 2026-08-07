@@ -18,7 +18,7 @@ mutants/
 *.json
 *.log
 
- 
+
 .codebase-memory/
 **/.codebase-memory/
 mutantes*.txt

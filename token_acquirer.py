@@ -3,9 +3,9 @@
 
 import asyncio
 import logging
-from pathlib import Path
 import re
 import ssl
+from pathlib import Path
 from typing import Any
 
 from .exceptions import (

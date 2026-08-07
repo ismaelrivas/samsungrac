@@ -24,4 +24,3 @@ rsync -av --prune-empty-dirs \
   "${ORIGEN}/" "${DESTINO}/"
 
 echo "Backup completado en ${DESTINO}"
-

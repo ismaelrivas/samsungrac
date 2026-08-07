@@ -1,10 +1,11 @@
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import aiohttp
 import pytest
+from homeassistant.const import CONF_TOKEN
 
 from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
-from homeassistant.const import CONF_TOKEN
 from custom_components.climate_ip.const import CONF_CERT
 
 
@@ -85,11 +86,12 @@ async def test_get_session_recreate_closed_local_session(
 
         assert session1 is not session2
 
-async def test_close_local_session_exception(
-    connection_config, mock_logger, mock_hass
-):
+
+async def test_close_local_session_exception(connection_config, mock_logger, mock_hass):
     """Test that exceptions during local session closure are logged correctly to kill Mutant 25."""
-    with patch("custom_components.climate_ip.connection_aiohttp._LOGGER") as mock_module_logger:
+    with patch(
+        "custom_components.climate_ip.connection_aiohttp._LOGGER"
+    ) as mock_module_logger:
         # 1. Initialize connection forcing a local session
         conn = ConnectionAiohttp8888(
             connection_config, mock_logger, mock_hass, None, "192.168.1.100"
@@ -108,9 +110,7 @@ async def test_close_local_session_exception(
 
         # 5. THE KILL SHOT: Assert the exact string was sent to the logger
         mock_module_logger.error.assert_any_call(
-            "%s [aiohttp] Error closing local session: %s",
-            conn.log_prefix,
-            mock_error
+            "%s [aiohttp] Error closing local session: %s", conn.log_prefix, mock_error
         )
 
         # 6. Verify state was still cleaned up despite the error

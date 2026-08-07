@@ -130,7 +130,7 @@ If the device token changes or becomes invalid:
 
 ### 🌡️ Climate Entity (`climate.samsung_ac_<id>`)
 * **HVAC Modes:** `Off`, `Cool`, `Heat`, `Dry`, `Fan Only`, `Heat/Cool` (`Auto`).
-* **Preset Modes:** 
+* **Preset Modes:**
   * `WindFree` (Samsung signature draft-free cooling)
   * `Quiet`
   * `Sleep`

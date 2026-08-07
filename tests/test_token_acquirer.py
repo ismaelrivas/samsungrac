@@ -1,16 +1,17 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
 """Tests for SamsungTokenAcquirer (2878 pairing)."""
 
-from unittest.mock import AsyncMock, MagicMock, patch, call
 import ssl
+from unittest.mock import AsyncMock, MagicMock, call, patch
+
 import pytest
 
-from custom_components.climate_ip.token_acquirer import SamsungTokenAcquirer
 from custom_components.climate_ip.exceptions import (
+    AuthTurnedOffError,
     CannotConnect,
     TokenAcquisitionError,
-    AuthTurnedOffError,
 )
+from custom_components.climate_ip.token_acquirer import SamsungTokenAcquirer
 
 
 @pytest.fixture

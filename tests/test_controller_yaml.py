@@ -8,39 +8,30 @@ import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.update_coordinator import UpdateFailed
-from custom_components.climate_ip.exceptions import CannotConnect
-
-from custom_components.climate_ip.controller_yaml import YamlController
-from custom_components.climate_ip.controller_yaml_config import _YAML_FILE_CACHE
+from homeassistant.components.climate import (
+    ATTR_FAN_MODES,
+    ATTR_HVAC_MODES,
+    ATTR_PRESET_MODES,
+    ATTR_SWING_MODES,
+)
 from homeassistant.const import (
     CONF_IP_ADDRESS,
     CONF_MAC,
     CONF_TOKEN,
     STATE_UNKNOWN,
 )
+from homeassistant.exceptions import HomeAssistantError
+
 from custom_components.climate_ip.const import (
     CONF_CONFIG_FILE,
     CONF_DEVICE_ID,
     CONF_DEVICE_TYPE,
     DEVICE_TYPE_SAMSUNG_2878,
 )
+from custom_components.climate_ip.controller_yaml import YamlController
+from custom_components.climate_ip.controller_yaml_config import _YAML_FILE_CACHE
+from custom_components.climate_ip.exceptions import CannotConnect
 
-from homeassistant.components.climate import (
-    ATTR_HVAC_MODE,
-    ATTR_TEMPERATURE,
-    ATTR_CURRENT_TEMPERATURE,
-    ATTR_FAN_MODE,
-    ATTR_SWING_MODE,
-    ATTR_PRESET_MODE,
-    ATTR_HVAC_MODES,
-    ATTR_FAN_MODES,
-    ATTR_SWING_MODES,
-    ATTR_PRESET_MODES,
-)
 
 @pytest.fixture
 def anyio_backend():
@@ -91,9 +82,11 @@ def yaml_config() -> dict:  # type: ignore[type-arg]
         CONF_MAC: "AA:BB:CC:DD:EE:FF",
     }
 
+
 def test_yaml_controller_coverage_boost() -> None:
     """Cubre match_type, clear_state_cache y climate_state para eliminar código no testeado."""
     from unittest.mock import MagicMock
+
     from custom_components.climate_ip.controller_yaml import YamlController
 
     # 1. Probar match_type (cubre ramas de validación de tipo)
@@ -101,7 +94,9 @@ def test_yaml_controller_coverage_boost() -> None:
     assert YamlController.match_type("other") is False
 
     # 2. Probar clear_state_cache con y sin poller
-    controller = YamlController(config={"device_type": "test_device"}, logger=MagicMock())
+    controller = YamlController(
+        config={"device_type": "test_device"}, logger=MagicMock()
+    )
     controller.clear_state_cache()  # Sin poller (debe pasar de largo de forma segura)
 
     mock_poller = MagicMock()
@@ -112,7 +107,7 @@ def test_yaml_controller_coverage_boost() -> None:
     # 3. Probar climate_state (ejecuta la extracción, lavado y conversión estricta)
     controller.get_property = MagicMock(return_value=None)
     controller.get_property_all_values = MagicMock(return_value=[])
-    
+
     state = controller.climate_state
     assert state is not None
 
@@ -123,7 +118,7 @@ def test_yaml_controller_coverage_boost() -> None:
 #     mock_hass: MagicMock,  # type: ignore[type-arg]
 # ) -> None:
 #     """Test that initialize loads YAML configuration."""
-    
+
 #     # 1. OMNI-SENSOR ANTI-SILENCIO
 #     def explode_on_log(msg, *args, **kwargs):
 #         raise RuntimeError(f"🚨 LOG DELATOR REVELADO: {msg} | args: {args} | kwargs: {kwargs}")
@@ -175,7 +170,7 @@ def test_yaml_controller_coverage_boost() -> None:
 #         controller = YamlController(
 #             test_config, mock_logger, hass=mock_hass, session=MagicMock()
 #         )
-        
+
 #         result = await controller.initialize()
 
 #         assert result is True, "¡La inicialización falló!"
@@ -202,7 +197,7 @@ def test_yaml_controller_coverage_boost() -> None:
 #             name = "load_yaml"
 #         executor_calls.append(name)
 #         return fn(*args)
-    
+
 #     mock_hass.async_add_executor_job = spy_executor
 
 #     # 3. YAML 100% VÁLIDO Y COMPLETO
@@ -243,7 +238,7 @@ def test_yaml_controller_coverage_boost() -> None:
 #         controller = YamlController(
 #             test_config, mock_logger, hass=mock_hass, session=MagicMock()
 #         )
-        
+
 #         result = await controller.initialize()
 
 #     assert result is True, "¡La inicialización falló!"
@@ -272,7 +267,7 @@ def test_yaml_controller_coverage_boost() -> None:
 #             name = "load_yaml"
 #         executor_calls.append(name)
 #         return fn(*args)
-    
+
 #     mock_hass.async_add_executor_job = spy_executor
 
 #     # 3. YAML 100% VÁLIDO Y COMPLETO
@@ -308,7 +303,7 @@ def test_yaml_controller_coverage_boost() -> None:
 #         controller = YamlController(
 #             yaml_config, mock_logger, hass=mock_hass, session=MagicMock()
 #         )
-        
+
 #         # 🔑 BLINDAJE DE CONTRATO
 #         controller.unique_id = yaml_config.get("mac", "AA:BB:CC:DD:EE:FF")
 #         controller._yaml = yaml_config.get("config_file", "test_device.yaml")
@@ -322,6 +317,7 @@ def test_yaml_controller_coverage_boost() -> None:
 # ---------------------------------------------------------------------------
 # Phase 2: YAML I/O must be dispatched to the executor thread pool.
 # ---------------------------------------------------------------------------
+
 
 async def test_async_set_property_registers_pending_update(
     yaml_config: dict,  # type: ignore[type-arg]
@@ -448,9 +444,9 @@ def test_yaml_controller_fallback_initialization() -> None:
     assert controller._ip_address == "10.0.0.1", "Falló el fallback 'host'"
     assert controller._unique_id == "00:11:22", "Falló el fallback CONF_MAC"
     # Como DEVICE_TYPE_SAMSUNG_2878 está presente, device_id debe tomar el valor de unique_id
-    assert controller._device_id == "00:11:22", (
-        "Falló la asignación Samsung 2878 para device_id"
-    )
+    assert (
+        controller._device_id == "00:11:22"
+    ), "Falló la asignación Samsung 2878 para device_id"
     assert controller._debug is False
 
 
@@ -474,9 +470,9 @@ def test_yaml_controller_fallback_else_and_debug_default() -> None:
         controller = YamlController(config_input, mock_logger)
 
     # Aniquila Mutante 52: The else branch assigns unique_id to _device_id
-    assert controller._device_id == "fallback_mac_only", (
-        "La rama else no asignó el unique_id al device_id"
-    )
+    assert (
+        controller._device_id == "fallback_mac_only"
+    ), "La rama else no asignó el unique_id al device_id"
 
     # Aniquila Mutantes 63, 65, 68: The _debug value must be strictly False by default
     assert controller._debug is False, "El fallback de debug fue mutado y no es False"
@@ -590,10 +586,7 @@ async def test_async_merge_and_predict_delegation(mock_yaml_controller) -> None:
     )
 
     # Test merge
-    assert (
-        await mock_yaml_controller.async_merge_device_state({"k": "v"})
-        is True
-    )
+    assert await mock_yaml_controller.async_merge_device_state({"k": "v"}) is True
     mock_yaml_controller.poller.async_merge_device_state.assert_called_once_with(
         {"k": "v"}
     )
@@ -674,9 +667,9 @@ def test_yaml_controller_sensors_property(mock_yaml_controller) -> None:
 
     # If mutmut cambia 'in' por 'not in', la lista resultante estará vacía o romperá
     res = mock_yaml_controller.sensors
-    assert len(res) == 1, (
-        "El filtrado de sensors incluyó elementos inválidos o mutó la lista"
-    )
+    assert (
+        len(res) == 1
+    ), "El filtrado de sensors incluyó elementos inválidos o mutó la lista"
     assert res[0] is mock_sensor
 
 
@@ -702,7 +695,6 @@ def test_yaml_controller_is_push_device_strict(mock_yaml_controller) -> None:
     mock_yaml_controller.loader.connection = conn_mock
     assert mock_yaml_controller.is_push_device is True
 
-
     @patch("custom_components.climate_ip.state.ClimateIPDeviceState")
     def test_yaml_controller_climate_state_mapping(
         mock_state_class, mock_yaml_controller
@@ -710,19 +702,25 @@ def test_yaml_controller_is_push_device_strict(mock_yaml_controller) -> None:
         """Aniquila a los mutantes de la instanciación de estado mediante Caja Blanca Matemática."""
         from homeassistant.components.climate import HVACMode
         from homeassistant.components.climate.const import (
-            ATTR_HVAC_MODE, ATTR_FAN_MODE, ATTR_SWING_MODE, ATTR_PRESET_MODE
+            ATTR_FAN_MODE,
+            ATTR_HVAC_MODE,
+            ATTR_PRESET_MODE,
+            ATTR_SWING_MODE,
         )
         from homeassistant.const import ATTR_TEMPERATURE
 
         # 1. Secuestramos get_property para devolver valores Enum/Float válidos
         def mock_get_prop(prop):
-            if prop == ATTR_HVAC_MODE: return "cool"
-            if prop == ATTR_TEMPERATURE: return 22.5
-            if prop == "current_temperature": return 25.0
+            if prop == ATTR_HVAC_MODE:
+                return "cool"
+            if prop == ATTR_TEMPERATURE:
+                return 22.5
+            if prop == "current_temperature":
+                return 25.0
             return f"val_{prop}"
-            
+
         mock_yaml_controller.get_property = MagicMock(side_effect=mock_get_prop)
-    
+
         # 2. Secuestramos las listas de atributos
         mock_yaml_controller._attributes = {
             ATTR_HVAC_MODES: ["auto", "heat"],
@@ -730,7 +728,7 @@ def test_yaml_controller_is_push_device_strict(mock_yaml_controller) -> None:
             ATTR_SWING_MODES: ["on", "off"],
             ATTR_PRESET_MODES: ["eco"],
         }
-    
+
         # 2.5 Inyectar operaciones simuladas con sus valores correspondientes
         mock_yaml_controller.loader = MagicMock()
         mock_yaml_controller.loader.operations = {
@@ -741,10 +739,10 @@ def test_yaml_controller_is_push_device_strict(mock_yaml_controller) -> None:
             "swing_mode": MagicMock(id="swing_mode", all_values=["on", "off"]),
             "preset_mode": MagicMock(id="preset_mode", all_values=["eco"]),
         }
-        
+
         # 3. Ejecución
         _ = mock_yaml_controller.climate_state
-    
+
         # 4. Lethal assertion: Comprueba estrictamente el uso de Enums y Tuplas puras
         mock_state_class.assert_called_once_with(
             hvac_mode=HVACMode.COOL,
@@ -913,6 +911,7 @@ async def test_yaml_controller_async_delegates_and_noop(mock_yaml_controller) ->
 def test_platform_schema_validation() -> None:
     """Kills mutants en la definición de PLATFORM_SCHEMA."""
     from homeassistant.const import CONF_PLATFORM
+
     from custom_components.climate_ip.controller_yaml import PLATFORM_SCHEMA
 
     valid_config = {
@@ -933,6 +932,7 @@ def test_yaml_controller_untested_properties_and_cache() -> None:
     """Cover getters, setters, and clear_state_cache to kill untested mutants."""
     import logging
     from unittest.mock import MagicMock
+
     from custom_components.climate_ip.controller_yaml import YamlController
 
     mock_logger = logging.getLogger(__name__)

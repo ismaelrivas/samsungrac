@@ -329,7 +329,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
                 f"Action set_property failed: '{key}' is not a valid operation for this device."
             )
 
-        if not isinstance(value, (str, int, float, bool)):
+        if not isinstance(value, str | int | float | bool):
             raise ServiceValidationError(
                 f"Action set_property failed: Invalid value type '{type(value).__name__}' for key '{key}'."
             )

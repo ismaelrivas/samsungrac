@@ -4,19 +4,16 @@
 import asyncio
 import logging
 import os
-from pathlib import Path
 import random
 import re
 import socket
 import ssl
 from collections.abc import Callable, Coroutine
+from pathlib import Path
 from typing import Any
 
-from homeassistant.helpers.json import json_dumps
-
-
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_PORT, CONF_TOKEN
-
+from homeassistant.helpers.json import json_dumps
 from homeassistant.helpers.template import Template
 
 from .connection import Connection, register_connection
@@ -46,8 +43,8 @@ from .exceptions import AuthError, CannotConnect
 from .helpers import (
     async_check_network_reachability,
     async_create_samsung_ssl_context,
-    mask_sensitive_data,
     format_placeholders,
+    mask_sensitive_data,
     safe_xml_to_dict,
 )
 
@@ -786,7 +783,6 @@ class ConnectionSamsung2878(Connection):
             )  # pragma: no mutate
             self._is_available = True
             self._persistent_offline_err_logged = False
-            
 
         # Request a full status update only on reconnections, not on the very first connection.
         if self._initial_connection_done:
@@ -835,7 +831,7 @@ class ConnectionSamsung2878(Connection):
                 exc_info=True,
             )  # pragma: no mutate
             return buffer.decode("utf-8", errors="ignore") if buffer else None
-        except (TimeoutError, OSError) as e:
+        except OSError as e:
             _LOGGER.error(
                 "%s Error during read: %s", self.log_prefix, e, exc_info=True
             )  # pragma: no mutate
@@ -970,7 +966,7 @@ class ConnectionSamsung2878(Connection):
         command, future = queue_task.result()
         self._pending_future = future
         # Store the command string on the future for debugging purposes using setattr.
-        setattr(self._pending_future, "_command_debug", command)
+        self._pending_future._command_debug = command
 
         try:
             await self._write_data(command)
@@ -1108,8 +1104,6 @@ class ConnectionSamsung2878(Connection):
                 )  # pragma: no mutate
 
         return buffer
-
-
 
     def _force_unavailability_if_needed(
         self, offline_type: str = "Network"

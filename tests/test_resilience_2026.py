@@ -1,16 +1,16 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.components.climate.const import HVACMode
+from homeassistant.const import CONF_MAC
+from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.update_coordinator import UpdateFailed
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from homeassistant.components.climate.const import HVACMode
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 from custom_components.climate_ip.exceptions import InvalidHeaderError
 from custom_components.climate_ip.state import ClimateIPDeviceState
-from homeassistant.const import CONF_MAC
-from homeassistant.exceptions import ConfigEntryAuthFailed
-from homeassistant.helpers.update_coordinator import UpdateFailed
 
 
 @pytest.fixture
@@ -47,17 +47,17 @@ async def test_connection_timeout_recovery(hass, coordinator):
 
     # 1. Transient Error — Platinum integrations must preserve state, not mark unavailable
     await coordinator.async_refresh()
-    assert coordinator.last_update_success, (
-        "Strike 1: state must be preserved on first timeout"
-    )
+    assert (
+        coordinator.last_update_success
+    ), "Strike 1: state must be preserved on first timeout"
 
     # 2. Network Recovery — coordinator.data must be a ClimateIPDeviceState, not a raw dict
     coordinator.controller.climate_state = MagicMock(spec=ClimateIPDeviceState)
     await coordinator.async_refresh()
     assert coordinator.last_update_success
-    assert isinstance(coordinator.data, ClimateIPDeviceState), (
-        "coordinator.data must be ClimateIPDeviceState after recovery, not a raw dict"
-    )
+    assert isinstance(
+        coordinator.data, ClimateIPDeviceState
+    ), "coordinator.data must be ClimateIPDeviceState after recovery, not a raw dict"
     assert coordinator.controller.async_get_status.call_count == 2
 
 
@@ -88,12 +88,19 @@ async def test_switch_connection_engine_on_error(hass, coordinator):
     from custom_components.climate_ip.const import CONF_CONN_METHOD, CONN_METHOD_RAW
 
     bg_tasks = []
+
     def _capture_bg_task(hass, coro, name=None):
         bg_tasks.append(coro)
         return MagicMock()
 
-    with patch.object(coordinator.config_entry, "async_create_background_task", side_effect=_capture_bg_task), \
-         patch.object(hass.config_entries, "async_update_entry") as mock_update_entry:
+    with (
+        patch.object(
+            coordinator.config_entry,
+            "async_create_background_task",
+            side_effect=_capture_bg_task,
+        ),
+        patch.object(hass.config_entries, "async_update_entry") as mock_update_entry,
+    ):
         try:
             await coordinator._async_update_data()
         except UpdateFailed as err:

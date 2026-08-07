@@ -1,10 +1,9 @@
 """Tests for ClimateIpConfigFlow main orchestrator in config_flow.py."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from homeassistant.config_entries import SOURCE_RECONFIGURE, SOURCE_USER
-from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
+from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
@@ -14,8 +13,6 @@ from custom_components.climate_ip.const import (
     CONF_NAME,
     DEVICE_TYPE_SAMSUNG_2878,
     DEVICE_TYPE_SAMSUNG_8888,
-    DEVICE_TYPE_SMARTTHINGS_HVAC,
-    DOMAIN,
 )
 
 
@@ -29,9 +26,16 @@ async def test_form_user_step(hass: HomeAssistant) -> None:
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "user"
 
-    with patch.object(flow, "async_step_samsung_2878", new_callable=AsyncMock) as mock_step:
-        mock_step.return_value = {"type": FlowResultType.FORM, "step_id": "samsung_2878"}
-        result2 = await flow.async_step_user({CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878})
+    with patch.object(
+        flow, "async_step_samsung_2878", new_callable=AsyncMock
+    ) as mock_step:
+        mock_step.return_value = {
+            "type": FlowResultType.FORM,
+            "step_id": "samsung_2878",
+        }
+        result2 = await flow.async_step_user(
+            {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
+        )
         assert flow.flow_data[CONF_DEVICE_TYPE] == DEVICE_TYPE_SAMSUNG_2878
         mock_step.assert_called_once()
 
@@ -46,10 +50,15 @@ async def test_step_samsung_2878_routing(hass: HomeAssistant) -> None:
     with patch.object(
         flow, "_async_process_samsung_device_step", new_callable=AsyncMock
     ) as mock_process:
-        mock_process.return_value = {"type": FlowResultType.FORM, "step_id": "samsung_2878"}
+        mock_process.return_value = {
+            "type": FlowResultType.FORM,
+            "step_id": "samsung_2878",
+        }
         result = await flow.async_step_samsung_2878({"ip_address": "192.168.1.50"})
         mock_process.assert_called_once_with(
-            step_id="samsung_2878", is_8888=False, user_input={"ip_address": "192.168.1.50"}
+            step_id="samsung_2878",
+            is_8888=False,
+            user_input={"ip_address": "192.168.1.50"},
         )
 
 
@@ -63,10 +72,15 @@ async def test_step_samsung_8888_routing(hass: HomeAssistant) -> None:
     with patch.object(
         flow, "_async_process_samsung_device_step", new_callable=AsyncMock
     ) as mock_process:
-        mock_process.return_value = {"type": FlowResultType.FORM, "step_id": "samsung_8888"}
+        mock_process.return_value = {
+            "type": FlowResultType.FORM,
+            "step_id": "samsung_8888",
+        }
         result = await flow.async_step_samsung_8888({"ip_address": "192.168.1.51"})
         mock_process.assert_called_once_with(
-            step_id="samsung_8888", is_8888=True, user_input={"ip_address": "192.168.1.51"}
+            step_id="samsung_8888",
+            is_8888=True,
+            user_input={"ip_address": "192.168.1.51"},
         )
 
 

@@ -2,26 +2,28 @@
 """Tests for the ClimateIP climate entity."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
-import pytest
 
-from homeassistant.components.climate import HVACMode, ATTR_HVAC_MODE, ATTR_FAN_MODE, ClimateEntityDescription
+import pytest
+from homeassistant.components.climate import (
+    ATTR_FAN_MODE,
+    ATTR_HVAC_MODE,
+    ClimateEntityDescription,
+    HVACMode,
+)
 from homeassistant.const import (
-    STATE_OFF,
-    STATE_ON,
-    PRECISION_HALVES,
-    PRECISION_WHOLE,
-    PRECISION_TENTHS,
     ATTR_TEMPERATURE as HA_ATTR_TEMPERATURE,
 )
+from homeassistant.const import (
+    PRECISION_HALVES,
+    STATE_OFF,
+    STATE_ON,
+)
 from homeassistant.core import HomeAssistant
-from homeassistant.config_entries import SOURCE_IMPORT
-from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers.issue_registry import IssueSeverity
 
 from custom_components.climate_ip.climate import (
-    ClimateIP,
-    ATTR_SWING_MODE,
     ATTR_PRESET_MODE,
+    ATTR_SWING_MODE,
+    ClimateIP,
     async_setup_entry,
 )
 from custom_components.climate_ip.const import CONF_TARGET_TEMP_STEP, CONF_TEMP_STEP
@@ -54,14 +56,16 @@ def base_climate_entity(hass: HomeAssistant) -> ClimateIP:
 
 def test_00_climate_defensive_init_properties(base_climate_entity: ClimateIP) -> None:
     """Fail-fast test for constructor state attributes to prevent Pytest timeouts during mutation.
-    
+
     This ensures that structural mutations (e.g., self._attr_unique_id = None) fail immediately
     with an AssertionError before hitting the event loop or async integrations.
     """
     assert base_climate_entity._attr_unique_id is not None, "unique_id MUST NOT be None"
     assert base_climate_entity.min_temp is not None, "min_temp MUST NOT be None"
     assert base_climate_entity.max_temp is not None, "max_temp MUST NOT be None"
-    assert base_climate_entity._attr_target_temperature_step is not None, "step MUST NOT be None"
+    assert (
+        base_climate_entity._attr_target_temperature_step is not None
+    ), "step MUST NOT be None"
     assert isinstance(base_climate_entity.hvac_modes, list), "hvac_modes MUST be a list"
     assert base_climate_entity.fan_modes is not None, "fan_modes MUST NOT be None"
     assert base_climate_entity.swing_modes is not None, "swing_modes MUST NOT be None"
@@ -70,7 +74,7 @@ def test_00_climate_defensive_init_properties(base_climate_entity: ClimateIP) ->
 
 def test_01_climate_defensive_sync_none_fallback() -> None:
     """Fail-fast test for _sync_data_from_coordinator fallback logic.
-    
+
     Ensures that when coordinator.data is None, the entity initializes its lists correctly.
     This kills structural mutations to fallback assignments instantly.
     """
@@ -83,9 +87,9 @@ def test_01_climate_defensive_sync_none_fallback() -> None:
     mock_coord.controller.operations = []
     mock_coord.controller.state_attributes = {}
     desc = ClimateEntityDescription(key="samsung_ac", translation_key="samsung_ac")
-    
+
     entity = ClimateIP(coordinator=mock_coord, description=desc)
-    
+
     assert isinstance(entity.hvac_modes, list), "hvac_modes MUST be a list"
     assert isinstance(entity.fan_modes, list), "fan_modes MUST be a list"
     assert isinstance(entity.swing_modes, list), "swing_modes MUST be a list"
@@ -111,7 +115,6 @@ async def test_turn_on_dry_helper(base_climate_entity: ClimateIP) -> None:
     )
 
 
-
 # ---------------------------------------------------------------------------
 # Phase 4: Zombie code removal verification
 # ---------------------------------------------------------------------------
@@ -119,9 +122,9 @@ async def test_turn_on_dry_helper(base_climate_entity: ClimateIP) -> None:
 
 def test_no_flicker_feature_method() -> None:
     """async_flicker_feature antipattern must be fully removed from ClimateIP."""
-    assert not hasattr(ClimateIP, "async_flicker_feature"), (
-        "async_flicker_feature was not removed from ClimateIP — remove the no-op method"
-    )
+    assert not hasattr(
+        ClimateIP, "async_flicker_feature"
+    ), "async_flicker_feature was not removed from ClimateIP — remove the no-op method"
 
 
 def test_no_stale_supported_features_annotation() -> None:
@@ -135,9 +138,9 @@ def test_no_stale_supported_features_annotation() -> None:
         if klass is object:
             break
         annotations.update(vars(klass).get("__annotations__", {}))
-    assert "_supported_features" not in annotations, (
-        "_supported_features stale annotation is still present in ClimateIP or a parent class"
-    )
+    assert (
+        "_supported_features" not in annotations
+    ), "_supported_features stale annotation is still present in ClimateIP or a parent class"
 
 
 def test_climate_translation_key_and_device_info(hass: HomeAssistant) -> None:
@@ -156,9 +159,7 @@ def test_climate_translation_key_and_device_info(hass: HomeAssistant) -> None:
         key="samsung_ac",
         translation_key="samsung_ac",
     )
-    climate = ClimateIP(
-        coordinator=mock_coordinator, description=description
-    )
+    climate = ClimateIP(coordinator=mock_coordinator, description=description)
     climate.hass = hass
 
     # Test Translation Key comes from description
@@ -166,9 +167,6 @@ def test_climate_translation_key_and_device_info(hass: HomeAssistant) -> None:
 
     # Test Device Info matches Coordinator (Parent linkage)
     assert climate.device_info == {"identifiers": {("climate_ip", "test_unique_id")}}
-
-
-
 
 
 async def test_climate_init_options_priority_and_halves(hass: HomeAssistant) -> None:
@@ -181,19 +179,15 @@ async def test_climate_init_options_priority_and_halves(hass: HomeAssistant) -> 
     config = {CONF_TARGET_TEMP_STEP: 1.0, CONF_TEMP_STEP: 2.0}
     description = ClimateEntityDescription(key="samsung_ac")
 
-    entity = ClimateIP(
-        coordinator=mock_coordinator, description=description
-    )
+    entity = ClimateIP(coordinator=mock_coordinator, description=description)
 
     # Lethal Assertions
-    assert entity.target_temperature_step == 0.5, (
-        "Entry options priority was not respected"
-    )
-    assert entity.precision == PRECISION_HALVES, (
-        "Precision was not adjusted to half degrees"
-    )
-
-
+    assert (
+        entity.target_temperature_step == 0.5
+    ), "Entry options priority was not respected"
+    assert (
+        entity.precision == PRECISION_HALVES
+    ), "Precision was not adjusted to half degrees"
 
 
 async def test_climate_unique_id(hass: HomeAssistant) -> None:
@@ -206,11 +200,9 @@ async def test_climate_unique_id(hass: HomeAssistant) -> None:
         coordinator=mock_coordinator,
         description=description,
     )
-    assert entity.unique_id == "coord_id_123", (
-        "The unique_id property does not match the coordinator"
-    )
-
-
+    assert (
+        entity.unique_id == "coord_id_123"
+    ), "The unique_id property does not match the coordinator"
 
 
 async def test_climate_sync_data_full(base_climate_entity: ClimateIP) -> None:
@@ -232,34 +224,38 @@ async def test_climate_sync_data_full(base_climate_entity: ClimateIP) -> None:
     base_climate_entity.coordinator.data = mock_state
 
     # Lethal Assertions for Mutants 2, 11, 12
-    assert base_climate_entity.hvac_mode == HVACMode.HEAT, (
-        "hvac_mode was not synchronized"
-    )
-    assert base_climate_entity.target_temperature == 25.0, (
-        "target_temperature was not synchronized"
-    )
-    assert base_climate_entity.current_temperature == 22.0, (
-        "current_temperature was not synchronized"
-    )
+    assert (
+        base_climate_entity.hvac_mode == HVACMode.HEAT
+    ), "hvac_mode was not synchronized"
+    assert (
+        base_climate_entity.target_temperature == 25.0
+    ), "target_temperature was not synchronized"
+    assert (
+        base_climate_entity.current_temperature == 22.0
+    ), "current_temperature was not synchronized"
     assert base_climate_entity.fan_mode == "high", "fan_mode was not synchronized"
-    assert base_climate_entity.swing_mode == "vertical", (
-        "swing_mode was not synchronized"
-    )
-    assert base_climate_entity.preset_mode == "boost", (
-        "preset_mode was not synchronized"
-    )
-    assert base_climate_entity.hvac_modes == [HVACMode.HEAT, HVACMode.OFF], (
-        "hvac_modes was not synchronized"
-    )
-    assert base_climate_entity.fan_modes == ["high", "low"], (
-        "fan_modes was not synchronized"
-    )
-    assert base_climate_entity.swing_modes == ["vertical", "horizontal"], (
-        "swing_modes was not synchronized"
-    )
-    assert base_climate_entity.preset_modes == ["boost", "eco"], (
-        "preset_modes was not synchronized"
-    )
+    assert (
+        base_climate_entity.swing_mode == "vertical"
+    ), "swing_mode was not synchronized"
+    assert (
+        base_climate_entity.preset_mode == "boost"
+    ), "preset_mode was not synchronized"
+    assert base_climate_entity.hvac_modes == [
+        HVACMode.HEAT,
+        HVACMode.OFF,
+    ], "hvac_modes was not synchronized"
+    assert base_climate_entity.fan_modes == [
+        "high",
+        "low",
+    ], "fan_modes was not synchronized"
+    assert base_climate_entity.swing_modes == [
+        "vertical",
+        "horizontal",
+    ], "swing_modes was not synchronized"
+    assert base_climate_entity.preset_modes == [
+        "boost",
+        "eco",
+    ], "preset_modes was not synchronized"
 
 
 async def test_climate_sync_data_none(base_climate_entity: ClimateIP) -> None:
@@ -269,19 +265,27 @@ async def test_climate_sync_data_none(base_climate_entity: ClimateIP) -> None:
 
     # Lethal Assertions: Must be strictly None or []
     assert base_climate_entity.hvac_mode is None, "hvac_mode did not reset to None"
-    assert base_climate_entity.target_temperature is None, (
-        "target_temperature did not reset to None"
-    )
-    assert base_climate_entity.current_temperature is None, (
-        "current_temperature did not reset to None"
-    )
+    assert (
+        base_climate_entity.target_temperature is None
+    ), "target_temperature did not reset to None"
+    assert (
+        base_climate_entity.current_temperature is None
+    ), "current_temperature did not reset to None"
     assert base_climate_entity.fan_mode is None, "fan_mode did not reset to None"
     assert base_climate_entity.swing_mode is None, "swing_mode did not reset to None"
     assert base_climate_entity.preset_mode is None, "preset_mode did not reset to None"
-    assert base_climate_entity.hvac_modes == [], "hvac_modes should be empty when data is None"
-    assert base_climate_entity.fan_modes == [], "fan_modes should be empty when data is None"
-    assert base_climate_entity.swing_modes == [], "swing_modes should be empty when data is None"
-    assert base_climate_entity.preset_modes == [], "preset_modes should be empty when data is None"
+    assert (
+        base_climate_entity.hvac_modes == []
+    ), "hvac_modes should be empty when data is None"
+    assert (
+        base_climate_entity.fan_modes == []
+    ), "fan_modes should be empty when data is None"
+    assert (
+        base_climate_entity.swing_modes == []
+    ), "swing_modes should be empty when data is None"
+    assert (
+        base_climate_entity.preset_modes == []
+    ), "preset_modes should be empty when data is None"
 
 
 async def test_hvac_action_dynamic_auto_heuristic(
@@ -362,9 +366,12 @@ async def test_async_set_hvac_mode_invalid_raises_service_validation_error(
 ) -> None:
     """Verify that async_set_hvac_mode raises ServiceValidationError for invalid mode."""
     from homeassistant.exceptions import ServiceValidationError
+
     base_climate_entity.coordinator.data.hvac_modes = [HVACMode.HEAT]
 
-    with pytest.raises(ServiceValidationError, match="Requested HVAC mode 'cool' is not available"):
+    with pytest.raises(
+        ServiceValidationError, match="Requested HVAC mode 'cool' is not available"
+    ):
         await base_climate_entity.async_set_hvac_mode(HVACMode.COOL)
 
 
@@ -391,9 +398,12 @@ async def test_async_set_fan_mode_invalid_raises_service_validation_error(
 ) -> None:
     """Verify that async_set_fan_mode raises ServiceValidationError for invalid mode."""
     from homeassistant.exceptions import ServiceValidationError
+
     base_climate_entity.coordinator.data.fan_modes = ["low", "high"]
 
-    with pytest.raises(ServiceValidationError, match="Requested fan mode 'turbo' is not available"):
+    with pytest.raises(
+        ServiceValidationError, match="Requested fan mode 'turbo' is not available"
+    ):
         await base_climate_entity.async_set_fan_mode("turbo")
 
 
@@ -437,7 +447,9 @@ async def test_async_set_temperature_both_missing_raises_service_validation_erro
     """Verify that async_set_temperature raises ServiceValidationError when both temperature and hvac_mode are missing."""
     from homeassistant.exceptions import ServiceValidationError
 
-    with pytest.raises(ServiceValidationError, match="No temperature or HVAC mode provided"):
+    with pytest.raises(
+        ServiceValidationError, match="No temperature or HVAC mode provided"
+    ):
         await base_climate_entity.async_set_temperature()
 
 
@@ -449,7 +461,9 @@ async def test_async_set_temperature_with_hvac_mode(
     base_climate_entity.coordinator.async_set_property = AsyncMock()
     base_climate_entity.coordinator.data.hvac_modes = [HVACMode.COOL]
 
-    await base_climate_entity.async_set_temperature(hvac_mode=HVACMode.COOL, temperature=22.0)
+    await base_climate_entity.async_set_temperature(
+        hvac_mode=HVACMode.COOL, temperature=22.0
+    )
 
     base_climate_entity.coordinator.async_set_property.assert_any_call(
         ATTR_HVAC_MODE, HVACMode.COOL
@@ -481,9 +495,12 @@ async def test_async_set_swing_mode_invalid_raises_service_validation_error(
 ) -> None:
     """Verify that async_set_swing_mode raises ServiceValidationError for invalid mode."""
     from homeassistant.exceptions import ServiceValidationError
+
     base_climate_entity.coordinator.data.swing_modes = ["vertical"]
 
-    with pytest.raises(ServiceValidationError, match="Requested swing mode 'invalid' is not available"):
+    with pytest.raises(
+        ServiceValidationError, match="Requested swing mode 'invalid' is not available"
+    ):
         await base_climate_entity.async_set_swing_mode("invalid")
 
 
@@ -509,9 +526,12 @@ async def test_async_set_preset_mode_invalid_raises_service_validation_error(
 ) -> None:
     """Verify that async_set_preset_mode raises ServiceValidationError for invalid mode."""
     from homeassistant.exceptions import ServiceValidationError
+
     base_climate_entity.coordinator.data.preset_modes = ["sleep"]
 
-    with pytest.raises(ServiceValidationError, match="Requested preset mode 'invalid' is not available"):
+    with pytest.raises(
+        ServiceValidationError, match="Requested preset mode 'invalid' is not available"
+    ):
         await base_climate_entity.async_set_preset_mode("invalid")
 
 
@@ -551,19 +571,12 @@ async def test_async_service_set_property_invalid_value_type_raises(
 
     base_climate_entity.coordinator.controller.operations = ["beep"]
     with pytest.raises(ServiceValidationError, match="Invalid value type 'list'"):
-        await base_climate_entity.async_service_set_property("beep", ["invalid", "list"])
+        await base_climate_entity.async_service_set_property(
+            "beep", ["invalid", "list"]
+        )
 
 
 # --- async_setup_entry — multi-device path (mutants 1-38) ---
-
-
-
-
-
-
-
-
-
 
 
 # ============================================================
@@ -593,11 +606,17 @@ def test_climate_invalid_temp_step_fallback(
 ) -> None:
     """Kill mutants in __init__ for invalid temp step configuration."""
     import logging
+
     from custom_components.climate_ip.climate import ClimateIP
-    from custom_components.climate_ip.const import CONF_TARGET_TEMP_STEP, DEFAULT_TARGET_TEMP_STEP
+    from custom_components.climate_ip.const import (
+        CONF_TARGET_TEMP_STEP,
+        DEFAULT_TARGET_TEMP_STEP,
+    )
 
     # 1. Ensure options dict contains corrupted string
-    base_climate_entity.coordinator.entry.options = {CONF_TARGET_TEMP_STEP: "invalid_string"}
+    base_climate_entity.coordinator.entry.options = {
+        CONF_TARGET_TEMP_STEP: "invalid_string"
+    }
     base_climate_entity.coordinator.entry.data = {}
 
     # 2. Capture logs and re-instantiate
@@ -620,10 +639,14 @@ def test_climate_supported_features_bitwise_strict_accumulation(
     """Kill mutants in __init__ (features |= feature)."""
     from homeassistant.components.climate import ClimateEntityFeature
     from homeassistant.components.climate.const import ATTR_PRESET_MODE
+
     from custom_components.climate_ip.climate import ClimateIP
 
     # 1. Set exactly two features that map through the dynamic loop
-    base_climate_entity.coordinator.controller.operations = [ATTR_PRESET_MODE, HA_ATTR_TEMPERATURE]
+    base_climate_entity.coordinator.controller.operations = [
+        ATTR_PRESET_MODE,
+        HA_ATTR_TEMPERATURE,
+    ]
     base_climate_entity.coordinator.swing_modes = []
 
     # 2. Re-instantiate entity to trigger __init__ static feature resolution
@@ -633,7 +656,9 @@ def test_climate_supported_features_bitwise_strict_accumulation(
     )
 
     # 3. Strict bitwise equality assertion (kills &= mutants)
-    expected_features = ClimateEntityFeature.PRESET_MODE | ClimateEntityFeature.TARGET_TEMPERATURE
+    expected_features = (
+        ClimateEntityFeature.PRESET_MODE | ClimateEntityFeature.TARGET_TEMPERATURE
+    )
     assert entity.supported_features == expected_features
 
 
@@ -706,7 +731,9 @@ def test_climate_min_temp_fallback_on_invalid_value(
 
     mock_prop = MagicMock()
     mock_prop.value = "invalid_number"
-    base_climate_entity.coordinator.controller.get_property_object.return_value = mock_prop
+    base_climate_entity.coordinator.controller.get_property_object.return_value = (
+        mock_prop
+    )
 
     assert base_climate_entity.min_temp == float(DEFAULT_CLIMATE_IP_TEMP_MIN)
 
@@ -753,7 +780,9 @@ def test_climate_max_temp_fallback_on_invalid_value(
 
     mock_prop = MagicMock()
     mock_prop.value = "invalid_number"
-    base_climate_entity.coordinator.controller.get_property_object.return_value = mock_prop
+    base_climate_entity.coordinator.controller.get_property_object.return_value = (
+        mock_prop
+    )
 
     assert base_climate_entity.max_temp == float(DEFAULT_CLIMATE_IP_TEMP_MAX)
 
@@ -764,55 +793,51 @@ async def test_modern_async_setup_entry_success() -> None:
     entry = MagicMock()
     entry.data = {"conf_key": "conf_val"}
     entry.unique_id = "main_entry_id"
-    
+
     # Simulate two coordinators attached to the entry
     coord_1 = MagicMock(spec=SamsungClimateCoordinator)
     coord_1.unique_id = "dev_1"
     coord_1.device_info = MagicMock()
     coord_1.entry = MagicMock(options={})
-    
+
     coord_2 = MagicMock(spec=SamsungClimateCoordinator)
     coord_2.unique_id = "dev_2"
     coord_2.device_info = MagicMock()
     coord_2.entry = MagicMock(options={})
-    
+
     entry.runtime_data = {"dev_1": coord_1, "dev_2": coord_2}
-    
+
     async_add_entities = MagicMock()
-    
+
     # We patch ClimateIP to verify arguments, but since ClimateIP.__init__ is called, we need to mock it carefully or patch the class.
     with patch("custom_components.climate_ip.climate.ClimateIP") as mock_climate_class:
         await async_setup_entry(MagicMock(), entry, async_add_entities)
-    
+
     assert mock_climate_class.call_count == 2
-    
+
     # Verify signature matches 2-arg constructor: ClimateIP(coordinator, description)
     first_call_args = mock_climate_class.call_args_list[0].args
     assert len(first_call_args) == 2
     assert first_call_args[0] == coord_1
     assert first_call_args[1].key == "samsung_ac"
-    
+
     async_add_entities.assert_called_once()
     assert len(async_add_entities.call_args[0][0]) == 2
     assert async_add_entities.call_args[1] == {}
+
 
 @pytest.mark.asyncio
 async def test_modern_async_setup_entry_empty() -> None:
     """Verify that an empty runtime_data dictionary aborts safely."""
     entry = MagicMock()
     entry.runtime_data = {}
-    
+
     async_add_entities = MagicMock()
-    
+
     with patch("custom_components.climate_ip.climate._LOGGER.error") as mock_logger:
         await async_setup_entry(MagicMock(), entry, async_add_entities)
-        
+
     async_add_entities.assert_not_called()
     mock_logger.assert_called_once_with(
         "No valid entities could be initialized from the provided coordinators."
     )
-
-
-
-
-

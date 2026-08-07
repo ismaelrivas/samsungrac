@@ -2,37 +2,32 @@
 """Unit tests for samsung_2878.py logic."""
 # pylint: disable=protected-access,redefined-outer-name,import-outside-toplevel,line-too-long
 
-from unittest.mock import MagicMock, AsyncMock, patch, call, ANY
-import pytest
-
-from custom_components.climate_ip.helpers import async_create_samsung_ssl_context
-from custom_components.climate_ip.const import PROTOCOL_2878_DPLUG
+import asyncio
+import inspect
 import os
+import socket
 import ssl
 import tempfile
-from custom_components.climate_ip.exceptions import AuthError
+from unittest.mock import ANY, AsyncMock, MagicMock, call, patch
 
-from custom_components.climate_ip.samsung_2878 import (
-    ConnectionSamsung2878,
-    INITIAL_RECONNECT_DELAY,
-    MAX_RECONNECT_DELAY,
-    RECONNECT_FACTOR,
-    CONF_PORT,
-    CONF_DUID,
-)
+import pytest
 
-import socket
-import asyncio
-from custom_components.climate_ip.exceptions import CannotConnect
+import custom_components.climate_ip.samsung_2878 as samsung_module
 from custom_components.climate_ip.const import (
+    PROTOCOL_2878_DPLUG,
     PROTOCOL_2878_POWER_ID,
     PROTOCOL_2878_VALUE_ON,
 )
-
-import inspect
-from homeassistant.helpers.issue_registry import IssueSeverity
-
-import custom_components.climate_ip.samsung_2878 as samsung_module
+from custom_components.climate_ip.exceptions import AuthError, CannotConnect
+from custom_components.climate_ip.helpers import async_create_samsung_ssl_context
+from custom_components.climate_ip.samsung_2878 import (
+    CONF_DUID,
+    CONF_PORT,
+    INITIAL_RECONNECT_DELAY,
+    MAX_RECONNECT_DELAY,
+    RECONNECT_FACTOR,
+    ConnectionSamsung2878,
+)
 
 
 @pytest.fixture
@@ -50,7 +45,6 @@ def connection():
 
 
 async def test_parse_and_update_state_valid_response(connection):
-
     connection._controller = MagicMock()
     connection._controller.hass = MagicMock()
 
@@ -336,7 +330,7 @@ async def test_samsung_2878_process_command_queue(connection):
         mock_write.assert_called_once_with('<Request Type="Test"></Request>\n')
         assert connection._pending_future == future
         assert (
-            getattr(connection._pending_future, "_command_debug")
+            connection._pending_future._command_debug
             == '<Request Type="Test"></Request>\n'
         )
 
@@ -565,7 +559,7 @@ async def test_process_read_queue_resolves_future(connection):
     connection._read_task.set_result(b'<Response Type="DeviceControl" Status="Okay" />')
 
     pending_future = asyncio.Future()
-    setattr(pending_future, "_command_debug", '<Request Type="DeviceControl" />')
+    pending_future._command_debug = '<Request Type="DeviceControl" />'
     connection._pending_future = pending_future
 
     with patch.object(
@@ -1076,9 +1070,7 @@ async def test_connection_manager_full_coverage(connection):
     connection._reader.read = AsyncMock(side_effect=mock_read)
 
     with (
-        patch.object(
-            connection, "_process_command_queue", new_callable=AsyncMock
-        ),
+        patch.object(connection, "_process_command_queue", new_callable=AsyncMock),
         patch.object(
             connection, "_process_read_queue", new_callable=AsyncMock
         ) as mock_read_q,
@@ -1342,12 +1334,12 @@ async def test_connection_manager_queues_and_cleanup(connection):
             # irp
             # fake_read_task.cancel.assert_called_once()
             # fake_queue_task.cancel.assert_called_once()
-            assert fake_read_task.cancelled() is True, (
-                "El mutante sobrevivió: _read_task no fue cancelada en el finally"
-            )
-            assert fake_queue_task.cancelled() is True, (
-                "El mutante sobrevivió: queue_task no fue cancelada en el finally"
-            )
+            assert (
+                fake_read_task.cancelled() is True
+            ), "El mutante sobrevivió: _read_task no fue cancelada en el finally"
+            assert (
+                fake_queue_task.cancelled() is True
+            ), "El mutante sobrevivió: queue_task no fue cancelada en el finally"
 
 
 class MutantTimeoutError(Exception):
@@ -1498,6 +1490,7 @@ def test_create_updated_strict(connection):
         assert res is connection
         # Aseguramos que se pasa fake_node y self, no None
         mock_load.assert_called_once_with(fake_node, connection)
+
 
 def test_update_configuration_from_hass_strict(connection):
     """Verify mutant kill de claves de diccionarios, get() fallbacks y resoluciones de path."""
@@ -2092,6 +2085,7 @@ async def test_process_read_queue_strict_future_getattr(connection):
             # Si lanza TypeError, es porque mutmut eliminó el default "" y coló un None
             pytest.fail(f"Mutante cazado (TypeError in getattr fallback): {e}")
 
+
 def test_update_config_and_yaml_strict_logic(connection):
     """Kills mutants lógicos en update_configuration_from_hass y load_from_yaml."""
 
@@ -2156,7 +2150,7 @@ async def test_process_read_queue_strict_positives(connection):
 
     # Test Poll Command Positivo
     poll_future = asyncio.Future()
-    setattr(poll_future, "_command_debug", "DeviceState")
+    poll_future._command_debug = "DeviceState"
     connection._pending_future = poll_future
 
     mock_task = asyncio.Future()
@@ -2172,6 +2166,7 @@ async def test_process_read_queue_strict_positives(connection):
         await connection._process_read_queue(mock_task.result())
         # Si Mutmut corrompió el "and", esto no se resolverá
         assert poll_future.done()
+
 
 @pytest.mark.asyncio
 async def test_establish_connection_strict_sockets(connection):

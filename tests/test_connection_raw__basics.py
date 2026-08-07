@@ -5,6 +5,7 @@ import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
 
 from custom_components.climate_ip.connection_raw import ConnectionRaw8888
 from custom_components.climate_ip.const import CONF_CERT
@@ -12,7 +13,6 @@ from custom_components.climate_ip.exceptions import CannotConnect
 from custom_components.climate_ip.protocol_8888 import (
     CannotConnect as LibConnError,
 )
-from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 
 
 @pytest.fixture
@@ -47,6 +47,7 @@ async def test_initialization(connection_config, mock_logger, mock_hass):
     """Test connection initialization."""
     with patch("os.path.exists", return_value=True):
         import os
+
         from custom_components.climate_ip import connection_raw
 
         conn = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
@@ -692,9 +693,7 @@ async def test_async_execute_exceptions(connection_config, mock_logger, mock_has
             # Other Error
             mock_client.close.reset_mock()
             mock_client.request.side_effect = LibConnError("some other error")
-            with pytest.raises(
-                CannotConnect, match="some other error"
-            ):
+            with pytest.raises(CannotConnect, match="some other error"):
                 await conn.async_execute("GET", "/x", None, None)
 
             # Probe suppresses errors
@@ -782,11 +781,15 @@ async def test_async_execute_mutants_coverage(
         conn._embedded_command._params = conn._embedded_command.params
         conn._embedded_command.check_execute_condition = MagicMock(return_value=True)
         # Use an AsyncMock with side_effect to simulate standard failure in an awaitable
-        conn._embedded_command.async_execute = AsyncMock(side_effect=TypeError("Emb failed"))
-        
+        conn._embedded_command.async_execute = AsyncMock(
+            side_effect=TypeError("Emb failed")
+        )
+
         with patch.object(conn, "async_get_client", return_value=mock_client):
             # The production code catches Exception and wraps it in CannotConnect
-            with pytest.raises(CannotConnect, match="Embedded command failed: Emb failed"):
+            with pytest.raises(
+                CannotConnect, match="Embedded command failed: Emb failed"
+            ):
                 await conn.async_execute(
                     "GET", "/main", None, None, device_state={"state": "on"}
                 )
@@ -836,9 +839,11 @@ async def test_async_execute_embedded_and_path(
 
         # Test embedded params replacement (second pass)
         # DO NOT delete async_render, just reconfigure the return value
-        mock_template.async_render = MagicMock(return_value=(
-            '{"url": "/emb/__DEVICE_ID__/__CLIMATE_IP_HOST__", "method": "GET"}'
-        ))
+        mock_template.async_render = MagicMock(
+            return_value=(
+                '{"url": "/emb/__DEVICE_ID__/__CLIMATE_IP_HOST__", "method": "GET"}'
+            )
+        )
         conn._embedded_command.connection_template = mock_template
         conn._embedded_command._connection_template = mock_template
         conn._embedded_command.async_execute.reset_mock()
@@ -878,9 +883,10 @@ async def test_async_execute_defaults(mock_logger):
         "cert": "cert.pem",
         "keep_alive": False,  # This normally closes the client if _is_poll=True
     }
+    from aiohttp.client_exceptions import ClientConnectorError
+
     from custom_components.climate_ip.connection_raw import ConnectionRaw8888
     from custom_components.climate_ip.exceptions import CannotConnect
-    from aiohttp.client_exceptions import ClientConnectorError
 
     conn = ConnectionRaw8888(config, mock_logger, None, None, None)
 
@@ -938,20 +944,28 @@ async def test_is_push_supported(connection_config, mock_logger, mock_hass):
         assert conn.is_push_supported is False
         assert type(conn.is_push_supported) is bool
 
+
 # ====================================================================================
 # TESTS DE COMANDOS EMBEBIDOS: LOGS Y WARNINGS (Migrados)
 # ====================================================================================
 
-async def test_embedded_command_no_params_no_template_logs_warning(connection_config, mock_logger, mock_hass):
+
+async def test_embedded_command_no_params_no_template_logs_warning(
+    connection_config, mock_logger, mock_hass
+):
     """When embedded command has neither _connection_template nor _params, it should log a warning."""
-    from jinja2 import Template
     from unittest.mock import AsyncMock, MagicMock, patch
+
+    from jinja2 import Template
+
     from custom_components.climate_ip.connection_raw import ConnectionRaw8888
-    
+
     with patch("os.path.exists", return_value=True):
         conn = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
-        embedded = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
-        
+        embedded = ConnectionRaw8888(
+            connection_config, mock_logger, mock_hass, None, None
+        )
+
         embedded._connection_template = None
         embedded._params = {}  # Empty params
         embedded.condition_template = Template("1")
@@ -974,6 +988,6 @@ async def test_embedded_command_no_params_no_template_logs_warning(connection_co
             headers={"Authorization": "Bearer mock_token"},
             device_state=device_state,
         )
-        
+
         # Embedded should NOT have been called (no params to send)
         embedded.async_execute.assert_not_called()

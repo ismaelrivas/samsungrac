@@ -1,5 +1,7 @@
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from custom_components.climate_ip.controller_yaml_config import (
     YamlConfigLoader,
     clear_yaml_cache,
@@ -152,10 +154,12 @@ async def test_async_finish_initialization_duck_typing_snipers(mock_controller_e
 @pytest.mark.asyncio
 async def test_async_finish_initialization_default_schema(mock_controller_errors):
     """Aniquila el mutante de cv.string por defecto (Target 39)."""
-    from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
+    from unittest.mock import patch
+
     import homeassistant.helpers.config_validation as cv
     import voluptuous as vol
-    from unittest.mock import patch
+
+    from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
 
     loader = YamlConfigLoader(mock_controller_errors)
     loader._parsed_yaml_config = {"device": {"operations": {"test_op": {}}}}
@@ -179,8 +183,9 @@ async def test_async_finish_initialization_default_schema(mock_controller_errors
 @pytest.mark.asyncio
 async def test_async_finish_initialization_config_fallback(mock_controller_errors):
     """Aniquila el getattr(None, 'config') forzando la ausencia de _config (Target 64)."""
-    from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
     from unittest.mock import MagicMock
+
+    from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
 
     # Destruimos el atributo privado
     if hasattr(mock_controller_errors, "_config"):
@@ -205,9 +210,10 @@ async def test_async_finish_initialization_config_fallback(mock_controller_error
 @pytest.mark.asyncio
 async def test_async_initialize_config_entry_fetch(mock_controller_errors):
     """Verify mutant kill for mutation async_get_entry(None) auditando el parámetro (Target 70)."""
-    from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
+    from unittest.mock import MagicMock, patch
+
     from custom_components.climate_ip.const import CONF_DEVICE_TYPE
-    from unittest.mock import patch, MagicMock
+    from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
 
     # Inyección táctica con constantes
     mock_controller_errors._config = {
@@ -284,6 +290,6 @@ async def test_apply_temperature_units_simple_sensor_fallback(mock_controller_er
     await loader.async_finish_initialization()
 
     # Lethal assertion: El motor DEBIÓ caer en el 'elif' y aplicar la unidad
-    assert strict_sensor.unit_applied == "°F", (
-        "El bloque 'elif hasattr' de fallback de temperatura no se ejecutó."
-    )
+    assert (
+        strict_sensor.unit_applied == "°F"
+    ), "El bloque 'elif hasattr' de fallback de temperatura no se ejecutó."

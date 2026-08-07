@@ -5,8 +5,8 @@ This file defines the Home Assistant sensor entities, adapted for DataUpdateCoor
 
 import logging
 
-from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
 from homeassistant import const
+from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback

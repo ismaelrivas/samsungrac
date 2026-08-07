@@ -1,8 +1,8 @@
 """Unit tests for Climate IP diagnostic binary_sensor platform."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
-import pytest
+from unittest.mock import MagicMock, patch
 
+import pytest
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.const import EntityCategory
 
@@ -13,15 +13,18 @@ from custom_components.climate_ip.binary_sensor import (
 
 # --- FIXTURES ---
 
+
 @pytest.fixture
 def mock_hass():
     """Fixture for HomeAssistant instance."""
     return MagicMock()
 
+
 @pytest.fixture
 def mock_async_add_entities():
     """Fixture for the async_add_entities callback."""
     return MagicMock()
+
 
 @pytest.fixture
 def mock_coordinator():
@@ -32,6 +35,7 @@ def mock_coordinator():
     coord.device_info = {"identifiers": {("climate_ip", "test_unique_id")}}
     return coord
 
+
 @pytest.fixture
 def mock_config_entry(mock_coordinator):
     """Fixture for the ConfigEntry containing the coordinator."""
@@ -39,13 +43,16 @@ def mock_config_entry(mock_coordinator):
     entry.runtime_data = mock_coordinator
     return entry
 
+
 @pytest.fixture
 def mock_logger():
     """Fixture to patch the module logger."""
     with patch("custom_components.climate_ip.binary_sensor._LOGGER.info") as mock_log:
         yield mock_log
 
+
 # --- TESTS ---
+
 
 @pytest.mark.asyncio
 async def test_async_setup_entry_single_coordinator(
@@ -56,7 +63,7 @@ async def test_async_setup_entry_single_coordinator(
 
     mock_async_add_entities.assert_called_once()
     added_entities = mock_async_add_entities.call_args[0][0]
-    
+
     assert len(added_entities) == 1
     entity = added_entities[0]
     assert isinstance(entity, ClimateIPConnectivitySensor)
@@ -64,7 +71,9 @@ async def test_async_setup_entry_single_coordinator(
     # Target 1: Strict Entity Description & Attribute Assertions
     assert entity.entity_description.key == "connectivity"
     assert entity.entity_description.translation_key == "connectivity"
-    assert entity.entity_description.device_class == BinarySensorDeviceClass.CONNECTIVITY
+    assert (
+        entity.entity_description.device_class == BinarySensorDeviceClass.CONNECTIVITY
+    )
     assert entity.entity_description.entity_category == EntityCategory.DIAGNOSTIC
     assert entity._attr_has_entity_name is True
     assert entity.unique_id == "test_unique_id_connectivity"
@@ -74,6 +83,7 @@ async def test_async_setup_entry_single_coordinator(
         "%s Adding diagnostic connectivity binary sensors to Home Assistant.",
         "[TestPrefix]",
     )
+
 
 @pytest.mark.asyncio
 async def test_async_setup_entry_dict_coordinators(
@@ -96,6 +106,7 @@ async def test_async_setup_entry_dict_coordinators(
         "[Dev1]",
     )
 
+
 @pytest.mark.asyncio
 async def test_async_setup_entry_empty_entities(
     mock_hass, mock_config_entry, mock_async_add_entities, mock_logger
@@ -108,12 +119,13 @@ async def test_async_setup_entry_empty_entities(
     mock_async_add_entities.assert_not_called()
     mock_logger.assert_not_called()
 
+
 def test_connectivity_sensor_attributes_and_is_on_states(mock_coordinator):
     """Test sensor metadata, availability, and is_on state reflecting coordinator success/failure."""
     mock_description = MagicMock(
         key="connectivity",
         device_class=BinarySensorDeviceClass.CONNECTIVITY,
-        entity_category=EntityCategory.DIAGNOSTIC
+        entity_category=EntityCategory.DIAGNOSTIC,
     )
 
     sensor = ClimateIPConnectivitySensor(mock_coordinator, mock_description)
@@ -121,7 +133,7 @@ def test_connectivity_sensor_attributes_and_is_on_states(mock_coordinator):
     assert sensor.unique_id == "test_unique_id_connectivity"
     assert sensor.log_prefix == "[TestPrefix]"
     assert sensor.device_info == {"identifiers": {("climate_ip", "test_unique_id")}}
-    
+
     # In CoordinatorEntity, if coordinator exists, available inherits from last_update_success
     # unless overridden. We assume strict behavior.
     assert getattr(sensor, "available", True) is True

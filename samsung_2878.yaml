@@ -84,7 +84,7 @@ device:
 
     special: # special_mode
       type: modes
-      values: 
+      values:
         'none': { value : 'Off' }
         'Quiet': { value : 'Quiet' }
         'sleep': { value : 'Sleep' }
@@ -100,7 +100,7 @@ device:
       validation_template: '{% if "AC_FUN_COMODE" in device_state %}valid{% endif %}'
     fan: # fan_mode
       type: modes
-      values: 
+      values:
         'auto':
           value : 'Auto'
           validation_template: '{% if device_state.AC_FUN_OPMODE != "Wind" %}valid{% endif %}' # Not valid in Wind (fan_only) mode
@@ -129,7 +129,7 @@ device:
       validation_template: '{% if "AC_FUN_WINDLEVEL" in device_state %}valid{% endif %}'
     swing: # swing_mode
       type: modes
-      values: 
+      values:
         'horizontal': { value : "SwingLR" }
         'vertical': { value : "SwingUD" }
         'off': { value : "Fixed" }

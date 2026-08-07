@@ -2,7 +2,6 @@
 
 import asyncio
 import ssl
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -214,7 +213,9 @@ async def test_connection_safe_unique_id_empty_fallback():
         CONF_IP_ADDRESS: "1.1.1.1",
     }
 
-    with patch("custom_components.climate_ip.controller_yaml.YamlController") as mock_yaml:
+    with patch(
+        "custom_components.climate_ip.controller_yaml.YamlController"
+    ) as mock_yaml:
         mock_ctrl = mock_yaml.return_value
         mock_ctrl.initialize = AsyncMock(return_value=True)
         mock_ctrl.async_get_status = AsyncMock(return_value=True)
@@ -292,17 +293,18 @@ async def test_select_devices_error_schema_default_keys():
     assert sel_key is not None, "CONF_SELECTED_DEVICES no encontrado en el schema"
 
     default_val = sel_key.default()
-    assert default_val == ["dev1", "dev2"], (
-        f"Expected ['dev1', 'dev2'], got {default_val}"
-    )
+    assert default_val == [
+        "dev1",
+        "dev2",
+    ], f"Expected ['dev1', 'dev2'], got {default_val}"
 
     assert None not in default_val
 
     selector = schema.schema[sel_key]
     assert hasattr(selector, "options"), "El selector debe tener opciones"
-    assert selector.options is not None, (
-        "El mutante asignó None a las opciones del selector"
-    )
+    assert (
+        selector.options is not None
+    ), "El mutante asignó None a las opciones del selector"
 
 
 @pytest.mark.asyncio
@@ -367,7 +369,9 @@ async def test_discover_uuid_hasattr_exact_attribute_name():
     }
     flow.hass = MagicMock()
 
-    with patch("custom_components.climate_ip.controller_yaml.YamlController") as mock_yaml:
+    with patch(
+        "custom_components.climate_ip.controller_yaml.YamlController"
+    ) as mock_yaml:
         mock_ctrl = MagicMock(
             spec=[
                 "initialize",
@@ -395,7 +399,9 @@ async def test_discover_uuid_hasattr_exact_attribute_name():
                 async with asyncio.timeout(0.5):
                     await flow.async_step_discover_uuid()
             except TimeoutError:
-                pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+                pytest.fail(
+                    "MUTANT KILLED: Asynchronous deadlock detected in flow step."
+                )
             mock_proc.assert_called_once()
             called_devices = mock_proc.call_args[0][0]
             assert len(called_devices) == 1
@@ -414,7 +420,9 @@ async def test_discover_uuid_invalid_header_controller_shutdown():
     }
     flow.hass = MagicMock()
 
-    with patch("custom_components.climate_ip.controller_yaml.YamlController") as mock_yaml:
+    with patch(
+        "custom_components.climate_ip.controller_yaml.YamlController"
+    ) as mock_yaml:
         mock_ctrl = MagicMock()
         mock_ctrl.initialize = AsyncMock(side_effect=InvalidHeaderError("bad header"))
         mock_ctrl.async_shutdown = AsyncMock()
@@ -433,10 +441,12 @@ async def test_discover_uuid_invalid_header_controller_shutdown():
                 async with asyncio.timeout(0.5):
                     await flow.async_step_discover_uuid()
             except TimeoutError:
-                pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+                pytest.fail(
+                    "MUTANT KILLED: Asynchronous deadlock detected in flow step."
+                )
 
             expected_calls = [manager.mock_calls[0], manager.mock_calls[1]]
-            assert expected_calls[0][0] == "shutdown", (
-                "Shutdown debe llamarse antes del fallback"
-            )
+            assert (
+                expected_calls[0][0] == "shutdown"
+            ), "Shutdown debe llamarse antes del fallback"
             assert expected_calls[1][0] == "fallback"

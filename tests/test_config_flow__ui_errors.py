@@ -232,7 +232,9 @@ async def test_initiate_pairing_and_discover_uuid_mutants():
 
 
 @pytest.mark.asyncio
-async def test_discover_uuid_missing_discovered_devices_attr(hass: HomeAssistant) -> None:
+async def test_discover_uuid_missing_discovered_devices_attr(
+    hass: HomeAssistant,
+) -> None:
     """Kill mutant on getattr default [] fallback."""
     flow = ClimateIpConfigFlow()
     flow.hass = hass
@@ -450,9 +452,7 @@ async def test_initiate_pairing_safe_auth_error_key():
     flow = ClimateIpConfigFlow()
     flow.flow_data = {CONF_IP_ADDRESS: "1.1.1.1"}
     flow.acquirer = MagicMock()
-    flow.acquirer.async_initiate_pairing = AsyncMock(
-        side_effect=AuthError("bad creds")
-    )
+    flow.acquirer.async_initiate_pairing = AsyncMock(side_effect=AuthError("bad creds"))
 
     result = await flow._initiate_pairing_safe()
 
@@ -500,9 +500,7 @@ async def test_initiate_pairing_safe_unknown_exception_key():
     flow = ClimateIpConfigFlow()
     flow.flow_data = {}
     flow.acquirer = MagicMock()
-    flow.acquirer.async_initiate_pairing = AsyncMock(
-        side_effect=RuntimeError("boom")
-    )
+    flow.acquirer.async_initiate_pairing = AsyncMock(side_effect=RuntimeError("boom"))
 
     result = await flow._initiate_pairing_safe()
 
@@ -592,9 +590,7 @@ async def test_wait_token_safe_unknown_exception_key():
     flow = ClimateIpConfigFlow()
     flow.flow_data = {}
     flow.acquirer = MagicMock()
-    flow.acquirer.async_wait_for_token = AsyncMock(
-        side_effect=ValueError("unexpected")
-    )
+    flow.acquirer.async_wait_for_token = AsyncMock(side_effect=ValueError("unexpected"))
 
     result = await flow._wait_token_safe()
 

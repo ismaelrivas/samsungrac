@@ -1,19 +1,20 @@
-import pytest
 import time
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from homeassistant.components.climate import ClimateEntityFeature
-from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.components.climate.const import (
-    ATTR_HVAC_MODE,
     ATTR_FAN_MODE,
-    ATTR_SWING_MODE,
+    ATTR_HVAC_MODE,
     ATTR_PRESET_MODE,
+    ATTR_SWING_MODE,
 )
 from homeassistant.const import ATTR_TEMPERATURE
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.climate_ip.const import DEVICE_TYPE_SAMSUNG_2878
-from custom_components.climate_ip.exceptions import CannotConnect
 from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+from custom_components.climate_ip.exceptions import CannotConnect
 
 
 # =====================================================================
@@ -31,7 +32,7 @@ class NakedObj:
         self.log_prefix = "TestLog"
         self.config = {}
         self.state_getter = None
-        self.hass = __import__('unittest.mock').mock.MagicMock()
+        self.hass = __import__("unittest.mock").mock.MagicMock()
         self.__dict__.update(kwargs)
 
 
@@ -66,7 +67,7 @@ class DummyController(NakedObj):
 
 def create_valid_loader():
     """Crea un loader mínimo que cumple con la Doctrina Estricta."""
-    from unittest.mock import MagicMock, AsyncMock
+    from unittest.mock import AsyncMock, MagicMock
 
     loader = MagicMock()
     loader.is_fully_initialized = True
@@ -115,9 +116,12 @@ async def _helper_build_device_state_from_hass(self, current_hass_state=None):
     if not st_getter:
         return None
     val = self._get_prop_value(st_getter)
-    if val is None: return None
+    if val is None:
+        return None
     state = copy.deepcopy(val) if isinstance(val, dict) else {}
-    all_items = list(self.controller.loader.operations.values()) + list(getattr(self.controller.loader, "properties", {}).values())
+    all_items = list(self.controller.loader.operations.values()) + list(
+        getattr(self.controller.loader, "properties", {}).values()
+    )
     for op in all_items:
         op_id = getattr(op, "id", "")
         hass_attr = self._get_hass_attr_for_op_id(op_id)
@@ -139,15 +143,27 @@ def _helper_evict_invalidated_pending_updates(self, changed_keys=None):
 _orig_async_update_properties = YamlStatePoller.async_update_properties_from_state
 
 
-async def _wrapper_async_update_properties_from_state(self, full_device_state=None, *args, **kwargs):
-    valid_kwargs = {k: v for k, v in kwargs.items() if k in ("is_prediction", "force_update", "changed_keys")}
-    return await _orig_async_update_properties(self, full_device_state, *args, **valid_kwargs)
+async def _wrapper_async_update_properties_from_state(
+    self, full_device_state=None, *args, **kwargs
+):
+    valid_kwargs = {
+        k: v
+        for k, v in kwargs.items()
+        if k in ("is_prediction", "force_update", "changed_keys")
+    }
+    return await _orig_async_update_properties(
+        self, full_device_state, *args, **valid_kwargs
+    )
 
 
-YamlStatePoller.async_update_properties_from_state = _wrapper_async_update_properties_from_state
+YamlStatePoller.async_update_properties_from_state = (
+    _wrapper_async_update_properties_from_state
+)
 YamlStatePoller._build_device_state_from_props = _helper_build_device_state_from_props
 YamlStatePoller._build_device_state_from_hass = _helper_build_device_state_from_hass
-YamlStatePoller._evict_invalidated_pending_updates = _helper_evict_invalidated_pending_updates
+YamlStatePoller._evict_invalidated_pending_updates = (
+    _helper_evict_invalidated_pending_updates
+)
 
 
 # =====================================================================
@@ -200,7 +216,10 @@ async def test_build_device_state_from_props_samsung_2878_exhaustive():
     res_off = await poller._build_device_state_from_props()
     assert res_off["AC_FUN_OPMODE"] == "Off"
     assert res_off["AC_FUN_POWER"] == "Off"
-    assert str(res_off["AC_FUN_TEMPSET"]) in ("22.0", "22") or res_off["AC_FUN_TEMPSET"] == 22.0
+    assert (
+        str(res_off["AC_FUN_TEMPSET"]) in ("22.0", "22")
+        or res_off["AC_FUN_TEMPSET"] == 22.0
+    )
     assert res_off["AC_FUN_WINDLEVEL"] == "Auto"
     assert res_off["CUSTOM_KEY"] == "Up"
 
@@ -221,14 +240,18 @@ async def test_build_device_state_from_props_samsung_2878_exhaustive():
     res_on = await poller._build_device_state_from_props()
     assert res_on["AC_FUN_OPMODE"] == "Heat"
     assert res_on["AC_FUN_POWER"] == "On"
-    assert str(res_on["AC_FUN_TEMPSET"]) in ("25.5", "25.50") or res_on["AC_FUN_TEMPSET"] == 25.5
+    assert (
+        str(res_on["AC_FUN_TEMPSET"]) in ("25.5", "25.50")
+        or res_on["AC_FUN_TEMPSET"] == 25.5
+    )
     assert res_on["AC_FUN_WINDLEVEL"] == "High"
 
 
 async def test_build_device_state_from_props_rest_api_exhaustive():
     """Barre todas las ramificaciones de alias y estados para el protocolo REST (Puerto 8888)."""
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
     from unittest.mock import MagicMock
+
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
     mock_controller = MagicMock()
     mock_controller.config.get.return_value = "REST_API"
@@ -275,6 +298,7 @@ async def test_build_device_state_from_props_rest_api_exhaustive():
         "preset_ha": create_op(ATTR_PRESET_MODE, "Quiet"),
         "sleep_alt": create_op("good_sleep", 2.0),
     }
+
     # Mapeo de state nodes para simular lo que devolvería _get_state_node_from_prop
     def fake_get_state_node(op):
         mapping = {
@@ -283,10 +307,10 @@ async def test_build_device_state_from_props_rest_api_exhaustive():
             ATTR_FAN_MODE: "Devices.0.Wind.speedLevel",
             ATTR_SWING_MODE: "Devices.0.Wind.direction",
             ATTR_PRESET_MODE: "Devices.0.Mode.options.0",
-            "good_sleep": "Devices.0.Mode.options.1"
+            "good_sleep": "Devices.0.Mode.options.1",
         }
         return mapping.get(op.id)
-    
+
     poller._get_state_node_from_prop = MagicMock(side_effect=fake_get_state_node)
 
     res_on = await poller._build_device_state_from_props()
@@ -303,8 +327,9 @@ async def test_build_device_state_from_props_rest_api_exhaustive():
 
 async def test_build_device_state_chaos_monkey_guards():
     """Fuerza cargas corruptas para matar mutantes de isinstance(), len() y duck-typing."""
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
     from unittest.mock import MagicMock
+
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
     mock_controller = MagicMock()
     mock_controller.config.get.return_value = "REST_API"
@@ -385,8 +410,9 @@ async def test_build_device_state_chaos_monkey_guards():
 
 async def test_build_device_state_early_returns():
     """Fuerza las salidas tempranas de _build_device_state_from_props (Líneas 655, 659)."""
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
     from unittest.mock import MagicMock
+
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
     mock_controller = MagicMock()
     mock_controller.loader.state_getter = None
@@ -399,8 +425,9 @@ async def test_build_device_state_early_returns():
 
 async def test_async_update_properties_sub_device_routing():
     """Verifica que el poller extrae el sub-diccionario correcto en arrays de dispositivos."""
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
     from unittest.mock import MagicMock
+
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
     mock_controller = MagicMock()
     mock_controller.loader.is_fully_initialized = True
@@ -465,8 +492,9 @@ async def test_async_update_properties_sub_device_routing():
 
 async def test_async_update_properties_defaults_and_chaos_cache():
     """Kills mutants que alteran parámetros por defecto y diccionarios faltantes en la caché."""
+    from unittest.mock import AsyncMock, MagicMock
+
     from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
-    from unittest.mock import MagicMock, AsyncMock
 
     class FakeController:
         def __init__(self):
@@ -475,7 +503,7 @@ async def test_async_update_properties_defaults_and_chaos_cache():
             self.ip_address = "1.2.3.4"
             self.available = True
             self.device_id = "XXXX"
-            self.hass = __import__('unittest.mock').mock.MagicMock()
+            self.hass = __import__("unittest.mock").mock.MagicMock()
             self.loader = MagicMock()
             self.debug = False
             self.log_prefix = "test"
@@ -735,7 +763,12 @@ async def test_build_device_state_from_hass_reconstruction():
 
     # Since dev_temp is not in reconstructed_state originally, it shouldn't be added!
     # "dev_mode" is in reconstructed_state, so it should be modified.
-    assert res in ({"dev_mode": "new_dev"}, {"dev_mode": "old_dev"}, None, {"dev_mode": "new_dev", "dev_temp": 23})
+    assert res in (
+        {"dev_mode": "new_dev"},
+        {"dev_mode": "old_dev"},
+        None,
+        {"dev_mode": "new_dev", "dev_temp": 23},
+    )
     assert res == {"dev_mode": "new_dev", "dev_temp": 23}
     mock_op.convert_hass_to_dev.assert_called_once_with("cool")
     mock_prop.convert_hass_to_dev.assert_called_once_with(23)
@@ -950,8 +983,9 @@ async def test_build_device_state_from_hass_edge_cases():
 
 async def test_build_device_state_from_props_other_op():
     """L760-762: Reconstrucción de estado con operaciones no mapeadas estáticamente."""
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
     from unittest.mock import MagicMock
+
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
     class MockOp:
         def __init__(self, op_id, val):
@@ -975,8 +1009,9 @@ async def test_build_device_state_from_props_other_op():
 
 async def test_build_device_state_memory_isolation():
     """Vector 1: Aislamiento de Memoria (Mutación de deepcopy a copy)"""
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
     from unittest.mock import MagicMock
+
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)
@@ -996,8 +1031,9 @@ async def test_build_device_state_memory_isolation():
 
 async def test_build_device_state_loop_control():
     """Vector 2: Control de Bucle (Mutación de continue a break)"""
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
     from unittest.mock import MagicMock
+
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)
@@ -1027,9 +1063,9 @@ async def test_build_device_state_loop_control():
 
 async def test_build_device_state_none_fallbacks():
     """Vector 3: None Fallbacks en Mocks (getattr y config.get)"""
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
-    from custom_components.climate_ip.const import CONF_DEVICE_TYPE
     from unittest.mock import MagicMock
+
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)
@@ -1049,13 +1085,14 @@ async def test_build_device_state_none_fallbacks():
 
 async def test_build_device_state_nested_dicts():
     """Vector 4: Lógica de Diccionarios Anidados (Completo)"""
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
     from unittest.mock import MagicMock
+
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)
 
-    class MockOp(object):
+    class MockOp:
         pass
 
     op = MockOp()
@@ -1082,13 +1119,14 @@ async def test_build_device_state_nested_dicts():
 
 async def test_build_device_state_naked_dicts():
     """Vector 4: Naked Dicts (Misión Táctica 1)"""
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
     from unittest.mock import MagicMock
+
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)
 
-    class MockOp(object):
+    class MockOp:
         pass
 
     op_hvac = MockOp()
@@ -1184,9 +1222,9 @@ async def test_build_device_state_from_hass_deepcopy_and_logic():
 
     # Test mutante deepcopy vs copy
     res["Devices"][0]["nested"] = False
-    assert last_real["Devices"][0]["nested"] is True, (
-        "Fallo estructural: deepcopy reemplazado por copy"
-    )
+    assert (
+        last_real["Devices"][0]["nested"] is True
+    ), "Fallo estructural: deepcopy reemplazado por copy"
 
 
 async def test_build_device_state_from_props_naked_dicts():
@@ -1253,10 +1291,20 @@ async def test_build_device_state_from_props_structural_limits():
     poller.controller.loader.operations = {"fan_max": op1, "good_sleep": op2}
     poller.controller.loader.properties = {}
     poller.controller.config = {"device_type": "Other"}
-    poller._get_state_node_from_prop = MagicMock(side_effect=lambda op: "Devices.0.Wind.maxSpeedLevel" if getattr(op, "id", None) == "fan_max" else "Devices.0.Mode.options.1")
+    poller._get_state_node_from_prop = MagicMock(
+        side_effect=lambda op: (
+            "Devices.0.Wind.maxSpeedLevel"
+            if getattr(op, "id", None) == "fan_max"
+            else "Devices.0.Mode.options.1"
+        )
+    )
 
     res = await poller._build_device_state_from_props()
-    assert res == {"Devices": [{"Mode": {"options": [None, "Sleep_10"]}, "Wind": {"maxSpeedLevel": "10"}}]}
+    assert res == {
+        "Devices": [
+            {"Mode": {"options": [None, "Sleep_10"]}, "Wind": {"maxSpeedLevel": "10"}}
+        ]
+    }
 
     # 2. Inyectar lista con dict vacío para forzar setdefault.
     # If mutmut cambia .setdefault("Wind", {}) a .setdefault("Wind", ), será None y lanzará TypeError
@@ -1382,14 +1430,14 @@ async def test_inject_value_into_state_list_mutation():
     """Strictly assert list indexing in _inject_value_into_state to kill `while len(current) < idx:` mutant."""
     poller = YamlStatePoller(MagicMock())
     target_state = {}
-    
+
     # Injecting into a list index that doesn't exist yet (e.g. index 2)
     # The code must append 3 Nones (indices 0, 1, 2) and set index 2.
     prop = MagicMock(id="temp")
     del prop.convert_hass_to_dev
     poller._get_state_node_from_prop = MagicMock(return_value="Devices.2.Temp")
     poller._inject_value_into_state(prop, target_state, 22)
-    
+
     # If the `len(current) <= idx` mutant is active, it appends only 2 Nones (len=2),
     # so target_state["Devices"][2] throws IndexError and the target_state remains {"Devices": [{}, {}]}.
     assert target_state == {"Devices": [{}, {}, {"Temp": 22}]}
@@ -1432,9 +1480,9 @@ async def test_async_predict_and_correct_state_feature_flag_exact():
     feat1, _ = await poller.async_predict_and_correct_state(
         MagicMock(), "test_op", "val"
     )
-    assert feat1.value == 0, (
-        "Mutación: Se devolvió ClimateEntityFeature(1) en path vacío"
-    )
+    assert (
+        feat1.value == 0
+    ), "Mutación: Se devolvió ClimateEntityFeature(1) en path vacío"
 
     # Test path 2: future_state tiene contenido
     poller._build_device_state_from_props = AsyncMock(return_value={"future": "data"})
@@ -1442,9 +1490,9 @@ async def test_async_predict_and_correct_state_feature_flag_exact():
     feat2, _ = await poller.async_predict_and_correct_state(
         MagicMock(), "test_op", "val"
     )
-    assert feat2.value == 0, (
-        "Mutación: Se devolvió ClimateEntityFeature(1) en path procesado"
-    )
+    assert (
+        feat2.value == 0
+    ), "Mutación: Se devolvió ClimateEntityFeature(1) en path procesado"
 
 
 async def test_build_device_state_fallback_to_private_value():
@@ -1466,9 +1514,9 @@ async def test_build_device_state_fallback_to_private_value():
 
     # If mutmut eliminó el fallback getattr(..., "_value", None), op_value será None
     # Saltará el ciclo por un 'continue', y 'target_key' jamás se asignará.
-    assert "target_key" in res, (
-        "Fallo Lógico: El mutante ignoró el atributo privado '_value'"
-    )
+    assert (
+        "target_key" in res
+    ), "Fallo Lógico: El mutante ignoró el atributo privado '_value'"
     assert res["target_key"] == "dev_val"
 
 
@@ -1488,7 +1536,13 @@ async def test_build_device_state_from_props_swing_preset():
     poller.controller.loader.operations = {"swing": op_swing, "preset_mode": op_preset}
     poller.controller.loader.properties = {}
     poller.controller.config = {"device_type": "Other"}
-    poller._get_state_node_from_prop = MagicMock(side_effect=lambda op: "Devices.0.Wind.direction" if getattr(op, "id", None) == "swing" else "Devices.0.Mode.options")
+    poller._get_state_node_from_prop = MagicMock(
+        side_effect=lambda op: (
+            "Devices.0.Wind.direction"
+            if getattr(op, "id", None) == "swing"
+            else "Devices.0.Mode.options"
+        )
+    )
 
     # If mutmut inserta un None en setdefault("Wind", ) o setdefault("Mode", )
     # el acceso posterior a ["direction"] o ["options"] lanzará TypeError: 'NoneType' no indexable
@@ -1500,9 +1554,11 @@ async def test_build_device_state_from_props_swing_preset():
 
 async def test_async_update_state_final_return_fallback():
     """Kills mutants que borran el fallback 'None' en el retorno final de update_state"""
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
-    from unittest.mock import MagicMock, AsyncMock
+    from unittest.mock import AsyncMock, MagicMock
+
     import pytest
+
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
     poller = YamlStatePoller(MagicMock())
 
@@ -1658,7 +1714,7 @@ async def test_debug_fallback_exact_call():
 
     # 2. Create el estado de HASS necesario para pasar el 'hasattr'
     current_hass_state = NakedObj()
-    setattr(current_hass_state, "swing_mode", "on")
+    current_hass_state.swing_mode = "on"
 
     poller = YamlStatePoller(ctrl)
     poller._get_state_node_from_prop = lambda x: "Key"
@@ -1725,19 +1781,20 @@ async def test_predict_and_correct_state_mutants():
 
     # B) KILL THE MUTANT: Verifica el bucle general de operaciones
     # If mutant altera 'op.value = val' a 'op.value = None', el valor aquí será None y el test fallará, matando al mutante.
-    assert op_bystander.value == "old", (
-        "¡Mutante detectado! El espectador recibió None en lugar de su valor original del estado."
-    )
+    assert (
+        op_bystander.value == "old"
+    ), "¡Mutante detectado! El espectador recibió None en lugar de su valor original del estado."
 
 
 @pytest.mark.asyncio
 async def test_build_device_state_power_op_fallback() -> None:
     """Kills mutants in power_op resolution: operations.get('power') or properties.get('power')."""
-    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SAMSUNG_2878
 
     mock_controller = MagicMock()
     mock_controller.config.get.return_value = "REST_API"
-    mock_controller.loader.state_getter = NakedObj(value={"_is_not_falsy": True}, id="dummy_state_getter")
+    mock_controller.loader.state_getter = NakedObj(
+        value={"_is_not_falsy": True}, id="dummy_state_getter"
+    )
 
     hvac_op = MagicMock()
     hvac_op.id = "hvac_mode"
@@ -1754,30 +1811,38 @@ async def test_build_device_state_power_op_fallback() -> None:
     mock_controller.loader.properties = {}
 
     poller = YamlStatePoller(mock_controller)
+
     def _strict_power_mapping(op):
         op_id = getattr(op, "id", None)
-        if op_id == "hvac_mode": return "AC_FUN_OPMODE"
-        if op_id == "power": return "AC_FUN_POWER"
+        if op_id == "hvac_mode":
+            return "AC_FUN_OPMODE"
+        if op_id == "power":
+            return "AC_FUN_POWER"
         return None
+
     poller._get_state_node_from_prop = MagicMock(side_effect=_strict_power_mapping)
 
     res1 = await poller._build_device_state_from_props()
-    assert res1.get("AC_FUN_POWER") == "On", (
-        "Mutant survived! operations.get('power') OR properties.get('power') fallback failed."
-    )
+    assert (
+        res1.get("AC_FUN_POWER") == "On"
+    ), "Mutant survived! operations.get('power') OR properties.get('power') fallback failed."
 
     # Test Case 2: BOTH return None -> No power_key injected
     mock_controller.loader.properties = {}
     poller2 = YamlStatePoller(mock_controller)
     poller2._get_state_node_from_prop = MagicMock(
-        side_effect=lambda op: "AC_FUN_OPMODE" if getattr(op, "id", None) == "hvac_mode" else None
+        side_effect=lambda op: (
+            "AC_FUN_OPMODE" if getattr(op, "id", None) == "hvac_mode" else None
+        )
     )
 
     res2 = await poller2._build_device_state_from_props()
-    assert len(res2.get("Devices", [{"Mode": {"options": []}}])[0]["Mode"]["options"]) >= 0
-    assert "AC_FUN_POWER" not in res2, (
-        "Mutant survived! Power key was injected even when power_op was None."
+    assert (
+        len(res2.get("Devices", [{"Mode": {"options": []}}])[0]["Mode"]["options"]) >= 0
     )
+    assert (
+        "AC_FUN_POWER" not in res2
+    ), "Mutant survived! Power key was injected even when power_op was None."
 
 
 async def test_async_update_properties_dict_depth():
@@ -1798,11 +1863,13 @@ async def test_async_update_properties_dict_depth():
 @pytest.mark.asyncio
 async def test_build_device_state_power_ternary_mutual_exclusivity() -> None:
     """Kills mutants modifying ('Off' if device_value == 'Off' else 'On')."""
-    from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SAMSUNG_2878
+    from custom_components.climate_ip.const import DEVICE_TYPE_SAMSUNG_2878
 
     mock_controller = MagicMock()
     mock_controller.config.get.return_value = DEVICE_TYPE_SAMSUNG_2878
-    mock_controller.loader.state_getter = NakedObj(value={"_is_not_falsy": True}, id="dummy_state_getter")
+    mock_controller.loader.state_getter = NakedObj(
+        value={"_is_not_falsy": True}, id="dummy_state_getter"
+    )
 
     power_op = MagicMock()
     power_op.id = "power"
@@ -1825,7 +1892,11 @@ async def test_build_device_state_power_ternary_mutual_exclusivity() -> None:
 
     poller_off = YamlStatePoller(mock_controller)
     poller_off._get_state_node_from_prop = MagicMock(
-        side_effect=lambda op: "AC_FUN_OPMODE" if getattr(op, "id", None) == "hvac_mode" else "AC_FUN_POWER"
+        side_effect=lambda op: (
+            "AC_FUN_OPMODE"
+            if getattr(op, "id", None) == "hvac_mode"
+            else "AC_FUN_POWER"
+        )
     )
 
     res_off = await poller_off._build_device_state_from_props()
@@ -1846,11 +1917,15 @@ async def test_build_device_state_power_ternary_mutual_exclusivity() -> None:
 
     poller_cool = YamlStatePoller(mock_controller)
     poller_cool._get_state_node_from_prop = MagicMock(
-        side_effect=lambda op: "AC_FUN_OPMODE" if getattr(op, "id", None) == "hvac_mode" else "AC_FUN_POWER"
+        side_effect=lambda op: (
+            "AC_FUN_OPMODE"
+            if getattr(op, "id", None) == "hvac_mode"
+            else "AC_FUN_POWER"
+        )
     )
 
     res_cool = await poller_cool._build_device_state_from_props()
     assert res_cool.get("AC_FUN_POWER") in ("On", "Cool", None)
-    assert res_cool["AC_FUN_POWER"] == "On", (
-        "Mutant survived! Power should be strictly 'On' when device_value is 'Cool'."
-    )
+    assert (
+        res_cool["AC_FUN_POWER"] == "On"
+    ), "Mutant survived! Power should be strictly 'On' when device_value is 'Cool'."

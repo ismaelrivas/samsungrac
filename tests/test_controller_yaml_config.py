@@ -1,34 +1,31 @@
-from pathlib import Path
 import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from voluptuous import Optional
-
-
-from custom_components.climate_ip.controller_yaml_config import (
-    YamlConfigLoader,
-    clear_yaml_cache,
-    CONST_CONTROLLER_TYPE,
-    _YAML_FILE_CACHE,
-    _LOGGER,
-)
-
-from custom_components.climate_ip.properties import TemperatureOperation
+from homeassistant.const import ATTR_ENTITY_ID, ATTR_NAME, ATTR_TEMPERATURE
 from homeassistant.util.yaml import load_yaml
+from voluptuous import Optional
 
 from custom_components.climate_ip.const import (
     CONF_CONFIG_FILE,
-    CONF_DEVICE_TYPE,
     CONF_CONN_METHOD,
-    CONN_METHOD_RAW,
+    CONF_DEVICE_TYPE,
     CONF_TEMP_NATIVE_CURRENT,
     CONF_TEMP_NATIVE_TARGET,
-    DEFAULT_CONF_TEMP_UNIT,
     CONFIG_DEVICE_POLL,
+    CONN_METHOD_RAW,
+    DEFAULT_CONF_TEMP_UNIT,
     DEVICE_TYPE_AIOHTTP_SUPPORTED,
 )
-
-from homeassistant.const import ATTR_TEMPERATURE, ATTR_ENTITY_ID, ATTR_NAME
+from custom_components.climate_ip.controller_yaml_config import (
+    _LOGGER,
+    _YAML_FILE_CACHE,
+    CONST_CONTROLLER_TYPE,
+    YamlConfigLoader,
+    clear_yaml_cache,
+)
+from custom_components.climate_ip.properties import TemperatureOperation
 
 
 class StrictMock(MagicMock):
@@ -604,9 +601,9 @@ async def test_async_finish_initialization_idempotency(mock_controller) -> None:
     ):
         await loader.async_finish_initialization()
 
-        assert loader.operations_list == ["shared_id"], (
-            "Falló la protección contra IDs duplicados."
-        )
+        assert loader.operations_list == [
+            "shared_id"
+        ], "Falló la protección contra IDs duplicados."
         assert loader.operations["shared_id"] is mock_prop_2
 
 
@@ -764,9 +761,9 @@ async def test_async_finish_initialization_all_loops_exhaustive():
         assert "real_yaml_attr" in loader.properties_list
         assert "yaml_sen" in loader.sensors_list
 
-        assert loader.is_fully_initialized is True, (
-            "El loader no levantó la bandera de inicialización completa"
-        )
+        assert (
+            loader.is_fully_initialized is True
+        ), "El loader no levantó la bandera de inicialización completa"
 
 
 # ====================================================================================
@@ -851,7 +848,6 @@ async def test_async_finish_initialization_entry_data_fallback():
 # FRENTE O: LA PARADOJA DE LA CACHÉ FANTASMA
 # ====================================================================================
 async def test_async_initialize_frente_o():
-
     mock_controller = StrictMock()
     mock_controller.log_prefix = "[Test]"
     mock_controller._yaml = "/test_o.yaml"
@@ -890,7 +886,6 @@ async def test_async_initialize_frente_o():
 # FRENTE D: ASERCIÓN ESTRICTA DE ARGUMENTOS DE CONEXIÓN
 # ====================================================================================
 async def test_async_initialize_connection_instantiation_args_frente_d():
-
     mock_controller = StrictMock()
     mock_controller.log_prefix = "[Test]"
     mock_controller.hass = MagicMock()
@@ -950,7 +945,6 @@ async def test_async_initialize_connection_instantiation_args_frente_d():
 # FRENTE P: VALIDACIÓN CV.STRING Y CASCADAS SECUNDARIAS
 # ====================================================================================
 async def test_async_finish_initialization_frente_p():
-
     mock_controller = StrictMock()
     mock_controller.log_prefix = "[Test]"
     mock_controller.hass = MagicMock()
@@ -1010,16 +1004,15 @@ async def test_async_finish_initialization_frente_p():
         assert "real_attr1" in loader.properties_list
         assert "sen1" in loader.sensors_list
 
-        assert loader.is_fully_initialized is True, (
-            "El loader no levantó la bandera de inicialización completa"
-        )
+        assert (
+            loader.is_fully_initialized is True
+        ), "El loader no levantó la bandera de inicialización completa"
 
 
 # ====================================================================================
 # FRENTE R: CASCADAS DE CONFIGURATION HASS UNITS Y ENTRY.OPTIONS
 # ====================================================================================
 async def test_async_finish_initialization_frente_r():
-
     mock_controller = StrictMock()
     mock_controller.log_prefix = "[Test]"
     mock_controller.device_id = "dev_r"
@@ -1164,9 +1157,9 @@ async def test_async_initialize_poll_parsing() -> None:
             result = await loader.async_initialize()
 
             assert result is True, f"Abortado prematuramente para {poll_str}"
-            assert loader.poll is expected_poll, (
-                f"Falló el parsing para '{poll_str}'. Esperado {expected_poll}, Obtuvo {loader.poll}"
-            )
+            assert (
+                loader.poll is expected_poll
+            ), f"Falló el parsing para '{poll_str}'. Esperado {expected_poll}, Obtuvo {loader.poll}"
 
 
 @pytest.mark.asyncio
@@ -1309,9 +1302,9 @@ async def test_async_initialize_yaml_deep_fallbacks(mock_controller) -> None:
         result = await loader.async_initialize()
 
         # Lethal assertion: El proceso debe completarse con éxito
-        assert result is True, (
-            "Falló la inicialización o la clase mock rechazó la cadena mutada"
-        )
+        assert (
+            result is True
+        ), "Falló la inicialización o la clase mock rechazó la cadena mutada"
 
         # Lethal assertion: El nombre debe ser el default 'yaml' (CONST_CONTROLLER_TYPE)
         assert loader.name == "yaml"
@@ -1424,12 +1417,13 @@ async def test_async_initialize_executor_job(mock_controller) -> None:
 @pytest.mark.asyncio
 async def test_async_initialize_connection_raw8888_args(mock_controller) -> None:
     """Kills mutants 113-127 (Untested) forzando y auditando la ruta ConnectionRaw8888."""
-    from custom_components.climate_ip.controller_yaml_config import (
-        YamlConfigLoader,
-        _LOGGER,
-    )
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import MagicMock, patch
+
     from custom_components.climate_ip.const import CONF_CONN_METHOD, CONF_DEVICE_TYPE
+    from custom_components.climate_ip.controller_yaml_config import (
+        _LOGGER,
+        YamlConfigLoader,
+    )
 
     # Inyección táctica de dependencias para RAW (usando constantes estrictas)
     mock_controller._config = {
@@ -1485,9 +1479,9 @@ async def test_async_initialize_connection_raw8888_args(mock_controller) -> None
         await loader.async_initialize()
 
         # Aserciones Letales de la firma del constructor
-        assert isinstance(loader.connection, MockRawConn), (
-            "El motor RAW no fue instanciado"
-        )
+        assert isinstance(
+            loader.connection, MockRawConn
+        ), "El motor RAW no fue instanciado"
         # Firma esperada: (controller_config, _LOGGER, hass, _session, ip_address)
         assert loader.connection.args[0] == mock_controller._config
         assert loader.connection.args[1] == _LOGGER
@@ -1511,6 +1505,6 @@ async def test_async_finish_initialization_state_flag(mock_controller) -> None:
     await loader.async_finish_initialization()
 
     # Lethal assertion: If mutmut cambia = True por = False en la línea 417, esto detonará.
-    assert loader.is_fully_initialized is True, (
-        "INFRACCIÓN: La bandera de inicialización no fue levantada."
-    )
+    assert (
+        loader.is_fully_initialized is True
+    ), "INFRACCIÓN: La bandera de inicialización no fue levantada."

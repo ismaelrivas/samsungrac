@@ -1,26 +1,24 @@
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 import voluptuous as vol
-import asyncio
-from typing import Any
-from unittest.mock import patch, MagicMock, AsyncMock
+from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
-from custom_components.climate_ip.const import (
-    CONF_DEVICE_TYPE,
-    DEVICE_TYPE_SMARTTHINGS_HVAC,
-    DEVICE_TYPE_TO_CONFIG_FILE,
-    CONF_CONFIG_FILE,
-    DEVICE_TYPE_SAMSUNG_2878,
-    DEVICE_TYPE_SAMSUNG_8888,
-    CONF_CERT,
-    GLOBAL_HTTP_TIMEOUT,
-)
-from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN, CONF_MAC
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 from custom_components.climate_ip.const import (
+    CONF_CERT,
+    CONF_CONFIG_FILE,
     CONF_DEVICE_ID,
+    CONF_DEVICE_TYPE,
     CONF_POLL_INTERVAL,
+    DEVICE_TYPE_SAMSUNG_2878,
+    DEVICE_TYPE_SAMSUNG_8888,
+    DEVICE_TYPE_SMARTTHINGS_HVAC,
+    DEVICE_TYPE_TO_CONFIG_FILE,
+    GLOBAL_HTTP_TIMEOUT,
 )
 
 
@@ -282,7 +280,8 @@ async def test_rest_api_schema_invalid_poll_interval_except_branch():
 
     # Parcheamos DEFAULT_POLL_INTERVAL a un valor inválido para forzar el except
     with patch(
-        "custom_components.climate_ip.config_flow_schemas.DEFAULT_POLL_INTERVAL", "invalid"
+        "custom_components.climate_ip.config_flow_schemas.DEFAULT_POLL_INTERVAL",
+        "invalid",
     ):
         schema = flow._get_rest_api_schema()
 
@@ -531,9 +530,7 @@ async def test_rest_api_empty_token_and_reauth_abort():
 
     # 1. Verify mutant M8 kill (Token vacío fallback a "XXXX")
     # If mutmut cambia raw_token = "" a "XXXX", el 'if raw_token:' se cumple y llama a sanitize.
-    with patch(
-        "custom_components.climate_ip.helpers.sanitize_token"
-    ) as mock_sanitize:
+    with patch("custom_components.climate_ip.helpers.sanitize_token") as mock_sanitize:
         await flow.async_step_rest_api({})
         # En el código original raw_token="", así que NO debe llamar a sanitize_token
         mock_sanitize.assert_not_called()
@@ -681,9 +678,9 @@ async def test_test_connection_safe_strict_timeout(hass: HomeAssistant) -> None:
         # 🔥 KILL SHOT: Aserción estricta de kwargs de red y argumento posicional de URL
         assert mock_sess.return_value.get.called
         call = mock_sess.return_value.get.call_args
-        assert len(call.args) == 1, (
-            "session.get debe recibir la URL como primer argumento posicional"
-        )
+        assert (
+            len(call.args) == 1
+        ), "session.get debe recibir la URL como primer argumento posicional"
         assert (
             call.args[0] == "https://1.1.1.1:8888/api/test" or "1.1.1.1" in call.args[0]
         )

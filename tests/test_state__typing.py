@@ -2,8 +2,8 @@
 """Tests for ClimateIPDeviceState strict typing and Fail-Fast validation."""
 
 import pytest
-
 from homeassistant.components.climate import HVACMode
+
 from custom_components.climate_ip.state import ClimateIPDeviceState
 
 
@@ -30,7 +30,7 @@ def test_climate_ip_state_valid_types():
 
 def test_climate_ip_state_invalid_types_raise():
     """Test that the Fail-Fast doctrine actively rejects malformed data."""
-    
+
     # 1. Reject invalid temperature (String instead of float/int)
     with pytest.raises(TypeError, match="Target temperature must be numeric"):
         ClimateIPDeviceState(target_temperature="24.5")  # type: ignore
@@ -47,12 +47,10 @@ def test_climate_ip_state_invalid_types_raise():
 
 def test_climate_ip_state_immutability():
     """Test that the state object cannot be mutated after creation."""
-    state = ClimateIPDeviceState(
-        hvac_mode=HVACMode.HEAT,
-        target_temperature=22.0
-    )
+    state = ClimateIPDeviceState(hvac_mode=HVACMode.HEAT, target_temperature=22.0)
 
     # Attempting to mutate a frozen dataclass must raise a FrozenInstanceError
     from dataclasses import FrozenInstanceError
+
     with pytest.raises(FrozenInstanceError):
         state.target_temperature = 25.0  # type: ignore

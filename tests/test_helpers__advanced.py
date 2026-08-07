@@ -3,30 +3,28 @@
 # pylint: disable=broad-exception-caught,import-outside-toplevel
 
 import asyncio
-import threading
-
-import pytest
-
 import ssl
-from homeassistant.helpers.entity import EntityCategory
-
+import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+from homeassistant.helpers.entity import EntityCategory
+
 from custom_components.climate_ip.helpers import (
+    ICMPSocketError,
     async_check_network_reachability,
     async_create_samsung_ssl_context,
     async_get_mac_address,
+    create_samsung_ssl_context,
+    find_key_in_data,
     format_placeholders,
     get_tls_version_name,
     get_value_by_path,
     mask_sensitive_data,
     parse_entity_category,
-    stream_wrapper,
-    create_samsung_ssl_context,
-    find_key_in_data,
     safe_xml_to_dict,
+    stream_wrapper,
     tolerant_header_parsing,
-    ICMPSocketError,
 )
 
 
@@ -41,13 +39,13 @@ class TestTolerantHeaderParsing:
 
         with tolerant_header_parsing():
             patched = response_util.assert_header_parsing
-            assert patched is not original, (
-                "assert_header_parsing should be patched inside context"
-            )
+            assert (
+                patched is not original
+            ), "assert_header_parsing should be patched inside context"
 
-        assert response_util.assert_header_parsing is original, (
-            "assert_header_parsing should be restored after context"
-        )
+        assert (
+            response_util.assert_header_parsing is original
+        ), "assert_header_parsing should be restored after context"
 
     def test_patch_restored_after_context(self):
         """Verify that the original function is restored after the context exits."""
@@ -72,14 +70,14 @@ class TestTolerantHeaderParsing:
         with pytest.raises(ValueError), tolerant_header_parsing():
             raise ValueError("Simulated error")
 
-        assert response_util.assert_header_parsing is original, (
-            "assert_header_parsing should be restored even after an exception"
-        )
+        assert (
+            response_util.assert_header_parsing is original
+        ), "assert_header_parsing should be restored even after an exception"
 
     def test_header_parsing_error_suppressed(self):
         """Verify that HeaderParsingError is caught and logged, not raised."""
-        from urllib3.exceptions import HeaderParsingError
         import urllib3.util.response as response_util
+        from urllib3.exceptions import HeaderParsingError
 
         # Save the real function
         real_assert = response_util.assert_header_parsing
@@ -123,9 +121,9 @@ class TestTolerantHeaderParsing:
             t.join()
 
         assert len(errors) == 0, f"Errors in threads: {errors}"
-        assert response_util.assert_header_parsing is original, (
-            "Original function should be restored after all threads complete"
-        )
+        assert (
+            response_util.assert_header_parsing is original
+        ), "Original function should be restored after all threads complete"
 
 
 class TestFindKeyInData:
@@ -204,6 +202,7 @@ class TestResolveCertPath:
     def test_resolve_cert_path_with_hass_slash(self):
         """Test resolve_cert_path with hass for a path containing slashes."""
         from unittest.mock import MagicMock
+
         from custom_components.climate_ip.helpers import resolve_cert_path
 
         mock_hass = MagicMock()
@@ -217,8 +216,9 @@ class TestResolveCertPath:
         """Test resolve_cert_path with hass for filename only."""
         from pathlib import Path
         from unittest.mock import MagicMock
-        from custom_components.climate_ip.helpers import resolve_cert_path
+
         import custom_components.climate_ip.helpers as helpers
+        from custom_components.climate_ip.helpers import resolve_cert_path
 
         mock_hass = MagicMock()
         res = resolve_cert_path("ac14k_m.pem", "/base/dir", hass=mock_hass)
@@ -227,6 +227,7 @@ class TestResolveCertPath:
     def test_resolve_cert_path_hass_attribute_error(self):
         """Test resolve_cert_path when hass raises AttributeError (Strict Fail-Fast)."""
         import pytest
+
         from custom_components.climate_ip.helpers import resolve_cert_path
 
         class FaultyHass:
@@ -242,8 +243,9 @@ class TestResolveCertPath:
     def test_resolve_cert_path_no_base_dir(self):
         """Test resolve_cert_path when base_dir is empty."""
         from pathlib import Path
-        from custom_components.climate_ip.helpers import resolve_cert_path
+
         import custom_components.climate_ip.helpers as helpers
+        from custom_components.climate_ip.helpers import resolve_cert_path
 
         res = resolve_cert_path("ac14k_m.pem", base_dir="")
         assert res == str(Path(helpers.__file__).parent / "ac14k_m.pem")
@@ -269,23 +271,25 @@ class TestValidatePollInterval:
 
     def test_validate_poll_interval_invalid_str(self):
         import pytest
+
         from custom_components.climate_ip.helpers import validate_poll_interval
 
         with pytest.raises(ValueError, match="Invalid time format"):
             validate_poll_interval("invalid_time_string")
 
     def test_validate_poll_interval_boundary(self):
-        from custom_components.climate_ip.helpers import validate_poll_interval
         from custom_components.climate_ip.const import (
-            MIN_POLL_INTERVAL,
             MAX_POLL_INTERVAL,
+            MIN_POLL_INTERVAL,
         )
+        from custom_components.climate_ip.helpers import validate_poll_interval
 
         assert validate_poll_interval(MIN_POLL_INTERVAL) == MIN_POLL_INTERVAL
         assert validate_poll_interval(MAX_POLL_INTERVAL) == MAX_POLL_INTERVAL
 
     def test_validate_poll_interval_out_of_range(self):
         import pytest
+
         from custom_components.climate_ip.helpers import validate_poll_interval
 
         with pytest.raises(ValueError, match="Interval must be between"):
@@ -389,21 +393,23 @@ def test_get_value_by_path():
     assert get_value_by_path(None, ["level1"]) is None
     assert get_value_by_path({"level1": "not_a_dict"}, ["level1", "level2"]) is None
 
+
 def test_get_value_valid_list_traversal():
     """Asserts successful list index resolution to kill the final Untested mutant."""
     from custom_components.climate_ip.helpers import get_value_by_path
-    
+
     # Valid traversal through a dictionary into a list
     data = {"items": ["zero", "one", "two"]}
     assert get_value_by_path(data, ["items", 1]) == "one"
-    
+
     # Deep traversal: list containing a dictionary
     nested = [{"id": 42}]
     assert get_value_by_path(nested, [0, "id"]) == 42
-    
+
     # Multidimensional list traversal
     matrix = [[0, 1], [2, 3]]
     assert get_value_by_path(matrix, [1, 0]) == 2
+
 
 # --- stream_wrapper ---
 def test_stream_wrapper():
@@ -503,6 +509,7 @@ def test_mask_sensitive_data():
     assert masked["nested_limits"]["uuid"] == "1234"
     assert masked["nested_limits"]["DUID"] == "123"
     assert masked["normal_key"] == "visible"
+
 
 # --- mask_sensitive_data (Añadido para cazar al Mutante 29 y string DUID mutants) ---
 def test_mask_sensitive_data_list():
@@ -623,7 +630,9 @@ def test_safe_xml_to_dict_layer2_fallback_defense():
 def test_tolerant_header_parsing_strict_mutants():
     """Kill Mutants 5, 7, and 8 in monkey-patch variable assignments."""
     import http.client
+
     import urllib3.connection as connection_mod
+
     from custom_components.climate_ip.helpers import tolerant_header_parsing
 
     orig_parse = http.client.parse_headers
@@ -644,8 +653,10 @@ def test_tolerant_header_parsing_strict_mutants():
 def test_tolerant_assert_strict_forwarding():
     """Kill Mutant 1 which sends None instead of original headers."""
     import http.client
-    import custom_components.climate_ip.helpers as helpers_mod
+
     import urllib3.connection as connection_mod
+
+    import custom_components.climate_ip.helpers as helpers_mod
     from custom_components.climate_ip.helpers import tolerant_header_parsing
 
     mock_orig = MagicMock()
@@ -661,37 +672,38 @@ def test_tolerant_assert_strict_forwarding():
         finally:
             helpers_mod._HEADER_PATCH_ORIGINAL_RESPONSE = old_orig
 
+
 # --- set_value_by_path ---
 class TestSetValueByPathStrict:
     """Annihilation of mutants while respecting business logic (Falsy Target Abort)."""
-    
+
     def test_set_value_falsy_target_aborts(self):
         """KILLS LOGICAL MUTANT: 'if not target and not path'."""
         from custom_components.climate_ip.helpers import set_value_by_path
-        
+
         d = {}
         set_value_by_path(d, ["a"], 1)
         assert d == {}  # Business logic dictates it remains empty!
-        
+
         l = []
         set_value_by_path(l, [0], 1)
         assert l == []  # Empty lists must also abort
-        
+
     def test_set_value_dict_simple_and_nested(self):
         """Tests standard dictionary traversal and creation."""
         from custom_components.climate_ip.helpers import set_value_by_path
-        
-        d = {"base": True} 
-        
+
+        d = {"base": True}
+
         set_value_by_path(d, ["a"], 1)
         assert d["a"] == 1
-        
+
         set_value_by_path(d, ["b", "c"], 2)
         assert d["b"]["c"] == 2
-        
+
         set_value_by_path(d, ["b", "d"], 3)
         assert d["b"] == {"c": 2, "d": 3}
-        
+
         d["null_node"] = None
         set_value_by_path(d, ["null_node", "e"], 4)
         assert d["null_node"]["e"] == 4
@@ -699,20 +711,20 @@ class TestSetValueByPathStrict:
     def test_set_value_list_creation_and_padding(self):
         """Tests strict list boundary extensions."""
         from custom_components.climate_ip.helpers import set_value_by_path
-        
-        d = {"l": ["first"]} 
-        
+
+        d = {"l": ["first"]}
+
         # KILLS MUTANT: "while len(current) < key" (forcing pure out-of-bounds)
         set_value_by_path(d, ["l", 2], "third")
         assert d["l"] == ["first", None, "third"]
-        
+
         set_value_by_path(d, ["l", 1], "second")
         assert d["l"] == ["first", "second", "third"]
 
     def test_set_value_invalid_paths(self):
         """Tests that illegal traversal paths abort gracefully."""
         from custom_components.climate_ip.helpers import set_value_by_path
-        
+
         d = {"l": []}
         set_value_by_path(d, ["l", "invalid_key", "x"], 10)
         assert d["l"] == []
@@ -720,14 +732,15 @@ class TestSetValueByPathStrict:
     def test_set_value_target_is_list(self):
         """Tests operations where the root target is a list."""
         from custom_components.climate_ip.helpers import set_value_by_path
-        
-        l = ["init"] 
-        
+
+        l = ["init"]
+
         set_value_by_path(l, [2], "b")
         assert l == ["init", None, "b"]
-        
+
         set_value_by_path(l, [1, "sub"], "a")
         assert l[1] == {"sub": "a"}
+
 
 # --- async_get_mac_address ---
 @pytest.mark.asyncio
@@ -744,7 +757,7 @@ async def test_async_get_mac_address_strict_native_parsing(mock_exec):
     # Test 2: Valid length but invalid characters (Not Hexadecimal) -> Killed by int(..., 16)
     mock_proc.communicate.return_value = (b"12:34:56:78:90:XX", b"")
     assert await async_get_mac_address("1.1.1.1") is None
-    
+
     # Test 3: Wrong separators -> Killed by colons/dashes count
     mock_proc.communicate.return_value = (b"12_34_56_78_90_ab", b"")
     assert await async_get_mac_address("1.1.1.1") is None
@@ -755,6 +768,7 @@ async def test_async_get_mac_address_strict_native_parsing(mock_exec):
 
     mock_proc.communicate.return_value = (b"12-34-56-78-90-CD", b"")
     assert await async_get_mac_address("1.1.1.1") == "12-34-56-78-90-cd"
+
 
 @pytest.mark.asyncio
 @patch("asyncio.create_subprocess_exec")
@@ -767,7 +781,7 @@ async def test_async_get_mac_address_os_routing(mock_system, mock_exec):
     mock_exec.return_value = mock_proc
 
     await async_get_mac_address("192.168.1.10")
-    
+
     # Windows uses '-a'
     mock_exec.assert_called_with(
         "arp",
@@ -777,18 +791,18 @@ async def test_async_get_mac_address_os_routing(mock_system, mock_exec):
         stderr=asyncio.subprocess.DEVNULL,
     )
 
+
 @pytest.mark.asyncio
 @patch("asyncio.create_subprocess_exec")
 async def test_async_get_mac_address_timeout_zombie_kill(mock_exec):
     """Asserts that a hanging ARP process is killed via TimeoutError."""
     mock_proc = AsyncMock()
     mock_exec.return_value = mock_proc
-    
+
     # Force asyncio.wait_for to raise a TimeoutError
     with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError):
         result = await async_get_mac_address("192.168.1.10")
-        
+
     assert result is None
     # Ensure the zombie process was terminated
     mock_proc.kill.assert_called_once()
-

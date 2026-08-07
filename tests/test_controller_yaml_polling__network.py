@@ -1,11 +1,11 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.helpers.issue_registry import IssueSeverity
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 from custom_components.climate_ip.exceptions import CannotConnect
-from homeassistant.helpers.issue_registry import IssueSeverity
 
 
 # =====================================================================
@@ -20,7 +20,7 @@ class NakedObj:
         self.ip_address = "1.2.3.4"
         self.available = True
         self.device_id = "XXXX"
-        self.hass = __import__('unittest.mock').mock.MagicMock()
+        self.hass = __import__("unittest.mock").mock.MagicMock()
         self.__dict__.update(kwargs)
 
 
@@ -271,7 +271,8 @@ async def test_async_update_state_early_exits_and_ping():
         return_value=False,
     ) as mock_ping:
         with pytest.raises(
-            UpdateFailed, match=r"Device unreachable: Host unreachable \(ICMP ping failed\)"
+            UpdateFailed,
+            match=r"Device unreachable: Host unreachable \(ICMP ping failed\)",
         ):
             await poller.async_update_state()
 
@@ -357,11 +358,13 @@ async def test_async_update_state_network_failures_and_cache():
 
 async def test_async_update_state_persistently_offline():
     """Verifica que el error 'persistently offline' asigna exactamente 2 al contador."""
+    from unittest.mock import MagicMock
+
+    import pytest
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
     from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
     from custom_components.climate_ip.exceptions import CannotConnect
-    from homeassistant.helpers.update_coordinator import UpdateFailed
-    import pytest
-    from unittest.mock import MagicMock
 
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)
@@ -661,8 +664,9 @@ async def test_update_state_api_error_cached_fallback():
 
 async def test_update_state_delete_issue_exception():
     """L260-261: Captura de excepción en async_delete_issue."""
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
     from unittest.mock import AsyncMock, MagicMock, patch
+
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
     mock_controller = MagicMock()
     mock_controller.config.get.return_value = "REST"
@@ -687,8 +691,9 @@ async def test_update_state_delete_issue_exception():
 
 async def test_async_update_state_sniper_network_ping():
     """Sniper: Dispositivos REST fallan temprano y generan repair issue en el umbral."""
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
     from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
     mock_controller = DummyController(ip_address="192.168.1.100")
     mock_controller.config = {"device_type": "REST"}

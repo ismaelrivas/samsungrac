@@ -1,15 +1,14 @@
 """Raw socket connection engine for Samsung devices on port 8888."""
 
-import asyncio
 import logging
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlparse
 
-from homeassistant.util.json import json_loads
 from homeassistant.helpers.json import json_dumps
 from homeassistant.helpers.template import Template
+from homeassistant.util.json import json_loads
 
 if TYPE_CHECKING:
     from .controller import ClimateController
@@ -49,7 +48,9 @@ class ConnectionRaw8888(Connection):
         """Return True if this connection handles the given type string."""
         return type_str == CONNECTION_TYPE_RAW_8888
 
-    def load_from_yaml(self, node: dict[str, Any] | None, _connection_base: Any) -> bool:
+    def load_from_yaml(
+        self, node: dict[str, Any] | None, _connection_base: Any
+    ) -> bool:
         """Load configuration from yaml node dictionary."""
         if not node:
             return False
@@ -104,7 +105,11 @@ class ConnectionRaw8888(Connection):
             "engine": CONNECTION_TYPE_RAW_8888,
             "keep_alive_enabled": getattr(self, "_keep_alive", False),
             "has_embedded_command": self._embedded_command is not None,
-            "has_shared_client": getattr(self._controller, "shared_raw_client", None) is not None if self._controller else False,
+            "has_shared_client": (
+                getattr(self._controller, "shared_raw_client", None) is not None
+                if self._controller
+                else False
+            ),
         }
 
     # pylint: disable=too-many-arguments
@@ -122,7 +127,7 @@ class ConnectionRaw8888(Connection):
 
         self._host: str = ip_address or cast(str, config.get(CONF_IP_ADDRESS, ""))
         self._cert: str | None = self._resolve_cert_path(config.get(CONF_CERT))
-        self._controller: "ClimateController | None" = None
+        self._controller: ClimateController | None = None
         self._client: Samsung8888Client | None = None
         self._internal_shared_client: Samsung8888Client | None = None
         self._params: dict[str, Any] = {}
@@ -162,7 +167,9 @@ class ConnectionRaw8888(Connection):
     async def async_get_client(self) -> Samsung8888Client:
         """Get the raw client, initializing it if necessary (shared or standalone)."""
         if not self._host:
-            raise CannotConnect("Host/IP address not provided for RAW connection")  # pragma: no mutate
+            raise CannotConnect(
+                "Host/IP address not provided for RAW connection"
+            )  # pragma: no mutate
 
         if self._controller:
             client = getattr(self._controller, "shared_raw_client", None)
@@ -211,7 +218,6 @@ class ConnectionRaw8888(Connection):
         """Return the embedded connection parameters."""
         return self._params
 
-
     def _get_token_and_ids(self) -> tuple[str | None, str, str | None, str]:
         """Resolve credentials strictly without OO-distrust."""
         host = self._host or str(self._config.get(CONF_IP_ADDRESS, ""))
@@ -223,15 +229,15 @@ class ConnectionRaw8888(Connection):
             # DOCTRINA FAIL-FAST: Acceso directo a propiedades formales.
             # Si el controlador no las tiene, debe detonar AttributeError.
             dev_id = self._controller.device_id
-            
+
             # Evaluación estricta: propiedad pública primero, diccionario de fallback segundo.
             ctrl_config = getattr(self._controller, "config", None)
             if not isinstance(ctrl_config, dict):
                 ctrl_config = getattr(self._controller, "_config", {}) or {}
 
             current_token = (
-                self._controller.token 
-                or str(ctrl_config.get(CONF_TOKEN, "")) 
+                self._controller.token
+                or str(ctrl_config.get(CONF_TOKEN, ""))
                 or current_token
             )
 
@@ -251,7 +257,10 @@ class ConnectionRaw8888(Connection):
 
         current_token, host, dev_id, mac = auth_ctx
 
-        if device_state is not None and not self._embedded_command.check_execute_condition(device_state):
+        if (
+            device_state is not None
+            and not self._embedded_command.check_execute_condition(device_state)
+        ):
             return
 
         embedded_template = self._embedded_command.connection_template
@@ -300,8 +309,10 @@ class ConnectionRaw8888(Connection):
         for client in self._get_active_clients():
             try:
                 await client.close()
-            except (asyncio.TimeoutError, OSError) as e:  # pragma: no mutate
-                _LOGGER.debug("%s [RAW] Ignored error during reset: %s", self.log_prefix, e)
+            except (TimeoutError, OSError) as e:  # pragma: no mutate
+                _LOGGER.debug(
+                    "%s [RAW] Ignored error during reset: %s", self.log_prefix, e
+                )
 
         self._client = None
         self._internal_shared_client = None
@@ -338,10 +349,16 @@ class ConnectionRaw8888(Connection):
         req_headers = format_placeholders(req_headers, current_token, host, dev_id, mac)
 
         if not current_token:
-            raise AuthError("Token not configured for the raw engine")  # pragma: no mutate
+            raise AuthError(
+                "Token not configured for the raw engine"
+            )  # pragma: no mutate
 
-        req_headers.setdefault(HEADER_AUTH, f"Bearer {current_token}")  # pragma: no mutate
-        req_headers.setdefault(HEADER_CONTENT_TYPE, HEADER_VALUE_JSON)  # pragma: no mutate
+        req_headers.setdefault(
+            HEADER_AUTH, f"Bearer {current_token}"
+        )  # pragma: no mutate
+        req_headers.setdefault(
+            HEADER_CONTENT_TYPE, HEADER_VALUE_JSON
+        )  # pragma: no mutate
 
         return req_headers
 
@@ -359,7 +376,6 @@ class ConnectionRaw8888(Connection):
         req_headers = self._format_request_headers(headers, auth_ctx)
 
         return formatted_url, path, body, req_headers
-
 
     async def async_execute(
         self,
@@ -381,7 +397,9 @@ class ConnectionRaw8888(Connection):
         except (CannotConnect, AuthError):
             raise  # pragma: no mutate
         except Exception as e:
-            raise CannotConnect(f"Embedded command failed: {e}") from e  # pragma: no mutate
+            raise CannotConnect(
+                f"Embedded command failed: {e}"
+            ) from e  # pragma: no mutate
 
         await self._handle_periodic_reset(_is_poll)
 
@@ -417,7 +435,11 @@ class ConnectionRaw8888(Connection):
 
             if debug_enabled:
                 elapsed = time.perf_counter() - start_time  # pragma: no mutate
-                _LOGGER.debug("%s [RAW] Request completed in %.3f seconds", self.log_prefix, elapsed)  # pragma: no mutate
+                _LOGGER.debug(
+                    "%s [RAW] Request completed in %.3f seconds",
+                    self.log_prefix,
+                    elapsed,
+                )  # pragma: no mutate
 
             return resp, None
 
@@ -427,7 +449,7 @@ class ConnectionRaw8888(Connection):
             raise
         except AuthError as exc:
             raise AuthError("Invalid token") from exc  # pragma: no mutate
-        except (asyncio.TimeoutError, TimeoutError, OSError) as e:
+        except (TimeoutError, OSError) as e:
             raise CannotConnect(f"Connection failed: {e}") from e  # pragma: no mutate
 
     async def close(self) -> None:
@@ -435,14 +457,20 @@ class ConnectionRaw8888(Connection):
         if self._embedded_command:
             try:
                 await self._embedded_command.close()
-            except (asyncio.TimeoutError, OSError) as e:  # pragma: no mutate
-                _LOGGER.debug("%s [RAW] Ignored error closing embedded command: %s", self.log_prefix, e)
+            except (TimeoutError, OSError) as e:  # pragma: no mutate
+                _LOGGER.debug(
+                    "%s [RAW] Ignored error closing embedded command: %s",
+                    self.log_prefix,
+                    e,
+                )
 
         for client in self._get_active_clients():
             try:
                 await client.close()
-            except (asyncio.TimeoutError, OSError) as e:  # pragma: no mutate
-                _LOGGER.debug("%s [RAW] Ignored error during cleanup: %s", self.log_prefix, e)
+            except (TimeoutError, OSError) as e:  # pragma: no mutate
+                _LOGGER.debug(
+                    "%s [RAW] Ignored error during cleanup: %s", self.log_prefix, e
+                )
 
         self._client = None
         self._internal_shared_client = None

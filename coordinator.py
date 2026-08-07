@@ -3,8 +3,9 @@
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from datetime import timedelta
-from typing import Any, Callable
+from typing import Any
 
 from homeassistant.components.climate import HVACMode
 from homeassistant.config_entries import ConfigEntry
@@ -45,7 +46,9 @@ def _dispatch_to_loop(hass: HomeAssistant, func: Callable[[], None]) -> None:
     """Execute func directly if on main thread or in mock test loop, else delegate via call_soon_threadsafe."""
     try:
         running_loop = asyncio.get_running_loop()
-        if hass.loop is running_loop or not isinstance(hass.loop, asyncio.AbstractEventLoop):
+        if hass.loop is running_loop or not isinstance(
+            hass.loop, asyncio.AbstractEventLoop
+        ):
             func()
             return
     except RuntimeError:
@@ -56,7 +59,9 @@ def _dispatch_to_loop(hass: HomeAssistant, func: Callable[[], None]) -> None:
 class PropertyDebouncer:
     """Debounces outgoing commands per property to shield hardware from request flooding."""
 
-    def __init__(self, coordinator: "SamsungClimateCoordinator", delay: float = 2.0) -> None:
+    def __init__(
+        self, coordinator: "SamsungClimateCoordinator", delay: float = 2.0
+    ) -> None:
         """Initialize the property debouncer."""
         self.coordinator = coordinator
         self.delay = delay
@@ -85,12 +90,16 @@ class PropertyDebouncer:
         last_activity = self._last_activities.get(property_name, 0.0)
 
         # Immediate execution for turn-off commands (aborts any pending debounced commands across all properties)
-        val = kwargs.get("val") if "val" in kwargs else (args[1] if len(args) > 1 else None)
+        val = (
+            kwargs.get("val")
+            if "val" in kwargs
+            else (args[1] if len(args) > 1 else None)
+        )
         val_str = str(val).lower() if val is not None else ""
         is_turn_off = (
-            (property_name in ("hvac_mode", "power") and val_str in ("off", HVACMode.OFF.value))
-            or val_str == "off"
-        )
+            property_name in ("hvac_mode", "power")
+            and val_str in ("off", HVACMode.OFF.value)
+        ) or val_str == "off"
 
         if is_turn_off:
             _LOGGER.debug(
@@ -124,7 +133,9 @@ class PropertyDebouncer:
             if unsub:
                 unsub()
             _LOGGER.debug(
-                "[Debouncer] Resetting %.1fs countdown timer for property '%s'", self.delay, property_name
+                "[Debouncer] Resetting %.1fs countdown timer for property '%s'",
+                self.delay,
+                property_name,
             )  # pragma: no mutate
 
         self._pending_payloads[property_name] = (coroutine_func, args, kwargs)
@@ -139,13 +150,14 @@ class PropertyDebouncer:
                 exec_time = time.time()
                 self._last_activities[prop] = exec_time
                 _LOGGER.debug(
-                    "[Debouncer] Executing delayed queued command for property: '%s'", prop
+                    "[Debouncer] Executing delayed queued command for property: '%s'",
+                    prop,
                 )  # pragma: no mutate
 
                 async def _task_runner() -> None:
                     try:
                         await func(*p_args, **p_kwargs)
-                    except (UpdateFailed, CannotConnect, asyncio.TimeoutError, OSError) as err:
+                    except (TimeoutError, UpdateFailed, CannotConnect, OSError) as err:
                         _LOGGER.debug(
                             "[Debouncer] Network error executing delayed command for '%s': %s",
                             prop,
@@ -175,7 +187,9 @@ class PropertyDebouncer:
             self.hass, self.delay, _fire_delayed
         )
         _LOGGER.debug(
-            "[Debouncer] Queued command for property '%s' with %.1fs delay", property_name, self.delay
+            "[Debouncer] Queued command for property '%s' with %.1fs delay",
+            property_name,
+            self.delay,
         )  # pragma: no mutate
         return True
 
@@ -200,7 +214,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         # Inject callbacks into the controller to avoid circular dependencies.
         self.controller.on_token_refreshed = self._async_save_new_token
         self.controller.get_current_state_callback = self._get_current_state
-        self.controller.on_push_update_callback = self.async_handle_push_update  # pragma: no mutate
+        self.controller.on_push_update_callback = (
+            self.async_handle_push_update
+        )  # pragma: no mutate
         self.controller.on_ssl_config_updated = self._async_save_ssl_config
         self.controller.request_refresh_callback = self.async_request_refresh
         self.controller.on_connection_failed_callback = self._async_on_connection_failed
@@ -222,8 +238,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         )  # pragma: no mutate
 
         _LOGGER.debug(
-            '%s Initializing coordinator with update interval: %s',
-            self.log_prefix, update_interval
+            "%s Initializing coordinator with update interval: %s",
+            self.log_prefix,
+            update_interval,
         )  # pragma: no mutate
 
         super().__init__(
@@ -247,7 +264,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 final_name = name
 
             # Parent linkage for hierarchical display in HA UI
-            via_device = (DOMAIN, parent_unique_id) if parent_unique_id else None  # pragma: no mutate
+            via_device = (
+                (DOMAIN, parent_unique_id) if parent_unique_id else None
+            )  # pragma: no mutate
 
             # NOTE: For sub-devices, we DO NOT include 'connections' (MAC) to prevent
             # Home Assistant from merging multiple units behind the same gateway into one.
@@ -260,7 +279,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         else:
             # Standalone/Parent device (e.g. the Wifi-kit itself or a single AC)
             mac = self.entry.data.get(CONF_MAC)  # pragma: no mutate
-            conns = {(dr.CONNECTION_NETWORK_MAC, mac)} if mac else set()  # pragma: no mutate
+            conns = (
+                {(dr.CONNECTION_NETWORK_MAC, mac)} if mac else set()
+            )  # pragma: no mutate
 
             self.device_info = DeviceInfo(
                 identifiers={(DOMAIN, self.unique_id)},
@@ -272,6 +293,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     @callback
     def _async_save_new_token(self, new_token: str) -> None:
         """Callback to save the renewed token from the network layer."""
+
         def _update_token() -> None:
             new_data = dict(self.entry.data)  # pragma: no mutate
             new_data[CONF_TOKEN_KEY] = new_token
@@ -289,11 +311,14 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     @callback
     def _async_save_ssl_config(self, ssl_config: dict[str, Any]) -> None:
         """Callback to save SSL configuration to the config entry."""
+
         def _update_ssl() -> None:
             current_data = dict(self.entry.data)  # pragma: no mutate
             if current_data.get(CONF_SSL_CONFIG_KEY) != ssl_config:
                 current_data[CONF_SSL_CONFIG_KEY] = ssl_config
-                self.hass.config_entries.async_update_entry(self.entry, data=current_data)
+                self.hass.config_entries.async_update_entry(
+                    self.entry, data=current_data
+                )
                 _LOGGER.info(
                     "%s Persisted SSL config to ConfigEntry data.", self.log_prefix
                 )  # pragma: no mutate
@@ -341,7 +366,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                     self._async_switch_to_raw_engine(),
                     "auto_heal_raw",
                 )
-                raise UpdateFailed("Auto-healing in progress: Switching to RAW engine") from err
+                raise UpdateFailed(
+                    "Auto-healing in progress: Switching to RAW engine"
+                ) from err
 
             _LOGGER.error(
                 "%s Invalid header error persists even on the RAW engine. Auto-healing failed: %s",
@@ -360,18 +387,12 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         except UpdateFailed:
             raise  # pragma: no mutate
 
-        except (
-            CannotConnect,
-            ConnectionRefusedError,
-            asyncio.TimeoutError,
-            OSError,
-        ) as err:
+        except (TimeoutError, CannotConnect, ConnectionRefusedError, OSError) as err:
             if hasattr(self.controller, "clear_state_cache"):  # pragma: no mutate
                 self.controller.clear_state_cache()
 
             _LOGGER.debug(
-                "%s Network error during state update: %s",
-                self.log_prefix, err
+                "%s Network error during state update: %s", self.log_prefix, err
             )  # pragma: no mutate
 
             raise UpdateFailed(
@@ -384,8 +405,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
             _LOGGER.error(
                 "%s Data parsing error during update: %s",
-                self.log_prefix, err,
-                exc_info=True
+                self.log_prefix,
+                err,
+                exc_info=True,
             )  # pragma: no mutate
 
             raise UpdateFailed(
@@ -400,7 +422,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 "%s Fatal unexpected error during update: %s",
                 self.log_prefix,
                 err,
-                exc_info=True
+                exc_info=True,
             )  # pragma: no mutate
 
             raise UpdateFailed(f"Fatal error: {err}") from err  # pragma: no mutate
@@ -411,30 +433,38 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         """Handle a state update received via push from the connection."""
         try:
             _LOGGER.debug(
-                "%s Push update received with data: %s",
-                self.log_prefix,
-                new_data
+                "%s Push update received with data: %s", self.log_prefix, new_data
             )  # pragma: no mutate
 
             if new_data:
-                if await self.controller.async_merge_device_state(
-                    new_data
-                ):
+                if await self.controller.async_merge_device_state(new_data):
                     updated_state = self._create_device_state()  # pragma: no mutate
                     self.async_set_updated_data(updated_state)  # pragma: no mutate
                 else:
-                    _LOGGER.debug("Push update discarded by controller (validation failed or junk data).")  # pragma: no mutate
+                    _LOGGER.debug(
+                        "Push update discarded by controller (validation failed or junk data)."
+                    )  # pragma: no mutate
 
             else:
-                _LOGGER.debug("%s Push update did not contain state data, skipping processing", self.log_prefix)  # pragma: no mutate
+                _LOGGER.debug(
+                    "%s Push update did not contain state data, skipping processing",
+                    self.log_prefix,
+                )  # pragma: no mutate
 
         except Exception as err:  # pylint: disable=broad-exception-caught
-            _LOGGER.error("%s Unexpected error during push update: %s", self.log_prefix, err, exc_info=True)  # pragma: no mutate
+            _LOGGER.error(
+                "%s Unexpected error during push update: %s",
+                self.log_prefix,
+                err,
+                exc_info=True,
+            )  # pragma: no mutate
 
     def _create_device_state(self) -> ClimateIPDeviceState:
         """Fetch the strictly typed state representation directly from the controller."""
         state = self.controller.climate_state
-        _LOGGER.debug("%s Fetched typed climate state: %s", self.log_prefix, state)  # pragma: no mutate
+        _LOGGER.debug(
+            "%s Fetched typed climate state: %s", self.log_prefix, state
+        )  # pragma: no mutate
         return state
 
     async def _locked_set_property(
@@ -467,7 +497,11 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         if corrections:
             properties_to_set.update(corrections)
 
-        _LOGGER.debug("%s Dispatching commands to controller: %s", self.log_prefix, properties_to_set)  # pragma: no mutate
+        _LOGGER.debug(
+            "%s Dispatching commands to controller: %s",
+            self.log_prefix,
+            properties_to_set,
+        )  # pragma: no mutate
 
         try:
             results = []
@@ -481,27 +515,45 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 )
 
             if not all(results):
-                _LOGGER.debug("%s Not all properties were set successfully. Requesting sync refresh to revert state.", self.log_prefix)  # pragma: no mutate
-                await self.controller.async_clear_pending_updates(list(properties_to_set.keys()))
+                _LOGGER.debug(
+                    "%s Not all properties were set successfully. Requesting sync refresh to revert state.",
+                    self.log_prefix,
+                )  # pragma: no mutate
+                await self.controller.async_clear_pending_updates(
+                    list(properties_to_set.keys())
+                )
                 await self.async_request_refresh()
 
         except Exception as err:  # pylint: disable=broad-exception-caught
-            await self.controller.async_clear_pending_updates(list(properties_to_set.keys()))
+            await self.controller.async_clear_pending_updates(
+                list(properties_to_set.keys())
+            )
             await self.async_request_refresh()
 
-            if isinstance(err, (CannotConnect, asyncio.TimeoutError, OSError)):
-                _LOGGER.error("%s Network error setting properties: %s", self.log_prefix, type(err).__name__)  # pragma: no mutate
+            if isinstance(err, CannotConnect | asyncio.TimeoutError | OSError):
+                _LOGGER.error(
+                    "%s Network error setting properties: %s",
+                    self.log_prefix,
+                    type(err).__name__,
+                )  # pragma: no mutate
                 raise HomeAssistantError(
                     f"Network error setting property {property_name}: {err}"
                 ) from err  # pragma: no mutate
 
-            if isinstance(err, (ValueError, TypeError, KeyError)):
-                _LOGGER.error("%s Data error setting properties: %s", self.log_prefix, err, exc_info=True)  # pragma: no mutate
+            if isinstance(err, ValueError | TypeError | KeyError):
+                _LOGGER.error(
+                    "%s Data error setting properties: %s",
+                    self.log_prefix,
+                    err,
+                    exc_info=True,
+                )  # pragma: no mutate
                 raise HomeAssistantError(
                     f"Data error setting property {property_name}: {err}"
                 ) from err  # pragma: no mutate
 
-            _LOGGER.error("%s Error setting properties: %s", self.log_prefix, err, exc_info=True)  # pragma: no mutate
+            _LOGGER.error(
+                "%s Error setting properties: %s", self.log_prefix, err, exc_info=True
+            )  # pragma: no mutate
             raise HomeAssistantError(
                 f"Failed to set property {property_name}: {err}"
             ) from err  # pragma: no mutate
@@ -515,6 +567,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     def unique_id(self) -> str:
         """Return the unique ID from the controller."""
         return self.controller.unique_id
+
     async def async_shutdown(self) -> None:
         """Shut down the coordinator and its controller.
 
@@ -523,7 +576,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         _LOGGER.debug(
             "%s Shutting down coordinator", self.log_prefix
         )  # pragma: no mutate
-        
+
         self.debouncer.cancel_all()
         await self.controller.async_shutdown()
 

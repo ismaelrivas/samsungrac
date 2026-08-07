@@ -11,8 +11,8 @@ import re
 import ssl
 from typing import Any, Final
 
-from homeassistant.util.json import json_loads
 from homeassistant.helpers.json import json_dumps
+from homeassistant.util.json import json_loads
 
 from .const import GLOBAL_HTTP_TIMEOUT
 from .exceptions import AuthError, CannotConnect
@@ -320,9 +320,7 @@ class Samsung8888Client:
                 resp_body = chunk.decode("utf-8", "ignore")
             except TimeoutError as exc:
                 await self.close()
-                raise CannotConnect(
-                    "Timeout reading response body"
-                ) from exc
+                raise CannotConnect("Timeout reading response body") from exc
             except Exception:  # pylint: disable=broad-exception-caught
                 resp_body = ""
         elif content_length == 0 and has_cl_header:
@@ -344,9 +342,7 @@ class Samsung8888Client:
                             break  # Connection closed.
 
                         buffer += chunk
-                        resp_body_candidate = buffer.decode(
-                            "utf-8", "ignore"
-                        ).lstrip()
+                        resp_body_candidate = buffer.decode("utf-8", "ignore").lstrip()
 
                         if not resp_body_candidate:
                             continue
@@ -481,6 +477,3 @@ class Samsung8888Client:
                     # An unexpected programming bug occurred (TypeError, etc.)
                     await self.close()
                     raise  # Fail-fast: do not mask as a CannotConnect
-
-
-

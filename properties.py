@@ -2,12 +2,8 @@
 """Device property classes for the climate_ip integration."""
 
 import ast
-import asyncio
 import logging
 from typing import Any
-
-from homeassistant.util.json import json_loads, JSON_DECODE_EXCEPTIONS
-from homeassistant.helpers.json import json_dumps
 
 import homeassistant.helpers.config_validation as cv
 from homeassistant.components.climate import ClimateEntityFeature
@@ -24,6 +20,8 @@ from homeassistant.components.climate.const import (
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNKNOWN, UnitOfTemperature
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.json import json_dumps
+from homeassistant.util.json import JSON_DECODE_EXCEPTIONS, json_loads
 from homeassistant.util.unit_conversion import TemperatureConverter
 from jinja2 import Template
 
@@ -38,6 +36,7 @@ from .const import (
     CONFIG_DEVICE_STATUS_TEMPLATE,
     CONFIG_DEVICE_VALIDATION_TEMPLATE,
     CONFIG_TYPE,
+    LEGACY_YAML_TO_ATTR_MAP,
     PROPERTY_TYPE_MODE,
     PROPERTY_TYPE_NUMBER,
     PROPERTY_TYPE_STRING,
@@ -45,7 +44,6 @@ from .const import (
     PROPERTY_TYPE_TEMP,
     STATUS_GETTER_JSON,
     YAML_NAME_TO_HA_FEATURE,
-    LEGACY_YAML_TO_ATTR_MAP,
 )
 from .exceptions import AuthError, CannotConnect
 from .helpers import get_value_by_path
@@ -165,13 +163,25 @@ class DeviceProperty:
             ctrl_pure = self._controller.pure_device_state
             if isinstance(ctrl_pure, dict) and ctrl_pure:
                 raw_dict = ctrl_pure
-        if not raw_dict and self._controller and hasattr(self._controller, "device_state"):
+        if (
+            not raw_dict
+            and self._controller
+            and hasattr(self._controller, "device_state")
+        ):
             ctrl_state = self._controller.device_state
             if isinstance(ctrl_state, dict) and ctrl_state:
                 raw_dict = ctrl_state
-        if not raw_dict and self._status_getter and isinstance(self._status_getter.value, dict):
+        if (
+            not raw_dict
+            and self._status_getter
+            and isinstance(self._status_getter.value, dict)
+        ):
             raw_dict = self._status_getter.value
-        if not raw_dict and self._controller and hasattr(self._controller, "get_property"):
+        if (
+            not raw_dict
+            and self._controller
+            and hasattr(self._controller, "get_property")
+        ):
             status_prop = self._controller.get_property("status")
             if status_prop and isinstance(status_prop.value, dict):
                 raw_dict = status_prop.value
@@ -304,7 +314,10 @@ class DeviceProperty:
     @property
     def value_is_string(self) -> bool:
         """Return True if the property value should be treated as a string."""
-        return getattr(self, "_type", None) in ("string", "enum") or self.device_class in ("enum", "problem")
+        return getattr(self, "_type", None) in (
+            "string",
+            "enum",
+        ) or self.device_class in ("enum", "problem")
 
     def load_from_yaml(self, node: dict[str, Any] | None) -> bool:
         """Load configuration from a YAML node dictionary."""
@@ -455,7 +468,7 @@ class GetJsonStatus(DeviceProperty):
                     try:
                         # 1. Try strictly as JSON (handles 'null', 'true', double quotes)
                         return json_loads(v)
-                    except (*JSON_DECODE_EXCEPTIONS,):
+                    except JSON_DECODE_EXCEPTIONS:
                         try:
                             # 2. Fallback to Python AST literal (handles 'None', 'True', single quotes)
                             return ast.literal_eval(v)
@@ -510,7 +523,7 @@ class GetJsonStatus(DeviceProperty):
             params_str = self.connection_template.render(**render_context)
             try:
                 params = json_loads(params_str)
-            except (*JSON_DECODE_EXCEPTIONS,):
+            except JSON_DECODE_EXCEPTIONS:
                 params = None  # pragma: no mutate
 
             if isinstance(params, dict):
@@ -538,7 +551,7 @@ class GetJsonStatus(DeviceProperty):
 
             try:
                 device_state_result = json_loads(response_text)
-            except (*JSON_DECODE_EXCEPTIONS,) as e:
+            except JSON_DECODE_EXCEPTIONS as e:
                 _LOGGER.error(
                     "%s [GetJsonStatus] JSON parsing error. Response: '%s'. Error: %s",
                     self.log_prefix,
@@ -571,10 +584,19 @@ class DeviceOperation(DeviceProperty):
     """Base class for a settable device operation."""
 
     def _resolve_async_params(
-        self, connection: Any, dev_value: Any, duid: str | None = None, device_state: dict[str, Any] | None = None
+        self,
+        connection: Any,
+        dev_value: Any,
+        duid: str | None = None,
+        device_state: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         """Resolve the final {method, url, json, headers} dict for an async command."""
-        render_ctx = {"value": dev_value, "device_id": duid, "duid": duid, "device_state": device_state or {}}
+        render_ctx = {
+            "value": dev_value,
+            "device_id": duid,
+            "duid": duid,
+            "device_state": device_state or {},
+        }
         conn_tmpl = getattr(connection, "_connection_template", None)
         template_to_use = self.connection_template or conn_tmpl
 
@@ -582,7 +604,7 @@ class DeviceOperation(DeviceProperty):
             rendered = template_to_use.render(**render_ctx)
             try:
                 operation_params = json_loads(rendered)
-            except (*JSON_DECODE_EXCEPTIONS,):
+            except JSON_DECODE_EXCEPTIONS:
                 return {"_raw": rendered}
         else:
             operation_params = dict(getattr(connection, "_params", {}))
@@ -599,7 +621,7 @@ class DeviceOperation(DeviceProperty):
         if base_template and base_template is not template_to_use:
             try:
                 base_params = json_loads(base_template.render(**render_ctx))
-            except (*JSON_DECODE_EXCEPTIONS,):
+            except JSON_DECODE_EXCEPTIONS:
                 pass
 
         raw_params = getattr(connection, "_params", {})
@@ -628,7 +650,9 @@ class DeviceOperation(DeviceProperty):
                     self._controller, "device_id", None
                 )
                 if not duid_for_render:
-                    cfg = getattr(connection, "_cfg", getattr(connection, "config", None))
+                    cfg = getattr(
+                        connection, "_cfg", getattr(connection, "config", None)
+                    )
                     duid_for_render = getattr(cfg, "duid", None) if cfg else None
 
                 # dev_value is already calculated and validated above
@@ -660,12 +684,22 @@ class DeviceOperation(DeviceProperty):
                     device_state=current_full_state,
                 )
                 if response is not None:
-                    if self._controller and hasattr(self._controller, "poller") and hasattr(self._controller.poller, "_pure_network_state"):
-                        pure_state = getattr(self._controller.poller, "_pure_network_state", None)
+                    if (
+                        self._controller
+                        and hasattr(self._controller, "poller")
+                        and hasattr(self._controller.poller, "_pure_network_state")
+                    ):
+                        pure_state = getattr(
+                            self._controller.poller, "_pure_network_state", None
+                        )
                         if isinstance(pure_state, dict):
                             state_node = getattr(self, "_state_node", None) or self.id
-                            if hasattr(self._controller.poller, "_set_dict_value_by_path"):
-                                self._controller.poller._set_dict_value_by_path(pure_state, state_node, dev_value)
+                            if hasattr(
+                                self._controller.poller, "_set_dict_value_by_path"
+                            ):
+                                self._controller.poller._set_dict_value_by_path(
+                                    pure_state, state_node, dev_value
+                                )
                             if hasattr(self, "apply_optimistic_cascades"):
                                 self.apply_optimistic_cascades(pure_state, v, dev_value)
                     return True
@@ -793,14 +827,17 @@ class BasicDeviceOperation(DeviceOperation):
 
         hvac_node = None
         if isinstance(self._device_state, dict):
-            hvac_prop = (
-                self._controller.loader.operations.get(ATTR_HVAC_MODE)
-                or self._controller.loader.operations.get("hvac")
-            )
+            hvac_prop = self._controller.loader.operations.get(
+                ATTR_HVAC_MODE
+            ) or self._controller.loader.operations.get("hvac")
             if hvac_prop:
-                state_node = getattr(hvac_prop, "state_node", getattr(hvac_prop, "_state_node", None))
+                state_node = getattr(
+                    hvac_prop, "state_node", getattr(hvac_prop, "_state_node", None)
+                )
                 if isinstance(state_node, str) and state_node:
-                    hvac_node = get_value_by_path(self._device_state, state_node.split("."))
+                    hvac_node = get_value_by_path(
+                        self._device_state, state_node.split(".")
+                    )
         cache_key_prop = self._controller.get_property(ATTR_HVAC_MODE)
         cache_key = (
             f"{cache_key_prop}_{hvac_node}"
@@ -938,7 +975,11 @@ class ModeOperation(BasicDeviceOperation):
                 ):
                     target_nodes.append(state["Devices"][0])
                 val_str = str(value).lower() if value is not None else ""
-                power_target = "Off" if val_str in ("off", STATE_OFF) else ("On" if val_str else None)
+                power_target = (
+                    "Off"
+                    if val_str in ("off", STATE_OFF)
+                    else ("On" if val_str else None)
+                )
                 if power_target:
                     for target in target_nodes:
                         op_node = target.setdefault("Operation", {})
@@ -1158,7 +1199,14 @@ class TemperatureOperation(BasicNumericOperation):
 
         if v is not STATE_UNKNOWN:
             res = self._convert_dev_to_hass_with_unit(v, device_unit)
-            _LOGGER.debug("%s [Forensic-Temp] Calculated %s value '%s' (raw: %s, dev_unit: %s)", self.log_prefix, self.id, res, v, device_unit) # pragma: no mutate
+            _LOGGER.debug(
+                "%s [Forensic-Temp] Calculated %s value '%s' (raw: %s, dev_unit: %s)",
+                self.log_prefix,
+                self.id,
+                res,
+                v,
+                device_unit,
+            )  # pragma: no mutate
             return res
         return STATE_UNKNOWN
 

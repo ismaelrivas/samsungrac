@@ -1,11 +1,11 @@
-import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from unittest.mock import MagicMock, AsyncMock, patch
+import pytest
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.climate_ip.const import DEVICE_TYPE_MIM_H03
-from custom_components.climate_ip.exceptions import CannotConnect
 from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
+from custom_components.climate_ip.exceptions import CannotConnect
 
 
 # =====================================================================
@@ -23,7 +23,7 @@ class NakedObj:
         self.log_prefix = "TestLog"
         self.config = {}
         self.state_getter = None
-        self.hass = __import__('unittest.mock').mock.MagicMock()
+        self.hass = __import__("unittest.mock").mock.MagicMock()
         self.__dict__.update(kwargs)
 
     def __getattr__(self, name):
@@ -51,7 +51,7 @@ class DummyController(NakedObj):
 
 def create_valid_loader():
     """Crea un loader mínimo que cumple con la Doctrina Estricta."""
-    from unittest.mock import MagicMock, AsyncMock
+    from unittest.mock import AsyncMock, MagicMock
 
     loader = MagicMock()
     loader.is_fully_initialized = True
@@ -88,6 +88,7 @@ async def _helper_build_device_state_from_props(self):
 
 def _helper_calculate_structured_state(self, full_device_state=None):
     from custom_components.climate_ip.state import ClimateIPDeviceState
+
     if full_device_state is None:
         st_getter = getattr(self.controller.loader, "state_getter", None)
         full_device_state = self._get_prop_value(st_getter) if st_getter else None
@@ -98,7 +99,12 @@ def _helper_calculate_structured_state(self, full_device_state=None):
     props = getattr(loader, "properties", {}) if loader else {}
     sensors = getattr(loader, "sensors", {}) if loader else {}
     st_getter = getattr(loader, "state_getter", None)
-    all_p = ([st_getter] if st_getter else []) + list(ops.values()) + list(props.values()) + list(sensors.values())
+    all_p = (
+        ([st_getter] if st_getter else [])
+        + list(ops.values())
+        + list(props.values())
+        + list(sensors.values())
+    )
     kwargs = {}
     for prop in all_p:
         prop_id = getattr(prop, "id", None)
@@ -110,12 +116,13 @@ def _helper_calculate_structured_state(self, full_device_state=None):
                 pass
     try:
         from dataclasses import fields
+
         valid_keys = {f.name for f in fields(ClimateIPDeviceState)}
-        
+
         # Mapping properties that HA uses differently from the dataclass
         if "temperature" in kwargs:
             kwargs["target_temperature"] = kwargs["temperature"]
-            
+
         filtered_kwargs = {k: v for k, v in kwargs.items() if k in valid_keys}
         return ClimateIPDeviceState(**filtered_kwargs)
     except Exception:
@@ -277,11 +284,12 @@ async def test_async_update_state_device_discovery():
 #     ].calculate_value_from_state.side_effect = Exception("Boom")
 #     pass
 
+
 def test_clear_pending_updates():
     poller = YamlStatePoller(MagicMock())
     poller.register_pending_update("target_temp", 22)
     assert "target_temp" in poller._pending_updates
-    
+
     poller.clear_pending_updates(["target_temp"])
     assert "target_temp" not in poller._pending_updates
 
@@ -589,8 +597,6 @@ async def test_async_update_state_sniper_discovery():
 
         await poller.async_update_state()
 
-
-
         # Restauramos la caché para que los siguientes pasen
         mock_controller.loader._parsed_yaml_cache = {}
 
@@ -750,10 +756,6 @@ async def test_getattr_defaults_destructively():
 
     # Destruir state_getter para forzar salidas de error (Fail-Fast puro)
     delattr(poller.controller.loader, "state_getter")
-
-
-
-
 
 
 def test_regex_device_state_key_cache_strict():

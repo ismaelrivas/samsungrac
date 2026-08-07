@@ -34,7 +34,7 @@ class Connection:
         self._config = config
         self._hass = hass
         self._lock = asyncio.Lock()
-        
+
         # FAIL-FAST DOCTRINE: Formalize ghost attributes
         self._controller: Any | None = None
         self._condition_template: Template | None = None
@@ -58,7 +58,9 @@ class Connection:
     def async_lock(self) -> asyncio.Lock:
         """Return the shared asyncio.Lock for this connection's (host, port)."""
         host: str | None = self._params.get("host") or self._config.get("host")
-        port: str | int = self._params.get("port") or self._config.get("port", "default")
+        port: str | int = self._params.get("port") or self._config.get(
+            "port", "default"
+        )
 
         if not host:
             return self._lock
@@ -97,10 +99,15 @@ class Connection:
         raise NotImplementedError
 
     async def async_execute_with_retry(
-        self, template: Any, value: Any, device_state: Any = None, device_id: str | None = None
+        self,
+        template: Any,
+        value: Any,
+        device_state: Any = None,
+        device_id: str | None = None,
     ) -> Any:
         """Asynchronously execute synchronous command with non-blocking exponential backoff."""
         import asyncio
+
         from .exceptions import CannotConnect, RetryNextAttempt
 
         MAX_SYNC_RETRIES = 5  # pragma: no mutate
@@ -110,7 +117,9 @@ class Connection:
             try:
                 async with self.async_lock:
                     # STRICT ACCESS: Trust the initialized variables
-                    hass = self._hass or (self._controller.hass if self._controller else None)
+                    hass = self._hass or (
+                        self._controller.hass if self._controller else None
+                    )
                     if hass:
                         return await hass.async_add_executor_job(
                             self.execute, template, value, device_state, device_id
@@ -123,15 +132,24 @@ class Connection:
                     delay = min(1.0 * (2**attempt), MAX_RETRY_DELAY_SEC)
                     self._logger.debug(
                         "%s Sync command yielded RetryNextAttempt. Async sleeping %.1fs (Attempt %s/%s)...",
-                        self.log_prefix, delay, attempt + 1, MAX_SYNC_RETRIES
+                        self.log_prefix,
+                        delay,
+                        attempt + 1,
+                        MAX_SYNC_RETRIES,
                     )  # pragma: no mutate
                     await asyncio.sleep(delay)
                     continue
-                raise CannotConnect(f"Connection failed after {MAX_SYNC_RETRIES} retries: {e}") from e  # pragma: no mutate
+                raise CannotConnect(
+                    f"Connection failed after {MAX_SYNC_RETRIES} retries: {e}"
+                ) from e  # pragma: no mutate
             except Exception as e:
-                raise CannotConnect(f"Connection failed after {MAX_SYNC_RETRIES} retries: {e}") from e  # pragma: no mutate
+                raise CannotConnect(
+                    f"Connection failed after {MAX_SYNC_RETRIES} retries: {e}"
+                ) from e  # pragma: no mutate
 
-        raise CannotConnect("Max retries exhausted.")  # Fallback safety, should not be reached
+        raise CannotConnect(
+            "Max retries exhausted."
+        )  # Fallback safety, should not be reached
 
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     async def async_execute(
@@ -141,8 +159,8 @@ class Connection:
         data: Any,
         headers: dict[str, str] | None,
         device_state: dict[str, Any] | None = None,
-        _is_probe: bool = False,  #pragma: no mutate
-        _is_poll: bool = False, #pragma: no mutate
+        _is_probe: bool = False,  # pragma: no mutate
+        _is_poll: bool = False,  # pragma: no mutate
     ) -> tuple[str | None, dict[str, Any] | None]:
         """Execute an asynchronous command."""
         raise NotImplementedError
@@ -184,7 +202,11 @@ class Connection:
                     raw_state = ctrl_state
 
             # 2. Try to fetch the raw JSON dictionary from the status property
-            if not isinstance(raw_state, dict) and self._controller and hasattr(self._controller, "get_property"):
+            if (
+                not isinstance(raw_state, dict)
+                and self._controller
+                and hasattr(self._controller, "get_property")
+            ):
                 status_prop = self._controller.get_property("status")
                 if status_prop and isinstance(status_prop.value, dict):
                     raw_state = status_prop.value
@@ -238,12 +260,12 @@ class Connection:
         # pylint: disable=unused-argument
         return self
 
+
 # Explicitly import connection classes at the very bottom of the module.
 # This guarantees that the decorators execute and populate the CLIMATE_IP_CONNECTIONS
 # registry whenever `connection.py` is loaded, while strictly avoiding circular imports.
 # (Moved here from __init__.py / controller_yaml_config.py)
 from .connection_aiohttp import ConnectionAiohttp8888  # noqa: F401, E402
 from .connection_raw import ConnectionRaw8888  # noqa: F401, E402
-from .connection_request import ConnectionRequest, ConnectionRequestPrint  # noqa: F401, E402
 from .connection_request_tls_auto import ConnectionRequestTlsAuto  # noqa: F401, E402
 from .samsung_2878 import ConnectionSamsung2878  # noqa: F401, E402

@@ -3,8 +3,8 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.const import CONF_MAC
+from homeassistant.data_entry_flow import FlowResultType
 
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 from custom_components.climate_ip.const import (
@@ -34,10 +34,17 @@ async def test_mim_h03_discovery_processing():
     ]
 
     with (
-        patch.object(flow, "async_set_unique_id", new_callable=AsyncMock) as mock_set_uid,
-        patch.object(flow, "async_step_select_devices", new_callable=AsyncMock) as mock_select,
+        patch.object(
+            flow, "async_set_unique_id", new_callable=AsyncMock
+        ) as mock_set_uid,
+        patch.object(
+            flow, "async_step_select_devices", new_callable=AsyncMock
+        ) as mock_select,
     ):
-        mock_select.return_value = {"type": FlowResultType.FORM, "step_id": "select_devices"}
+        mock_select.return_value = {
+            "type": FlowResultType.FORM,
+            "step_id": "select_devices",
+        }
 
         result = await flow._async_process_mim_h03(discovered)
 
@@ -72,7 +79,9 @@ async def test_init_discovery_controller_failure_and_invalid_header():
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
 
-    with patch("custom_components.climate_ip.controller_yaml.YamlController") as mock_ctrl_cls:
+    with patch(
+        "custom_components.climate_ip.controller_yaml.YamlController"
+    ) as mock_ctrl_cls:
         mock_ctrl = MagicMock()
         mock_ctrl.initialize = AsyncMock(return_value=False)
         mock_ctrl.async_get_status = AsyncMock(return_value=True)
@@ -83,7 +92,9 @@ async def test_init_discovery_controller_failure_and_invalid_header():
         assert res is None
         mock_ctrl.async_shutdown.assert_called_once()
 
-    with patch("custom_components.climate_ip.controller_yaml.YamlController") as mock_ctrl_cls:
+    with patch(
+        "custom_components.climate_ip.controller_yaml.YamlController"
+    ) as mock_ctrl_cls:
         mock_ctrl = MagicMock()
         mock_ctrl.initialize = AsyncMock(side_effect=InvalidHeaderError("bad header"))
         mock_ctrl.async_shutdown = AsyncMock()
@@ -106,8 +117,13 @@ async def test_process_generic_discovery():
         {"id": "2", "uuid": "u2", "name": "Device 2"},
     ]
 
-    with patch.object(flow, "async_step_select_devices", new_callable=AsyncMock) as mock_select:
-        mock_select.return_value = {"type": FlowResultType.FORM, "step_id": "select_devices"}
+    with patch.object(
+        flow, "async_step_select_devices", new_callable=AsyncMock
+    ) as mock_select:
+        mock_select.return_value = {
+            "type": FlowResultType.FORM,
+            "step_id": "select_devices",
+        }
         result = await flow._async_process_generic_discovery(discovered)
         assert len(flow.flow_data[CONF_DISCOVERED_DEVICES]) == 2
         mock_select.assert_called_once()
@@ -120,7 +136,9 @@ async def test_fallback_raw_discovery():
     flow.hass = MagicMock()
     flow.flow_data = {}
 
-    with patch("custom_components.climate_ip.controller_yaml.YamlController") as mock_ctrl_cls:
+    with patch(
+        "custom_components.climate_ip.controller_yaml.YamlController"
+    ) as mock_ctrl_cls:
         mock_ctrl = MagicMock()
         mock_ctrl.initialize = AsyncMock(return_value=True)
         mock_ctrl.async_get_status = AsyncMock(return_value=True)
@@ -151,14 +169,18 @@ async def test_async_step_discover_uuid_blind_device():
         mock_init.return_value = mock_ctrl
 
         with (
-            patch.object(flow, "async_set_unique_id", new_callable=AsyncMock) as mock_set_uid,
+            patch.object(
+                flow, "async_set_unique_id", new_callable=AsyncMock
+            ) as mock_set_uid,
             patch.object(flow, "_abort_if_unique_id_configured") as mock_abort_if,
             patch.object(flow, "_create_entry", new_callable=AsyncMock) as mock_create,
         ):
             mock_create.return_value = {"type": FlowResultType.CREATE_ENTRY}
             res = await flow.async_step_discover_uuid()
             assert res["type"] == FlowResultType.CREATE_ENTRY
-            mock_set_uid.assert_called_once_with("BLIND_UNIQUE_123", raise_on_progress=False)
+            mock_set_uid.assert_called_once_with(
+                "BLIND_UNIQUE_123", raise_on_progress=False
+            )
             mock_abort_if.assert_called_once()
 
 
@@ -184,14 +206,17 @@ async def test_async_step_select_devices_flow():
 
     # Step 2: Submit with selected devices
     with (
-        patch.object(flow, "async_set_unique_id", new_callable=AsyncMock) as mock_set_uid,
+        patch.object(
+            flow, "async_set_unique_id", new_callable=AsyncMock
+        ) as mock_set_uid,
         patch.object(flow, "_abort_if_unique_id_configured") as mock_abort_if,
         patch.object(flow, "_create_entry", new_callable=AsyncMock) as mock_create,
     ):
         mock_create.return_value = {"type": FlowResultType.CREATE_ENTRY}
-        res_submit = await flow.async_step_select_devices({CONF_SELECTED_DEVICES: ["1"]})
+        res_submit = await flow.async_step_select_devices(
+            {CONF_SELECTED_DEVICES: ["1"]}
+        )
         assert res_submit["type"] == FlowResultType.CREATE_ENTRY
         assert len(flow.flow_data[CONF_DEVICES]) == 1
         assert flow.flow_data[CONF_DEVICES][0]["id"] == "1"
         mock_set_uid.assert_called_once_with("MAIN_UID", raise_on_progress=False)
-

@@ -3,8 +3,6 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC
-from homeassistant.core import HomeAssistant
 
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 
@@ -82,10 +80,14 @@ async def test_resolve_mac_provided_by_user(hass_mock):
     flow = ClimateIpConfigFlow()
     flow.hass = hass_mock
     flow.flow_data = {}
-    
-    with patch.object(flow, "async_set_unique_id", new_callable=AsyncMock) as mock_set_id:
-        result = await flow._async_resolve_mac_and_set_unique_id("1.1.1.1", "aa:bb:cc:dd:ee:ff")
-        
+
+    with patch.object(
+        flow, "async_set_unique_id", new_callable=AsyncMock
+    ) as mock_set_id:
+        result = await flow._async_resolve_mac_and_set_unique_id(
+            "1.1.1.1", "aa:bb:cc:dd:ee:ff"
+        )
+
         assert result is None
         assert flow.flow_data["mac"] == "AABBCCDDEEFF"
         mock_set_id.assert_called_once()
@@ -148,7 +150,9 @@ async def test_validate_cert_path_none_resolved_returns_true(hass_mock):
     """Test _async_validate_cert_path returns True when resolve_cert_path returns None."""
     flow = ClimateIpConfigFlow()
     flow.hass = hass_mock
-    with patch("custom_components.climate_ip.helpers.resolve_cert_path", return_value=None):
+    with patch(
+        "custom_components.climate_ip.helpers.resolve_cert_path", return_value=None
+    ):
         assert await flow._async_validate_cert_path("invalid_path") is True
 
 
@@ -165,7 +169,9 @@ async def test_test_connection_safe_8888_branch_and_2878_branch(hass_mock):
         "token": "tok8888",
         "cert": "ca.pem",
     }
-    with patch("homeassistant.helpers.aiohttp_client.async_get_clientsession") as mock_sess:
+    with patch(
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
+    ) as mock_sess:
         mock_get = AsyncMock()
         mock_get.status = 200
         mock_get.__aenter__.return_value = mock_get
@@ -181,12 +187,16 @@ async def test_test_connection_safe_8888_branch_and_2878_branch(hass_mock):
         "ip_address": "1.1.1.1",
         "mac": "AA:BB:CC:DD:EE:FF",
     }
-    with patch("custom_components.climate_ip.controller_yaml.YamlController") as mock_ctrl_cls:
+    with patch(
+        "custom_components.climate_ip.controller_yaml.YamlController"
+    ) as mock_ctrl_cls:
         mock_ctrl = MagicMock()
         mock_ctrl.initialize = AsyncMock(return_value=True)
         mock_ctrl.loader = MagicMock()
         mock_ctrl.loader.state_getter = MagicMock()
-        mock_ctrl.loader.state_getter.async_update_state = AsyncMock(return_value={"state": "on"})
+        mock_ctrl.loader.state_getter.async_update_state = AsyncMock(
+            return_value={"state": "on"}
+        )
         mock_ctrl.async_shutdown = AsyncMock()
         mock_ctrl_cls.return_value = mock_ctrl
 
@@ -194,4 +204,3 @@ async def test_test_connection_safe_8888_branch_and_2878_branch(hass_mock):
         assert res2878 == {"ok": True}
         mock_ctrl.initialize.assert_called_once()
         mock_ctrl.async_shutdown.assert_called_once()
-

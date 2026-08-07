@@ -7,7 +7,7 @@
 > - **Zero-Dependency XML Engine**: `defusedxml` and `xmltodict` have been purged in favor of native Python standard library parsing (`xml.etree`).
 > - **Asynchronous Purity**: 100% non-blocking I/O verified across all socket connections, file reads, and subprocesses.
 > - **Operation Regex Purge**: Replaced expensive regular expressions in hot-path polling with $O(n)$ string methods.
-> 
+>
 > **What to look out for during Beta testing:**
 > 1. Monitor system logs for any unexpected connection drops or timeout warnings.
 > 2. Verify that UI pairing / re-authentication completes smoothly with your specific AC model.
@@ -91,7 +91,7 @@
 - **Maintainer Attribution**: Updated `manifest.json` codeowners and documentation links to correctly attribute `@ismaelrivas` as the primary maintainer of this AsyncIO hard-fork.
 - **Modernized Climate Features**: Refactored `supported_features` in `climate.py` to strictly use the modern Bitwise `ClimateEntityFeature` Enum mapping, replacing manual integer combinations if present.
 - **Modernized Entities**: Transitioned `sensor.py` and `switch.py` to use `SensorEntityDescription` and `SwitchEntityDescription` objects for standardized attribute management.
-- **Frontend / UX Overhaul**: 
+- **Frontend / UX Overhaul**:
     - Purged explicit `name` hardcoding across secondary entities (`sensor.py`, `switch.py`), fully delegating names to Home Assistant's native translations logic (`en.json`, `es.json`) using `translation_key` strings.
     - Improved `climate.py` precision rendering `PRECISION_HALVES` conditionally based on the user's `CONF_TEMP_STEP` choices.
     - Interpolated dynamic `icon` properties based on the state of `ClimateEntity` (e.g., `mdi:snowflake`, `mdi:fire`, `mdi:fan`).
@@ -174,7 +174,7 @@
 ### Fixed
 - **Connection Keep-Alive Hang**: Fixed a structural bug where the integration would hang for 10 seconds waiting after the AC finished responding due to malformed headers. The solution safely strips illegal characters and proactively falls back to `Connection: close` on protocol violations.
 - **Critical TLS Hang (AC Port 8888/2878)**: Samsung AC firmware hangs indefinitely when receiving a TLS 1.3 Client Hello. Fixed by capping all SSL context creation strictly at `TLSv1_2`.
-- **Connection Cleanup Logging**: Fixed a bug where `ConnectionRequest` session cleanup logic would repeatedly log redundant closure messages during garbage collection. 
+- **Connection Cleanup Logging**: Fixed a bug where `ConnectionRequest` session cleanup logic would repeatedly log redundant closure messages during garbage collection.
 - **Config Flow Timeout**: Fixed a bug where port 2878 devices would unconditionally time out during connection testing.
 - **SSL Context Handling**: Fixed local listener socket configuration to properly handle server-side handshake requests, and resolved Python `ValueError` exceptions caused by conflicting `check_hostname` assignments.
 - **Embedded Command Execution**: Fixed nested YAML commands with parameters (like auto power-on) being silently skipped on older devices.

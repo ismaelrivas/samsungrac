@@ -7,30 +7,29 @@ import logging
 from typing import Any, Self
 
 import voluptuous as vol
-
 from homeassistant.config_entries import (
+    SOURCE_RECONFIGURE,
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
     OptionsFlow,
-    SOURCE_RECONFIGURE,
 )
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import AbortFlow
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import aiohttp_client
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
 )
 
+from . import helpers
 from .config_flow_discovery import ConfigFlowDiscoveryMixin
 from .config_flow_helpers import ConfigFlowHelpersMixin
 from .config_flow_schemas import ConfigFlowSchemasMixin
 from .const import (
-    CONFIG_ENTRY_VERSION,
     CONF_CERT,
     CONF_CONFIG_FILE,
     CONF_DEVICE_ID,
@@ -39,20 +38,20 @@ from .const import (
     CONF_POLL_INTERVAL,
     CONF_SELECTED_DEVICES,
     CONFIG_DEVICE_NAME,
+    CONFIG_ENTRY_VERSION,
     CONFIG_FILE_TO_DEVICE_TYPE,
     DEFAULT_CONF_CERT_FILE,
-    DEVICE_TYPE_TO_CONFIG_FILE,
     DEVICE_TYPE_8888_GROUP,
     DEVICE_TYPE_MIM_H03,
     DEVICE_TYPE_SAMSUNG_2878,
     DEVICE_TYPE_SAMSUNG_8888,
     DEVICE_TYPE_SMARTTHINGS_DHW,
     DEVICE_TYPE_SMARTTHINGS_HVAC,
+    DEVICE_TYPE_TO_CONFIG_FILE,
     DOMAIN,
     GLOBAL_HTTP_TIMEOUT,
 )
 from .exceptions import CannotConnect
-from . import helpers
 from .options_flow import OptionsFlowHandler
 from .token_acquirer import SamsungTokenAcquirer
 from .token_acquirer_8888 import SamsungTokenAcquirer8888
@@ -208,9 +207,7 @@ class ClimateIpConfigFlow(
         """Common logic for processing Samsung network configuration steps."""
         errors: dict[str, str] = {}
         schema_generator = (
-            self._get_samsung_8888_schema
-            if is_8888
-            else self._get_samsung_2878_schema
+            self._get_samsung_8888_schema if is_8888 else self._get_samsung_2878_schema
         )
 
         if user_input is not None:
@@ -238,7 +235,9 @@ class ClimateIpConfigFlow(
                 and user_input[CONF_POLL_INTERVAL] is not None
             ):
                 try:
-                    seconds = helpers.validate_poll_interval(user_input[CONF_POLL_INTERVAL])
+                    seconds = helpers.validate_poll_interval(
+                        user_input[CONF_POLL_INTERVAL]
+                    )
                     self.flow_data[CONF_POLL_INTERVAL] = seconds
                 except ValueError:
                     errors[CONF_POLL_INTERVAL] = "invalid_poll_interval"
@@ -329,10 +328,14 @@ class ClimateIpConfigFlow(
                 and user_input[CONF_POLL_INTERVAL] is not None
             ):
                 try:
-                    seconds = helpers.validate_poll_interval(user_input[CONF_POLL_INTERVAL])
+                    seconds = helpers.validate_poll_interval(
+                        user_input[CONF_POLL_INTERVAL]
+                    )
                     self.flow_data[CONF_POLL_INTERVAL] = seconds
                 except ValueError:
-                    errors[CONF_POLL_INTERVAL] = "invalid_poll_interval"  # pragma: no mutate
+                    errors[CONF_POLL_INTERVAL] = (
+                        "invalid_poll_interval"  # pragma: no mutate
+                    )
                     step_id_err2 = "rest_api"  # pragma: no mutate
                     schema_err2 = self._get_rest_api_schema()  # pragma: no mutate
                     return self.async_show_form(
@@ -349,7 +352,9 @@ class ClimateIpConfigFlow(
                     f"[{ip_addr}]" if ":" in ip_addr else ip_addr
                 )  # pragma: no mutate
                 url = f"https://{host_str}/v1/devices"
-                headers = {"Authorization": f"Bearer {self.flow_data.get(CONF_TOKEN)}"}  # pragma: no mutate
+                headers = {
+                    "Authorization": f"Bearer {self.flow_data.get(CONF_TOKEN)}"
+                }  # pragma: no mutate
 
                 async with session.get(
                     url, headers=headers, timeout=GLOBAL_HTTP_TIMEOUT
@@ -361,7 +366,9 @@ class ClimateIpConfigFlow(
                         raise CannotConnect("HTTP Status Error")  # pragma: no mutate
 
                 unique_id = str(
-                    self.flow_data.get(CONF_DEVICE_ID) or self.flow_data.get(CONF_MAC) or ""  # pragma: no mutate
+                    self.flow_data.get(CONF_DEVICE_ID)
+                    or self.flow_data.get(CONF_MAC)
+                    or ""  # pragma: no mutate
                 )
                 if not unique_id:
                     _LOGGER.error(
@@ -378,7 +385,7 @@ class ClimateIpConfigFlow(
                 raise
             except CannotConnect:
                 errors["base"] = "cannot_connect"
-            except Exception as e:  # pylint: disable=broad-except
+            except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception(
                     "Unexpected error during connection test"
                 )  # pragma: no mutate
@@ -450,10 +457,14 @@ class ClimateIpConfigFlow(
                     # fmt: on
                     self.flow_data[CONF_DEVICE_TYPE] = DEVICE_TYPE_SAMSUNG_2878
                     self.acquirer = SamsungTokenAcquirer(
-                        self.hass, ip_address, cert_path  # pragma: no mutate
+                        self.hass,
+                        ip_address,
+                        cert_path,  # pragma: no mutate
                     )
 
-                self.task = self.hass.async_create_task(self._initiate_pairing_safe())  # pragma: no mutate
+                self.task = self.hass.async_create_task(
+                    self._initiate_pairing_safe()
+                )  # pragma: no mutate
                 return self.async_show_progress(
                     step_id="initiate_pairing",
                     progress_action="initiating_pairing",
@@ -524,7 +535,9 @@ class ClimateIpConfigFlow(
             progress_action="awaiting_button_press",
             progress_task=self.task,
             description_placeholders={
-                "ip_address": self.flow_data.get(CONF_IP_ADDRESS, "")  # pragma: no mutate
+                "ip_address": self.flow_data.get(
+                    CONF_IP_ADDRESS, ""
+                )  # pragma: no mutate
             },
         )
 
@@ -589,7 +602,9 @@ class ClimateIpConfigFlow(
             self.flow_data.pop("error_details", "")
         )  # pragma: no mutate
         device_type = self.flow_data[CONF_DEVICE_TYPE]
-        ip_address = str(self.flow_data.get(CONF_IP_ADDRESS, "Unknown"))  # pragma: no mutate
+        ip_address = str(
+            self.flow_data.get(CONF_IP_ADDRESS, "Unknown")
+        )  # pragma: no mutate
 
         # Directive 1: Lethal Failures -> Verbose Abort with Placeholders
         if error_key == "pairing_connection_failed":
@@ -631,9 +646,7 @@ class ClimateIpConfigFlow(
             )  # pragma: no mutate
             errors[CONF_IP_ADDRESS] = "timeout_connect"
         elif error_key == "invalid_auth":
-            _LOGGER.warning(
-                "AC rejected token during pairing."
-            )  # pragma: no mutate
+            _LOGGER.warning("AC rejected token during pairing.")  # pragma: no mutate
             errors["base"] = "invalid_auth"
         else:
             errors["base"] = error_key
@@ -663,7 +676,9 @@ class ClimateIpConfigFlow(
             return self.async_abort(reason="no_mac_address_found")
 
         await self.async_set_unique_id(final_unique_id)
-        if self.reauth_entry is None and self.source != SOURCE_RECONFIGURE:  # pragma: no mutate
+        if (
+            self.reauth_entry is None and self.source != SOURCE_RECONFIGURE
+        ):  # pragma: no mutate
             self._abort_if_unique_id_configured(updates=self.flow_data)
         self.flow_data["unique_id"] = final_unique_id
 
@@ -724,7 +739,9 @@ class ClimateIpConfigFlow(
             "Entering async_step_reauth with data: %s", entry_data
         )  # pragma: no mutate
         entry_id = self.context.get("entry_id")
-        self.reauth_entry = self.hass.config_entries.async_get_entry(entry_id) if entry_id else None
+        self.reauth_entry = (
+            self.hass.config_entries.async_get_entry(entry_id) if entry_id else None
+        )
 
         if self.reauth_entry is not None:
             self.flow_data = dict(self.reauth_entry.data)
@@ -796,7 +813,9 @@ class ClimateIpConfigFlow(
         )
         return self.async_show_form(
             step_id="reconfigure_confirm",
-            data_schema=self.add_suggested_values_to_schema(base_schema, suggested_values),
+            data_schema=self.add_suggested_values_to_schema(
+                base_schema, suggested_values
+            ),
             errors=errors,
             description_placeholders=description_placeholders or {},
         )
@@ -874,7 +893,9 @@ class ClimateIpConfigFlow(
                 )
 
             token_raw = self.flow_data.get(CONF_TOKEN)
-            token_val = str(token_raw) if token_raw is not None else ""  # pragma: no mutate
+            token_val = (
+                str(token_raw) if token_raw is not None else ""
+            )  # pragma: no mutate
             if not token_val and device_type not in (
                 DEVICE_TYPE_SMARTTHINGS_HVAC,
                 DEVICE_TYPE_SMARTTHINGS_DHW,

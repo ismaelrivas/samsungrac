@@ -7,12 +7,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests  # type: ignore[import-untyped]
+from homeassistant.const import CONF_TOKEN
 
 from custom_components.climate_ip.connection_request import ConnectionRequest
-from custom_components.climate_ip.connection_request_tls_auto import ConnectionRequestTlsAuto
+from custom_components.climate_ip.connection_request_tls_auto import (
+    ConnectionRequestTlsAuto,
+)
 from custom_components.climate_ip.const import CONF_CERT
 from custom_components.climate_ip.exceptions import AuthError, RetryNextAttempt
-from homeassistant.const import CONF_TOKEN
 
 
 @pytest.fixture
@@ -118,9 +120,11 @@ def test_execute_connection_error(connection_config, mock_logger):
 
 def _make_request_connection(cls):
     """Create an initialized request-based connection with mocked internals."""
-    from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
-    from custom_components.climate_ip.const import CONF_CERT
     from unittest.mock import MagicMock, patch
+
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
+
+    from custom_components.climate_ip.const import CONF_CERT
 
     config = {
         CONF_IP_ADDRESS: "192.168.1.100",
@@ -133,7 +137,9 @@ def _make_request_connection(cls):
 
 
 @pytest.mark.skip_legacy
-@pytest.mark.parametrize("connection_class", [ConnectionRequest, ConnectionRequestTlsAuto])
+@pytest.mark.parametrize(
+    "connection_class", [ConnectionRequest, ConnectionRequestTlsAuto]
+)
 def test_request_embedded_command_is_executed(connection_class):
     """Verifies that request engines execute their embedded commands by delegating."""
     from unittest.mock import MagicMock, patch
@@ -161,12 +167,15 @@ def test_request_embedded_command_is_executed(connection_class):
 
 
 @pytest.mark.skip_legacy
-@pytest.mark.parametrize("connection_class", [ConnectionRequest, ConnectionRequestTlsAuto])
+@pytest.mark.parametrize(
+    "connection_class", [ConnectionRequest, ConnectionRequestTlsAuto]
+)
 def test_request_embedded_command_skipped_when_condition_not_met(connection_class):
     """Verifies that if the main command condition is not met, the embedded command
     IS STILL executed first, but the main command skips its execute_internal.
     """
     from unittest.mock import MagicMock, patch
+
     from jinja2 import Template
 
     conn = _make_request_connection(connection_class)

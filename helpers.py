@@ -16,22 +16,26 @@ import contextlib
 import functools
 import http.client
 import logging
-from pathlib import Path
 import platform
 import re
 import ssl
 import threading
+import xml.etree.ElementTree as ET
 from io import BytesIO
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import xml.etree.ElementTree as ET
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
+from homeassistant.helpers import config_validation as cv
 
 # HA Core standard imports moved to module level
 from homeassistant.helpers.entity import EntityCategory
-from homeassistant.helpers import config_validation as cv
 from voluptuous.error import Invalid
 
 _LOGGER = logging.getLogger(__name__)
+
 
 def sanitize_token(token: str | None) -> str | None:
     """Validate that a Samsung DeviceToken only contains safe characters."""
@@ -147,7 +151,9 @@ def tolerant_header_parsing():
 
     import urllib3.connection as connection_mod  # pylint: disable=import-outside-toplevel
     import urllib3.util.response as response_util  # pylint: disable=import-outside-toplevel
-    from urllib3.exceptions import HeaderParsingError  # pylint: disable=import-outside-toplevel
+    from urllib3.exceptions import (
+        HeaderParsingError,
+    )
 
     def _tolerant_assert(headers: Any) -> None:
         try:
@@ -235,13 +241,13 @@ def find_key_in_data(data: Any, key: str) -> Any | None:
     return None
 
 
-
-
-def get_value_by_path(data: dict[str, Any] | list[Any], path: list[str | int]) -> Any | None:
+def get_value_by_path(
+    data: dict[str, Any] | list[Any], path: list[str | int]
+) -> Any | None:
     """Navigate through a nested dictionary or list using a path of keys/indices."""
     if not data or not path:
         return None
-        
+
     current = data
     for key in path:
         if isinstance(current, dict) and isinstance(key, str):
@@ -257,16 +263,18 @@ def get_value_by_path(data: dict[str, Any] | list[Any], path: list[str | int]) -
     return current
 
 
-def set_value_by_path(target: dict[str, Any] | list[Any], path: list[str | int], value: Any) -> None:
+def set_value_by_path(
+    target: dict[str, Any] | list[Any], path: list[str | int], value: Any
+) -> None:
     """Set a value in a deeply nested dictionary/list structure. Aborts securely if target is falsy."""
     if not target or not path:
         return
-        
+
     current = target
     for i, key in enumerate(path[:-1]):
         next_key = path[i + 1]
         is_next_list = isinstance(next_key, int)
-        
+
         if isinstance(current, dict) and isinstance(key, str):
             if key not in current or current[key] is None:
                 current[key] = [] if is_next_list else {}
@@ -275,7 +283,7 @@ def set_value_by_path(target: dict[str, Any] | list[Any], path: list[str | int],
             # Strict O(1) list extension. Replaces vulnerable while-loops and avoids infinite timeouts.
             if key >= len(current):
                 current.extend([None] * (key - len(current) + 1))
-            
+
             if current[key] is None:
                 current[key] = [] if is_next_list else {}
             current = current[key]
@@ -291,6 +299,7 @@ def set_value_by_path(target: dict[str, Any] | list[Any], path: list[str | int],
             current.extend([None] * (last_key - len(current) + 1))
         current[last_key] = value
 
+
 def resolve_cert_path(
     cert_path: str | None, base_dir: str = "", hass: "HomeAssistant | None" = None
 ) -> str | None:
@@ -301,7 +310,7 @@ def resolve_cert_path(
     has_slash = "/" in cert_path or "\\" in cert_path
 
     if hass is not None:
-        # STRICT CONTRACT: We expect a valid HomeAssistant instance. 
+        # STRICT CONTRACT: We expect a valid HomeAssistant instance.
         # Fail-fast (raise AttributeError) if an invalid mock or broken object is injected.
         if has_slash:
             return hass.config.path(cert_path)
@@ -313,6 +322,7 @@ def resolve_cert_path(
     if base_dir:
         return str(Path(base_dir) / cert_path)
     return str(Path(__file__).parent / cert_path)
+
 
 def stream_wrapper(
     data: str,
@@ -332,7 +342,7 @@ def stream_wrapper(
     for placeholder, actual_value in replacements.items():
         if actual_value is not None:
             data = data.replace(placeholder, str(actual_value))
-            
+
     return data
 
 
@@ -455,7 +465,7 @@ def mask_sensitive_data(data: Any) -> Any:
                     masked[key] = "***" + value[-6:]  # pragma: no mutate
                 elif len(value) > 4:
                     masked[key] = "***" + value[-4:]  # pragma: no mutate
-            elif isinstance(value, (dict, list)):
+            elif isinstance(value, dict | list):
                 masked[key] = mask_sensitive_data(value)
         return masked
     if isinstance(data, list):
@@ -482,9 +492,11 @@ def mask_sensitive_data(data: Any) -> Any:
 
 # --- Native ICMP Ping via icmplib ---
 try:
-    from icmplib import ICMPSocketError
-    from icmplib import NameLookupError as IcmpNameLookupError  # pylint: disable=import-outside-toplevel
-    from icmplib import async_ping
+    # pylint: disable=import-outside-toplevel
+    from icmplib import ICMPSocketError, async_ping
+    from icmplib import (
+        NameLookupError as IcmpNameLookupError,
+    )
 
     _ICMPLIB_AVAILABLE = True
 except ImportError:
@@ -547,26 +559,32 @@ async def async_check_network_reachability(
 
 async def async_get_mac_address(ip_address: str) -> str | None:
     """Get the MAC address for a given IP address using the 'arp' command.
-    
-    Strictly uses native O(N) string operations and enforces a fail-fast 
+
+    Strictly uses native O(N) string operations and enforces a fail-fast
     subprocess timeout to prevent Event Loop deadlocks.
     """
 
     try:
-        cmd = ["arp", "-a", ip_address] if platform.system() == "Windows" else ["arp", "-n", ip_address]
+        cmd = (
+            ["arp", "-a", ip_address]
+            if platform.system() == "Windows"
+            else ["arp", "-n", ip_address]
+        )
 
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
         )
-        
+
         try:
             # Envolvemos la espera en un cortafuegos estricto de 2.0 segundos
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=2.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # Si el SO se cuelga, matamos el proceso para no dejar zombies
             with contextlib.suppress(OSError):
                 proc.kill()
-            _LOGGER.debug("ARP command timed out for %s. Process killed.", ip_address)  # pragma: no mutate
+            _LOGGER.debug(
+                "ARP command timed out for %s. Process killed.", ip_address
+            )  # pragma: no mutate
             return None
 
         output = stdout.decode("utf-8", errors="ignore")
@@ -575,19 +593,19 @@ async def async_get_mac_address(ip_address: str) -> str | None:
             # Phase 1: Fail-fast on length
             if len(token) != 17:
                 continue
-            
+
             # Phase 2: Exact separator count
             colons = token.count(":")
             dashes = token.count("-")
-            
+
             if colons != 5 and dashes != 5:
                 continue
-                
+
             # Phase 3: Pure alphanumeric length after strip
             cleaned = token.replace(":", "").replace("-", "")
             if len(cleaned) != 12:
                 continue
-                
+
             # Phase 4: Strict Hexadecimal validation natively
             try:
                 int(cleaned, 16)
@@ -596,24 +614,28 @@ async def async_get_mac_address(ip_address: str) -> str | None:
                 continue
 
     except FileNotFoundError:
-        _LOGGER.debug("ARP command not found. Cannot resolve MAC for %s.", ip_address)  # pragma: no mutate
+        _LOGGER.debug(
+            "ARP command not found. Cannot resolve MAC for %s.", ip_address
+        )  # pragma: no mutate
     except OSError as e:
-        _LOGGER.debug("Failed to resolve MAC address for %s via ARP: %s", ip_address, e)  # pragma: no mutate
+        _LOGGER.debug(
+            "Failed to resolve MAC address for %s via ARP: %s", ip_address, e
+        )  # pragma: no mutate
 
     return None
 
 
 def validate_poll_interval(val: Any) -> int:
     """Validate and convert poll interval to seconds."""
-    from .const import MIN_POLL_INTERVAL, MAX_POLL_INTERVAL
+    from .const import MAX_POLL_INTERVAL, MIN_POLL_INTERVAL
 
     try:
-        if isinstance(val, (int, float)):
+        if isinstance(val, int | float):
             seconds = int(val)
         else:
             seconds = int(cv.time_period_str(str(val)).total_seconds())
     except Invalid as e:
-        raise ValueError(f"Invalid time format: {e}")
+        raise ValueError(f"Invalid time format: {e}") from e
 
     if seconds < MIN_POLL_INTERVAL or seconds > MAX_POLL_INTERVAL:
         raise ValueError(

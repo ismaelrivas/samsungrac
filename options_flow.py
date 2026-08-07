@@ -5,7 +5,6 @@ import datetime
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsFlow
 from homeassistant.const import UnitOfTemperature
 from homeassistant.helpers.selector import (

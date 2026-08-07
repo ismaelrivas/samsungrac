@@ -1,12 +1,13 @@
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import aiohttp
 import pytest
+from homeassistant.const import CONF_TOKEN
 
 from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
-from custom_components.climate_ip.exceptions import CannotConnect, InvalidHeaderError
-from homeassistant.const import CONF_TOKEN
 from custom_components.climate_ip.const import CONF_CERT
+from custom_components.climate_ip.exceptions import CannotConnect, InvalidHeaderError
 
 
 @pytest.fixture
@@ -57,12 +58,12 @@ async def test_try_connection_success(
         _, kwargs = mock_session.request.call_args
         actual_timeout = kwargs.get("timeout")
         assert actual_timeout is not None, "El mutante borró el timeout"
-        assert actual_timeout.total == 10, (
-            f"El mutante cambió el timeout total: {actual_timeout.total}"
-        )
-        assert getattr(actual_timeout, "sock_read", None) == 5, (
-            "El mutante borró o alteró el sock_read del probe"
-        )
+        assert (
+            actual_timeout.total == 10
+        ), f"El mutante cambió el timeout total: {actual_timeout.total}"
+        assert (
+            getattr(actual_timeout, "sock_read", None) == 5
+        ), "El mutante borró o alteró el sock_read del probe"
 
 
 async def test_try_connection_success_no_body(
@@ -126,15 +127,13 @@ async def test_try_connection_client_connector_error(
 async def test_try_connection_timeout_error(
     connection_config, mock_logger, mock_hass, mock_session
 ):
-    import asyncio
-
     with patch("os.path.exists", return_value=True):
         conn = ConnectionAiohttp8888(
             connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
         )
         conn._create_ssl_context = AsyncMock(return_value=MagicMock())
 
-        mock_session.request.side_effect = asyncio.TimeoutError()
+        mock_session.request.side_effect = TimeoutError()
 
         with pytest.raises(InvalidHeaderError):
             await conn._try_connection()

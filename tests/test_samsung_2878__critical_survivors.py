@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.const import CONF_MAC
-from custom_components.climate_ip.const import CONF_CERT
 
+from custom_components.climate_ip.const import CONF_CERT
 from custom_components.climate_ip.exceptions import CannotConnect
 from custom_components.climate_ip.samsung_2878 import (
     ConnectionConfig,
@@ -175,6 +175,7 @@ async def test_read_full_response_logic_dplug_only(connection):
 
 @pytest.mark.asyncio
 # --- 3. TESTS DE LÓGICA DE RECONEXIÓN Y FAST-FAIL ---
+
 
 @pytest.mark.asyncio
 async def test_async_execute_fast_fail_backoff(connection):

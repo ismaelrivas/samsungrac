@@ -3,19 +3,22 @@
 import asyncio
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from custom_components.climate_ip.connection import (
-    CLIMATE_IP_CONNECTIONS,
     _HOST_LOCKS,
+    CLIMATE_IP_CONNECTIONS,
     Connection,
     register_connection,
 )
 from custom_components.climate_ip.exceptions import CannotConnect
 
+
 # Define a mock exception directly for tests to match the one imported dynamically
 class RetryNextAttempt(Exception):
     """Mock exception to simulate RetryNextAttempt."""
+
     pass
 
 
@@ -141,7 +144,9 @@ async def test_async_execute_with_retry_success_hass_add_job():
 
     hass.async_add_executor_job = AsyncMock(side_effect=_mock_add_job)
 
-    result = await conn.async_execute_with_retry("template", "val", {"state": 1}, "dev1")
+    result = await conn.async_execute_with_retry(
+        "template", "val", {"state": 1}, "dev1"
+    )
     assert result == {"status": "ok"}
     conn.execute.assert_called_once_with("template", "val", {"state": 1}, "dev1")
 
@@ -154,9 +159,9 @@ async def test_async_execute_with_retry_success_controller_hass():
     mock_controller = MagicMock()
     mock_hass = MagicMock()
     mock_controller.hass = mock_hass
-    
+
     # FAIL FAST ASSIGNMENT (Validating initialized property)
-    conn._controller = mock_controller 
+    conn._controller = mock_controller
     conn.execute = MagicMock(return_value="success")
 
     async def _mock_add_job(fn, *args):
@@ -227,7 +232,9 @@ async def test_async_execute_with_retry_other_exception_wrapped():
     conn = DummyConnection({"host": "127.0.0.1"}, logger, hass=None)
     conn.execute = MagicMock(side_effect=ValueError("Invalid parameter"))
 
-    with pytest.raises(CannotConnect, match="Connection failed after 5 retries: Invalid parameter"):
+    with pytest.raises(
+        CannotConnect, match="Connection failed after 5 retries: Invalid parameter"
+    ):
         await conn.async_execute_with_retry("tmpl", "val")
 
 
@@ -244,7 +251,9 @@ def test_check_execute_condition():
     mock_async_tmpl.async_render.return_value = "1"
     conn.condition_template = mock_async_tmpl
     assert conn.check_execute_condition({"state": "on"}) is True
-    mock_async_tmpl.async_render.assert_called_once_with({"device_state": {"state": "on"}})
+    mock_async_tmpl.async_render.assert_called_once_with(
+        {"device_state": {"state": "on"}}
+    )
 
     # 3. Async render template returning "0" -> False
     mock_async_tmpl.async_render.return_value = "0"
@@ -256,12 +265,15 @@ def test_check_execute_condition():
     conn.condition_template = mock_err_tmpl
     assert conn.check_execute_condition({"state": "on"}) is False
 
+
 def test_check_execute_condition_default_logger():
     """Kills logger fallback / logical mutation mutants in check_execute_condition when logger is None."""
     conn = DummyConnection({}, logger=None)
     assert conn.check_execute_condition(None) is True
 
+
 import inspect
+
 
 def test_connection_async_execute_signature_defaults():
     """Sniper test: kills boolean flip mutants on async_execute default arguments via inspection."""
@@ -273,6 +285,7 @@ def test_connection_async_execute_signature_defaults():
 def test_check_execute_condition_with_default_logger_and_template():
     """Sniper test: kills logical/structural mutants on _log fallback when logger is None and template exists."""
     from jinja2 import Template
+
     conn = DummyConnection({}, logger=None)
     conn.condition_template = Template("1")
     # Al ser logger=None, _log usará logging.getLogger(__name__) y llegará al .debug() sin explotar.

@@ -16,20 +16,19 @@ frequent TLS renegotiation.
 import asyncio
 import copy
 import logging
-from pathlib import Path
 import re
 import ssl
 import warnings
+from pathlib import Path
 from typing import Any
 
-from homeassistant.util.json import json_loads, JSON_DECODE_EXCEPTIONS
-
 import requests  # type: ignore[import-untyped]
+from homeassistant.util.json import JSON_DECODE_EXCEPTIONS, json_loads
 from jinja2 import Template
 from requests.adapters import HTTPAdapter  # type: ignore[import-untyped]
 from urllib3.exceptions import InsecureRequestWarning
 
-from .connection import Connection, _HOST_LOCKS, register_connection
+from .connection import _HOST_LOCKS, Connection, register_connection
 from .const import (
     CONF_CERT,
     CONFIG_DEVICE_CONDITION_TEMPLATE,
@@ -37,7 +36,7 @@ from .const import (
     CONFIG_DEVICE_CONNECTION_PARAMS,
 )
 from .exceptions import AuthError, CannotConnect, RetryNextAttempt
-from .helpers import mask_sensitive_data, tolerant_header_parsing, format_placeholders
+from .helpers import format_placeholders, mask_sensitive_data, tolerant_header_parsing
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -108,9 +107,9 @@ class ConnectionRequestBase(Connection):
         super().__init__(hass_config or {}, _logger, hass=hass)
         self._params: dict[str, Any] = {"timeout": timeout}
         self._max_retries = 3
-        self._embedded_command: "ConnectionRequestBase | None" = None
+        self._embedded_command: ConnectionRequestBase | None = None
         self._controller: Any = None
-        self._parent: "ConnectionRequestBase | None" = None
+        self._parent: ConnectionRequestBase | None = None
         logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
         self.update_configuration_from_hass(hass_config)
         self._condition_template: Template | None = None
@@ -122,6 +121,7 @@ class ConnectionRequestBase(Connection):
             "The 'request_tls_auto' connection method is deprecated and "
             "will be removed in a future release.",
             DeprecationWarning,
+            stacklevel=2,
         )
 
     def set_controller_ref(self, controller: Any) -> None:
@@ -366,7 +366,7 @@ class ConnectionRequestBase(Connection):
                         )
                         return (json_loads(resp.content), True, resp.status_code)
 
-                except (*JSON_DECODE_EXCEPTIONS,) as e:
+                except JSON_DECODE_EXCEPTIONS as e:
                     _LOGGER.warning(
                         "%s Failed to parse JSON response: %s",
                         self.log_prefix,

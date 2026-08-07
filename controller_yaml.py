@@ -1,9 +1,12 @@
 # pylint: disable=import-outside-toplevel,protected-access,too-many-instance-attributes,too-many-public-methods,unused-import,wrong-import-position
 """YAML-based climate device controller for the climate_ip integration."""
 
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
     from .state import ClimateIPDeviceState
 
 import logging
@@ -15,15 +18,12 @@ import voluptuous as vol
 from homeassistant.components.climate import (
     ATTR_CURRENT_TEMPERATURE,
     ATTR_FAN_MODE,
-    ATTR_FAN_MODES,
     ATTR_HVAC_MODE,
-    ATTR_HVAC_MODES,
     ATTR_PRESET_MODE,
-    ATTR_PRESET_MODES,
     ATTR_SWING_MODE,
-    ATTR_SWING_MODES,
     ClimateEntityFeature,
 )
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_TEMPERATURE,
     CONF_IP_ADDRESS,
@@ -32,10 +32,8 @@ from homeassistant.const import (
     STATE_UNKNOWN,
     UnitOfTemperature,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.config_validation import PLATFORM_SCHEMA
-from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .const import (
     CONF_CONFIG_FILE,
@@ -80,14 +78,18 @@ class YamlController(ClimateController):
         if config is None and config_entry is not None:
             config = {**config_entry.data, **config_entry.options}
             config["entry_id"] = config_entry.entry_id
-            
+
             # Reconstruct unique_id with device_id suffix for sub-devices
             base_unique_id = config_entry.unique_id
             if device_id and device_id != MAIN_DEVICE_ID:
-                config["unique_id"] = f"{base_unique_id}_{device_id}" if base_unique_id else f"Unknown_{device_id}"
+                config["unique_id"] = (
+                    f"{base_unique_id}_{device_id}"
+                    if base_unique_id
+                    else f"Unknown_{device_id}"
+                )
             else:
                 config["unique_id"] = base_unique_id
-                
+
             if device_id:
                 config[CONF_DEVICE_ID] = device_id
             device_type = config.get(CONF_DEVICE_TYPE)
@@ -142,7 +144,7 @@ class YamlController(ClimateController):
         self.on_connection_failed_callback: Callable[[], None] | None = None
         self.on_offline_callback: Callable[[str], None] | None = None
         self.discovered_devices: list[Any] | None = None
-        self._debug = config.get("debug", False)  
+        self._debug = config.get("debug", False)
         self._attributes: dict[str, Any] = {"controller": self.id}
 
         # We explicitly rely on the loader's connection object, so we do not use self._connection.
@@ -283,10 +285,12 @@ class YamlController(ClimateController):
                     new_value,  # pragma: no mutate
                 )  # pragma: no mutate
                 target_device_id = device_id or self.device_id
-                return await op.async_set_value(
-                    new_value, target_device_id
-                )
-            except (requests.exceptions.RequestException, CannotConnect, HomeAssistantError) as e:
+                return await op.async_set_value(new_value, target_device_id)
+            except (
+                requests.exceptions.RequestException,
+                CannotConnect,
+                HomeAssistantError,
+            ) as e:
                 _LOGGER.debug(
                     "%s Setting property '%s' with value '%s' failed: %s",
                     self.log_prefix,
@@ -347,10 +351,10 @@ class YamlController(ClimateController):
                     return op
 
         _LOGGER.warning(
-            "%s Property object '%s' not found. Available operation ids: %s", 
-            self.log_prefix, 
+            "%s Property object '%s' not found. Available operation ids: %s",
+            self.log_prefix,
             property_name,
-            [getattr(op, "id", "unknown") for op in self.loader.operations.values()]
+            [getattr(op, "id", "unknown") for op in self.loader.operations.values()],
         )  # pragma: no mutate
         return None
 
@@ -418,7 +422,11 @@ class YamlController(ClimateController):
     def pure_device_state(self) -> dict[str, Any]:
         """Return the unmutated pure network state of the device."""
         # pylint: disable=protected-access
-        if hasattr(self.poller, "_pure_network_state") and isinstance(self.poller._pure_network_state, dict) and self.poller._pure_network_state:
+        if (
+            hasattr(self.poller, "_pure_network_state")
+            and isinstance(self.poller._pure_network_state, dict)
+            and self.poller._pure_network_state
+        ):
             st = self.poller._pure_network_state
             if "Devices" in st and isinstance(st["Devices"], list) and st["Devices"]:
                 return st["Devices"][0]
@@ -438,13 +446,16 @@ class YamlController(ClimateController):
     @property
     def climate_state(self) -> "ClimateIPDeviceState":
         """Return the strictly typed state representation of the device."""
-        from .state import ClimateIPDeviceState  # imported here to avoid circular dep
         from homeassistant.components.climate import HVACMode
+
+        from .state import ClimateIPDeviceState  # imported here to avoid circular dep
 
         try:
             # 1. Extracción y lavado de valores escalares (Destruye NodeStrClass)
             raw_hvac = self.get_property(ATTR_HVAC_MODE)
-            hvac_mode = HVACMode(str(raw_hvac).lower()) if raw_hvac is not None else None
+            hvac_mode = (
+                HVACMode(str(raw_hvac).lower()) if raw_hvac is not None else None
+            )
 
             raw_target = self.get_property(ATTR_TEMPERATURE)
             target_temp = float(raw_target) if raw_target is not None else None
@@ -464,11 +475,19 @@ class YamlController(ClimateController):
             # 2. Lavado y conversión a Tuplas Inmutables para las listas de modos
             # Filtramos posibles nulos y forzamos el tipo estricto.
             raw_hvac_modes = self.get_property_all_values(ATTR_HVAC_MODE) or []
-            hvac_modes_tuple = tuple(HVACMode(str(m).lower()) for m in raw_hvac_modes if m is not None)
+            hvac_modes_tuple = tuple(
+                HVACMode(str(m).lower()) for m in raw_hvac_modes if m is not None
+            )
 
-            fan_modes_tuple = tuple(str(m) for m in (self.get_property_all_values(ATTR_FAN_MODE) or []))
-            swing_modes_tuple = tuple(str(m) for m in (self.get_property_all_values(ATTR_SWING_MODE) or []))
-            preset_modes_tuple = tuple(str(m) for m in (self.get_property_all_values(ATTR_PRESET_MODE) or []))
+            fan_modes_tuple = tuple(
+                str(m) for m in (self.get_property_all_values(ATTR_FAN_MODE) or [])
+            )
+            swing_modes_tuple = tuple(
+                str(m) for m in (self.get_property_all_values(ATTR_SWING_MODE) or [])
+            )
+            preset_modes_tuple = tuple(
+                str(m) for m in (self.get_property_all_values(ATTR_PRESET_MODE) or [])
+            )
 
             # 3. Empaquetado estricto. La dataclass ahora recibe datos 100% puros.
             return ClimateIPDeviceState(
@@ -503,15 +522,11 @@ class YamlController(ClimateController):
             if hasattr(self.poller, "_clear_state_cache"):
                 self.poller._clear_state_cache()
 
-    async def async_merge_device_state(
-        self, new_data: dict[str, Any]
-    ) -> bool:
+    async def async_merge_device_state(self, new_data: dict[str, Any]) -> bool:
         """Merge incoming push updates or responses into the memory state.
         Returns True if committed.
         """
-        return await self.poller.async_merge_device_state(
-            new_data
-        )
+        return await self.poller.async_merge_device_state(new_data)
 
     async def async_clear_pending_updates(self, keys: list[str]) -> None:
         """Clear specific pending updates (anti-flicker locks) on failure."""

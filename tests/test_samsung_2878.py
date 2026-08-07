@@ -11,6 +11,7 @@ def test_can_import_connection_class():
     """Test that we can import the class without syntax errors."""
     assert ConnectionSamsung2878 is not None
 
+
 async def test_async_xml_parse():
     """Test that XML parsing is offloaded to the executor/thread pool."""
     from unittest.mock import AsyncMock, MagicMock, patch
@@ -63,8 +64,9 @@ def test_2878_auth_token_format():
     """Test that __CLIMATE_IP_TOKEN__ placeholder is properly replaced with the real token."""
     from unittest.mock import MagicMock
 
-    from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878
     from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
+
+    from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878
 
     # 1. Simulate the config dictionary coming from Home Assistant
     hass_config = {
@@ -148,9 +150,11 @@ def test_connection_config_mutants():
     # Kill mutmut 5: self.cert = None
     assert cfg.cert == "my_cert.pem"
 
+
 async def test_offline_callback_invoked_on_disconnect():
     """Test that the controller's offline callback is triggered after 2 failures."""
     from unittest.mock import AsyncMock, MagicMock, patch
+
     from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878
 
     mock_hass = MagicMock()
@@ -160,22 +164,39 @@ async def test_offline_callback_invoked_on_disconnect():
     mock_controller.on_offline_callback = MagicMock()
     mock_controller.on_connection_failed_callback = MagicMock()
 
-    config = {"host": "192.168.1.100", "port": 2878, "cert": "dummy.pem", "duid": "12345"}
+    config = {
+        "host": "192.168.1.100",
+        "port": 2878,
+        "cert": "dummy.pem",
+        "duid": "12345",
+    }
     logger = MagicMock()
 
     conn = ConnectionSamsung2878(config, logger)
     conn._cfg = MagicMock()
     conn._cfg.host = "192.168.1.100"
     conn._controller = mock_controller
-    
+
     # CRITICAL FIX: Simular que el AC se conectó exitosamente al menos una vez.
     # Sin esto, el sistema suprime los errores de UI creyendo que está en fase de arranque.
-    conn._initial_connection_done = True 
+    conn._initial_connection_done = True
 
     with (
-        patch("custom_components.climate_ip.samsung_2878.asyncio.sleep", new_callable=AsyncMock),
-        patch("custom_components.climate_ip.helpers.async_check_network_reachability", new_callable=AsyncMock, return_value=False),
-        patch.object(conn, "_establish_connection_and_handshake", new_callable=AsyncMock, return_value=False)
+        patch(
+            "custom_components.climate_ip.samsung_2878.asyncio.sleep",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "custom_components.climate_ip.helpers.async_check_network_reachability",
+            new_callable=AsyncMock,
+            return_value=False,
+        ),
+        patch.object(
+            conn,
+            "_establish_connection_and_handshake",
+            new_callable=AsyncMock,
+            return_value=False,
+        ),
     ):
         # 1er intento (retries = 1) -> No hay trigger
         await conn.handle_reconnection()
@@ -183,18 +204,28 @@ async def test_offline_callback_invoked_on_disconnect():
 
         # 2do intento (retries = 2) -> Supera el umbral estricto y dispara el offline a la UI
         await conn.handle_reconnection()
-        mock_controller.on_offline_callback.assert_called_once_with("Host unreachable after multiple retry attempts.")
+        mock_controller.on_offline_callback.assert_called_once_with(
+            "Host unreachable after multiple retry attempts."
+        )
         mock_controller.on_connection_failed_callback.assert_called()
+
+
 async def test_reconnection_state_changes_availability():
     """Test that connection recovery correctly updates the internal availability flag."""
     from unittest.mock import AsyncMock, MagicMock, patch
+
     from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878
 
     mock_hass = MagicMock()
     mock_controller = MagicMock()
     mock_controller.hass = mock_hass
-    
-    config = {"host": "192.168.1.100", "port": 2878, "cert": "dummy.pem", "duid": "12345"}
+
+    config = {
+        "host": "192.168.1.100",
+        "port": 2878,
+        "cert": "dummy.pem",
+        "duid": "12345",
+    }
     logger = MagicMock()
 
     conn = ConnectionSamsung2878(config, logger)
@@ -203,9 +234,16 @@ async def test_reconnection_state_changes_availability():
     conn._controller = mock_controller
     conn._is_available = False  # Start offline
 
-    with patch.object(conn, "_establish_connection_and_handshake", new_callable=AsyncMock, return_value=True):
+    with patch.object(
+        conn,
+        "_establish_connection_and_handshake",
+        new_callable=AsyncMock,
+        return_value=True,
+    ):
         await conn.handle_reconnection()
         # Si se restablece, el handshake cambia is_available y limpia el flag persistente
-        # (Esto ocurre dentro de _establish_connection_and_handshake, pero como lo mockeamos 
+        # (Esto ocurre dentro de _establish_connection_and_handshake, pero como lo mockeamos
         # devolviendo True, solo verificamos que handle_reconnection retorna True)
-        assert conn._is_available is False # It doesn't flip it here, it flips inside establish
+        assert (
+            conn._is_available is False
+        )  # It doesn't flip it here, it flips inside establish

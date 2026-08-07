@@ -7,12 +7,12 @@ from typing import Any
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
-from homeassistant.util.yaml import load_yaml
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     ATTR_NAME,
     ATTR_TEMPERATURE,
 )
+from homeassistant.util.yaml import load_yaml
 
 from .connection import CLIMATE_IP_CONNECTIONS, Connection
 from .const import (
@@ -35,7 +35,7 @@ from .const import (
     DEVICE_TYPE_AIOHTTP_SUPPORTED,
     DEVICE_TYPE_SAMSUNG_2878,
 )
-from .properties import create_property, create_status_getter, TemperatureOperation
+from .properties import TemperatureOperation, create_property, create_status_getter
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -474,5 +474,5 @@ class YamlConfigLoader:
         _LOGGER.warning(  # pragma: no mutate
             "%s [DEBUG INIT] Finished initialization! Operations mapped: %s",
             self.controller.log_prefix,  # pragma: no mutate
-            self.operations_list
+            self.operations_list,
         )  # pragma: no mutate

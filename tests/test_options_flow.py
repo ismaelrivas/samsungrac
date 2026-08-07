@@ -1,18 +1,12 @@
 """Tests for OptionsFlowHandler in options_flow.py."""
 
 import datetime
-from unittest.mock import MagicMock
 
 import pytest
 import voluptuous as vol
-
-from homeassistant.const import UnitOfTemperature
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.climate_ip.config_flow import OptionsFlowHandler
-from custom_components.climate_ip.const import (
-    DEFAULT_POLL_INTERVAL,
-)
 from custom_components.climate_ip.const import (
     CONF_CONN_METHOD,
     CONF_DEVICE_TYPE,
@@ -21,6 +15,7 @@ from custom_components.climate_ip.const import (
     CONF_TEMP_NATIVE_TARGET,
     CONN_METHOD_AIOHTTP,
     DEFAULT_CONF_TEMP_UNIT,
+    DEFAULT_POLL_INTERVAL,
     DEFAULT_TARGET_TEMP_STEP,
     DEVICE_TYPE_SMARTTHINGS_HVAC,
     DOMAIN,
@@ -148,4 +143,3 @@ async def test_options_flow_invalid_target_temp_step_fallback(hass):
     )
     assert result["type"] == "create_entry"
     assert result["data"][CONF_TARGET_TEMP_STEP] == DEFAULT_TARGET_TEMP_STEP
-

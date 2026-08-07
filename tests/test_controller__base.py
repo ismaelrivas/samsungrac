@@ -1,8 +1,9 @@
 """Tests for the base ClimateController and create_controller factory."""
 
 import logging
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from custom_components.climate_ip.controller import (
     ClimateController,

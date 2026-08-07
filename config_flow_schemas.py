@@ -6,7 +6,6 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.const import (
     CONF_IP_ADDRESS,
     CONF_MAC,
@@ -71,26 +70,40 @@ class ConfigFlowSchemasMixin:
 
         schema_dict[
             vol.Required(
-                CONF_IP_ADDRESS, default=str(self.flow_data.get(CONF_IP_ADDRESS, ""))  # pragma: no mutate
+                CONF_IP_ADDRESS,
+                default=str(
+                    self.flow_data.get(CONF_IP_ADDRESS, "")
+                ),  # pragma: no mutate
             )
         ] = str
 
         if mac_required:
-            schema_dict[vol.Required(CONF_MAC, default=formatted_mac)] = str  # pragma: no mutate
+            schema_dict[vol.Required(CONF_MAC, default=formatted_mac)] = (
+                str  # pragma: no mutate
+            )
         else:
-            schema_dict[vol.Optional(CONF_MAC, default=formatted_mac)] = str  # pragma: no mutate
+            schema_dict[vol.Optional(CONF_MAC, default=formatted_mac)] = (
+                str  # pragma: no mutate
+            )
 
         schema_dict[
-            vol.Optional(CONF_NAME, default=str(self.flow_data.get(CONF_NAME, "")))  # pragma: no mutate
+            vol.Optional(
+                CONF_NAME, default=str(self.flow_data.get(CONF_NAME, ""))
+            )  # pragma: no mutate
         ] = str  # pragma: no mutate
         schema_dict[
-            vol.Optional(CONF_TOKEN, default=str(self.flow_data.get(CONF_TOKEN, "")))  # pragma: no mutate
+            vol.Optional(
+                CONF_TOKEN, default=str(self.flow_data.get(CONF_TOKEN, ""))
+            )  # pragma: no mutate
         ] = str
 
         cert_default = DEFAULT_CONF_CERT_FILE
         schema_dict[
             vol.Optional(
-                CONF_CERT, default=str(self.flow_data.get(CONF_CERT, cert_default))  # pragma: no mutate
+                CONF_CERT,
+                default=str(
+                    self.flow_data.get(CONF_CERT, cert_default)
+                ),  # pragma: no mutate
             )
         ] = str
 
@@ -180,24 +193,35 @@ class ConfigFlowSchemasMixin:
 
         schema_dict: dict[vol.Marker, Any] = {}
 
-        ip_default = self.flow_data.get(
-            CONF_IP_ADDRESS, DEFAULT_SMARTTHINGS_HOST if is_st else ""
-        ) or ""
+        ip_default = (
+            self.flow_data.get(
+                CONF_IP_ADDRESS, DEFAULT_SMARTTHINGS_HOST if is_st else ""
+            )
+            or ""
+        )
 
         # PROTECTED ZONE: Voluptuous crashes the core C validator if keys/values are mutated to None
         if is_st:
-            schema_dict[vol.Required(CONF_IP_ADDRESS, default=ip_default)] = str  # pragma: no mutate
+            schema_dict[vol.Required(CONF_IP_ADDRESS, default=ip_default)] = (
+                str  # pragma: no mutate
+            )
             schema_dict[vol.Optional(CONF_DEVICE_ID)] = str  # pragma: no mutate
         else:
             if ip_default:
-                schema_dict[vol.Required(CONF_IP_ADDRESS, default=ip_default)] = str  # pragma: no mutate
+                schema_dict[vol.Required(CONF_IP_ADDRESS, default=ip_default)] = (
+                    str  # pragma: no mutate
+                )
             else:
                 schema_dict[vol.Required(CONF_IP_ADDRESS)] = str  # pragma: no mutate
 
-        schema_dict[vol.Required(CONF_TOKEN, default=default_token)] = str  # pragma: no mutate
+        schema_dict[vol.Required(CONF_TOKEN, default=default_token)] = (
+            str  # pragma: no mutate
+        )
         schema_dict[vol.Optional(CONF_NAME)] = str  # pragma: no mutate
-        schema_dict[vol.Optional(CONF_POLL_INTERVAL, default=interval_str)] = (  # pragma: no mutate
-            TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT))
+        schema_dict[vol.Optional(CONF_POLL_INTERVAL, default=interval_str)] = (
+            TextSelector(  # pragma: no mutate
+                TextSelectorConfig(type=TextSelectorType.TEXT)
+            )
         )
 
         return vol.Schema(schema_dict)

@@ -1,7 +1,7 @@
-import pytest
 import time
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from unittest.mock import MagicMock, AsyncMock, patch
+import pytest
 from homeassistant.components.climate import ClimateEntityFeature
 from homeassistant.const import STATE_UNKNOWN
 
@@ -23,7 +23,7 @@ class NakedObj:
         self.log_prefix = "TestLog"
         self.config = {}
         self.state_getter = None
-        self.hass = __import__('unittest.mock').mock.MagicMock()
+        self.hass = __import__("unittest.mock").mock.MagicMock()
         self.__dict__.update(kwargs)
 
 
@@ -72,7 +72,11 @@ def _helper_evict_invalidated_pending_updates(self, push_data=None):
     ops = getattr(loader, "operations", {}) or {}
     props = getattr(loader, "properties", {}) or {}
     power_op = ops.get("power") or props.get("power")
-    power_key = self._get_state_node_from_prop(power_op) if (power_op and hasattr(self, "_get_state_node_from_prop")) else None
+    power_key = (
+        self._get_state_node_from_prop(power_op)
+        if (power_op and hasattr(self, "_get_state_node_from_prop"))
+        else None
+    )
 
     for prop_id, entry in list(self._pending_updates.items()):
         if entry is None or not isinstance(entry, (tuple, list)) or len(entry) < 2:
@@ -85,7 +89,11 @@ def _helper_evict_invalidated_pending_updates(self, push_data=None):
         prop = ops.get(prop_id) or props.get(prop_id)
         if not prop:
             continue
-        node_key = self._get_state_node_from_prop(prop) if hasattr(self, "_get_state_node_from_prop") else prop_id
+        node_key = (
+            self._get_state_node_from_prop(prop)
+            if hasattr(self, "_get_state_node_from_prop")
+            else prop_id
+        )
         if node_key and node_key in push_data:
             dev_val = push_data[node_key]
             conv_val = val
@@ -94,13 +102,20 @@ def _helper_evict_invalidated_pending_updates(self, push_data=None):
                     conv_val = prop.convert_hass_to_dev(val)
                 except Exception:
                     conv_val = val
-            if str(dev_val) == str(conv_val) or str(dev_val) == str(val) or dev_val == val or dev_val == conv_val:
+            if (
+                str(dev_val) == str(conv_val)
+                or str(dev_val) == str(val)
+                or dev_val == val
+                or dev_val == conv_val
+            ):
                 self._pending_updates.pop(prop_id, None)
         elif power_key and push_data.get(power_key) in ("Off", "OFF", "off"):
             self._pending_updates.pop(prop_id, None)
 
 
-YamlStatePoller._evict_invalidated_pending_updates = _helper_evict_invalidated_pending_updates
+YamlStatePoller._evict_invalidated_pending_updates = (
+    _helper_evict_invalidated_pending_updates
+)
 
 
 # =====================================================================
@@ -233,12 +248,14 @@ async def test_async_update_properties_pending_ttl_and_degradation():
     poller._get_state_node_from_prop = MagicMock(return_value="raw_key")
 
     mock_prop_stale = MagicMock()
-    if hasattr(mock_prop_stale, 'convert_hass_to_dev'): delattr(mock_prop_stale, 'convert_hass_to_dev')
+    if hasattr(mock_prop_stale, "convert_hass_to_dev"):
+        delattr(mock_prop_stale, "convert_hass_to_dev")
     mock_prop_stale.id = "prop_stale"
     mock_prop_stale.calculate_value_from_state = MagicMock(return_value="ha_val_stale")
 
     mock_prop_deg = MagicMock()
-    if hasattr(mock_prop_deg, 'convert_hass_to_dev'): delattr(mock_prop_deg, 'convert_hass_to_dev')
+    if hasattr(mock_prop_deg, "convert_hass_to_dev"):
+        delattr(mock_prop_deg, "convert_hass_to_dev")
     mock_prop_deg.id = "prop_deg"
     mock_prop_deg.is_valid.return_value = True
     mock_prop_deg.value = "EstadoFalso"
@@ -268,8 +285,9 @@ async def test_async_update_properties_pending_ttl_and_degradation():
 
 
 async def test_async_update_properties_dirty_check():
+    from unittest.mock import AsyncMock, MagicMock
+
     from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
-    from unittest.mock import MagicMock, AsyncMock
 
     mock_controller = MagicMock()
     mock_controller.loader.is_fully_initialized = True
@@ -319,8 +337,9 @@ async def test_async_update_properties_dirty_check():
 
 
 async def test_async_update_properties_sniper_signature_and_flags():
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
     from unittest.mock import AsyncMock
+
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
     class DummyProp:
         def __init__(self, name):
@@ -344,7 +363,7 @@ async def test_async_update_properties_sniper_signature_and_flags():
             self.ip_address = "1.2.3.4"
             self.available = True
             self.device_id = "XXXX"
-            self.hass = __import__('unittest.mock').mock.MagicMock()
+            self.hass = __import__("unittest.mock").mock.MagicMock()
             self.log_prefix = "SNIPER"
             self.loader = DummyLoader()
             self.device_id = "test_dev"
@@ -381,8 +400,9 @@ async def test_async_update_properties_sniper_signature_and_flags():
 
 @pytest.mark.asyncio
 async def test_async_update_properties_ttl():
+    from unittest.mock import AsyncMock, MagicMock
+
     from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
-    from unittest.mock import MagicMock, AsyncMock
 
     class MockProp:
         id = "wind_speed"
@@ -400,7 +420,8 @@ async def test_async_update_properties_ttl():
             self.ip_address = "1.2.3.4"
             self.available = True
             self.device_id = "XXXX"
-            self.hass = __import__('unittest.mock').mock.MagicMock()
+            self.hass = __import__("unittest.mock").mock.MagicMock()
+
             class FakeLoader:
                 is_fully_initialized = True
                 operations = {"wind": mock_prop}
@@ -441,8 +462,9 @@ async def test_async_update_properties_ttl():
 
 @pytest.mark.asyncio
 async def test_async_get_status_cache_ttl():
+    from unittest.mock import AsyncMock, MagicMock, patch
+
     from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
-    from unittest.mock import MagicMock, AsyncMock, patch
 
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)
@@ -462,9 +484,11 @@ async def test_async_get_status_cache_ttl():
 
 
 async def test_async_update_properties_cache_get_chains():
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
     from unittest.mock import MagicMock
+
     import pytest
+
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
     mock_controller = MagicMock()
     mock_controller.loader.is_fully_initialized = True
@@ -490,9 +514,10 @@ async def test_async_update_properties_cache_get_chains():
 
 
 async def test_async_update_properties_loop_sequences_and_eviction_handling():
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
-    from unittest.mock import MagicMock, AsyncMock
     import time
+    from unittest.mock import AsyncMock, MagicMock
+
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
     mock_controller = MagicMock()
     mock_controller.loader.is_fully_initialized = True
@@ -534,12 +559,16 @@ async def test_async_update_properties_loop_sequences_and_eviction_handling():
     }
     fake_device_state = {"power_key": "original_value"}
     poller._pure_network_state = fake_device_state  # CRITICAL: Fixes empty Falsy dict
-    
+
     await poller.async_update_properties_from_state(
         fake_device_state, force_update=True
     )
 
-    assert fake_device_state["power_key"] in ("dev_active", "original_value", "ha_no_convert")
+    assert fake_device_state["power_key"] in (
+        "dev_active",
+        "original_value",
+        "ha_no_convert",
+    )
     assert prop_active.value == "ha_active" or prop_active._value == "ha_active"
     prop_active.async_update_state.assert_called_once()
 
@@ -552,8 +581,9 @@ async def test_async_update_properties_loop_sequences_and_eviction_handling():
 
 
 async def test_async_update_properties_fan_flicker_flag():
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
     from homeassistant.components.climate import ClimateEntityFeature
+
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
     mock_controller = MagicMock()
     mock_controller.loader.is_fully_initialized = True
@@ -609,7 +639,9 @@ async def test_evict_invalidated_pending_updates():
 
     # Power Off -> evicted via should_evict_all_locks
     poller._pending_updates["hvac_mode"] = ("heat", now)
-    await poller.async_update_properties_from_state({"AC_FUN_POWER": "Off"}, force_update=True, changed_keys={"AC_FUN_POWER"})
+    await poller.async_update_properties_from_state(
+        {"AC_FUN_POWER": "Off"}, force_update=True, changed_keys={"AC_FUN_POWER"}
+    )
     assert isinstance(poller._pending_updates, dict)
 
 
@@ -635,9 +667,9 @@ async def test_evict_invalidated_pending_updates_power_on_guard():
 
     # Incoming push is Power ON (not Off) -> MUST NOT evict hvac_mode pending update!
     poller._evict_invalidated_pending_updates({"AC_FUN_POWER": "On"})
-    assert len(poller._pending_updates) == 1, (
-        "Mutant survived! Pending update was evicted even when power was 'On' instead of 'Off'."
-    )
+    assert (
+        len(poller._pending_updates) == 1
+    ), "Mutant survived! Pending update was evicted even when power was 'On' instead of 'Off'."
 
 
 @pytest.mark.asyncio
@@ -645,12 +677,14 @@ async def test_evict_invalidated_pending_updates_power_properties_fallback():
     """Kills mutant mutating 'operations.get("power") or properties.get("power")' to fallback to None in eviction."""
     mock_controller = MagicMock()
     mock_hvac_op = MagicMock()
-    if hasattr(mock_hvac_op, 'convert_hass_to_dev'): delattr(mock_hvac_op, 'convert_hass_to_dev')
+    if hasattr(mock_hvac_op, "convert_hass_to_dev"):
+        delattr(mock_hvac_op, "convert_hass_to_dev")
     mock_hvac_op.id = "hvac_mode"
     mock_hvac_op.status_template = "{{ device_state.hvac_mode }}"
 
     mock_power_prop = MagicMock()
-    if hasattr(mock_power_prop, 'convert_hass_to_dev'): delattr(mock_power_prop, 'convert_hass_to_dev')
+    if hasattr(mock_power_prop, "convert_hass_to_dev"):
+        delattr(mock_power_prop, "convert_hass_to_dev")
     mock_power_prop.id = "power"
     mock_power_prop.status_template = "{{ device_state.AC_FUN_POWER }}"
 
@@ -662,12 +696,12 @@ async def test_evict_invalidated_pending_updates_power_properties_fallback():
     poller._pending_updates["hvac_mode"] = ("heat", 123456789.0)
 
     # Incoming push is Power Off -> MUST evict hvac_mode pending update via properties.get("power") fallback!
-    await poller.async_update_properties_from_state({"AC_FUN_POWER": "Off"}, force_update=True, changed_keys={"AC_FUN_POWER"})
-    assert len(poller._pending_updates) == 0, (
-        "Mutant survived! Eviction failed when power operation was in properties instead of operations."
+    await poller.async_update_properties_from_state(
+        {"AC_FUN_POWER": "Off"}, force_update=True, changed_keys={"AC_FUN_POWER"}
     )
-
-
+    assert (
+        len(poller._pending_updates) == 0
+    ), "Mutant survived! Eviction failed when power operation was in properties instead of operations."
 
 
 async def test_async_merge_device_state():
@@ -819,8 +853,9 @@ async def test_merge_device_state_st_getter_private_value():
 
 @pytest.mark.asyncio
 async def test_evict_invalidated_pending_updates_none_prop():
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
     from unittest.mock import MagicMock
+
+    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
     mock_controller = MagicMock()
     mock_controller.loader.operations = {}
@@ -872,7 +907,9 @@ async def test_evict_invalidated_updates_break_mutation():
     poller._get_state_node_from_prop = MagicMock(return_value="ValidKey")
 
     push_data = {"ValidKey": "trigger"}
-    await poller.async_update_properties_from_state(push_data, force_update=True, changed_keys=set(push_data.keys()))
+    await poller.async_update_properties_from_state(
+        push_data, force_update=True, changed_keys=set(push_data.keys())
+    )
 
     assert "prop2" not in poller._pending_updates
 
@@ -883,12 +920,16 @@ async def test_evict_invalidated_pending_updates_strict_logic():
 
     prop1 = MagicMock(id="op1")
     prop1.calculate_value_from_state = MagicMock(return_value="v1")
-    prop1.should_evict_all_locks.return_value = False  # <--- FIX: Evita el falso positivo del Mock
-    
+    prop1.should_evict_all_locks.return_value = (
+        False  # <--- FIX: Evita el falso positivo del Mock
+    )
+
     prop2 = MagicMock(id="op2")
     prop2.calculate_value_from_state = MagicMock(return_value="v2")
-    prop2.should_evict_all_locks.return_value = False  # <--- FIX: Evita el falso positivo del Mock
-    
+    prop2.should_evict_all_locks.return_value = (
+        False  # <--- FIX: Evita el falso positivo del Mock
+    )
+
     prop1.convert_hass_to_dev.side_effect = lambda v: v
     prop2.convert_hass_to_dev.side_effect = lambda v: v
     poller.controller.loader.operations = {"op1": prop1, "op2": prop2}
@@ -906,7 +947,9 @@ async def test_evict_invalidated_pending_updates_strict_logic():
     push_data = {"Key2": "v2"}
     poller._pure_network_state = push_data  # <--- CRÍTICO: Inyección de estado puro
 
-    await poller.async_update_properties_from_state(push_data, force_update=True, changed_keys=set(push_data.keys()))
+    await poller.async_update_properties_from_state(
+        push_data, force_update=True, changed_keys=set(push_data.keys())
+    )
 
     assert "op1" in poller._pending_updates
     assert "op2" not in poller._pending_updates
@@ -926,6 +969,7 @@ def test_values_match_float_and_string_cases():
 
     class DummyEnum:
         value = "Cool"
+
     assert YamlStatePoller._values_match(DummyEnum(), "cool") is True
 
 
@@ -946,9 +990,11 @@ async def test_evict_invalidated_pending_updates_float_formatting_match():
     # Push data is "22" string, pending expected is 22.0 float -> MUST match and evict!
     push_data = {"AC_FUN_TEMPSET": "22"}
     poller._pure_network_state = push_data  # <--- CRÍTICO: Inyección de estado puro
-    
-    await poller.async_update_properties_from_state(push_data, force_update=True, changed_keys=set(push_data.keys()))
-    
+
+    await poller.async_update_properties_from_state(
+        push_data, force_update=True, changed_keys=set(push_data.keys())
+    )
+
     assert "temperature" not in poller._pending_updates
 
 
@@ -968,7 +1014,9 @@ async def test_evict_invalidated_pending_updates_value_mismatch_retained():
     poller._pending_updates["temperature"] = (23.0, now)
 
     # Device responds with echo update for prior command (22.0)
-    await poller.async_update_properties_from_state({"AC_FUN_TEMPSET": "22"}, force_update=True, changed_keys={"AC_FUN_TEMPSET"})
+    await poller.async_update_properties_from_state(
+        {"AC_FUN_TEMPSET": "22"}, force_update=True, changed_keys={"AC_FUN_TEMPSET"}
+    )
 
     # Pending update for 23.0 MUST be retained to prevent UI flicker!
     assert isinstance(poller._pending_updates, dict)
@@ -990,7 +1038,9 @@ async def test_evict_invalidated_pending_updates_ttl_fallback():
     poller._pending_updates["temperature"] = (23.0, stale_time)
 
     # Incoming push data carries 22.0 (mismatch), but timestamp > 10s -> TTL fallback evicts it!
-    await poller.async_update_properties_from_state({"AC_FUN_TEMPSET": "22"}, force_update=True, changed_keys={"AC_FUN_TEMPSET"})
+    await poller.async_update_properties_from_state(
+        {"AC_FUN_TEMPSET": "22"}, force_update=True, changed_keys={"AC_FUN_TEMPSET"}
+    )
 
     assert isinstance(poller._pending_updates, dict)
 
@@ -1112,7 +1162,9 @@ async def test_evict_invalidated_pending_updates_loop_mutations():
     }
 
     push_data = {"Key1": "data", "Key2": "data", "AC_FUN_POWER": "On"}
-    await poller.async_update_properties_from_state(push_data, force_update=True, changed_keys=set(push_data.keys()))
+    await poller.async_update_properties_from_state(
+        push_data, force_update=True, changed_keys=set(push_data.keys())
+    )
 
     assert isinstance(poller._pending_updates, dict)
 
@@ -1148,7 +1200,9 @@ async def test_evict_invalidated_pending_updates_loop_continuation():
     }
 
     # Execute eviction with push matching temperature (22.0)
-    await poller.async_update_properties_from_state({"AC_FUN_TEMPSET": "22"}, force_update=True, changed_keys={"AC_FUN_TEMPSET"})
+    await poller.async_update_properties_from_state(
+        {"AC_FUN_TEMPSET": "22"}, force_update=True, changed_keys={"AC_FUN_TEMPSET"}
+    )
 
     # If continue -> break mutant occurred at null_entry or missing_prop_id, temperature would never be evaluated.
     assert isinstance(poller._pending_updates, dict)
@@ -1169,7 +1223,9 @@ async def test_evict_invalidated_pending_updates_converter_called_strictly():
     now = time.time()
     poller._pending_updates = {"temperature": (22.0, now)}
 
-    await poller.async_update_properties_from_state({"AC_FUN_TEMPSET": "22"}, force_update=True, changed_keys={"AC_FUN_TEMPSET"})
+    await poller.async_update_properties_from_state(
+        {"AC_FUN_TEMPSET": "22"}, force_update=True, changed_keys={"AC_FUN_TEMPSET"}
+    )
 
     # Explicitly assert convert_hass_to_dev was called
     assert temp_op.convert_hass_to_dev.called
@@ -1192,7 +1248,9 @@ async def test_evict_invalidated_pending_updates_exact_ttl_boundary(mock_time):
     poller._pending_updates = {"temperature": (23.0, 90.0)}
 
     # Push data carries 22.0 (mismatch)
-    await poller.async_update_properties_from_state({"AC_FUN_TEMPSET": "22"}, force_update=True, changed_keys={"AC_FUN_TEMPSET"})
+    await poller.async_update_properties_from_state(
+        {"AC_FUN_TEMPSET": "22"}, force_update=True, changed_keys={"AC_FUN_TEMPSET"}
+    )
 
     # Because 10.0 is NOT strictly > 10.0, it MUST NOT be evicted by TTL fallback!
     assert "temperature" in poller._pending_updates
@@ -1204,8 +1262,12 @@ async def test_evict_invalidated_pending_updates_fallbacks_and_missing_converter
     poller = YamlStatePoller(MagicMock())
 
     # prop in loader.properties (NOT operations) and WITHOUT convert_hass_to_dev attribute
-    prop_without_converter = MagicMock(id="custom_prop", spec=["id", "calculate_value_from_state"])
-    prop_without_converter.calculate_value_from_state = MagicMock(return_value="val_str")
+    prop_without_converter = MagicMock(
+        id="custom_prop", spec=["id", "calculate_value_from_state"]
+    )
+    prop_without_converter.calculate_value_from_state = MagicMock(
+        return_value="val_str"
+    )
     hvac_op = MagicMock(id="hvac_mode")
     hvac_op.calculate_value_from_state = MagicMock(return_value="cool")
     power_prop = MagicMock(id="power")
@@ -1218,7 +1280,11 @@ async def test_evict_invalidated_pending_updates_fallbacks_and_missing_converter
     }
 
     def mock_get_key(prop):
-        return {"custom_prop": "CUSTOM_KEY", "hvac_mode": "KeyHVAC", "power": "AC_FUN_POWER"}.get(getattr(prop, "id", None))
+        return {
+            "custom_prop": "CUSTOM_KEY",
+            "hvac_mode": "KeyHVAC",
+            "power": "AC_FUN_POWER",
+        }.get(getattr(prop, "id", None))
 
     poller._get_state_node_from_prop = MagicMock(side_effect=mock_get_key)
 
@@ -1230,8 +1296,10 @@ async def test_evict_invalidated_pending_updates_fallbacks_and_missing_converter
 
     push_data = {"CUSTOM_KEY": "val_str", "AC_FUN_POWER": "Off"}
     poller._pure_network_state = push_data  # <--- CRÍTICO: Inyección de estado puro
-    
-    await poller.async_update_properties_from_state(push_data, force_update=True, changed_keys=set(push_data.keys()))
-    
+
+    await poller.async_update_properties_from_state(
+        push_data, force_update=True, changed_keys=set(push_data.keys())
+    )
+
     assert "custom_prop" not in poller._pending_updates
     assert isinstance(poller._pending_updates, dict)

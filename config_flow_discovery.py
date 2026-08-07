@@ -5,13 +5,13 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-
-from homeassistant.config_entries import ConfigFlowResult, SOURCE_RECONFIGURE
+from homeassistant.config_entries import SOURCE_RECONFIGURE, ConfigFlowResult
 from homeassistant.const import CONF_MAC
 from homeassistant.data_entry_flow import AbortFlow
-from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import aiohttp_client
+from homeassistant.helpers import config_validation as cv
 
+from . import controller_yaml
 from .const import (
     CONF_CONFIG_FILE,
     CONF_CONN_METHOD,
@@ -26,7 +26,6 @@ from .const import (
     DEVICE_TYPE_SAMSUNG_8888,
     DEVICE_TYPE_TO_CONFIG_FILE,
 )
-from . import controller_yaml
 from .exceptions import InvalidHeaderError
 
 _LOGGER = logging.getLogger(__name__)
@@ -54,7 +53,9 @@ class ConfigFlowDiscoveryMixin:
             config=config_data,
             logger=_LOGGER,
             hass=self.hass,  # pragma: no mutate
-            session=aiohttp_client.async_get_clientsession(self.hass),  # pragma: no mutate
+            session=aiohttp_client.async_get_clientsession(
+                self.hass
+            ),  # pragma: no mutate
         )
 
         try:
@@ -127,7 +128,9 @@ class ConfigFlowDiscoveryMixin:
                     }
                 )
                 # PHASE 1 FIX APPLIED: Do not abort prematurely on reconfigurations
-                if self.reauth_entry is None and self.source != SOURCE_RECONFIGURE:  # pragma: no mutate
+                if (
+                    self.reauth_entry is None and self.source != SOURCE_RECONFIGURE
+                ):  # pragma: no mutate
                     self._abort_if_unique_id_configured(updates=self.flow_data)  # type: ignore[attr-defined]
 
                 if ac_units_info:
@@ -197,7 +200,9 @@ class ConfigFlowDiscoveryMixin:
                 config=config_data,
                 logger=_LOGGER,
                 hass=self.hass,  # pragma: no mutate
-                session=aiohttp_client.async_get_clientsession(self.hass),  # pragma: no mutate
+                session=aiohttp_client.async_get_clientsession(
+                    self.hass
+                ),  # pragma: no mutate
             )
 
             init_fb = await controller.initialize()
@@ -255,7 +260,9 @@ class ConfigFlowDiscoveryMixin:
                         self.flow_data[CONF_DEVICE_ID] = str(controller.device_id)
 
                     # PHASE 1 FIX APPLIED: Do not abort prematurely on reconfigurations
-                    if self.reauth_entry is None and self.source != SOURCE_RECONFIGURE:  # pragma: no mutate
+                    if (
+                        self.reauth_entry is None and self.source != SOURCE_RECONFIGURE
+                    ):  # pragma: no mutate
                         self._abort_if_unique_id_configured(updates=self.flow_data)  # type: ignore[attr-defined]
                 return await self._create_entry()  # type: ignore[attr-defined]
 
@@ -302,11 +309,17 @@ class ConfigFlowDiscoveryMixin:
 
         def _build_select_schema() -> vol.Schema:
             def_keys = list(device_options.keys())
-            req_key = vol.Required(CONF_SELECTED_DEVICES, default=def_keys)  # pragma: no mutate
-            return vol.Schema({req_key: cv.multi_select(device_options)})  # pragma: no mutate
+            req_key = vol.Required(
+                CONF_SELECTED_DEVICES, default=def_keys
+            )  # pragma: no mutate
+            return vol.Schema(
+                {req_key: cv.multi_select(device_options)}
+            )  # pragma: no mutate
 
         if user_input:
-            selected_devices_ids = user_input.get(CONF_SELECTED_DEVICES) or []  # pragma: no mutate
+            selected_devices_ids = (
+                user_input.get(CONF_SELECTED_DEVICES) or []
+            )  # pragma: no mutate
             if not selected_devices_ids:
                 return self.async_show_form(  # type: ignore[attr-defined]
                     step_id="select_devices",
@@ -329,7 +342,9 @@ class ConfigFlowDiscoveryMixin:
                 await self.async_set_unique_id(  # type: ignore[attr-defined]
                     str(main_unique_id), raise_on_progress=False
                 )
-                if self.reauth_entry is None and self.source != SOURCE_RECONFIGURE:  # pragma: no mutate
+                if (
+                    self.reauth_entry is None and self.source != SOURCE_RECONFIGURE
+                ):  # pragma: no mutate
                     self._abort_if_unique_id_configured(updates=self.flow_data)  # type: ignore[attr-defined]
                 return await self._create_entry()  # type: ignore[attr-defined]
             return self.async_abort(reason="no_unique_id")  # type: ignore[attr-defined]

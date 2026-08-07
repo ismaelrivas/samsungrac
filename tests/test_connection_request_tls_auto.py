@@ -6,13 +6,13 @@ import logging
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
+from homeassistant.const import CONF_TOKEN
 
 from custom_components.climate_ip.connection_request_tls_auto import (
     ConnectionRequestTlsAuto,
     SamsungHTTPAdapter,
 )
 from custom_components.climate_ip.const import CONF_CERT
-from homeassistant.const import CONF_TOKEN
 
 
 @pytest.fixture

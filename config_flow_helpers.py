@@ -4,21 +4,21 @@
 import asyncio
 import logging
 import os
-from pathlib import Path
 import ssl
+from pathlib import Path
 from typing import Any
 
 from homeassistant.config_entries import SOURCE_RECONFIGURE
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 from homeassistant.data_entry_flow import AbortFlow
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import aiohttp_client
+from homeassistant.helpers import device_registry as dr
 
+from . import controller_yaml, helpers
 from .const import (
     CONF_CERT,
     CONF_CONFIG_FILE,
     CONF_DEVICE_TYPE,
-    CONFIG_FILE_TO_DEVICE_TYPE,
     DEVICE_TYPE_8888_GROUP,
     DEVICE_TYPE_SAMSUNG_2878,
     DEVICE_TYPE_TO_CONFIG_FILE,
@@ -26,9 +26,12 @@ from .const import (
     PORT_SAMSUNG_2878,
     PORT_SAMSUNG_8888,
 )
-from . import controller_yaml
-from .exceptions import AuthError, AuthTurnedOffError, CannotConnect, TokenAcquisitionError
-from . import helpers
+from .exceptions import (
+    AuthError,
+    AuthTurnedOffError,
+    CannotConnect,
+    TokenAcquisitionError,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -54,7 +57,7 @@ class ConfigFlowHelpersMixin:
                 )
                 writer.close()
                 await writer.wait_closed()
-            except (OSError, asyncio.TimeoutError):
+            except (TimeoutError, OSError):
                 pass
 
         await asyncio.gather(
@@ -105,13 +108,16 @@ class ConfigFlowHelpersMixin:
             return True
 
         path_to_check = helpers.resolve_cert_path(
-            user_cert_path, str(Path(__file__).parent), self.hass  # pragma: no mutate
+            user_cert_path,
+            str(Path(__file__).parent),
+            self.hass,  # pragma: no mutate
         )
         if path_to_check is None:
             return True
 
         exists: bool = await self.hass.async_add_executor_job(
-            os.path.exists, path_to_check  # pragma: no mutate
+            os.path.exists,
+            path_to_check,  # pragma: no mutate
         )
         return exists
 
@@ -130,7 +136,9 @@ class ConfigFlowHelpersMixin:
             # fmt: on
             return {"ok": True, "config": successful_config}
         except CannotConnect as err:
-            ip_address = str(self.flow_data.get(CONF_IP_ADDRESS, "Unknown"))  # pragma: no mutate
+            ip_address = str(
+                self.flow_data.get(CONF_IP_ADDRESS, "Unknown")
+            )  # pragma: no mutate
             _LOGGER.error(
                 "Fatal pairing failure at %s. Details: %s", ip_address, err
             )  # pragma: no mutate
@@ -149,7 +157,9 @@ class ConfigFlowHelpersMixin:
                 "error_details": str(err),  # pragma: no mutate
             }
         except TimeoutError as err:
-            ip_address = str(self.flow_data.get(CONF_IP_ADDRESS, "Unknown"))  # pragma: no mutate
+            ip_address = str(
+                self.flow_data.get(CONF_IP_ADDRESS, "Unknown")
+            )  # pragma: no mutate
             _LOGGER.warning(
                 "Timeout connecting to %s. Wrong IP?", ip_address
             )  # pragma: no mutate
@@ -179,7 +189,9 @@ class ConfigFlowHelpersMixin:
             )  # pragma: no mutate
             return {"ok": True, "token": token}
         except TimeoutError as err:
-            ip_address = str(self.flow_data.get(CONF_IP_ADDRESS, "Unknown"))  # pragma: no mutate
+            ip_address = str(
+                self.flow_data.get(CONF_IP_ADDRESS, "Unknown")
+            )  # pragma: no mutate
             _LOGGER.warning(
                 "Timeout connecting to %s. Wrong IP?", ip_address
             )  # pragma: no mutate
@@ -205,7 +217,9 @@ class ConfigFlowHelpersMixin:
         ssl_context = ssl.create_default_context()
         if cert_path:
             # Protect os.path.dirname from receiving a None value
-            full_path = helpers.resolve_cert_path(cert_path, os.path.dirname(__file__))  # pragma: no mutate
+            full_path = helpers.resolve_cert_path(
+                cert_path, os.path.dirname(__file__)
+            )  # pragma: no mutate
             if full_path is not None and os.path.exists(full_path):
                 # Protect the underlying SSL C library from receiving a None value
                 ssl_context.load_verify_locations(cafile=full_path)  # pragma: no mutate
@@ -222,7 +236,9 @@ class ConfigFlowHelpersMixin:
         )  # pragma: no mutate
         try:
             device_type = self.flow_data[CONF_DEVICE_TYPE]
-            ip_address = str(self.flow_data.get(CONF_IP_ADDRESS, "Unknown"))  # pragma: no mutate
+            ip_address = str(
+                self.flow_data.get(CONF_IP_ADDRESS, "Unknown")
+            )  # pragma: no mutate
             token = str(self.flow_data.get(CONF_TOKEN) or "")
 
             if device_type in DEVICE_TYPE_8888_GROUP:
@@ -266,7 +282,9 @@ class ConfigFlowHelpersMixin:
                             device_type
                         ]
 
-                controller = controller_yaml.YamlController(config=config_data, logger=_LOGGER)
+                controller = controller_yaml.YamlController(
+                    config=config_data, logger=_LOGGER
+                )
                 controller.hass = self.hass
                 # pylint: disable=protected-access
                 controller._session = aiohttp_client.async_get_clientsession(self.hass)
@@ -282,7 +300,8 @@ class ConfigFlowHelpersMixin:
                 ):
                     state_data = (
                         await controller.loader.state_getter.async_update_state(
-                            None, False  # pragma: no mutate
+                            None,
+                            False,  # pragma: no mutate
                         )
                     )
                 await controller.async_shutdown()
@@ -296,7 +315,9 @@ class ConfigFlowHelpersMixin:
                 return {"ok": False, "error": "cannot_connect"}
 
         except CannotConnect as err:
-            ip_address = str(self.flow_data.get(CONF_IP_ADDRESS, "Unknown"))  # pragma: no mutate
+            ip_address = str(
+                self.flow_data.get(CONF_IP_ADDRESS, "Unknown")
+            )  # pragma: no mutate
             _LOGGER.error(
                 "Fatal pairing failure at %s. Details: %s", ip_address, err
             )  # pragma: no mutate
@@ -306,7 +327,9 @@ class ConfigFlowHelpersMixin:
                 "error_details": str(err),  # pragma: no mutate
             }
         except TimeoutError as err:
-            ip_address = str(self.flow_data.get(CONF_IP_ADDRESS, "Unknown"))  # pragma: no mutate
+            ip_address = str(
+                self.flow_data.get(CONF_IP_ADDRESS, "Unknown")
+            )  # pragma: no mutate
             _LOGGER.warning(
                 "Timeout connecting to %s. Wrong IP?", ip_address
             )  # pragma: no mutate
@@ -316,9 +339,7 @@ class ConfigFlowHelpersMixin:
                 "error_details": str(err),  # pragma: no mutate
             }
         except AuthError as err:
-            _LOGGER.warning(
-                "AC rejected token during pairing."
-            )  # pragma: no mutate
+            _LOGGER.warning("AC rejected token during pairing.")  # pragma: no mutate
             return {
                 "ok": False,
                 "error": "invalid_auth",

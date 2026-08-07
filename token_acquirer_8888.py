@@ -3,13 +3,13 @@
 
 import asyncio
 import logging
-from pathlib import Path
 import re
 import ssl
+from pathlib import Path
 from typing import Any
 
-from homeassistant.util.json import json_loads, JSON_DECODE_EXCEPTIONS
 from homeassistant.helpers.json import json_dumps
+from homeassistant.util.json import JSON_DECODE_EXCEPTIONS, json_loads
 
 from .exceptions import CannotConnect, TokenAcquisitionError
 from .helpers import mask_sensitive_data
@@ -167,7 +167,7 @@ class SamsungTokenAcquirer8888:
             writer.close()
             try:
                 await writer.wait_closed()
-            except (OSError, asyncio.TimeoutError, ConnectionError):
+            except (TimeoutError, OSError, ConnectionError):
                 pass
 
     async def _start_listener_server(self) -> bool:
@@ -304,7 +304,7 @@ class SamsungTokenAcquirer8888:
                     f"AC responded with non-200 status or malformed response: {first_line}"
                 )
 
-        except (asyncio.TimeoutError, ConnectionError, OSError) as e:
+        except (TimeoutError, ConnectionError, OSError) as e:
             await self.async_close()
             raise CannotConnect(
                 f"Failed to connect to AC via raw socket: {e}"

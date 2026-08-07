@@ -2,41 +2,9 @@
 """Tests for DeviceProperty, GetJsonStatus, ModeOperation and TemperatureOperation."""
 
 import logging
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.components.sensor import SensorStateClass
-from jinja2 import Template
-
-from custom_components.climate_ip.const import (
-    CONFIG_DEVICE_CONNECTION,
-    CONFIG_DEVICE_OPERATION_VALUE,
-    CONFIG_DEVICE_OPERATION_VALUES,
-    CONFIG_DEVICE_VALIDATION_TEMPLATE,
-    CONFIG_TYPE,
-    STATUS_GETTER_JSON,
-    PROPERTY_TYPE_SWITCH,
-    PROPERTY_TYPE_MODE,
-)
-from custom_components.climate_ip.properties import (
-    DeviceProperty,
-    GetJsonStatus,
-    ModeOperation,
-    TemperatureOperation,
-    DeviceOperation,
-    BasicDeviceOperation,
-    BasicNumericOperation,
-    SwitchOperation,
-    create_property,
-    create_status_getter,
-    register_property,
-    register_status_getter,
-    CLIMATE_IP_PROPERTIES,
-    CLIMATE_IP_STATUS_GETTER,
-)
-from custom_components.climate_ip.exceptions import CannotConnect, AuthError
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.const import UnitOfTemperature, STATE_UNKNOWN, STATE_ON, STATE_OFF
 from homeassistant.components.climate.const import (
     ATTR_FAN_MODE,
     ATTR_FAN_MODES,
@@ -46,6 +14,38 @@ from homeassistant.components.climate.const import (
     ATTR_PRESET_MODES,
     ATTR_SWING_MODE,
     ATTR_SWING_MODES,
+)
+from homeassistant.components.sensor import SensorStateClass
+from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNKNOWN, UnitOfTemperature
+from homeassistant.exceptions import HomeAssistantError
+from jinja2 import Template
+
+from custom_components.climate_ip.const import (
+    CONFIG_DEVICE_CONNECTION,
+    CONFIG_DEVICE_OPERATION_VALUE,
+    CONFIG_DEVICE_OPERATION_VALUES,
+    CONFIG_DEVICE_VALIDATION_TEMPLATE,
+    CONFIG_TYPE,
+    PROPERTY_TYPE_MODE,
+    PROPERTY_TYPE_SWITCH,
+    STATUS_GETTER_JSON,
+)
+from custom_components.climate_ip.exceptions import AuthError, CannotConnect
+from custom_components.climate_ip.properties import (
+    CLIMATE_IP_PROPERTIES,
+    CLIMATE_IP_STATUS_GETTER,
+    BasicDeviceOperation,
+    BasicNumericOperation,
+    DeviceOperation,
+    DeviceProperty,
+    GetJsonStatus,
+    ModeOperation,
+    SwitchOperation,
+    TemperatureOperation,
+    create_property,
+    create_status_getter,
+    register_property,
+    register_status_getter,
 )
 
 
@@ -545,7 +545,9 @@ async def test_deviceoperation_async_set_value_sync_retry(
         side_effect=CannotConnect("Connection failed after 5 retries")
     )
 
-    with pytest.raises(HomeAssistantError, match="Connection error: could not set value for test_op"):
+    with pytest.raises(
+        HomeAssistantError, match="Connection error: could not set value for test_op"
+    ):
         await op.async_set_value("val")
 
 
@@ -883,8 +885,8 @@ async def test_set_device_state_for_values(mock_connection, mock_controller):
 async def test_basicnumericoperation_load_from_yaml(mock_connection, mock_controller):
     """Kill mutants in BasicNumericOperation load_from_yaml."""
     from custom_components.climate_ip.const import (
-        CONFIG_DEVICE_OPERATION_NUMBER_MIN,
         CONFIG_DEVICE_OPERATION_NUMBER_MAX,
+        CONFIG_DEVICE_OPERATION_NUMBER_MIN,
     )
 
     op = BasicNumericOperation("test", mock_connection, mock_controller)
@@ -980,8 +982,9 @@ async def test_deviceproperty_set_unit_of_measurement(mock_connection, mock_cont
     """Verify set_unit_of_measurement."""
     prop = DeviceProperty("test", mock_connection, mock_controller)
 
-    from custom_components.climate_ip.properties import UNIT_MAP
     import unittest.mock as mock
+
+    from custom_components.climate_ip.properties import UNIT_MAP
 
     with mock.patch.dict(UNIT_MAP, {"TEST_ALIAS": "TEST_UNIT"}):
         prop.set_unit_of_measurement("TEST_ALIAS")
@@ -990,8 +993,9 @@ async def test_deviceproperty_set_unit_of_measurement(mock_connection, mock_cont
 
 async def test_deviceproperty_is_valid(mock_connection, mock_controller):
     """Verify is_valid logic."""
-    import jinja2
     from unittest.mock import patch
+
+    import jinja2
 
     prop = DeviceProperty("test", mock_connection, mock_controller)
 
@@ -1662,8 +1666,9 @@ async def test_deviceoperation_async_set_value_mutants_async_native():
 
 async def test_static_yaml_strings_and_base_units(mock_connection, mock_controller):
     """Test static YAML strings and base set_unit_of_measurement."""
-    from custom_components.climate_ip.properties import DeviceProperty
     from homeassistant.components.sensor import SensorStateClass
+
+    from custom_components.climate_ip.properties import DeviceProperty
 
     op_co = DeviceProperty("test_co", mock_connection, mock_controller)
     op_co.load_from_yaml({"device_class": "carbon_monoxide"})
@@ -2169,7 +2174,9 @@ async def test_device_operation_async_set_value_conversions_and_fallbacks():
     )
 
     # 4. Test sync execution passing device_id
-    sync_conn = MagicMock(spec=["is_async_native", "_lock", "execute", "async_execute_with_retry"])
+    sync_conn = MagicMock(
+        spec=["is_async_native", "_lock", "execute", "async_execute_with_retry"]
+    )
     sync_conn.is_async_native = False
     sync_conn.async_execute_with_retry = AsyncMock(return_value={})
     sync_conn._lock = AsyncMock()
@@ -2258,7 +2265,9 @@ def test_basicdeviceoperation_values_hvac_mode_key(mock_connection, mock_control
     assert op._values_cache["cool_cool"] == vals
 
 
-async def test_device_operation_async_set_value_device_state_passed(mock_connection, mock_controller):
+async def test_device_operation_async_set_value_device_state_passed(
+    mock_connection, mock_controller
+):
     """Verify that current_full_state is passed to _resolve_async_params as device_state."""
     op = DeviceOperation("test_op", mock_connection, mock_controller)
     mock_template = MagicMock()
@@ -2272,22 +2281,30 @@ async def test_device_operation_async_set_value_device_state_passed(mock_connect
     assert res is True
     # Ensure render was called with device_state equal to mock_controller.device_state
     mock_template.render.assert_called_with(
-        value="val", device_id="test_duid", duid="test_duid", device_state={"custom_key": "custom_val"}
+        value="val",
+        device_id="test_duid",
+        duid="test_duid",
+        device_state={"custom_key": "custom_val"},
     )
 
 
-async def test_getjsonstatus_calculate_value_json_strict(mock_connection, mock_controller):
+async def test_getjsonstatus_calculate_value_json_strict(
+    mock_connection, mock_controller
+):
     """Kill json_loads(None) mutant by asserting strict JSON parsing output."""
-    from custom_components.climate_ip.properties import GetJsonStatus
     from jinja2 import Template
+
+    from custom_components.climate_ip.properties import GetJsonStatus
 
     getter = GetJsonStatus("test_json_strict", mock_connection, mock_controller)
     # Give it a pure, valid JSON string output
-    getter._status_template = Template('{"strict_key": "strict_value", "is_active": true}')
-    
+    getter._status_template = Template(
+        '{"strict_key": "strict_value", "is_active": true}'
+    )
+
     # Run the calculation
     result = getter.calculate_value_from_state({"dummy": 1})
-    
+
     # STRICT ASSERTION: If the mutant returns None, this will fail and kill it.
     assert isinstance(result, dict)
     assert result == {"strict_key": "strict_value", "is_active": True}
@@ -2304,7 +2321,9 @@ def test_samsungrac_sensor_validation_templates() -> None:
         "{% if 'Mode' in device_state and 'options' in device_state.Mode and 'FilterCleanAlarm_' in (device_state.Mode.options | string) %}valid{% endif %}"
     )
 
-    state_valid = {"Mode": {"options": ["Comode_Off", "OutdoorTemp_63", "FilterCleanAlarm_0"]}}
+    state_valid = {
+        "Mode": {"options": ["Comode_Off", "OutdoorTemp_63", "FilterCleanAlarm_0"]}
+    }
     state_invalid = {"Mode": {"options": ["Comode_Off", "Spi_Off"]}}
 
     assert tmpl_outdoor.render(device_state=state_valid) == "valid"
@@ -2312,5 +2331,3 @@ def test_samsungrac_sensor_validation_templates() -> None:
 
     assert tmpl_filter.render(device_state=state_valid) == "valid"
     assert tmpl_filter.render(device_state=state_invalid) == ""
-
-

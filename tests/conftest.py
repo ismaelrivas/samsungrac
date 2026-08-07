@@ -1,20 +1,19 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
 """Fixtures for Climate IP integration tests."""
 
+import asyncio
 import os
 import sys
+import warnings
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
-import warnings
 
-import asyncio
 import pytest
 
 sys.path.append(os.getcwd())
 
-import resource
 import platform
-
+import resource
 
 # --- HIDE WARNINGS ---
 # Hide DeprecationWarnings from our own legacy connection methods
@@ -189,7 +188,9 @@ def hass():
             }
         return {"type": "create_entry"}
 
-    async def mock_options_async_init(entry_id):  # pylint: disable=import-outside-toplevel,unused-argument
+    async def mock_options_async_init(
+        entry_id,
+    ):  # pylint: disable=import-outside-toplevel,unused-argument
         """Mock options flow init."""
         return {"type": "form", "step_id": "init", "flow_id": "mock_flow_123"}
 
@@ -365,24 +366,26 @@ def mock_now():
 async def ruthless_teardown():
     """
     Se ejecuta automáticamente en cada test asíncrono.
-    Garantiza que ninguna tarea generada por un mutante mantenga 
+    Garantiza que ninguna tarea generada por un mutante mantenga
     el Event Loop abierto durante la fase de teardown de Pytest.
     """
-    yield # Deja que el test se ejecute normalmente (incluyendo tu Fail-Fast)
-    
+    yield  # Deja que el test se ejecute normalmente (incluyendo tu Fail-Fast)
+
     # Fase de Teardown: Buscar y destruir tareas zombi
     loop = asyncio.get_running_loop()
     pending_tasks = [
-        task for task in asyncio.all_tasks(loop)
+        task
+        for task in asyncio.all_tasks(loop)
         if task is not asyncio.current_task(loop) and not task.done()
     ]
-    
+
     if pending_tasks:
         for task in pending_tasks:
             task.cancel()
-        
+
         # Dar un ciclo de reloj para que las tareas procesen la cancelación
         await asyncio.gather(*pending_tasks, return_exceptions=True)
+
 
 def limit_memory_and_cpu():
     """
@@ -394,15 +397,17 @@ def limit_memory_and_cpu():
             # 1. Límite de RAM (2 GB)
             MAX_RAM = 2 * 1024 * 1024 * 1024
             resource.setrlimit(resource.RLIMIT_AS, (MAX_RAM, MAX_RAM))
-            
+
             # 2. LA GUILLOTINA DEL KERNEL: Límite de CPU (5 Segundos)
-            # Si un mutante entra en bucle infinito síncrono, el Kernel 
+            # Si un mutante entra en bucle infinito síncrono, el Kernel
             # de Linux matará el proceso instantáneamente.
-            #resource.setrlimit(resource.RLIMIT_CPU, (5, 5))
+            # resource.setrlimit(resource.RLIMIT_CPU, (5, 5))
         except ValueError:
             pass  # Ignorar si el OS o Docker no permite modificar rlimits
 
+
 limit_memory_and_cpu()
+
 
 @pytest.fixture(autouse=True)
 def block_unmocked_network_io(monkeypatch):
@@ -411,6 +416,7 @@ def block_unmocked_network_io(monkeypatch):
     Intercepta llamadas de red/socket no mockeadas dentro de config_flow.py
     y las hace fallar instantáneamente (0.0s) en lugar de esperar el timeout del OS.
     """
+
     async def immediate_network_fail(*args, **kwargs):
         raise OSError("FAIL-FAST: Unmocked network connection attempt intercepted.")
 
@@ -458,6 +464,8 @@ def block_unmocked_network_io(monkeypatch):
         raise OSError("FAIL-FAST: Unmocked requests HTTP request intercepted.")
 
     try:
-        monkeypatch.setattr("requests.sessions.Session.request", immediate_requests_fail)
+        monkeypatch.setattr(
+            "requests.sessions.Session.request", immediate_requests_fail
+        )
     except Exception:
         pass
