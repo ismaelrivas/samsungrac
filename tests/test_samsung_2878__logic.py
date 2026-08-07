@@ -152,7 +152,7 @@ async def test_reconnect_backoff_timing(connection):
     # 0 failures = INITIAL_RECONNECT_DELAY = 10.0
     assert connection._reconnect_retries == 0
     connection._reconnect_delay = INITIAL_RECONNECT_DELAY
-    assert connection._reconnect_delay == 5.0  # INITIAL_RECONNECT_DELAY is 5
+    assert connection._reconnect_delay == 3.0  # INITIAL_RECONNECT_DELAY is 3
 
     # Simulate first failure calculation inline as in _connection_manager
     connection._reconnect_retries += 1
@@ -162,7 +162,7 @@ async def test_reconnect_backoff_timing(connection):
 
     # 1 failure
     assert connection._reconnect_retries == 1
-    assert connection._reconnect_delay == 10.0
+    assert connection._reconnect_delay == 6.0
 
     # Simulate second failure
     connection._reconnect_retries += 1
@@ -172,7 +172,7 @@ async def test_reconnect_backoff_timing(connection):
 
     # 2 failures
     assert connection._reconnect_retries == 2
-    assert connection._reconnect_delay == 20.0
+    assert connection._reconnect_delay == 12.0
 
     # Simulate third failure
     connection._reconnect_retries += 1
@@ -182,7 +182,7 @@ async def test_reconnect_backoff_timing(connection):
 
     # 3 failures (not capped yet)
     assert connection._reconnect_retries == 3
-    assert connection._reconnect_delay == 40.0
+    assert connection._reconnect_delay == 24.0
 
 
 # =====================================================================
