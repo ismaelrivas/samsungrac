@@ -284,6 +284,36 @@ async def test_climate_sync_data_none(base_climate_entity: ClimateIP) -> None:
     assert base_climate_entity.preset_modes == [], "preset_modes should be empty when data is None"
 
 
+async def test_hvac_action_dynamic_auto_heuristic(
+    base_climate_entity: ClimateIP,
+) -> None:
+    """Verify dynamic temperature heuristic for hvac_action in AUTO / HEAT_COOL mode."""
+    from homeassistant.components.climate import HVACAction
+
+    state = MagicMock()
+    state.hvac_mode = HVACMode.AUTO
+    base_climate_entity.coordinator.data = state
+
+    # Current < Target - 0.5 -> HEATING
+    state.current_temperature = 20.0
+    state.target_temperature = 22.0
+    assert base_climate_entity.hvac_action == HVACAction.HEATING
+
+    # Current > Target + 0.5 -> COOLING
+    state.current_temperature = 24.0
+    state.target_temperature = 22.0
+    assert base_climate_entity.hvac_action == HVACAction.COOLING
+
+    # Within deadband (22.0 vs 22.0) -> IDLE
+    state.current_temperature = 22.0
+    state.target_temperature = 22.0
+    assert base_climate_entity.hvac_action == HVACAction.IDLE
+
+    # OFF mode -> OFF
+    state.hvac_mode = HVACMode.OFF
+    assert base_climate_entity.hvac_action == HVACAction.OFF
+
+
 async def test_public_async_set_hvac_mode_behavior(
     base_climate_entity: ClimateIP,
 ) -> None:
@@ -484,6 +514,17 @@ async def test_async_service_set_property_invalid_key_raises(
     base_climate_entity.coordinator.controller.operations = ["beep"]
     with pytest.raises(ServiceValidationError, match="is not a valid operation"):
         await base_climate_entity.async_service_set_property("invalid_key", "on")
+
+
+async def test_async_service_set_property_invalid_value_type_raises(
+    base_climate_entity: ClimateIP,
+) -> None:
+    """Verify that async_service_set_property raises ServiceValidationError for non-primitive value types."""
+    from homeassistant.exceptions import ServiceValidationError
+
+    base_climate_entity.coordinator.controller.operations = ["beep"]
+    with pytest.raises(ServiceValidationError, match="Invalid value type 'list'"):
+        await base_climate_entity.async_service_set_property("beep", ["invalid", "list"])
 
 
 # --- async_setup_entry — multi-device path (mutants 1-38) ---

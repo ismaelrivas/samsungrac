@@ -1,5 +1,4 @@
 """Support for Samsung AC devices using climate_ip."""
-# pylint: disable=import-outside-toplevel
 import logging
 from typing import TYPE_CHECKING, Any, Final
 
@@ -170,14 +169,28 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         if not self.coordinator.data or self.hvac_mode == HVACMode.OFF:
             return HVACAction.OFF
 
-        # Fallback heuristic for modern UI cards
+        hvac_mode = self.hvac_mode
+
+        # Dynamic heuristic for AUTO mode based on temperature delta
+        if hvac_mode in (HVACMode.AUTO, HVACMode.HEAT_COOL):
+            current = self.current_temperature
+            target = self.target_temperature
+            if current is not None and target is not None:
+                # Assume a 0.5 degree deadband to represent "within range" (IDLE)
+                if current < (target - 0.5):
+                    return HVACAction.HEATING
+                if current > (target + 0.5):
+                    return HVACAction.COOLING
+            return HVACAction.IDLE
+
+        # Strict mapping for explicit modes
         action_map = {
             HVACMode.COOL: HVACAction.COOLING,
             HVACMode.HEAT: HVACAction.HEATING,
             HVACMode.DRY: HVACAction.DRYING,
             HVACMode.FAN_ONLY: HVACAction.FAN,
         }
-        return action_map.get(self.hvac_mode, HVACAction.IDLE)
+        return action_map.get(hvac_mode, HVACAction.IDLE)
 
     @property
     def current_temperature(self) -> float | None:
@@ -292,6 +305,11 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         if key not in self.coordinator.controller.operations:
             raise ServiceValidationError(
                 f"Action set_property failed: '{key}' is not a valid operation for this device."
+            )
+
+        if not isinstance(value, (str, int, float, bool)):
+            raise ServiceValidationError(
+                f"Action set_property failed: Invalid value type '{type(value).__name__}' for key '{key}'."
             )
 
         _LOGGER.debug(
