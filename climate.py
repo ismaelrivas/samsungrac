@@ -240,9 +240,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
     async def async_set_fan_mode(self, fan_mode: str) -> None:
         """Set new target fan mode."""
         if fan_mode not in self.fan_modes:
-            # fmt: off
             _LOGGER.warning("%s Requested fan mode '%s' is not available. Ignoring request.", self.coordinator.log_prefix, fan_mode)
-            # fmt: on
             return
         await self.coordinator.async_set_property(ATTR_FAN_MODE, fan_mode)
     async def async_set_swing_mode(self, swing_mode: str) -> None:
