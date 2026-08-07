@@ -98,7 +98,11 @@ async def _async_setup_single_device(
 ) -> tuple[str, SamsungClimateCoordinator | None]:
     """Initialize a single device controller and coordinator concurrently with resource safety."""
     controller = YamlController(
-        config_entry=entry, device_id=device_id, logger=_LOGGER, hass=hass, session=session
+        config_entry=entry,
+        device_id=device_id,
+        logger=_LOGGER,
+        hass=hass,
+        session=session,
     )
 
     try:
@@ -253,7 +257,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
     # 5. EMPTY CHECK
     if not coordinators:
         _LOGGER.error("No coordinators could be set up for entry %s", entry.title)
-        raise ConfigEntryNotReady(f"No coordinators could be set up for entry {entry.title}")
+        raise ConfigEntryNotReady(
+            f"No coordinators could be set up for entry {entry.title}"
+        )
 
     # 6. SUCCESS: Contract strictly fulfilled: runtime_data is ALWAYS a dict
     entry.runtime_data = coordinators
@@ -277,7 +283,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -
         # 2. TERMINATE BACKGROUND TASKS
         if entry.runtime_data:
             _LOGGER.debug(
-                "Terminating active connections and coordinators for entry %s", entry.entry_id
+                "Terminating active connections and coordinators for entry %s",
+                entry.entry_id,
             )
             for device_id, coordinator in entry.runtime_data.items():
                 _LOGGER.debug("Executing async_shutdown for device ID: %s", device_id)
@@ -308,7 +315,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -
         if not other_active_entries:
             clear_yaml_cache()
 
-        _LOGGER.info("Teardown complete. Config entry %s fully unloaded.", entry.entry_id)
+        _LOGGER.info(
+            "Teardown complete. Config entry %s fully unloaded.", entry.entry_id
+        )
     else:
         _LOGGER.warning(
             "Platform unload failed for entry %s. Aborting teardown to prevent unstable state.",
