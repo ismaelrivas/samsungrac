@@ -1,7 +1,7 @@
 """Diagnostics support for climate_ip."""
 
 from __future__ import annotations
-
+ 
 import re
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
