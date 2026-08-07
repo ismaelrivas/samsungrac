@@ -14,6 +14,7 @@ from homeassistant.components.climate import (
     ClimateEntity,
     ClimateEntityDescription,
     ClimateEntityFeature,
+    HVACAction,
     HVACMode,
 )
 from homeassistant.const import (
@@ -23,6 +24,7 @@ from homeassistant.const import (
     PRECISION_WHOLE,
     STATE_OFF,
     STATE_ON,
+    UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
@@ -163,6 +165,21 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         return self.coordinator.data.hvac_mode or HVACMode.OFF
 
     @property
+    def hvac_action(self) -> HVACAction | str | None:
+        """Return the current running hvac operation if supported."""
+        if not self.coordinator.data or self.hvac_mode == HVACMode.OFF:
+            return HVACAction.OFF
+
+        # Fallback heuristic for modern UI cards
+        action_map = {
+            HVACMode.COOL: HVACAction.COOLING,
+            HVACMode.HEAT: HVACAction.HEATING,
+            HVACMode.DRY: HVACAction.DRYING,
+            HVACMode.FAN_ONLY: HVACAction.FAN,
+        }
+        return action_map.get(self.hvac_mode, HVACAction.IDLE)
+
+    @property
     def current_temperature(self) -> float | None:
         return self.coordinator.data.current_temperature if self.coordinator.data else None
 
@@ -212,7 +229,7 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
     @property
     def temperature_unit(self) -> str:
-        """Return the temperature unit."""
+        """Return the temperature unit used for display."""
         return self.hass.config.units.temperature_unit
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
@@ -232,6 +249,10 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
+        if hvac_mode not in self.hvac_modes:
+            raise ServiceValidationError(
+                f"[{self.coordinator.log_prefix}] Requested HVAC mode '{hvac_mode}' is not available."
+            )
         await self.coordinator.async_set_property(ATTR_HVAC_MODE, hvac_mode)
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:

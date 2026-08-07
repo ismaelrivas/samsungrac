@@ -289,6 +289,7 @@ async def test_public_async_set_hvac_mode_behavior(
 ) -> None:
     """Verify network output of the HVAC delegator."""
     base_climate_entity.coordinator.async_set_property = AsyncMock()
+    base_climate_entity.coordinator.data.hvac_modes = [HVACMode.COOL]
 
     # Execute the public API just as Home Assistant would
     await base_climate_entity.async_set_hvac_mode(HVACMode.COOL)
@@ -297,6 +298,17 @@ async def test_public_async_set_hvac_mode_behavior(
     base_climate_entity.coordinator.async_set_property.assert_awaited_once_with(
         ATTR_HVAC_MODE, HVACMode.COOL
     )
+
+
+async def test_async_set_hvac_mode_invalid_raises_service_validation_error(
+    base_climate_entity: ClimateIP,
+) -> None:
+    """Verify that async_set_hvac_mode raises ServiceValidationError for invalid mode."""
+    from homeassistant.exceptions import ServiceValidationError
+    base_climate_entity.coordinator.data.hvac_modes = [HVACMode.HEAT]
+
+    with pytest.raises(ServiceValidationError, match="Requested HVAC mode 'cool' is not available"):
+        await base_climate_entity.async_set_hvac_mode(HVACMode.COOL)
 
 
 async def test_public_async_set_fan_mode_behavior(
@@ -353,6 +365,7 @@ async def test_async_set_temperature_hvac_mode_only(
 ) -> None:
     """Verify that async_set_temperature accepts hvac_mode alone without temperature."""
     base_climate_entity.coordinator.async_set_property = AsyncMock()
+    base_climate_entity.coordinator.data.hvac_modes = [HVACMode.COOL]
 
     await base_climate_entity.async_set_temperature(hvac_mode=HVACMode.COOL)
 
@@ -377,6 +390,7 @@ async def test_async_set_temperature_with_hvac_mode(
     """Verify that async_set_temperature processes hvac_mode when provided in kwargs."""
     base_climate_entity.coordinator.entry.data = {}
     base_climate_entity.coordinator.async_set_property = AsyncMock()
+    base_climate_entity.coordinator.data.hvac_modes = [HVACMode.COOL]
 
     await base_climate_entity.async_set_temperature(hvac_mode=HVACMode.COOL, temperature=22.0)
 
