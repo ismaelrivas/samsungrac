@@ -32,9 +32,9 @@ SSL_OPTIMIZATIONS: Final = {
 HEADER_PATTERN = re.compile(r"^(?P<key>[^:]+):\s*(?P<value>.+)$", re.IGNORECASE)
 STATUS_PATTERN = re.compile(r"^HTTP/\d\.\d\s+(?P<code>\d+)", re.IGNORECASE)
 
-
-class ProtocolError(Exception):
-    """Raised for protocol-level errors in the 8888 communication layer."""
+READ_CHUNK_SIZE: Final = 8192
+FALLBACK_READ_TIMEOUT: Final = 5.0
+SOCKET_CLOSE_TIMEOUT: Final = 2.0
 
 
 # AuthError and CannotConnect are imported from exceptions.py — do not redefine here.
@@ -87,16 +87,6 @@ class Samsung8888Client:
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
         self._lock = asyncio.Lock()
-
-        # Keep track of background tasks to ensure clean shutdown (Step 3.1)
-        self._active_tasks: set[asyncio.Task[Any]] = set()
-
-    def _track_task(self, coro: Any) -> asyncio.Task[Any]:
-        """Helper to track background tasks for clean shutdown."""
-        task = asyncio.create_task(coro)
-        self._active_tasks.add(task)
-        task.add_done_callback(self._active_tasks.discard)  # pragma: no mutate
-        return task
 
     async def _create_ssl_context(self) -> ssl.SSLContext:
         """Configure SSL, replicating the logic from connection_request.py."""
@@ -182,33 +172,17 @@ class Samsung8888Client:
             raise CannotConnect(f"Connection error: {exc}") from exc
 
     async def close(self) -> None:
-        """Close and clean up the socket writer and cancel pending tasks (Step 3.1)."""
+        """Close and clean up the socket writer and reader."""
         _LOGGER.debug(  # pragma: no mutate
             "%s [Samsung8888Client] Closing and cleaning up resources...",
             self.log_prefix,  # pragma: no mutate
         )  # pragma: no mutate
 
-        # 1. Cancel all tracked background tasks aggressively
-        tasks_to_cancel = [t for t in self._active_tasks if not t.done()]
-        for task in tasks_to_cancel:
-            task.cancel()
-
-        if tasks_to_cancel:
-            _LOGGER.debug(  # pragma: no mutate
-                "%s [Samsung8888Client] Waiting for %s tasks to cancel...",  # pragma: no mutate
-                self.log_prefix,  # pragma: no mutate
-                len(tasks_to_cancel),  # pragma: no mutate
-            )  # pragma: no mutate
-            # Wait for them to actually cancel, ignoring CancelledError
-            await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
-            self._active_tasks.clear()
-
-        # 2. Close the writer gracefully
         if self._writer:
             try:
                 self._writer.close()
                 try:
-                    async with asyncio.timeout(2.0):
+                    async with asyncio.timeout(SOCKET_CLOSE_TIMEOUT):
                         await self._writer.wait_closed()
                 except TimeoutError:
                     _LOGGER.warning(  # pragma: no mutate
@@ -240,6 +214,159 @@ class Samsung8888Client:
         else:
             self._reader = None
 
+    def _build_request_bytes(
+        self,
+        method: str,
+        path: str,
+        headers: dict[str, str] | None = None,
+        body: dict[str, Any] | None = None,
+    ) -> bytes:
+        """Build HTTP request bytes preserving exact header casing and UTF-8 body length."""
+        req = [
+            f"{method} {path} HTTP/1.1",
+            f"Host: {self.host}:{self.port}",
+            "Connection: keep-alive",
+        ]
+        if headers:
+            for k, v in headers.items():
+                req.append(f"{k}: {v}")
+
+        payload_bytes = json_dumps(body).encode("utf-8") if body else b""
+        req.append(f"Content-Length: {len(payload_bytes)}")
+
+        request_str = "\r\n".join(req) + "\r\n\r\n"
+        return request_str.encode("utf-8") + payload_bytes
+
+    async def _read_response_headers(
+        self, reader: asyncio.StreamReader
+    ) -> tuple[int, int, bool, str, list[str]]:
+        """Read status line and HTTP headers from reader.
+
+        Returns tuple: (status_code, content_length, has_content_length_header, content_type, headers_received).
+        """
+        try:
+            async with asyncio.timeout(GLOBAL_HTTP_TIMEOUT):
+                status_line = await reader.readline()
+        except TimeoutError as exc:
+            await self.close()
+            raise CannotConnect(
+                "Timeout sending request or reading status line"
+            ) from exc
+
+        if not status_line:
+            raise ConnectionResetError("Remote closure")
+
+        # --- Hardened HTTP Status Line parser ---
+        decoded_status = status_line.decode("utf-8", "ignore").strip()
+        status_match = STATUS_PATTERN.match(decoded_status)
+        if not status_match:
+            raise CannotConnect(f"Invalid status format: {decoded_status!r}")
+
+        status_code = int(status_match.group("code"))
+
+        headers_received = []
+        has_content_length_header = False
+        content_length = 0
+        content_type = ""
+        while True:
+            try:
+                async with asyncio.timeout(GLOBAL_HTTP_TIMEOUT // 2):
+                    line = await reader.readline()
+            except TimeoutError as exc:
+                await self.close()
+                raise CannotConnect("Timeout reading headers") from exc
+
+            if not line or line == b"\r\n":
+                break
+
+            line_str = line.decode("utf-8", "ignore").strip()
+            headers_received.append(line_str)
+
+            # --- Hardened HTTP Header parser ---
+            match = HEADER_PATTERN.match(line_str)
+            if match:
+                key = match.group("key").lower()
+                val = match.group("value")
+
+                if key == "content-length":
+                    has_content_length_header = True
+                    try:
+                        content_length = int(val)
+                    except ValueError:
+                        pass  # Ignore invalid non-numeric Content-Length header values from device
+                elif key == "content-type":
+                    content_type = val
+
+        return (
+            status_code,
+            content_length,
+            has_content_length_header,
+            content_type,
+            headers_received,
+        )
+
+    async def _read_response_body(
+        self,
+        reader: asyncio.StreamReader,
+        content_length: int,
+        has_cl_header: bool,
+    ) -> str:
+        """Read response body from reader according to Content-Length or fallback streaming parser."""
+        resp_body = ""
+        if content_length > 0:
+            try:
+                async with asyncio.timeout(GLOBAL_HTTP_TIMEOUT):
+                    chunk = await reader.readexactly(content_length)
+                resp_body = chunk.decode("utf-8", "ignore")
+            except TimeoutError as exc:
+                await self.close()
+                raise CannotConnect(
+                    "Timeout reading response body"
+                ) from exc
+            except Exception:  # pylint: disable=broad-exception-caught
+                resp_body = ""
+        elif content_length == 0 and has_cl_header:
+            resp_body = ""  # Explicitly 0 — do not read.
+        else:
+            # Fallback: read until closed or timeout; extract first valid JSON object.
+            buffer = b""
+            decoder = json.JSONDecoder()
+
+            try:
+                # Use a single timeout context for the entire loop
+                async with asyncio.timeout(FALLBACK_READ_TIMEOUT):
+                    while True:
+                        chunk = await reader.read(READ_CHUNK_SIZE)
+                        if not chunk:
+                            break  # Connection closed.
+
+                        buffer += chunk
+                        resp_body_candidate = buffer.decode(
+                            "utf-8", "ignore"
+                        ).lstrip()
+
+                        if not resp_body_candidate:
+                            continue
+
+                        try:
+                            # raw_decode cleanly extracts the first valid JSON object from a stream
+                            _, idx = decoder.raw_decode(resp_body_candidate)
+                            resp_body = resp_body_candidate[:idx]
+                            break  # Valid JSON found and extracted.
+                        except json.JSONDecodeError:
+                            continue  # Not full JSON yet — keep reading.
+
+            except TimeoutError:
+                _LOGGER.debug(  # pragma: no mutate
+                    "%s [RAW] Socket chunk read timed out (5.0s limit reached).",  # pragma: no mutate
+                    self.log_prefix,  # pragma: no mutate
+                )  # pragma: no mutate
+
+            if not resp_body:
+                resp_body = buffer.decode("utf-8", "ignore")
+
+        return resp_body
+
     async def request(
         self,
         method: str,
@@ -259,138 +386,30 @@ class Samsung8888Client:
                     if writer is None or reader is None:
                         raise CannotConnect("No connection established")
 
-                    # Build HTTP request manually to avoid header normalisation issues.
-                    req = [
-                        f"{method} {path} HTTP/1.1",
-                        f"Host: {self.host}:{self.port}",
-                        "Connection: keep-alive",
-                    ]
-                    if headers:
-                        for k, v in headers.items():
-                            req.append(f"{k}: {v}")
-
-                    payload = json_dumps(body) if body else ""
-                    req.append(
-                        f"Content-Length: {len(payload)}"
-                        if payload
-                        else "Content-Length: 0"
+                    request_bytes = self._build_request_bytes(
+                        method, path, headers=headers, body=body
                     )
-
-                    request_str = "\r\n".join(req) + "\r\n\r\n" + (payload or "")
-                    writer.write(request_str.encode("utf-8"))
+                    writer.write(request_bytes)
                     try:
                         async with asyncio.timeout(GLOBAL_HTTP_TIMEOUT // 2):
                             await writer.drain()
-                        async with asyncio.timeout(GLOBAL_HTTP_TIMEOUT):
-                            status_line = await reader.readline()
                     except TimeoutError as exc:
                         await self.close()
                         raise CannotConnect(
                             "Timeout sending request or reading status line"
                         ) from exc
 
-                    if not status_line:
-                        raise ConnectionResetError("Remote closure")
+                    (
+                        status_code,
+                        content_length,
+                        has_content_length_header,
+                        content_type,
+                        headers_received,
+                    ) = await self._read_response_headers(reader)
 
-                    # --- Hardened HTTP Status Line parser ---
-                    decoded_status = status_line.decode("utf-8", "ignore").strip()
-                    status_match = STATUS_PATTERN.match(decoded_status)
-                    if not status_match:
-                        raise CannotConnect(
-                            f"Invalid status format: {decoded_status!r}"
-                        )
-
-                    status_code = int(status_match.group("code"))
-
-                    # ── Read response headers ────────────────────────────
-                    headers_received = []
-                    has_content_length_header = False
-                    content_length = 0
-                    content_type = ""
-                    while True:
-                        try:
-                            async with asyncio.timeout(GLOBAL_HTTP_TIMEOUT // 2):
-                                line = await reader.readline()
-                        except TimeoutError as exc:
-                            await self.close()
-                            raise CannotConnect(
-                                "Timeout reading headers"
-                            ) from exc
-
-                        if not line or line == b"\r\n":
-                            break
-
-                        line_str = line.decode("utf-8", "ignore").strip()
-                        headers_received.append(line_str)
-
-                        # --- Hardened HTTP Header parser ---
-                        match = HEADER_PATTERN.match(line_str)
-                        if match:
-                            key = match.group("key").lower()
-                            val = match.group("value")
-
-                            if key == "content-length":
-                                has_content_length_header = True
-                                try:
-                                    content_length = int(val)
-                                except ValueError:
-                                    pass  # Ignore invalid non-numeric Content-Length header values from device
-                            elif key == "content-type":
-                                content_type = val
-
-                    # ── Read response body ────────────────────────────────
-                    resp_body = ""
-                    if content_length > 0:
-                        try:
-                            async with asyncio.timeout(GLOBAL_HTTP_TIMEOUT):
-                                chunk = await reader.readexactly(content_length)
-                            resp_body = chunk.decode("utf-8", "ignore")
-                        except TimeoutError as exc:
-                            await self.close()
-                            raise CannotConnect(
-                                "Timeout reading response body"
-                            ) from exc
-                        except Exception:  # pylint: disable=broad-exception-caught
-                            resp_body = ""
-                    elif content_length == 0 and has_content_length_header:
-                        resp_body = ""  # Explicitly 0 — do not read.
-                    else:
-                        # Fallback: read until closed or timeout; extract first valid JSON object.
-                        buffer = b""
-                        decoder = json.JSONDecoder()
-
-                        try:
-                            # Use a single timeout context for the entire loop
-                            async with asyncio.timeout(5.0):
-                                while True:
-                                    chunk = await reader.read(8192)
-                                    if not chunk:
-                                        break  # Connection closed.
-
-                                    buffer += chunk
-                                    resp_body_candidate = buffer.decode(
-                                        "utf-8", "ignore"
-                                    ).lstrip()
-
-                                    if not resp_body_candidate:
-                                        continue
-
-                                    try:
-                                        # raw_decode cleanly extracts the first valid JSON object from a stream
-                                        _, idx = decoder.raw_decode(resp_body_candidate)
-                                        resp_body = resp_body_candidate[:idx]
-                                        break  # Valid JSON found and extracted.
-                                    except json.JSONDecodeError:
-                                        continue  # Not full JSON yet — keep reading.
-
-                        except TimeoutError:
-                            _LOGGER.debug(  # pragma: no mutate
-                                "%s [RAW] Socket chunk read timed out (5.0s limit reached).",  # pragma: no mutate
-                                self.log_prefix,  # pragma: no mutate
-                            )  # pragma: no mutate
-
-                        if not resp_body:
-                            resp_body = buffer.decode("utf-8", "ignore")
+                    resp_body = await self._read_response_body(
+                        reader, content_length, has_content_length_header
+                    )
 
                     _LOGGER.debug(  # pragma: no mutate
                         "%s Headers received: %s",  # pragma: no mutate
@@ -405,15 +424,13 @@ class Samsung8888Client:
                     )  # pragma: no mutate
 
                     # Compact and mask the body for logging.
-                    log_body = resp_body.replace("\r", "").replace(
-                        "\n", ""
-                    )  # pragma: no mutate
-                    try:  # pragma: no mutate
-                        json_obj = json_loads(resp_body)  # pragma: no mutate
-                        masked_obj = mask_sensitive_data(json_obj)  # pragma: no mutate
-                        log_body = json_dumps(masked_obj)  # pragma: no mutate
-                    except Exception:  # pylint: disable=broad-exception-caught  # pragma: no mutate
-                        pass  # Keep cleaned string if not valid JSON.  # pragma: no mutate
+                    log_body = resp_body.replace("\r", "").replace("\n", "")
+                    try:
+                        json_obj = json_loads(resp_body)
+                        masked_obj = mask_sensitive_data(json_obj)
+                        log_body = json_dumps(masked_obj)
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        pass  # Keep cleaned string if not valid JSON.
 
                     _LOGGER.debug(  # pragma: no mutate
                         "%s Response body received: '%s'",  # pragma: no mutate
@@ -460,3 +477,4 @@ class Samsung8888Client:
                     raise  # Fail-fast: do not mask as a CannotConnect
 
         return None, "No response"
+

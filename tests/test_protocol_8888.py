@@ -295,18 +295,19 @@ async def test_request_malformed_headers(
             assert err is None
 
 
-async def test_close_handles_task_exceptions(client, mock_writer):
-    """Kills the return_exceptions=True mutant in close()."""
-    client._writer = mock_writer
+async def test_request_payload_non_ascii_utf8_bytes(client):
+    """Test payload with non-ASCII characters calculates Content-Length using UTF-8 byte length."""
+    from homeassistant.helpers.json import json_dumps
 
-    async def failing_task():
-        raise ValueError("Background failure")
+    body = {"mode": "cool", "sensor": "21°C"}
+    payload_str = json_dumps(body)
+    payload_bytes = payload_str.encode("utf-8")
+    assert len(payload_bytes) > len(payload_str)
 
-    client._track_task(failing_task())
-
-    # If return_exceptions=False, exception will be raised to fail test.
-    await client.close()
-    assert len(client._active_tasks) == 0
+    req_bytes = client._build_request_bytes("POST", "/api/control", body=body)
+    expected_cl = f"Content-Length: {len(payload_bytes)}\r\n".encode("utf-8")
+    assert expected_cl in req_bytes
+    assert req_bytes.endswith(payload_bytes)
 
 
 async def test_request_content_length_1(client, mock_reader, mock_writer):
@@ -355,8 +356,6 @@ def test_init_attributes():
     assert client1._ssl_context is None
     assert client1._reader is None
     assert client1._writer is None
-    assert isinstance(client1._active_tasks, set)
-    assert client1._active_tasks == set()
 
     client2 = Samsung8888Client(
         "10.0.0.1", port=8889, cert_path="/c.pem", log_prefix="[Custom]"
@@ -474,21 +473,16 @@ async def test_close_writer_close_exception(client, mock_writer):
     assert client._reader is None
 
 
-async def test_track_task(client):
-    """Test background task tracking and completion discard."""
-
-    async def sample_coro():
-        await asyncio.sleep(0.001)
-        return "done"
-
-    task = client._track_task(sample_coro())
-    assert task in client._active_tasks
-    assert any(
-        cb[0] == client._active_tasks.discard for cb in getattr(task, "_callbacks", [])
-    ), "Discard callback not registered!"
-    res = await task
-    assert res == "done"
-    assert task not in client._active_tasks
+async def test_build_request_bytes_helper(client):
+    """Directly test _build_request_bytes helper method."""
+    req_bytes = client._build_request_bytes(
+        "GET", "/test", headers={"X-Header": "Val"}, body={"key": "val"}
+    )
+    assert req_bytes.startswith(b"GET /test HTTP/1.1\r\n")
+    assert b"Host: 192.168.1.100:8888\r\n" in req_bytes
+    assert b"X-Header: Val\r\n" in req_bytes
+    assert b"Content-Length: 13\r\n" in req_bytes
+    assert req_bytes.endswith(b'{"key":"val"}')
 
 
 async def test_request_close_before_retry(client, mock_reader, mock_writer):
@@ -857,15 +851,32 @@ async def test_request_fallback_raw_json_incremental_chunks(
                 )
 
 
-async def test_track_task_callback_registered(client):
-    """Kills task.add_done_callback(None) mutant."""
-    mock_task = MagicMock()
-    with patch("asyncio.create_task", return_value=mock_task):
-        res_task = client._track_task(MagicMock())
-        assert res_task == mock_task
-        mock_task.add_done_callback.assert_called_once_with(
-            client._active_tasks.discard
-        )
+async def test_read_response_headers_and_body_helpers(client, mock_reader):
+    """Directly test _read_response_headers and _read_response_body helper methods."""
+    mock_reader.readline.side_effect = [
+        b"HTTP/1.1 200 OK\r\n",
+        b"Content-Length: 14\r\n",
+        b"Content-Type: application/json\r\n",
+        b"\r\n",
+    ]
+    mock_reader.readexactly.return_value = b'{"status":"ok"}'
+
+    (
+        status_code,
+        content_length,
+        has_cl,
+        content_type,
+        headers,
+    ) = await client._read_response_headers(mock_reader)
+
+    assert status_code == 200
+    assert content_length == 14
+    assert has_cl is True
+    assert content_type == "application/json"
+    assert len(headers) == 2
+
+    body = await client._read_response_body(mock_reader, content_length, has_cl)
+    assert body == '{"status":"ok"}'
 
 
 async def test_request_writer_or_reader_none(client, mock_reader, mock_writer):
@@ -1011,3 +1022,114 @@ async def test_request_non_json_fallback_strict(client, mock_reader, mock_writer
             # STRICT ASSERTION: If the mutant alters decoding, it will either crash or return None.
             assert error is None
             assert body == "PLAINTEXT"
+
+
+# ── WHITE-BOX PROTOCOL & STREAM PARSER TESTS ─────────────────────────────────
+
+
+async def test_white_box_http_framing_casing_and_crlf(client, mock_reader, mock_writer):
+    """Assert HTTP request preserves exact header casing (Content-Length) and CRLF line endings."""
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch(
+            "custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context",
+            return_value=MagicMock(),
+        ):
+            mock_reader.readline.side_effect = [
+                b"HTTP/1.1 200 OK\r\n",
+                b"Content-Length: 2\r\n",
+                b"\r\n",
+            ]
+            mock_reader.readexactly.return_value = b"{}"
+            mock_reader._waiter = None
+
+            await client.request(
+                "POST",
+                "/devices",
+                body={"op": "power"},
+                headers={"X-Custom-Header": "CustomVal"},
+            )
+
+            written_bytes = mock_writer.write.call_args[0][0]
+            written_str = written_bytes.decode("utf-8")
+
+            # 1. Assert exact CRLF line endings
+            assert "\r\n" in written_str
+            assert "\n\n" not in written_str.replace("\r\n", "")
+
+            # 2. Assert exact case-sensitive header naming
+            assert "Content-Length: " in written_str
+            assert "content-length: " not in written_str
+            assert "X-Custom-Header: CustomVal\r\n" in written_str
+            assert "POST /devices HTTP/1.1\r\n" in written_str
+
+
+async def test_header_flag_and_content_length_scenarios(client, mock_reader, mock_writer):
+    """Test 3 distinct Content-Length stream scenarios: >0, ==0, and missing (fallback)."""
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch(
+            "custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context",
+            return_value=MagicMock(),
+        ):
+            # Scenario A: Content-Length > 0 -> Uses readexactly
+            mock_reader.readline.side_effect = [
+                b"HTTP/1.1 200 OK\r\n",
+                b"Content-Length: 13\r\n",
+                b"\r\n",
+            ]
+            mock_reader.readexactly.return_value = b'{"status":"ok"}'
+            mock_reader._waiter = None
+
+            body_a, error_a = await client.request("GET", "/test_a")
+            assert error_a is None
+            assert body_a == '{"status":"ok"}'
+            mock_reader.readexactly.assert_called_once_with(13)
+
+            # Scenario B: Content-Length: 0 -> Immediately returns empty string without reading body stream
+            client._writer = mock_writer
+            client._reader = mock_reader
+            mock_reader.readexactly.reset_mock()
+            mock_reader.read = AsyncMock()
+
+            mock_reader.readline.side_effect = [
+                b"HTTP/1.1 200 OK\r\n",
+                b"Content-Length: 0\r\n",
+                b"\r\n",
+            ]
+
+            body_b, error_b = await client.request("GET", "/test_b")
+            assert error_b is None
+            assert body_b == ""
+            mock_reader.readexactly.assert_not_called()
+            mock_reader.read.assert_not_called()
+
+            # Scenario C: Missing Content-Length -> Fallback stream reading loop with JSONDecoder.raw_decode
+            client._writer = mock_writer
+            client._reader = mock_reader
+            mock_reader.readline.side_effect = [
+                b"HTTP/1.1 200 OK\r\n",
+                b"Content-Type: application/json\r\n",
+                b"\r\n",
+            ]
+            mock_reader.read.side_effect = [
+                b'{"device":',
+                b' "samsung"}\r\nEXTRA_GARBAGE',
+                b"",
+            ]
+
+            body_c, error_c = await client.request("GET", "/test_c")
+            assert error_c is None
+            assert body_c == '{"device": "samsung"}'
+
+
+async def test_close_transport_abort_on_timeout(client, mock_writer):
+    """Test close() aborts transport on timeout waiting closed."""
+    client._writer = mock_writer
+    mock_writer.wait_closed.side_effect = TimeoutError("Close wait timeout")
+    mock_transport = MagicMock()
+    mock_writer.transport = mock_transport
+
+    await client.close()
+
+    mock_transport.abort.assert_called_once()
+    assert client._writer is None
+    assert client._reader is None
