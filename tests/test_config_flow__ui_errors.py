@@ -47,12 +47,12 @@ async def test_handle_error_mac_required_mutants():
         "error_key": "mac_resolve_failed",
     }
 
-    # 1. Si el error es mac_resolve_failed, la MAC debe ser obligatoria
+    # 1. If error is mac_resolve_failed, MAC must be required
     result = await flow.async_step_handle_error()
     mac_key, _ = get_schema_marker(result["data_schema"], CONF_MAC)
     assert isinstance(mac_key, vol.Required)
 
-    # 2. Si el error es cualquier otro, la MAC debe ser opcional
+    # 2. If error is any other, MAC must be optional
     flow.flow_data["error_key"] = "cannot_connect"
     result2 = await flow.async_step_handle_error()
     mac_key2, _ = get_schema_marker(result2["data_schema"], CONF_MAC)
@@ -122,7 +122,7 @@ async def test_select_devices_parsing_and_fallbacks():
         await flow.async_step_select_devices({CONF_SELECTED_DEVICES: ["1"]})
         mock_set_uid.assert_called_once_with("AA:BB:CC", raise_on_progress=False)
 
-    # 3. Mutante de Reconfiguración (M70: or en lugar de and)
+    # 3. Reconfiguration Mutant (M70: or instead of and)
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
     flow.context = {"source": SOURCE_RECONFIGURE}
@@ -176,7 +176,7 @@ async def test_initiate_pairing_and_discover_uuid_mutants():
 
     assert flow.flow_data["error_key"] == "unknown_error"
 
-    # 2. Reseteamos para probar M62 (asignación del certificado en fallback)
+    # 2. Reset to test M62 (certificate assignment in fallback)
     flow.flow_data.pop("error_key", None)
     flow.flow_data["_fallback_attempted"] = False
     flow.flow_data[CONF_DEVICE_TYPE] = DEVICE_TYPE_SAMSUNG_2878
@@ -211,7 +211,7 @@ async def test_initiate_pairing_and_discover_uuid_mutants():
             await flow.async_step_discover_uuid()
             mock_proc.assert_called_once()
 
-    # M62 en discover_uuid: Verificamos shutdown en catch de InvalidHeaderError
+    # M62 in discover_uuid: Verify shutdown in InvalidHeaderError catch
     from custom_components.climate_ip.exceptions import InvalidHeaderError
 
     with (
@@ -390,7 +390,7 @@ async def test_mim_h03_device_id_str_fallback():
 
 @pytest.mark.asyncio
 async def test_rest_api_aborts_if_already_configured_normal_flow(hass):
-    """Verify mutant M92 kill: Flujo normal aborta si el dispositivo ya existe."""
+    """Verify mutant M92 kill: Normal flow aborts if the device already exists."""
     flow = ClimateIpConfigFlow()
     flow.hass = hass
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
@@ -418,7 +418,7 @@ async def test_rest_api_aborts_if_already_configured_normal_flow(hass):
                     }
                 )
                 pytest.fail(
-                    "Mutante 92 sobrevive: No se llamó a _abort_if_unique_id_configured"
+                    "Mutant 92 survives: _abort_if_unique_id_configured was not called"
                 )
             except AbortFlow as e:
                 assert e.reason == "already_configured"

@@ -53,7 +53,7 @@ class DummyController(NakedObj):
 
 
 def create_valid_loader():
-    """Crea un loader mínimo que cumple con la Doctrina Estricta."""
+    """Creates a minimal loader compliant with Strict Doctrine."""
     from unittest.mock import MagicMock
 
     loader = MagicMock()
@@ -205,7 +205,7 @@ async def test_update_properties_operation_validation_fallbacks():
     mock_controller.loader = loader
     poller = YamlStatePoller(mock_controller)
 
-    # Añadido atributo 'id' exigido por la arquitectura estricta
+    # Added 'id' attribute required by strict architecture
     op1 = NakedObj(
         id="op1",
         _value="invalid_mode",

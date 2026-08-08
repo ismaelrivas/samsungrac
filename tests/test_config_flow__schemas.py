@@ -28,37 +28,38 @@ def get_schema_marker(schema: vol.Schema, key_name: str):
 @pytest.mark.asyncio
 async def test_rest_api_schema_mutants_annihilation():
     """Mata a los 12 mutantes de _get_rest_api_schema."""
+    """Kill the 12 mutants of _get_rest_api_schema."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
     flow.hass.config_entries.async_entries.return_value = []  # Simulate no SmartThings
 
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
-        CONF_IP_ADDRESS: "192.168.1.99",  # Para el mutante 37 (get(None))
+        CONF_IP_ADDRESS: "192.168.1.99",  # For mutant 37 (get(None))
     }
 
-    # Al no haber SmartThings en hass, el token debe caer a "" (Mata al Mutante 31)
-    # Al no haber CONF_POLL_INTERVAL en flow_data, debe caer a ""...
+    # With no SmartThings in hass, token must fall back to "" (Kills Mutant 31)
+    # With no CONF_POLL_INTERVAL in flow_data, it must fall back to ""...
     schema = flow._get_rest_api_schema()
 
-    # 1. Verificar parámetros base (Kills mutants 51, 60)
+    # 1. Verify base parameters (Kills mutants 51, 60)
     dev_id_key, dev_id_type = get_schema_marker(schema, CONF_DEVICE_ID)
-    assert dev_id_type is str  # If mutant asigna None a la derecha del dict, esto falla
+    assert dev_id_type is str  # If mutant assigns None to the right of the dict, this fails
 
     _, name_type = get_schema_marker(schema, CONF_NAME)
     assert name_type is str
 
-    # 2. Verificar parámetros de IP estrictos (Kills mutants 37, 53, 54, 55, 56, 57)
+    # 2. Verify strict IP parameters (Kills mutants 37, 53, 54, 55, 56, 57)
     ip_key, ip_type = get_schema_marker(schema, CONF_IP_ADDRESS)
     assert isinstance(ip_key, vol.Required)
     assert (
         ip_key.default() == "192.168.1.99"
-    )  # Mata al mutante 37 que usaría la IP de smartthings.com
+    )  # Kills mutant 37 that would use smartthings.com IP
     assert ip_type is str
 
     # 3. Verificar fallbacks vacíos (Kills mutants 18, 20, 21, 31)
     token_key, _ = get_schema_marker(schema, CONF_TOKEN)
-    assert token_key.default() == ""  # Mata al mutante 31 (default_token = "XXXX")
+    assert token_key.default() == ""  # Kills mutant 31 (default_token = "XXXX")
 
 
 @pytest.mark.asyncio
@@ -80,7 +81,7 @@ async def test_base_samsung_schema_mutants():
 
 
 # ====================================================================================
-# TESTS DE FLUJO DE OPCIONES (Options Flow Schemas) - Migrados para matar mutantes
+# OPTIONS FLOW SCHEMAS TESTS - Migrated to kill mutants
 # ====================================================================================
 
 
@@ -106,11 +107,11 @@ async def test_options_flow_empty_defaults(hass):
     )
 
     # Entrada vacía de opciones y configuración básica
-    # USAMOS SMARTTHINGS_HVAC porque soporta AIOHTTP y expone el CONF_CONN_METHOD en opciones
+    # WE USE SMARTTHINGS_HVAC because it supports AIOHTTP and exposes CONF_CONN_METHOD in options
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC},
-        options={},  # Clave para matar a los mutantes
+        options={},  # Key to kill mutants
     )
     entry.add_to_hass(hass)
 

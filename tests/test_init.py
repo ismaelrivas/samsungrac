@@ -412,7 +412,7 @@ async def test_setup_entry_multi_device_branch_and_unique_id_logic(
 
         mock_forward.assert_awaited_once_with(mock_entry, PLATFORMS)
 
-        # LETHAL ASSERTION (Mutante 68)
+        # LETHAL ASSERTION (Mutant 68)
         assert all(
             c is not None for c in mock_entry.runtime_data.values()
         ), "None was assigned to the coordinators dictionary instead of the instance"

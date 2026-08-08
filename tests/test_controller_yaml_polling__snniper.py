@@ -462,7 +462,7 @@ async def test_sniper_build_device_state_success_flow():
 
 @pytest.mark.asyncio
 async def test_sniper_async_merge_device_state_protected_value():
-    """Aniquila Mutante L899: Valida la escritura en _value cuando no existe 'value'."""
+    """Annihilates Mutant L899: Validates write to _value when 'value' does not exist."""
     mock_controller = NakedObj(
         log_prefix="TEST",
         get_current_state_callback=MagicMock(return_value="valid_state"),
@@ -494,7 +494,7 @@ async def test_sniper_async_merge_device_state_protected_value():
 
 @pytest.mark.asyncio
 async def test_sniper_merge_device_state_protected_value_mutation():
-    """Aniquila Mutante L899: Garantiza que la rama protegida _value se ejecuta y escribe."""
+    """Annihilates Mutant L899: Guarantees protected branch _value executes and writes."""
     mock_controller = NakedObj(
         log_prefix="TEST",
         get_current_state_callback=MagicMock(return_value="valid_state"),
@@ -557,20 +557,20 @@ async def test_sniper_update_properties_pending_and_is_valid_mutations():
         base_state = {"dummy": "state"}
         await poller.async_update_properties_from_state(base_state)
 
-        # 1. Verificación de L534
+        # 1. Verification of L534
         mock_get_key.assert_any_call(prop)
         assert (
             base_state.get("prop1_key") == "dev_pending_val"
-        ), "Mutante L534: Falló la inyección por pasar None al key finder"
+        ), "Mutant L534: Injection failed due to passing None to key finder"
 
-        # 2. Verificación de L567
+        # 2. Verification of L567
         op.is_valid.assert_called_once()
         args, _ = op.is_valid.call_args
-        # Aseguramos que is_valid recibió el diccionario real y no un None introducido por mutmut
+        # Ensure is_valid received the real dictionary and not a None introduced by mutmut
         assert args[0] is not None
         assert (
             args[0] == base_state
-        ), "Mutante L567: is_valid evaluado ciegamente con None"
+        ), "Mutant L567: is_valid evaluated blindly with None"
 
 
 @pytest.mark.asyncio
@@ -586,7 +586,7 @@ async def test_sniper_async_update_state_network_and_discovery_strictness():
     poller.controller.loader = NakedObj(
         state_getter=NakedObj(
             value={"dummy": "state"}
-        ),  # <-- CORRECCIÓN: El atributo exigido por la ley marcial
+        ),  # <-- CORRECTION: The attribute required by martial law
         is_fully_initialized=False,
         async_finish_initialization=AsyncMock(),
         operations={},
@@ -600,7 +600,7 @@ async def test_sniper_async_update_state_network_and_discovery_strictness():
         "custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability",
         return_value=True,
     ):
-        # --- PRUEBA 1: Matar el Mutante L328 (<= 2 vs < 2) ---
+        # --- TEST 1: Kill Mutant L328 (<= 2 vs < 2) ---
         poller._consecutive_connection_errors = 1
         poller._cached_device_state = {"cached": True}
         poller.controller.loader.state_getter.async_update_state = AsyncMock(
@@ -610,10 +610,10 @@ async def test_sniper_async_update_state_network_and_discovery_strictness():
         res = await poller.async_update_state()
         assert res == {
             "cached": True
-        }, "Mutante L328 sobrevivió: no respetó la barrera de <= 2 errores"
+        }, "Mutant L328 survived: did not respect the <= 2 error barrier"
         assert poller._consecutive_connection_errors == 2
 
-        # --- PRUEBA 2: Matar los Mutantes L344 y L345 (Manipulación de strings de error) ---
+        # --- TEST 2: Kill Mutants L344 and L345 (Error string manipulation) ---
         poller._consecutive_connection_errors = 2
         poller._cached_device_state = {"cached": True}
         poller.controller.loader.state_getter.async_update_state = AsyncMock(
@@ -626,9 +626,9 @@ async def test_sniper_async_update_state_network_and_discovery_strictness():
         assert poller._consecutive_connection_errors == 3
         assert "Device unreachable: Timeout on backend" in str(
             exc_info.value
-        ), "Mutante L344/L345 sobrevivió: la razón del error fue corrupta"
+        ), "Mutant L344/L345 survived: error reason was corrupted"
 
-    # --- PRUEBA 3: Configuración estricta (Sin Cambios) ---
+    # --- TEST 3: Strict Configuration (Unchanged) ---
     class StrictConfig(dict):
         def get(self, key, default=None):
             if key is None:
@@ -812,7 +812,7 @@ async def test_mutant_71_boundary_less_than_two():
         async_update_state=mock_update_state
     )
 
-    # Empezamos en 1. El fallo sumará +1 = 2.
+    # Start at 1. The failure will add +1 = 2.
     poller._consecutive_connection_errors = 1
     poller._cached_device_state = {"state": "cached"}
 
@@ -823,7 +823,7 @@ async def test_mutant_71_boundary_less_than_two():
     except UpdateFailed:
         # If mutant (< 2) actúa, evaluará False, ignorará la caché y lanzará UpdateFailed.
         pytest.fail(
-            "Mutante M71 (< 2) detectado: La caché fue ignorada en la frontera exacta."
+            "Mutant M71 (< 2) detected: Cache was ignored at the exact boundary."
         )
 
 

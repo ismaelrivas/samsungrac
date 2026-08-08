@@ -304,7 +304,7 @@ async def test_select_devices_error_schema_default_keys():
     assert hasattr(selector, "options"), "El selector debe tener opciones"
     assert (
         selector.options is not None
-    ), "El mutante asignó None a las opciones del selector"
+    ), "The mutant assigned None to selector options"
 
 
 @pytest.mark.asyncio

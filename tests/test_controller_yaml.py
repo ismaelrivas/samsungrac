@@ -84,240 +84,36 @@ def yaml_config() -> dict:  # type: ignore[type-arg]
 
 
 def test_yaml_controller_coverage_boost() -> None:
-    """Cubre match_type, clear_state_cache y climate_state para eliminar código no testeado."""
+    """Covers match_type, clear_state_cache and climate_state to eliminate untested code."""
     from unittest.mock import MagicMock
 
     from custom_components.climate_ip.controller_yaml import YamlController
 
-    # 1. Probar match_type (cubre ramas de validación de tipo)
+    # 1. Test match_type (covers type validation branches)
     assert YamlController.match_type("yaml") is True
     assert YamlController.match_type("other") is False
 
-    # 2. Probar clear_state_cache con y sin poller
+    # 2. Test clear_state_cache with and without poller
     controller = YamlController(
         config={"device_type": "test_device"}, logger=MagicMock()
     )
-    controller.clear_state_cache()  # Sin poller (debe pasar de largo de forma segura)
+    controller.clear_state_cache()  # Without poller (should pass safely)
 
     mock_poller = MagicMock()
     controller.poller = mock_poller
-    controller.clear_state_cache()  # Con poller
+    controller.clear_state_cache()  # With poller
     mock_poller._clear_state_cache.assert_called_once()
 
-    # 3. Probar climate_state (ejecuta la extracción, lavado y conversión estricta)
+    # 3. Test climate_state (executes extraction, sanitization, and strict conversion)
     controller.get_property = MagicMock(return_value=None)
     controller.get_property_all_values = MagicMock(return_value=[])
 
     state = controller.climate_state
     assert state is not None
 
-
-# async def test_initialize_loads_yaml(
-#     yaml_config: dict,
-#     mock_logger: logging.Logger,
-#     mock_hass: MagicMock,  # type: ignore[type-arg]
-# ) -> None:
-#     """Test that initialize loads YAML configuration."""
-
-#     # 1. OMNI-SENSOR ANTI-SILENCIO
-#     def explode_on_log(msg, *args, **kwargs):
-#         raise RuntimeError(f"🚨 LOG DELATOR REVELADO: {msg} | args: {args} | kwargs: {kwargs}")
-#     mock_logger.error.side_effect = explode_on_log
-#     mock_logger.warning.side_effect = explode_on_log
-
-#     # 2. Hacer que el executor de hass sea asíncrono
-#     async def mock_executor(fn, *args):
-#         return fn(*args)
-#     mock_hass.async_add_executor_job = mock_executor
-
-#     # 3. YAML 100% VÁLIDO Y COMPLETO
-#     mock_yaml_data = {
-#         "device": {
-#             "name": "Test AC",
-#             "mac": "AA:BB:CC:DD:EE:FF",
-#             "token": "dummy_token_123",
-#             "connection": {"type": "samsung_2878"},
-#             "status": {
-#                 "type": "request",
-#                 "path": "/status/now"
-#             }
-#         },
-#         "properties": {}
-#     }
-
-#     # 4. Preparar la conexión mockeada
-#     mock_conn_class = MagicMock()
-#     mock_conn_class.match_type.return_value = True
-#     mock_conn_class.__name__ = "MockConnection"
-#     mock_conn_instance = MagicMock()
-#     mock_conn_instance.load_from_yaml.return_value = True
-#     mock_conn_class.return_value = mock_conn_instance
-
-#     # Configuración limpia con unique_id y config_file provistos desde el inicio
-#     test_config = dict(yaml_config)
-#     test_config["config_file"] = "test_device.yaml"
-#     test_config["unique_id"] = test_config.get("mac", "AA:BB:CC:DD:EE:FF")
-
-#     with (
-#         patch("os.path.exists", return_value=True),
-#         patch("os.path.isfile", return_value=True),
-#         patch("custom_components.climate_ip.controller_yaml_config.load_yaml", return_value=mock_yaml_data),
-#         patch("custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS", new=[mock_conn_class]),
-#         patch("custom_components.climate_ip.controller_yaml_config.create_status_getter", return_value=MagicMock()),
-#         patch("custom_components.climate_ip.controller_yaml_polling.YamlStatePoller.async_update_state", new_callable=AsyncMock, return_value=True),
-#         patch("custom_components.climate_ip.controller_yaml.YamlController.async_get_status", new_callable=AsyncMock, return_value=True)
-#     ):
-#         controller = YamlController(
-#             test_config, mock_logger, hass=mock_hass, session=MagicMock()
-#         )
-
-#         result = await controller.initialize()
-
-#         assert result is True, "¡La inicialización falló!"
-
-
-# async def test_yaml_file_read_uses_executor(
-#     yaml_config: dict,  # type: ignore[type-arg]
-#     mock_logger: logging.Logger,
-#     mock_hass: MagicMock,
-# ) -> None:
-#     """YAML file reading must be dispatched via async_add_executor_job."""
-#     executor_calls: list[str] = []
-
-#     # 1. OMNI-SENSOR ANTI-SILENCIO
-#     def explode_on_log(msg, *args, **kwargs):
-#         raise RuntimeError(f"🚨 LOG DELATOR REVELADO: {msg} | args: {args} | kwargs: {kwargs}")
-#     mock_logger.error.side_effect = explode_on_log
-#     mock_logger.warning.side_effect = explode_on_log
-
-#     # 2. Spy asíncrono para capturar las llamadas
-#     async def spy_executor(fn, *args):
-#         name = getattr(fn, "__name__", repr(fn))
-#         if isinstance(fn, MagicMock):
-#             name = "load_yaml"
-#         executor_calls.append(name)
-#         return fn(*args)
-
-#     mock_hass.async_add_executor_job = spy_executor
-
-#     # 3. YAML 100% VÁLIDO Y COMPLETO
-#     mock_yaml_data = {
-#         "device": {
-#             "name": "Test AC",
-#             "mac": "AA:BB:CC:DD:EE:FF",
-#             "token": "dummy_token_123",
-#             "connection": {"type": "samsung_2878"},
-#             "status": {
-#                 "type": "request",
-#                 "path": "/status/now"
-#             }
-#         },
-#         "properties": {}
-#     }
-
-#     mock_conn_class = MagicMock()
-#     mock_conn_class.match_type.return_value = True
-#     mock_conn_class.__name__ = "MockConnection"
-#     mock_conn_instance = MagicMock()
-#     mock_conn_instance.load_from_yaml.return_value = True
-#     mock_conn_class.return_value = mock_conn_instance
-
-#     test_config = dict(yaml_config)
-#     test_config["config_file"] = "test_device.yaml"
-#     test_config["unique_id"] = test_config.get("mac", "AA:BB:CC:DD:EE:FF")
-
-#     with (
-#         patch("os.path.exists", return_value=True),
-#         patch("os.path.isfile", return_value=True),
-#         patch("custom_components.climate_ip.controller_yaml_config.load_yaml", return_value=mock_yaml_data),
-#         patch("custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS", new=[mock_conn_class]),
-#         patch("custom_components.climate_ip.controller_yaml_config.create_status_getter", return_value=MagicMock()),
-#         patch("custom_components.climate_ip.controller_yaml_polling.YamlStatePoller.async_update_state", new_callable=AsyncMock, return_value=True),
-#         patch("custom_components.climate_ip.controller_yaml.YamlController.async_get_status", new_callable=AsyncMock, return_value=True)
-#     ):
-#         controller = YamlController(
-#             test_config, mock_logger, hass=mock_hass, session=MagicMock()
-#         )
-
-#         result = await controller.initialize()
-
-#     assert result is True, "¡La inicialización falló!"
-#     assert len(executor_calls) >= 1
-#     assert any("load_yaml" in name for name in executor_calls)
-
-
-# async def test_yaml_file_read_uses_executor(
-#     yaml_config: dict,  # type: ignore[type-arg]
-#     mock_logger: logging.Logger,
-#     mock_hass: MagicMock,
-# ) -> None:
-#     """YAML file reading must be dispatched via async_add_executor_job."""
-#     executor_calls: list[str] = []
-
-#     # 1. OMNI-SENSOR ANTI-SILENCIO
-#     def explode_on_log(msg, *args, **kwargs):
-#         raise RuntimeError(f"🚨 LOG DELATOR REVELADO: {msg} | args: {args} | kwargs: {kwargs}")
-#     mock_logger.error.side_effect = explode_on_log
-#     mock_logger.warning.side_effect = explode_on_log
-
-#     # 2. Spy asíncrono para capturar las llamadas
-#     async def spy_executor(fn, *args):
-#         name = getattr(fn, "__name__", repr(fn))
-#         if isinstance(fn, MagicMock):
-#             name = "load_yaml"
-#         executor_calls.append(name)
-#         return fn(*args)
-
-#     mock_hass.async_add_executor_job = spy_executor
-
-#     # 3. YAML 100% VÁLIDO Y COMPLETO
-#     mock_yaml_data = {
-#         "device": {
-#             "name": "Test AC",
-#             "mac": "AA:BB:CC:DD:EE:FF",
-#             "token": "dummy_token_123",
-#             "connection": {"type": "samsung_2878"},
-#             "status": {
-#                 "type": "request",
-#                 "path": "/status/now"
-#             }
-#         },
-#         "properties": {}
-#     }
-
-#     mock_conn_class = MagicMock()
-#     mock_conn_class.match_type.return_value = True
-#     mock_conn_class.__name__ = "MockConnection"
-#     mock_conn_instance = MagicMock()
-#     mock_conn_instance.load_from_yaml.return_value = True
-#     mock_conn_class.return_value = mock_conn_instance
-
-#     with (
-#         patch("os.path.exists", return_value=True),
-#         patch("os.path.isfile", return_value=True),
-#         patch("custom_components.climate_ip.controller_yaml_config.load_yaml", return_value=mock_yaml_data),
-#         patch("custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS", new=[mock_conn_class]),
-#         patch("custom_components.climate_ip.controller_yaml_config.create_status_getter", return_value=MagicMock()),
-#         patch("custom_components.climate_ip.controller_yaml_polling.YamlStatePoller.async_update_state", new_callable=AsyncMock, return_value=True)
-#     ):
-#         controller = YamlController(
-#             yaml_config, mock_logger, hass=mock_hass, session=MagicMock()
-#         )
-
-#         # 🔑 BLINDAJE DE CONTRATO
-#         controller.unique_id = yaml_config.get("mac", "AA:BB:CC:DD:EE:FF")
-#         controller._yaml = yaml_config.get("config_file", "test_device.yaml")
-
-#         result = await controller.initialize()
-
-#     assert result is True, "¡La inicialización falló!"
-#     assert len(executor_calls) >= 1
-#     assert any("load_yaml" in name for name in executor_calls)
-
 # ---------------------------------------------------------------------------
 # Phase 2: YAML I/O must be dispatched to the executor thread pool.
 # ---------------------------------------------------------------------------
-
 
 async def test_async_set_property_registers_pending_update(
     yaml_config: dict,  # type: ignore[type-arg]
@@ -351,16 +147,15 @@ async def test_async_set_property_registers_pending_update(
 
 def test_yaml_controller_strict_initialization() -> None:
     """
-    Aniquila los 35 mutantes del __init__ de YamlController.
-    Verifica matemáticamente que la extracción del config dict,
-    la asignación de variables de estado y la instanciación
-    de los delegados (loader y poller) ocurren sin alteraciones.
+    Kills the 35 mutants in the YamlController __init__.
+    Mathematically verifies that config dict extraction, state variable assignment,
+    and delegate (loader and poller) instantiation occur without alteration.
     """
     mock_logger = logging.getLogger("test_logger")
     mock_hass = MagicMock()
     mock_session = MagicMock()
 
-    # Configuramos un diccionario de entrada completo
+    # Configure a complete input dictionary
     config_input = {
         "hass": "should_be_popped",
         "session": "should_be_popped",
@@ -372,7 +167,7 @@ def test_yaml_controller_strict_initialization() -> None:
         "debug": True,
     }
 
-    # Evitamos que los delegados intenten interactuar con el sistema de archivos o red en el init
+    # Avoid delegates attempting to interact with file system or network in init
     with (
         patch("custom_components.climate_ip.controller_yaml.YamlConfigLoader"),
         patch(
@@ -381,24 +176,24 @@ def test_yaml_controller_strict_initialization() -> None:
     ):
         controller = YamlController(config_input, mock_logger, mock_hass, mock_session)
 
-    # --- ASERCIONES LETALES ---
+    # --- LETHAL ASSERTIONS ---
 
-    # 1. Mutantes 7-16: Verificar que 'hass' y 'session' fueron extraídos del config.
-    assert "hass" not in controller._config, "El mutante evitó hacer pop('hass')"
-    assert "session" not in controller._config, "El mutante evitó hacer pop('session')"
+    # 1. Mutants 7-16: Verify that 'hass' and 'session' were extracted from config.
+    assert "hass" not in controller._config, "The mutant avoided calling pop('hass')"
+    assert "session" not in controller._config, "The mutant avoided calling pop('session')"
     assert controller.hass is mock_hass
     assert controller._session is mock_session
     assert controller._logger is mock_logger
 
-    # 2. Mutantes 23-25: Strict IP Address extraction
+    # 2. Mutants 23-25: Strict IP Address extraction
     assert controller._ip_address == "192.168.1.100"
 
-    # 3. Mutantes 33-35: Strict identifier and Token extraction
+    # 3. Mutants 33-35: Strict identifier and Token extraction
     assert controller._token == "secret_token"
     assert controller._device_id == "dev_123"
     assert controller._unique_id == "test_mac_uid"
 
-    # 4. Mutantes 52-60: Inicialización de Callbacks estrictamente a None
+    # 4. Mutants 52-60: Callback initialization strictly to None
     assert controller.on_token_refreshed is None
     assert controller.get_current_state_callback is None
     assert controller.on_push_update_callback is None
@@ -408,31 +203,31 @@ def test_yaml_controller_strict_initialization() -> None:
     assert controller.on_offline_callback is None
     assert controller.discovered_devices is None
 
-    # 5. Mutantes 61-68: Asignación de flag de debug
-    assert controller._debug is True, "El mutante alteró la extracción del flag debug"
+    # 5. Mutants 61-68: Debug flag assignment
+    assert controller._debug is True, "The mutant altered debug flag extraction"
 
-    # 6. Mutantes 69-72: Asignación del diccionario de atributos base
-    # Tiene que contener exactamente la clave 'controller' mapeada al unique_id
+    # 6. Mutants 69-72: Base attributes dictionary assignment
+    # Must contain exactly the 'controller' key mapped to unique_id
     assert controller._attributes == {"controller": "test_mac_uid"}
     assert controller._shared_raw_client is None
 
-    # 7. Mutantes 75-76: Verificación de composición (Delegados)
+    # 7. Mutants 75-76: Composition verification (Delegates)
     assert controller.loader is not None
     assert controller.poller is not None
-    # Verificamos que al poller se le pasó el controlador como argumento (self)
+    # Verify that controller was passed as an argument (self) to the poller
     mock_poller_class.assert_called_once_with(controller)
 
 
 def test_yaml_controller_fallback_initialization() -> None:
-    """Kills mutants en las ramas condicionales de fallbacks lógicos del init."""
+    """Kills mutants in logical fallback branches of init."""
     mock_logger = logging.getLogger("test_logger")
 
-    # Configuramos un config donde faltan claves primarias para forzar los `or` lógicos
+    # Configure a config missing primary keys to force logical `or`s
     config_input = {
-        "host": "10.0.0.1",  # Fallback para _ip_address
-        CONF_MAC: "00:11:22",  # Fallback para _unique_id
-        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,  # Fueraza la rama de fallback de device_id
-        "debug": False,  # Debug explícito a False
+        "host": "10.0.0.1",  # Fallback for _ip_address
+        CONF_MAC: "00:11:22",  # Fallback for _unique_id
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,  # Forces device_id fallback branch
+        "debug": False,  # Explicitly False
     }
 
     with (
@@ -441,26 +236,26 @@ def test_yaml_controller_fallback_initialization() -> None:
     ):
         controller = YamlController(config_input, mock_logger)
 
-    assert controller._ip_address == "10.0.0.1", "Falló el fallback 'host'"
-    assert controller._unique_id == "00:11:22", "Falló el fallback CONF_MAC"
-    # Como DEVICE_TYPE_SAMSUNG_2878 está presente, device_id debe tomar el valor de unique_id
+    assert controller._ip_address == "10.0.0.1", "Fallback 'host' failed"
+    assert controller._unique_id == "00:11:22", "Fallback CONF_MAC failed"
+    # As DEVICE_TYPE_SAMSUNG_2878 is present, device_id must take unique_id value
     assert (
         controller._device_id == "00:11:22"
-    ), "Falló la asignación Samsung 2878 para device_id"
+    ), "Samsung 2878 assignment for device_id failed"
     assert controller._debug is False
 
 
 def test_yaml_controller_fallback_else_and_debug_default() -> None:
     """
-    Aniquila los últimos 4 mutantes (52, 63, 65, 68).
-    Verifica la rama 'else' de la asignación de device_id
-    y el valor por defecto puro de 'debug' cuando no se proporciona en config.
+    Kills the final 4 mutants (52, 63, 65, 68).
+    Verifies the 'else' branch of device_id assignment
+    and the pure default value of 'debug' when not provided in config.
     """
     mock_logger = logging.getLogger("test_logger")
 
-    # 1. NO proveemos 'debug' en absoluto para forzar el fallback de config.get("debug", False)
-    # 2. NO proveemos DEVICE_TYPE_SAMSUNG_2878 para forzar la rama `else` del fallback de device_id
-    # 3. Proveemos solo unique_id, sin device_id.
+    # 1. Do NOT provide 'debug' at all to force config.get("debug", False) fallback
+    # 2. Do NOT provide DEVICE_TYPE_SAMSUNG_2878 to force the `else` branch of device_id fallback
+    # 3. Provide only unique_id, without device_id.
     config_input = {"unique_id": "fallback_mac_only"}
 
     with (
@@ -469,13 +264,13 @@ def test_yaml_controller_fallback_else_and_debug_default() -> None:
     ):
         controller = YamlController(config_input, mock_logger)
 
-    # Aniquila Mutante 52: The else branch assigns unique_id to _device_id
+    # Kills Mutant 52: The else branch assigns unique_id to _device_id
     assert (
         controller._device_id == "fallback_mac_only"
-    ), "La rama else no asignó el unique_id al device_id"
+    ), "The else branch did not assign unique_id to device_id"
 
-    # Aniquila Mutantes 63, 65, 68: The _debug value must be strictly False by default
-    assert controller._debug is False, "El fallback de debug fue mutado y no es False"
+    # Kills Mutants 63, 65, 68: The _debug value must be strictly False by default
+    assert controller._debug is False, "The debug fallback was mutated and is not False"
 
 
 @pytest.fixture
@@ -501,20 +296,20 @@ def mock_yaml_controller():
 
 @pytest.mark.asyncio
 async def test_update_state_delegation(mock_yaml_controller) -> None:
-    """Kills mutants en update_state (evalúa retorno booleano)."""
-    # Escenario 1: Poller devuelve un dict (éxito) -> update_state debe devolver True
+    """Kills mutants in update_state (evaluates boolean return)."""
+    # Scenario 1: Poller returns dict (success) -> update_state must return True
     mock_yaml_controller.poller.async_update_state = AsyncMock(
         return_value={"power": "on"}
     )
     assert await mock_yaml_controller.update_state() is True
 
-    # Escenario 2: Poller devuelve None (fallo) -> update_state debe devolver False
+    # Scenario 2: Poller returns None (failure) -> update_state must return False
     mock_yaml_controller.poller.async_update_state = AsyncMock(return_value=None)
     assert await mock_yaml_controller.update_state() is False
 
 
 def test_get_property_object_hierarchy(mock_yaml_controller) -> None:
-    """Kills mutants en la jerarquía de búsqueda de get_property_object."""
+    """Kills mutants in the search hierarchy of get_property_object."""
     mock_op = MagicMock()
     mock_prop = MagicMock()
     mock_sensor = MagicMock()
@@ -523,7 +318,7 @@ def test_get_property_object_hierarchy(mock_yaml_controller) -> None:
     mock_yaml_controller.loader.properties = {"test_prop": mock_prop}
     mock_yaml_controller.loader.sensors = {"test_sensor": mock_sensor}
 
-    # Búsqueda en orden: operations -> properties -> sensors -> None
+    # Search order: operations -> properties -> sensors -> None
     assert mock_yaml_controller.get_property_object("test_op") is mock_op
     assert mock_yaml_controller.get_property_object("test_prop") is mock_prop
     assert mock_yaml_controller.get_property_object("test_sensor") is mock_sensor
@@ -541,13 +336,13 @@ def test_get_property_value_extraction(mock_yaml_controller) -> None:
         "unknown_attr": STATE_UNKNOWN,
     }
 
-    # Escenario 1: Atributo existe como objeto
+    # Scenario 1: Attribute exists as object
     assert mock_yaml_controller.get_property("test_op") == "op_value"
 
-    # Escenario 2: Atributo no es objeto, se busca en _attributes
+    # Scenario 2: Attribute is not object, searched in _attributes
     assert mock_yaml_controller.get_property("test_attr") == "attr_value"
 
-    # Escenario 3: Valor encontrado es STATE_UNKNOWN, debe convertirse a None
+    # Scenario 3: Value found is STATE_UNKNOWN, must convert to None
     assert mock_yaml_controller.get_property("unknown_attr") is None
 
     # Escenario 4: Clave inexistente, devuelve None
@@ -604,25 +399,27 @@ async def test_async_merge_and_predict_delegation(mock_yaml_controller) -> None:
 @pytest.mark.asyncio
 async def test_async_set_property_error_scenarios(mock_yaml_controller) -> None:
     """Kills mutants 2, 14, 15, 16 en async_set_property asertando fallos y excepciones."""
-    # Escenario 1 (Mutante 2): Controlador no inicializado -> devuelve False
+    # Scenario 1 (Mutant 2): Uninitialized controller -> returns False
     mock_yaml_controller.loader.is_fully_initialized = False
     assert await mock_yaml_controller.async_set_property("prop", "val") is False
     mock_yaml_controller.loader.is_fully_initialized = True  # Restaurar estado
 
-    # Escenario 2 (Mutante 16): Propiedad no existe -> devuelve False
+    mock_yaml_controller.loader.is_fully_initialized = True  # Restore state
+
+    # Scenario 2 (Mutant 16): Property does not exist -> returns False
     assert await mock_yaml_controller.async_set_property("missing_prop", "val") is False
 
-    # Preparamos una operación simulada para los siguientes escenarios
+    # Prepare a simulated operation for the following scenarios
     mock_op = AsyncMock()
     mock_yaml_controller.loader.operations = {"test_prop": mock_op}
 
-    # Escenario 3 (Mutante 14): Error de red -> Lanza CannotConnect con mensaje estricto
+    # Scenario 3 (Mutant 14): Network error -> Raises CannotConnect with strict message
     mock_op.async_set_value.side_effect = CannotConnect("Host down")
     with pytest.raises(CannotConnect) as exc_info:
         await mock_yaml_controller.async_set_property("test_prop", "val")
     assert "Host down" in str(exc_info.value)
 
-    # Escenario 4 (Mutante 15): Exception genérica -> Lanza HomeAssistantError
+    # Scenario 4 (Mutant 15): Generic exception -> Raises HomeAssistantError
     mock_op.async_set_value.side_effect = ValueError("Boom")
     with pytest.raises(HomeAssistantError):
         await mock_yaml_controller.async_set_property("test_prop", "val")
@@ -674,14 +471,14 @@ def test_yaml_controller_sensors_property(mock_yaml_controller) -> None:
 
 
 def test_yaml_controller_is_push_device_strict(mock_yaml_controller) -> None:
-    """Verify mutant kill lógicos evaluando el soporte nativo de push bajo Fail-Fast."""
+    """Verify mutant kill by evaluating native push support under Fail-Fast."""
     import pytest
 
-    # 1. Sin conexión -> Falla limpiamente por lógica (retorna False)
+    # 1. No connection -> Fails cleanly by logic (returns False)
     mock_yaml_controller.loader.connection = None
     assert mock_yaml_controller.is_push_device is False
 
-    # 2. Doctrina Fail-Fast: Conexión corrupta/incompatible -> DEBE ESTALLAR
+    # 2. Fail-Fast Doctrine: Corrupt/incompatible connection -> MUST BLOW UP
     class LegacyConnection:
         pass
 
@@ -689,7 +486,7 @@ def test_yaml_controller_is_push_device_strict(mock_yaml_controller) -> None:
     with pytest.raises(AttributeError):
         _ = mock_yaml_controller.is_push_device
 
-    # 3. Conexión 100% compatible -> Retorna el valor
+    # 3. 100% compatible connection -> Returns the value
     conn_mock = MagicMock()
     conn_mock.is_push_supported = True
     mock_yaml_controller.loader.connection = conn_mock
@@ -699,7 +496,7 @@ def test_yaml_controller_is_push_device_strict(mock_yaml_controller) -> None:
     def test_yaml_controller_climate_state_mapping(
         mock_state_class, mock_yaml_controller
     ) -> None:
-        """Aniquila a los mutantes de la instanciación de estado mediante Caja Blanca Matemática."""
+        """Kills instantiation mutants of state using White Box Mathematics."""
         from homeassistant.components.climate import HVACMode
         from homeassistant.components.climate.const import (
             ATTR_FAN_MODE,
@@ -709,7 +506,7 @@ def test_yaml_controller_is_push_device_strict(mock_yaml_controller) -> None:
         )
         from homeassistant.const import ATTR_TEMPERATURE
 
-        # 1. Secuestramos get_property para devolver valores Enum/Float válidos
+        # 1. Hijack get_property to return valid Enum/Float values
         def mock_get_prop(prop):
             if prop == ATTR_HVAC_MODE:
                 return "cool"
@@ -721,7 +518,7 @@ def test_yaml_controller_is_push_device_strict(mock_yaml_controller) -> None:
 
         mock_yaml_controller.get_property = MagicMock(side_effect=mock_get_prop)
 
-        # 2. Secuestramos las listas de atributos
+        # 2. Hijack attribute lists
         mock_yaml_controller._attributes = {
             ATTR_HVAC_MODES: ["auto", "heat"],
             ATTR_FAN_MODES: ["high", "low"],
@@ -729,7 +526,7 @@ def test_yaml_controller_is_push_device_strict(mock_yaml_controller) -> None:
             ATTR_PRESET_MODES: ["eco"],
         }
 
-        # 2.5 Inyectar operaciones simuladas con sus valores correspondientes
+        # 2.5 Inject simulated operations with their corresponding values
         mock_yaml_controller.loader = MagicMock()
         mock_yaml_controller.loader.operations = {
             "hvac_mode": MagicMock(id="hvac_mode", all_values=["auto", "heat"]),
@@ -740,10 +537,10 @@ def test_yaml_controller_is_push_device_strict(mock_yaml_controller) -> None:
             "preset_mode": MagicMock(id="preset_mode", all_values=["eco"]),
         }
 
-        # 3. Ejecución
+        # 3. Execution
         _ = mock_yaml_controller.climate_state
 
-        # 4. Lethal assertion: Comprueba estrictamente el uso de Enums y Tuplas puras
+        # 4. Lethal assertion: Strictly verifies the use of Enums and pure Tuples
         mock_state_class.assert_called_once_with(
             hvac_mode=HVACMode.COOL,
             target_temperature=22.5,
@@ -759,35 +556,35 @@ def test_yaml_controller_is_push_device_strict(mock_yaml_controller) -> None:
 
 
 def test_yaml_controller_unique_id_property(mock_yaml_controller) -> None:
-    """Kills mutants en la propiedad unique_id probando todas las combinaciones."""
-    # 1. Sub-dispositivo con unique_id simple -> Sufijo _device_id
+    """Kills mutants in unique_id property by testing all combinations."""
+    # 1. Sub-device with simple unique_id -> _device_id suffix
     mock_yaml_controller._unique_id = "mac_123"
     mock_yaml_controller._device_id = "sub_1"
     assert mock_yaml_controller.unique_id == "mac_123_sub_1"
 
-    # 2. Sub-dispositivo que ya incluye _device_id en unique_id -> No duplica
+    # 2. Sub-device that already includes _device_id in unique_id -> No duplication
     mock_yaml_controller._unique_id = "mac_123_sub_1"
     mock_yaml_controller._device_id = "sub_1"
     assert mock_yaml_controller.unique_id == "mac_123_sub_1"
 
-    # 3. Dispositivo principal con device_id "0" -> Mantiene unique_id original
+    # 3. Main device with device_id "0" -> Keeps original unique_id
     mock_yaml_controller._unique_id = "mac_123"
     mock_yaml_controller._device_id = "0"
     assert mock_yaml_controller.unique_id == "mac_123"
 
-    # 4. device_id es None -> Devuelve unique_id
+    # 4. device_id is None -> Returns unique_id
     mock_yaml_controller._unique_id = "mac_123"
     mock_yaml_controller._device_id = None
     assert mock_yaml_controller.unique_id == "mac_123"
 
-    # 5. unique_id es None -> Devuelve None
+    # 5. unique_id is None -> Returns None
     mock_yaml_controller._unique_id = None
     mock_yaml_controller._device_id = "sub_1"
     assert mock_yaml_controller.unique_id is None
 
 
 def test_yaml_controller_delegated_properties(mock_yaml_controller) -> None:
-    """Kills mutants en las propiedades delegadas simples."""
+    """Kills mutants in simple delegated properties."""
     # name
     mock_yaml_controller.loader.name = "Test AC Name"
     assert mock_yaml_controller.name == "Test AC Name"
@@ -835,12 +632,12 @@ def test_yaml_controller_delegated_properties(mock_yaml_controller) -> None:
 
 
 def test_yaml_controller_last_poll_data(mock_yaml_controller) -> None:
-    """Kills mutants en last_poll_data."""
-    # Sin state_getter -> None
+    """Kills mutants in last_poll_data."""
+    # Without state_getter -> None
     mock_yaml_controller.loader.state_getter = None
     assert mock_yaml_controller.last_poll_data is None
 
-    # Con state_getter -> Devuelve value
+    # With state_getter -> Returns value
     mock_state_getter = MagicMock()
     mock_state_getter.value = {"raw_temp": 25}
     mock_yaml_controller.loader.state_getter = mock_state_getter
@@ -848,12 +645,12 @@ def test_yaml_controller_last_poll_data(mock_yaml_controller) -> None:
 
 
 def test_yaml_controller_connection_diagnostics(mock_yaml_controller) -> None:
-    """Kills mutants en connection_diagnostics."""
-    # Sin conexión -> Dict vacío
+    """Kills mutants in connection_diagnostics."""
+    # Without connection -> Empty dict
     mock_yaml_controller.loader.connection = None
     assert mock_yaml_controller.connection_diagnostics == {}
 
-    # Con conexión -> Devuelve diagnostics
+    # With connection -> Returns diagnostics
     mock_conn = MagicMock()
     mock_conn.get_diagnostics.return_value = {"latency_ms": 12, "connected": True}
     mock_yaml_controller.loader.connection = mock_conn

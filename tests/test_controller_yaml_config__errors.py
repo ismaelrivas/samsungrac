@@ -25,49 +25,49 @@ def mock_controller_errors():
 
 @pytest.mark.asyncio
 async def test_async_initialize_early_exits_bombardment(mock_controller_errors):
-    """Mata los 15 mutantes Untested forzando todos los return False lícitos."""
+    """Kills the 15 Untested mutants by forcing all legitimate return False paths."""
 
-    # 1. Fallo: Archivo no especificado (None)
+    # 1. Failure: File not specified (None)
     mock_controller_errors._yaml = None
     loader = YamlConfigLoader(mock_controller_errors)
     assert await loader.async_initialize() is False
 
-    # 2. Fallo: Excepción al leer YAML
+    # 2. Failure: Exception while reading YAML
     mock_controller_errors._yaml = "test.yaml"
     clear_yaml_cache()
     with patch(
         "custom_components.climate_ip.controller_yaml_config.load_yaml",
-        side_effect=Exception("Explosión YAML"),
+        side_effect=Exception("YAML Explosion"),
     ):
         assert await loader.async_initialize() is False
 
-    # 3. Fallo: YAML vacío
+    # 3. Failure: Empty YAML
     with patch(
         "custom_components.climate_ip.controller_yaml_config.load_yaml", return_value={}
     ):
         assert await loader.async_initialize() is False
 
-    # 4. Fallo: Falta nodo 'device'
+    # 4. Failure: Missing 'device' node
     with patch(
         "custom_components.climate_ip.controller_yaml_config.load_yaml",
         return_value={"wrong_node": {}},
     ):
         assert await loader.async_initialize() is False
 
-    # 5. Fallo: Sin unique_id
+    # 5. Failure: Without unique_id
     mock_controller_errors.unique_id = None
     with patch(
         "custom_components.climate_ip.controller_yaml_config.load_yaml",
         return_value={"device": {}},
     ):
         assert await loader.async_initialize() is False
-    mock_controller_errors.unique_id = "uid_error"  # Restaurar
+    mock_controller_errors.unique_id = "uid_error"  # Restore
 
-    # 6. Fallo: Falla al crear la conexión (ConnectionMatch falla o load_from_yaml devuelve False)
+    # 6. Failure: Connection creation fails (ConnectionMatch fails or load_from_yaml returns False)
     mock_conn_class = MagicMock()
-    mock_conn_class.match_type.return_value = True  # Coincide tipo...
+    mock_conn_class.match_type.return_value = True  # Type matches...
     mock_conn_instance = MagicMock()
-    mock_conn_instance.load_from_yaml.return_value = False  # ...pero rechaza la carga
+    mock_conn_instance.load_from_yaml.return_value = False  # ...but rejects loading
     mock_conn_class.return_value = mock_conn_instance
 
     with patch(
@@ -80,8 +80,8 @@ async def test_async_initialize_early_exits_bombardment(mock_controller_errors):
         ):
             assert await loader.async_initialize() is False
 
-    # 7. Fallo: Falta 'status' node en el YAML (create_status_getter devuelve None)
-    mock_conn_instance.load_from_yaml.return_value = True  # Ahora pasa la conexión
+    # 7. Failure: Missing 'status' node in YAML (create_status_getter returns None)
+    mock_conn_instance.load_from_yaml.return_value = True  # Connection now passes
     with patch(
         "custom_components.climate_ip.controller_yaml_config.load_yaml",
         return_value={"device": {"connection": {}}},
@@ -99,11 +99,11 @@ async def test_async_initialize_early_exits_bombardment(mock_controller_errors):
 
 @pytest.mark.asyncio
 async def test_async_finish_initialization_duck_typing_snipers(mock_controller_errors):
-    """Kills mutants 42, 98, 111 aislando hasattr y getattr con NakedObjs."""
+    """Kills mutants 42, 98, 111 by isolating hasattr and getattr with NakedObjs."""
     loader = YamlConfigLoader(mock_controller_errors)
     loader.is_fully_initialized = False
 
-    # Preparamos un YAML válido para que corra el bucle
+    # Prepare a valid YAML so the loop runs
     loader._parsed_yaml_config = {
         "device": {
             "operations": {"op_key_fallback": {}},
@@ -112,17 +112,17 @@ async def test_async_finish_initialization_duck_typing_snipers(mock_controller_e
     }
     loader._parsed_yaml_cache = {"dev_error": loader._parsed_yaml_config}
 
-    # 1. MATA TARGET 42: Objeto sin atributo "id" para forzar fallback a "op_key_fallback"
+    # 1. KILL TARGET 42: Object without "id" attribute to force fallback to "op_key_fallback"
     naked_op = NakedObj()
     naked_op.config_validation_type = str
 
-    # 2. MATA TARGET 98: TemperatureOperation asimétrica (solo tiene un método en lugar de dos)
+    # 2. KILL TARGET 98: Asymmetric TemperatureOperation (has one method instead of two)
     naked_attr = NakedObj()
     naked_attr.id = "attr_duck"
     naked_attr.device_class = "temperature"
     naked_attr.set_hass_unit = MagicMock()
-    # INTENCIONALMENTE NO TIENE set_device_unit.
-    # If mutmut cambia 'and' por 'or', entrará al bloque y lanzará AttributeError.
+    # INTENTIONALLY NO set_device_unit.
+    # If mutmut changes 'and' to 'or', it will enter the block and raise AttributeError.
 
     def fake_create(key, node, conn, ctrl, getter):
         if key == "op_key_fallback":
@@ -139,21 +139,21 @@ async def test_async_finish_initialization_duck_typing_snipers(mock_controller_e
             await loader.async_finish_initialization()
         except AttributeError as e:
             pytest.fail(
-                f"Mutante vivo: Intentó usar un método no validado por hasattr/getattr de manera insegura: {e}"
+                f"Mutant alive: Attempted to use a method not validated by hasattr/getattr insecurely: {e}"
             )
 
-        # Lethal assertion para Target 42:
-        # Como naked_op no tenía "id", DEBIÓ usar "op_key_fallback"
+        # Lethal assertion for Target 42:
+        # Since naked_op did not have "id", it MUST have used "op_key_fallback"
         assert "op_key_fallback" in loader.operations
 
-        # Lethal assertion para Target 98:
-        # Al faltarle 'set_device_unit', el 'and' evaluó False, y NO debió ejecutar 'set_hass_unit'
+        # Lethal assertion for Target 98:
+        # Lacking 'set_device_unit', the 'and' evaluated False, and it MUST NOT have executed 'set_hass_unit'
         naked_attr.set_hass_unit.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_async_finish_initialization_default_schema(mock_controller_errors):
-    """Aniquila el mutante de cv.string por defecto (Target 39)."""
+    """Annihilates the default cv.string mutant (Target 39)."""
     from unittest.mock import patch
 
     import homeassistant.helpers.config_validation as cv
@@ -163,12 +163,12 @@ async def test_async_finish_initialization_default_schema(mock_controller_errors
 
     loader = YamlConfigLoader(mock_controller_errors)
     loader._parsed_yaml_config = {"device": {"operations": {"test_op": {}}}}
-    # CLAVE: Usamos 'dev_error' que es el device_id definido en la fixture mock_controller_errors
+    # KEY: We use 'dev_error' which is the device_id defined in the mock_controller_errors fixture
     loader._parsed_yaml_cache = {"dev_error": loader._parsed_yaml_config}
 
     class NakedProp:
         id = "test_op"
-        # INTENCIONALMENTE SIN config_validation_type
+        # INTENTIONALLY WITHOUT config_validation_type
 
     with patch(
         "custom_components.climate_ip.controller_yaml_config.create_property",
@@ -176,22 +176,22 @@ async def test_async_finish_initialization_default_schema(mock_controller_errors
     ):
         await loader.async_finish_initialization()
 
-    # Lethal assertion: Debe haber usado el cv.string por defecto
+    # Lethal assertion: It must have used the default cv.string
     assert loader.service_schema_map[vol.Optional("test_op")] == cv.string
 
 
 @pytest.mark.asyncio
 async def test_async_finish_initialization_config_fallback(mock_controller_errors):
-    """Aniquila el getattr(None, 'config') forzando la ausencia de _config (Target 64)."""
+    """Annihilates the getattr(None, 'config') forcing the absence of _config (Target 64)."""
     from unittest.mock import MagicMock
 
     from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
 
-    # Destruimos el atributo privado
+    # Destroy the private attribute
     if hasattr(mock_controller_errors, "_config"):
         delattr(mock_controller_errors, "_config")
 
-    # Dejamos solo el público
+    # Leave only the public one
     mock_controller_errors.config = {"entry_id": "fallback_entry_id"}
     mock_controller_errors.hass.config_entries.async_get_entry = MagicMock()
 
@@ -201,7 +201,7 @@ async def test_async_finish_initialization_config_fallback(mock_controller_error
 
     await loader.async_finish_initialization()
 
-    # Lethal assertion: Si el fallback falló, async_get_entry no se llamará con este ID
+    # Lethal assertion: If fallback failed, async_get_entry will not be called with this ID
     mock_controller_errors.hass.config_entries.async_get_entry.assert_called_once_with(
         "fallback_entry_id"
     )
@@ -209,24 +209,24 @@ async def test_async_finish_initialization_config_fallback(mock_controller_error
 
 @pytest.mark.asyncio
 async def test_async_initialize_config_entry_fetch(mock_controller_errors):
-    """Verify mutant kill for mutation async_get_entry(None) auditando el parámetro (Target 70)."""
+    """Verify mutant kill for mutation async_get_entry(None) auditing the parameter (Target 70)."""
     from unittest.mock import MagicMock, patch
 
     from custom_components.climate_ip.const import CONF_DEVICE_TYPE
     from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
 
-    # Inyección táctica con constantes
+    # Tactical injection with constants
     mock_controller_errors._config = {
         "entry_id": "TARGET_ENTRY_ID",
         CONF_DEVICE_TYPE: "samsung_8888",
     }
     mock_controller_errors.config = (
         mock_controller_errors._config
-    )  # Sincronizamos fallbacks
+    )  # Synchronize fallbacks
     mock_controller_errors._yaml = "test.yaml"
     mock_controller_errors.hass.config_entries.async_get_entry = MagicMock()
 
-    # [!] FIX: Inject una corrutina real para simular el executor de Home Assistant y evitar el crash
+    # [!] FIX: Inject a real coroutine to simulate Home Assistant's executor and avoid crash
     async def mock_async_add_executor_job(*args, **kwargs):
         return args[0](*args[1:], **kwargs)
 
@@ -249,7 +249,7 @@ async def test_async_initialize_config_entry_fetch(mock_controller_errors):
     ):
         await loader.async_initialize()
 
-    # Lethal assertion: El framework debió ser consultado con el ID exacto, no con None
+    # Lethal assertion: The framework must have been queried with the exact ID, not None
     mock_controller_errors.hass.config_entries.async_get_entry.assert_called_once_with(
         "TARGET_ENTRY_ID"
     )
@@ -257,7 +257,7 @@ async def test_async_initialize_config_entry_fetch(mock_controller_errors):
 
 @pytest.mark.asyncio
 async def test_apply_temperature_units_simple_sensor_fallback(mock_controller_errors):
-    """Aniquila el mutante final (Target 83) forzando la rama 'elif' de temperatura."""
+    """Annihilates the final mutant (Target 83) by forcing the temperature 'elif' branch."""
     from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
 
     loader = YamlConfigLoader(mock_controller_errors)
@@ -292,4 +292,4 @@ async def test_apply_temperature_units_simple_sensor_fallback(mock_controller_er
     # Lethal assertion: El motor DEBIÓ caer en el 'elif' y aplicar la unidad
     assert (
         strict_sensor.unit_applied == "°F"
-    ), "El bloque 'elif hasattr' de fallback de temperatura no se ejecutó."
+    ), "The temperature fallback 'elif hasattr' block did not execute."

@@ -381,11 +381,11 @@ async def test_samsung_2878_parse_redundant_power_on(connection):
 
 def test_ensure_callback_linked_mutants(connection):
     """Verify mutant kill de la condicional y el getattr sin default."""
-    # Mutante 1: 'and' a 'or'. Si es 'or', entrará aquí e intentará hacer getattr sobre None,
-    # lanzando AttributeError.
+    # Mutant 1: 'and' to 'or'. If 'or', it will enter here and try to getattr on None,
+    # raising AttributeError.
     connection._controller = None
     connection._update_callback = None
-    connection._ensure_callback_linked()  # Si sobrevive el mutante 'or', esto explota
+    connection._ensure_callback_linked()  # If 'or' mutant survives, this explodes
 
     # Objeto genérico sin 'on_push_update_callback' debe lanzar AttributeError al acceder directamente
     connection._controller = object()
@@ -505,7 +505,7 @@ async def test_close_connection_logic(connection):
 
 @pytest.mark.asyncio
 async def test_establish_connection_network_refused(connection):
-    """Fallo de red puro que itera los ciphers."""
+    """Pure network failure iterating ciphers."""
     connection._cfg.host = "192.168.1.50"
     with (
         patch("socket.socket"),
@@ -733,7 +733,7 @@ async def test_async_execute_timeout_and_success(connection):
     connection._manager_task = MagicMock()
     connection._manager_task.done.return_value = False
 
-    # 1. Fallo rápido si no está listo y ya hubo reintentos
+    # 1. Fast fail if not ready and retries already occurred
     connection._is_ready.clear()
     connection._reconnect_retries = 1
     with patch("custom_components.climate_ip.samsung_2878.COMMAND_TIMEOUT", 0.01):
@@ -766,7 +766,7 @@ async def test_async_execute_timeout_and_success(connection):
     connection._cmd_queue.put.assert_called_once()
     assert "<MyData>\n" in connection._cmd_queue.put.call_args[0][0][0]
 
-    # Ejecutamos modo poll
+    # Execute poll mode
     connection._cmd_queue.put.reset_mock()
     connection._cfg.duid = "TESTDUID"
     await connection.async_execute(None, None, None, None, _is_poll=True)
@@ -1021,7 +1021,7 @@ async def test_establish_connection_cipher_iteration_and_issue_clear(connection)
     ):
         mock_loop.return_value.sock_connect = AsyncMock()
 
-        # EL TRUCO: Fallamos la primera conexión SSL, acertamos la segunda
+        # THE TRICK: Fail first SSL connection, succeed on second
         # If mutmut puso un 'break', devolverá False en vez de intentar la segunda.
         mock_open_conn.side_effect = [
             ssl.SSLError("Cipher 1 fallback"),
@@ -1336,10 +1336,10 @@ async def test_connection_manager_queues_and_cleanup(connection):
             # fake_queue_task.cancel.assert_called_once()
             assert (
                 fake_read_task.cancelled() is True
-            ), "El mutante sobrevivió: _read_task no fue cancelada en el finally"
+            ), "Mutant survived: _read_task was not cancelled in finally"
             assert (
                 fake_queue_task.cancelled() is True
-            ), "El mutante sobrevivió: queue_task no fue cancelada en el finally"
+            ), "Mutant survived: queue_task was not cancelled in finally"
 
 
 class MutantTimeoutError(Exception):
@@ -1389,7 +1389,7 @@ async def test_connection_manager_reconnect_continue(connection):
                 await connection._connection_manager()
 
         # If mutant cambió 'continue' por 'break', el loop se habría roto tras el primer False
-        # y mock_reconn solo tendría 1 llamada. Al asertar 2, matamos al mutante.
+        # and mock_reconn would only have 1 call. By asserting 2, we kill mutant.
         assert mock_reconn.call_count == 2
 
 
@@ -1413,7 +1413,7 @@ async def test_connection_manager_reconnect_continue_strict(connection):
             await connection._connection_manager()
 
         # If mutmut cambió 'continue' por 'break', el código habría salido del bucle
-        # en el primer intento y call_count sería 1. Al exigir 2, el mutante muere.
+        # on first attempt and call_count would be 1. Requiring 2 kills mutant.
         assert mock_reconn.call_count == 2
 
 
@@ -1441,7 +1441,7 @@ def test_start_listening_strict_assignments(connection):
 
 @pytest.mark.asyncio
 async def test_connection_manager_missing_reader_continue_strict(connection):
-    """Mata al ÚLTIMO mutante: cambia 'continue' por 'break' cuando se pierde el _reader."""
+    """Kills the LAST mutant: changes 'continue' to 'break' when _reader is lost."""
 
     # 1. Estado inicial: Forzamos que el _writer esté vivo, pero el _reader esté caído
     # Esto evade el primer IF y nos hace caer directamente en la trampa del segundo IF
@@ -1469,7 +1469,7 @@ async def test_connection_manager_missing_reader_continue_strict(connection):
             await connection._connection_manager()
 
         # If mutant cambió 'continue' por 'break', la función habría terminado limpiamente en la 1ª iteración.
-        # Al exigir que se haya llamado 2 veces (es decir, que haya dado la 2ª vuelta), aniquilamos al mutante.
+        # Requiring it to be called twice (i.e. second iteration), we annihilate mutant.
         assert mock_reconn.call_count == 2
 
 
@@ -1562,62 +1562,10 @@ def test_execute_sync_not_implemented(connection):
     ):
         connection.execute(None, None, None)
 
-
-# def test_force_unavailability_if_needed_strict():
-#     """Kills mutants de strings y hasattr en la indisponibilidad usando Análisis Estático."""
-#     import inspect
-#     from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878
-
-#     # 1. Verify mutant kill del valor por defecto ("Network" -> "network", "NETWORK", "XXNetworkXX")
-#     # Inspeccionamos la firma de la función sin ejecutarla
-#     sig = inspect.signature(ConnectionSamsung2878._force_unavailability_if_needed)
-#     assert sig.parameters['offline_type'].default == "Network"
-
-#     # 2. Verify mutant kill lógicos y de strings dentro del bloque IF
-#     # Obtenemos el código fuente de la función tal cual está en memoria
-#     source = inspect.getsource(ConnectionSamsung2878._force_unavailability_if_needed)
-
-#     # Si Mutmut cambia 'and' por 'or', o cambia el string "on_offline_callback", esto fallará matemáticamente
-#     assert 'and hasattr(self._controller, "on_offline_callback")' in source
-#     assert 'and self._controller.on_offline_callback:' in source
-
-# def test_samsung_2878_force_unavailability(connection):
-#     """Verify mutant kill de _force_unavailability_if_needed."""
-#     mock_controller = MagicMock()
-#     connection._controller = mock_controller
-
-#     # Caso 1: retries != 2 (No hace nada)
-#     connection._reconnect_retries = 1
-#     connection._force_unavailability_if_needed("Network")
-#     mock_controller.on_offline_callback.assert_not_called()
-#     mock_controller.on_connection_failed_callback.assert_not_called() # <-- CORRECCIÓN: No se llama si retries != 2
-#     assert connection._persistent_offline_err_logged is False
-
-#     # Caso 2: retries == 2, initial_connection_done = True
-#     mock_controller.reset_mock()
-#     connection._reconnect_retries = 2
-#     connection._initial_connection_done = True
-#     connection._force_unavailability_if_needed("Service")
-
-#     mock_controller.on_offline_callback.assert_called_once_with("Host unreachable after multiple retry attempts.")
-#     mock_controller.on_connection_failed_callback.assert_called_once()
-#     assert connection._persistent_offline_err_logged is True
-
-#     # Caso 3: Ya está logeado (evita spam de offline, pero sí notifica connection_failed)
-#     mock_controller.reset_mock()
-#     connection._reconnect_retries = 2
-#     connection._force_unavailability_if_needed("Service")
-
-#     # Al estar a True, no debe volver a llamar a on_offline_callback
-#     mock_controller.on_offline_callback.assert_not_called()
-#     # Pero sí debe llamar a on_connection_failed_callback porque está fuera de la validación del booleano
-#     mock_controller.on_connection_failed_callback.assert_called_once()
-
-
 def test_samsung_2878_force_unavailability(connection):
-    """Verify mutant kill de _force_unavailability_if_needed usando una clase estricta."""
+    """Verify mutant kill of _force_unavailability_if_needed using a strict class."""
 
-    # CLASE ESTRICTA: Kills mutants que alteran las strings de los callbacks
+    # STRICT CLASS: Kills mutants altering callback strings
     class StrictMockController:
         def __init__(self):
             # Atributos de identidad para que self.log_prefix no crashee
@@ -1734,24 +1682,24 @@ async def test_parse_state_strict_dicts_and_logic(connection):
         side_effect=mock_async_add_executor_job
     )
 
-    # 1. Mutante de `{}` a `None` o string vacía en .get(PROTOCOL_2878_DEVICE_STATE, {})
+    # 1. Mutant from {} to None or empty string in .get(PROTOCOL_2878_DEVICE_STATE, {})
     xml_missing_state = '<?xml version="1.0"?><Response Type="Fake"></Response>'
     # If mutant inyecta un None, el ".get('Device')" encadenado lanzará AttributeError
-    # Al no atraparlo, Pytest reportará fallo de test y MUTANTE ANIQUILADO.
+    # By not catching it, Pytest will report test failure and MUTANT ANNIHILATED.
     is_resp, is_upd, parsed = await connection._parse_and_update_state(
         xml_missing_state
     )
     assert is_resp is True
     assert parsed == {}
 
-    # 2. Mutante de [] a None en attrs = device_data.get(PROTOCOL_2878_ATTR, [])
+    # 2. Mutant from [] to None in attrs = device_data.get(PROTOCOL_2878_ATTR, [])
     # Proveemos un diccionario con una llave falsa para que no entre por el "if not device_data"
     xml_missing_attr = '<?xml version="1.0"?><Response><DeviceState><Device><Dummy>1</Dummy></Device></DeviceState></Response>'
     # Si muta el array [], for attr in attrs lanzará TypeError
     is_resp, is_upd, parsed = await connection._parse_and_update_state(xml_missing_attr)
     assert parsed == {}
 
-    # 3. Mutante lógico de AND a OR en la extracción de atributos
+    # 3. Logical AND to OR mutant in attribute extraction
     xml_bad_attr = '<?xml version="1.0"?><Update Type="Status"><Status><Attr ID="OnlyID" /></Status></Update>'
     # If mutmut cambia a "ID in attr OR VALUE in attr", intentará extraer el valor inexistente y lanzará KeyError
     is_resp, is_upd, parsed = await connection._parse_and_update_state(xml_bad_attr)
@@ -1864,7 +1812,7 @@ def test_samsung_2878_init_strict():
     # Pass None como controlador para poder asertar su estado vacío estricto
     conn = ConnectionSamsung2878({}, None)
 
-    # Exigimos la identidad estricta en memoria, no solo que evalúen a 'False'
+    # We require strict identity in memory, not just evaluating to 'False'
     assert conn._controller is None
     assert conn._reader is None
     assert conn._writer is None
@@ -1897,7 +1845,7 @@ async def test_samsung_2878_stop_listening_strict(connection):
 async def test_parse_and_update_state_xml_strict_dicts(connection):
     """Kills mutants de diccionarios por defecto ({}, []) en el parser XML."""
 
-    # 1. Matar el mutante getattr(..., "HASS").
+    # 1. Kill mutant getattr(..., "HASS").
     # Usamos spec=["hass"]. If mutmut pregunta por "HASS", AttributeError cortará el test de raíz.
     connection._controller = MagicMock(spec=["hass"])
     connection._controller.hass = MagicMock()
@@ -1945,7 +1893,7 @@ async def test_post_connect_status_request_strict_put(connection):
     connection._cmd_queue.put.assert_called_once()
     args = connection._cmd_queue.put.call_args[0][0]
 
-    # Validamos estructura de cola estricta (Comando XML, Future)
+    # Validate strict queue structure (XML Command, Future)
     assert isinstance(args, tuple)
     assert "TESTDUID" in args[0]
     assert isinstance(args[1], asyncio.Future)
@@ -1978,7 +1926,7 @@ async def test_handle_reconnection_strict_sleep_and_kwargs(connection):
         await connection.handle_reconnection()
 
         mock_sleep.assert_called_once()
-        # Si Mutmut cambió el argumento a None, esta aserción estricta de tipo falla.
+        # If Mutmut changed argument to None, this strict type assertion fails.
         assert isinstance(mock_sleep.call_args[0][0], float)
         # Ahora sí se rechaza el future adecuadamente
         assert fake_future.exception() is not None
@@ -2009,7 +1957,7 @@ def test_update_configuration_strict_dicts(connection):
             "val_token", "val_token", "val_ip_address", "val_device_id", "val_mac"
         )
 
-    # 3. Matar el mutante de load_from_yaml: self._params[CONF_DUID] = None
+    # 3. Kill load_from_yaml mutant: self._params[CONF_DUID] = None
     connection._cfg.duid = "STRICT_DUID"
 
     # AÑADIDO: Parcheamos 'Template' para que no explote el Frame Helper de HA
@@ -2083,7 +2031,7 @@ async def test_process_read_queue_strict_future_getattr(connection):
             await connection._process_read_queue(b"")
         except TypeError as e:
             # Si lanza TypeError, es porque mutmut eliminó el default "" y coló un None
-            pytest.fail(f"Mutante cazado (TypeError in getattr fallback): {e}")
+            pytest.fail(f"Mutant caught (TypeError in getattr fallback): {e}")
 
 
 def test_update_config_and_yaml_strict_logic(connection):
@@ -2170,7 +2118,7 @@ async def test_process_read_queue_strict_positives(connection):
 
 @pytest.mark.asyncio
 async def test_establish_connection_strict_sockets(connection):
-    """Verify mutant kill de configuración de sockets y parámetros de conexión."""
+    """Verify mutant kill of socket configuration and connection parameters."""
 
     connection._cfg.host = "10.0.0.1"
     connection._cfg.port = 2878
@@ -2232,7 +2180,7 @@ async def test_establish_connection_strict_sockets(connection):
                 cert_path=None, ciphers=ANY, verify_mode=ssl.CERT_NONE
             )
 
-            # 5. Validar extracción de info SSL estricta
+            # 5. Validate strict SSL info extraction
             mock_writer.get_extra_info.assert_called_with("ssl_object")
 
             # 6. Validar opciones TCP exactas (Kills mutants de IPPROTO_TCP a None)
@@ -2255,7 +2203,7 @@ async def test_read_full_response_unified_assault(connection):
     """
     from unittest.mock import AsyncMock
 
-    # Neutralizamos el cierre real de la conexión para no generar errores colaterales
+    # Neutralize real connection closure to avoid collateral errors
     connection._close_connection = AsyncMock()
 
     # ==========================================================
@@ -2281,7 +2229,7 @@ async def test_read_full_response_unified_assault(connection):
             return b""
 
     # ==========================================================
-    # 1. Mutante de EOF temprano (Línea 765: if not self._reader or self._reader.at_eof())
+    # 1. Early EOF mutant (Line 765: if not self._reader or self._reader.at_eof())
     # ==========================================================
     connection._reader = FakeReader([])
     connection._reader.eof = True
@@ -2296,26 +2244,26 @@ async def test_read_full_response_unified_assault(connection):
     connection._close_connection.assert_called()
 
     # ==========================================================
-    # 3. Mutante de Concatenación (Línea 778: buffer += chunk)
+    # 3. Concatenation Mutant (Line 778: buffer += chunk)
     # ==========================================================
     connection._reader = FakeReader([b"A", b"B", b""])
     res2 = await connection._read_full_response(timeout=1.0)
-    assert res2 == "AB", "Mutante de concatenación sobrevivió"
+    assert res2 == "AB", "Concatenation mutant survived"
 
     # ==========================================================
-    # 4. Mutante de decodificación hostil (Línea 779: errors="ignore")
+    # 4. Hostile decoding mutant (Line 779: errors="ignore")
     # Inject basura UTF-8. Si quita el "ignore", crashea y retorna None.
     # ==========================================================
     connection._reader = FakeReader([b"Valid" + b"\xff\xfe", b""])
     res3 = await connection._read_full_response(timeout=1.0)
-    assert res3 is not None, "El mutante borró errors='ignore' y crasheó"
+    assert res3 is not None, "The mutant deleted errors='ignore' and crashed"
     assert "Valid" in res3
 
     # ==========================================================
     # 5. Mutantes OR -> AND y lógica de endswith (Líneas 781-784)
     # LA GUILLOTINA: Le pasamos la trama correcta y luego una Excepción.
     # Si el código es sano (OR), retorna al ver la trama y no pide más.
-    # Si es un mutante (AND), pide más, traga el RuntimeError,
+    # If it's a mutant (AND), asks for more, swallows RuntimeError,
     # y el except original retorna None.
     # ==========================================================
 
@@ -2324,7 +2272,7 @@ async def test_read_full_response_unified_assault(connection):
         [f"{PROTOCOL_2878_DPLUG}\n".encode(), RuntimeError("Guillotina")]
     )
     res_a = await connection._read_full_response(timeout=1.0)
-    assert res_a is not None, "Mutante vivo: 'or' cambió a 'and' en DPLUG"
+    assert res_a is not None, "Mutant alive: 'or' changed to 'and' in DPLUG"
     assert PROTOCOL_2878_DPLUG in res_a
 
     # 5B: </Response>
@@ -2332,19 +2280,19 @@ async def test_read_full_response_unified_assault(connection):
         [b"<Data></Response>\n", RuntimeError("Guillotina")]
     )
     res_b = await connection._read_full_response(timeout=1.0)
-    assert res_b is not None, "Mutante vivo: 'or' cambió a 'and' en </Response>"
+    assert res_b is not None, "Mutant alive: 'or' changed to 'and' in </Response>"
     assert "</Response>" in res_b
 
     # 5C: </Update>
     connection._reader = FakeReader([b"<Data></Update>\n", RuntimeError("Guillotina")])
     res_c = await connection._read_full_response(timeout=1.0)
-    assert res_c is not None, "Mutante vivo: 'or' cambió a 'and' en </Update>"
+    assert res_c is not None, "Mutant alive: 'or' changed to 'and' in </Update>"
     assert "</Update>" in res_c
 
     # 5D: endswith("/>")
     connection._reader = FakeReader([b"<SoloCierre/>\n", RuntimeError("Guillotina")])
     res_d = await connection._read_full_response(timeout=1.0)
-    assert res_d is not None, "Mutante vivo: 'or' cambió a 'and' en '/>'"
+    assert res_d is not None, "Mutant alive: 'or' changed to 'and' in '/>'"
     assert res_d.endswith("/>")
 
 

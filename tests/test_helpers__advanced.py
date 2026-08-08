@@ -511,11 +511,11 @@ def test_mask_sensitive_data():
     assert masked["normal_key"] == "visible"
 
 
-# --- mask_sensitive_data (Añadido para cazar al Mutante 29 y string DUID mutants) ---
+# --- mask_sensitive_data (Added to hunt Mutant 29 and string DUID mutants) ---
 def test_mask_sensitive_data_list():
     """Test explicit list processing to kill Mutant 29."""
     data = [{"token": "12345678"}]
-    # If mutmut cambia 'item' a 'None', devolverá [None] y este assert fallará
+    # If mutmut changes 'item' to 'None', it will return [None] and this assertion will fail
     assert mask_sensitive_data(data) == [{"token": "***345678"}]
 
 
@@ -546,7 +546,7 @@ def test_mask_sensitive_data_strings():
     assert mask_sensitive_data(str_device_token) == 'DeviceToken="***"'
 
 
-# --- async_check_network_reachability (Actualizado) ---
+# --- async_check_network_reachability (Updated) ---
 @pytest.mark.asyncio
 @patch("custom_components.climate_ip.helpers.async_ping")
 async def test_async_check_network_reachability(mock_ping):
@@ -566,13 +566,13 @@ async def test_async_check_network_reachability(mock_ping):
     mock_ping.side_effect = OSError("Permission denied")
     assert await async_check_network_reachability("192.168.1.100") is True
 
-    # ¡LA TRAMPA PARA EL MUTANTE 23!
+    # THE TRAP FOR MUTANT 23!
     if ICMPSocketError is not None:
         mock_ping.side_effect = ICMPSocketError("Mocked socket error")
         assert await async_check_network_reachability("192.168.1.100") is False
 
 
-# --- async_check_network_reachability (Nuevo Test para Mutantes 2 y 5) ---
+# --- async_check_network_reachability (New Test for Mutants 2 and 5) ---
 @pytest.mark.asyncio
 async def test_async_check_network_reachability_no_library():
     """Test fallback logic when icmplib is missing or fails to load."""
@@ -580,21 +580,21 @@ async def test_async_check_network_reachability_no_library():
 
     original_ping = helpers_module.async_ping
 
-    # Simulamos que la librería no está instalada en el sistema
+    # Simulate library not installed on the system
     helpers_module.async_ping = None
 
     try:
-        # Esto debería usar la vía de escape y devolver True
+        # This should use escape route and return True
         assert await async_check_network_reachability("192.168.1.100") is True
     finally:
-        # Restauramos el módulo a su estado original para no romper otros tests
+        # Restore module to original state so we don't break other tests
         helpers_module.async_ping = original_ping
 
 
 def test_safe_xml_to_dict_non_string_mutation():
-    """Mata al Mutante 1 forzando un tipo no-string evaluable como True."""
-    # El mutante 'and' intentaría hacer un re.search sobre una lista, reventando.
-    # El código correcto corta por lo sano y devuelve {}.
+    """Kills Mutant 1 by forcing a non-string type evaluable as True."""
+    # The 'and' mutant would try to do a re.search on a list, blowing up.
+    # Correct code cuts clean and returns {}.
     assert safe_xml_to_dict(["<root></root>"]) == {}
     assert safe_xml_to_dict(12345) == {}
 

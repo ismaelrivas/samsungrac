@@ -246,7 +246,7 @@ async def test_async_delete_issue_fallback_cascade(
 
 
 async def test_async_update_state_early_exits_and_ping():
-    """Asserts que la falta de getter o el fallo de ping abortan la petición de red."""
+    """Asserts that missing getter or ping failure aborts the network request."""
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)
 
@@ -312,7 +312,7 @@ async def test_async_update_state_network_failures_and_cache():
     poller._cached_device_state = {"power": "on"}
     poller._consecutive_connection_errors = 0
 
-    # Inject una excepción de conexión
+    # Inject a connection exception
     mock_controller.loader.state_getter.async_update_state.side_effect = CannotConnect(
         "Timeout HTTP"
     )
@@ -334,7 +334,7 @@ async def test_async_update_state_network_failures_and_cache():
     # We assert que intentó crear el issue al llegar a 3
     poller._try_create_repair_issue.assert_called_once()
 
-    # Validamos la resolución del Issue (Cuando la conexión se recupera)
+    # Validate Issue resolution (When connection recovers)
     poller._consecutive_connection_errors = 1
     mock_controller.loader.state_getter.async_update_state.side_effect = None
     mock_controller.loader.state_getter.async_update_state.return_value = {
@@ -348,7 +348,7 @@ async def test_async_update_state_network_failures_and_cache():
         "custom_components.climate_ip.controller_yaml_polling.async_delete_issue"
     ) as mock_delete_issue:
         await poller.async_update_state()
-        # Verificación estricta de que se borró el issue con los parámetros correctos
+        # Strict verification that the issue was deleted with correct parameters
         mock_delete_issue.assert_called_once_with(
             mock_controller.hass, "climate_ip", "device_offline_192_168_1_100"
         )
@@ -368,7 +368,7 @@ async def test_async_update_state_persistently_offline():
     poller = YamlStatePoller(mock_controller)
     mock_controller.config.get.return_value = "REST_API"
 
-    # 1. Fallo "persistently offline" (Kills mutants en `if "persistently offline" in str(e)`)
+    # 1. "persistently offline" failure (Kills mutants in `if "persistently offline" in str(e)`)
     mock_controller.loader.state_getter.async_update_state.side_effect = CannotConnect(
         "Host unreachable (ICMP ping failed). Device is persistently offline."
     )
@@ -378,7 +378,7 @@ async def test_async_update_state_persistently_offline():
 
     assert poller._consecutive_connection_errors == 2
 
-    # 2. Fallo de red genérico (Debe sumar 1, en lugar de igualar a 2)
+    # 2. Generic network failure (Must add 1, instead of setting to 2)
     poller._consecutive_connection_errors = 0
     mock_controller.loader.state_getter.async_update_state.side_effect = CannotConnect(
         "Timeout"

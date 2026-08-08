@@ -130,13 +130,13 @@ def test_update_state_valid_float(base_sensor_entity: ClimateIpSensor) -> None:
     # el valor resultante será None y esta aserción fallará crasamente.
     assert (
         base_sensor_entity._attr_native_value == 23.7
-    ), "Falló la conversión matemática a float (Mutante 10/11)."
+    ), "Mathematical float conversion failed (Mutant 10/11)."
 
 
 def test_update_state_float_parsing_failure(
     base_sensor_entity: ClimateIpSensor,
 ) -> None:
-    """Kills mutants en el bloque try/except de float(), incluyendo el Mutante 12."""
+    """Kills mutants in float() try/except block, including Mutant 12."""
     # Al no ser string ni UniqueIdProperty, intentará castear a float
     base_sensor_entity._property.value_is_string = False
 
@@ -152,7 +152,7 @@ def test_update_state_float_parsing_failure(
     # El uso de 'is None' asegura que si mutmut lo cambia a '""', el test fallará.
     assert (
         base_sensor_entity._attr_native_value is None
-    ), "El fallo de casteo a float debe asignar exactamente None (aniquila Mutante 12)."
+    ), "Float casting failure must assign exactly None (annihilates Mutant 12)."
 
 
 # ============================================================
@@ -203,7 +203,7 @@ async def test_async_setup_entry_strict_mapping(
 
     # Inyección de la clase plana en lugar de un Mock
     prop_instance = DummyPropValid()
-    # Usamos un mock para el método is_valid para asertar que recibe el estado correcto (Mutante 5 y 6)
+    # We use a mock for is_valid method to assert receiving correct state (Mutant 5 and 6)
     prop_instance.is_valid = MagicMock(return_value=True)
 
     mock_coord.controller.sensors = [prop_instance]
@@ -233,17 +233,17 @@ async def test_async_setup_entry_strict_mapping(
         icon="mdi:thermometer",
     )
 
-    # Aniquila Mutante 71: Asserts explícitamente los argumentos posicionales del constructor
+    # Annihilates Mutant 71: Explicitly asserts constructor positional arguments
     mock_sensor_class.assert_called_once_with(
         mock_coord, mock_desc_class.return_value, prop_instance
     )
 
-    # Aniquila Mutante 68: Asserts the identidad del objeto en la lista, no solo su longitud
+    # Annihilates Mutant 68: Asserts object identity in list, not just length
     async_add_entities.assert_called_once()
     entities_passed = async_add_entities.call_args[0][0]
     assert entities_passed == [
         mock_sensor_class.return_value
-    ], "El mutante hizo append de None en lugar del sensor instanciado."
+    ], "The mutant appended None instead of instantiated sensor."
 
 
 @pytest.mark.asyncio
@@ -252,7 +252,7 @@ async def test_async_setup_entry_strict_mapping(
 async def test_async_setup_entry_fallback_and_logic(
     mock_parse_category, mock_desc_class
 ) -> None:
-    """Kills mutants lógicos en las ramas de fallback (ej. mutante 32)."""
+    """Kills logical mutants in fallback branches (e.g. mutant 32)."""
     hass = MagicMock()
     entry = MagicMock()
     mock_coord = MagicMock()
@@ -286,7 +286,7 @@ async def test_async_setup_entry_icon_logical_operator_inverse(
     mock_parse_category, mock_desc_class
 ) -> None:
     """
-    Aniquila Mutante 32 (cambio de 'and' por 'or' en la asignación del icono).
+    Annihilates Mutant 32 (changing 'and' to 'or' in icon assignment).
     Evaluamos el caso inverso: No hay icono, pero SÍ hay device_class.
     En el código original ('and'): No se asigna 'mdi:eye' porque hay device_class.
     En el código mutado ('or'): Se asignaría 'mdi:eye' de forma errónea.
@@ -318,7 +318,7 @@ async def test_async_setup_entry_icon_logical_operator_inverse(
     # Lethal assertion: El icono debe seguir siendo None, no "mdi:eye"
     assert (
         kwargs["icon"] is None
-    ), "El mutante 'or' reescribió el icono a mdi:eye ignorando el device_class."
+    ), "The 'or' mutant rewrote icon to mdi:eye ignoring device_class."
 
 
 @pytest.mark.asyncio

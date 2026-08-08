@@ -487,7 +487,7 @@ async def test_corrections_are_dispatched_to_controller(hass: HomeAssistant) -> 
         try:
             await asyncio.wait_for(asyncio.gather(*tasks), timeout=0.5)
         except TimeoutError:
-            pytest.fail("Mutante cazado: Tarea asíncrona colgada por mutación.")
+            pytest.fail("Mutant caught: Async task hung by mutation.")
 
     # The controller must have been called exactly twice:
     assert mock_controller.async_set_property.await_count == 2, (
@@ -1275,8 +1275,8 @@ async def test_coordinator_auto_healing_fails_when_already_raw(
     hass: HomeAssistant,
 ) -> None:
     """
-    Aniquila el mutante de la línea 307 (if current_method == CONN_METHOD_RAW)
-    y cubre el bloque Untested de fallo persistente (Líneas 320-324).
+    Annihilates mutant line 307 (if current_method == CONN_METHOD_RAW)
+    and covers the Untested persistent failure block (Lines 320-324).
     """
     from homeassistant.helpers.update_coordinator import UpdateFailed
 
@@ -1422,93 +1422,9 @@ def test_debouncer_cancel_all_strict_none():
     assert len(debouncer._timers) == 0
     assert len(debouncer._pending_payloads) == 0
 
-
-# @pytest.mark.asyncio
-# async def test_debouncer_exception_handling_and_window_replace():
-#     """
-#     Cubre y aniquila los mutantes 'Untested' de exc_info=True (líneas 117 y 125)
-#     y cubre la rama de re-encolado rápido (línea 90).
-#     """
-#     from custom_components.climate_ip.exceptions import CannotConnect
-
-#     mock_coordinator = MagicMock()
-#     mock_coordinator.async_request_refresh = AsyncMock()
-#     mock_coordinator.hass = MagicMock()
-#     mock_coordinator.unique_id = "test_123"
-
-#     # Interceptamos la creación de la tarea en segundo plano para ejecutarla nosotros
-#     created_tasks = []
-#     def fake_create_task(coro, **kwargs):
-#         created_tasks.append(coro)
-#         return coro
-
-#     mock_coordinator.hass.async_create_task.side_effect = fake_create_task
-#     mock_coordinator.hass.loop.call_later = MagicMock(return_value="mock_timer")
-
-#     debouncer = PropertyDebouncer(mock_coordinator, delay=10.0)
-
-#     # --- 1. Cubrir Línea 90: Reemplazar un comando rápido ---
-#     # Simulamos que ya hay un timer activo y estamos dentro de la ventana del delay
-#     mock_existing_timer = MagicMock()
-#     debouncer._global_timer = mock_existing_timer
-#     debouncer._global_last_execution = time.time()
-
-#     async def dummy_success(): pass
-
-#     # Ejecutamos. Al haber un timer activo, lo cancela y pasa por la línea 90
-#     await debouncer.async_execute("prop_success", dummy_success)
-#     mock_existing_timer.cancel.assert_called_once()
-
-#     # --- 2. Cubrir Líneas 117 y 125: Excepciones en el runner ---
-#     # Preparamos funciones que fallen al ejecutarse para detonar los bloques except
-#     async def dummy_fail_network():
-#         raise CannotConnect("Network offline")
-
-#     async def dummy_fail_generic():
-#         raise ValueError("Generic boom")
-
-#     # Añadimos los fallos a la cola pendiente
-#     debouncer._pending_payloads["prop_net"] = (dummy_fail_network, ("arg_net",), {"kw": 1})
-#     debouncer._pending_payloads["prop_gen"] = (dummy_fail_generic, ("arg_gen",), {"kw": 2})
-
-#     # Extraemos la función interna _fire_delayed que el debouncer programó en call_later
-#     callback_fire_delayed = mock_coordinator.hass.loop.call_later.call_args[0][1]
-
-#     with patch("custom_components.climate_ip.coordinator._LOGGER.debug") as mock_debug:
-#         # Disparamos el timer manualmente
-#         callback_fire_delayed()
-
-#         # _fire_delayed saca las tareas pendientes y crea un _task_runner
-#         assert len(created_tasks) > 0
-#         task_coro = created_tasks[-1]
-
-#         # Ejecutamos la tarea asíncrona real
-#         try:
-#             await asyncio.wait_for(task_coro, timeout=0.5)
-#         except asyncio.TimeoutError:
-#             pytest.fail("Mutante cazado: El runner interno se colgó.")
-
-#         # Verificamos que el coordinador pidió refresco tras ambos fallos
-#         assert mock_coordinator.async_request_refresh.await_count == 2
-
-#         # Aniquilamos los mutantes lógicos de la línea 117 y 125 comprobando que exc_info=True se usó intacto
-#         mock_debug.assert_any_call(
-#             "[Debouncer] Network error executing delayed command for '%s': %s",
-#             "prop_net",
-#             ANY,
-#             exc_info=True
-#         )
-#         mock_debug.assert_any_call(
-#             "[Debouncer] Error executing delayed command for '%s': %s",
-#             "prop_gen",
-#             ANY,
-#             exc_info=True
-#         )
-
-
 @pytest.mark.asyncio
 async def test_debouncer_exact_time_boundary():
-    """Aniquila el mutante de la línea 73 (>= cambiado a >)."""
+    """Annihilates line 73 mutant (>= changed to >)."""
     mock_coordinator = MagicMock()
     mock_coordinator.hass.loop.call_later = MagicMock()
 
@@ -1526,7 +1442,7 @@ async def test_debouncer_exact_time_boundary():
         mock_time.return_value = 1002.0
         await debouncer.async_execute("prop1", dummy_coroutine)
 
-        # Si el mutante '>' sobrevive, evaluará 2.0 > 2.0 (Falso) y lo meterá en pending.
+        # If mutant '>' survives, it will evaluate 2.0 > 2.0 (False) and put it into pending.
         # El código original '>=' evalúa 2.0 >= 2.0 (Verdadero) y lo ejecuta, vaciando pending.
         assert "prop1" not in debouncer._pending_payloads
 
@@ -1570,7 +1486,7 @@ async def test_locked_set_property_mutants(hass: HomeAssistant) -> None:
 
 @pytest.mark.asyncio
 async def test_debouncer_exact_time_boundary_mutant():
-    """Aniquila el mutante L73 (>= mutado a >). Si es exacto, debe ejecutarse, no encolarse."""
+    """Annihilates mutant L73 (>= mutated to >). If exact, it must execute, not queue."""
     mock_coordinator = MagicMock()
     mock_coordinator.hass.loop.call_later = MagicMock()
 
@@ -1583,7 +1499,7 @@ async def test_debouncer_exact_time_boundary_mutant():
         mock_time.return_value = 1000.0
         await debouncer.async_execute("prop1", dummy_coroutine)
 
-        # Exactamente 2.0s después. El código original (>=) lo ejecuta. El mutante (>) lo encola.
+        # Exactly 2.0s later. Original code (>=) executes it. Mutant (>) queues it.
         mock_time.return_value = 1002.0
         await debouncer.async_execute("prop1", dummy_coroutine)
 
@@ -1591,7 +1507,7 @@ async def test_debouncer_exact_time_boundary_mutant():
 
 
 # def test_coordinator_debouncer_delay_init(hass: HomeAssistant) -> None:
-#     """Aniquila el mutante L158 que elimina explícitamente delay=3.0 en la inicialización."""
+#     """Annihilates mutant L158 explicitly removing delay=3.0 during initialization."""
 #     mock_controller = MagicMock()
 #     mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
 #     mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
@@ -1718,7 +1634,7 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
 
 
 def test_sniper_coordinator_debouncer_delay_init_mutant(hass: HomeAssistant) -> None:
-    """Aniquila el mutante L158 que elimina explícitamente delay=3.0 en la inicialización."""
+    """Annihilates mutant L158 explicitly removing delay=3.0 during initialization."""
     mock_controller = MagicMock()
     mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
     mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
@@ -1733,7 +1649,7 @@ def test_sniper_coordinator_debouncer_delay_init_mutant(hass: HomeAssistant) -> 
 
 @pytest.mark.asyncio
 async def test_sniper_debouncer_exact_time_boundary_strict(hass: HomeAssistant):
-    """Aniquila el mutante de la línea 73 (>= cambiado a >) evitando errores de coma flotante."""
+    """Annihilates line 73 mutant (>= changed to >) avoiding floating point errors."""
     from custom_components.climate_ip.coordinator import PropertyDebouncer
 
     mock_coordinator = MagicMock()
@@ -1745,7 +1661,7 @@ async def test_sniper_debouncer_exact_time_boundary_strict(hass: HomeAssistant):
     async def dummy(*args, **kwargs):
         return True
 
-    # Al ser el tiempo 2.0 exacto, (2.0 - 0.0 >= 2.0) es True. El mutante (>) dará False.
+    # Being exact time 2.0, (2.0 - 0.0 >= 2.0) is True. Mutant (>) will give False.
     with patch("custom_components.climate_ip.coordinator.time.time", return_value=2.0):
         await debouncer.async_execute("prop1", dummy)
 
@@ -1766,14 +1682,14 @@ async def test_sniper_debouncer_kwargs_and_pop_strict(hass: HomeAssistant):
 
     res = await debouncer.async_execute("test_prop", dummy, "arg1", kw_key="kw_val")
 
-    # Aserción ultra-estricta de tuplas para evitar que el mutante devuelva la tupla sin kwargs
+    # Ultra-strict tuple assertion to prevent mutant from returning tuple without kwargs
     assert res == (("arg1",), {"kw_key": "kw_val"})
     assert "test_prop" not in debouncer._pending_payloads
 
 
 @pytest.mark.asyncio
 async def test_sniper_locked_set_property_strict_args(hass: HomeAssistant):
-    """Aniquila el mutante L433 que elimina argumentos en _locked_set_property."""
+    """Annihilates mutant L433 removing arguments in _locked_set_property."""
     mock_controller = MagicMock()
     mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
     mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
@@ -1796,13 +1712,13 @@ async def test_sniper_locked_set_property_strict_args(hass: HomeAssistant):
         args, _ = mock_controller.async_set_property.call_args
         assert (
             len(args) == 3
-        ), f"Mutante cazado: Se perdieron argumentos. Esperaba 3, llegaron {len(args)}"
+        ), f"Mutant caught: Arguments lost. Expected 3, got {len(args)}"
         assert args == ("my_prop", "my_val", "my_dev")
 
 
 @pytest.mark.asyncio
 async def test_sniper_async_set_property_debouncer_args(hass: HomeAssistant):
-    """Aniquila el mutante L460 que elimina el 'val' al llamar al debouncer."""
+    """Annihilates mutant L460 removing 'val' when calling debouncer."""
     mock_controller = MagicMock()
     mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
     mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
@@ -1826,8 +1742,8 @@ async def test_sniper_async_set_property_debouncer_args(hass: HomeAssistant):
 
         # Debouncer debe recibir exactamente 5 argumentos posicionales
         args, _ = coordinator.debouncer.async_execute.call_args
-        assert len(args) == 5, f"Mutante cazado: Faltan argumentos. Llegaron: {args}"
-        assert args[3] == "cool", f"Mutante cazado: Faltan argumentos. Llegaron: {args}"
+        assert len(args) == 5, f"Mutant caught: Missing arguments. Got: {args}"
+        assert args[3] == "cool", f"Mutant caught: Missing arguments. Got: {args}"
 
 
 @pytest.mark.asyncio

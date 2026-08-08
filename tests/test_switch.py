@@ -94,24 +94,24 @@ def test_switch_initialization(base_switch_entity: SamsungClimateSwitch) -> None
     Aniquila Mutantes 1, 4, 5, 6, 7 y 8 en __init__.
     Asserts estrictamente las asignaciones estructurales iniciales.
     """
-    # Mutante 1: super().__init__(None) -> falla porque coordinator no se asignaría.
+    # Mutant 1: super().__init__(None) -> fails because coordinator would not be assigned.
     assert base_switch_entity.coordinator is not None
 
-    # Mutante 4: self._controller = None
+    # Mutant 4: self._controller = None
     assert base_switch_entity._controller is base_switch_entity.coordinator.controller
 
-    # Mutante 5: self._attr_is_on = ""
+    # Mutant 5: self._attr_is_on = ""
     assert (
         base_switch_entity._attr_is_on is None
     ), "Debe ser estrictamente None, no un string vacío."
 
-    # Mutantes 6 y 7: self._attr_has_entity_name = None / False
+    # Mutants 6 and 7: self._attr_has_entity_name = None / False
     assert base_switch_entity._attr_has_entity_name is True
 
-    # Mutante 8: self._attr_unique_id = None
+    # Mutant 8: self._attr_unique_id = None
     assert base_switch_entity._attr_unique_id == "test_mac_123_test_switch_id"
 
-    # Aniquila Mutante 9: self._attr_device_info = None
+    # Annihilates Mutant 9: self._attr_device_info = None
     assert base_switch_entity._attr_device_info == {
         "identifiers": {("climate_ip", "test_mac_123")}
     }, "El device_info no se asignó o fue corrompido con None."
@@ -126,8 +126,8 @@ def test_update_state_value_extraction(
     base_switch_entity: SamsungClimateSwitch,
 ) -> None:
     """
-    Aniquila Mutante 1 (value = None en la extracción inicial).
-    Si extrae None, ignorará el valor real y el estado terminará en None en lugar de True.
+    Annihilates Mutant 1 (value = None in initial extraction).
+    If it extracts None, it will ignore the real value and state will end up as None instead of True.
     """
     base_switch_entity._operation.value = "on"
     base_switch_entity._update_state()
@@ -163,15 +163,15 @@ def test_update_state_off_matrix(
     base_switch_entity._update_state()
     assert (
         base_switch_entity._attr_is_on is False
-    ), f"Falló la asignación a False para la entrada '{input_value}'"
+    ), f"Assignment to False failed for input '{input_value}'"
 
 
 def test_update_state_unknown_fallback(
     base_switch_entity: SamsungClimateSwitch,
 ) -> None:
     """
-    Aniquila Mutante 20.
-    Garantiza que la rama 'else' asigne estrictamente None, y no un string vacío u otro valor.
+    Annihilates Mutant 20.
+    Guarantees the 'else' branch strictly assigns None, not an empty string or other value.
     """
     base_switch_entity._operation.value = "garbage_unrecognized_data"
     base_switch_entity._update_state()
@@ -356,13 +356,13 @@ async def test_async_setup_entry_get_property_object_failure(mock_switch_class) 
     async_add_entities = MagicMock()
     await async_setup_entry(hass, entry, async_add_entities)
 
-    # Mutante 10: Asegura que get_property_object recibe exactamente "string_op"
+    # Mutant 10: Ensures get_property_object receives exactly "string_op"
     mock_coord.controller.get_property_object.assert_called_once_with("string_op")
 
-    # Mutantes 9 y 11: Si la evaluación del objeto string falla correctamente (prop_obj is None),
-    # el bucle debe hacer 'continue' y procesar 'valid_op_after_string'.
-    # If mutmut invierte la lógica ('if prop_obj is None: op = prop_obj'), la iteración explotará
-    # o se detendrá. Por tanto, exigimos que la clase se instancie EXACTAMENTE 1 vez.
+    # Mutants 9 and 11: If string object evaluation fails correctly (prop_obj is None),
+    # the loop must 'continue' and process 'valid_op_after_string'.
+    # If mutmut inverts logic ('if prop_obj is None: op = prop_obj'), iteration will explode
+    # or stop. Therefore, we require the class to be instantiated EXACTLY 1 time.
     assert (
         mock_switch_class.call_count == 1
     ), "El bucle no manejó el string_op correctamente o abortó la iteración."
@@ -376,20 +376,20 @@ async def test_async_setup_entry_get_property_object_failure(mock_switch_class) 
 async def test_async_setup_entry_continue_vs_break(
     mock_switch_class, mock_parse_category, mock_desc_class
 ) -> None:
-    """Elimina los mutantes 13, 21, 25 y 30 garantizando el uso de continue en lugar de break."""
+    """Eliminates mutants 13, 21, 25, and 30 guaranteeing the use of continue instead of break."""
     hass = MagicMock()
     entry = MagicMock()
     mock_coord = MagicMock()
 
-    # Mutante 21: Objeto sin atributo 'id'
+    # Mutant 21: Object without 'id' attribute
     class NoIdProp:
         pass
 
-    # Mutante 25: ID es "power"
+    # Mutant 25: ID is "power"
     class PowerProp:
         id = "power"
 
-    # Mutante 30: No válido para el estado del dispositivo
+    # Mutant 30: Invalid for device state
     class InvalidProp:
         id = "invalid_switch"
 
@@ -472,7 +472,7 @@ async def test_async_setup_entry_icon_logical_operator_inverse(
 async def test_async_setup_entry_get_property_object_success(
     mock_parse_category, mock_desc_class, mock_switch_class
 ) -> None:
-    """Elimina al Mutante 11 asertando el Happy Path de la resolución de strings."""
+    """Eliminates Mutant 11 by asserting Happy Path string resolution."""
     hass = MagicMock()
     entry = MagicMock()
     mock_coord = MagicMock()
@@ -499,6 +499,6 @@ async def test_async_setup_entry_get_property_object_success(
     # el objeto válido caerá en la rama 'else', se ejecutará 'continue',
     # y el contador de llamadas será 0.
     assert mock_switch_class.call_count == 1, (
-        "El string operation válido no instanció la entidad. "
-        "El mutante 11 invirtió el chequeo de 'is not None'."
+        "Valid string operation did not instantiate entity. "
+        "Mutant 11 inverted the 'is not None' check."
     )

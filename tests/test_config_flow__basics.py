@@ -1229,7 +1229,7 @@ async def test_cert_not_found_validation(hass: HomeAssistant) -> None:
 async def test_process_samsung_step_acquirer_initialization_8888(
     hass: HomeAssistant,
 ) -> None:
-    """Audita la instanciación estricta del acquirer 8888 evaluando el fallback del certificado."""
+    """Audits strict instantiation of acquirer 8888 evaluating certificate fallback."""
     from unittest.mock import patch
 
     from homeassistant.const import CONF_IP_ADDRESS
@@ -1285,7 +1285,7 @@ async def test_process_samsung_step_acquirer_initialization_8888(
 async def test_process_samsung_step_acquirer_initialization_2878(
     hass: HomeAssistant,
 ) -> None:
-    """Audita la instanciación estricta del acquirer estándar (puerto 2878)."""
+    """Audits strict instantiation of standard acquirer (port 2878)."""
     from unittest.mock import patch
 
     from homeassistant.const import CONF_IP_ADDRESS
@@ -2414,7 +2414,7 @@ async def test_async_step_discover_uuid_mutants(hass: HomeAssistant) -> None:
         # Missing 'name' key to trigger the fallback on coordinator and missing everything on indoor unit
         mock_controller2.discovered_devices = [
             {"id": "0", "uuid": "5678"},
-            {"id": "ghost", "Mode": "Auto"},  # DISPOSITIVO FANTASMA (Táctica 2)
+            {"id": "ghost", "Mode": "Auto"},  # GHOST DEVICE (Tactic 2)
         ]
         mock_controller_class2.return_value = mock_controller2
 
@@ -3308,7 +3308,7 @@ async def test_async_step_test_connection_mutants(hass: HomeAssistant) -> None:
         pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res1b["type"] == "progress_done"
     assert res1b["step_id"] == "handle_error"
-    # ASERCIÓN ESTRICTA DE FRANCOTIRADOR:
+    # STRICT SNIPER ASSERTION:
     # If mutmut cambia esto a "UNKNOWN_ERROR" o "XXunknown_errorXX", fallará.
     assert flow.flow_data["error_key"] == "unknown_error"
     assert flow.task is None
@@ -3414,7 +3414,7 @@ async def test_async_step_select_devices_comprehensive(hass: HomeAssistant) -> N
         CONF_DISCOVERED_DEVICES: [
             {"id": "1", "name": "Device 1"},
             {"id": "2", "name": "Device 2"},
-            {"id": "3"},  # DISPOSITIVO FANTASMA (Táctica 2)
+            {"id": "3"},  # GHOST DEVICE (Tactic 2)
         ]
     }
 
@@ -3471,7 +3471,7 @@ async def test_async_step_select_devices_comprehensive(hass: HomeAssistant) -> N
         mock_set_uid.assert_called_once_with("unique_123", raise_on_progress=False)
         mock_abort.assert_called_once_with(updates=flow.flow_data)
 
-        # Aserción transaccional: Solo el dispositivo 2 debe sobrevivir en CONF_DEVICES
+        # Transactional assertion: Only device 2 must survive in CONF_DEVICES
         assert len(flow.flow_data[CONF_DEVICES]) == 1
         assert flow.flow_data[CONF_DEVICES][0]["id"] == "2"
 
@@ -3659,7 +3659,7 @@ async def test_test_connection_safe_2878_branch(hass: HomeAssistant) -> None:
         "ip_address": "1.2.3.4",
     }
 
-    # Escenario A: Fallo en la inicialización del controlador (Kills mutants de inyección de unique_id)
+    # Scenario A: Controller initialization failure (Kills unique_id injection mutants)
     with patch(
         "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_ctrl_cls:
@@ -3700,7 +3700,7 @@ async def test_test_connection_safe_2878_branch(hass: HomeAssistant) -> None:
 
     flow.flow_data.pop("unique_id")
 
-    # Escenario B: Éxito en la conexión y lectura de estado
+    # Scenario B: Connection success and state retrieval
     with patch(
         "custom_components.climate_ip.controller_yaml.YamlController"
     ) as mock_ctrl_cls:
@@ -4187,7 +4187,7 @@ async def test_process_samsung_device_step_strict_args(hass: HomeAssistant) -> N
     flow.DEBUG_ME = True
     flow.flow_data = {CONF_IP_ADDRESS: "192.168.1.50"}
 
-    # Simulamos un fallo de resolución de MAC para que fuerce mac_required=True
+    # Simulate MAC resolution failure to force mac_required=True
     with patch.object(
         flow, "_async_resolve_mac_and_set_unique_id", return_value="mac_resolve_failed"
     ):
@@ -4209,7 +4209,7 @@ async def test_process_samsung_device_step_strict_args(hass: HomeAssistant) -> N
             # Kills mutants 45, 46, 106, 107: Exigimos que mac_required sea strictly True
             mock_schema_gen.assert_called_once_with(mac_required=True)
 
-    # Simulamos fallo de certificado (debe forzar mac_required=False)
+    # Simulate certificate failure (must force mac_required=False)
     flow.flow_data.clear()
     flow.flow_data[CONF_IP_ADDRESS] = "192.168.1.50"
     with (
@@ -4492,7 +4492,7 @@ async def test_rest_api_strict_headers_and_fallback(hass: HomeAssistant) -> None
 
         from custom_components.climate_ip.const import GLOBAL_HTTP_TIMEOUT
 
-        # Aserción de Caja Blanca estricta para matar los mutantes de Headers y Timeout
+        # Strict White-Box assertion to kill Headers and Timeout mutants
         mock_session.get.assert_called_once_with(
             ANY,
             headers={"Authorization": "Bearer valid_token"},
@@ -4511,7 +4511,7 @@ async def test_await_button_fallback_error(hass: HomeAssistant) -> None:
     flow.DEBUG_ME = True
     flow.task = MagicMock()
     flow.task.done.return_value = True
-    # Forzamos fallo sin proveer 'error' para detonar el get("error", "unknown_error")
+    # Force failure without providing 'error' to trigger get("error", "unknown_error")
     flow.task.result.return_value = {"ok": False}
 
     try:
@@ -4737,7 +4737,7 @@ async def test_rest_api_strict_dict_assignments(hass: HomeAssistant) -> None:
         CONF_TOKEN: "",
     }
 
-    # Parcheamos la conexión para que devuelva OK si llegara a intentar conectar (no debería)
+    # Patch connection to return OK if it attempts to connect (it should not)
     with patch(
         "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_session_func:
@@ -4759,7 +4759,7 @@ async def test_rest_api_strict_dict_assignments(hass: HomeAssistant) -> None:
                 )
 
             # El token estaba vacío, así que NO debió llamar a sanitize_token
-            # y debió llegar al final del test de conexión sin token.
+            # and should have reached the end of connection test without token.
             assert flow.flow_data[CONF_TOKEN] == ""
 
 
@@ -4825,7 +4825,7 @@ async def test_async_step_reconfigure_confirm_schema_fallbacks(
             )
             == "ac14k_m.pem"
         )
-        # Comprobar IP prioriza flow_data (no reconfigure_entry) para matar Mutante 18-40
+        # Check IP prioritizes flow_data (not reconfigure_entry) to kill Mutant 18-40
         assert (
             next(
                 k.description.get("suggested_value")
@@ -5191,7 +5191,7 @@ async def test_form_schemas_types_and_defaults(hass):
 
 
 async def test_await_button_ghost_token(hass):
-    """Mata al mutante que devuelve fallback sin token en await_button."""
+    """Kills the mutant returning fallback without token in await_button."""
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 
     flow = ClimateIpConfigFlow()
@@ -5222,7 +5222,7 @@ async def test_await_button_ghost_token(hass):
 
 
 async def test_discovery_ghost_name(hass):
-    """Mata al mutante que asume un nombre por defecto para un dispositivo sin nombre."""
+    """Kills the mutant that assumes a default name for an unnamed device."""
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
     from custom_components.climate_ip.const import CONF_SELECTED_DEVICES
 
@@ -5230,11 +5230,11 @@ async def test_discovery_ghost_name(hass):
     flow.hass = hass
     flow.DEBUG_ME = True
 
-    # Inyectar en el controlador un dispositivo fantasma sin name
+    # Inject a ghost device without a name into the controller
     flow.controller = MagicMock()
     flow.controller.discovered_devices = [{"id": "99"}]
 
-    # Saltamos directamente al paso select_devices
+    # We jump directly to the select_devices step
     try:
         async with asyncio.timeout(0.5):
             res = await flow.async_step_select_devices()
@@ -5251,7 +5251,7 @@ async def test_discovery_ghost_name(hass):
 
 
 async def test_validate_poll_interval_bounds(hass):
-    """Mata al mutante de ValueError en validate_poll_interval."""
+    """Kills the ValueError mutant in validate_poll_interval."""
     from custom_components.climate_ip.helpers import validate_poll_interval
 
     with pytest.raises(ValueError) as exc:
@@ -5260,7 +5260,7 @@ async def test_validate_poll_interval_bounds(hass):
 
 
 async def test_trampa2_placeholders_and_step_ids(hass):
-    """Test sniper para matar mutantes de placeholders (ip_address, device_name) y step_ids."""
+    """Sniper test to kill placeholder (ip_address, device_name) and step_id mutants."""
     from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC
 
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
@@ -5269,7 +5269,7 @@ async def test_trampa2_placeholders_and_step_ids(hass):
     flow = ClimateIpConfigFlow()
     flow.hass = hass
 
-    # Simular _test_connection_safe fallando
+    # Simulate _test_connection_safe failing
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03,
         CONF_IP_ADDRESS: "192.168.1.100",
@@ -5283,7 +5283,7 @@ async def test_trampa2_placeholders_and_step_ids(hass):
             "custom_components.climate_ip.config_flow.ClimateIpConfigFlow._async_process_samsung_device_step",
             return_value=None,
         ):
-            # 1. Llamar sin task para ver el async_show_progress
+            # 1. Call without task to see async_show_progress
             class DummyTaskNotDone:
                 def done(self):
                     return False
@@ -5307,7 +5307,7 @@ async def test_trampa2_placeholders_and_step_ids(hass):
                     == "192.168.1.100"
                 )
 
-            # 2. Simular tarea terminada con error
+            # 2. Simulate task finished with error
             class DummyTask:
                 def __init__(self, res):
                     self._res = res
@@ -5377,7 +5377,7 @@ async def test_options_flow_invalid_poll_interval(hass: HomeAssistant) -> None:
     assert result2["type"] == "form"
     assert result2["errors"]["poll_interval"] == "invalid_poll_interval"
 
-    # Ataque 3: user_input vacío
+    # Attack 3: empty user_input
     try:
         async with asyncio.timeout(0.5):
             result_empty = await flow.async_step_init({})
@@ -5508,7 +5508,7 @@ async def test_discovery_missing_attributes(hass: HomeAssistant) -> None:
 
 @pytest.mark.asyncio
 async def test_import_cannot_connect_reason(hass: HomeAssistant) -> None:
-    """Verify mutant M43 kill, M44, M45: reason de abort debe ser exactamente 'cannot_connect'."""
+    """Verify mutant M43 kill, M44, M45: abort reason must be exactly 'cannot_connect'."""
     from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC
 
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
@@ -5539,9 +5539,9 @@ async def test_import_cannot_connect_reason(hass: HomeAssistant) -> None:
         except TimeoutError:
             pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert res["type"] == "abort"
-    # M43: reason=None → HA no puede mostrar pantalla correcta
-    # M44: reason="XXcannot_connectXX" → pantalla incorrecta
-    # M45: reason="CANNOT_CONNECT" → pantalla incorrecta
+    # M43: reason=None → HA cannot show correct screen
+    # M44: reason="XXcannot_connectXX" → incorrect screen
+    # M45: reason="CANNOT_CONNECT" → incorrect screen
     assert res["reason"] == "cannot_connect"
 
 
@@ -5549,7 +5549,7 @@ async def test_import_cannot_connect_reason(hass: HomeAssistant) -> None:
 async def test_import_connection_tested_when_device_type_present(
     hass: HomeAssistant,
 ) -> None:
-    """Verify mutant M33 kill: La condición 'if CONF_DEVICE_TYPE in self.flow_data' NO debe estar invertida."""
+    """Verify mutant M33 kill: The condition 'if CONF_DEVICE_TYPE in self.flow_data' MUST NOT be inverted."""
     from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC
 
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
@@ -5582,13 +5582,13 @@ async def test_import_connection_tested_when_device_type_present(
                 )
         except TimeoutError:
             pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
-    # M33 invierte la condición → NO se llama a _test_connection_safe cuando DEVICE_TYPE está presente
+    # M33 inverts the condition → _test_connection_safe is NOT called when DEVICE_TYPE is present
     mock_test.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_rest_api_clientsession_receives_hass(hass: HomeAssistant) -> None:
-    """Verify mutant M47 kill: async_get_clientsession debe recibir self.hass, no None."""
+    """Verify mutant M47 kill: async_get_clientsession must receive self.hass, not None."""
     from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
 
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
@@ -5628,7 +5628,7 @@ async def test_rest_api_clientsession_receives_hass(hass: HomeAssistant) -> None
                 pytest.fail(
                     "MUTANT KILLED: Asynchronous deadlock detected in flow step."
                 )
-    # M47: async_get_clientsession(None) → sesión inválida
+    # M47: async_get_clientsession(None) → invalid session
     mock_sess.assert_called_once_with(flow.hass)
     from custom_components.climate_ip.const import GLOBAL_HTTP_TIMEOUT
 
@@ -5641,7 +5641,7 @@ async def test_rest_api_clientsession_receives_hass(hass: HomeAssistant) -> None
 
 @pytest.mark.asyncio
 async def test_rest_api_ipv6_url_has_brackets(hass: HomeAssistant) -> None:
-    """Verify mutant M51 kill: Con IPv6, la URL debe tener corchetes [fe80::1]."""
+    """Verify mutant M51 kill: With IPv6, the URL must have brackets [fe80::1]."""
     from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
 
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
@@ -5683,7 +5683,7 @@ async def test_rest_api_ipv6_url_has_brackets(hass: HomeAssistant) -> None:
                 )
     from custom_components.climate_ip.const import GLOBAL_HTTP_TIMEOUT
 
-    # M51: Corchetes IPv6, Headers y Timeout
+    # M51: IPv6 Brackets, Headers and Timeout
     mock_sess.return_value.get.assert_called_once_with(
         "https://[fe80::1]/v1/devices",
         headers={"Authorization": "Bearer valid-token-12345"},
@@ -5693,7 +5693,7 @@ async def test_rest_api_ipv6_url_has_brackets(hass: HomeAssistant) -> None:
 
 @pytest.mark.asyncio
 async def test_rest_api_no_mac_abort_reason(hass: HomeAssistant) -> None:
-    """Verify mutant M81 kill, M82, M84, M85, M86: unique_id vacío aborta con reason exacto 'no_mac_address_found'."""
+    """Verify mutant M81 kill, M82, M84, M85, M86: empty unique_id aborts with exact reason 'no_mac_address_found'."""
     from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
 
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
@@ -5715,7 +5715,7 @@ async def test_rest_api_no_mac_abort_reason(hass: HomeAssistant) -> None:
         mock_get.status = 200
         mock_get.__aenter__.return_value = mock_get
         mock_sess.return_value.get.return_value = mock_get
-        # No CONF_DEVICE_ID ni CONF_MAC → unique_id = "" → abort
+        # No CONF_DEVICE_ID or CONF_MAC → unique_id = "" → abort
         try:
             async with asyncio.timeout(0.5):
                 res = await flow.async_step_rest_api(
@@ -5729,14 +5729,14 @@ async def test_rest_api_no_mac_abort_reason(hass: HomeAssistant) -> None:
 
     assert res["type"] == "abort"
 
-    # M82: unique_id="XXXX" → truthy → no aborta → dispositivo duplicado
+    # M82: unique_id="XXXX" → truthy → does not abort → duplicate device
     # M84: reason=None; M85: reason="XXno_mac_address_foundXX"; M86: reason="NO_MAC_ADDRESS_FOUND"
     assert res["reason"] == "no_mac_address_found"
 
 
 @pytest.mark.asyncio
 async def test_cert_validation_called_with_correct_value(hass: HomeAssistant) -> None:
-    """Verify mutant M121 kill: _async_validate_cert_path debe llamarse con cert_value, no con None."""
+    """Verify mutant M121 kill: _async_validate_cert_path must be called with cert_value, not None."""
     from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
@@ -5774,13 +5774,13 @@ async def test_cert_validation_called_with_correct_value(hass: HomeAssistant) ->
                 )
         except TimeoutError:
             pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
-    # M121: llamaría con None → siempre pasa o siempre falla según el mock → comportamiento incorrecto
+    # M121: would call with None → always passes or fails depending on mock → incorrect behavior
     mock_val.assert_called_once_with("my_cert.pem")
 
 
 @pytest.mark.asyncio
 async def test_reconfigure_null_token_routes_to_pairing(hass: HomeAssistant) -> None:
-    """Verify mutant M157 kill: token_val=None→XXXX haría if not token_val False, saltando el bloque de pairing."""
+    """Verify mutant M157 kill: token_val=None→XXXX would do if not token_val False, skipping pairing block."""
     from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC
 
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
@@ -5796,7 +5796,7 @@ async def test_reconfigure_null_token_routes_to_pairing(hass: HomeAssistant) -> 
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
         CONF_IP_ADDRESS: "10.0.0.1",
         CONF_MAC: "AA:BB:CC:DD:EE:FF",
-        # ¡CONF_TOKEN TOTALMENTE AUSENTE para que get() devuelva None!
+        # CONF_TOKEN ABSENT so get() returns None
     }
     flow._get_reconfigure_entry = MagicMock(return_value=MagicMock(data={}))
 
@@ -5815,21 +5815,21 @@ async def test_reconfigure_null_token_routes_to_pairing(hass: HomeAssistant) -> 
                     user_input={
                         CONF_IP_ADDRESS: "10.0.0.1",
                         CONF_MAC: "AA:BB:CC:DD:EE:FF",
-                        # ¡SIN CONF_TOKEN EN EL INPUT TAMPOCO!
+                        # WITHOUT CONF_TOKEN IN INPUT
                         CONF_CERT: "",
                     }
                 )
         except TimeoutError:
             pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
-    # M157: Al inyectar "XXXX", el código cree que hay token y no llama a pairing.
-    # Exigimos strictly que sí se llame.
+    # M157: By injecting "XXXX", the code thinks there is a token and doesn't call pairing.
+    # We strictly require it to be called.
     mock_pairing.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_reconfigure_cert_fallback_name_is_exact(hass: HomeAssistant) -> None:
-    """Verify mutant M161 kill, M162, M163: target_cert_name debe ser exactamente 'ac14k_m.pem'."""
+    """Verify mutant M161 kill, M162, M163: target_cert_name must be exactly 'ac14k_m.pem'."""
     from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
@@ -5846,7 +5846,7 @@ async def test_reconfigure_cert_fallback_name_is_exact(hass: HomeAssistant) -> N
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888,
         CONF_IP_ADDRESS: "10.0.0.1",
         CONF_MAC: "AA:BB:CC:DD:EE:FF",
-        CONF_CERT: "",  # vacío → fuerza uso de target_cert_name
+        CONF_CERT: "",  # empty → forces use of target_cert_name
     }
     flow._get_reconfigure_entry = MagicMock(return_value=MagicMock(data={}))
 
@@ -5864,7 +5864,7 @@ async def test_reconfigure_cert_fallback_name_is_exact(hass: HomeAssistant) -> N
                     user_input={
                         CONF_IP_ADDRESS: "10.0.0.1",
                         CONF_MAC: "AA:BB:CC:DD:EE:FF",
-                        CONF_TOKEN: "",  # vacío → pairing con cert fallback
+                        CONF_TOKEN: "",  # empty → pairing with cert fallback
                         CONF_CERT: "",
                     }
                 )
@@ -5872,11 +5872,11 @@ async def test_reconfigure_cert_fallback_name_is_exact(hass: HomeAssistant) -> N
             pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     mock_acq.assert_called_once()
-    # El tercer argumento posicional es el cert
+    # The third positional argument is the cert
     actual_cert = mock_acq.call_args[0][2]
-    # M161: None → SamsungTokenAcquirer8888 recibe None → error SSL
-    # M162: "XXac14k_m.pemXX" → cert incorrecto → falla
-    # M163: "AC14K_M.PEM" → case-sensitive en Linux → cert no encontrado
+    # M161: None → SamsungTokenAcquirer8888 receives None → SSL error
+    # M162: "XXac14k_m.pemXX" → incorrect cert → fails
+    # M163: "AC14K_M.PEM" → case-sensitive on Linux → cert not found
     assert actual_cert == "ac14k_m.pem"
 
 
@@ -5884,7 +5884,7 @@ async def test_reconfigure_cert_fallback_name_is_exact(hass: HomeAssistant) -> N
 async def test_reconfigure_update_entry_called_with_real_entry(
     hass: HomeAssistant,
 ) -> None:
-    """Verify mutant M182 kill, M184: async_update_entry debe llamarse con el entry real, no con None."""
+    """Verify mutant M182 kill, M184: async_update_entry must be called with the real entry, not None."""
     from homeassistant import config_entries
     from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 
@@ -5945,12 +5945,12 @@ async def test_reconfigure_update_entry_called_with_real_entry(
     assert result["reason"] == "reconfigure_successful"
 
     mock_update.assert_called_once()
-    # M182: primer arg es None → HA no actualiza el entry correcto
-    # M184: sin primer arg posicional → TypeError o actualiza entry incorrecto
+    # M182: first arg is None → HA does not update correct entry
+    # M184: without first positional arg → TypeError or updates incorrect entry
     actual_entry_arg = mock_update.call_args[0][0]
     assert actual_entry_arg is not None
     assert actual_entry_arg is entry
-    # Verificar que los datos nuevos se propagaron
+    # Verify that new data propagated
     actual_data = mock_update.call_args.kwargs.get("data") or mock_update.call_args[
         1
     ].get("data")
@@ -5959,14 +5959,14 @@ async def test_reconfigure_update_entry_called_with_real_entry(
 
 
 # ============================================================
-# ATAQUE 1 — Grupo A: Forzar bloque except en los 3 steps de progreso
-# Mata: M7-M14 en initiate_pairing, await_button, test_connection
+# ATTACK 1 — Group A: Force except block in the 3 progress steps
+# Kills: M7-M14 in initiate_pairing, await_button, test_connection
 # ============================================================
 
 
 @pytest.mark.asyncio
 async def test_force_except_in_all_progress_steps(hass: HomeAssistant) -> None:
-    """Verify G mutant killrupo A: el bloque except debe producir error_key 'unknown_error', nunca éxito."""
+    """Verify Group A mutant kill: the except block must produce error_key 'unknown_error', never success."""
     from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC
 
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
@@ -5984,10 +5984,10 @@ async def test_force_except_in_all_progress_steps(hass: HomeAssistant) -> None:
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
         CONF_IP_ADDRESS: "1.2.3.4",
     }
-    # Tarea que lanza excepción al llamar .result()
+    # Task that throws exception when calling .result()
     mock_task_tc = MagicMock()
     mock_task_tc.done.return_value = True
-    mock_task_tc.result.side_effect = RuntimeError("Fallo fatal en test_connection")
+    mock_task_tc.result.side_effect = RuntimeError("Fatal failure in test_connection")
     flow_tc.task = mock_task_tc
 
     try:
@@ -5996,8 +5996,8 @@ async def test_force_except_in_all_progress_steps(hass: HomeAssistant) -> None:
     except TimeoutError:
         pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
-    # M7 (result=None) → AttributeError en result.get("ok") → crash
-    # M10 (ok:True) → el flujo avanzaría a discover_uuid/create_entry aunque hubo excepción
+    # M7 (result=None) → AttributeError in result.get("ok") → crash
+    # M10 (ok:True) → flow would proceed to discover_uuid/create_entry even if there was an exception
     assert result_tc["type"] == "progress_done"
     assert result_tc["step_id"] == "handle_error"
     assert flow_tc.flow_data["error_key"] == "unknown_error"
@@ -6013,7 +6013,7 @@ async def test_force_except_in_all_progress_steps(hass: HomeAssistant) -> None:
     }
     mock_task_ab = MagicMock()
     mock_task_ab.done.return_value = True
-    mock_task_ab.result.side_effect = RuntimeError("Fallo fatal en await_button")
+    mock_task_ab.result.side_effect = RuntimeError("Fatal failure in await_button")
     flow_ab.task = mock_task_ab
 
     try:
@@ -6035,11 +6035,11 @@ async def test_force_except_in_all_progress_steps(hass: HomeAssistant) -> None:
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
         CONF_IP_ADDRESS: "1.2.3.4",
         CONF_MAC: "AA:BB:CC:DD:EE:FF",
-        "_fallback_attempted": True,  # Salta el fallback, va directo a handle_error
+        "_fallback_attempted": True,  # Skips fallback, goes straight to handle_error
     }
     mock_task_ip = MagicMock()
     mock_task_ip.done.return_value = True
-    mock_task_ip.result.side_effect = RuntimeError("Fallo fatal en initiate_pairing")
+    mock_task_ip.result.side_effect = RuntimeError("Fatal failure in initiate_pairing")
     flow_ip.task = mock_task_ip
 
     try:
@@ -6053,10 +6053,10 @@ async def test_force_except_in_all_progress_steps(hass: HomeAssistant) -> None:
     assert flow_ip.flow_data["error_key"] == "unknown_error"
 
 
-# ── Ataque 1B: Grupo F — next_step_id en await_button success path ──────────
+# ── Attack 1B: Group F — next_step_id in await_button success path ──────────
 @pytest.mark.asyncio
 async def test_await_button_success_next_step_id_strict(hass: HomeAssistant) -> None:
-    """Verify mutant M45 kill, M46, M47: next_step_id debe ser exactamente 'discover_uuid' al tener éxito (no 2878)."""
+    """Verify mutant M45 kill, M46, M47: next_step_id must be exactly 'discover_uuid' on success (not 2878)."""
     from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
 
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
@@ -6067,7 +6067,7 @@ async def test_await_button_success_next_step_id_strict(hass: HomeAssistant) -> 
     flow.DEBUG_ME = True
     flow.context = {}
     flow.flow_data = {
-        CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03,  # No es 2878 → va a discover_uuid
+        CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03,  # Not 2878 → goes to discover_uuid
         CONF_IP_ADDRESS: "1.2.3.4",
     }
     mock_task = MagicMock()
@@ -6082,21 +6082,21 @@ async def test_await_button_success_next_step_id_strict(hass: HomeAssistant) -> 
         pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     assert result["type"] == "progress_done"
-    # M45: next_step_id=None → HA busca step "None" → crash
-    # M46: "XXdiscover_uuidXX" → step no existe → crash
-    # M47: "DISCOVER_UUID" → step no existe → crash
+    # M45: next_step_id=None → HA looks for step "None" → crash
+    # M46: "XXdiscover_uuidXX" → step does not exist → crash
+    # M47: "DISCOVER_UUID" → step does not exist → crash
     assert result["step_id"] == "discover_uuid"
     assert flow.flow_data[CONF_TOKEN] == "valid-token-abcde"
 
 
 # ============================================================
-# ATAQUE 2 — Grupo D: YamlController strict instantiation (M82-M86)
+# ATTACK 2 — Group D: YamlController strict instantiation (M82-M86)
 # ============================================================
 
 
 @pytest.mark.asyncio
 async def test_yaml_controller_instantiation_strict(hass: HomeAssistant) -> None:
-    """Verify mutant M82 kill, M84, M85, M86: YamlController debe recibir logger=_LOGGER, hass y _session reales."""
+    """Verify mutant M82 kill, M84, M85, M86: YamlController must receive actual logger=_LOGGER, hass, and _session."""
     from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
@@ -6146,26 +6146,26 @@ async def test_yaml_controller_instantiation_strict(hass: HomeAssistant) -> None
 
     assert result["ok"] is True
 
-    # M82: logger=None → el controlador no puede logear nada → fallo silencioso
-    # M84: sin logger (kwarg borrado) → TypeError en YamlController.__init__
+    # M82: logger=None → controller cannot log anything → silent failure
+    # M84: no logger (kwarg deleted) → TypeError in YamlController.__init__
     mock_ctrl_class.assert_called_once()
     call_kwargs = mock_ctrl_class.call_args.kwargs
-    assert call_kwargs.get("logger") is not None, "logger no debe ser None (M82/M84)"
+    assert call_kwargs.get("logger") is not None, "logger must not be None (M82/M84)"
 
-    # M85: controller.hass = None → el controlador no puede acceder a HA
-    assert mock_ctrl.hass is hass, "hass debe ser el objeto real de HA (M85)"
+    # M85: controller.hass = None → controller cannot access HA
+    assert mock_ctrl.hass is hass, "hass must be the real HA object (M85)"
 
-    # M86: controller._session = None → peticiones HTTP fallan silenciosamente
+    # M86: controller._session = None → HTTP requests fail silently
     assert (
         mock_ctrl._session is mock_sess_instance
-    ), "_session debe ser la sesión real (M86)"
+    ), "_session must be the real session (M86)"
 
-    # Verificar que async_get_clientsession fue llamado con hass (no con None)
+    # Verify that async_get_clientsession was called with hass (not with None)
     mock_sess.assert_called_once_with(hass)
 
 
 # ============================================================
-# ATAQUE 3 — Grupos C + E: _test_connection_safe dict mutations + unique_id
+# ATTACK 3 — Groups C + E: _test_connection_safe dict mutations + unique_id
 # ============================================================
 
 
@@ -6173,7 +6173,7 @@ async def test_yaml_controller_instantiation_strict(hass: HomeAssistant) -> None
 async def test_test_connection_safe_8888_failure_dict_strict(
     hass: HomeAssistant,
 ) -> None:
-    """Verify mutant M57 kill-M63: el dict de fallo de 8888 debe ser exactamente {'ok':False,'error':'cannot_connect'}."""
+    """Verify mutant M57 kill-M63: the 8888 failure dict must be exactly {'ok':False,'error':'cannot_connect'}."""
     from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
 
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
@@ -6206,7 +6206,7 @@ async def test_test_connection_safe_8888_failure_dict_strict(
             pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     # M59: {"ok": True, ...} → el llamador cree que conectó cuando falló → ¡LETAL!
-    # M57: {"XXokXX": False} → result.get("ok") devuelve None → fallo silencioso
+    # M57: {"XXokXX": False} → result.get("ok") returns None → silent failure
     # M60-63: key "error" mutada → llamador no puede leer el error
     assert result["ok"] is False
     assert result["error"] == "cannot_connect"

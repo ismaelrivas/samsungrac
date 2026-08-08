@@ -85,7 +85,7 @@ async def test_async_update_state_auth_refresh_flow():
             with patch.object(
                 poller, "_try_delete_repair_issue"
             ) as mock_delete_issue:
-                # Simulamos que venimos de un error de conexión para asertar el reseteo
+                # Simulate coming from a connection error to assert reset
                 poller._consecutive_connection_errors = 2
 
                 result = await poller.async_update_state()
@@ -111,7 +111,7 @@ async def test_async_update_state_auth_refresh_flow():
             # 6. We assert que la ejecución retornó el valor exitoso tras el retry
             assert result == {"status": "ok"}
 
-    # Validamos que on_token_refreshed no se llama si es None (mutante AttributeError)
+    # Validate on_token_refreshed is not called if None (AttributeError mutant)
     mock_controller.on_token_refreshed = None
     mock_controller.token = "OLD_TOKEN"
     mock_controller.loader.state_getter.async_update_state.side_effect = [
@@ -182,39 +182,40 @@ async def test_refresh_smartthings_token_sniper_failures(
             self.available = True
             self.device_id = "XXXX"
             self.log_prefix = "[AuthTest]"
-            # hass no está definido a propósito al inicio
+            # hass is intentionally not defined at start
 
     mock_controller = DummyController()
     poller = YamlStatePoller(mock_controller)
 
-    # 1. Fallo: No hay hass configurado (Atributo inexistente)
-    # Originalmente retorna None silenciosamente.
-    # Si el mutant cambia el getattr default a "XXXX", pasará, fallará más abajo y lanzará un _LOGGER.error.
+
+    # 1. Failure: No hass configured (Attribute does not exist)
+    # Originally returns None silently.
+    # If the mutant changes getattr default to "XXXX", it will fail lower down and log a _LOGGER.error.
     assert await poller._refresh_smartthings_token() is None
     mock_logger.error.assert_not_called()
     mock_logger.debug.assert_not_called()
 
-    # Le ponemos un hass mockeado para las siguientes pruebas
+    # We add a mocked hass for subsequent tests
     mock_controller.hass = MagicMock()
 
-    # 2. Fallo: hass es None explícitamente
+    # 2. Failure: hass is explicitly None
     mock_controller.hass = None
     assert await poller._refresh_smartthings_token() is None
     mock_logger.error.assert_not_called()
     mock_logger.debug.assert_not_called()
 
-    # Restauramos hass funcional
+    # Restore functional hass
     mock_controller.hass = MagicMock()
 
-    # 3. Fallo: No hay config entries (Lista vacía)
+    # 3. Failure: No config entries (Empty list)
     mock_logger.reset_mock()
     mock_controller.hass.config_entries.async_entries.return_value = []
     assert await poller._refresh_smartthings_token() is None
-    # Debe loguear un debug informando que no hay entries, no un error
+    # Must log a debug informing no entries, not an error
     mock_logger.debug.assert_called_once()
     mock_logger.error.assert_not_called()
 
-    # 4. Fallo: Exception explícita en async_ensure_token_valid()
+    # 4. Failure: Explicit Exception in async_ensure_token_valid()
     mock_logger.reset_mock()
     mock_controller.hass.config_entries.async_entries.return_value = [MagicMock()]
 
@@ -225,7 +226,7 @@ async def test_refresh_smartthings_token_sniper_failures(
     mock_oauth_session.return_value = mock_session_instance
 
     assert await poller._refresh_smartthings_token() is None
-    # Debe loguear un error con la excepción
+    # Must log an error with exception
     mock_logger.error.assert_called_once()
     mock_logger.debug.assert_not_called()
 
@@ -316,7 +317,7 @@ def test_update_all_connections_token_deduplication():
     poller = YamlStatePoller(MagicMock())
     conn_mock = MagicMock()
 
-    # Create dos props que devuelven la MISMA conexión
+    # Create two props that return the SAME connection
     prop1 = MagicMock()
     prop1.get_connection.return_value = conn_mock
     prop2 = MagicMock()
@@ -326,7 +327,7 @@ def test_update_all_connections_token_deduplication():
 
     poller._update_all_connections_token("new_token")
 
-    # Aserción hiper-estricta: sólo debe llamarse 1 vez, a pesar de haber 2 propiedades (mata 'or' flip)
+    # Hyper-strict assertion: must only be called once despite 2 properties (kills 'or' flip)
     conn_mock.update_auth_token.assert_called_once_with("new_token")
     # Asegura que el fallback a None no se ha corrompido
     prop1.get_connection.assert_called_once_with(None)

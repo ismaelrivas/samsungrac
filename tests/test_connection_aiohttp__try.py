@@ -57,13 +57,13 @@ async def test_try_connection_success(
         mock_session.request.assert_called_once()
         _, kwargs = mock_session.request.call_args
         actual_timeout = kwargs.get("timeout")
-        assert actual_timeout is not None, "El mutante borró el timeout"
+        assert actual_timeout is not None, "The mutant deleted timeout"
         assert (
             actual_timeout.total == 10
-        ), f"El mutante cambió el timeout total: {actual_timeout.total}"
+        ), f"The mutant changed total timeout: {actual_timeout.total}"
         assert (
             getattr(actual_timeout, "sock_read", None) == 5
-        ), "El mutante borró o alteró el sock_read del probe"
+        ), "The mutant deleted or altered probe sock_read"
 
 
 async def test_try_connection_success_no_body(

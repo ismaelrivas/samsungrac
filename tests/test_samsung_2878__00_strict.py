@@ -211,7 +211,7 @@ async def test_async_execute_ready_but_with_past_retries(connection):
     connection._manager_task = MagicMock()
     connection._manager_task.done.return_value = False
 
-    # 1. Configuramos el estado: LA CONEXIÓN ESTÁ LISTA.
+    # 1. Configure state: CONNECTION IS READY.
     connection._is_ready.set()
 
     # 2. Configuramos el estado: Hubo errores en el pasado (retries > 0).

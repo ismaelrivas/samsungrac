@@ -662,7 +662,7 @@ def test_sniper_deep_redact_substrings():
         "normal_string": "Hello World",
     }
 
-    # Si un mutante rompe la recursión, esto lanza TypeError instantáneo
+    # If a mutant breaks recursion, this raises instantaneous TypeError
     res = _deep_redact_substrings(payload, patterns)
 
     assert res["mac_1"] == "**REDACTED**"
@@ -680,7 +680,7 @@ def test_sniper_get_mac_threat_patterns():
         title = "Test AC Unit"
         unique_id = "AABBCCDDEEFF"
 
-    # Si un mutante cambia la partición del string, fallará aquí
+    # If a mutant changes string partition, it will fail here
     patterns = _get_mac_threat_patterns(MockEntry())
 
     assert "AABBCCDDEEFF" in patterns
@@ -719,10 +719,10 @@ def test_sniper_deep_redact_internals():
     # Mutantes 7, 9, 10: reverse=True y key=len (el más largo primero)
     assert _deep_redact_substrings("xabcdy", {"ab", "abcd"}) == "x**REDACTED**y"
 
-    # Mutante 20: re.IGNORECASE
+    # Mutant 20: re.IGNORECASE
     assert _deep_redact_substrings("MAC_ADDRESS", {"mac_address"}) == "**REDACTED**"
 
-    # Mutante 12: result = None (rompe la sustitución base)
+    # Mutant 12: result = None (breaks base substitution)
     assert _deep_redact_substrings("test", {"no_match"}) == "test"
 
     # Mutantes 28, 29, 34: Listas y tuplas mutadas (quitando el 'v')
@@ -731,7 +731,7 @@ def test_sniper_deep_redact_internals():
 
 
 def test_sniper_mac_boundary():
-    """Mata el mutante M47 (>= 5 en lugar de > 5)."""
+    """Kills mutant M47 (>= 5 instead of > 5)."""
     from custom_components.climate_ip.diagnostics import _get_mac_threat_patterns
 
     class MockEntry:
@@ -765,7 +765,7 @@ def test_sniper_extractors_typeerrors():
         controller = MockEmpty()
         devices = {}
 
-    # Si mutmut cambia hasattr(ctrl, "raw_state") a hasattr("raw_state"),
-    # Python lanzará TypeError inmediatamente, matando al mutante sin usar syrupy.
+    # If a mutant changes hasattr(ctrl, "raw_state") to hasattr("raw_state"),
+    # Python will raise TypeError immediately, killing mutant without using syrupy.
     assert _extract_controller_diagnostics(MockEmpty()) == {}
     assert _extract_raw_device_state(MockCoordinator()) == {}
