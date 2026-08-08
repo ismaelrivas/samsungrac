@@ -187,23 +187,23 @@ class ClimateController[T](ABC):
     # Define safe default no-op implementations to prevent dynamic hasattr() calls
     # =========================================================================
 
-    def on_ssl_config_updated(self, ssl_config: dict[str, Any]) -> None:
+    def on_ssl_config_updated(self, ssl_config: dict[str, Any]) -> None:  # noqa: B027
         """Callback invoked when the network negotiates a new SSL configuration."""
         pass
 
-    async def on_push_update_callback(self, data: dict[str, Any]) -> None:
+    async def on_push_update_callback(self, data: dict[str, Any]) -> None:  # noqa: B027
         """Callback invoked when the device sends a push update."""
         pass
 
-    async def request_refresh_callback(self) -> None:
+    async def request_refresh_callback(self) -> None:  # noqa: B027
         """Callback to trigger a state update in Home Assistant."""
         pass
 
-    def on_offline_callback(self, reason: str) -> None:
+    def on_offline_callback(self, reason: str) -> None:  # noqa: B027
         """Callback invoked when the device is declared offline."""
         pass
 
-    def on_connection_failed_callback(self) -> None:
+    def on_connection_failed_callback(self) -> None:  # noqa: B027
         """Callback invoked on critical connection failures."""
         pass
 

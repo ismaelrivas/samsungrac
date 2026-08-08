@@ -1,6 +1,7 @@
 """Tests for base Connection class and registry in connection.py."""
 
 import asyncio
+import inspect
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -272,7 +273,6 @@ def test_check_execute_condition_default_logger():
     assert conn.check_execute_condition(None) is True
 
 
-import inspect
 
 
 def test_connection_async_execute_signature_defaults():

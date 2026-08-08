@@ -685,9 +685,9 @@ class TestSetValueByPathStrict:
         set_value_by_path(d, ["a"], 1)
         assert d == {}  # Business logic dictates it remains empty!
 
-        l = []
-        set_value_by_path(l, [0], 1)
-        assert l == []  # Empty lists must also abort
+        target_list = []
+        set_value_by_path(target_list, [0], 1)
+        assert target_list == []  # Empty lists must also abort
 
     def test_set_value_dict_simple_and_nested(self):
         """Tests standard dictionary traversal and creation."""
@@ -733,13 +733,13 @@ class TestSetValueByPathStrict:
         """Tests operations where the root target is a list."""
         from custom_components.climate_ip.helpers import set_value_by_path
 
-        l = ["init"]
+        target_list = ["init"]
 
-        set_value_by_path(l, [2], "b")
-        assert l == ["init", None, "b"]
+        set_value_by_path(target_list, [2], "b")
+        assert target_list == ["init", None, "b"]
 
-        set_value_by_path(l, [1, "sub"], "a")
-        assert l[1] == {"sub": "a"}
+        set_value_by_path(target_list, [1, "sub"], "a")
+        assert target_list[1] == {"sub": "a"}
 
 
 # --- async_get_mac_address ---

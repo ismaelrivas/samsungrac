@@ -46,7 +46,7 @@ async def test_mim_h03_discovery_processing():
             "step_id": "select_devices",
         }
 
-        result = await flow._async_process_mim_h03(discovered)
+        _ = await flow._async_process_mim_h03(discovered)
 
         mock_set_uid.assert_called_once_with("COORD_UUID_123", raise_on_progress=False)
         assert flow.flow_data[CONF_DEVICE_ID] == "0"
@@ -66,7 +66,7 @@ async def test_samsung_8888_discovery_processing():
     with patch.object(flow, "_create_entry", new_callable=AsyncMock) as mock_create:
         mock_create.return_value = {"type": FlowResultType.CREATE_ENTRY}
 
-        result = await flow._async_process_samsung_8888_discovery(discovered)
+        _ = await flow._async_process_samsung_8888_discovery(discovered)
 
         assert flow.flow_data[CONF_DEVICE_ID] == "SAMSUNG_8888_UUID"
         assert flow.flow_data[CONF_NAME] == "Samsung AC 001122334455"
@@ -124,7 +124,7 @@ async def test_process_generic_discovery():
             "type": FlowResultType.FORM,
             "step_id": "select_devices",
         }
-        result = await flow._async_process_generic_discovery(discovered)
+        _ = await flow._async_process_generic_discovery(discovered)
         assert len(flow.flow_data[CONF_DISCOVERED_DEVICES]) == 2
         mock_select.assert_called_once()
 
@@ -209,7 +209,7 @@ async def test_async_step_select_devices_flow():
         patch.object(
             flow, "async_set_unique_id", new_callable=AsyncMock
         ) as mock_set_uid,
-        patch.object(flow, "_abort_if_unique_id_configured") as mock_abort_if,
+        patch.object(flow, "_abort_if_unique_id_configured") as _,
         patch.object(flow, "_create_entry", new_callable=AsyncMock) as mock_create,
     ):
         mock_create.return_value = {"type": FlowResultType.CREATE_ENTRY}

@@ -1,3 +1,5 @@
+import copy
+import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -64,8 +66,6 @@ def create_valid_loader():
     return loader
 
 
-import copy
-import re
 
 
 async def _helper_build_device_state_from_props(self):
@@ -666,7 +666,7 @@ async def test_async_update_state_consecutive_errors_logic():
         ) as mock_log_info,
         patch(
             "custom_components.climate_ip.controller_yaml_polling._LOGGER.debug"
-        ) as mock_log_debug,
+        ) as _,
     ):
         poller._consecutive_connection_errors = 0
         await poller.async_update_state()

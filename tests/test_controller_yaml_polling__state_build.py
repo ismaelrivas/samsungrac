@@ -1,3 +1,4 @@
+import copy
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -35,8 +36,6 @@ class NakedObj:
         self.hass = __import__("unittest.mock").mock.MagicMock()
         self.__dict__.update(kwargs)
 
-
-import copy
 
 
 class DummyController(NakedObj):
@@ -93,7 +92,6 @@ async def _helper_build_device_state_from_props(self):
         raise AttributeError("state_getter is missing")
     state = copy.deepcopy(st_val) if isinstance(st_val, dict) else {}
     for prop in self._all_props():
-        prop_id = prop.id
         val = getattr(prop, "value", None)
         if hasattr(prop, "convert_hass_to_dev"):
             try:
@@ -1844,8 +1842,8 @@ async def test_build_device_state_power_op_fallback() -> None:
     ), "Mutant survived! Power key was injected even when power_op was None."
 
 
-async def test_async_update_properties_dict_depth():
-    """Mata fallbacks {} mutados a falta de parámetros en cadenas .get() (L463-466)"""
+async def test_async_update_properties_dict_depth_fallback():
+    """Kills mutated fallback {} on missing .get() params in L463-466 (duplicate-name fix)."""
     poller = YamlStatePoller(MagicMock())
     poller.controller.loader.is_fully_initialized = True
     poller._build_device_state_from_hass = AsyncMock(return_value={"raw": "data"})

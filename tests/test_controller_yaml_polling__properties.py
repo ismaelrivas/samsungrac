@@ -278,7 +278,7 @@ async def test_async_update_properties_pending_ttl_and_degradation():
     }
 
     fake_state = {"raw_key": "old_val"}
-    corrections = await poller.async_update_properties_from_state(fake_state)
+    _ = await poller.async_update_properties_from_state(fake_state)
 
     assert isinstance(poller._pending_updates, dict)
     assert fake_state.get("raw_key") is not None
@@ -1105,7 +1105,7 @@ async def test_async_update_properties_from_state_attribute_crashes():
     # Due to try/except block, catch prevents escalation but logs
     with patch(
         "custom_components.climate_ip.controller_yaml_polling._LOGGER.exception"
-    ) as mock_exc:
+    ) as _:
         await poller.async_update_properties_from_state({"Devices": []})
         assert True
 

@@ -11,6 +11,10 @@ from custom_components.climate_ip.const import DOMAIN
 from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 from custom_components.climate_ip.diagnostics import (
     TO_REDACT,
+    _deep_redact_substrings,
+    _extract_controller_diagnostics,
+    _extract_raw_device_state,
+    _get_mac_threat_patterns,
     async_get_config_entry_diagnostics,
 )
 
@@ -635,16 +639,6 @@ async def test_diagnostics_multi_coordinator_default_fallback_metrics(
     boot = result.get("bootstrapping", {})
     assert boot.get("total_devices_discovered") == 1
     assert boot.get("skipped_devices_missing_info") == 0
-
-
-import pytest
-
-from custom_components.climate_ip.diagnostics import (
-    _deep_redact_substrings,
-    _extract_controller_diagnostics,
-    _extract_raw_device_state,
-    _get_mac_threat_patterns,
-)
 
 # ---------------------------------------------------------
 # ESCUADRÓN FRANCOTIRADOR: EJECUCIÓN DIRECTA (0.001s Kill)

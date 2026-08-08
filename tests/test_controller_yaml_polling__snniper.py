@@ -71,7 +71,6 @@ async def _helper_build_device_state_from_props(self):
         raise AttributeError("state_getter value is None")
     state = copy.deepcopy(st_val) if isinstance(st_val, dict) else {}
     for prop in self._all_props():
-        prop_id = prop.id
         val = self._get_prop_value(prop)
         if val is not None:
             self._inject_value_into_state(prop, state, val)
@@ -178,7 +177,7 @@ async def test_sniper_async_get_status_connection_id():
 
     with patch(
         "custom_components.climate_ip.controller_yaml_polling._LOGGER.debug"
-    ) as mock_debug:
+    ) as _:
         await poller.async_get_status()
         pass
 
@@ -191,7 +190,6 @@ async def test_sniper_async_merge_device_state_strict():
     )
     poller = YamlStatePoller(mock_controller)
 
-    candidate_state = {"base": "state", "new": "data"}
     new_data = {"new": "data"}
 
     poller._build_device_state_from_hass = AsyncMock(return_value={"base": "state"})

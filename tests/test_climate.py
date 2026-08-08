@@ -26,7 +26,7 @@ from custom_components.climate_ip.climate import (
     ClimateIP,
     async_setup_entry,
 )
-from custom_components.climate_ip.const import CONF_TARGET_TEMP_STEP, CONF_TEMP_STEP
+from custom_components.climate_ip.const import CONF_TARGET_TEMP_STEP
 from custom_components.climate_ip.controller import ATTR_POWER
 from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 
@@ -176,7 +176,6 @@ async def test_climate_init_options_priority_and_halves(hass: HomeAssistant) -> 
     mock_coordinator.entry.options = {CONF_TARGET_TEMP_STEP: 0.5}
 
     # Inject config (Priority 2 and 3) with different values to verify they are ignored
-    config = {CONF_TARGET_TEMP_STEP: 1.0, CONF_TEMP_STEP: 2.0}
     description = ClimateEntityDescription(key="samsung_ac")
 
     entity = ClimateIP(coordinator=mock_coordinator, description=description)

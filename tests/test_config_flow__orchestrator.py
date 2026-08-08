@@ -33,7 +33,7 @@ async def test_form_user_step(hass: HomeAssistant) -> None:
             "type": FlowResultType.FORM,
             "step_id": "samsung_2878",
         }
-        result2 = await flow.async_step_user(
+        _ = await flow.async_step_user(
             {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
         )
         assert flow.flow_data[CONF_DEVICE_TYPE] == DEVICE_TYPE_SAMSUNG_2878
@@ -54,7 +54,7 @@ async def test_step_samsung_2878_routing(hass: HomeAssistant) -> None:
             "type": FlowResultType.FORM,
             "step_id": "samsung_2878",
         }
-        result = await flow.async_step_samsung_2878({"ip_address": "192.168.1.50"})
+        _ = await flow.async_step_samsung_2878({"ip_address": "192.168.1.50"})
         mock_process.assert_called_once_with(
             step_id="samsung_2878",
             is_8888=False,
@@ -76,7 +76,7 @@ async def test_step_samsung_8888_routing(hass: HomeAssistant) -> None:
             "type": FlowResultType.FORM,
             "step_id": "samsung_8888",
         }
-        result = await flow.async_step_samsung_8888({"ip_address": "192.168.1.51"})
+        _ = await flow.async_step_samsung_8888({"ip_address": "192.168.1.51"})
         mock_process.assert_called_once_with(
             step_id="samsung_8888",
             is_8888=True,
