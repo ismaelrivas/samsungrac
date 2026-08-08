@@ -3,7 +3,7 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Generic, Protocol, TypeVar, runtime_checkable
+from typing import Any, Protocol, TypeVar, runtime_checkable
 
 ATTR_POWER = "power"
 CLIMATE_CONTROLLERS: list[type["ClimateController"]] = []
@@ -46,7 +46,7 @@ class ControllerInterface(Protocol):
     def on_connection_failed_callback(self) -> None: ...
 
 
-class ClimateController(ABC, Generic[_T]):
+class ClimateController[T](ABC):
     """Abstract base class for a device controller. Enforcement through ABC."""
 
     # pylint: disable=import-outside-toplevel,too-many-public-methods,useless-return

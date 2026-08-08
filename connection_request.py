@@ -319,7 +319,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                     )
 
     @contextlib.contextmanager
-    def _borrow_session(self) -> Generator[requests.Session, None, None]:
+    def _borrow_session(self) -> Generator[requests.Session]:
         """Yields the persistent session without closing it on exit."""
         _LOGGER.debug(
             "%s [Debug] Borrowing session ID: %s", self.log_prefix, id(self._session)
