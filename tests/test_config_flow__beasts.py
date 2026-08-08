@@ -30,20 +30,20 @@ async def test_rest_api_token_sanitization_mutants():
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
 
     # 1. Mutant 8: Injects "XXXX" when raw_tok is None
-    # Si simulamos que sanitize_token falla porque recibe "XXXX" (algo falso),
-    # comprobaremos que lanza error de formato en vez de aceptarlo.
+    # If we simulate sanitize_token fails on receiving "XXXX" (fake value),
+    # we verify it raises format error instead of accepting it.
     with patch(
         "custom_components.climate_ip.helpers.sanitize_token", return_value=False
     ):
-        # Le pasamos un token falso para que falle sanitize_token
+        # Pass fake token to fail sanitize_token
         result = await flow.async_step_rest_api({CONF_TOKEN: "XXXX"})
 
-        # M15-M23: Verificamos retornos exactos del formulario de error
+        # M15-M23: Verify exact returns from error form
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "rest_api"
         assert result["errors"] == {CONF_TOKEN: "invalid_token_format"}
         assert result["data_schema"] is not None
-        # If mutant M19 pone step_id=None o el M22 anula el esquema, estas aserciones fallan
+        # If mutant M19 sets step_id=None or M22 voids schema, these assertions fail
 
 
 @pytest.mark.asyncio
@@ -51,19 +51,19 @@ async def test_rest_api_device_mapping_mutants():
     """Kills mutants del mapeo de configuración (M26, M27, M28, M29)"""
     flow = ClimateIpConfigFlow()
 
-    # M26/M27: Anulan la lectura de device_type a None
-    # M28: Invierten el "if device_type in DEVICE_TYPE_TO_CONFIG_FILE" a "not in"
-    # M29: Ponen la asignación a None en vez del dict
+    # M26/M27: Void device_type reading to None
+    # M28: Invert "if device_type in DEVICE_TYPE_TO_CONFIG_FILE" to "not in"
+    # M29: Set assignment to None instead of dict
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
         CONF_TOKEN: "valid_token",
     }
 
-    # Mock validate_poll para pasar directo al chequeo de REST
+    # Mock validate_poll to skip directly to REST check
     with patch(
         "homeassistant.helpers.aiohttp_client.async_get_clientsession"
     ) as mock_session:
-        # Mock HTTP 200 para evitar exception de CannotConnect
+        # Mock HTTP 200 to avoid CannotConnect exception
         mock_get = AsyncMock()
         mock_get.status = 200
         mock_get.__aenter__.return_value = mock_get
@@ -128,9 +128,9 @@ async def test_rest_api_unique_id_logic_mutants():
 
         # 3. Abort Reauth (M91)
         flow.reauth_entry = MagicMock()
-        # If mutant 91 cambia `if self.reauth_entry is None` por `is not None`,
-        # llamará a _abort_if_unique_id_configured y saltará una excepción de abort.
-        # Forzamos _abort_if_unique_id_configured a lanzar un Exception("MataM91")
+        # If mutant 91 changes `if self.reauth_entry is None` to `is not None`,
+        # it will call _abort_if_unique_id_configured and trigger abort exception.
+        # Force _abort_if_unique_id_configured to raise Exception("MataM91")
         with patch.object(
             flow, "_abort_if_unique_id_configured", side_effect=Exception("MataM91")
         ):
@@ -146,7 +146,7 @@ async def test_rest_api_unique_id_logic_mutants():
                         )
 
 
-# Asumimos que tienes esta lupa en tu helper o test de schemas
+# Assuming you have this magnifying glass in your helper or schema test
 def get_schema_marker(schema: vol.Schema, key_name: str):
     for key, value_type in schema.schema.items():
         if key.schema == key_name:
@@ -161,10 +161,10 @@ async def test_reconfigure_confirm_schema_fallbacks():
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
         CONF_IP_ADDRESS: "192.168.1.10",
-        # INTENCIONADAMENTE omitimos MAC, TOKEN y CERT para forzar los fallbacks de diccionario
+        # INTENTIONALLY omit MAC, TOKEN, and CERT to force dictionary fallbacks
     }
 
-    # Mock la entrada a reconfigurar
+    # Mock reconfiguration entry
     mock_entry = MagicMock()
     mock_entry.data = flow.flow_data
     mock_entry.title = "Test AC"
@@ -176,7 +176,7 @@ async def test_reconfigure_confirm_schema_fallbacks():
     mac_key, _ = get_schema_marker(schema, CONF_MAC)
     cert_key, _ = get_schema_marker(schema, CONF_CERT)
 
-    # If mutmut cambió el fallback a "XXXX" o None, estas aserciones lo liquidan
+    # If mutmut changed fallback to "XXXX" or None, these assertions liquidate it
     assert mac_key.description.get("suggested_value") == ""
     assert cert_key.description.get("suggested_value") == "ac14k_m.pem"
 
@@ -192,22 +192,22 @@ async def test_reconfigure_confirm_mac_error_rebuild():
     mock_entry = MagicMock(data={})
     flow._get_reconfigure_entry = MagicMock(return_value=mock_entry)
 
-    # Input intencionadamente carente de campos opcionales para disparar los defaults internos
+    # Input intentionally lacking optional fields to trigger internal defaults
     user_input = {CONF_IP_ADDRESS: "10.0.0.1"}
 
-    # Simulamos que la resolución de MAC falla
+    # Simulate MAC resolution failure
     with patch.object(
         flow, "_async_resolve_mac_and_set_unique_id", return_value="mac_resolve_failed"
     ) as mock_resolve:
         result = await flow.async_step_reconfigure_confirm(user_input)
 
-        # M68-M77: Verificar que los argumentos enviados a resolver MAC fueron exactos
+        # M68-M77: Verify arguments passed to resolve MAC were exact
         mock_resolve.assert_called_once_with(ip_address="10.0.0.1", mac_address="")
 
         assert result["errors"]["base"] == "mac_resolve_failed"
         schema = result["data_schema"]
 
-        # M87-M115 y M142-M174: If mutant inyecta "XXXX" o None en los fallbacks de error, esto falla
+        # M87-M115 and M142-M174: If mutant injects "XXXX" or None in error fallbacks, this fails
         ip_key, _ = get_schema_marker(schema, CONF_IP_ADDRESS)
         mac_key, _ = get_schema_marker(schema, CONF_MAC)
         token_key, _ = get_schema_marker(schema, CONF_TOKEN)
@@ -228,12 +228,12 @@ async def test_reconfigure_confirm_cert_error_rebuild():
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
         CONF_IP_ADDRESS: "10.0.0.1",
-        # BALA PARA M128/M131: Inject una MAC en minúsculas
+        # BULLET FOR M128/M131: Inject lowercase MAC
         CONF_MAC: "aa:bb:cc:dd:ee:ff",
     }
     flow._get_reconfigure_entry = MagicMock(return_value=MagicMock(data={}))
 
-    # El usuario envía la misma MAC en minúsculas en el input
+    # User submits same lowercase MAC in input
     user_input = {
         CONF_IP_ADDRESS: "10.0.0.1",
         CONF_CERT: "invalid.pem",
@@ -416,7 +416,7 @@ def test_get_base_samsung_schema_rejects_none_mac_required():
     with pytest.raises(TypeError):
         flow._get_base_samsung_schema(mac_required=None, is_8888=True)
 
-    # Con bool estricto debe funcionar sin error
+    # With strict bool must work without error
     schema_false = flow._get_base_samsung_schema(mac_required=False, is_8888=False)
     assert schema_false is not None
     schema_true = flow._get_base_samsung_schema(mac_required=True, is_8888=False)
@@ -692,7 +692,7 @@ def test_get_smartthings_token_empty_string(hass: HomeAssistant) -> None:
     flow.hass = hass
 
     mock_entry = MagicMock()
-    # 'access_token' no está presente -> dict.get() devuelve None
+    # 'access_token' not present -> dict.get() returns None
     mock_entry.data = {}
     flow.hass.config_entries.async_entries.return_value = [mock_entry]
 

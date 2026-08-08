@@ -725,7 +725,7 @@ def test_sniper_deep_redact_internals():
     # Mutant 12: result = None (breaks base substitution)
     assert _deep_redact_substrings("test", {"no_match"}) == "test"
 
-    # Mutantes 28, 29, 34: Listas y tuplas mutadas (quitando el 'v')
+    # Mutants 28, 29, 34: Mutated lists and tuples (removing 'v')
     assert _deep_redact_substrings(["secret"], {"secret"}) == ["**REDACTED**"]
     assert _deep_redact_substrings(("secret",), {"secret"}) == ("**REDACTED**",)
 

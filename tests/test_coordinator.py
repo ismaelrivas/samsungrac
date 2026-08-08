@@ -25,7 +25,7 @@ def prevent_asyncio_sleep_timeouts():
     """Evita el Event Loop Starvation de mutmut sin causar recursividad infinita."""
 
     async def zero_sleep(*args, **kwargs):
-        # 2. Llamamos a la función original, rompiendo la recursividad
+        # 2. Call original function, breaking recursion
         await _original_sleep(0)
 
     with patch(
@@ -462,10 +462,10 @@ async def test_corrections_are_dispatched_to_controller(hass: HomeAssistant) -> 
     mock_entry.options = {}
     mock_entry.data = {}
 
-    # Ejecutamos los call_later síncronamente
+    # Execute call_later synchronously
     hass.loop.call_later.side_effect = lambda delay, callback: callback()
 
-    # FIX: Rastreamos las tareas en segundo plano del debouncer para esperarlas
+    # FIX: Track background tasks in debouncer to await them
     tasks = []
 
     def mock_create_task(coro, **kwargs):
@@ -482,7 +482,7 @@ async def test_corrections_are_dispatched_to_controller(hass: HomeAssistant) -> 
     mock_controller.async_predict_and_correct_state.return_value = (None, corrections)
     await coordinator.async_set_property("hvac_mode", "cool")
 
-    # Esperamos a que todas las tareas encoladas terminen de ejecutarse
+    # Wait for all queued tasks to finish executing
     if tasks:
         try:
             await asyncio.wait_for(asyncio.gather(*tasks), timeout=0.5)
@@ -1289,13 +1289,13 @@ async def test_coordinator_auto_healing_fails_when_already_raw(
     mock_controller.log_prefix = "[RAW_Test]"
     mock_controller.name = "RAW AC"
 
-    # Simulamos el error recurrente de cabeceras
+    # Simulate recurring headers error
     mock_controller.async_get_status = AsyncMock(
         side_effect=InvalidHeaderError("Test Header Error")
     )
 
     mock_entry = MagicMock()
-    # TRUCO: Ya estamos en el motor RAW.
+    # TRICK: Already in RAW engine.
     mock_entry.options = {CONF_CONN_METHOD: CONN_METHOD_RAW}
     mock_entry.data = {}
 
@@ -1310,14 +1310,14 @@ async def test_coordinator_auto_healing_fails_when_already_raw(
         with patch.object(
             hass.config_entries, "async_update_entry"
         ) as mock_update_entry:
-            # Al fallar estando ya en RAW, debe lanzar UpdateFailed normal con el error, sin reconfigurar
+            # On failure while already in RAW, must raise standard UpdateFailed with error without reconfiguring
             with pytest.raises(
                 UpdateFailed,
                 match="Data parsing failed on RAW engine: Test Header Error",
             ):
                 await coordinator._async_update_data()
 
-            # Aniquila M307 (==): Validamos que NO intentó volver a actualizar el ConfigEntry
+            # Annihilates M307 (==): Validate DID NOT attempt to re-update ConfigEntry
             mock_update_entry.assert_not_called()
 
 
@@ -1346,7 +1346,7 @@ async def test_coordinator_clears_cache_on_critical_errors(
     mock_controller.name = "Error AC"
     mock_controller.async_get_status = AsyncMock(side_effect=exception_instance)
 
-    # Creamos un mock estricto para el poller
+    # Create strict mock for poller
     mock_poller = MagicMock()
     mock_controller.poller = mock_poller
 
@@ -1365,7 +1365,7 @@ async def test_coordinator_clears_cache_on_critical_errors(
         with pytest.raises(UpdateFailed, match=expected_match):
             await coordinator._async_update_data()
 
-        # Verifica que se haya forzado la limpieza de caché
+        # Verify cache clearance was forced
         mock_controller.clear_state_cache.assert_called_once()
 
 
@@ -1385,7 +1385,7 @@ async def test_coordinator_handles_missing_poller_safely(hass: HomeAssistant) ->
         side_effect=ValueError("No poller JSON error")
     )
 
-    # Eliminamos el atributo clear_state_cache explícitamente para forzar el condicional
+    # Explicitly remove clear_state_cache attribute to force conditional
     del mock_controller.clear_state_cache
 
     mock_entry = MagicMock()
@@ -1400,7 +1400,7 @@ async def test_coordinator_handles_missing_poller_safely(hass: HomeAssistant) ->
 
         coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
 
-        # Debería lanzar el error limpiamente sin arrojar AttributeError interno
+        # Should raise error cleanly without throwing internal AttributeError
         with pytest.raises(
             UpdateFailed, match="Data parsing error: No poller JSON error"
         ):
@@ -1471,11 +1471,11 @@ async def test_locked_set_property_mutants(hass: HomeAssistant) -> None:
         mock_controller.async_set_property.return_value = True
         res_true = await coordinator._locked_set_property("hvac_mode", "cool", "dev_1")
 
-        # L414: Verificamos que se pasó la propiedad, el VALOR y el device_id
+        # L414: Verify property, VALUE, and device_id were passed
         mock_controller.async_set_property.assert_awaited_once_with(
             "hvac_mode", "cool", "dev_1"
         )
-        # L416: Aseguramos el retorno correcto
+        # L416: Ensure correct return
         assert res_true is True
 
         # CASO 2: Controller devuelve explícitamente False
@@ -1587,7 +1587,7 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
         await debouncer.async_execute("prop_success", dummy_success)
         mock_existing_timer.assert_called_once()
 
-        # Excepciones que pasan kwargs
+        # Exceptions passing kwargs
         async def dummy_fail_network(*args, **kwargs):
             raise CannotConnect("Network offline")
 
@@ -1619,7 +1619,7 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
 
         assert mock_coordinator.async_request_refresh.await_count == 2
 
-        # VERIFICACIÓN BLINDADA: Buscamos en las llamadas interceptadas
+        # ARMORED VERIFICATION: Search within intercepted calls
         debug_calls = mock_debug.call_args_list
         net_call = next(
             c for c in debug_calls if "Network error executing" in c.args[0]
@@ -1628,7 +1628,7 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
             c for c in debug_calls if "Error executing delayed command" in c.args[0]
         )
 
-        # Aniquilamos los mutantes que cambian exc_info a False o lo eliminan
+        # Annihilate mutants changing exc_info to False or removing it
         assert net_call.kwargs.get("exc_info") is True
         assert gen_call.kwargs.get("exc_info") is True
 
@@ -1655,7 +1655,7 @@ async def test_sniper_debouncer_exact_time_boundary_strict(hass: HomeAssistant):
     mock_coordinator = MagicMock()
     debouncer = PropertyDebouncer(mock_coordinator, delay=2.0)
 
-    # Forzamos el tiempo exacto a 0.0 para que 2.0 - 0.0 sea matemáticamente perfecto
+    # Force exact time to 0.0 so 2.0 - 0.0 is mathematically perfect
     debouncer._global_last_execution = 0.0
 
     async def dummy(*args, **kwargs):
@@ -1708,7 +1708,7 @@ async def test_sniper_locked_set_property_strict_args(hass: HomeAssistant):
 
         await coordinator._locked_set_property("my_prop", "my_val", "my_dev")
 
-        # Verificamos la longitud exacta de la tupla de argumentos que recibió el mock
+        # Verify exact length of argument tuple received by mock
         args, _ = mock_controller.async_set_property.call_args
         assert (
             len(args) == 3

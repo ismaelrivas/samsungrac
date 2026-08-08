@@ -160,7 +160,7 @@ async def test_offline_callback_invoked_on_disconnect():
     mock_hass = MagicMock()
     mock_controller = MagicMock()
     mock_controller.hass = mock_hass
-    # Definir explícitamente los callbacks para cumplir el contrato Fail-Fast
+    # Explicitly define callbacks to satisfy Fail-Fast contract
     mock_controller.on_offline_callback = MagicMock()
     mock_controller.on_connection_failed_callback = MagicMock()
 
@@ -177,8 +177,8 @@ async def test_offline_callback_invoked_on_disconnect():
     conn._cfg.host = "192.168.1.100"
     conn._controller = mock_controller
 
-    # CRITICAL FIX: Simular que el AC se conectó exitosamente al menos una vez.
-    # Sin esto, el sistema suprime los errores de UI creyendo que está en fase de arranque.
+    # CRITICAL FIX: Simulate AC connected successfully at least once.
+    # Without this, system suppresses UI errors assuming startup phase.
     conn._initial_connection_done = True
 
     with (
@@ -198,11 +198,11 @@ async def test_offline_callback_invoked_on_disconnect():
             return_value=False,
         ),
     ):
-        # 1er intento (retries = 1) -> No hay trigger
+        # 1st attempt (retries = 1) -> No trigger
         await conn.handle_reconnection()
         mock_controller.on_offline_callback.assert_not_called()
 
-        # 2do intento (retries = 2) -> Supera el umbral estricto y dispara el offline a la UI
+        # 2nd attempt (retries = 2) -> Exceeds strict threshold and triggers offline to UI
         await conn.handle_reconnection()
         mock_controller.on_offline_callback.assert_called_once_with(
             "Host unreachable after multiple retry attempts."
@@ -241,9 +241,9 @@ async def test_reconnection_state_changes_availability():
         return_value=True,
     ):
         await conn.handle_reconnection()
-        # Si se restablece, el handshake cambia is_available y limpia el flag persistente
-        # (Esto ocurre dentro de _establish_connection_and_handshake, pero como lo mockeamos
-        # devolviendo True, solo verificamos que handle_reconnection retorna True)
+        # If restored, handshake updates is_available and clears persistent flag
+        # (Occurs inside _establish_connection_and_handshake, but since mocked
+        # returning True, only verify handle_reconnection returns True)
         assert (
             conn._is_available is False
         )  # It doesn't flip it here, it flips inside establish

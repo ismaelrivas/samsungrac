@@ -63,7 +63,7 @@ def mock_controller():
 
 
 # ====================================================================================
-# FRENTE A: AUTORIDAD PRIMITIVA (Mata los 8 mutantes de __init__)
+# FRONT A: PRIMITIVE AUTHORITY (Kills all 8 __init__ mutants)
 # ====================================================================================
 
 
@@ -88,12 +88,12 @@ def test_yaml_config_initial_state():
     # Kills Mutant 9 (vol.Optional(None) instead of ATTR_ENTITY_ID)
     schema_keys = list(loader.service_schema_map.keys())
     assert len(schema_keys) > 0
-    # vol.Optional envuelve el valor en la propiedad .schema
+    # vol.Optional wraps value in .schema property
     assert schema_keys[0].schema == ATTR_ENTITY_ID
 
 
 # ====================================================================================
-# FRENTE B: RESILIENCIA A YAML FRAGMENTADO (Kills mutants de fallback en .get)
+# FRONT B: FRAGMENTED YAML RESILIENCE (Kills fallback mutants in .get)
 # ====================================================================================
 
 
@@ -108,11 +108,11 @@ async def test_yaml_config_fragmented_payloads():
     loader = YamlConfigLoader(mock_controller)
     loader.is_fully_initialized = False
 
-    # Inject un YAML que carece de switches, sensors, attributes y operations
+    # Inject YAML lacking switches, sensors, attributes, and operations
     loader._parsed_yaml_config = {
         "target_dev": {
             "device": {
-                # Solo pasamos la raíz, forzando a que fallen todos los ac.get()
+                # Pass root only, forcing all ac.get() to fail
             }
         }
     }
@@ -706,7 +706,7 @@ async def test_apply_temperature_units_no_hass() -> None:
 
     await loader.async_finish_initialization()
 
-    # Sin HASS, debe caer al DEFAULT_CONF_TEMP_UNIT global (que importamos como DEFAULT_CONF_TEMP_UNIT)
+    # Without HASS, must fall back to global DEFAULT_CONF_TEMP_UNIT (imported as DEFAULT_CONF_TEMP_UNIT)
     target_temp.set_hass_unit.assert_called_once_with(DEFAULT_CONF_TEMP_UNIT)
     target_temp.set_device_unit.assert_called_once_with(DEFAULT_CONF_TEMP_UNIT)
 
@@ -726,7 +726,7 @@ async def test_async_finish_initialization_all_loops_exhaustive():
     loader = YamlConfigLoader(mock_controller)
     loader.is_fully_initialized = False
 
-    # Inject datos en TODAS las categorías simultáneamente
+    # Inject data into ALL categories simultaneously
     loader._parsed_yaml_config = {
         "device": {
             "operations": {"yaml_op": {"type": "A"}},
@@ -756,7 +756,7 @@ async def test_async_finish_initialization_all_loops_exhaustive():
         assert "real_yaml_attr" in loader.properties
         assert "yaml_sen" in loader.sensors
 
-        # Validamos que las listas de deduplicación se llenaron (Mata "if op_id not in...")
+        # Validate deduplication lists filled up (Kills "if op_id not in...")
         assert "real_yaml_sw" in loader.operations_list
         assert "real_yaml_attr" in loader.properties_list
         assert "yaml_sen" in loader.sensors_list
@@ -777,11 +777,11 @@ async def test_async_initialize_config_fallback_cascade():
     mock_controller = StrictMock()
     mock_controller.hass = MagicMock()
     mock_controller.unique_id = "test_unique"
-    # 1. Destruimos el atributo privado para obligar a usar el público
+    # 1. Destroy private attribute to force public usage
     if hasattr(mock_controller, "_config"):
         delattr(mock_controller, "_config")
 
-    # 2. Asignamos el atributo público
+    # 2. Assign public attribute
     mock_controller.config = {CONF_DEVICE_TYPE: "samsung_2878"}
 
     loader = YamlConfigLoader(mock_controller)
@@ -792,8 +792,8 @@ async def test_async_initialize_config_fallback_cascade():
 
     await loader.async_initialize()
 
-    # If mutmut alteró getattr(..., "config", {}), el device_type será None
-    # y no entrará en la rama de samsung_2878, por lo que connection_node fallará.
+    # If mutmut altered getattr(..., "config", {}), device_type will be None
+    # and won't enter samsung_2878 branch, so connection_node will fail.
     assert type(loader.connection).__name__ == "ConnectionSamsung2878"
 
 
@@ -836,8 +836,8 @@ async def test_async_finish_initialization_entry_data_fallback():
     ):
         await loader.async_finish_initialization()
 
-        # Debe haber extraído los valores del diccionario .data porque .options estaba vacío
-        # If mutmut cambia .data.get(..., def) a None, esta aserción explotará
+        # Must extract values from .data dict because .options was empty
+        # If mutmut changes .data.get(..., def) to None, this assertion explodes
         mock_prop.set_device_unit.assert_any_call("Rankine")
 
 
@@ -953,7 +953,7 @@ async def test_async_finish_initialization_frente_p():
     loader = YamlConfigLoader(mock_controller)
     loader.is_fully_initialized = False
 
-    # Proveemos operaciones, switches, atributos y sensors para que se aserten todos los bucles
+    # Provide operations, switches, attributes, and sensors to assert all loops
     loader._parsed_yaml_config = {
         "device": {
             "operations": {"op1": {}},
@@ -966,11 +966,11 @@ async def test_async_finish_initialization_frente_p():
 
     def fake_create(key, node, conn, ctrl, getter):
         prop = StrictMock()
-        # Claves distintas para deduplicar
+        # Distinct keys for deduplication
         prop.id = f"real_{key}"
         prop.config_validation_type = "cv_boolean"
 
-        # Soportamos el getattr de device_class
+        # Support device_class getattr
         if key == "attr1":
             prop.device_class = "sensor"  # ¡EVITA que entre al if is_temp!
         else:
@@ -979,7 +979,7 @@ async def test_async_finish_initialization_frente_p():
         if key == "attr1":
             prop.set_unit_of_measurement = MagicMock()
 
-        # Soportamos la asignación de unidades
+        # Support unit assignment
         prop.set_hass_unit = MagicMock()
         prop.set_device_unit = MagicMock()
         return prop
@@ -990,8 +990,8 @@ async def test_async_finish_initialization_frente_p():
     ):
         await loader.async_finish_initialization()
 
-        # 1. We assert cv_boolean (mata mutantes 59-60, 97-99)
-        # Las claves en service_schema_map son Optional("real_op1"), etc.
+        # 1. We assert cv_boolean (kills mutants 59-60, 97-99)
+        # Keys in service_schema_map are Optional("real_op1"), etc.
         assert loader.service_schema_map[Optional("real_op1")] == "cv_boolean"
         assert loader.service_schema_map[Optional("real_sw1")] == "cv_boolean"
 
@@ -999,7 +999,7 @@ async def test_async_finish_initialization_frente_p():
         attr1_mock = loader.properties["real_attr1"]
         attr1_mock.set_unit_of_measurement.assert_called_once_with("custom_unit")
 
-        # 3. We assert asimetría en operaciones (mata 49-53, 87-94)
+        # 3. We assert asymmetry in operations (kills 49-53, 87-94)
         assert "real_sw1" in loader.operations_list
         assert "real_attr1" in loader.properties_list
         assert "sen1" in loader.sensors_list
@@ -1023,7 +1023,7 @@ async def test_async_finish_initialization_frente_r():
     mock_hass.config.units.temperature_unit = "Fahrenheit"
     mock_controller.hass = mock_hass
 
-    # Mock entry para que devuelva algo distinto en options vs data
+    # Mock entry to return different output in options vs data
     mock_entry = MagicMock()
     mock_entry.options = {
         CONF_TEMP_NATIVE_CURRENT: "OptionsCurrent",
@@ -1077,7 +1077,7 @@ async def test_async_initialize_sync_fallback(mock_controller) -> None:
             "device": {"connection": {"type": "test"}, "status": {}}
         }
 
-        # Mock create_status_getter para no depender de la clase base real
+        # Mock create_status_getter to not depend on real base class
         with patch(
             "custom_components.climate_ip.controller_yaml_config.create_status_getter",
             return_value=MagicMock(),
@@ -1110,7 +1110,7 @@ async def test_async_initialize_poll_parsing() -> None:
     ]
 
     for poll_str, expected_poll in test_cases:
-        # Aislamiento Total Nivel 0: Purgar el caché del módulo
+        # Level 0 Total Isolation: Purge module cache
         clear_yaml_cache()
 
         # Aislamiento Total Nivel 1: Nuevo Controlador Mock
@@ -1136,7 +1136,7 @@ async def test_async_initialize_poll_parsing() -> None:
 
         mock_conn_instance = MagicMock()
         mock_conn_instance.load_from_yaml.return_value = True
-        # EVITAMOS que el mock tenga un atributo 'poll' que pueda interferir mágicamente
+        # AVOID mock having a 'poll' attribute that could magically interfere
         del mock_conn_instance.poll
         mock_conn_class.return_value = mock_conn_instance
 
@@ -1216,7 +1216,7 @@ async def test_apply_temperature_units_logic(mock_controller) -> None:
     """Kills mutants 167-266 forzando la lógica diferencial de ATTR_TEMPERATURE vs Otros."""
     loader = YamlConfigLoader(mock_controller)
 
-    # Configuramos el ConfigEntry mockeado para tener options puras
+    # Configure mocked ConfigEntry to have pure options
     mock_entry = MagicMock()
     mock_entry.options = {CONF_TEMP_NATIVE_CURRENT: "°F", CONF_TEMP_NATIVE_TARGET: "°K"}
     mock_controller.config = {"entry_id": "123"}
@@ -1260,7 +1260,7 @@ async def test_async_initialize_yaml_deep_fallbacks(mock_controller) -> None:
     mock_controller._yaml = "test.yaml"
     mock_controller.hass = None
 
-    # EL TRAMPÓN DE MAGICMOCK: _config se auto-crea como Mock. Hay que sobreescribirlo explícitamente.
+    # MAGICMOCK TRAP: _config auto-creates as Mock. Must explicitly overwrite.
     # In addition, dynamically use a valid device type from the real support array.
     test_config = {
         CONF_DEVICE_TYPE: list(DEVICE_TYPE_AIOHTTP_SUPPORTED)[0],
@@ -1269,7 +1269,7 @@ async def test_async_initialize_yaml_deep_fallbacks(mock_controller) -> None:
     mock_controller._config = test_config  # Mata al MagicMock residual
     mock_controller.config = test_config
 
-    # Inject YAML incompleto PERO CON STATUS para que no aborte en la línea 265
+    # Inject incomplete YAML BUT WITH STATUS so it doesn't abort at line 265
     yaml_data = {
         "device": {
             "status": {}  # Obligatorio para llegar al parsing del nombre y polling
@@ -1301,12 +1301,12 @@ async def test_async_initialize_yaml_deep_fallbacks(mock_controller) -> None:
     ):
         result = await loader.async_initialize()
 
-        # Lethal assertion: El proceso debe completarse con éxito
+        # Lethal assertion: Process must complete successfully
         assert (
             result is True
         ), "Falló la inicialización o la clase mock rechazó la cadena mutada"
 
-        # Lethal assertion: El nombre debe ser el default 'yaml' (CONST_CONTROLLER_TYPE)
+        # Lethal assertion: Name must be default 'yaml' (CONST_CONTROLLER_TYPE)
         assert loader.name == "yaml"
 
 
@@ -1319,7 +1319,7 @@ async def test_async_initialize_explicit_yaml_data(mock_controller) -> None:
     mock_controller._yaml = "test.yaml"
     mock_controller.hass = None
 
-    # Configuramos un controlador limpio
+    # Configure clean controller
     mock_controller._config = {
         CONF_DEVICE_TYPE: list(DEVICE_TYPE_AIOHTTP_SUPPORTED)[0],
         CONF_CONN_METHOD: "metodo_invalido_para_forzar_else",
@@ -1360,9 +1360,9 @@ async def test_async_initialize_explicit_yaml_data(mock_controller) -> None:
         result = await loader.async_initialize()
 
         assert result is True
-        # If mutant cambia self.name = None o self.name = ac.get(ATTR_NAME, ), esta aserción reventará
+        # If mutant changes self.name = None or self.name = ac.get(ATTR_NAME, ), this assertion will burst
         assert loader.name == "CustomACName"
-        # If mutant muta poll_config o lo pone en upper(), esta aserción reventará
+        # If mutant mutates poll_config or uppercases it, this assertion will burst
         assert loader.poll is False
 
 
@@ -1375,7 +1375,7 @@ async def test_async_initialize_executor_job(mock_controller) -> None:
     loader = YamlConfigLoader(mock_controller)
     mock_controller._yaml = "test.yaml"
 
-    # Create un mock para el hass que registre las llamadas al executor
+    # Create mock hass registering executor calls
     mock_controller.hass = AsyncMock()
     mock_controller.hass.async_add_executor_job.return_value = {
         "device": {"status": {}, "connection": {"type": "test_executor"}}
@@ -1397,7 +1397,7 @@ async def test_async_initialize_executor_job(mock_controller) -> None:
             return_value=MagicMock(),
         ),
     ):
-        # Disable el parcheo de load_yaml para que intente pasar la función real al executor
+        # Disable load_yaml patching to attempt passing real function to executor
         await loader.async_initialize()
 
         # Lethal assertion: Executor was invoked with exact function and path
@@ -1425,7 +1425,7 @@ async def test_async_initialize_connection_raw8888_args(mock_controller) -> None
         YamlConfigLoader,
     )
 
-    # Inyección táctica de dependencias para RAW (usando constantes estrictas)
+    # Tactical dependency injection for RAW (using strict constants)
     mock_controller._config = {
         CONF_DEVICE_TYPE: "samsung_8888",
         CONF_CONN_METHOD: CONN_METHOD_RAW,
@@ -1437,7 +1437,7 @@ async def test_async_initialize_connection_raw8888_args(mock_controller) -> None
     mock_controller.ip_address = "10.0.0.99"
     mock_controller._yaml = "test_raw.yaml"
 
-    # Inject una corrutina real para simular el executor de Home Assistant
+    # Inject real coroutine to simulate Home Assistant executor
     async def mock_async_add_executor_job(*args, **kwargs):
         return args[0](*args[1:], **kwargs)
 
@@ -1459,7 +1459,7 @@ async def test_async_initialize_connection_raw8888_args(mock_controller) -> None
         def load_from_yaml(self, node, getter):
             return True
 
-    # Suplantamos el nombre de la clase para engañar al if conn_class.__name__ == "ConnectionRaw8888"
+    # Substitute class name to trick if conn_class.__name__ == "ConnectionRaw8888"
     MockRawConn.__name__ = "ConnectionRaw8888"
 
     with (
@@ -1478,7 +1478,7 @@ async def test_async_initialize_connection_raw8888_args(mock_controller) -> None
     ):
         await loader.async_initialize()
 
-        # Aserciones Letales de la firma del constructor
+        # Lethal Assertions on constructor signature
         assert isinstance(
             loader.connection, MockRawConn
         ), "El motor RAW no fue instanciado"
@@ -1498,13 +1498,13 @@ async def test_async_finish_initialization_state_flag(mock_controller) -> None:
     loader = YamlConfigLoader(mock_controller)
     loader.is_fully_initialized = False  # Partimos de estado base
 
-    # Proveemos lo mínimo viable para que atraviese el método sin early exits
+    # Provide minimum viable to pass method without early exits
     loader._parsed_yaml_config = {"device": {}}
     loader._parsed_yaml_cache = {mock_controller.device_id: loader._parsed_yaml_config}
 
     await loader.async_finish_initialization()
 
-    # Lethal assertion: If mutmut cambia = True por = False en la línea 417, esto detonará.
+        # Lethal assertion: If mutmut changes = True to = False on line 417, this detonates.
     assert (
         loader.is_fully_initialized is True
     ), "INFRACCIÓN: La bandera de inicialización no fue levantada."

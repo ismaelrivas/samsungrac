@@ -1678,7 +1678,7 @@ async def test_static_yaml_strings_and_base_units(mock_connection, mock_controll
     op_gas.load_from_yaml({"device_class": "gas"})
     assert op_gas._state_class == SensorStateClass.TOTAL_INCREASING
 
-    # 2. set_unit_of_measurement en la clase base (Mata .get(unit, None) devolviendo el default)
+    # 2. set_unit_of_measurement in base class (Kills .get(unit, None) returning default)
     op_unit = DeviceProperty("test_unit", mock_connection, mock_controller)
     op_unit.set_unit_of_measurement("UNIDAD_BASE_DESCONOCIDA")
     assert op_unit._unit_of_measurement == "UNIDAD_BASE_DESCONOCIDA"
@@ -1692,10 +1692,10 @@ async def test_device_property_connection_fallback_dict(
 
     op = DeviceProperty("test_conn", mock_connection, mock_controller)
 
-    # Inject un YAML sin la clave CONFIG_DEVICE_CONNECTION
+    # Inject YAML missing CONFIG_DEVICE_CONNECTION key
     op.load_from_yaml({"name": "Test"})
 
-    # Strictly assert que la factoría recibió un diccionario vacío y no None
+    # Strictly assert factory received empty dictionary and not None
     mock_connection.create_updated.assert_called_with({})
 
 

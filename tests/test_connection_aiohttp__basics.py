@@ -245,7 +245,7 @@ async def test_aiohttp_lifecycle_and_shared_state():
         config, logging.getLogger(), mock_hass, mock_session, "192.168.1.100"
     )
 
-    # 1. Aserciones de Inicialización (Kills mutants que alteran None, False o diccionarios)
+    # 1. Initialization Assertions (Kills mutants altering None, False, or dictionaries)
     assert conn._force_close_connection is False
     assert conn._connection_template is None
     assert conn._ssl_context is None
@@ -259,7 +259,7 @@ async def test_aiohttp_lifecycle_and_shared_state():
     assert diag["force_close_connection"] is False
     assert diag["keep_alive_enabled"] is False
 
-    # 3. Cierre y purga (Kills mutants que alteran "initialized" = False en el reset)
+    # 3. Shutdown and purge (Kills mutants altering "initialized" = False on reset)
     conn._shared_state.initialized = True
     conn._shared_state.ssl_context = "FAKE_SSL"
     conn._shared_state.local_session = AsyncMock()  # Simulamos una sesión local
@@ -300,15 +300,15 @@ def test_format_url_variants():
     mock_controller._config = {"token": "ctrl_token"}
     conn.set_controller_ref(mock_controller)
 
-    # 1. URL Completa: Reemplazo de puerto, downgrade HTTP, y placeholders
-    # Kills mutants que alteran ":8888/" a "XX:8888/XX" o eliminan "use_http"
+    # 1. Full URL: Port replacement, HTTP downgrade, and placeholders
+    # Kills mutants altering ":8888/" to "XX:8888/XX" or removing "use_http"
     url_base = (
         "https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__?mac=__CLIMATE_IP_MAC__"
     )
     res = conn._build_full_url(url_base)
     assert res == "http://10.0.0.1:9999/devices/dev_123?mac=AA:BB"
 
-    # 2. Reemplazo de variables de host y placeholders en _build_full_url
+    # 2. Host variable and placeholder replacement in _build_full_url
     conn._ip_address = "192.168.1.50"
     res2 = conn._build_full_url("https://__CLIMATE_IP_HOST__/status")
     assert res2 == "http://192.168.1.50/status"
@@ -501,7 +501,7 @@ def test_format_url_strict_evaluations():
         "http://192.168.1.50/devices/AA:BB:CC:DD" in formatted
     ), "Mutant survived altering host/mac injection or HTTP fallback"
 
-    # 2. Test del puerto custom (:8888/ -> :9999/) y fallback HTTP estricto
+    # 2. Custom port test (:8888/ -> :9999/) and strict HTTP fallback
     url_port = "https://192.168.1.50:8888/devices/__CLIMATE_IP_MAC__"
     formatted_port = conn._build_full_url(url_port)
 
@@ -540,7 +540,7 @@ async def test_adaptive_keep_alive_on_timeout_recovery(
     mock_context = AsyncMock()
     mock_context.__aenter__.return_value = mock_response
 
-    # Hacemos que el mock falle la primera vez y funcione la segunda
+    # Make mock fail first time and succeed second time
     mock_session.request.side_effect = [
         aiohttp.ClientConnectorError(None, OSError("Mocked Error")),
         mock_context,  # Segunda vez funciona
@@ -550,15 +550,15 @@ async def test_adaptive_keep_alive_on_timeout_recovery(
         "GET", "https://192.168.1.100:8888/test", None, {}
     )
 
-    # Verificamos que reintentó
+    # Verify retry occurred
     assert mock_session.request.call_count == 2
 
-    # Verificamos que el segundo intento llevaba la cabecera salvavidas
+    # Verify second attempt carried lifeline header
     retry_kwargs = mock_session.request.call_args_list[1][1]
     assert "Connection" in retry_kwargs["headers"]
     assert retry_kwargs["headers"]["Connection"] == "close"
 
-    # Y que el estado interno se actualizó para persistir el cierre en subsecuentes llamadas
+    # And internal state updated to persist closure on subsequent calls
     assert conn._force_close_connection is True
 
 
@@ -593,7 +593,7 @@ def test_create_updated_preserves_memory_references(
         )
         base_conn._controller = "MockControllerRef"
 
-        # Create un clon con nuevos parámetros
+        # Create clone with new parameters
         new_conn = base_conn.create_updated({"keep_alive": False})
 
         # ASERCIONES ESTRICTAS DE MEMORIA
@@ -623,7 +623,7 @@ async def test_execution_uses_controller_token_priority(
         conn._shared_state.initialized = True
         conn._shared_state.ssl_context = None
 
-        # Inject el controlador con un token dominante
+        # Inject controller with dominant token
         mock_controller = MagicMock()
         mock_controller._config = {"token": "TOKEN_DOMINANTE"}
         mock_controller.device_id = "DEV_123"
@@ -817,10 +817,10 @@ async def test_async_execute_default_poll_is_false(
     mock_local.request.return_value = mock_context
     conn._shared_state.local_session = mock_local
 
-    # Llamamos SIN el argumento _is_poll
+    # Call WITHOUT _is_poll argument
     await conn.async_execute("GET", "/test", None, {})
 
-    # If mutmut cambió el default a True, la sesión se cerrará y el test fallará
+    # If mutmut changed default to True, session will close and test will fail
     mock_local.close.assert_not_called()
 
 
@@ -841,7 +841,7 @@ async def test_async_execute_embedded_command_kwargs_strict(
     embed_mock = AsyncMock()
     embed_mock.params = {}
     embed_mock.check_execute_condition.return_value = True
-    # Simulamos un template que devuelve un JSON configurador
+    # Simulate template returning config JSON
     embed_mock.connection_template.async_render = MagicMock(
         return_value='{"method": "PUT", "url": "/embed", "json": {"key": "val"}, "headers": {"X": "Y"}}'
     )
@@ -858,7 +858,7 @@ async def test_async_execute_embedded_command_kwargs_strict(
 
     await conn.async_execute("GET", "/main", None, {}, device_state={"state": "on"})
 
-    # Verificamos qué se le pasó al comando embebido
+    # Verify what was passed to embedded command
     embed_mock.async_execute.assert_called_once()
     kwargs = embed_mock.async_execute.call_args[1]
 
@@ -1204,7 +1204,7 @@ async def test_get_session_strict_creation_parameters_http():
             keepalive_timeout=75,
             limit=1,
         )
-        # Timeout y Session idénticos en ambos branches
+        # Timeout and Session identical in both branches
         mock_timeout.assert_called_once_with(total=30, connect=10)
         mock_session_cls.assert_called_once_with(
             connector="mocked_connector_obj",
@@ -1234,7 +1234,7 @@ async def test_get_session_returns_shared_session_when_keep_alive():
     ):
         result = await conn._get_session()
 
-        # DEBE devolver la sesión inyectada, NO crear una nueva
+        # MUST return injected session, NOT create a new one
         assert result is injected_session, "No devolvió la sesión compartida de HA"
         mock_connector.assert_not_called()
         mock_session_cls.assert_not_called()
@@ -1254,7 +1254,7 @@ async def test_get_session_recreates_on_closed_session():
     )
     conn._keep_alive = False
 
-    # Simulamos una sesión cerrada
+    # Simulate closed session
     closed_session = MagicMock()
     closed_session.closed = True
     conn._shared_state.local_session = closed_session
@@ -1272,7 +1272,7 @@ async def test_get_session_recreates_on_closed_session():
 
         await conn._get_session()
 
-        # DEBE haber creado una nueva sesión porque la anterior estaba cerrada
+        # MUST have created new session because previous was closed
         mock_session_cls.assert_called_once()
         assert (
             conn._shared_state.local_session is fresh_session
@@ -1293,7 +1293,7 @@ async def test_get_session_reuses_open_local_session():
     )
     conn._keep_alive = False
 
-    # Simulamos una sesión local SANA Y ABIERTA
+    # Simulate HEALTHY AND OPEN local session
     healthy_session = MagicMock()
     healthy_session.closed = False
     conn._shared_state.local_session = healthy_session
@@ -1306,7 +1306,7 @@ async def test_get_session_reuses_open_local_session():
     ):
         result = await conn._get_session()
 
-        # ASERCIÓN: Debe devolver la sesión existente y no haber llamado a las clases de aiohttp
+        # ASSERTION: Must return existing session without calling aiohttp classes
         assert result is healthy_session, "No reutilizó la sesión local sana"
         mock_connector.assert_not_called()
         mock_timeout.assert_not_called()
@@ -1318,7 +1318,7 @@ async def test_get_session_fallback_when_shared_session_is_none():
     """Valida el fallback defensivo: keep_alive=True pero session=None."""
     import logging
 
-    # Configuramos keep_alive=True pero omitimos intencionalmente la sesión
+    # Configure keep_alive=True but intentionally omit session
     conn = ConnectionAiohttp8888(
         config={"keep_alive": True},
         logger=logging.getLogger(),
@@ -1328,19 +1328,19 @@ async def test_get_session_fallback_when_shared_session_is_none():
     )
     conn._shared_state.local_session = None
 
-    # Parcheamos la creación para verificar que el fallback local se activa
+    # Patch creation to verify local fallback triggers
     _NS = "custom_components.climate_ip.connection_aiohttp.aiohttp"
     with (
         patch(f"{_NS}.TCPConnector"),
         patch(f"{_NS}.ClientTimeout"),
         patch(f"{_NS}.ClientSession") as mock_session_cls,
     ):
-        # Usamos el truco de trazabilidad en memoria
+        # Use in-memory traceability trick
         mock_session_cls.return_value = "fallback_local_session_obj"
 
         result = await conn._get_session()
 
-        # ASERCIÓN EXTREMA: A pesar de keep_alive=True, tuvo que crear una sesión local
+        # EXTREME ASSERTION: Despite keep_alive=True, had to create local session
         mock_session_cls.assert_called_once()
         assert (
             result == "fallback_local_session_obj"
@@ -1376,7 +1376,7 @@ async def test_embedded_command_without_template_uses_params_directly(
     )
     conn._shared_state.initialized = True
 
-    # Preparar la sesión principal para el comando principal
+    # Prepare main session for main command
     mock_response = AsyncMock()
     mock_response.status = 200
     mock_response.text.return_value = "{}"
@@ -1385,8 +1385,8 @@ async def test_embedded_command_without_template_uses_params_directly(
     mock_ctx.__aenter__.return_value = mock_response
     mock_session.request.return_value = mock_ctx
 
-    # Embebido: SIN template, CON _params directos
-    # Valores ASIMÉTRICOS para detectar cualquier swap de clave
+    # Embedded: WITHOUT template, WITH direct _params
+    # ASYMMETRIC values to detect any key swapping
     embed_mock = AsyncMock()
     embed_mock.check_execute_condition.return_value = True
     embed_mock.connection_template = None  # <--- Activa el branch _params
@@ -1400,7 +1400,7 @@ async def test_embedded_command_without_template_uses_params_directly(
 
     await conn.async_execute("GET", "/main", None, {}, device_state={"state": "on"})
 
-    # Verificamos los kwargs exactos pasados al motor del comando embebido
+    # Verify exact kwargs passed to embedded command engine
     embed_mock.async_execute.assert_called_once()
     kwargs = embed_mock.async_execute.call_args[1]
 
@@ -1456,7 +1456,7 @@ async def test_embedded_command_without_template_and_empty_params_skips(
 
     await conn.async_execute("GET", "/main", None, {}, device_state={"state": "on"})
 
-    # El embebido NO debe haberse ejecutado porque params estaba vacío
+    # Embedded MUST NOT have executed because params was empty
     embed_mock.async_execute.assert_not_called()
 
 
@@ -1491,7 +1491,7 @@ async def test_embedded_command_method_and_url_fallback_to_main(
     embed_mock = AsyncMock()
     embed_mock.check_execute_condition.return_value = True
     embed_mock.connection_template = None
-    # _params SIN "method" ni "url" → deben heredarse del comando principal
+    # _params WITHOUT "method" or "url" → must inherit from main command
     embed_mock.params = {"json": {"action": "toggle"}}
     conn._embedded_command = embed_mock
 
@@ -1500,7 +1500,7 @@ async def test_embedded_command_method_and_url_fallback_to_main(
     embed_mock.async_execute.assert_called_once()
     kwargs = embed_mock.async_execute.call_args[1]
 
-    # FALLBACK: Si el embebido no define method ni url, usa los del comando principal
+    # FALLBACK: If embedded defines neither method nor url, uses main command's
     assert (
         kwargs["method"] == "PUT"
     ), f"El fallback de 'method' está roto: recibido {kwargs['method']}"
@@ -1548,12 +1548,12 @@ async def test_embedded_command_strict_fallbacks_to_main(
     embed_mock.check_execute_condition.return_value = True
     embed_mock.connection_template = None
 
-    # TRUCO: clave irrelevante para que bool(_params) sea True
-    # pero omitimos 'method', 'url', 'json' y 'headers' intencionalmente
+    # TRICK: Irrelevant key so bool(_params) is True
+    # but intentionally omit 'method', 'url', 'json', and 'headers'
     embed_mock.params = {"dummy_key": "force_execution"}
     conn._embedded_command = embed_mock
 
-    # Ejecutamos el main con cabeceras NO vacías → si el fallback muta a None el test falla
+    # Execute main with NON-empty headers → if fallback mutates to None, test fails
     main_headers = {"Main-Header": "Present"}
     await conn.async_execute(
         "PUT",
@@ -1583,7 +1583,7 @@ async def test_embedded_command_strict_fallbacks_to_main(
 
 
 # ====================================================================================
-# TÁCTICA 3 — MEJORA 2: Tabla de la Verdad de _is_poll (Kills mutants 134-137)
+# TACTIC 3 — IMPROVEMENT 2: _is_poll Truth Table (Kills mutants 134-137)
 # ====================================================================================
 
 
@@ -1611,12 +1611,12 @@ async def test_async_execute_periodic_reset_truth_table(
     conn._shared_state.initialized = True
     conn._keep_alive = keep_alive
 
-    # Sesión local ABIERTA para que el cierre sea observable
+    # OPEN local session so closure is observable
     mock_local = AsyncMock()
     mock_local.closed = False
     conn._shared_state.local_session = mock_local
 
-    # Mock de sesión principal para que _async_execute_request no explote
+    # Main session mock so _async_execute_request doesn't blow up
     mock_response = AsyncMock()
     mock_response.status = 200
     mock_response.text.return_value = "{}"
@@ -1625,10 +1625,10 @@ async def test_async_execute_periodic_reset_truth_table(
     mock_ctx = AsyncMock()
     mock_ctx.__aenter__.return_value = mock_response
     mock_session.request.return_value = mock_ctx
-    # También preparamos la sesión local para el request que sigue al cierre
+    # Also prepare local session for request following closure
     mock_local.request.return_value = mock_ctx
 
-    # Parcheo _async_execute_request para aislar sólo la lógica de _is_poll
+    # Patch _async_execute_request to isolate _is_poll logic only
     with patch.object(
         conn, "_async_execute_request", new_callable=AsyncMock
     ) as mock_req:
@@ -1673,9 +1673,9 @@ async def test_try_connection_strict_http_mode(mock_logger, mock_hass):
         ip_address="192.168.1.50",
     )
 
-    # Inject sesión local para que _get_session la devuelva sin crear una nueva.
-    # IMPORTANTE: MagicMock (no AsyncMock) porque `async with session.request(...)` espera
-    # un context manager directo, no una corutina.
+    # Inject local session so _get_session returns it without creating a new one.
+    # IMPORTANT: MagicMock (not AsyncMock) because `async with session.request(...)` expects
+    # a direct context manager, not a coroutine.
     mock_local_session = MagicMock()
     mock_local_session.closed = (
         False  # CRÍTICO: evita que _get_session intente crear una nueva
@@ -1689,7 +1689,7 @@ async def test_try_connection_strict_http_mode(mock_logger, mock_hass):
     conn._shared_state.local_session = mock_local_session
     conn._shared_state.ssl_context = None
 
-    # NO parcheamos _create_ssl_context: si la lógica intenta crearlo el test fallará
+    # DO NOT patch _create_ssl_context: if logic tries to create it, test will fail
     with patch.object(
         conn, "_create_ssl_context", new_callable=AsyncMock
     ) as mock_ssl_create:
@@ -1936,7 +1936,7 @@ async def test_try_connection_strict_error_handling(
         conn, "_create_ssl_context", new_callable=AsyncMock
     ) as mock_ssl_create:
         mock_ssl_create.return_value = MagicMock()
-        # If mutmut elimina el código de la tupla, esto lanzará CannotConnect y el test fallará
+        # If mutmut removes tuple code, this raises CannotConnect and test fails
         result = await conn._try_connection()
         assert result is None, f"Se esperaba None para el status {status_code}"
 
@@ -1955,7 +1955,7 @@ async def test_try_connection_strict_token_and_port(
         ip_address="1.1.1.1",
     )
 
-    # 2. Configuramos Controller con Token dominante
+    # 2. Configure Controller with dominant Token
     mock_ctrl = MagicMock()
     mock_ctrl._config = {"token": "CTRL_TOK"}
     conn.set_controller_ref(mock_ctrl)

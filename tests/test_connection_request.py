@@ -114,7 +114,7 @@ def test_execute_connection_error(connection_config, mock_logger):
 
 
 # ====================================================================================
-# TESTS DE COMANDOS EMBEBIDOS (Migrados desde test_embedded_command.py)
+# EMBEDDED COMMAND TESTS (Migrated from test_embedded_command.py)
 # ====================================================================================
 
 

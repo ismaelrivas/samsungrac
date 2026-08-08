@@ -245,7 +245,7 @@ def test_samsung_2878_get_diagnostics(connection):
     assert diag1["is_available"] is False
     assert diag1["last_successful_config"] is None
 
-    # Estado con config guardada
+    # State with saved config
     connection._is_ready.set()
     connection._last_successful_config = {
         "cert": "/fake/path/cert_file_secret.pem",
@@ -304,7 +304,7 @@ def test_samsung_2878_update_configuration_from_hass_and_yaml():
 
 def test_samsung_2878_ensure_callback_linked(connection):
     """Verify mutant kill del enlazado automático del callback."""
-    # Simular que el controller tiene el método
+    # Simulate controller has method
     mock_cb = AsyncMock()
     connection._controller = MagicMock()
     connection._controller.on_push_update_callback = mock_cb
@@ -319,8 +319,8 @@ async def test_samsung_2878_process_command_queue(connection):
     """Verify mutant kill del procesamiento de la cola de comandos sin colgar el event loop."""
     future = asyncio.Future()
 
-    # SIMULACIÓN SEGURA: Usamos un Future ya resuelto en lugar de un Task en vivo
-    # Esto evita que mutmut rompa el event loop y cuelgue pytest.
+    # SAFE SIMULATION: Use already resolved Future instead of live Task
+    # Prevents mutmut breaking event loop and hanging pytest.
     queue_task = asyncio.Future()
     queue_task.set_result(('<Request Type="Test"></Request>\n', future))
 
@@ -351,7 +351,7 @@ async def test_samsung_2878_process_command_queue(connection):
 @pytest.mark.asyncio
 async def test_samsung_2878_parse_redundant_power_on(connection):
     """Verify mutant kill que ignora el update redundante de Power On."""
-    # Forzar el estado actual a Encendido
+    # Force current state to On
     connection._device_status[PROTOCOL_2878_POWER_ID] = PROTOCOL_2878_VALUE_ON
 
     connection._controller = MagicMock()
@@ -373,7 +373,7 @@ async def test_samsung_2878_parse_redundant_power_on(connection):
     """
     is_resp, is_upd, parsed = await connection._parse_and_update_state(xml_redundant)
 
-    # Debe devolver todo en False/None porque ignoró el mensaje por ser redundante
+    # Must return all False/None because message was ignored as redundant
     assert is_resp is False
     assert is_upd is False
     assert parsed is None
@@ -387,7 +387,7 @@ def test_ensure_callback_linked_mutants(connection):
     connection._update_callback = None
     connection._ensure_callback_linked()  # If 'or' mutant survives, this explodes
 
-    # Objeto genérico sin 'on_push_update_callback' debe lanzar AttributeError al acceder directamente
+    # Generic object without 'on_push_update_callback' must raise AttributeError on direct access
     connection._controller = object()
     with pytest.raises(AttributeError):
         connection._ensure_callback_linked()
@@ -395,7 +395,7 @@ def test_ensure_callback_linked_mutants(connection):
 
 def test_get_diagnostics_empty_cert(connection):
     """Verify mutant kill de 'and' a 'or' en la comprobación del certificado."""
-    # Le damos un cert vacío. If mutmut cambia 'and' a 'or', intentará procesarlo y fallará.
+    # Provide empty cert. If mutmut changes 'and' to 'or', attempts processing and fails.
     connection._last_successful_config = {"cert": ""}
     diag = connection.get_diagnostics()
     assert "cert_filename" not in diag["last_successful_config"]
@@ -414,7 +414,7 @@ def test_track_task_safe(connection):
 
         assert result == mock_task
         assert mock_task in connection._background_tasks
-        # Comprueba que se añadió el callback para eliminarse del set
+        # Check callback added to self-remove from set
         mock_task.add_done_callback.assert_called_once_with(
             connection._background_tasks.discard
         )
@@ -519,7 +519,7 @@ async def test_establish_connection_network_refused(connection):
         mock_loop_inst.sock_connect = AsyncMock(side_effect=ConnectionRefusedError)
         mock_loop.return_value = mock_loop_inst
 
-        # Tras fallar todos los ciphers, devuelve False
+        # After all ciphers fail, returns False
         assert await connection._establish_connection_and_handshake() is False
 
 
@@ -537,14 +537,14 @@ async def test_process_read_queue_fragmented(connection):
         assert await connection._process_read_queue(b"old") is None
         mock_close.assert_called_once()
 
-    # 2. Fragmentación exitosa con tag completo
+    # 2. Successful fragmentation with complete tag
     connection._read_task = asyncio.Future()
     connection._read_task.set_result(b"sponse>")
     with patch.object(
         connection, "_parse_and_update_state", new_callable=AsyncMock
     ) as mock_parse:
         mock_parse.return_value = (True, False, {"power": "on"})
-        # ¡Corrección aquí! Incluimos 'Response' en el inicio para que el bucle lo intercepte bien al unirse
+        # Fix here! Include 'Response' at start so loop intercepts properly when joining
         result = await connection._process_read_queue(b"<?xml><Response>data</Re")
 
         mock_parse.assert_called_once()
@@ -590,7 +590,7 @@ async def test_establish_connection_success(connection):
             new_callable=AsyncMock,
         ),
     ):
-        # LA CLAVE: Forzar que sock_connect sea asíncrono
+        # KEY: Force sock_connect to be asynchronous
         mock_loop.return_value.sock_connect = AsyncMock()
         mock_writer = get_safe_mock_writer()
         mock_open_conn.return_value = (MagicMock(), mock_writer)
@@ -624,7 +624,7 @@ async def test_establish_connection_auth_failure(connection):
     connection._connection_init_template = MagicMock()
     connection._connection_init_template.async_render.return_value = "<Auth/>"
 
-    # Inject mocks básicos para el controlador
+    # Inject basic mocks for controller
     connection._controller = MagicMock()
     connection._controller.hass = MagicMock()
 
@@ -641,7 +641,7 @@ async def test_establish_connection_auth_failure(connection):
         mock_writer = get_safe_mock_writer()
         mock_open_conn.return_value = (MagicMock(), mock_writer)
 
-        # AÑADIDO: mock_parse para evitar el RuntimeError del XML de Home Assistant
+        # ADDED: mock_parse to avoid Home Assistant XML RuntimeError
         with (
             patch.object(
                 connection, "_read_full_response", new_callable=AsyncMock
@@ -686,7 +686,7 @@ async def test_establish_connection_ssl_cache_and_ciphers(connection):
         mock_open_conn.return_value = (MagicMock(), mock_writer)
         mock_ssl_ctx.return_value = MagicMock()
 
-        # ¡AQUÍ ESTÁ LA MAGIA! Añadimos _post_connect_status_request al bloque de patches
+        # HERE IS THE MAGIC! Add _post_connect_status_request to patch block
         with (
             patch.object(
                 connection, "_read_full_response", new_callable=AsyncMock
@@ -711,7 +711,7 @@ async def test_establish_connection_ssl_cache_and_ciphers(connection):
                 socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1
             )
 
-            # 2. Segunda pasada: Debe usar la caché
+            # 2. Second pass: Must use cache
             connection._is_ready.clear()
             mock_read.side_effect = ["DPLUG-1.6\n", 'Status="Okay"']
             assert await connection._establish_connection_and_handshake() is True
@@ -729,7 +729,7 @@ async def test_async_execute_timeout_and_success(connection):
     connection._ensure_callback_linked = MagicMock()
     connection.start_listening = MagicMock()
 
-    # Simular que el manager ya está corriendo
+    # Simulate manager already running
     connection._manager_task = MagicMock()
     connection._manager_task.done.return_value = False
 
@@ -740,7 +740,7 @@ async def test_async_execute_timeout_and_success(connection):
         with pytest.raises(CannotConnect, match="Client not ready"):
             await connection.async_execute(None, None, "<Test/>", None)
 
-    # 2. Timeout esperando a que esté listo (Dispara la excepción)
+    # 2. Timeout waiting to be ready (Triggers exception)
     connection._reconnect_retries = 0
     with patch(
         "custom_components.climate_ip.samsung_2878.asyncio.timeout",
@@ -752,7 +752,7 @@ async def test_async_execute_timeout_and_success(connection):
     # 3. Éxito: Encolado de comando correcto
     connection._is_ready.set()
 
-    # Simulamos que al meter el comando en la cola, otro proceso resuelve el future instantáneamente
+    # Simulate another process resolves future instantly upon queuing command
     async def mock_queue_put(item):
         cmd, future = item
         future.set_result(True)
@@ -778,7 +778,7 @@ async def test_handle_reconnection_backoff(connection):
     """Kills mutants del backoff exponencial y limpieza de repair issues."""
     connection._cfg.host = "192.168.1.50"
 
-    # CRÍTICO: Parchear en el namespace de samsung_2878, no en helpers
+    # CRITICAL: Patch in samsung_2878 namespace, not helpers
     with (
         patch(
             "custom_components.climate_ip.samsung_2878.async_check_network_reachability",
@@ -803,7 +803,7 @@ async def test_handle_reconnection_backoff(connection):
         assert connection._reconnect_delay == 10  # 5 * factor 2
         mock_handshake.assert_not_called()
 
-        # Escenario 2: Ping bien, pero Handshake falla (Port down)
+        # Scenario 2: Ping ok, but Handshake fails (Port down)
         mock_ping.return_value = True
         mock_handshake.return_value = False
 
@@ -815,7 +815,7 @@ async def test_handle_reconnection_backoff(connection):
         # Escenario 3: Ping bien, handshake levanta Exception
         mock_handshake.reset_mock()
         mock_handshake.side_effect = CannotConnect("Test Error")
-        # Simular que hay un future pendiente que debe fallar
+        # Simulate pending future that must fail
         fake_future = asyncio.Future()
         connection._pending_future = fake_future
 
@@ -838,9 +838,9 @@ async def test_connection_manager_loop_logic(connection):
     ):
         connection._writer = None
 
-        # LA BALA DE PLATA: Raise CancelledError.
-        # Como no hereda de Exception sino de BaseException, se salta el 'except Exception'
-        # y destruye el 'while True' de forma fulminante.
+        # SILVER BULLET: Raise CancelledError.
+        # Inherits from BaseException not Exception, bypassing 'except Exception'
+        # and destroying 'while True' loop cleanly.
         mock_reconn.side_effect = asyncio.CancelledError()
 
         fake_read_task = asyncio.Future()
@@ -851,11 +851,11 @@ async def test_connection_manager_loop_logic(connection):
         with patch.object(
             connection, "_close_connection", new_callable=AsyncMock
         ) as mock_close:
-            # Esperamos que la cancelación suba hacia arriba
+            # Expect cancellation to bubble up
             with pytest.raises(asyncio.CancelledError):
                 await connection._connection_manager()
 
-            # Verificamos que el bloque finally sí se ejecutó antes de morir
+            # Verify finally block executed before dying
             assert fake_read_task.cancelled() is True
             mock_close.assert_called()
 
@@ -872,12 +872,12 @@ async def test_async_execute_future_timeout(connection):
 
     async def mock_queue_put(item):
         cmd, future = item
-        # Guardamos la referencia como haría el manager
+        # Save reference as manager would
         connection._pending_future = future
 
-        # EL TRUCO MAGISTRAL: Inject el TimeoutError directamente en el Future.
-        # Cuando el código haga 'await future', explotará instantáneamente
-        # simulando un timeout real sin tener que esperar ni parchear context managers.
+        # MASTER TRICK: Inject TimeoutError directly into Future.
+        # When code performs 'await future', explodes instantly,
+        # simulating real timeout without waiting or patching context managers.
         future.set_exception(TimeoutError("Fake Timeout"))
 
     connection._cmd_queue.put = AsyncMock(side_effect=mock_queue_put)
@@ -888,7 +888,7 @@ async def test_async_execute_future_timeout(connection):
         with pytest.raises(CannotConnect, match="Command timed out"):
             await connection.async_execute(None, None, "<Test/>", None)
 
-        # Validaciones de que la limpieza se ha hecho correctamente
+        # Validations that cleanup was done properly
         assert connection._pending_future is None
         mock_close.assert_called_once()
 
@@ -903,7 +903,7 @@ async def test_samsung_2878_start_stop_listening_strict(connection):
     """Kills mutants de start/stop y chequeos de tareas."""
     connection._ensure_callback_linked = MagicMock()
 
-    # 1. start_listening cuando task ya está corriendo (no debe sobreescribir)
+    # 1. start_listening when task is already running (must not overwrite)
     connection._manager_task = MagicMock()
     connection._manager_task.done.return_value = False
     connection._reconnect_retries = 99
@@ -912,7 +912,7 @@ async def test_samsung_2878_start_stop_listening_strict(connection):
     # If mutmut cambia 'or' a 'and', sobreescribirá y retries bajará a 0
     assert connection._reconnect_retries == 99
 
-    # 2. stop_listening asegura que la tarea se borra a None estricto
+    # 2. stop_listening ensures task cleared strictly to None
     mock_task = asyncio.Future()
     mock_task.cancel = MagicMock()
     mock_task.set_result(None)
@@ -930,7 +930,7 @@ def test_load_from_yaml_missing_params():
     conn = ConnectionSamsung2878(
         {"host": "192.168.1.10"}, MagicMock(), hass=MagicMock()
     )
-    # Falla porque le falta el DUID/mac
+    # Fails due to missing DUID/mac
     assert conn.load_from_yaml({"params": {}}, None) is False
 
 
@@ -960,7 +960,7 @@ async def test_post_connect_status_request_strict(connection):
 
     connection._cmd_queue.put = AsyncMock(side_effect=mock_put_timeout)
     await connection._post_connect_status_request()
-    # Debe haber limpiado el future
+    # Must have cleared future
     assert connection._pending_future is None
 
 
@@ -977,8 +977,8 @@ async def test_parse_state_multiple_docs(connection):
         side_effect=mock_add_exec
     )
 
-    # Dos bloques XML juntos. El primero es inútil, el segundo es un Update válido
-    # Si hay un 'break', se saltará el segundo. Si hay 'continue', lo procesará.
+    # Two XML blocks adjacent. First useless, second valid Update.
+    # On 'break', skips second. On 'continue', processes it.
     xml = '<?xml version="1.0"?><Fake/><?xml version="1.0"?><Update Type="Status"><Status DUID="1"><Attr ID="AC_FUN_POWER" Value="Off"/></Status></Update>'
     is_res, is_upd, parsed = await connection._parse_and_update_state(xml)
 
@@ -1021,8 +1021,8 @@ async def test_establish_connection_cipher_iteration_and_issue_clear(connection)
     ):
         mock_loop.return_value.sock_connect = AsyncMock()
 
-        # THE TRICK: Fail first SSL connection, succeed on second
-        # If mutmut puso un 'break', devolverá False en vez de intentar la segunda.
+        # THE TRICK: Fail first SSL connection, succeed on second.
+        # If mutmut placed 'break', returns False instead of attempting second.
         mock_open_conn.side_effect = [
             ssl.SSLError("Cipher 1 fallback"),
             (MagicMock(), get_safe_mock_writer()),
@@ -1053,12 +1053,12 @@ async def test_connection_manager_full_coverage(connection):
     connection._reader = MagicMock()
     connection._cmd_queue = asyncio.Queue()
 
-    # Preparamos un comando para que queue_task termine en el primer ciclo
+    # Prepare command for queue_task to finish on first cycle
     await connection._cmd_queue.put(("<Cmd1/>", asyncio.Future()))
 
-    # Controlamos las iteraciones del _read_task:
-    # 1. Devuelve b"" (EOF) -> fuerza continue y limpieza
-    # 2. Lanza CancelledError -> Rompe el loop de nuestro manager
+    # Control _read_task iterations:
+    # 1. Returns b"" (EOF) -> forces continue and cleanup
+    # 2. Raises CancelledError -> Breaks manager loop
     read_returns = [b"", asyncio.CancelledError()]
 
     async def mock_read(size):
@@ -1104,8 +1104,8 @@ async def test_async_execute_defaults(connection):
     connection._manager_task = MagicMock()
     connection._manager_task.done.return_value = False
 
-    # Si ejecutamos con (None, None, None, None), _is_poll es False por defecto
-    # por lo que command quedará en None y devolverá (None, None) al instante.
+    # Executing with (None, None, None, None), _is_poll is False by default,
+    # leaving command None and returning (None, None) instantly.
     res1, res2 = await connection.async_execute(None, None, None, None)
     assert res1 is None
     assert res2 is None
@@ -1172,7 +1172,7 @@ async def test_establish_connection_callbacks_and_generic_catch(connection):
         with patch("asyncio.open_connection", new_callable=AsyncMock) as mock_open:
             mock_open.return_value = (MagicMock(), get_safe_mock_writer())
 
-            # ¡AQUÍ ESTÁ EL ANTÍDOTO! Añadimos el patch para _post_connect_status_request
+            # HERE IS THE ANTIDOTE! Add patch for _post_connect_status_request
             with (
                 patch.object(
                     connection, "_read_full_response", new_callable=AsyncMock
@@ -1188,10 +1188,10 @@ async def test_establish_connection_callbacks_and_generic_catch(connection):
                 mock_read.side_effect = ["DPLUG-1.6", 'Status="Okay"']
                 mock_parse.return_value = (False, True, {"fake": "state"})
 
-                # Ejecutamos. If mutant cambió 'continue' a 'break' en el catch genérico, devolvería False
+                # Execute. If mutant changed 'continue' to 'break' in generic catch, returns False
                 assert await connection._establish_connection_and_handshake() is True
 
-                # Validamos que se llamaron a los callbacks
+                # Validate callbacks were invoked
                 mock_update_cb.assert_called_once_with({"fake": "state"})
                 connection._controller.request_refresh_callback.assert_called_once()
 
@@ -1199,9 +1199,9 @@ async def test_establish_connection_callbacks_and_generic_catch(connection):
 def test_load_from_yaml_missing_mac(connection):
     """Verify mutant kill que altera el retorno cuando falta el DUID/MAC."""
     connection._cfg.duid = None  # Forzamos que falte el MAC
-    # Parcheamos 'Template' para que no explote el Frame Helper de HA
+    # Patch 'Template' to prevent HA Frame Helper explosion
     with patch("custom_components.climate_ip.samsung_2878.Template"):
-        # If mutmut cambió 'return False' por 'return True', esto fallará
+        # If mutmut changed 'return False' to 'return True', this will fail
         assert (
             connection.load_from_yaml({"params": {"connection_template": "a"}}, None)
             is False
@@ -1227,7 +1227,7 @@ async def test_establish_connection_deep_mutants(connection):
         mock_loop.return_value.sock_connect = AsyncMock()
         mock_open.return_value = (MagicMock(), get_safe_mock_writer())
 
-        # AÑADIDO: mock_parse para sortear la seguridad XML de Home Assistant
+        # ADDED: mock_parse to bypass Home Assistant XML security
         with (
             patch.object(
                 connection, "_read_full_response", new_callable=AsyncMock
@@ -1254,7 +1254,7 @@ async def test_establish_connection_deep_mutants(connection):
             ):
                 await connection._establish_connection_and_handshake()
 
-            # CASO 3: Auth fallido sin código 301 ni Invalidate
+            # CASE 3: Failed auth without 301 code or Invalidate
             connection._connection_init_template = MagicMock()
             mock_read.side_effect = ["DPLUG-1.6", '<Response Status="Failed" />']
 
@@ -1264,7 +1264,7 @@ async def test_establish_connection_deep_mutants(connection):
             ):
                 await connection._establish_connection_and_handshake()
 
-            # CASO 4: Auth fallido con ErrorCode genérico (regex fallback)
+            # CASE 4: Failed auth with generic ErrorCode (regex fallback)
             mock_read.side_effect = [
                 "DPLUG-1.6",
                 '<Response Status="Failed" ErrorCode="999" />',
@@ -1280,13 +1280,8 @@ async def test_connection_manager_queues_and_cleanup(connection):
     connection._reader = MagicMock()
     connection._cmd_queue = asyncio.Queue()
 
-    # Usamos MagicMock en vez de Future para asegurar el chequeo de cancel()
+    # Use MagicMock instead of Future to ensure cancel() check
 
-    # irp
-    # fake_read_task = MagicMock()
-    # fake_read_task.done.return_value = False
-    # fake_queue_task = MagicMock()
-    # fake_queue_task.done.return_value = False
     fake_read_task = asyncio.Future()
     fake_queue_task = asyncio.Future()
 
@@ -1299,7 +1294,7 @@ async def test_connection_manager_queues_and_cleanup(connection):
             connection, "_process_command_queue", new_callable=AsyncMock
         ) as mock_cmd,
     ):
-        # Al procesar el comando forzamos un OSError para romper el loop
+        # Force OSError processing command to break loop
         mock_cmd.side_effect = OSError("Crash to finally")
 
         call_count = 0
@@ -1316,8 +1311,8 @@ async def test_connection_manager_queues_and_cleanup(connection):
             patch("asyncio.create_task", side_effect=mock_create_task),
             patch.object(connection, "_close_connection", new_callable=AsyncMock),
         ):
-            # EL ARREGLO FINAL: Dejamos pasar el primer sleep(2) de arranque,
-            # y reventamos el segundo sleep (el de recuperación tras el error)
+            # FINAL FIX: Pass first startup sleep(2),
+            # and explode second sleep (recovery sleep post-error)
             with patch("asyncio.sleep", side_effect=[None, asyncio.CancelledError()]):
                 try:
                     await asyncio.wait_for(
@@ -1330,10 +1325,7 @@ async def test_connection_manager_queues_and_cleanup(connection):
                         "_connection_manager deadlocked! Mutant broke queue/read task lifecycle."
                     )
 
-            # MATA MUTANTES DEL FINALLY: Valida que task.cancel() se llamó en ambas tareas
-            # irp
-            # fake_read_task.cancel.assert_called_once()
-            # fake_queue_task.cancel.assert_called_once()
+            # KILLS FINALLY MUTANTS: Validates task.cancel() was called on both tasks
             assert (
                 fake_read_task.cancelled() is True
             ), "Mutant survived: _read_task was not cancelled in finally"
@@ -1380,15 +1372,15 @@ async def test_connection_manager_reconnect_continue(connection):
             new_callable=AsyncMock,
         ),
     ):
-        # Hacemos que handle_reconnection falle la primera vez (devuelve False -> entra al continue),
-        # y lance CancelledError la segunda vez para romper el while de forma controlada.
+        # Make handle_reconnection fail first time (returns False -> enters continue),
+        # and raise CancelledError second time to break while loop in controlled manner.
         mock_reconn.side_effect = [False, asyncio.CancelledError()]
 
         with patch.object(connection, "_close_connection", new_callable=AsyncMock):
             with pytest.raises(asyncio.CancelledError):
                 await connection._connection_manager()
 
-        # If mutant cambió 'continue' por 'break', el loop se habría roto tras el primer False
+        # If mutant changed 'continue' to 'break', loop would break after first False
         # and mock_reconn would only have 1 call. By asserting 2, we kill mutant.
         assert mock_reconn.call_count == 2
 
@@ -1405,14 +1397,14 @@ async def test_connection_manager_reconnect_continue_strict(connection):
         patch("asyncio.sleep", new_callable=AsyncMock),
         patch.object(connection, "_close_connection", new_callable=AsyncMock),
     ):
-        # EL TRUCO: El primero devuelve False (falla red) -> activa el 'continue'
-        # El segundo lanza CancelledError -> rompe el loop 'while True' de forma controlada
+        # THE TRICK: First returns False (network failure) -> triggers 'continue'
+        # Second raises CancelledError -> breaks 'while True' loop controlledly
         mock_reconn.side_effect = [False, asyncio.CancelledError()]
 
         with pytest.raises(asyncio.CancelledError):
             await connection._connection_manager()
 
-        # If mutmut cambió 'continue' por 'break', el código habría salido del bucle
+        # If mutmut changed 'continue' to 'break', code would have exited loop
         # on first attempt and call_count would be 1. Requiring 2 kills mutant.
         assert mock_reconn.call_count == 2
 
@@ -1420,7 +1412,7 @@ async def test_connection_manager_reconnect_continue_strict(connection):
 def test_start_listening_strict_assignments(connection):
     """Verify mutant kill de asignación a None en start_listening (Líneas 188 y 189)."""
     connection._ensure_callback_linked = MagicMock()
-    # Limpiamos la variable para que el código no se salte el bloque IF
+    # Clean variable so code doesn't skip IF block
     connection._manager_task = None
     connection._reconnect_retries = 99
 
@@ -1432,9 +1424,9 @@ def test_start_listening_strict_assignments(connection):
 
         connection.start_listening()
 
-        # If mutmut cambió el 0 por None, esto falla
+        # If mutmut changed 0 to None, this fails
         assert connection._reconnect_retries == 0
-        # If mutmut eliminó el create_task, esto falla
+        # If mutmut removed create_task, this fails
         assert connection._manager_task == "fake_task"
         mock_create.assert_called_once()
 
@@ -1443,8 +1435,8 @@ def test_start_listening_strict_assignments(connection):
 async def test_connection_manager_missing_reader_continue_strict(connection):
     """Kills the LAST mutant: changes 'continue' to 'break' when _reader is lost."""
 
-    # 1. Estado inicial: Forzamos que el _writer esté vivo, pero el _reader esté caído
-    # Esto evade el primer IF y nos hace caer directamente en la trampa del segundo IF
+    # 1. Initial state: Force _writer alive, but _reader down
+    # Evades first IF and drops directly into second IF trap
     connection._writer = get_safe_mock_writer()
     connection._reader = None
 
@@ -1457,18 +1449,18 @@ async def test_connection_manager_missing_reader_continue_strict(connection):
             new_callable=AsyncMock,
         ),
     ):
-        # LA TRAMPA:
-        # 1ª iteración: Devuelve True -> Debe golpear el 'continue'.
-        # 2ª iteración: Lanza CancelledError -> Destruye el bucle para poder asertar.
+        # THE TRAP:
+        # 1st iteration: Returns True -> Must hit 'continue'.
+        # 2nd iteration: Raises CancelledError -> Destroys loop for assertion.
         mock_reconn.side_effect = [True, asyncio.CancelledError()]
 
-        # IMPORTANTE: NO mockeamos _close_connection.
-        # Dejamos que el código real mate al _writer poniéndolo a None.
-        # Así, en la 2ª iteración obligada por el 'continue', entrará por el primer IF y lanzará el error.
+        # IMPORTANT: DO NOT mock _close_connection.
+        # Allow real code to kill _writer by setting it to None.
+        # Thus, on 2nd iteration forced by 'continue', enters first IF and raises error.
         with pytest.raises(asyncio.CancelledError):
             await connection._connection_manager()
 
-        # If mutant cambió 'continue' por 'break', la función habría terminado limpiamente en la 1ª iteración.
+        # If mutant changed 'continue' to 'break', function would complete cleanly on 1st iteration.
         # Requiring it to be called twice (i.e. second iteration), we annihilate mutant.
         assert mock_reconn.call_count == 2
 
@@ -1488,7 +1480,7 @@ def test_create_updated_strict(connection):
         res = connection.create_updated(fake_node)
 
         assert res is connection
-        # Aseguramos que se pasa fake_node y self, no None
+        # Ensure fake_node and self are passed, not None
         mock_load.assert_called_once_with(fake_node, connection)
 
 
@@ -1498,7 +1490,7 @@ def test_update_configuration_from_hass_strict(connection):
     connection.update_configuration_from_hass({"ip_address": "1.1.1.1"})
     assert connection._cfg.port == 2878
 
-    # 2. Claves de last_successful_config y paths inyectados desde HA config
+    # 2. last_successful_config keys and paths injected from HA config
 
     hass_config = {
         "ip_address": "1.1.1.1",
@@ -1510,7 +1502,7 @@ def test_update_configuration_from_hass_strict(connection):
     }
     connection.update_configuration_from_hass(hass_config)
 
-    # Verificamos que resolvió la ruta del cert haciéndola absoluta (contiene separadores)
+    # Verify resolved cert path to absolute (contains separators)
     cert_path = connection._last_successful_config["cert"]
     assert "fake.pem" in cert_path
     assert "/" in cert_path or "\\" in cert_path
@@ -1520,7 +1512,7 @@ def test_update_configuration_from_hass_strict(connection):
 @pytest.mark.asyncio
 async def test_process_read_queue_end_tags(connection):
     """Kills mutants de tags ternarios (/>, </Update>, </Response>)."""
-    # Para que entre al while, read_task debe devolver ALGO (data no puede ser vacía)
+    # To enter while, read_task must return SOMETHING (data cannot be empty)
     mock_task = asyncio.Future()
     mock_task.set_result(b"More")
     connection._read_task = mock_task
@@ -1530,7 +1522,7 @@ async def test_process_read_queue_end_tags(connection):
     ) as mock_parse:
         mock_parse.return_value = (False, False, None)
 
-        # Le pasamos el inicio del mensaje, se concatena con "More"
+        # Pass start of message, concatenates with "More"
         res = await connection._process_read_queue(b"Data<Fake/>")
 
         # El buffer final debe ser "More" tras extraer "Data<Fake/>"
@@ -1541,10 +1533,10 @@ async def test_process_read_queue_end_tags(connection):
 def test_init_strict_defaults():
     """Verify mutant kill del constructor (__init__) y sus tipos."""
 
-    # Create un objeto limpio con un diccionario vacío y un MagicMock
+    # Create clean object with empty dictionary and MagicMock
     conn = ConnectionSamsung2878({}, MagicMock())
 
-    # Valores exactos usando la misma referencia de variable que el módulo
+    # Exact values using same variable reference as module
     assert conn._socket_timeout == float(samsung_module.GLOBAL_HTTP_TIMEOUT) + 10.0
     assert conn._is_available is True
     assert conn._initial_connection_done is False
@@ -1555,7 +1547,7 @@ def test_init_strict_defaults():
 
 def test_execute_sync_not_implemented(connection):
     """Verify mutant kill de strings y NotImplementedError en execute()."""
-    # La firma espera de 4 a 5 argumentos (incluyendo self). Le pasamos 3 Nones para cumplir.
+    # Signature expects 4 to 5 arguments (including self). Pass 3 Nones to fulfill.
     with pytest.raises(
         NotImplementedError,
         match="^ConnectionSamsung2878 is async-native\\. Use async_execute\\.$",
@@ -1568,7 +1560,7 @@ def test_samsung_2878_force_unavailability(connection):
     # STRICT CLASS: Kills mutants altering callback strings
     class StrictMockController:
         def __init__(self):
-            # Atributos de identidad para que self.log_prefix no crashee
+            # Identity attributes so self.log_prefix doesn't crash
             self.unique_id = "strict_id"
             self.log_prefix = "[strict_id]"
 
@@ -1602,7 +1594,7 @@ def test_samsung_2878_force_unavailability(connection):
     mock_controller.on_connection_failed_callback.assert_called_once()
     assert connection._persistent_offline_err_logged is True
 
-    # Caso 3: Ya está logeado (evita spam de offline, pero sí notifica connection_failed)
+    # Case 3: Already logged in (prevents offline spam, but notifies connection_failed)
     mock_controller.reset_mock()
     connection._reconnect_retries = 2
     connection._force_unavailability_if_needed("Service")
@@ -1614,18 +1606,18 @@ def test_samsung_2878_force_unavailability(connection):
 def test_force_unavailability_if_needed_strict(connection):
     """Kills mutants de strings y hasattr en la indisponibilidad de forma dinámica (sin AST)."""
 
-    # 1. Verify mutant kill del valor por defecto de la firma ("Network" -> "network", etc.)
+    # 1. Verify mutant kill of default signature value ("Network" -> "network", etc.)
     sig = inspect.signature(ConnectionSamsung2878._force_unavailability_if_needed)
     assert sig.parameters["offline_type"].default == "Network"
 
     # 2. Verify mutant kill lógicos (cambiar and -> or, o quitar hasattr directamente)
     class EmptyController:
         def __init__(self):
-            # Proveemos los atributos base para que el logger (self.log_prefix) no falle
+            # Provide base attributes so logger (self.log_prefix) does not fail
             self.unique_id = "empty_id"
             self.log_prefix = "[empty_id]"
 
-        # Pero NO proveemos los callbacks para forzar y probar el cortocircuito del hasattr
+        # But DO NOT provide callbacks to force and test hasattr short-circuit
 
     connection._controller = EmptyController()
     connection._reconnect_retries = 2
@@ -1684,7 +1676,7 @@ async def test_parse_state_strict_dicts_and_logic(connection):
 
     # 1. Mutant from {} to None or empty string in .get(PROTOCOL_2878_DEVICE_STATE, {})
     xml_missing_state = '<?xml version="1.0"?><Response Type="Fake"></Response>'
-    # If mutant inyecta un None, el ".get('Device')" encadenado lanzará AttributeError
+    # If mutant injects None, chained ".get('Device')" will raise AttributeError
     # By not catching it, Pytest will report test failure and MUTANT ANNIHILATED.
     is_resp, is_upd, parsed = await connection._parse_and_update_state(
         xml_missing_state
@@ -1693,15 +1685,15 @@ async def test_parse_state_strict_dicts_and_logic(connection):
     assert parsed == {}
 
     # 2. Mutant from [] to None in attrs = device_data.get(PROTOCOL_2878_ATTR, [])
-    # Proveemos un diccionario con una llave falsa para que no entre por el "if not device_data"
+    # Provide dict with fake key to avoid entering "if not device_data"
     xml_missing_attr = '<?xml version="1.0"?><Response><DeviceState><Device><Dummy>1</Dummy></Device></DeviceState></Response>'
-    # Si muta el array [], for attr in attrs lanzará TypeError
+    # If [] mutates, 'for attr in attrs' raises TypeError
     is_resp, is_upd, parsed = await connection._parse_and_update_state(xml_missing_attr)
     assert parsed == {}
 
     # 3. Logical AND to OR mutant in attribute extraction
     xml_bad_attr = '<?xml version="1.0"?><Update Type="Status"><Status><Attr ID="OnlyID" /></Status></Update>'
-    # If mutmut cambia a "ID in attr OR VALUE in attr", intentará extraer el valor inexistente y lanzará KeyError
+    # If mutmut changes to "ID in attr OR VALUE in attr", attempts extracting missing value and raises KeyError
     is_resp, is_upd, parsed = await connection._parse_and_update_state(xml_bad_attr)
     assert parsed == {}
 
@@ -1714,19 +1706,16 @@ async def test_connection_manager_strict_buffer(connection):
     connection._writer.is_closing.return_value = False
     connection._reader = MagicMock()
 
-    # Usamos MagicMock puro para evadir validaciones estrictas de pytest-asyncio
+    # Use pure MagicMock to bypass strict pytest-asyncio validations
 
-    # irp
-    # fake_read_task = MagicMock()
-    # fake_read_task.done.return_value = False
     fake_read_task = asyncio.Future()
 
     connection._read_task = fake_read_task
 
-    # Bloqueamos la creación del queue_task para no dejar corrutinas huérfanas
+    # Block queue_task creation to avoid leaving orphaned coroutines
     connection._pending_future = MagicMock()
 
-    # Interceptamos create_task para evitar que lance TypeError e inicie el bucle infinito
+    # Intercept create_task to prevent raising TypeError and starting infinite loop
     def mock_create_task(coro):
         return fake_read_task
 
@@ -1742,12 +1731,12 @@ async def test_connection_manager_strict_buffer(connection):
         ),
         patch.object(connection, "_close_connection", new_callable=AsyncMock),
     ):
-        # Hacemos que "wait" simule que la lectura ha terminado
+        # Make "wait" simulate read completed
         mock_wait.return_value = ({fake_read_task}, set())
 
-        # Iteración 1: devuelve b"FRAGMENT"
-        # Iteración 2: devuelve None (desconexión)
-        # Iteración 3: explota para salir del while True
+        # Iteration 1: returns b"FRAGMENT"
+        # Iteration 2: returns None (disconnection)
+        # Iteration 3: explodes to exit while True
         mock_process_read.side_effect = [b"FRAGMENT", None, asyncio.CancelledError()]
 
         try:
@@ -1759,8 +1748,8 @@ async def test_connection_manager_strict_buffer(connection):
                 "_connection_manager deadlocked! Mutant sabotaged buffer processing."
             )
 
-        # LA TRAMPA: Si en la segunda iteración el buffer no conservó el b"FRAGMENT",
-        # significa que Mutmut saboteó la asignación "buffer = read_buffer" a None o vacío.
+        # THE TRAP: If on second iteration buffer did not retain b"FRAGMENT",
+        # Mutmut sabotaged assignment "buffer = read_buffer" to None or empty.
         assert mock_process_read.call_args_list[1][0][0] == b"FRAGMENT"
         assert mock_wait.call_args.kwargs.get("return_when") == asyncio.FIRST_COMPLETED
 
@@ -1771,8 +1760,8 @@ async def test_read_queue_strict_xml_tags_b(connection):
 
     # 1. Mata .rfind() y mutantes de strings de Response
     mock_task = asyncio.Future()
-    # Ponemos dos tags juntos y un resto ("C").
-    # If mutmut cambia .find por .rfind, engullirá los dos tags en 1 sola pasada.
+    # Place two tags adjacent and remainder ("C").
+    # If mutmut changes .find to .rfind, engulfs both tags in 1 pass.
     mock_task.set_result(b"A</Response>B</Response>C")
     connection._read_task = mock_task
 
@@ -1782,7 +1771,7 @@ async def test_read_queue_strict_xml_tags_b(connection):
         mock_parse.return_value = (False, False, None)
         res = await connection._process_read_queue(b"")
 
-        # El código original correcto dejará la "C" intacta y hará 2 llamadas
+        # Original correct code leaves "C" intact and makes 2 calls
         assert res == b"C"
         assert mock_parse.call_count == 2
         mock_parse.assert_has_calls([call("A</Response>"), call("B</Response>")])
@@ -1803,13 +1792,13 @@ async def test_read_queue_strict_xml_tags_b(connection):
         mock_parse.assert_has_calls([call("X</Update>"), call("Y</Update>")])
 
 
-# --- Fin del bloque original ---
+# --- End of original block ---
 
 
 def test_samsung_2878_init_strict():
     """Kills mutants de inicialización fantasma (None vs '')."""
 
-    # Pass None como controlador para poder asertar su estado vacío estricto
+    # Pass None as controller to assert strict empty state
     conn = ConnectionSamsung2878({}, None)
 
     # We require strict identity in memory, not just evaluating to 'False'
@@ -1836,7 +1825,7 @@ async def test_samsung_2878_stop_listening_strict(connection):
 
     await connection.stop_listening()
 
-    # El original cancela SOLO las tareas NO terminadas. Si muta a 'if task.done()', se invierte.
+    # Original cancels ONLY UNFINISHED tasks. On 'if task.done()', inverts behavior.
     task_not_done.cancel.assert_called_once()
     task_done.cancel.assert_not_called()
 
@@ -1846,7 +1835,7 @@ async def test_parse_and_update_state_xml_strict_dicts(connection):
     """Kills mutants de diccionarios por defecto ({}, []) en el parser XML."""
 
     # 1. Kill mutant getattr(..., "HASS").
-    # Usamos spec=["hass"]. If mutmut pregunta por "HASS", AttributeError cortará el test de raíz.
+    # Use spec=["hass"]. If mutmut checks "HASS", AttributeError kills test at root.
     connection._controller = MagicMock(spec=["hass"])
     connection._controller.hass = MagicMock()
 
@@ -1862,7 +1851,7 @@ async def test_parse_and_update_state_xml_strict_dicts(connection):
     is_resp, is_upd, parsed = await connection._parse_and_update_state(xml_no_dev_state)
     assert parsed == {}
 
-    # 3. Matar .get(PROTOCOL_2878_ATTR, []) -> Si cambia a None, el iterador 'for attr in attrs' explota.
+    # 3. Kill .get(PROTOCOL_2878_ATTR, []) -> If changes to None, 'for attr in attrs' iterator explodes.
     xml_no_attr = '<?xml version="1.0"?><Response Status="Okay"><DeviceState><Device DUID="123"></Device></DeviceState></Response>'
     is_resp, is_upd, parsed = await connection._parse_and_update_state(xml_no_attr)
     assert parsed == {}
@@ -1875,9 +1864,9 @@ async def test_post_connect_status_request_strict_put(connection):
     connection._cfg.duid = "TESTDUID"
     connection._cmd_queue = AsyncMock()
 
-    # Hacemos que el sleep se ejecute instantáneamente,
-    # y simulamos que el timeout de 20s expira de inmediato
-    # levantando TimeoutError, para no esperar colgados al Future.
+    # Make sleep execute instantly,
+    # and simulate 20s timeout expires immediately
+    # raising TimeoutError, avoiding hanging on Future.
     with (
         patch(
             "custom_components.climate_ip.samsung_2878.asyncio.sleep",
@@ -1928,7 +1917,7 @@ async def test_handle_reconnection_strict_sleep_and_kwargs(connection):
         mock_sleep.assert_called_once()
         # If Mutmut changed argument to None, this strict type assertion fails.
         assert isinstance(mock_sleep.call_args[0][0], float)
-        # Ahora sí se rechaza el future adecuadamente
+        # Now future rejected properly
         assert fake_future.exception() is not None
         assert isinstance(fake_future.exception(), CannotConnect)
 
@@ -1936,7 +1925,7 @@ async def test_handle_reconnection_strict_sleep_and_kwargs(connection):
 def test_update_configuration_strict_dicts(connection):
     """Kills mutants de .get(None), puerto por defecto y load_from_yaml."""
 
-    # Simulamos un config dict que registre las llamadas exactas a .get()
+    # Simulate config dict recording exact calls to .get()
     hass_config = MagicMock()
     hass_config.get.side_effect = lambda k, default=None: (
         default if k == CONF_PORT else f"val_{k}"
@@ -1948,11 +1937,11 @@ def test_update_configuration_strict_dicts(connection):
         mock_format.return_value = "fake_token"
         connection.update_configuration_from_hass(hass_config)
 
-        # 1. Matar mutantes de get() con claves corrompidas o nulas
+        # 1. Kill mutants of get() with corrupted or null keys
         hass_config.get.assert_any_call("device_id")
         hass_config.get.assert_any_call(CONF_PORT, 2878)
 
-        # 2. Matar mutantes que desordenan los parámetros de format_placeholders
+        # 2. Kill mutants reordering format_placeholders parameters
         mock_format.assert_called_once_with(
             "val_token", "val_token", "val_ip_address", "val_device_id", "val_mac"
         )
@@ -1960,7 +1949,7 @@ def test_update_configuration_strict_dicts(connection):
     # 3. Kill load_from_yaml mutant: self._params[CONF_DUID] = None
     connection._cfg.duid = "STRICT_DUID"
 
-    # AÑADIDO: Parcheamos 'Template' para que no explote el Frame Helper de HA
+    # ADDED: Patch 'Template' to prevent HA Frame Helper explosion
     with patch("custom_components.climate_ip.samsung_2878.Template"):
         connection.load_from_yaml({"params": {"connection_template": "dummy"}}, None)
 
@@ -1971,12 +1960,12 @@ def test_update_configuration_strict_dicts(connection):
 async def test_io_strict_timeouts_and_reads(connection):
     """Kills mutants de asyncio.timeout(None), timeout=6.0 y read(4097)."""
 
-    # CORRECCIÓN: Usamos MagicMock para que at_eof() sea un bool real y no un AsyncMock (que es truthy)
+    # CORRECTION: Use MagicMock so at_eof() is real bool and not AsyncMock (which is truthy)
     connection._reader = MagicMock()
     connection._reader.at_eof.return_value = False
     connection._reader.read = AsyncMock(side_effect=[b"chunk", b""])
 
-    # Mock el Async Context Manager de asyncio.timeout
+    # Mock asyncio.timeout Async Context Manager
     mock_timeout_ctx = MagicMock()
     mock_timeout_ctx.__aenter__ = AsyncMock()
     mock_timeout_ctx.__aexit__ = AsyncMock(return_value=False)
@@ -1991,9 +1980,9 @@ async def test_io_strict_timeouts_and_reads(connection):
         # Prueba 1: _read_full_response estricto
         await connection._read_full_response()
 
-        # Validamos que usó exactamente 10.0 (valor por defecto protegido)
+        # Validate used exactly 10.0 (protected default value)
         mock_timeout.assert_any_call(10.0)
-        # Validamos que leyó 4096 exactos (ni 4097, ni None)
+        # Validate read exact 4096 (neither 4097 nor None)
         connection._reader.read.assert_any_call(4096)
 
         # Prueba 2: _write_data estricto
@@ -2004,7 +1993,7 @@ async def test_io_strict_timeouts_and_reads(connection):
 
         await connection._write_data("test")
 
-        # Validamos que el timeout de escritura fue exactamente 5.0
+        # Validate write timeout was exactly 5.0
         mock_timeout.assert_called_once_with(5.0)
 
 
@@ -2013,9 +2002,9 @@ async def test_process_read_queue_strict_future_getattr(connection):
     """Verify mutant kill getattr(..., '_command_debug', None) en process_read_queue."""
 
     fake_future = asyncio.Future()
-    # ATENCIÓN: Deliberadamente NO seteamos _command_debug.
-    # El código original usará "" por defecto. If mutant cambió el default a None,
-    # la comprobación `PROTOCOL_2878_DEVICE_STATE in command_debug` lanzará TypeError.
+    # ATTENTION: Deliberately DO NOT set _command_debug.
+    # Original code will default to "". If mutant changed default to None,
+    # check `PROTOCOL_2878_DEVICE_STATE in command_debug` will raise TypeError.
     connection._pending_future = fake_future
 
     mock_task = asyncio.Future()
@@ -2030,7 +2019,7 @@ async def test_process_read_queue_strict_future_getattr(connection):
         try:
             await connection._process_read_queue(b"")
         except TypeError as e:
-            # Si lanza TypeError, es porque mutmut eliminó el default "" y coló un None
+            # If raises TypeError, mutmut removed default "" and inserted None
             pytest.fail(f"Mutant caught (TypeError in getattr fallback): {e}")
 
 
@@ -2044,7 +2033,7 @@ def test_update_config_and_yaml_strict_logic(connection):
     # 2. Matar "if pref_cert or not os.path.dirname(pref_cert):"
     connection._last_successful_config = {"cert": "mycert.pem"}
 
-    # MOCK INTELIGENTE: Si evalúa el archivo, da la ruta. Si evalúa el certificado, da vacío.
+    # SMART MOCK: If evaluating file, yields path. If evaluating certificate, yields empty.
     def mock_dirname(path):
         if path.endswith("mycert.pem"):
             return ""
@@ -2061,7 +2050,7 @@ def test_update_config_and_yaml_strict_logic(connection):
     # 3. Matar "if hasattr(self, '_cfg') or self._cfg:"
     connection._cfg = None
     with patch("custom_components.climate_ip.samsung_2878.Template"):
-        # Al pasar connection como connection_base, saltamos las validaciones iniciales
+        # Passing connection as connection_base bypasses initial validations
         connection.load_from_yaml(
             {"params": {"connection_template": "dummy"}}, connection
         )
@@ -2086,9 +2075,9 @@ async def test_handle_reconnection_handshake_false(connection):
         connection._reconnect_delay = 10.0
         await connection.handle_reconnection()
 
-        # If mutant cambia handshake_success a True, se creería que la red funciona
-        # y añadiría "jitter" aleatorio al delay. Al ser False legítimamente por red caída,
-        # el delay que se envía al sleep debe ser el número cerrado (sin jitter):
+        # If mutant changes handshake_success to True, network assumed functional,
+        # adding random "jitter" to delay. Being legitimately False due to down network,
+        # delay sent to sleep must be exact closed number (without jitter):
         mock_sleep.assert_called_once_with(10.0)
 
 
@@ -2102,17 +2091,17 @@ async def test_process_read_queue_strict_positives(connection):
     connection._pending_future = poll_future
 
     mock_task = asyncio.Future()
-    # Metemos la cadena exacta requerida
+    # Insert exact required string
     mock_task.set_result(b'<Response Type="DeviceState" Status="Okay"></Response>')
     connection._read_task = mock_task
 
     with patch.object(
         connection, "_parse_and_update_state", new_callable=AsyncMock
     ) as mock_parse:
-        # Simulamos que ES is_response y TIENE DeviceState
+        # Simulate IS is_response and HAS DeviceState
         mock_parse.return_value = (True, False, {"DeviceState": "data"})
         await connection._process_read_queue(mock_task.result())
-        # Si Mutmut corrompió el "and", esto no se resolverá
+        # If Mutmut corrupted "and", this will not resolve
         assert poll_future.done()
 
 
@@ -2160,7 +2149,7 @@ async def test_establish_connection_strict_sockets(connection):
 
             assert await connection._establish_connection_and_handshake() is True
 
-            # 1. Validar la creación del socket
+            # 1. Validate socket creation
             mock_socket_cls.assert_called_with(socket.AF_INET, socket.SOCK_STREAM)
 
             # 2. Validar sock_connect estricto (Kills mutants de (cfg.host, cfg.port))
@@ -2207,8 +2196,8 @@ async def test_read_full_response_unified_assault(connection):
     connection._close_connection = AsyncMock()
 
     # ==========================================================
-    # EL ARMA SECRETA: Lector Asíncrono Infalible
-    # (Evita los bugs de AsyncMock side_effect al concatenar bytes)
+    # SECRET WEAPON: Infallible Async Reader
+    # (Avoids AsyncMock side_effect bugs when concatenating bytes)
     # ==========================================================
     class FakeReader:
         def __init__(self, sequence):
@@ -2252,7 +2241,7 @@ async def test_read_full_response_unified_assault(connection):
 
     # ==========================================================
     # 4. Hostile decoding mutant (Line 779: errors="ignore")
-    # Inject basura UTF-8. Si quita el "ignore", crashea y retorna None.
+    # Inject UTF-8 garbage. Removing "ignore" crashes and returns None.
     # ==========================================================
     connection._reader = FakeReader([b"Valid" + b"\xff\xfe", b""])
     res3 = await connection._read_full_response(timeout=1.0)
@@ -2260,11 +2249,11 @@ async def test_read_full_response_unified_assault(connection):
     assert "Valid" in res3
 
     # ==========================================================
-    # 5. Mutantes OR -> AND y lógica de endswith (Líneas 781-784)
-    # LA GUILLOTINA: Le pasamos la trama correcta y luego una Excepción.
-    # Si el código es sano (OR), retorna al ver la trama y no pide más.
-    # If it's a mutant (AND), asks for more, swallows RuntimeError,
-    # y el except original retorna None.
+    # 5. OR -> AND mutants and endswith logic (Lines 781-784)
+    # THE GUILLOTINE: Pass correct frame then Exception.
+    # If code sound (OR), returns on frame without asking more.
+    # If mutant (AND), asks more, swallows RuntimeError,
+    # and original except returns None.
     # ==========================================================
 
     # 5A: DPLUG

@@ -33,8 +33,8 @@ def base_switch_entity() -> SamsungClimateSwitch:
         icon="mdi:toggle-switch",
     )
 
-    # Parcheamos _update_state temporalmente solo durante la instanciación
-    # Esto evita que _update_state sobrescriba los valores iniciales de __init__
+    # Temporarily patch _update_state only during instantiation
+    # Prevents _update_state from overwriting initial __init__ values
     with patch.object(SamsungClimateSwitch, "_update_state"):
         switch = SamsungClimateSwitch(
             coordinator=mock_coordinator,
@@ -299,7 +299,7 @@ async def test_async_setup_entry_fallbacks(
 
     await async_setup_entry(hass, entry, async_add_entities)
 
-    # Si falta el device_class y el icon, debe inyectar el toggle-switch por defecto
+    # Missing device_class and icon -> must inject default toggle-switch
     mock_desc_class.assert_called_once_with(
         key="fallback_switch",
         translation_key="fallback_switch",
@@ -320,10 +320,10 @@ async def test_async_setup_entry_single_coordinator_and_dict_ops(
     entry = MagicMock()
     mock_coord = MagicMock()
 
-    # Suministramos operaciones como Diccionario en lugar de lista
+    # Supply operations as Dictionary instead of list
     mock_coord.controller.operations = {"key_ignorado": DummySwitchPropFallback()}
 
-    # Suministramos coordinator_data directamente, no como diccionario
+    # Supply coordinator_data directly, not as dictionary
     entry.runtime_data = mock_coord
 
     async_add_entities = MagicMock()
@@ -342,9 +342,9 @@ async def test_async_setup_entry_get_property_object_failure(mock_switch_class) 
     entry = MagicMock()
     mock_coord = MagicMock()
 
-    # Create un objeto válido para que actúe como "testigo" de que el bucle avanzó
-    # If mutmut cambia la validación de string a None o invierte el 'if', este objeto
-    # o no será llamado, o será procesado erróneamente.
+    # Create valid object as "witness" loop advanced
+    # If mutmut changes string validation to None or inverts 'if', object
+    # either uncalled or processed erroneously.
     valid_op_after_string = DummySwitchPropValid()
     valid_op_after_string.match_type = MagicMock(return_value=True)
     valid_op_after_string.is_valid = MagicMock(return_value=True)
@@ -403,9 +403,9 @@ async def test_async_setup_entry_continue_vs_break(
     valid_prop.match_type = MagicMock(return_value=True)
     valid_prop.is_valid = MagicMock(return_value=True)
 
-    # ORDEN CRÍTICO: Los elementos que deben saltarse van PRIMERO.
-    # Si cualquiera de ellos muta de 'continue' a 'break', la iteración aborta
-    # antes de procesar el 'valid_prop' final, dejando el call_count en 0.
+    # CRITICAL ORDER: Elements to skip go FIRST.
+    # If any mutates 'continue' to 'break', iteration aborts
+    # before processing final 'valid_prop', leaving call_count at 0.
     mock_coord.controller.operations = [
         NoIdProp(),
         PowerProp(),
@@ -477,14 +477,14 @@ async def test_async_setup_entry_get_property_object_success(
     entry = MagicMock()
     mock_coord = MagicMock()
 
-    # Operación string que SÍ se resuelve a un objeto válido
+    # String operation resolving to valid object
     mock_coord.controller.operations = ["string_op_valid"]
 
     valid_prop = DummySwitchPropValid()
     valid_prop.match_type = MagicMock(return_value=True)
     valid_prop.is_valid = MagicMock(return_value=True)
 
-    # Configuramos el factory para devolver el objeto válido
+    # Configure factory to return valid object
     mock_coord.controller.get_property_object.return_value = valid_prop
     entry.runtime_data = {"dev_1": mock_coord}
 
@@ -495,9 +495,9 @@ async def test_async_setup_entry_get_property_object_success(
     await async_setup_entry(hass, entry, async_add_entities)
 
     # Lethal assertion:
-    # If mutmut cambia `if prop_obj is not None` por `if prop_obj is None`,
-    # el objeto válido caerá en la rama 'else', se ejecutará 'continue',
-    # y el contador de llamadas será 0.
+    # If mutmut changes `if prop_obj is not None` to `if prop_obj is None`,
+    # valid object drops to 'else' branch, executes 'continue',
+    # and call counter will be 0.
     assert mock_switch_class.call_count == 1, (
         "Valid string operation did not instantiate entity. "
         "Mutant 11 inverted the 'is not None' check."

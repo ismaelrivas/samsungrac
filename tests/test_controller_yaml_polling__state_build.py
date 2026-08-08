@@ -204,7 +204,7 @@ async def test_build_device_state_from_props_samsung_2878_exhaustive():
         side_effect=lambda op: key_mapping.get(getattr(op, "id", None), "CUSTOM_KEY")
     )
 
-    # BARRIDO 1: Estado OFF con alias nativos
+    # SWEEP 1: OFF state with native aliases
     mock_controller.loader.operations = {
         "hvac": create_op("hvac", "Off"),
         "power": create_op("power", "Off"),
@@ -223,7 +223,7 @@ async def test_build_device_state_from_props_samsung_2878_exhaustive():
     assert res_off["AC_FUN_WINDLEVEL"] == "Auto"
     assert res_off["CUSTOM_KEY"] == "Up"
 
-    # BARRIDO 2: Estado ON con alias de Home Assistant y alias alternos
+    # SWEEP 2: ON state with Home Assistant aliases and alternate aliases
     mock_controller.loader.operations = {
         "hvac_ha": create_op(ATTR_HVAC_MODE, "Cool"),
         "hvac_alt": create_op(
@@ -265,7 +265,7 @@ async def test_build_device_state_from_props_rest_api_exhaustive():
 
     poller = YamlStatePoller(mock_controller)
 
-    # BARRIDO 1: Generación inicial desde 0 y estado OFF
+    # SWEEP 1: Initial generation from scratch and OFF state
     mock_controller.loader.state_getter.value = {"Devices": [{}]}
     mock_controller.loader.operations = {
         "hvac": create_op("hvac", "Off"),
@@ -280,7 +280,7 @@ async def test_build_device_state_from_props_rest_api_exhaustive():
     res_off = await poller._build_device_state_from_props()
     assert res_off is not None
 
-    # BARRIDO 2: Mutación de JSON pre-existente y estado ON con alias de HA
+    # SWEEP 2: Mutation of pre-existing JSON and ON state with HA aliases
     mock_controller.loader.state_getter.value = {
         "Devices": [
             {
@@ -299,7 +299,7 @@ async def test_build_device_state_from_props_rest_api_exhaustive():
         "sleep_alt": create_op("good_sleep", 2.0),
     }
 
-    # Mapeo de state nodes para simular lo que devolvería _get_state_node_from_prop
+    # State nodes mapping to simulate what _get_state_node_from_prop returns
     def fake_get_state_node(op):
         mapping = {
             ATTR_HVAC_MODE: "Devices.0.Mode.modes.0",
@@ -354,19 +354,19 @@ async def test_build_device_state_chaos_monkey_guards():
         mock_controller.loader.properties = {}
         mock_controller.loader.sensors = {}
 
-    # --- CASO 1: 'Devices' NO es una lista (Mata isinstance(device_list, list)) ---
+    # --- CASE 1: 'Devices' is NOT a list (Kills isinstance(device_list, list)) ---
     setup_ops("hvac", "Cool")
     mock_controller.loader.state_getter.value = {"Devices": "ESTO_ES_UN_STRING"}
     res = await poller._build_device_state_from_props()
-    # Si la guardia está, ignora la actualización y no explota.
+    # If guard present, ignores update without exploding.
     assert res["Devices"] == "ESTO_ES_UN_STRING"
 
-    # --- CASO 2: 'Devices' es lista vacía (Mata len(device_list) > 0) ---
+    # --- CASE 2: 'Devices' is empty list (Kills len(device_list) > 0) ---
     mock_controller.loader.state_getter.value = {"Devices": []}
     res = await poller._build_device_state_from_props()
     assert res["Devices"] == [{"Mode": {"options": "Cool"}}]
 
-    # --- CASO 3: El interior de 'Devices' no es un dict (Mata isinstance(device_obj, dict)) ---
+    # --- CASE 3: 'Devices' interior is not a dict (Kills isinstance(device_obj, dict)) ---
     mock_controller.loader.state_getter.value = {"Devices": ["ESTO_NO_ES_UN_DICT"]}
     res = await poller._build_device_state_from_props()
     assert res["Devices"] == ["ESTO_NO_ES_UN_DICT"]
@@ -375,14 +375,14 @@ async def test_build_device_state_chaos_monkey_guards():
     setup_ops("temperature", 22.0)
     mock_controller.loader.state_getter.value = {"Devices": [{"Temperatures": []}]}
     res = await poller._build_device_state_from_props()
-    # La lógica original ignora listas vacías si ya existe la clave.
-    # If mutmut cambia > 0 por >= 0, dará IndexError al intentar acceder a [0].
+    # Original logic ignores empty lists if key already exists.
+    # If mutmut changes > 0 to >= 0, IndexError occurs accessing [0].
     assert res["Devices"][0]["Temperatures"] == [{"desired": 22.0}]
 
     # --- CASO 5: Arrays 'options' de Mode (Kills mutants de len == 1, len > 1) ---
     setup_ops("good_sleep", 1.0)
 
-    # Longitud 0: Ahora sí debe inicializarse porque mejoramos la estructura
+    # Length 0: Now must initialize due to structure improvements
     mock_controller.loader.state_getter.value = {"Devices": [{"Mode": {"options": []}}]}
     res = await poller._build_device_state_from_props()
     assert res is not None
@@ -404,7 +404,7 @@ async def test_build_device_state_chaos_monkey_guards():
     mock_controller.loader.state_getter.value = {"Devices": [{}]}
     res = await poller._build_device_state_from_props()
     assert res["Devices"] == [{}]
-    # No debe haber añadido "Operation" porque la propiedad era None
+    # Must not have added "Operation" because property was None
     assert "Operation" not in res["Devices"][0]
 
 
@@ -436,14 +436,14 @@ async def test_async_update_properties_sub_device_routing():
     mock_controller.debug = False
     poller = YamlStatePoller(mock_controller)
 
-    # Configuramos el id_map de la caché simulada
+    # Configure id_map for simulated cache
     mock_controller.loader._parsed_yaml_cache = {
         "TARGET_ID": {
             "device": {"identifiers": {"path_to_devices": ["Devices"], "id": ["id"]}}
         }
     }
 
-    # Payload con múltiples dispositivos. El target está en la segunda posición.
+    # Payload with multiple devices. Target is at second position.
     full_payload = {
         "Devices": [
             {"id": "WRONG_ID", "power": "off"},
@@ -462,16 +462,16 @@ async def test_async_update_properties_sub_device_routing():
     mock_controller.loader.properties = {}
     mock_controller.loader.sensors = {}
 
-    # Ejecutamos forzando la actualización
+    # Execute forcing update
     await poller.async_update_properties_from_state(full_payload, force_update=True)
 
-    # ASERCIÓN CRÍTICA: La propiedad debió recibir exclusivamente el sub-diccionario del TARGET_ID
-    # Kills mutants de la iteración `next(...)` y la comparación `== str(...)`
+    # CRITICAL ASSERTION: Property strictly received TARGET_ID sub-dict
+    # Kills iteration mutants `next(...)` and comparison `== str(...)`
     mock_prop.async_update_state.assert_called_once_with(
         {"id": "TARGET_ID", "power": "on"}, False
     )
 
-    # Test Fallback: Si el ID no existe en la lista, debe usar el índice [0]
+    # Test Fallback: If ID missing in list, must use index [0]
     mock_prop.async_update_state.reset_mock()
 
     # Device is TARGET_ID, but payload no longer includes it.
@@ -513,7 +513,7 @@ async def test_async_update_properties_defaults_and_chaos_cache():
     mock_controller.loader.is_fully_initialized = True
     mock_controller.debug = False
 
-    # 1. Caché completamente vacía (Mata los .get(CONFIG_DEVICE, {}) -> None)
+    # 1. Completely empty cache (Kills .get(CONFIG_DEVICE, {}) -> None)
     mock_controller.loader._parsed_yaml_cache = {}
 
     poller = YamlStatePoller(mock_controller)
@@ -528,31 +528,30 @@ async def test_async_update_properties_defaults_and_chaos_cache():
 
     fake_payload = {"some": "data"}
 
-    # 2. Llamada SIN is_prediction ni force_update, confiando en los DEFAULTS
-    # Mata a: is_prediction=True, force_update=True
-    # Como force_update es False (default) y pending_updates es vacío, si el estado cambia, procesará.
-    # Necesitamos asegurar que pase el cortocircuito dirty-check
+    # 2. Call WITHOUT is_prediction or force_update, relying on DEFAULTS
+    # Kills: is_prediction=True, force_update=True
+    # Since force_update is False (default) and pending_updates empty, if state changes, will process.
+    # Need to ensure dirty-check short-circuit passes
     poller._last_device_state_str = "different_state"
 
     await poller.async_update_properties_from_state(fake_payload)
     mock_prop.async_update_state.assert_called_once_with({"some": "data"}, False)
 
-    # 1.5. Test de `force_update=True` mutation (Kills mutant 2)
-    # Llamamos de nuevo con el MISMO payload (no ha cambiado el estado)
+    # 1.5. `force_update=True` mutation test (Kills mutant 2)
+    # Call again with SAME payload (state unchanged)
     mock_prop.async_update_state.reset_mock()
     await poller.async_update_properties_from_state(fake_payload)
-    # Al no haber cambiado el estado, y ser force_update=False por defecto, no debe llamarse
+    # State unchanged and force_update=False by default -> must not be called
     mock_prop.async_update_state.assert_not_called()
 
-    # 1.7. Test de falta de `_parsed_yaml_cache` para matar defaults en getattr
-    # Reemplazamos `loader` por un mock estricto que lanzará AttributeError real
-    # al no tener `_parsed_yaml_cache`
+    # 1.7. Missing `_parsed_yaml_cache` test to kill getattr defaults
+    # Replace `loader` with strict mock raising real AttributeError on missing `_parsed_yaml_cache`
     class StrictLoader:
         is_fully_initialized = True
         operations = {"test": mock_prop}
         properties = {}
         sensors = {}
-        # NO tiene _parsed_yaml_cache
+        # DOES NOT have _parsed_yaml_cache
 
     mock_controller.loader = StrictLoader()
     mock_prop.async_update_state.reset_mock()
@@ -560,15 +559,15 @@ async def test_async_update_properties_defaults_and_chaos_cache():
     await poller.async_update_properties_from_state({"some": "new_data"})
     mock_prop.async_update_state.assert_called_once_with({"some": "new_data"}, False)
 
-    # 1.8 Test de Exception en el bloque try (Kills mutants en el bloque except)
-    # Asignar None hace que cache.get lance AttributeError
+    # 1.8 Exception test inside try block (Kills mutants in except block)
+    # Assigning None causes cache.get to raise AttributeError
     mock_controller.loader._parsed_yaml_cache = None
     mock_prop.async_update_state.reset_mock()
     poller._last_device_state_str = "different_state_exc"
     await poller.async_update_properties_from_state({"some": "exc_data"})
     mock_prop.async_update_state.assert_called_once_with({"some": "exc_data"}, False)
 
-    # 1.9 Test del dirty check (Kills mutants de is_prediction y condiciones del dirty check)
+    # 1.9 Dirty check test (Kills mutants of is_prediction and dirty check conditions)
     mock_prop.async_update_state.reset_mock()
     poller._last_device_state = {"some": "dirty_data"}
     poller._last_device_state_str = "{'some': 'dirty_data'}"
@@ -576,27 +575,27 @@ async def test_async_update_properties_defaults_and_chaos_cache():
     assert res == {}
     mock_prop.async_update_state.assert_not_called()
 
-    # Restauramos para el siguiente test
+    # Restore for next test
     mock_controller.loader = MagicMock()
     mock_controller.loader.is_fully_initialized = True
     mock_controller.debug = False
     mock_controller.loader.operations = {"test": mock_prop}
 
-    # Al no haber id_map, `device_to_process` NUNCA DEBE SER REASIGNADO,
-    # so if the mutant set `device_to_process = None`, the mock will receive None instead of real payload.
-    # 2. Test del default device_id en la caché (Kills mutant 41)
+    # With no id_map, `device_to_process` MUST NEVER BE REASSIGNED,
+    # so if mutant set `device_to_process = None`, mock receives None instead of real payload.
+    # 2. Default device_id in cache test (Kills mutant 41)
     mock_prop.async_update_state.reset_mock()
 
-    # Create un caché donde la clave es "XXXX", que es el default de getattr(..., "device_id", "XXXX")
+    # Create cache where key is "XXXX", default of getattr(..., "device_id", "XXXX")
     mock_controller.loader._parsed_yaml_cache = {
         "XXXX": {
             "device": {"identifiers": {"path_to_devices": ["Devices"], "id": ["id"]}}
         }
     }
-    # Pass DOS dispositivos en la lista. El primero tiene id "WRONG", el segundo id "".
-    # Así, si el `getattr` con el default "" es mutado (ej. a None o "XXXX"), el match fallará.
-    # Al fallar el match, el código hará fallback a `devices_list[0]` ("WRONG"),
-    # con lo cual la aserción sobre mock_prop fallará porque esperaba el de id "".
+    # Pass TWO devices in list. First has id "WRONG", second id "".
+    # If `getattr` default "" mutated (e.g. None or "XXXX"), match fails.
+    # On match failure, code falls back to `devices_list[0]` ("WRONG"),
+    # failing assertion on mock_prop expecting id "".
     payload_list_2 = {
         "Devices": [{"id": "WRONG", "power": "on"}, {"id": "", "power": "off"}]
     }
@@ -1022,10 +1021,10 @@ async def test_build_device_state_memory_isolation():
     mock_controller.loader.properties = {}
 
     res = await poller._build_device_state_from_props()
-    # Modificar profundamente el resultado
+    # Deeply modify result
     res["Mode"]["modes"][0] = "Hacked"
 
-    # Asegurar que el estado original NO cambió
+    # Ensure original state DID NOT change
     assert mock_controller.loader.state_getter.value["Mode"]["modes"][0] == "Cool"
 
 
@@ -1074,7 +1073,7 @@ async def test_build_device_state_none_fallbacks():
 
     class StrictOp:
         value = "val"
-        # Sin atributo 'id' para forzar FAIL-FAST
+        # Missing 'id' attribute to force FAIL-FAST
 
     mock_controller.loader.operations = {"op1": StrictOp()}
     mock_controller.loader.properties = {}
@@ -1107,7 +1106,7 @@ async def test_build_device_state_nested_dicts():
     mock_controller.loader.state_getter.value = {"Devices": []}
     assert await poller._build_device_state_from_props() == {"Devices": []}
 
-    # Caso 2: device_list no es lista
+    # Case 2: device_list is not a list
     mock_controller.loader.state_getter.value = {"Devices": "NotAList"}
     assert await poller._build_device_state_from_props() == {"Devices": "NotAList"}
 
@@ -1169,7 +1168,7 @@ async def test_async_update_state_sniper_debug_and_fallbacks():
 
     assert await poller.async_update_state() is None
 
-    # 2. Con debug en True (probando atributo existente)
+    # 2. With debug as True (testing existing attribute)
     mock_controller = DummyController(debug=True)
     mock_controller.config = {"device_type": "samsung_2878"}
     mock_controller.loader.state_getter.async_update_state.return_value = {
@@ -1185,7 +1184,7 @@ async def test_async_update_state_sniper_debug_and_fallbacks():
         None, True
     )
 
-    # 3. Fallback: sin atributo debug configurado (DummyController lanzará AttributeError si quitan el fallback)
+    # 3. Fallback: no debug attribute configured (DummyController raises AttributeError if fallback removed)
     mock_controller = DummyController()  # No tiene 'debug'
     mock_controller.debug = False  # <-- ADDED BY STRICT MARTIAL LAW
     mock_controller.config = {"device_type": "samsung_2878"}
@@ -1210,8 +1209,8 @@ async def test_build_device_state_from_hass_deepcopy_and_logic():
     poller.controller.loader.state_getter.value = last_real
 
     op_mock = MagicMock()
-    # Inject hass_value pero borramos la función de conversión.
-    # Si la condición es 'or' en lugar de 'and', intentará evaluar y fallará.
+    # Inject hass_value but delete conversion function.
+    # If condition is 'or' instead of 'and', attempts evaluation and fails.
     delattr(op_mock, "convert_hass_to_dev")
     poller.controller.loader.operations = {"op1": op_mock}
 
@@ -1233,7 +1232,7 @@ async def test_build_device_state_from_props_naked_dicts():
     # Estado inicial estéril
     poller.controller.loader.state_getter.value = {"Devices": []}
 
-    # Mock op sin 'value' pero con '_value'
+    # Op mock without 'value' but with '_value'
     op_mock = MagicMock()
     delattr(op_mock, "value")
     op_mock._value = "24"
@@ -1246,7 +1245,7 @@ async def test_build_device_state_from_props_naked_dicts():
     )
 
     res = await poller._build_device_state_from_props()
-    # If mutmut alteró len(device_list) > 0 a >= 0, este test lanzará IndexError al intentar Devices[0]
+    # If mutmut altered len(device_list) > 0 to >= 0, this test will raise IndexError attempting Devices[0]
     assert res is not None
 
 
@@ -1254,12 +1253,12 @@ async def test_async_predict_and_correct_state_logic_flip():
     """Verify mutant kill for mutation de `not A or not B` a `not A and not B`"""
     poller = YamlStatePoller(MagicMock())
 
-    # Configuramos A = False, B = True. (state_getter existe, pero loader no está inicializado)
-    # Si la mutación es 'and', no cortará la ejecución y crasheará en la línea siguiente.
+    # Configure A = False, B = True (state_getter exists, loader not initialized)
+    # If mutation is 'and', execution won't short-circuit and crashes next line.
     poller.controller.loader.state_getter = MagicMock()
     poller.controller.loader.is_fully_initialized = False
 
-    # Trampa explosiva: si el flujo avanza erróneamente, esto detonará
+    # Explosive trap: if flow advances erroneously, this detonates
     type(poller.controller.loader.state_getter).value = property(
         lambda self: exec('raise Exception("Mutant OR->AND survived!")')
     )
@@ -1280,7 +1279,7 @@ async def test_build_device_state_from_props_structural_limits():
     poller.controller.loader.state_getter = st_getter
     poller.controller.loader.is_fully_initialized = True
 
-    # Mock de operación sin 'convert_hass_to_dev' para forzar asignación directa
+    # Operation mock without 'convert_hass_to_dev' to force direct assignment
     op1 = MagicMock(id="fan_max")
     op1.value = "10"
     delattr(op1, "convert_hass_to_dev")
@@ -1306,8 +1305,8 @@ async def test_build_device_state_from_props_structural_limits():
         ]
     }
 
-    # 2. Inyectar lista con dict vacío para forzar setdefault.
-    # If mutmut cambia .setdefault("Wind", {}) a .setdefault("Wind", ), será None y lanzará TypeError
+    # 2. Inject list with empty dict to force setdefault.
+    # If mutmut changes .setdefault("Wind", {}) to .setdefault("Wind", ), becomes None raising TypeError
     st_getter.value = {"Devices": [{}]}
 
     res = await poller._build_device_state_from_props()
@@ -1851,7 +1850,7 @@ async def test_async_update_properties_dict_depth():
     poller.controller.loader.is_fully_initialized = True
     poller._build_device_state_from_hass = AsyncMock(return_value={"raw": "data"})
 
-    # loader._parsed_yaml_cache existe, pero está vacío.
+    # loader._parsed_yaml_cache exists, but is empty.
     mock_controller = poller.controller
     mock_controller.loader._parsed_yaml_cache = {}
     mock_controller.device_id = "123"

@@ -27,7 +27,7 @@ def connection():
     return conn
 
 
-# --- 1. TESTS PARA LA CONFIGURACIÓN BASE (Kills mutants "None Fallback" en __init__) ---
+# --- 1. BASE CONFIGURATION TESTS (Kills "None Fallback" mutants in __init__) ---
 
 
 def test_connection_config_strict_init():

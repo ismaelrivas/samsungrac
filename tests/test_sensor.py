@@ -33,7 +33,7 @@ def base_sensor_entity(hass: HomeAssistant) -> ClimateIpSensor:
         icon="mdi:thermometer",
     )
 
-    # Prevent que __init__ llame a _sync_data para aislar las pruebas de estado inicial
+    # Prevent __init__ calling _sync_data to isolate initial state tests
     with patch.object(ClimateIpSensor, "_sync_data_from_coordinator"):
         sensor = ClimateIpSensor(
             coordinator=mock_coord, description=desc, property_object=mock_prop
@@ -90,7 +90,7 @@ def test_update_state_unknown_no_exception_path(
     base_sensor_entity._update_state()
 
     assert base_sensor_entity._attr_native_value is None
-    # Si el operador lógico fue mutado, la ejecución cae al except y el logger dispara.
+    # If logical operator mutated, execution falls to except and logger triggers.
     mock_logger_warning.assert_not_called()
 
 
@@ -122,12 +122,12 @@ def test_update_state_valid_float(base_sensor_entity: ClimateIpSensor) -> None:
     """
     base_sensor_entity.coordinator.controller.get_property.return_value = "23.7"
     base_sensor_entity._property.value_is_string = False
-    # No es UniqueIdProperty
+    # Not UniqueIdProperty
 
     base_sensor_entity._update_state()
 
-    # Lethal assertion: If mutant asigna None o lanza TypeError (float(None)),
-    # el valor resultante será None y esta aserción fallará crasamente.
+    # Lethal assertion: If mutant assigns None or raises TypeError (float(None)),
+    # resulting value will be None and this assertion fails horribly.
     assert (
         base_sensor_entity._attr_native_value == 23.7
     ), "Mathematical float conversion failed (Mutant 10/11)."
@@ -140,16 +140,16 @@ def test_update_state_float_parsing_failure(
     # Al no ser string ni UniqueIdProperty, intentará castear a float
     base_sensor_entity._property.value_is_string = False
 
-    # Inject una cadena corrupta que detonará ValueError
+    # Inject corrupt string triggering ValueError
     base_sensor_entity.coordinator.controller.get_property.return_value = "not_a_number"
 
-    # Forzamos un valor previo conocido que NO sea None ni un string vacío
+    # Force known prior value NOT None or empty string
     base_sensor_entity._attr_native_value = 50.0
 
     base_sensor_entity._update_state()
 
-    # El except debe capturarlo y setear a None explícitamente.
-    # El uso de 'is None' asegura que si mutmut lo cambia a '""', el test fallará.
+    # except block must capture and set to None explicitly.
+    # 'is None' usage ensures if mutmut changes it to '""', test fails.
     assert (
         base_sensor_entity._attr_native_value is None
     ), "Float casting failure must assign exactly None (annihilates Mutant 12)."
@@ -201,7 +201,7 @@ async def test_async_setup_entry_strict_mapping(
     target_device_state = {"temp": 22}
     mock_coord.controller.device_state = target_device_state
 
-    # Inyección de la clase plana en lugar de un Mock
+    # Plain class injection instead of Mock
     prop_instance = DummyPropValid()
     # We use a mock for is_valid method to assert receiving correct state (Mutant 5 and 6)
     prop_instance.is_valid = MagicMock(return_value=True)
@@ -215,7 +215,7 @@ async def test_async_setup_entry_strict_mapping(
 
     await async_setup_entry(hass, entry, async_add_entities)
 
-    # Kills mutants 5 y 6: Asserts the recepción del raw_state exacto
+    # Kills mutants 5 and 6: Asserts reception of exact raw_state
     prop_instance.is_valid.assert_called_once_with(target_device_state)
 
     # Kills mutants de parse_entity_category (8, 9, 14, 15)
@@ -265,8 +265,8 @@ async def test_async_setup_entry_fallback_and_logic(
 
     await async_setup_entry(hass, entry, async_add_entities)
 
-    # Kills mutants que alteran la condición 'not icon and not device_class'
-    # o que corrompen el getattr forzando el default None
+    # Kills mutants altering 'not icon and not device_class' condition
+    # or corrupting getattr forcing default None
     mock_desc_class.assert_called_once_with(
         key="sensor_fallback",
         translation_key="sensor_fallback",
@@ -311,7 +311,7 @@ async def test_async_setup_entry_icon_logical_operator_inverse(
 
     await async_setup_entry(hass, entry, async_add_entities)
 
-    # Extraemos los kwargs con los que se intentó crear el SensorEntityDescription
+    # Extract kwargs used attempting to create SensorEntityDescription
     mock_desc_class.assert_called_once()
     kwargs = mock_desc_class.call_args.kwargs
 

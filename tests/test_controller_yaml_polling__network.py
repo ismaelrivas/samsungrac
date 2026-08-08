@@ -250,12 +250,12 @@ async def test_async_update_state_early_exits_and_ping():
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)
 
-    # 1. Sin state_getter (Kills mutants en `if not self.controller.loader.state_getter`)
+    # 1. No state_getter (Kills mutants in `if not self.controller.loader.state_getter`)
     poller.controller.loader = MagicMock()
     poller.controller.loader.state_getter = None
     assert await poller.async_update_state() is None
 
-    # 2. Ping ICMP fallido para dispositivos no-2878
+    # 2. Failed ICMP ping for non-2878 devices
     mock_controller.loader.state_getter = AsyncMock()
     mock_controller.config.get.return_value = (
         "rest_api"  # Falsa la guardia de DEVICE_TYPE_SAMSUNG_2878
@@ -263,7 +263,7 @@ async def test_async_update_state_early_exits_and_ping():
     mock_controller.ip_address = "192.168.1.100"
     poller._consecutive_connection_errors = 2
 
-    # Simulamos que la red no es alcanzable
+    # Simulate network unreachable
     with patch(
         "custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability",
         return_value=False,
@@ -274,14 +274,14 @@ async def test_async_update_state_early_exits_and_ping():
         ):
             await poller.async_update_state()
 
-        # Aserciones strictly del pre-check (Frente de Red)
+        # Assertions strictly on pre-check (Network Front)
         mock_controller.config.get.assert_any_call("device_type")
         mock_ping.assert_called_once_with("192.168.1.100", mock_controller.log_prefix)
 
-        # Kills mutants en la matemática del contador (ej. += 2 en lugar de += 1)
+        # Kills mutants in counter math (e.g. += 2 instead of += 1)
         assert poller._consecutive_connection_errors == 3
 
-    # 3. Cortocircuito de Reachability por ip_address = None (Kills mutant and -> or)
+    # 3. Reachability short-circuit due to ip_address = None (Kills mutant and -> or)
     mock_controller.ip_address = None
     with patch(
         "custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability",
@@ -299,16 +299,16 @@ async def test_async_update_state_network_failures_and_cache():
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)
 
-    # Esquivamos el ping para ir directo a la red
+    # Bypass ping to go straight to network
     mock_controller.config.get.return_value = "samsung_2878"
     mock_controller.loader.state_getter = AsyncMock()
 
-    # Mock el resto de dependencias para evitar ruido
+    # Mock remaining dependencies to prevent noise
     poller.async_update_properties_from_state = AsyncMock()
     mock_controller.loader.is_fully_initialized = True
     mock_controller.debug = False
 
-    # Simulamos que ya tenemos una caché válida de un estado anterior
+    # Simulate valid cache from previous state already present
     poller._cached_device_state = {"power": "on"}
     poller._consecutive_connection_errors = 0
 
@@ -319,19 +319,19 @@ async def test_async_update_state_network_failures_and_cache():
 
     result = await poller.async_update_state()
 
-    # We assert que no explotó y devolvió el estado rescatado
+    # We assert it didn't explode and returned rescued state
     assert result == {"power": "on"}
-    # We assert que el contador de errores subió en la rama `else`
+    # We assert error counter increased in `else` branch
     assert poller._consecutive_connection_errors == 1
 
-    # Inject el límite fatal (3 errores)
+    # Inject fatal limit (3 errors)
     poller._consecutive_connection_errors = 2
     poller._try_create_repair_issue = MagicMock()
 
     with pytest.raises(UpdateFailed, match="Device unreachable: Timeout HTTP"):
         await poller.async_update_state()
 
-    # We assert que intentó crear el issue al llegar a 3
+    # We assert it attempted to create issue upon reaching 3
     poller._try_create_repair_issue.assert_called_once()
 
     # Validate Issue resolution (When connection recovers)
@@ -731,7 +731,7 @@ async def test_async_update_state_sniper_network_ping():
             assert poller._consecutive_connection_errors == 4
             mock_repair.assert_called_once()  # Remains at 1, no duplicate issues generated
 
-        # 3. Ping lanza excepción pero se captura como diagnóstico, delegando luego a state_getter
+        # 3. Ping raises exception but captured as diagnostic, delegating later to state_getter
         mock_ping.side_effect = Exception("Ping error")
         mock_controller.loader.state_getter.async_update_state.return_value = {
             "state": "ping_failed_but_recovered"
@@ -759,8 +759,8 @@ async def test_async_shutdown_raw_client_circuit():
     poller = YamlStatePoller(MagicMock())
     delattr(poller.controller, "close_shared_client")
 
-    # Inject objeto sin 'close', si usa 'or' fallará en runtime al hacer close().
-    # El and actúa de circuito cortador seguro.
+    # Inject object without 'close'; using 'or' will fail at runtime when calling close().
+    # 'and' acts as a safe circuit breaker.
     class DummyClient:
         pass
 
@@ -776,7 +776,7 @@ async def test_async_update_state_force_connection_errors():
     poller.controller.loader.is_fully_initialized = True
     poller.controller.config = {"device_type": "Other"}
 
-    # Mock el getter
+    # Mock getter
     poller.controller.loader.state_getter = AsyncMock()
 
     # Inject CannotConnect. El poller debe capturarlo y relanzar UpdateFailed
@@ -799,5 +799,5 @@ async def test_shutdown_raw_client_missing():
     if hasattr(poller.controller, "_shared_raw_client"):
         delattr(poller.controller, "_shared_raw_client")
 
-    # If mutmut eliminó el None, lanzará AttributeError al evaluar la variable temporal.
+    # If mutmut removed None, will raise AttributeError evaluating temporary variable.
     await poller.async_shutdown()

@@ -269,13 +269,13 @@ async def test_apply_temperature_units_simple_sensor_fallback(mock_controller_er
             self.device_class = "temperature"
             self.unit_applied = None
 
-        # [!] INTENCIONALMENTE OMITIMOS set_hass_unit y set_device_unit
-        # Esto forzará al código de producción a fallar el primer 'if' y caer al 'elif'
+        # [!] INTENTIONALLY OMIT set_hass_unit and set_device_unit
+        # Forces production code to fail first 'if' and drop to 'elif'
 
         def set_unit_of_measurement(self, unit):
             self.unit_applied = unit
 
-    # Inject el objeto crudo (NO un MagicMock)
+    # Inject raw object (NOT MagicMock)
     strict_sensor = SimpleTempSensor()
     loader.sensors = {"simple_temp": strict_sensor}
 
@@ -284,12 +284,12 @@ async def test_apply_temperature_units_simple_sensor_fallback(mock_controller_er
         mock_controller_errors.device_id: loader._parsed_yaml_config
     }
 
-    # Configuramos la unidad esperada (fallback)
+    # Configure expected unit (fallback)
     mock_controller_errors.hass.config.units.temperature_unit = "°F"
 
     await loader.async_finish_initialization()
 
-    # Lethal assertion: El motor DEBIÓ caer en el 'elif' y aplicar la unidad
+    # Lethal assertion: Engine MUST have dropped to 'elif' and applied unit
     assert (
         strict_sensor.unit_applied == "°F"
     ), "The temperature fallback 'elif hasattr' block did not execute."

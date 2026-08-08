@@ -46,7 +46,7 @@ class DummyController:
         self.available = True
         self.config = {}
         self.device_id = ""
-        # Estructura base del loader para evitar colapsos no deseados
+        # Base loader structure to prevent unintended crashes
         self.loader = NakedObj(
             operations={},
             properties={},
@@ -55,7 +55,7 @@ class DummyController:
             _parsed_yaml_cache={},
             state_getter=None,
         )
-        # Sobrescribimos con los kwargs inyectados en los tests si los hay
+        # Overwrite with injected test kwargs if present
         for k, v in kwargs.items():
             setattr(self, k, v)
 
@@ -259,7 +259,7 @@ async def test_sniper_update_properties_cache_and_get_fallbacks():
         await poller.async_update_properties_from_state({"dummy": "data"})
         mock_exc.assert_not_called()
 
-    # Inject una clave dummy para que evada los ifs vacíos pero fuerce el fallback del getter
+    # Inject dummy key to evade empty ifs but force getter fallback
     poller.controller.loader._parsed_yaml_cache["0"][CONFIG_DEVICE] = {
         "identifiers": {"dummy": "val"}
     }
@@ -301,7 +301,7 @@ async def test_sniper_update_properties_delegations():
     )
     poller._rebuild_attributes = MagicMock()
 
-    # Escenario A: < 15 segundos (Pasa por convert_hass_to_dev pero hace continue)
+    # Scenario A: < 15 seconds (Passes through convert_hass_to_dev but hits continue)
     poller._pending_updates = {"prop1": ("pending_val", time.time() - 5.0)}
     with patch.object(poller, "_get_state_node_from_prop", return_value="prop1_key"):
         await poller.async_update_properties_from_state({"dummy": "state_A"})
@@ -409,7 +409,7 @@ async def test_sniper_build_device_state_fails_on_missing_value():
     mock_controller = NakedObj(log_prefix="TEST", config={})
     poller = YamlStatePoller(mock_controller)
 
-    # st_getter es NakedObj sin 'value'
+    # st_getter is NakedObj without 'value'
     poller.controller.loader = NakedObj(
         state_getter=NakedObj(), operations={}, properties={}
     )
@@ -469,7 +469,7 @@ async def test_sniper_async_merge_device_state_protected_value():
     )
     poller = YamlStatePoller(mock_controller)
 
-    # Create un state_getter con estado inicial
+    # Create state_getter with initial state
     st_getter = NakedObj(value={"base": "state"}, _value={"base": "state"})
 
     poller.controller.loader = NakedObj(
@@ -484,7 +484,7 @@ async def test_sniper_async_merge_device_state_protected_value():
     poller._evict_invalidated_pending_updates = MagicMock()
     poller.async_update_properties_from_state = AsyncMock()
 
-    # Ejecutamos el merge con un nuevo estado
+    # Execute merge with new state
     new_data = {"new": "data"}
     res = await poller.async_merge_device_state(new_data)
 
@@ -501,7 +501,7 @@ async def test_sniper_merge_device_state_protected_value_mutation():
     )
     poller = YamlStatePoller(mock_controller)
 
-    # IMPORTANTE: Create un state_getter con estado inicial
+    # IMPORTANT: Create state_getter with initial state
     st_getter = NakedObj(value={"base": "state"}, _value={"base": "state"})
 
     poller.controller.loader = NakedObj(
@@ -516,7 +516,7 @@ async def test_sniper_merge_device_state_protected_value_mutation():
     poller._evict_invalidated_pending_updates = MagicMock()
     poller.async_update_properties_from_state = AsyncMock()
 
-    # Ejecutamos el merge con un nuevo estado
+    # Execute merge with new state
     new_data = {"new": "data"}
     res = await poller.async_merge_device_state(new_data)
 
@@ -529,12 +529,12 @@ async def test_sniper_update_properties_pending_and_is_valid_mutations():
     mock_controller = NakedObj(log_prefix="TEST", debug=False)
     poller = YamlStatePoller(mock_controller)
 
-    # Para interceptar L534 (Sustitución por None en pending update)
+    # Intercept L534 (None substitution in pending update)
     prop = NakedObj(id="prop1")
     prop.convert_hass_to_dev = MagicMock(return_value="dev_pending_val")
     prop.set_device_state_for_values = MagicMock()
 
-    # Para interceptar L567 (Sustitución por None en is_valid)
+    # Intercept L567 (None substitution in is_valid)
     op = NakedObj(id="op1", value="a", values=["a", "b"])
     op.is_valid = MagicMock(return_value=True)
 
@@ -546,7 +546,7 @@ async def test_sniper_update_properties_pending_and_is_valid_mutations():
     )
     poller._rebuild_attributes = MagicMock()
 
-    # Insertamos un pending update < 15 segundos para forzar L534
+    # Insert pending update < 15 seconds to force L534
     poller._pending_updates = {"prop1": ("pending_val", time.time() - 5.0)}
 
     with patch.object(
@@ -669,11 +669,11 @@ async def test_async_update_state_generator_fallback():
     mock_controller = DummyController()
     poller = YamlStatePoller(mock_controller)
 
-    # 1. Definimos una función asíncrona real para el mock
+    # 1. Define real async function for mock
     async def mock_update_state(*args, **kwargs):
         return {"Devices": [{"id": "0", "Mode": {}}]}
 
-    # 2. La inyectamos en el NakedObj
+    # 2. Inject it into NakedObj
     poller.controller.loader.state_getter = NakedObj(
         value={"raw": "data"}, async_update_state=mock_update_state
     )
@@ -683,22 +683,22 @@ async def test_async_update_state_generator_fallback():
         "XXXX": {CONFIG_DEVICE: {"identifiers": {"path_to_devices": ["Devices"]}}}
     }
 
-    # Si next() fue mutado a next((...)) sin el fallback None, esto detona un StopIteration interno
-    # y rompe el colapso controlado.
+    # If next() was mutated to next((...)) without None fallback, this triggers internal StopIteration
+    # and breaks controlled collapse.
     res = await poller.async_update_state()
 
-    # We assert que la función sobrevivió y devolvió algo
+    # We assert function survived and returned something
     assert res is not None
 
 
 async def test_async_merge_device_state_logic_flips():
     """Kills mutants de 'and -> or' y 'return False -> return True'."""
-    # Objeto sin 'get_current_state_callback'. Si el 'and' cambia a 'or' (M5),
-    # intentará ejecutar una propiedad que no existe y lanzará AttributeError.
+    # Object without 'get_current_state_callback'. If 'and' changes to 'or' (M5),
+    # will attempt executing non-existent property and raise AttributeError.
     mock_controller = NakedObj(loader=NakedObj(state_getter=None), log_prefix="Test")
     poller = YamlStatePoller(mock_controller)
 
-    # Si M14/15 cambia "if not st_getter: return False" a "return True", esta aserción fallará.
+    # If M14/15 changes "if not st_getter: return False" to "return True", this assertion fails.
     res = await poller.async_merge_device_state({"new": "data"})
     assert res is False
 
@@ -708,7 +708,7 @@ async def test_update_properties_private_value_pending():
     mock_controller = DummyController()
     poller = YamlStatePoller(mock_controller)
 
-    # Propiedad intencionalmente SIN 'value', solo con '_value'
+    # Property intentionally WITHOUT 'value', only with '_value'
     prop_private = NakedObj(
         id="hidden_prop", _value="old_val", async_update_state=lambda *args: None
     )
@@ -724,7 +724,7 @@ async def test_update_properties_private_value_pending():
 
     await poller.async_update_properties_from_state({"raw": "data"})
 
-    # If mutmut alteró las sentencias hasattr('_value') o la asignación, '_value' seguirá siendo "old_val"
+    # If mutmut altered hasattr('_value') statements or assignment, '_value' remains "old_val"
     assert prop_private._value == "NEW_DATA"
 
 
@@ -740,7 +740,7 @@ async def test_async_update_state_boundary_cache_fallback():
     )
     from custom_components.climate_ip.exceptions import CannotConnect
 
-    # EVASIÓN: Forzamos el tipo 2878 para saltar el async_check_network_reachability
+    # EVASION: Force type 2878 to bypass async_check_network_reachability
     mock_controller.config = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
 
     async def mock_update_state(*args, **kwargs):
@@ -750,11 +750,11 @@ async def test_async_update_state_boundary_cache_fallback():
         async_update_state=mock_update_state
     )
 
-    # LA TRAMPA: Condición de frontera exacta (1) y un estado cacheado válido
+    # THE TRAP: Exact boundary condition (1) and valid cached state
     poller._consecutive_connection_errors = 1
     poller._cached_device_state = {"status": "saved_by_the_bell"}
 
-    # PRODUCCIÓN NORMAL: Sube a 2. Evalúa 2 <= 2 (True) y caché existe -> Devuelve la caché
+    # NORMAL PRODUCTION: Increases to 2. Evaluates 2 <= 2 (True) and cache exists -> Returns cache
     res = await poller.async_update_state()
 
     assert res == {"status": "saved_by_the_bell"}
@@ -778,8 +778,8 @@ async def test_async_update_state_mutant_split_index():
     mock_controller.config = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
 
     async def mock_update_state(*args, **kwargs):
-        # M75 (split(None)): Romperá en los espacios y sacará solo "Host"
-        # M77 ([+1]): Extraerá "Network"
+        # M75 (split(None)): Breaks on spaces, extracting only "Host"
+        # M77 ([+1]): Extracts "Network"
         raise CannotConnect("Error:Network:Unreachable Host")
 
     poller.controller.loader.state_getter = NakedObj(
@@ -817,11 +817,11 @@ async def test_mutant_71_boundary_less_than_two():
     poller._cached_device_state = {"state": "cached"}
 
     try:
-        # En producción (2 <= 2) esto devolverá la caché.
+        # In production (2 <= 2), returns cache.
         res = await poller.async_update_state()
         assert res == {"state": "cached"}
     except UpdateFailed:
-        # If mutant (< 2) actúa, evaluará False, ignorará la caché y lanzará UpdateFailed.
+        # If mutant (< 2) acts, evaluates False, ignores cache, raises UpdateFailed.
         pytest.fail(
             "Mutant M71 (< 2) detected: Cache was ignored at the exact boundary."
         )
@@ -847,7 +847,7 @@ async def test_mutant_74_75_split_logic():
     with pytest.raises(UpdateFailed) as exc_info:
         await poller.async_update_state()
 
-    # Producción original sacará estrictamente el último elemento después de los dos puntos.
+    # Original production strictly extracts last element after colon.
     assert (
         str(exc_info.value) == "Device unreachable: Segment3"
     ), "Mutantes M74/M75 detectados en el formateo del log."

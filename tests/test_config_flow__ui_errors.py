@@ -65,7 +65,7 @@ async def test_process_samsung_device_step_error_flags():
     flow = ClimateIpConfigFlow()
     flow.flow_data = {CONF_IP_ADDRESS: "1.1.1.1"}
 
-    # Error por intervalo de polling inválido
+    # Error due to invalid polling interval
     with patch.object(flow, "_async_resolve_mac_and_set_unique_id", return_value=None):
         result = await flow._async_process_samsung_device_step(
             "samsung_2878", False, {CONF_POLL_INTERVAL: "invalid"}
@@ -73,7 +73,7 @@ async def test_process_samsung_device_step_error_flags():
         mac_key, _ = get_schema_marker(result["data_schema"], CONF_MAC)
         assert isinstance(mac_key, vol.Optional)
 
-    # Error por certificado no encontrado
+    # Error due to certificate not found
     flow.flow_data = {
         CONF_IP_ADDRESS: "1.1.1.1",
         CONF_POLL_INTERVAL: 300,
@@ -113,7 +113,7 @@ async def test_select_devices_parsing_and_fallbacks():
     assert options["1"] == "Indoor Unit 1"
     assert options["2"] == "Zone 2"
 
-    # 2. Mutantes de Fallback del unique_id (M59-M63)
+    # 2. unique_id Fallback Mutants (M59-M63)
     flow.reauth_entry = MagicMock()
     with (
         patch.object(flow, "async_set_unique_id") as mock_set_uid,

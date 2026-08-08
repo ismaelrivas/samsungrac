@@ -339,7 +339,7 @@ async def test_create_ssl_context_options(mock_create_ssl, client):
 
     ctx = await client._create_ssl_context()
 
-    # Verificamos que se acumularon los bits (OR) y no se sobrescribieron (=)
+    # Verify bits were accumulated (OR) and not overwritten (=)
     expected_options = getattr(ssl, "OP_NO_TICKET", 0) | getattr(
         ssl, "OP_NO_COMPRESSION", 0
     )

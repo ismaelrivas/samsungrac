@@ -96,7 +96,7 @@ async def test_00_read_full_response_decode_errors_block(connection):
     connection._reader = MagicMock()
     connection._reader.at_eof.return_value = False
 
-    # Forzamos una excepción (TimeoutError)
+    # Force exception (TimeoutError)
     connection._reader.read = AsyncMock(side_effect=TimeoutError())
     with patch.object(connection, "_close_connection", new_callable=AsyncMock):
         # We need buffer to be populated before TimeoutError?
@@ -110,8 +110,8 @@ async def test_00_read_full_response_decode_timeout_block(connection):
     connection._reader = MagicMock()
     connection._reader.at_eof.return_value = False
 
-    # El primer read devuelve bytes (buffer += chunk).
-    # El segundo read lanza TimeoutError, rompiendo el bucle.
+    # First read returns bytes (buffer += chunk).
+    # Second read raises TimeoutError, breaking loop.
     connection._reader.read = AsyncMock(side_effect=[b"partial_data", TimeoutError()])
 
     with patch.object(connection, "_close_connection", new_callable=AsyncMock):
@@ -125,13 +125,13 @@ async def test_00_async_execute_fast_fail_backoff(connection):
     """Verify mutant kill 'if self._is_ready.is_set()' en async_execute ANTES de que cuelgue tests de integración."""
     from custom_components.climate_ip.samsung_2878 import CannotConnect
 
-    # Prevenir que start_listening() inicie tareas
+    # Prevent start_listening() from starting tasks
     connection.start_listening = MagicMock()
 
     connection._reconnect_retries = 1
     connection._is_ready.clear()
 
-    # Mocking wait() to return instantly si el check falla
+    # Mocking wait() to return instantly if check fails
     connection._is_ready.wait = AsyncMock()
 
     with pytest.raises(CannotConnect):
@@ -214,10 +214,10 @@ async def test_async_execute_ready_but_with_past_retries(connection):
     # 1. Configure state: CONNECTION IS READY.
     connection._is_ready.set()
 
-    # 2. Configuramos el estado: Hubo errores en el pasado (retries > 0).
+    # 2. Configure state: Past errors occurred (retries > 0).
     connection._reconnect_retries = 3
 
-    # 3. Mocks para evitar la red real
+    # 3. Mocks to avoid real network
     async def mock_put(item):
         cmd, future = item
         if not future.done():
@@ -226,7 +226,7 @@ async def test_async_execute_ready_but_with_past_retries(connection):
     connection._cmd_queue = MagicMock()
     connection._cmd_queue.put = AsyncMock(side_effect=mock_put)
 
-    # Como el comando debe ejecutarse (no caer en el fast-fail), evitamos que se quede colgado en await future
+    # Since command must execute (not hit fast-fail), prevent hanging on await future
     mock_timeout_ctx = MagicMock()
     mock_timeout_ctx.__aenter__ = AsyncMock()
     mock_timeout_ctx.__aexit__ = AsyncMock(return_value=False)

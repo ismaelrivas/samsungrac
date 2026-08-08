@@ -288,6 +288,6 @@ def test_check_execute_condition_with_default_logger_and_template():
 
     conn = DummyConnection({}, logger=None)
     conn.condition_template = Template("1")
-    # Al ser logger=None, _log usará logging.getLogger(__name__) y llegará al .debug() sin explotar.
-    # Si mutmut cambia 'or' por 'and', _log será None y saltará un AttributeError al intentar hacer .debug()
+    # Since logger=None, _log will use logging.getLogger(__name__) and reach .debug() without blowing up.
+    # If mutmut changes 'or' to 'and', _log will be None and raise AttributeError on attempting .debug()
     assert conn.check_execute_condition({"state": "on"}) is True

@@ -193,7 +193,7 @@ async def test_async_execute_embedded_command_strict(
 
         await conn.async_execute("GET", "/main", None, {}, device_state={})
 
-        # Verificar que async_execute del embebido se llamó con SUS parámetros exactos
+        # Verify embedded async_execute was called with ITS exact parameters
         embed_conn.async_execute.assert_called_once_with(
             method="POST",
             url="/embedded_endpoint",

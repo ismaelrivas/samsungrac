@@ -362,10 +362,10 @@ def test_get_property_all_values(mock_yaml_controller) -> None:
         "bad_op": mock_op_no_values,
     }
 
-    # Escenario 1: El objeto existe y tiene all_values
+    # Scenario 1: Object exists and has all_values
     assert mock_yaml_controller.get_property_all_values("good_op") == ["val1", "val2"]
 
-    # Escenario 2: El objeto existe pero no tiene all_values
+    # Scenario 2: Object exists but does not have all_values
     assert mock_yaml_controller.get_property_all_values("bad_op") is None
 
     # Escenario 3: El objeto ni siquiera existe
@@ -440,17 +440,17 @@ def test_yaml_controller_setters_strict_assignment(mock_yaml_controller) -> None
 
 def test_yaml_controller_available_property(mock_yaml_controller) -> None:
     """Aniquila los 8 mutants in available property across all 3 branches."""
-    # Escenario 1: connection es None -> Fallback a True
+    # Scenario 1: connection is None -> Fallback to True
     mock_yaml_controller.loader.connection = None
     assert mock_yaml_controller.available is True
 
-    # Escenario 2: connection presente pero devuelve is_available=False
+    # Scenario 2: connection present but returns is_available=False
     conn_mock = MagicMock()
     conn_mock.get_diagnostics.return_value = {"is_available": False}
     mock_yaml_controller.loader.connection = conn_mock
     assert mock_yaml_controller.available is False
 
-    # Escenario 3: connection presente pero su diagnostic dict no tiene la llave (Fallback True)
+    # Scenario 3: connection present but its diagnostic dict lacks the key (Fallback True)
     conn_mock.get_diagnostics.return_value = {"other_key": "data"}
     assert mock_yaml_controller.available is True
 
@@ -458,11 +458,11 @@ def test_yaml_controller_available_property(mock_yaml_controller) -> None:
 def test_yaml_controller_sensors_property(mock_yaml_controller) -> None:
     """Aniquila el mutant in list comprehension for sensors property."""
     mock_sensor = MagicMock()
-    # Inject 1 sensor válido y definimos en la lista 1 válido y 1 "fantasma"
+    # Inject 1 valid sensor and define 1 valid and 1 "ghost" in list
     mock_yaml_controller.loader.sensors = {"valid_sensor": mock_sensor}
     mock_yaml_controller.loader.sensors_list = ["valid_sensor", "ghost_sensor"]
 
-    # If mutmut cambia 'in' por 'not in', la lista resultante estará vacía o romperá
+    # If mutmut changes 'in' to 'not in', resulting list will be empty or break
     res = mock_yaml_controller.sensors
     assert (
         len(res) == 1
@@ -662,18 +662,18 @@ def test_yaml_controller_connection_diagnostics(mock_yaml_controller) -> None:
 
 def test_yaml_controller_device_state(mock_yaml_controller) -> None:
     """Kills mutants en device_state comprobando la jerarquía poller -> loader -> dict vacío."""
-    # 1. Poller tiene _last_device_state -> Devuelve estado de poller
+    # 1. Poller has _last_device_state -> Returns poller state
     mock_yaml_controller.poller._last_device_state = {"poller_key": "val1"}
     assert mock_yaml_controller.device_state == {"poller_key": "val1"}
 
-    # 2. Poller _last_device_state es None, loader tiene state_getter -> Devuelve loader value
+    # 2. Poller _last_device_state is None, loader has state_getter -> Returns loader value
     mock_yaml_controller.poller._last_device_state = None
     mock_state_getter = MagicMock()
     mock_state_getter.value = {"loader_key": "val2"}
     mock_yaml_controller.loader.state_getter = mock_state_getter
     assert mock_yaml_controller.device_state == {"loader_key": "val2"}
 
-    # 3. Ninguno tiene datos -> Devuelve dict vacío
+    # 3. Neither has data -> Returns empty dict
     mock_yaml_controller.loader.state_getter = None
     assert mock_yaml_controller.device_state == {}
 

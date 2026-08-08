@@ -288,17 +288,17 @@ def event_loop():
     # --- FASE DE TEARDOWN ULTRA-AGRESIVA ---
     pending = asyncio.all_tasks(loop)
     if pending:
-        # 1. Enviar señal de cancelación a todas las tareas
+        # 1. Send cancellation signal to all tasks
         for task in pending:
             task.cancel()
 
-        # 2. Dar MÁXIMO 0.5s para que mueran. NO usar gather sin timeout.
+        # 2. Allow MAXIMUM 0.5s for them to die. Do NOT use gather without timeout.
         try:
             loop.run_until_complete(asyncio.wait(pending, timeout=0.5))
         except Exception:
             pass
 
-    # 3. Forzar cierre sin importar el estado de las tareas restantes
+    # 3. Force shutdown regardless of remaining tasks status
     loop.close()
     asyncio.set_event_loop(None)
 
@@ -420,7 +420,7 @@ def block_unmocked_network_io(monkeypatch):
     async def immediate_network_fail(*args, **kwargs):
         raise OSError("FAIL-FAST: Unmocked network connection attempt intercepted.")
 
-    # 1. Bloquear apertura de sockets TCP en asyncio
+    # 1. Block opening TCP sockets in asyncio
     monkeypatch.setattr("asyncio.open_connection", immediate_network_fail)
 
     # 2. Bloquear resolución ARP/MAC no mockeada
@@ -429,7 +429,7 @@ def block_unmocked_network_io(monkeypatch):
         AsyncMock(return_value=None),
     )
 
-    # 3. Fail-fast para YamlController no mockeados en discovery/test_connection
+    # 3. Fail-fast for unmocked YamlController in discovery/test_connection
     async def immediate_controller_init_fail(self):
         return False
 
@@ -438,7 +438,7 @@ def block_unmocked_network_io(monkeypatch):
         immediate_controller_init_fail,
     )
 
-    # 4. Fail-fast para aiohttp HTTP requests no mockeados
+    # 4. Fail-fast for unmocked aiohttp HTTP requests
     async def immediate_aiohttp_fail(*args, **kwargs):
         raise OSError("FAIL-FAST: Unmocked aiohttp HTTP request intercepted.")
 
@@ -459,7 +459,7 @@ def block_unmocked_network_io(monkeypatch):
         lambda hass: mock_aiohttp_session,
     )
 
-    # 5. Fail-fast para requests HTTP no mockeados
+    # 5. Fail-fast for unmocked HTTP requests
     def immediate_requests_fail(*args, **kwargs):
         raise OSError("FAIL-FAST: Unmocked requests HTTP request intercepted.")
 

@@ -232,20 +232,20 @@ async def test_migration_runs_for_v1(hass: HomeAssistant) -> None:
     with patch.object(hass.config_entries, "async_update_entry") as mock_update:
         result = await async_migrate_entry(hass, mock_entry)
 
-        # Aserciones letales para IDs 10 y 11
+        # Lethal assertions for IDs 10 and 11
         assert result is True, "La migración debió retornar True"
 
-        # FIX: Puesto que async_update_entry está mockeado, la propiedad mock_entry.version no
-        # se actualiza automáticamente. Debemos validar con qué argumentos fue llamado el mock.
+        # FIX: Since async_update_entry is mocked, mock_entry.version property
+        # does not auto-update. Must validate arguments mock was called with.
         mock_update.assert_called_once_with(mock_entry, version=2)
 
 
 async def test_migration_ignored_for_current_version(hass: HomeAssistant) -> None:
     """Asegura que la migración v1 no se ejecute si la versión ya es la correcta."""
 
-    # Entrada ya en v2. Usamos datos INVÁLIDOS para v1.
-    # If mutant cambia 'if entry.version == 1:' a '!= 1' o '== 2',
-    # entrará al bloque v1, fallará el validador (falta ip_address) y devolverá False.
+    # Entry already in v2. Use INVALID data for v1.
+    # If mutant changes 'if entry.version == 1:' to '!= 1' or '== 2',
+    # will enter v1 block, fail validator (missing ip_address), and return False.
     mock_entry = MagicMock()
     mock_entry.version = 2
     mock_entry.data = {}

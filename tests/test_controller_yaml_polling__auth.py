@@ -65,17 +65,17 @@ async def test_async_update_state_auth_refresh_flow():
     mock_controller.token = "OLD_TOKEN"
     mock_controller.debug = False
 
-    # Configuración de Side Effects: Falla por Auth la primera vez, tiene éxito la segunda
+    # Side Effects Setup: Fails Auth first time, succeeds second time
     mock_controller.loader.state_getter.async_update_state.side_effect = [
         AuthError("401 Unauthorized"),
         {"status": "ok"},
     ]
 
-    # El método final retorna el '.value' del state_getter
+    # Final method returns '.value' from state_getter
     mock_controller.loader.state_getter.value = {"status": "ok"}
     poller.async_update_properties_from_state = AsyncMock()
 
-    # Interceptamos la obtención del nuevo token y el despachador
+    # Intercept new token fetching and dispatcher
     with patch.object(
         poller, "_refresh_smartthings_token", return_value="NEW_TOKEN_999"
     ):
@@ -90,25 +90,25 @@ async def test_async_update_state_auth_refresh_flow():
 
                 result = await poller.async_update_state()
 
-                # 1. We assert que el controlador recibió la nueva credencial
+                # 1. We assert controller received new credential
                 assert mock_controller.token == "NEW_TOKEN_999"
 
-                # 2. We assert que se emitió la orden de actualizar las conexiones hijas
+                # 2. We assert order was issued to update child connections
                 mock_update_dispatch.assert_called_once_with("NEW_TOKEN_999")
 
-                # 3. We assert que el callback del usuario se llamó (Kills mutant and -> or)
+                # 3. We assert user callback was called (Kills mutant and -> or)
                 mock_controller.on_token_refreshed.assert_called_once_with("NEW_TOKEN_999")
 
-                # 4. We assert que se borró el repair issue y el contador de errores se reseteó a 0 estrictamente
+                # 4. We assert repair issue was cleared and error counter reset strictly to 0
                 mock_delete_issue.assert_called_once()
                 assert poller._consecutive_connection_errors == 0
 
-            # 5. We assert que state_getter se llamó con los argumentos exactos (Mata debug = False -> True)
+            # 5. We assert state_getter was called with exact arguments (Kills debug = False -> True)
             mock_controller.loader.state_getter.async_update_state.assert_called_with(
                 None, False
             )
 
-            # 6. We assert que la ejecución retornó el valor exitoso tras el retry
+            # 6. We assert execution returned successful value after retry
             assert result == {"status": "ok"}
 
     # Validate on_token_refreshed is not called if None (AttributeError mutant)
@@ -137,18 +137,18 @@ async def test_refresh_smartthings_token_success(mock_get_impl, mock_oauth_sessi
     mock_controller.hass = MagicMock()
     mock_controller.log_prefix = "[AuthTest]"
 
-    # 1. Mock de las config_entries
+    # 1. Config_entries mock
     mock_entry = MagicMock()
     mock_controller.hass.config_entries.async_entries.return_value = [mock_entry]
 
-    # 2. Mock del Session y token
+    # 2. Session and token mock
     mock_session_instance = AsyncMock()
     mock_session_instance.token = {"access_token": "nuevo_token_refrescado"}
     mock_oauth_session.return_value = mock_session_instance
 
     poller = YamlStatePoller(mock_controller)
 
-    # Ejecutamos el método
+    # Execute method
     result = await poller._refresh_smartthings_token()
 
     # Aserciones estrictas
@@ -173,7 +173,7 @@ async def test_refresh_smartthings_token_sniper_failures(
 ):
     """Sniper: Test token refresh failure paths strictly checking loggers and missing attributes."""
 
-    # Dummy estricto para evitar MagicMocks donde testeamos hasattr/getattr
+    # Strict dummy to avoid MagicMocks where testing hasattr/getattr
     class DummyController:
         def __init__(self):
             self.debug = False
@@ -329,7 +329,7 @@ def test_update_all_connections_token_deduplication():
 
     # Hyper-strict assertion: must only be called once despite 2 properties (kills 'or' flip)
     conn_mock.update_auth_token.assert_called_once_with("new_token")
-    # Asegura que el fallback a None no se ha corrompido
+    # Ensure fallback to None is not corrupted
     prop1.get_connection.assert_called_once_with(None)
 
 
@@ -346,7 +346,7 @@ async def test_auth_refresh_token_getattr_missing():
     poller.controller.config = {"device_type": "Other"}
     poller.controller.loader.is_fully_initialized = True
 
-    # Mock de actualización de estado y la variable .value requerida al final
+    # State update mock and required .value variable at end
     poller.controller.loader.state_getter.async_update_state = AsyncMock(
         side_effect=[AuthError("401"), {"state": "ok"}]
     )
@@ -365,5 +365,5 @@ async def test_auth_refresh_token_getattr_missing():
     ):
         await poller.async_update_state()
 
-    # Aserción: verificamos que el flujo se completó y despachó el nuevo token
+    # Assertion: verify flow completed and dispatched new token
     poller._update_all_connections_token.assert_called_once_with("NewToken")

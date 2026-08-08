@@ -225,7 +225,7 @@ def test_register_controller_kills_mutants() -> None:
     class FakeController(DummyController):
         pass
 
-    # Parcheamos la lista con una nueva lista vacía aislada
+    # Patch list with isolated new empty list
     with patch(
         "custom_components.climate_ip.controller.CLIMATE_CONTROLLERS", []
     ) as mock_list:

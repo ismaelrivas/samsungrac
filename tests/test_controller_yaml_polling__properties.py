@@ -143,7 +143,7 @@ async def test_update_properties_strict_subdevice_routing_and_logs():
         "value": "missed_root",
     }
 
-    # Atributo 'id' añadido para cumplir con el Tipado Estricto de L975/L986
+    # Added 'id' attribute to satisfy Strict Typing of L975/L986
     prop = NakedObj(id="test_prop", value="old")
     if hasattr(prop, "name"):
         delattr(prop, "name")
@@ -1099,10 +1099,10 @@ async def test_async_update_properties_from_state_attribute_crashes():
     poller = YamlStatePoller(MagicMock())
     poller.controller.loader.is_fully_initialized = True
 
-    # Destrucción del caché en el loader (Forzando la caída silenciosa del getattr obsoleto)
+    # Loader cache destruction (Forcing silent failure of deprecated getattr)
     delattr(poller.controller.loader, "_parsed_yaml_cache")
 
-    # Como hay un bloque try/except, atrapamos que no escale, pero loguea
+    # Due to try/except block, catch prevents escalation but logs
     with patch(
         "custom_components.climate_ip.controller_yaml_polling._LOGGER.exception"
     ) as mock_exc:

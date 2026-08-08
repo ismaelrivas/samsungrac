@@ -191,12 +191,12 @@ async def test_async_update_state_device_discovery():
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)
 
-    # Configuramos para forzar el bloque de descubrimiento
+    # Configure to force discovery block
     mock_controller.loader.is_fully_initialized = False
     mock_controller.config.get.return_value = DEVICE_TYPE_MIM_H03
     mock_controller.device_id = "0"  # "0" fuerza la actualización
 
-    # Simulamos la caché del loader
+    # Simulate loader cache
     mock_controller.loader._parsed_yaml_cache = {
         "0": {  # device_id en config es "0", así que la caché debe usar "0"
             "device": {"identifiers": {"path_to_devices": ["Devices"], "id": ["id"]}}
@@ -211,7 +211,7 @@ async def test_async_update_state_device_discovery():
         ]
     }
 
-    # Mock la red y las propiedades
+    # Mock network and properties
     mock_controller.loader.state_getter.async_update_state = AsyncMock(
         return_value=fake_full_state
     )
@@ -220,7 +220,7 @@ async def test_async_update_state_device_discovery():
 
     await poller.async_update_state()
 
-    # Strictly assert que saltó el ID "0" y capturó el "12345"
+    # Strictly assert ID "0" skipped and "12345" captured
     assert mock_controller.device_id == "12345"
     mock_controller.loader.async_finish_initialization.assert_called_once()
 
@@ -242,7 +242,7 @@ def test_device_key_from_template_regex():
         def __init__(self, text):
             self.template = text
 
-    # Prueba 1: Sintaxis de corchetes con comillas simples
+    # Test 1: Bracket syntax with single quotes
     tmpl_bracket = FakeTemplate("{{ device_state['Operation'] }}")
     assert poller._get_device_key_from_template(tmpl_bracket) == "Operation"
 
@@ -250,14 +250,14 @@ def test_device_key_from_template_regex():
     tmpl_dot = FakeTemplate("{{ device_state.power_level }}")
     assert poller._get_device_key_from_template(tmpl_dot) == "power_level"
 
-    # Prueba 3: Objeto vacío o patrón sin coincidencia
+    # Test 3: Empty object or non-matching pattern
     assert poller._get_device_key_from_template(None) is None
     assert (
         poller._get_device_key_from_template(FakeTemplate("{{ otra_cosa['val'] }}"))
         is None
     )
 
-    # Sniper tests para eliminar mutantes maxsplit=1 y 'and' -> 'or' en _get_device_key_from_template
+    # Sniper tests to eliminate maxsplit=1 and 'and' -> 'or' mutants in _get_device_key_from_template
     assert (
         poller._get_device_key_from_template(
             FakeTemplate("{{ device_state.first_device_state.second }}")
@@ -520,13 +520,13 @@ async def test_async_update_state_sniper_discovery():
     poller.async_update_properties_from_state = AsyncMock()
 
     # =========================================================================
-    # FASE 1: Romper la Cadena de Diccionarios (Exterminio de None Fallbacks)
+    # PHASE 1: Break Dictionary Chain (Extermination of None Fallbacks)
     # =========================================================================
 
     with patch(
         "custom_components.climate_ip.controller_yaml_polling._LOGGER.exception"
     ) as mock_log_exc:
-        # Test 1.0: Sin _parsed_yaml_cache (Ahora EXPLOTA controladamente en el try/except de producción)
+        # Test 1.0: Missing _parsed_yaml_cache (Now EXPLODES in controlled fashion in production try/except)
         if hasattr(mock_controller.loader, "_parsed_yaml_cache"):
             delattr(mock_controller.loader, "_parsed_yaml_cache")
         mock_controller.loader.state_getter.async_update_state.return_value = {
@@ -536,7 +536,7 @@ async def test_async_update_state_sniper_discovery():
 
         await poller.async_update_state()
 
-        # Restauramos la caché para que los siguientes pasen
+        # Restore cache so subsequent tests pass
         mock_controller.loader._parsed_yaml_cache = {}
 
         # Test 1.1: Caché vacía
@@ -545,7 +545,7 @@ async def test_async_update_state_sniper_discovery():
         mock_controller.loader.async_finish_initialization.assert_called_once()
         assert getattr(mock_controller, "device_id", "") == ""
 
-        # Test 1.2: Caché con clave "XXXX" pero sin 'device'
+        # Test 1.2: Cache with "XXXX" key but without 'device'
         mock_controller.loader.async_finish_initialization.reset_mock()
         mock_controller.loader._parsed_yaml_cache = {"XXXX": {}}
         await poller.async_update_state()
@@ -553,7 +553,7 @@ async def test_async_update_state_sniper_discovery():
         assert getattr(mock_controller, "device_id", "") == ""
         mock_log_exc.assert_not_called()
 
-        # Test 1.3: Caché con 'device' pero sin 'identifiers'
+        # Test 1.3: Cache with 'device' but without 'identifiers'
         mock_controller.loader.async_finish_initialization.reset_mock()
         mock_controller.loader._parsed_yaml_cache = {"XXXX": {"device": {}}}
         await poller.async_update_state()
@@ -561,7 +561,7 @@ async def test_async_update_state_sniper_discovery():
         assert getattr(mock_controller, "device_id", "") == ""
         mock_log_exc.assert_not_called()
 
-        # Test 1.4: Inject un Mock explosivo para asegurar la Cobertura del Except
+        # Test 1.4: Inject explosive Mock to ensure Except Coverage
         mock_controller.loader.async_finish_initialization.reset_mock()
         mock_cache = AsyncMock()
         mock_cache.get.side_effect = Exception("Fake Error")
@@ -611,12 +611,12 @@ async def test_async_update_state_sniper_discovery():
     await poller.async_update_state()
 
     # =========================================================================
-    # FASE 4: La Prueba del Vacío (The Void Tests)
+    # PHASE 4: The Void Tests
     # =========================================================================
 
     if hasattr(mock_controller, "device_id"):
         delattr(mock_controller, "device_id")
-    # Restauramos cache para que no crashee aquí
+    # Restore cache to avoid crash here
     mock_controller.loader._parsed_yaml_cache = {}
 
     await poller.async_update_state()
@@ -693,7 +693,7 @@ async def test_getattr_defaults_destructively():
     poller = YamlStatePoller(MagicMock())
     poller.controller.loader.state_getter = MagicMock(value={})
 
-    # Destruir state_getter para forzar salidas de error (Fail-Fast puro)
+    # Destroy state_getter to force error exits (pure Fail-Fast)
     delattr(poller.controller.loader, "state_getter")
 
 
@@ -866,7 +866,7 @@ async def test_async_update_state_cache_mutants():
     poller._build_device_state_from_hass = AsyncMock(return_value=expected_state)
     poller.async_update_properties_from_state = AsyncMock()
 
-    # Dotación rigurosa de 'value' para evitar explosión de línea final
+    # Rigorous 'value' endowment to prevent final line explosion
     loader.state_getter = NakedObj(
         value={"raw": "data"}, async_update_state=AsyncMock(return_value=expected_state)
     )
@@ -889,7 +889,7 @@ def test_calculate_structured_state_getattr_id():
     poller.controller.loader.properties = {}
     poller.controller.loader.sensors = {}
 
-    # El AttributeError estalla, el bucle lo traga y devuelve el estado vacío
+    # AttributeError bursts, loop swallows it and returns empty state
     res = poller._calculate_structured_state({"raw": "data"})
     assert type(res).__name__ == "ClimateIPDeviceState"
 
