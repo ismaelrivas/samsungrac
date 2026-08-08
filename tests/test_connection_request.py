@@ -42,9 +42,10 @@ def mock_response():
 
 
 def test_initialization(connection_config, mock_logger):
-    """Test connection initialization."""
+    """Test connection initialization — also asserts the deprecation notice is emitted."""
     with patch("os.path.exists", return_value=True):
-        conn = ConnectionRequest(connection_config, mock_logger)
+        with pytest.warns(DeprecationWarning, match="'request' connection method is deprecated"):
+            conn = ConnectionRequest(connection_config, mock_logger)
         assert conn.is_async_native is False
         assert conn.is_push_supported is False
         assert conn._session is not None
@@ -59,7 +60,8 @@ def test_execute_success(connection_config, mock_logger, mock_response):
             mock_session.__enter__.return_value = mock_session
             mock_session.request.return_value = mock_response
 
-            conn = ConnectionRequest(connection_config, mock_logger)
+            with pytest.warns(DeprecationWarning, match="'request' connection method is deprecated"):
+                conn = ConnectionRequest(connection_config, mock_logger)
 
             mock_template = MagicMock()
             mock_template.render.return_value = '{"method": "GET", "url": "/test"}'
@@ -76,7 +78,8 @@ def test_execute_auth_error(connection_config, mock_logger):
             mock_session = mock_session_cls.return_value
             mock_session.__enter__.return_value = mock_session
 
-            conn = ConnectionRequest(connection_config, mock_logger)
+            with pytest.warns(DeprecationWarning, match="'request' connection method is deprecated"):
+                conn = ConnectionRequest(connection_config, mock_logger)
 
             mock_response = MagicMock()
             mock_response.status_code = 401
@@ -100,7 +103,8 @@ def test_execute_connection_error(connection_config, mock_logger):
             mock_session = mock_session_cls.return_value
             mock_session.__enter__.return_value = mock_session
 
-            conn = ConnectionRequest(connection_config, mock_logger)
+            with pytest.warns(DeprecationWarning, match="'request' connection method is deprecated"):
+                conn = ConnectionRequest(connection_config, mock_logger)
 
             mock_session.request.side_effect = requests.exceptions.ConnectionError(
                 "Connection failed"
@@ -119,7 +123,12 @@ def test_execute_connection_error(connection_config, mock_logger):
 
 
 def _make_request_connection(cls):
-    """Create an initialized request-based connection with mocked internals."""
+    """Create an initialized request-based connection with mocked internals.
+
+    Wraps instantiation in pytest.warns(DeprecationWarning) so that Paranoia
+    Mode (-W error::DeprecationWarning) treats the expected deprecation notice
+    as a passing assertion rather than a test failure.
+    """
     from unittest.mock import MagicMock, patch
 
     from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
@@ -132,7 +141,8 @@ def _make_request_connection(cls):
         CONF_TOKEN: "mock_token",
     }
     with patch("os.path.exists", return_value=True):
-        conn = cls(config, MagicMock(), MagicMock())
+        with pytest.warns(DeprecationWarning):
+            conn = cls(config, MagicMock(), MagicMock())
     return conn
 
 

@@ -52,7 +52,15 @@ class SamsungHTTPAdapter(HTTPAdapter):
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
-        ssl_context.minimum_version = ssl.TLSVersion.TLSv1
+        # TLSv1 is deprecated in Python 3.13 but strictly required by legacy Samsung
+        # AC devices on port 2878. Suppress surgically; protocol cannot be upgraded.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="ssl.TLSVersion.TLSv1 is deprecated",
+                category=DeprecationWarning,
+            )
+            ssl_context.minimum_version = ssl.TLSVersion.TLSv1
         ssl_context.set_ciphers("ALL:@SECLEVEL=0")
         kwargs["ssl_context"] = ssl_context
         return super().init_poolmanager(*args, **kwargs)

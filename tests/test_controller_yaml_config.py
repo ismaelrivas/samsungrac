@@ -878,7 +878,8 @@ async def test_async_initialize_frente_o():
                 "custom_components.climate_ip.controller_yaml_config.create_status_getter",
                 return_value=MagicMock(),
             ):
-                await loader.async_initialize()
+                with pytest.warns(DeprecationWarning, match="'request' connection method is deprecated"):
+                    await loader.async_initialize()
                 assert loader.connection is not None
 
 

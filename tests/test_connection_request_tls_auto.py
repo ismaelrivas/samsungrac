@@ -28,9 +28,10 @@ def connection_config():
 
 
 def test_initialization(connection_config, mock_logger):
-    """Test connection initialization."""
+    """Test connection initialization — also asserts the deprecation notice is emitted."""
     with patch("os.path.exists", return_value=True):
-        conn = ConnectionRequestTlsAuto(connection_config, mock_logger)
+        with pytest.warns(DeprecationWarning, match="'request_tls_auto' connection method is deprecated"):
+            conn = ConnectionRequestTlsAuto(connection_config, mock_logger)
         assert conn._params[CONF_CERT].endswith("cert.pem")
 
 
@@ -50,7 +51,8 @@ def test_samsung_http_adapter_init():
 def test_execute_success(connection_config, mock_logger):
     """Test successful request execution."""
     with patch("os.path.exists", return_value=True):
-        conn = ConnectionRequestTlsAuto(connection_config, mock_logger)
+        with pytest.warns(DeprecationWarning, match="'request_tls_auto' connection method is deprecated"):
+            conn = ConnectionRequestTlsAuto(connection_config, mock_logger)
 
         with patch("requests.sessions.Session") as mock_session_cls:
             mock_session = mock_session_cls.return_value
@@ -75,9 +77,10 @@ def test_execute_success(connection_config, mock_logger):
 def test_execute_insecure_ssl(connection_config, mock_logger):
     """Test request execution with insecure_ssl=True."""
     with patch("os.path.exists", return_value=True):
-        conn = ConnectionRequestTlsAuto(
-            connection_config, mock_logger, insecure_ssl=True
-        )
+        with pytest.warns(DeprecationWarning, match="'request_tls_auto' connection method is deprecated"):
+            conn = ConnectionRequestTlsAuto(
+                connection_config, mock_logger, insecure_ssl=True
+            )
 
         with patch("requests.sessions.Session") as mock_session_cls:
             mock_session = mock_session_cls.return_value

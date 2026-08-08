@@ -20,6 +20,7 @@ import platform
 import re
 import ssl
 import threading
+import warnings
 import xml.etree.ElementTree as ET
 from io import BytesIO
 from pathlib import Path
@@ -409,7 +410,15 @@ def create_samsung_ssl_context(
         _LOGGER.debug("Could not set TLS max version: %s", e)  # pragma: no mutate
 
     try:
-        context.minimum_version = ssl.TLSVersion.TLSv1  # pragma: no mutate
+        # TLSv1 is deprecated in Python 3.13 but strictly required by legacy Samsung
+        # AC devices on port 2878. Suppress surgically; protocol cannot be upgraded.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="ssl.TLSVersion.TLSv1 is deprecated",
+                category=DeprecationWarning,
+            )
+            context.minimum_version = ssl.TLSVersion.TLSv1  # pragma: no mutate
     except (AttributeError, TypeError, ssl.SSLError, ValueError):
         pass
 

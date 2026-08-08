@@ -15,12 +15,18 @@ sys.path.append(os.getcwd())
 import platform
 import resource
 
-# --- HIDE WARNINGS ---
-# Hide DeprecationWarnings from our own legacy connection methods
-warnings.filterwarnings("ignore", category=DeprecationWarning)
-# Hide RuntimeWarnings from unawaited AsyncMocks during tests
+# --- SURGICAL WARNING SUPPRESSION (Paranoia Mode compatible) ---
+# TLSv1 is deprecated in Python 3.13 but required by legacy Samsung AC devices.
+# Suppress only this specific message; all other DeprecationWarnings remain errors.
+warnings.filterwarnings(
+    "ignore",
+    message="ssl.TLSVersion.TLSv1 is deprecated",
+    category=DeprecationWarning,
+)
+# RuntimeWarnings from unawaited AsyncMock coroutines are test infrastructure noise.
 warnings.filterwarnings("ignore", category=RuntimeWarning)
-# ---------------------
+# ---------------------------------------------------------------
+
 
 
 # @pytest.fixture(autouse=True)
