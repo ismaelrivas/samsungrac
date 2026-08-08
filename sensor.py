@@ -3,6 +3,8 @@ Platform that offers support for IP controlled climate device sensors.
 This file defines the Home Assistant sensor entities, adapted for DataUpdateCoordinator.
 """
 
+from __future__ import annotations
+
 import logging
 
 from homeassistant import const

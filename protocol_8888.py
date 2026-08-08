@@ -4,6 +4,8 @@ Pure Python library for Samsung AC (Port 8888).
 Supports Raw Sockets and SSL auto-negotiation (Legacy vs Modern).
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging

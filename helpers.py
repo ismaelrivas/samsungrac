@@ -11,6 +11,8 @@ Provides:
 - Native ICMP network reachability check (async_check_network_reachability).
 """
 
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import functools
@@ -302,7 +304,7 @@ def set_value_by_path(
 
 
 def resolve_cert_path(
-    cert_path: str | None, base_dir: str = "", hass: "HomeAssistant | None" = None
+    cert_path: str | None, base_dir: str = "", hass: HomeAssistant | None = None
 ) -> str | None:
     """Safely resolve certificate path relying on strict Object-Oriented contracts."""
     if not cert_path:

@@ -11,6 +11,8 @@ persistent HTTP/1.1 connections with Keep-Alive. It handles automatic
 recovery for protocol violations and adaptive timeout management.
 """
 
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import logging
@@ -336,7 +338,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         yield self._session
 
     @property
-    def embedded_command(self) -> "ConnectionRequestBase | None":
+    def embedded_command(self) -> ConnectionRequestBase | None:
         """Return the optional nested command."""
         return self._embedded_command
 
@@ -884,7 +886,7 @@ class ConnectionRequest(ConnectionRequestBase):  # pylint: disable=import-outsid
         """Return True if this connection type matches 'request'."""
         return type_str == CONNECTION_TYPE_REQUEST
 
-    def create_updated(self, yaml_node: dict[str, Any] | None) -> "ConnectionRequest":
+    def create_updated(self, yaml_node: dict[str, Any] | None) -> ConnectionRequest:
         c = ConnectionRequest(None, _LOGGER, session=self._session)
         c.load_from_yaml(yaml_node, self)
         c._controller = self._controller
@@ -978,7 +980,7 @@ class ConnectionRequestPrint(ConnectionRequestBase):  # pylint: disable=import-o
 
     def create_updated(
         self, yaml_node: dict[str, Any] | None
-    ) -> "ConnectionRequestPrint":
+    ) -> ConnectionRequestPrint:
         c = ConnectionRequestPrint(None, _LOGGER, session=self._session)
         c.load_from_yaml(yaml_node, self)
         return c

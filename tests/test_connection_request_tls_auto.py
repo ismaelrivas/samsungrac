@@ -2,6 +2,8 @@
 """Tests for ConnectionRequestTlsAuto."""
 
 # pylint: disable=import-outside-toplevel,protected-access,redefined-outer-name
+from __future__ import annotations
+
 import logging
 from unittest.mock import ANY, MagicMock, patch
 

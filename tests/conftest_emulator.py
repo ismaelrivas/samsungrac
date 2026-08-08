@@ -2,6 +2,8 @@
 """Emulator fixtures for Climate IP integration integration tests."""
 
 # pylint: disable=import-outside-toplevel
+from __future__ import annotations
+
 import json
 import logging
 import queue

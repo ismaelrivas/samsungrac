@@ -1,6 +1,8 @@
 # pylint: disable=broad-exception-caught,duplicate-code,import-outside-toplevel,line-too-long,no-else-return,too-few-public-methods,too-many-arguments,too-many-branches,too-many-instance-attributes,too-many-lines,too-many-locals,too-many-positional-arguments,too-many-statements
 """Support for Samsung AC devices using port 2878."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import os
@@ -376,7 +378,7 @@ class ConnectionSamsung2878(Connection):
 
     def create_updated(
         self, yaml_node: dict[str, Any] | None
-    ) -> "ConnectionSamsung2878":
+    ) -> ConnectionSamsung2878:
         self.load_from_yaml(yaml_node, self)
         return self
 

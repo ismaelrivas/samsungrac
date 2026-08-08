@@ -2,6 +2,8 @@
 """Test DataUpdateCoordinator and state polling behaviors."""
 # pylint: disable=redefined-outer-name,protected-access,import-outside-toplevel
 
+from __future__ import annotations
+
 import asyncio
 import time
 from unittest.mock import AsyncMock, MagicMock, patch

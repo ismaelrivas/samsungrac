@@ -1,5 +1,7 @@
 """Unit tests for Climate IP diagnostic binary_sensor platform."""
 
+from __future__ import annotations
+
 from unittest.mock import MagicMock, patch
 
 import pytest

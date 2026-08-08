@@ -1,5 +1,7 @@
 """Tests for OptionsFlowHandler in options_flow.py."""
 
+from __future__ import annotations
+
 import datetime
 
 import pytest

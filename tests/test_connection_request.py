@@ -2,6 +2,8 @@
 """Tests for ConnectionRequest."""
 
 # pylint: disable=import-outside-toplevel,protected-access,redefined-outer-name
+from __future__ import annotations
+
 import logging
 from unittest.mock import MagicMock, patch
 

@@ -1,5 +1,7 @@
 """Test config flow schemas to kill mutants."""
 
+from __future__ import annotations
+
 from unittest.mock import MagicMock
 
 import pytest

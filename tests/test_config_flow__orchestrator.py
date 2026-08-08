@@ -1,5 +1,7 @@
 """Tests for ClimateIpConfigFlow main orchestrator in config_flow.py."""
 
+from __future__ import annotations
+
 from unittest.mock import AsyncMock, patch
 
 import pytest

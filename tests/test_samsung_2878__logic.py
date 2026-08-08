@@ -2,6 +2,8 @@
 """Unit tests for samsung_2878.py logic."""
 # pylint: disable=protected-access,redefined-outer-name,import-outside-toplevel,line-too-long
 
+from __future__ import annotations
+
 import asyncio
 import inspect
 import os

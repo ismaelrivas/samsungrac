@@ -1,5 +1,7 @@
 """Base connection class and registry for climate_ip connections."""
 
+from __future__ import annotations
+
 import asyncio
 import dataclasses
 import logging
@@ -8,7 +10,7 @@ from typing import Any
 
 from homeassistant.helpers.template import Template
 
-CLIMATE_IP_CONNECTIONS: list[type["Connection"]] = []
+CLIMATE_IP_CONNECTIONS: list[type[Connection]] = []
 
 # Centralised per-host lock registry.
 # Key: (host, port) tuple resolved from config/params at runtime.
@@ -16,7 +18,7 @@ CLIMATE_IP_CONNECTIONS: list[type["Connection"]] = []
 _HOST_LOCKS: dict[tuple[str, str | int], asyncio.Lock] = {}
 
 
-def register_connection(conn: type["Connection"]) -> type["Connection"]:
+def register_connection(conn: type[Connection]) -> type[Connection]:
     """Decorate a function to register a connection type."""
     CLIMATE_IP_CONNECTIONS.append(conn)
     return conn
@@ -255,7 +257,7 @@ class Connection:
         """Execute connection and return JSON object as result or None if unsuccessful."""
         return None
 
-    def create_updated(self, yaml_node: dict[str, Any] | None) -> "Connection | None":
+    def create_updated(self, yaml_node: dict[str, Any] | None) -> Connection | None:
         """Create a copy of connection object updated from a YAML configuration node."""
         # pylint: disable=unused-argument
         return self

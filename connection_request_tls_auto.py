@@ -13,6 +13,8 @@ necessary for some devices that do not support Keep-Alive correctly or require
 frequent TLS renegotiation.
 """
 
+from __future__ import annotations
+
 import asyncio
 import copy
 import logging
@@ -224,7 +226,7 @@ class ConnectionRequestBase(Connection):
             )
 
     @property
-    def embedded_command(self) -> "ConnectionRequestBase | None":
+    def embedded_command(self) -> ConnectionRequestBase | None:
         """Return the embedded command if defined."""
         return self._embedded_command
 
@@ -274,7 +276,7 @@ class ConnectionRequestBase(Connection):
 
     def create_updated(
         self, yaml_node: dict[str, Any] | None
-    ) -> "ConnectionRequestBase":
+    ) -> ConnectionRequestBase:
         """
         FIX for Pylint E1128: Implement create_updated in base class.
         Creates a copy of this connection object updated from a YAML node.

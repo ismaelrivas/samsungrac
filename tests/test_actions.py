@@ -2,6 +2,8 @@
 """Test native Home Assistant actions from actions.yaml."""
 
 # pylint: disable=import-outside-toplevel
+from __future__ import annotations
+
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 

@@ -1,6 +1,8 @@
 # pylint: disable=f-string-without-interpolation,line-too-long,too-many-branches,too-many-instance-attributes,too-many-locals,too-many-statements,unused-variable
 """Helper to acquire a token from modern Samsung AC units (port 8888) using asyncio."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import re

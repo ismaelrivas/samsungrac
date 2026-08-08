@@ -1,5 +1,7 @@
 """Constants for the Climate IP integration."""
 
+from __future__ import annotations
+
 from homeassistant.components.climate import ClimateEntityFeature
 from homeassistant.components.climate.const import (
     ATTR_FAN_MODE,

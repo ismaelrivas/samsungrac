@@ -2,6 +2,8 @@
 """Tests for ConnectionAiohttp8888."""
 
 # pylint: disable=import-outside-toplevel,protected-access,redefined-outer-name
+from __future__ import annotations
+
 import logging
 import ssl
 from unittest.mock import AsyncMock, MagicMock, patch

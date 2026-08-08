@@ -1,5 +1,7 @@
 """DataUpdateCoordinator for the Samsung Climate integration."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import time
@@ -60,7 +62,7 @@ class PropertyDebouncer:
     """Debounces outgoing commands per property to shield hardware from request flooding."""
 
     def __init__(
-        self, coordinator: "SamsungClimateCoordinator", delay: float = 2.0
+        self, coordinator: SamsungClimateCoordinator, delay: float = 2.0
     ) -> None:
         """Initialize the property debouncer."""
         self.coordinator = coordinator

@@ -1,6 +1,8 @@
 # custom_components/climate_ip/config_flow_helpers.py
 """Connectivity, pairing, and validation helpers for Climate IP config flow."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import os

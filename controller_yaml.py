@@ -1,6 +1,8 @@
 # pylint: disable=import-outside-toplevel,protected-access,too-many-instance-attributes,too-many-public-methods,unused-import,wrong-import-position
 """YAML-based climate device controller for the climate_ip integration."""
 
+from __future__ import annotations
+
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -444,7 +446,7 @@ class YamlController(ClimateController):
         return {}
 
     @property
-    def climate_state(self) -> "ClimateIPDeviceState":
+    def climate_state(self) -> ClimateIPDeviceState:
         """Return the strictly typed state representation of the device."""
         from homeassistant.components.climate import HVACMode
 

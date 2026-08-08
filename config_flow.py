@@ -2,6 +2,8 @@
 # custom_components/climate_ip/config_flow.py
 """Config flow for the Climate IP integration."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 from typing import Any, Self

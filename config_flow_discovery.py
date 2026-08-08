@@ -1,6 +1,8 @@
 # custom_components/climate_ip/config_flow_discovery.py
 """Discovery routines and indoor unit selection for Climate IP config flow."""
 
+from __future__ import annotations
+
 import logging
 from typing import Any
 

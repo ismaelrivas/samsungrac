@@ -1,6 +1,8 @@
 # pylint: disable=too-many-branches,too-many-instance-attributes
 """Device property classes for the climate_ip integration."""
 
+from __future__ import annotations
+
 import ast
 import logging
 from typing import Any

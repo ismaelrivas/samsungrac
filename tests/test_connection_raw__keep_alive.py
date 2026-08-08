@@ -2,6 +2,8 @@
 """Tests for ConnectionRaw8888 keep-alive logic."""
 
 # pylint: disable=import-outside-toplevel,protected-access,redefined-outer-name
+from __future__ import annotations
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest

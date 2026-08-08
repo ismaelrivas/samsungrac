@@ -2,6 +2,8 @@
 """Smoke test for samsung_2878.py."""
 # pylint: disable=protected-access,redefined-outer-name,import-outside-toplevel,reimported,broad-exception-caught,unnecessary-pass,line-too-long
 
+from __future__ import annotations
+
 import pytest
 
 from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878

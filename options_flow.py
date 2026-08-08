@@ -1,6 +1,8 @@
 # custom_components/climate_ip/options_flow.py
 """Options flow handler for Climate IP."""
 
+from __future__ import annotations
+
 import datetime
 from typing import Any
 

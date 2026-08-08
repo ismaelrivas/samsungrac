@@ -1,5 +1,7 @@
 """Platform that offers diagnostic connectivity binary sensors for Climate IP devices."""
 
+from __future__ import annotations
+
 import logging
 
 from homeassistant.components.binary_sensor import (

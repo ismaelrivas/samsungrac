@@ -1,6 +1,8 @@
 # pylint: disable=no-else-raise,too-many-branches,too-many-locals,too-many-statements
 """Helper to acquire a token from older Samsung AC units in phases."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import re

@@ -1,5 +1,7 @@
 """Tests for ConfigFlowDiscoveryMixin in config_flow_discovery.py."""
 
+from __future__ import annotations
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

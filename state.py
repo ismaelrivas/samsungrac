@@ -1,5 +1,7 @@
 """Dataclass for representing the immutable state of a climate device."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 
 from homeassistant.components.climate import HVACMode

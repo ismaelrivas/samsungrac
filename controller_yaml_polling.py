@@ -1,6 +1,8 @@
 # pylint: disable=import-outside-toplevel,line-too-long,protected-access,too-many-branches,too-many-instance-attributes,too-many-lines,too-many-locals,too-many-nested-blocks,too-many-statements
 """State management and polling for YAML-configured climate controllers."""
 
+from __future__ import annotations
+
 import asyncio
 import copy
 import logging

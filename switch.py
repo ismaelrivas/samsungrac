@@ -3,6 +3,8 @@ Platform that offers support for IP controlled climate device switches.
 This file defines the Home Assistant switch entities.
 """
 
+from __future__ import annotations
+
 import logging
 from typing import Any
 

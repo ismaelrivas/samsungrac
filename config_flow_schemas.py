@@ -1,6 +1,8 @@
 # custom_components/climate_ip/config_flow_schemas.py
 """Schema definitions for Climate IP config flow."""
 
+from __future__ import annotations
+
 import datetime
 import logging
 from typing import Any

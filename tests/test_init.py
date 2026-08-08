@@ -2,6 +2,8 @@
 """Test the Climate IP setup and actions."""
 # pylint: disable=protected-access,import-outside-toplevel,reimported,redefined-outer-name
 
+from __future__ import annotations
+
 import asyncio
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch

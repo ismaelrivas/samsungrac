@@ -2,6 +2,8 @@
 """Tests for the tolerant_header_parsing context manager (H-12) and find_key_in_data."""
 # pylint: disable=broad-exception-caught,import-outside-toplevel
 
+from __future__ import annotations
+
 import asyncio
 import ssl
 import threading

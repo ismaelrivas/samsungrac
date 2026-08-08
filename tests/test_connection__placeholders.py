@@ -2,6 +2,8 @@
 """Tests for placeholder rendering routines."""
 
 # pylint: disable=import-outside-toplevel
+from __future__ import annotations
+
 import pytest
 
 from custom_components.climate_ip.helpers import (

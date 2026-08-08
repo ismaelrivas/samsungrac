@@ -1,6 +1,8 @@
 # pylint: disable=import-outside-toplevel,too-few-public-methods
 """Exceptions for the Climate IP integration."""
 
+from __future__ import annotations
+
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import DOMAIN

@@ -1,5 +1,7 @@
 """Raw socket connection engine for Samsung devices on port 8888."""
 
+from __future__ import annotations
+
 import logging
 import time
 from pathlib import Path
@@ -60,7 +62,7 @@ class ConnectionRaw8888(Connection):
         self._params.update(node.get("params", {}))
         return True
 
-    def create_updated(self, yaml_node: dict[str, Any] | None) -> "ConnectionRaw8888":
+    def create_updated(self, yaml_node: dict[str, Any] | None) -> ConnectionRaw8888:
         """Create a new connection instance with updated parameters from YAML."""
         new_conn = ConnectionRaw8888(
             config=self._config,  # pragma: no mutate
@@ -148,7 +150,7 @@ class ConnectionRaw8888(Connection):
             return str(Path(__file__).parent / str(cert_file))
         return str(cert_file)
 
-    def set_controller_ref(self, controller: "ClimateController") -> None:
+    def set_controller_ref(self, controller: ClimateController) -> None:
         """Set reference to the main controller and propagate downwards."""
         self._controller = controller
         if self._embedded_command:

@@ -1,5 +1,7 @@
 """Support for Samsung AC devices using climate_ip."""
 
+from __future__ import annotations
+
 import logging
 from typing import TYPE_CHECKING, Any, Final
 
@@ -68,7 +70,7 @@ _CORE_ATTRIBUTES: Final[set[str]] = {
 
 async def async_setup_entry(
     _hass: HomeAssistant,
-    entry: "ClimateIPConfigEntry",
+    entry: ClimateIPConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the climate entity from a config entry."""

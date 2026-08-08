@@ -1,5 +1,7 @@
 """Tests for base Connection class and registry in connection.py."""
 
+from __future__ import annotations
+
 import asyncio
 import inspect
 import logging

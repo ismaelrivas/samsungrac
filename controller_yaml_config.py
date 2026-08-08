@@ -1,6 +1,8 @@
 # pylint: disable=import-outside-toplevel,line-too-long,too-many-branches,too-many-instance-attributes,too-many-locals,too-many-return-statements,too-many-statements,unused-import
 """YAML configuration loader for climate_ip controllers."""
 
+from __future__ import annotations
+
 import logging
 from pathlib import Path
 from typing import Any

@@ -1,5 +1,7 @@
 """Test config flow isolated steps to kill mutants."""
 
+from __future__ import annotations
+
 import asyncio
 import ssl
 from unittest.mock import AsyncMock, MagicMock, patch

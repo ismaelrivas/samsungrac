@@ -1,12 +1,14 @@
 # pylint: disable=import-outside-toplevel,too-many-public-methods,useless-return
 """Base class for a climate device controller. Strict enforcement."""
 
+from __future__ import annotations
+
 import logging
 from abc import ABC, abstractmethod
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
 ATTR_POWER = "power"
-CLIMATE_CONTROLLERS: list[type["ClimateController"]] = []
+CLIMATE_CONTROLLERS: list[type[ClimateController]] = []
 
 _T = TypeVar("_T")
 
@@ -209,8 +211,8 @@ class ClimateController[T](ABC):
 
 
 def register_controller(
-    controller: type["ClimateController"],
-) -> type["ClimateController"]:
+    controller: type[ClimateController],
+) -> type[ClimateController]:
     """A decorator to register a controller class."""
     CLIMATE_CONTROLLERS.append(controller)
     return controller

@@ -4,6 +4,8 @@ Asynchronous connection engine for modern Samsung devices (port 8888) using aioh
 This engine implements HTTP Keep-Alive for low latency and correct mTLS.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import os
@@ -150,7 +152,7 @@ class ConnectionAiohttp8888(Connection):
             dev_id = getattr(self._controller, "device_id", None)
         return token, dev_id
 
-    def set_controller_ref(self, controller: "YamlController") -> None:
+    def set_controller_ref(self, controller: YamlController) -> None:
         """Allows the property to set a reference to the main controller."""
         debug_msg = "%s [set_controller_ref] Setting controller reference for connection object."
         _LOGGER.debug(debug_msg, self.log_prefix)
@@ -221,7 +223,7 @@ class ConnectionAiohttp8888(Connection):
         return type_str == CONNECTION_TYPE_AIOHTTP_8888
 
     def load_from_yaml(
-        self, node: dict[str, Any] | None, connection_base: "Connection"
+        self, node: dict[str, Any] | None, connection_base: Connection
     ) -> bool:
         """Load configuration from yaml node dictionary."""
         if node and CONF_KEEP_ALIVE in node:
@@ -230,7 +232,7 @@ class ConnectionAiohttp8888(Connection):
 
     def create_updated(
         self, yaml_node: dict[str, Any] | None
-    ) -> "ConnectionAiohttp8888":
+    ) -> ConnectionAiohttp8888:
         """
         Creates a new connection instance with updated parameters from YAML.
         """
