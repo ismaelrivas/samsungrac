@@ -102,7 +102,7 @@ def test_yaml_controller_coverage_boost() -> None:
     mock_poller = MagicMock()
     controller.poller = mock_poller
     controller.clear_state_cache()  # With poller
-    mock_poller._clear_state_cache.assert_called_once()
+    mock_poller.clear_state_cache.assert_called_once()
 
     # 3. Test climate_state (executes extraction, sanitization, and strict conversion)
     controller.get_property = MagicMock(return_value=None)
@@ -226,7 +226,7 @@ def test_yaml_controller_fallback_initialization() -> None:
     config_input = {
         "host": "10.0.0.1",  # Fallback for _ip_address
         CONF_MAC: "00:11:22",  # Fallback for _unique_id
-        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,  # Forces device_id fallback branch
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,  # Any device_type; fallback is now generic
         "debug": False,  # Explicitly False
     }
 
@@ -238,10 +238,10 @@ def test_yaml_controller_fallback_initialization() -> None:
 
     assert controller._ip_address == "10.0.0.1", "Fallback 'host' failed"
     assert controller._unique_id == "00:11:22", "Fallback CONF_MAC failed"
-    # As DEVICE_TYPE_SAMSUNG_2878 is present, device_id must take unique_id value
+    # device_id must fall back to unique_id when CONF_DEVICE_ID is absent
     assert (
         controller._device_id == "00:11:22"
-    ), "Samsung 2878 assignment for device_id failed"
+    ), "Generic device_id fallback to unique_id failed"
     assert controller._debug is False
 
 
@@ -662,12 +662,12 @@ def test_yaml_controller_connection_diagnostics(mock_yaml_controller) -> None:
 
 def test_yaml_controller_device_state(mock_yaml_controller) -> None:
     """Kills mutants en device_state comprobando la jerarquía poller -> loader -> dict vacío."""
-    # 1. Poller has _last_device_state -> Returns poller state
-    mock_yaml_controller.poller._last_device_state = {"poller_key": "val1"}
+    # 1. Poller has device_state -> Returns poller state
+    mock_yaml_controller.poller.device_state = {"poller_key": "val1"}
     assert mock_yaml_controller.device_state == {"poller_key": "val1"}
 
-    # 2. Poller _last_device_state is None, loader has state_getter -> Returns loader value
-    mock_yaml_controller.poller._last_device_state = None
+    # 2. Poller device_state is empty, loader has state_getter -> Returns loader value
+    mock_yaml_controller.poller.device_state = {}
     mock_state_getter = MagicMock()
     mock_state_getter.value = {"loader_key": "val2"}
     mock_yaml_controller.loader.state_getter = mock_state_getter
@@ -705,24 +705,19 @@ async def test_yaml_controller_async_delegates_and_noop(mock_yaml_controller) ->
     assert res is None
 
 
-def test_platform_schema_validation() -> None:
-    """Kills mutants en la definición de PLATFORM_SCHEMA."""
-    from homeassistant.const import CONF_PLATFORM
+def test_platform_schema_removed() -> None:
+    """Verify that PLATFORM_SCHEMA is no longer exported by controller_yaml.
 
-    from custom_components.climate_ip.controller_yaml import PLATFORM_SCHEMA
+    Modern HA Core 2026.x+ uses config_flow.py exclusively.
+    The schema block was removed; this test guards against accidental re-introduction.
+    """
+    import importlib
 
-    valid_config = {
-        CONF_PLATFORM: "climate_ip",
-        CONF_CONFIG_FILE: "device.yaml",
-        CONF_IP_ADDRESS: "192.168.1.10",
-        CONF_TOKEN: "abc",
-        CONF_DEVICE_ID: "dev1",
-    }
-    validated = PLATFORM_SCHEMA(valid_config)
-    assert validated[CONF_CONFIG_FILE] == "device.yaml"
-    assert validated[CONF_IP_ADDRESS] == "192.168.1.10"
-    assert validated[CONF_TOKEN] == "abc"
-    assert validated[CONF_DEVICE_ID] == "dev1"
+    module = importlib.import_module("custom_components.climate_ip.controller_yaml")
+    assert not hasattr(module, "PLATFORM_SCHEMA"), (
+        "PLATFORM_SCHEMA must not be defined in controller_yaml — "
+        "use config_flow.py instead."
+    )
 
 
 def test_yaml_controller_untested_properties_and_cache() -> None:
@@ -748,7 +743,7 @@ def test_yaml_controller_untested_properties_and_cache() -> None:
 
     # 3. clear_state_cache
     controller.clear_state_cache()  # With poller
-    controller.poller._clear_state_cache.assert_called_once()
+    controller.poller.clear_state_cache.assert_called_once()
 
     controller.poller = None
     controller.clear_state_cache()  # Without poller, should safely do nothing

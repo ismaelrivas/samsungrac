@@ -14,9 +14,6 @@ if TYPE_CHECKING:
 import logging
 
 import aiohttp
-import homeassistant.helpers.config_validation as cv
-
-import voluptuous as vol
 from homeassistant.components.climate import (
     ATTR_CURRENT_TEMPERATURE,
     ATTR_FAN_MODE,
@@ -35,7 +32,6 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.config_validation import PLATFORM_SCHEMA
 
 from .const import (
     CONF_CONFIG_FILE,
@@ -44,7 +40,6 @@ from .const import (
     CONF_TEMP_NATIVE_CURRENT,
     CONF_TEMP_NATIVE_TARGET,
     DEFAULT_CONF_TEMP_UNIT,
-    DEVICE_TYPE_SAMSUNG_2878,
     DEVICE_TYPE_TO_CONFIG_FILE,
     MAIN_DEVICE_ID,
 )
@@ -127,14 +122,6 @@ class YamlController(ClimateController):
 
         if not self._device_id:
             self._device_id = _raw_uid
-            if (
-                config.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_SAMSUNG_2878
-            ):  # pragma: no mutate
-                _LOGGER.info(
-                    "%s [Init] device_id was missing, fell back to unique_id: %s",
-                    f"[{_raw_uid[-6:]}]" if _raw_uid else "[Unknown]",
-                    self._device_id,
-                )  # pragma: no mutate
 
         # Store raw base unique_id. The @property unique_id applies the device_id suffix
         # on read, so that post-construction device_id discovery is always reflected.
@@ -165,6 +152,8 @@ class YamlController(ClimateController):
 
         # We explicitly rely on the loader's connection object, so we do not use self._connection.
         self._shared_raw_client = None
+
+        self._obj_id_cache: dict[str, Any] | None = None
 
         # Delegate implementations (Composition over Inheritance)
         self.loader = YamlConfigLoader(self)
@@ -349,8 +338,35 @@ class YamlController(ClimateController):
             return None
         return value
 
+    @property
+    def _objects_by_id(self) -> dict[str, Any]:
+        """O(1) lazy-loaded cache for property/operation/sensor lookup by internal ID.
+
+        Built on first access and intentionally not invalidated on loader changes
+        because loader collections are populated once during initialization.
+        """
+        if self._obj_id_cache is None:
+            self._obj_id_cache: dict[str, Any] = {
+                getattr(op, "id"): op
+                for collection in (
+                    self.loader.operations,
+                    self.loader.properties,
+                    self.loader.sensors,
+                )
+                for op in collection.values()
+                if getattr(op, "id", None) is not None
+            }
+        return self._obj_id_cache
+
     def get_property_object(self, property_name: str) -> Any | None:
-        """Return the property object (not just its value) by name."""
+        """Return the property object by name, internal ID, or mapped HASS attribute.
+
+        Lookup order (all O(1)):
+        1. Direct dictionary key match across operations / properties / sensors.
+        2. Internal operation ID via pre-built _objects_by_id cache.
+        3. Reverse-mapped HASS attribute via the poller's public interface.
+        """
+        # 1. Direct key lookup (fastest — covers the common case)
         if property_name in self.loader.operations:
             return self.loader.operations[property_name]
         if property_name in self.loader.properties:
@@ -358,25 +374,22 @@ class YamlController(ClimateController):
         if property_name in self.loader.sensors:
             return self.loader.sensors[property_name]
 
-        all_objs = (
-            list(self.loader.operations.values())
-            + list(self.loader.properties.values())
-            + list(self.loader.sensors.values())
-        )
-        for op in all_objs:
-            op_id = getattr(op, "id", "")
-            if op_id == property_name:
-                return op
-            if hasattr(self, "poller"):
-                mapped = self.poller._get_hass_attr_for_op_id(op_id)
-                if mapped == property_name:
-                    return op
+        # 2. O(1) lookup by internal operation ID
+        obj = self._objects_by_id.get(property_name)
+        if obj is not None:
+            return obj
+
+        # 3. O(1) reverse-mapped HASS attribute via public poller interface
+        mapped_op_id = self.poller.get_hass_attr_for_op_id(property_name)
+        if mapped_op_id and mapped_op_id != property_name:
+            obj = self._objects_by_id.get(mapped_op_id)
+            if obj is not None:
+                return obj
 
         _LOGGER.warning(
-            "%s Property object '%s' not found. Available operation ids: %s",
+            "%s Property object '%s' not found.",
             self.log_prefix,
             property_name,
-            [getattr(op, "id", "unknown") for op in self.loader.operations.values()],
         )  # pragma: no mutate
         return None
 
@@ -442,27 +455,24 @@ class YamlController(ClimateController):
 
     @property
     def pure_device_state(self) -> dict[str, Any]:
-        """Return the unmutated pure network state of the device."""
-        # pylint: disable=protected-access
-        if (
-            hasattr(self.poller, "_pure_network_state")
-            and isinstance(self.poller._pure_network_state, dict)
-            and self.poller._pure_network_state
-        ):
-            st = self.poller._pure_network_state
-            if "Devices" in st and isinstance(st["Devices"], list) and st["Devices"]:
-                return st["Devices"][0]
-            return st
+        """Return the unmutated pure network state of the device.
+
+        Delegates payload normalisation (vendor-specific unwrapping) to the
+        poller layer in compliance with the Open/Closed Principle.
+        """
+        pure = self.poller.pure_network_state
+        if pure:
+            return pure
         return self.device_state
 
     @property
     def device_state(self) -> dict[str, Any]:
-        """Return the current unwrapped device state."""
-        # pylint: disable=protected-access
-        if self.poller._last_device_state:
-            return self.poller._last_device_state
+        """Return the current device state via the poller's public interface."""
+        state = self.poller.device_state
+        if state:
+            return state
         if self.loader.state_getter:
-            return self.loader.state_getter.value
+            return self.loader.state_getter.value or {}
         return {}
 
     @property
@@ -473,7 +483,7 @@ class YamlController(ClimateController):
         from .state import ClimateIPDeviceState  # imported here to avoid circular dep
 
         try:
-            # 1. Extracción y lavado de valores escalares (Destruye NodeStrClass)
+            # 1. Extract and sanitize scalar values (destroys NodeStrClass instances)
             raw_hvac = self.get_property(ATTR_HVAC_MODE)
             hvac_mode = (
                 HVACMode(str(raw_hvac).lower()) if raw_hvac is not None else None
@@ -540,10 +550,9 @@ class YamlController(ClimateController):
 
     def clear_state_cache(self) -> None:
         """Clear cached state in poller to prevent ghosting."""
-        # self.poller is guaranteed to exist after __init__ completes.
         # Guard retained for edge cases where poller is replaced with None in tests.
         if self.poller is not None:
-            self.poller._clear_state_cache()
+            self.poller.clear_state_cache()
 
     async def async_merge_device_state(self, new_data: dict[str, Any]) -> bool:
         """Merge incoming push updates or responses into the memory state.
@@ -595,18 +604,3 @@ class YamlController(ClimateController):
         pass
 
 
-# Extend the core platform schema
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
-    {
-        vol.Required(CONF_CONFIG_FILE): cv.string,
-        vol.Optional(CONF_IP_ADDRESS): cv.string,
-        vol.Optional(CONF_TOKEN): cv.string,
-        vol.Optional(CONF_DEVICE_ID): cv.string,
-        vol.Optional(
-            CONF_TEMP_NATIVE_CURRENT, default=DEFAULT_CONF_TEMP_UNIT
-        ): cv.string,
-        vol.Optional(
-            CONF_TEMP_NATIVE_TARGET, default=DEFAULT_CONF_TEMP_UNIT
-        ): cv.string,
-    }
-)

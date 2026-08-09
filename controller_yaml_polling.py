@@ -146,6 +146,14 @@ class YamlStatePoller:
         if hasattr(self, "_pure_network_state"):
             self._pure_network_state = None
 
+    def clear_state_cache(self) -> None:
+        """Public interface for clearing internal state cache (anti-ghosting).
+
+        Delegates to the internal _clear_state_cache without exposing its
+        private naming to callers outside this class.
+        """
+        self._clear_state_cache()
+
     async def _refresh_smartthings_token(self) -> str | None:
         """Attempt to refresh an expired SmartThings token using the official HA integration."""
         try:
@@ -1126,3 +1134,26 @@ class YamlStatePoller:
     def last_device_state(self) -> dict[str, Any] | None:
         """Return the last known parsed device state."""
         return self._last_device_state
+
+    @property
+    def device_state(self) -> dict[str, Any]:
+        """Return the current device state (public interface over _last_device_state)."""
+        return self._last_device_state or {}
+
+    @property
+    def pure_network_state(self) -> dict[str, Any]:
+        """Return the pure network state, handling vendor-specific payload normalisation.
+
+        The Samsung 'Devices' unwrap is intentionally moved here from the controller
+        facade — payload normalisation belongs to the network/poller layer (OCP).
+        """
+        st = getattr(self, "_pure_network_state", None)
+        if not isinstance(st, dict) or not st:
+            return {}
+        if "Devices" in st and isinstance(st["Devices"], list) and st["Devices"]:
+            return st["Devices"][0]
+        return st
+
+    def get_hass_attr_for_op_id(self, op_id: str) -> str:
+        """Public interface: map a YAML operation ID to its HA attribute name."""
+        return self._get_hass_attr_for_op_id(op_id)
