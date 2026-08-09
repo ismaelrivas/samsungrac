@@ -249,3 +249,77 @@ async def test_reconnection_state_changes_availability():
         assert (
             conn._is_available is False
         )  # It doesn't flip it here, it flips inside establish
+
+@pytest.mark.parametrize("invalid_mac", [None, "", "   "])
+def test_malformed_or_missing_mac_fails_yaml_load(invalid_mac: str | None):
+    """Test que asegura que si la MAC está ausente o vacía, la carga de YAML falla (devuelve False)."""
+    from unittest.mock import MagicMock
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
+    from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878
+
+    hass_config = {
+        CONF_IP_ADDRESS: "192.168.1.100",
+        "port": 2878,
+        CONF_TOKEN: "VALID_TOKEN_123",
+        CONF_MAC: invalid_mac,
+    }
+    logger = MagicMock()
+    conn = ConnectionSamsung2878(hass_config, logger, hass=MagicMock())
+
+    yaml_node = {
+        "params": {
+            "connection_template": '<Request Type="AuthToken"><User Token="{{token}}" /></Request>',
+        }
+    }
+
+    # Intentar cargar YAML sin una MAC/DUID válida debe retornar False
+    success = conn.load_from_yaml(yaml_node, None)
+    assert success is False
+    assert conn._cfg.duid is None or conn._cfg.duid.strip() == ""
+
+
+def test_mac_formatting_and_sanitization():
+    """Test que verifica que los separadores de la MAC (: y -) se limpian correctamente al generar el DUID."""
+    from unittest.mock import MagicMock
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
+    from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878
+
+    # MAC con formato estándar de red con dos puntos
+    hass_config = {
+        CONF_IP_ADDRESS: "192.168.1.100",
+        "port": 2878,
+        CONF_TOKEN: "VALID_TOKEN_123",
+        CONF_MAC: "BC:8C:CD:5B:54:F6",
+    }
+    logger = MagicMock()
+    conn = ConnectionSamsung2878(hass_config, logger, hass=MagicMock())
+
+    # DUID debe haberse limpiado sin dos puntos
+    assert conn._cfg.duid == "BC8CCD5B54F6"
+    assert ":" not in conn._cfg.duid
+
+
+async def test_command_execution_fails_with_unconfigured_duid():
+    """Test que verifica que async_execute falla limpiamente si el DUID no está listo o es inválido."""
+    from unittest.mock import MagicMock
+    import pytest
+    from custom_components.climate_ip.exceptions import CannotConnect
+    from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878
+
+    hass_config = {
+        "ip_address": "192.168.1.100",
+        "port": 2878,
+        "token": "TOKEN",
+        "mac": None,  # MAC no configurada
+    }
+    conn = ConnectionSamsung2878(hass_config, MagicMock(), hass=MagicMock())
+    conn._reconnect_retries = 1  # Forzamos estado de reintento/no listo
+
+    # Si la conexión no está lista por falta de DUID/configuración, async_execute debe lanzar CannotConnect
+    with pytest.raises(CannotConnect, match="Client not ready"):
+        await conn.async_execute(
+            method=None,
+            url=None,
+            data='<Request Type="DeviceControl"><Control CommandID="AC_FUN_POWER" DUID="main"><Attr ID="AC_FUN_POWER" Value="Off" /></Control></Request>',
+            headers=None,
+        )

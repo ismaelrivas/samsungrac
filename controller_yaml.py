@@ -15,7 +15,7 @@ import logging
 
 import aiohttp
 import homeassistant.helpers.config_validation as cv
-import requests.exceptions  # type: ignore[import-untyped]
+
 import voluptuous as vol
 from homeassistant.components.climate import (
     ATTR_CURRENT_TEMPERATURE,
@@ -121,21 +121,29 @@ class YamlController(ClimateController):
 
         self._device_id = config.get(CONF_DEVICE_ID)
         self._token = config.get(CONF_TOKEN)
-        self._unique_id = (
-            config.get("unique_id") or config.get(CONF_MAC) or self._ip_address
-        )
+
+        # Compute the raw base uid before device_id fallback so the log message is accurate
+        _raw_uid = config.get("unique_id") or config.get(CONF_MAC) or self._ip_address
 
         if not self._device_id:
-            self._device_id = self._unique_id
+            self._device_id = _raw_uid
             if (
                 config.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_SAMSUNG_2878
             ):  # pragma: no mutate
                 _LOGGER.info(
                     "%s [Init] device_id was missing, fell back to unique_id: %s",
-                    f"[{self._unique_id[-6:]}]" if self._unique_id else "[Unknown]",
+                    f"[{_raw_uid[-6:]}]" if _raw_uid else "[Unknown]",
                     self._device_id,
                 )  # pragma: no mutate
 
+        # Store raw base unique_id. The @property unique_id applies the device_id suffix
+        # on read, so that post-construction device_id discovery is always reflected.
+        self._unique_id = _raw_uid
+
+        # Callbacks that are overridden at the instance level so the coordinator can
+        # assign callables directly (e.g. controller.on_token_refreshed = my_fn).
+        # on_ssl_config_updated / on_connection_failed_callback / on_offline_callback
+        # remain as None here: the base-class no-op methods are used when not overridden.
         self.on_token_refreshed: Callable[[str], None] | None = None
         self.get_current_state_callback: Callable[[], Any] | None = None
         self.on_push_update_callback: Callable[[dict[str, Any] | None], Any] | None = (
@@ -147,6 +155,12 @@ class YamlController(ClimateController):
         self.on_offline_callback: Callable[[str], None] | None = None
         self.discovered_devices: list[Any] | None = None
         self._debug = config.get("debug", False)
+        # Pre-calculate temperature unit once (O(1), no branching on every read)
+        self._temperature_unit: str = (
+            self._config.get(CONF_TEMP_NATIVE_TARGET)
+            or self._config.get(CONF_TEMP_NATIVE_CURRENT)
+            or UnitOfTemperature.CELSIUS
+        )
         self._attributes: dict[str, Any] = {"controller": self.id}
 
         # We explicitly rely on the loader's connection object, so we do not use self._connection.
@@ -183,7 +197,11 @@ class YamlController(ClimateController):
 
     @property
     def unique_id(self) -> str | None:
-        """Return the unique ID of this controller."""
+        """Return the unique ID of this controller.
+
+        Applies the device_id suffix on each read so that post-construction
+        device_id updates (e.g. sub-device discovery) are always reflected.
+        """
         if self._unique_id and self._device_id and self._device_id != "0":
             # Ensure the device_id is included in the unique_id for sub-devices
             # to avoid collision in the HA device registry.
@@ -287,9 +305,11 @@ class YamlController(ClimateController):
                     new_value,  # pragma: no mutate
                 )  # pragma: no mutate
                 target_device_id = device_id or self.device_id
+                if not target_device_id or target_device_id == MAIN_DEVICE_ID:
+                    target_device_id = self._unique_id
+
                 return await op.async_set_value(new_value, target_device_id)
             except (
-                requests.exceptions.RequestException,
                 CannotConnect,
                 HomeAssistantError,
             ) as e:
@@ -380,8 +400,8 @@ class YamlController(ClimateController):
 
     @property
     def temperature_unit(self) -> str:
-        """Return the temperature unit in use."""
-        return UnitOfTemperature.CELSIUS
+        """Return the temperature unit in use (resolved at construction time)."""
+        return self._temperature_unit
 
     @property
     def service_schema_map(self) -> dict[str, Any] | None:
@@ -520,9 +540,10 @@ class YamlController(ClimateController):
 
     def clear_state_cache(self) -> None:
         """Clear cached state in poller to prevent ghosting."""
-        if hasattr(self, "poller") and self.poller:
-            if hasattr(self.poller, "_clear_state_cache"):
-                self.poller._clear_state_cache()
+        # self.poller is guaranteed to exist after __init__ completes.
+        # Guard retained for edge cases where poller is replaced with None in tests.
+        if self.poller is not None:
+            self.poller._clear_state_cache()
 
     async def async_merge_device_state(self, new_data: dict[str, Any]) -> bool:
         """Merge incoming push updates or responses into the memory state.
