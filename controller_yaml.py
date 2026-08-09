@@ -4,14 +4,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from homeassistant.core import HomeAssistant
-
-    from .state import ClimateIPDeviceState
-
 import logging
+from typing import TYPE_CHECKING
 
 import aiohttp
 from homeassistant.components.climate import (
@@ -21,7 +15,13 @@ from homeassistant.components.climate import (
     ATTR_PRESET_MODE,
     ATTR_SWING_MODE,
     ClimateEntityFeature,
+    HVACMode,
 )
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+    from .connection import ClimateConnection  # Interfaz concreta de conexión
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_TEMPERATURE,
@@ -44,12 +44,11 @@ from .const import (
     MAIN_DEVICE_ID,
 )
 from .controller import ClimateController, register_controller
-
-# pylint: disable=unused-import
 from .controller_yaml_config import YamlConfigLoader
 from .controller_yaml_polling import YamlStatePoller
 from .exceptions import CannotConnect
 from .properties import DeviceProperty
+from .state import ClimateIPDeviceState
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,8 +58,6 @@ CONST_CONTROLLER_TYPE = "yaml"
 @register_controller
 class YamlController(ClimateController):
     """YAML-based controller mapped as a clean Facade pattern over composition."""
-
-    # pylint: disable=import-outside-toplevel,protected-access,too-many-instance-attributes,too-many-public-methods,unused-import,wrong-import-position
 
     def __init__(
         self,
@@ -76,7 +73,6 @@ class YamlController(ClimateController):
             config = {**config_entry.data, **config_entry.options}
             config["entry_id"] = config_entry.entry_id
 
-            # Reconstruct unique_id with device_id suffix for sub-devices
             base_unique_id = config_entry.unique_id
             if device_id and device_id != MAIN_DEVICE_ID:
                 config["unique_id"] = (
@@ -99,15 +95,11 @@ class YamlController(ClimateController):
             logger = _LOGGER
 
         super().__init__(config, logger)  # pragma: no mutate
-        # 1. Pure dictionary clone — never mutate the caller's reference.
         self._config = dict(config)
 
-        # 2. Strict instance attributes for HA runtime objects.
         self.hass = hass
         self._session = session
 
-        # 3. Purge serialization poison from the clone (Fail-Safe).
-        #    Guarantees self._config remains JSON-serializable.
         self._config.pop("hass", None)  # pragma: no mutate
         self._config.pop("session", None)  # pragma: no mutate
         self._config.pop("logger", None)  # pragma: no mutate
@@ -117,32 +109,24 @@ class YamlController(ClimateController):
         self._device_id = config.get(CONF_DEVICE_ID)
         self._token = config.get(CONF_TOKEN)
 
-        # Compute the raw base uid before device_id fallback so the log message is accurate
         _raw_uid = config.get("unique_id") or config.get(CONF_MAC) or self._ip_address
 
         if not self._device_id:
             self._device_id = _raw_uid
 
-        # Store raw base unique_id. The @property unique_id applies the device_id suffix
-        # on read, so that post-construction device_id discovery is always reflected.
         self._unique_id = _raw_uid
 
-        # Callbacks that are overridden at the instance level so the coordinator can
-        # assign callables directly (e.g. controller.on_token_refreshed = my_fn).
-        # on_ssl_config_updated / on_connection_failed_callback / on_offline_callback
-        # remain as None here: the base-class no-op methods are used when not overridden.
+        # Callbacks tipados con precisión
         self.on_token_refreshed: Callable[[str], None] | None = None
-        self.get_current_state_callback: Callable[[], Any] | None = None
-        self.on_push_update_callback: Callable[[dict[str, Any] | None], Any] | None = (
-            None
-        )
+        self.get_current_state_callback: Callable[[], dict[str, Any] | None] | None = None
+        self.on_push_update_callback: Callable[[dict[str, Any] | None], None] | None = None
         self.on_ssl_config_updated: Callable[[dict[str, Any]], None] | None = None
-        self.request_refresh_callback: Callable[[], Any] | None = None
+        self.request_refresh_callback: Callable[[], None] | None = None
         self.on_connection_failed_callback: Callable[[], None] | None = None
         self.on_offline_callback: Callable[[str], None] | None = None
-        self.discovered_devices: list[Any] | None = None
-        self._debug = config.get("debug", False)
-        # Pre-calculate temperature unit once (O(1), no branching on every read)
+        self.discovered_devices: list[dict[str, Any]] | None = None
+        self._debug = bool(config.get("debug", False))
+
         self._temperature_unit: str = (
             self._config.get(CONF_TEMP_NATIVE_TARGET)
             or self._config.get(CONF_TEMP_NATIVE_CURRENT)
@@ -150,12 +134,11 @@ class YamlController(ClimateController):
         )
         self._attributes: dict[str, Any] = {"controller": self.id}
 
-        # We explicitly rely on the loader's connection object, so we do not use self._connection.
         self._shared_raw_client = None
 
-        self._obj_id_cache: dict[str, Any] | None = None
+        # Caché tipada explícitamente con DeviceProperty en lugar de Any
+        self._obj_id_cache: dict[str, DeviceProperty] | None = None
 
-        # Delegate implementations (Composition over Inheritance)
         self.loader = YamlConfigLoader(self)
         self.poller = YamlStatePoller(self)
 
@@ -165,7 +148,7 @@ class YamlController(ClimateController):
         return str(controller_type).lower() == CONST_CONTROLLER_TYPE
 
     @property
-    def connection(self) -> Any | None:
+    def connection(self) -> ClimateConnection | None:
         """Override base connection to point strictly to the loader's active connection."""
         return self.loader.connection
 
@@ -186,14 +169,8 @@ class YamlController(ClimateController):
 
     @property
     def unique_id(self) -> str | None:
-        """Return the unique ID of this controller.
-
-        Applies the device_id suffix on each read so that post-construction
-        device_id updates (e.g. sub-device discovery) are always reflected.
-        """
+        """Return the unique ID of this controller."""
         if self._unique_id and self._device_id and self._device_id != "0":
-            # Ensure the device_id is included in the unique_id for sub-devices
-            # to avoid collision in the HA device registry.
             if f"_{self._device_id}" not in str(self._unique_id):
                 return f"{self._unique_id}_{self._device_id}"
         return self._unique_id
@@ -269,29 +246,27 @@ class YamlController(ClimateController):
     async def async_set_property(
         self,
         property_name: str,
-        new_value: Any,
+        new_value: str | int | float | bool,
         device_id: str | None = None,
     ) -> bool:
         """Asynchronously set a property on the device."""
         if not self.loader.is_fully_initialized:
             _LOGGER.error(  # pragma: no mutate
-                "%s Cannot set property '%s': controller not fully initialized",  # pragma: no mutate
-                self.log_prefix,  # pragma: no mutate
-                property_name,  # pragma: no mutate
+                "%s Cannot set property '%s': controller not fully initialized",
+                self.log_prefix,
+                property_name,
             )  # pragma: no mutate
             return False
 
         op = self.get_property_object(property_name)
         if op and hasattr(op, "async_set_value"):
             try:
-                # Register the pending update in the poller dispatcher
-                # pylint: disable=protected-access
                 self.poller.register_pending_update(property_name, new_value)
                 _LOGGER.debug(  # pragma: no mutate
-                    "%s Registered pending update for '%s': %s",  # pragma: no mutate
-                    self.log_prefix,  # pragma: no mutate
-                    property_name,  # pragma: no mutate
-                    new_value,  # pragma: no mutate
+                    "%s Registered pending update for '%s': %s",
+                    self.log_prefix,
+                    property_name,
+                    new_value,
                 )  # pragma: no mutate
                 target_device_id = device_id or self.device_id
                 if not target_device_id or target_device_id == MAIN_DEVICE_ID:
@@ -323,13 +298,13 @@ class YamlController(ClimateController):
                 ) from e
 
         _LOGGER.error(  # pragma: no mutate
-            "%s Failed to set property '%s': property not found",  # pragma: no mutate
-            self.log_prefix,  # pragma: no mutate
-            property_name,  # pragma: no mutate
+            "%s Failed to set property '%s': property not found",
+            self.log_prefix,
+            property_name,
         )  # pragma: no mutate
         return False
 
-    def get_property(self, property_name: str) -> Any:
+    def get_property(self, property_name: str) -> str | int | float | bool | None:
         """Return the current value of a property by name using safe extraction."""
         obj = self.get_property_object(property_name)
         value = obj.value if obj else self._attributes.get(property_name)
@@ -339,14 +314,10 @@ class YamlController(ClimateController):
         return value
 
     @property
-    def _objects_by_id(self) -> dict[str, Any]:
-        """O(1) lazy-loaded cache for property/operation/sensor lookup by internal ID.
-
-        Built on first access and intentionally not invalidated on loader changes
-        because loader collections are populated once during initialization.
-        """
+    def _objects_by_id(self) -> dict[str, DeviceProperty]:
+        """O(1) lazy-loaded cache for property/operation/sensor lookup by internal ID."""
         if self._obj_id_cache is None:
-            self._obj_id_cache: dict[str, Any] = {
+            self._obj_id_cache = {
                 getattr(op, "id"): op
                 for collection in (
                     self.loader.operations,
@@ -358,15 +329,8 @@ class YamlController(ClimateController):
             }
         return self._obj_id_cache
 
-    def get_property_object(self, property_name: str) -> Any | None:
-        """Return the property object by name, internal ID, or mapped HASS attribute.
-
-        Lookup order (all O(1)):
-        1. Direct dictionary key match across operations / properties / sensors.
-        2. Internal operation ID via pre-built _objects_by_id cache.
-        3. Reverse-mapped HASS attribute via the poller's public interface.
-        """
-        # 1. Direct key lookup (fastest — covers the common case)
+    def get_property_object(self, property_name: str) -> DeviceProperty | None:
+        """Return the property object by name, internal ID, or mapped HASS attribute."""
         if property_name in self.loader.operations:
             return self.loader.operations[property_name]
         if property_name in self.loader.properties:
@@ -374,12 +338,10 @@ class YamlController(ClimateController):
         if property_name in self.loader.sensors:
             return self.loader.sensors[property_name]
 
-        # 2. O(1) lookup by internal operation ID
         obj = self._objects_by_id.get(property_name)
         if obj is not None:
             return obj
 
-        # 3. O(1) reverse-mapped HASS attribute via public poller interface
         mapped_op_id = self.poller.get_hass_attr_for_op_id(property_name)
         if mapped_op_id and mapped_op_id != property_name:
             obj = self._objects_by_id.get(mapped_op_id)
@@ -400,9 +362,9 @@ class YamlController(ClimateController):
             return prop.all_values
 
         _LOGGER.debug(  # pragma: no mutate
-            "%s Cannot get values for '%s': not an operation or missing all_values",  # pragma: no mutate
-            self.log_prefix,  # pragma: no mutate
-            property_name,  # pragma: no mutate
+            "%s Cannot get values for '%s': not an operation or missing all_values",
+            self.log_prefix,
+            property_name,
         )  # pragma: no mutate
         return None
 
@@ -434,7 +396,6 @@ class YamlController(ClimateController):
     @property
     def sensors(self) -> list[DeviceProperty]:
         """Return a list of all defined sensor property objects."""
-        # FIXED C0301: Line split to stay under 100 chars
         return [
             self.loader.sensors[n]
             for n in self.loader.sensors_list
@@ -442,7 +403,7 @@ class YamlController(ClimateController):
         ]
 
     @property
-    def last_poll_data(self) -> Any:
+    def last_poll_data(self) -> dict[str, Any] | None:
         """Return the last raw poll response, useful for diagnostics."""
         return self.loader.state_getter.value if self.loader.state_getter else None
 
@@ -455,11 +416,7 @@ class YamlController(ClimateController):
 
     @property
     def pure_device_state(self) -> dict[str, Any]:
-        """Return the unmutated pure network state of the device.
-
-        Delegates payload normalisation (vendor-specific unwrapping) to the
-        poller layer in compliance with the Open/Closed Principle.
-        """
+        """Return the unmutated pure network state of the device."""
         pure = self.poller.pure_network_state
         if pure:
             return pure
@@ -478,12 +435,7 @@ class YamlController(ClimateController):
     @property
     def climate_state(self) -> ClimateIPDeviceState:
         """Return the strictly typed state representation of the device."""
-        from homeassistant.components.climate import HVACMode
-
-        from .state import ClimateIPDeviceState  # imported here to avoid circular dep
-
         try:
-            # 1. Extract and sanitize scalar values (destroys NodeStrClass instances)
             raw_hvac = self.get_property(ATTR_HVAC_MODE)
             hvac_mode = (
                 HVACMode(str(raw_hvac).lower()) if raw_hvac is not None else None
@@ -504,8 +456,6 @@ class YamlController(ClimateController):
             raw_preset = self.get_property(ATTR_PRESET_MODE)
             preset_mode = str(raw_preset) if raw_preset is not None else None
 
-            # 2. Sanitization and conversion to Immutable Tuples for mode lists
-            # Filter out potential nulls and enforce strict typing.
             raw_hvac_modes = self.get_property_all_values(ATTR_HVAC_MODE) or []
             hvac_modes_tuple = tuple(
                 HVACMode(str(m).lower()) for m in raw_hvac_modes if m is not None
@@ -521,7 +471,6 @@ class YamlController(ClimateController):
                 str(m) for m in (self.get_property_all_values(ATTR_PRESET_MODE) or [])
             )
 
-            # 3. Strict packaging. The dataclass now receives 100% pure data.
             return ClimateIPDeviceState(
                 hvac_mode=hvac_mode,
                 target_temperature=target_temp,
@@ -550,14 +499,11 @@ class YamlController(ClimateController):
 
     def clear_state_cache(self) -> None:
         """Clear cached state in poller to prevent ghosting."""
-        # Guard retained for edge cases where poller is replaced with None in tests.
         if self.poller is not None:
             self.poller.clear_state_cache()
 
     async def async_merge_device_state(self, new_data: dict[str, Any]) -> bool:
-        """Merge incoming push updates or responses into the memory state.
-        Returns True if committed.
-        """
+        """Merge incoming push updates or responses into the memory state."""
         return await self.poller.async_merge_device_state(new_data)
 
     async def async_clear_pending_updates(self, keys: list[str]) -> None:
@@ -565,10 +511,9 @@ class YamlController(ClimateController):
         self.poller.clear_pending_updates(keys)
 
     async def async_predict_and_correct_state(
-        self, current_hass_state: Any, property_name: str, new_value: Any
+        self, current_hass_state: str | None, property_name: str, new_value: str | int | float | bool
     ) -> tuple[ClimateEntityFeature, dict[str, Any]]:
         """Predict expected state changes based on a command."""
-        # FIXED C0301: Multi-argument method call split for readability and length
         return await self.poller.async_predict_and_correct_state(
             current_hass_state, property_name, new_value
         )
@@ -579,10 +524,7 @@ class YamlController(ClimateController):
 
     @property
     def is_push_device(self) -> bool:
-        """Return True if the device uses push-based updates.
-
-        Strictly interfaces with the initialized network engine.
-        """
+        """Return True if the device uses push-based updates."""
         if self.connection is None:
             return False
 
@@ -600,7 +542,4 @@ class YamlController(ClimateController):
 
     async def async_refresh_from_connection(self) -> None:
         """Refresh the controller's properties from the connection's internal state."""
-        # This implementation remains a no-op as the YAML layer is agnostic.
         pass
-
-
