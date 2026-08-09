@@ -1,11 +1,10 @@
-# pylint: disable=import-outside-toplevel,protected-access,too-many-instance-attributes,too-many-public-methods,unused-import,wrong-import-position
 """YAML-based climate device controller for the climate_ip integration."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
 from homeassistant.components.climate import (
@@ -17,29 +16,30 @@ from homeassistant.components.climate import (
     ClimateEntityFeature,
     HVACMode,
 )
-
-if TYPE_CHECKING:
-    from homeassistant.core import HomeAssistant
-    from .connection import ClimateConnection  # Interfaz concreta de conexión
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_TEMPERATURE,
+    CONF_HOST,
     CONF_IP_ADDRESS,
     CONF_MAC,
     CONF_TOKEN,
+    CONF_UNIQUE_ID,
     STATE_UNKNOWN,
     UnitOfTemperature,
 )
 from homeassistant.exceptions import HomeAssistantError
 
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+    from .connection import ClimateConnection
+
 from .const import (
     CONF_CONFIG_FILE,
+    CONF_DEBUG,
     CONF_DEVICE_ID,
     CONF_DEVICE_TYPE,
     CONF_TEMP_NATIVE_CURRENT,
     CONF_TEMP_NATIVE_TARGET,
-    DEFAULT_CONF_TEMP_UNIT,
     DEVICE_TYPE_TO_CONFIG_FILE,
     MAIN_DEVICE_ID,
 )
@@ -53,6 +53,7 @@ from .state import ClimateIPDeviceState
 _LOGGER = logging.getLogger(__name__)
 
 CONST_CONTROLLER_TYPE = "yaml"
+SAMSUNG_PRIMARY_DEVICE_SENTINEL = "0"
 
 
 @register_controller
@@ -75,13 +76,13 @@ class YamlController(ClimateController):
 
             base_unique_id = config_entry.unique_id
             if device_id and device_id != MAIN_DEVICE_ID:
-                config["unique_id"] = (
+                config[CONF_UNIQUE_ID] = (
                     f"{base_unique_id}_{device_id}"
                     if base_unique_id
                     else f"Unknown_{device_id}"
                 )
             else:
-                config["unique_id"] = base_unique_id
+                config[CONF_UNIQUE_ID] = base_unique_id
 
             if device_id:
                 config[CONF_DEVICE_ID] = device_id
@@ -100,32 +101,38 @@ class YamlController(ClimateController):
         self.hass = hass
         self._session = session
 
+        # Purge non-serializable objects from configuration clone
         self._config.pop("hass", None)  # pragma: no mutate
         self._config.pop("session", None)  # pragma: no mutate
         self._config.pop("logger", None)  # pragma: no mutate
-        self._yaml = config.get(CONF_CONFIG_FILE)
-        self._ip_address = config.get(CONF_IP_ADDRESS) or config.get("host")
 
+        self._ip_address = config.get(CONF_IP_ADDRESS) or config.get(CONF_HOST)
         self._device_id = config.get(CONF_DEVICE_ID)
         self._token = config.get(CONF_TOKEN)
 
-        _raw_uid = config.get("unique_id") or config.get(CONF_MAC) or self._ip_address
+        _raw_uid = (
+            config.get(CONF_UNIQUE_ID) or config.get(CONF_MAC) or self._ip_address
+        )
 
         if not self._device_id:
             self._device_id = _raw_uid
 
         self._unique_id = _raw_uid
 
-        # Callbacks tipados con precisión
+        # Precise callback type definitions
         self.on_token_refreshed: Callable[[str], None] | None = None
-        self.get_current_state_callback: Callable[[], dict[str, Any] | None] | None = None
-        self.on_push_update_callback: Callable[[dict[str, Any] | None], None] | None = None
+        self.get_current_state_callback: Callable[[], dict[str, Any] | None] | None = (
+            None
+        )
+        self.on_push_update_callback: Callable[[dict[str, Any] | None], None] | None = (
+            None
+        )
         self.on_ssl_config_updated: Callable[[dict[str, Any]], None] | None = None
         self.request_refresh_callback: Callable[[], None] | None = None
         self.on_connection_failed_callback: Callable[[], None] | None = None
         self.on_offline_callback: Callable[[str], None] | None = None
         self.discovered_devices: list[dict[str, Any]] | None = None
-        self._debug = bool(config.get("debug", False))
+        self._debug = bool(config.get(CONF_DEBUG, False))
 
         self._temperature_unit: str = (
             self._config.get(CONF_TEMP_NATIVE_TARGET)
@@ -134,9 +141,7 @@ class YamlController(ClimateController):
         )
         self._attributes: dict[str, Any] = {"controller": self.id}
 
-        self._shared_raw_client = None
-
-        # Caché tipada explícitamente con DeviceProperty en lugar de Any
+        self._shared_raw_client: Any | None = None
         self._obj_id_cache: dict[str, DeviceProperty] | None = None
 
         self.loader = YamlConfigLoader(self)
@@ -170,7 +175,11 @@ class YamlController(ClimateController):
     @property
     def unique_id(self) -> str | None:
         """Return the unique ID of this controller."""
-        if self._unique_id and self._device_id and self._device_id != "0":
+        if (
+            self._unique_id
+            and self._device_id
+            and self._device_id != SAMSUNG_PRIMARY_DEVICE_SENTINEL
+        ):
             if f"_{self._device_id}" not in str(self._unique_id):
                 return f"{self._unique_id}_{self._device_id}"
         return self._unique_id
@@ -246,7 +255,7 @@ class YamlController(ClimateController):
     async def async_set_property(
         self,
         property_name: str,
-        new_value: str | int | float | bool,
+        new_value: Any,
         device_id: str | None = None,
     ) -> bool:
         """Asynchronously set a property on the device."""
@@ -304,7 +313,7 @@ class YamlController(ClimateController):
         )  # pragma: no mutate
         return False
 
-    def get_property(self, property_name: str) -> str | int | float | bool | None:
+    def get_property(self, property_name: str) -> Any:
         """Return the current value of a property by name using safe extraction."""
         obj = self.get_property_object(property_name)
         value = obj.value if obj else self._attributes.get(property_name)
@@ -370,8 +379,8 @@ class YamlController(ClimateController):
 
     @property
     def state_attributes(self) -> dict[str, Any]:
-        """Return the state attributes dictionary."""
-        return self._attributes
+        """Return a copy of the state attributes dictionary."""
+        return dict(self._attributes)
 
     @property
     def temperature_unit(self) -> str:
@@ -511,7 +520,7 @@ class YamlController(ClimateController):
         self.poller.clear_pending_updates(keys)
 
     async def async_predict_and_correct_state(
-        self, current_hass_state: str | None, property_name: str, new_value: str | int | float | bool
+        self, current_hass_state: Any, property_name: str, new_value: Any
     ) -> tuple[ClimateEntityFeature, dict[str, Any]]:
         """Predict expected state changes based on a command."""
         return await self.poller.async_predict_and_correct_state(
@@ -531,12 +540,12 @@ class YamlController(ClimateController):
         return self.connection.is_push_supported
 
     @property
-    def shared_raw_client(self) -> Any:
+    def shared_raw_client(self) -> Any | None:
         """Return the shared raw socket client."""
         return self._shared_raw_client
 
     @shared_raw_client.setter
-    def shared_raw_client(self, client: Any) -> None:
+    def shared_raw_client(self, client: Any | None) -> None:
         """Set the shared raw socket client."""
         self._shared_raw_client = client
 
