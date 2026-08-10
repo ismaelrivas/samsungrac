@@ -90,7 +90,7 @@ class YamlConfigLoader:
 
     async def async_initialize(self) -> bool:
         """Perform initial YAML configuration loading and set up the base connection."""
-        file = getattr(self.controller, "_yaml", None)
+        file = self.controller.yaml_file
         if file is not None and file.find("\\") == -1 and file.find("/") == -1:
             file = str(Path(__file__).parent / file)
         _LOGGER.debug(

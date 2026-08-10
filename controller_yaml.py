@@ -112,8 +112,6 @@ class YamlController(ClimateController):
         self._config.pop("session", None)  # pragma: no mutate
         self._config.pop("logger", None)  # pragma: no mutate
 
-        # _yaml is read by YamlConfigLoader.async_initialize via getattr(controller, "_yaml")
-        self._yaml: str | None = config.get(CONF_CONFIG_FILE)
         self._ip_address = config.get(CONF_IP_ADDRESS) or config.get(CONF_HOST)
         self._device_id = config.get(CONF_DEVICE_ID)
         self._token = config.get(CONF_TOKEN)
@@ -153,6 +151,7 @@ class YamlController(ClimateController):
 
         self._shared_raw_client: Any | None = None
         self._obj_id_cache: dict[str, DeviceProperty] | None = None
+        self._cached_static_modes: tuple[tuple[HVACMode, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]] | None = None
 
         self.loader = YamlConfigLoader(self)
         self.poller = YamlStatePoller(self)
@@ -161,6 +160,11 @@ class YamlController(ClimateController):
     def match_type(controller_type: str) -> bool:
         """Return True if the given type string matches this controller."""
         return str(controller_type).lower() == CONST_CONTROLLER_TYPE
+
+    @property
+    def yaml_file(self) -> str | None:
+        """Return the YAML configuration file path from config."""
+        return self._config.get(CONF_CONFIG_FILE)
 
     @property
     def connection(self) -> ClimateConnection | None:
@@ -475,19 +479,30 @@ class YamlController(ClimateController):
             raw_preset = self.get_property(ATTR_PRESET_MODE)
             preset_mode = str(raw_preset) if raw_preset is not None else None
 
-            raw_hvac_modes = self.get_property_all_values(ATTR_HVAC_MODE) or []
-            hvac_modes_tuple = tuple(
-                HVACMode(str(m).lower()) for m in raw_hvac_modes if m is not None
-            )
+            if self._cached_static_modes is None:
+                raw_hvac_modes = self.get_property_all_values(ATTR_HVAC_MODE) or []
+                self._cached_static_modes = (
+                    tuple(
+                        HVACMode(str(m).lower())
+                        for m in raw_hvac_modes
+                        if m is not None
+                    ),
+                    tuple(
+                        str(m)
+                        for m in (self.get_property_all_values(ATTR_FAN_MODE) or [])
+                    ),
+                    tuple(
+                        str(m)
+                        for m in (self.get_property_all_values(ATTR_SWING_MODE) or [])
+                    ),
+                    tuple(
+                        str(m)
+                        for m in (self.get_property_all_values(ATTR_PRESET_MODE) or [])
+                    ),
+                )
 
-            fan_modes_tuple = tuple(
-                str(m) for m in (self.get_property_all_values(ATTR_FAN_MODE) or [])
-            )
-            swing_modes_tuple = tuple(
-                str(m) for m in (self.get_property_all_values(ATTR_SWING_MODE) or [])
-            )
-            preset_modes_tuple = tuple(
-                str(m) for m in (self.get_property_all_values(ATTR_PRESET_MODE) or [])
+            hvac_modes_tuple, fan_modes_tuple, swing_modes_tuple, preset_modes_tuple = (
+                self._cached_static_modes
             )
 
             return ClimateIPDeviceState(
@@ -517,7 +532,8 @@ class YamlController(ClimateController):
         return await self.poller.async_update_state()
 
     def clear_state_cache(self) -> None:
-        """Clear cached state in poller to prevent ghosting."""
+        """Clear cached state in poller and static mode cache to prevent ghosting."""
+        self._cached_static_modes = None
         if self.poller is not None:
             self.poller.clear_state_cache()
 

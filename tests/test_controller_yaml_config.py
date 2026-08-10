@@ -192,7 +192,7 @@ async def test_async_initialize_connection_instantiation_args():
 
     mock_controller._session = "SESSION_INSTANCE"
     mock_controller.ip_address = "192.168.1.100"
-    mock_controller._yaml = "/test.yaml"
+    mock_controller.yaml_file = "/test.yaml"
     # Force the 'else' branch of the connection type (generic/REST)
     mock_controller._config = {"device_type": "UNKNOWN_GENERIC"}
 
@@ -519,7 +519,7 @@ async def test_async_finish_initialization_config_entry_options():
         [DummySamsungConn],
     ):
         # Prevent load_yaml check failing by using absolute path or mocking cache
-        mock_controller._yaml = "/test_j.yaml"
+        mock_controller.yaml_file = "/test_j.yaml"
         _YAML_FILE_CACHE["/test_j.yaml"] = loader._parsed_yaml_config
 
         await loader.async_initialize()
@@ -643,7 +643,7 @@ async def test_apply_temperature_units_master_matrix() -> None:
         mock_controller = MagicMock()
         mock_controller.config = {"entry_id": "123"}
         mock_controller.log_prefix = "[Test]"
-        mock_controller._yaml = "test.yaml"
+        mock_controller.yaml_file = "test.yaml"
         mock_controller.hass = MagicMock()
         mock_controller.hass.config.units.temperature_unit = "°C"
 
@@ -789,7 +789,7 @@ async def test_async_initialize_config_fallback_cascade():
     loader = YamlConfigLoader(mock_controller)
     loader._parsed_yaml_config = {"device": {}}
 
-    mock_controller._yaml = "/test_m.yaml"
+    mock_controller.yaml_file = "/test_m.yaml"
     _YAML_FILE_CACHE["/test_m.yaml"] = loader._parsed_yaml_config
 
     await loader.async_initialize()
@@ -852,7 +852,7 @@ async def test_async_finish_initialization_entry_data_fallback():
 async def test_async_initialize_frente_o():
     mock_controller = StrictMock()
     mock_controller.log_prefix = "[Test]"
-    mock_controller._yaml = "/test_o.yaml"
+    mock_controller.yaml_file = "/test_o.yaml"
     mock_controller.device_id = "target_dev"
     mock_controller.unique_id = "target_dev"
     mock_controller.hass = MagicMock()
@@ -894,7 +894,7 @@ async def test_async_initialize_connection_instantiation_args_frente_d():
     mock_controller.hass = MagicMock()
     mock_controller._session = "SESSION_INSTANCE"
     mock_controller.ip_address = "192.168.1.100"
-    mock_controller._yaml = "/test_d.yaml"
+    mock_controller.yaml_file = "/test_d.yaml"
     mock_controller.unique_id = "test_d"
     mock_controller._config = {"device_type": "samsung_8888"}
 
@@ -1066,9 +1066,7 @@ async def test_async_finish_initialization_frente_r():
 async def test_async_initialize_sync_fallback(mock_controller) -> None:
     """Kills mutants 34-46 comprobando el fallback a load_yaml síncrono si hass es None."""
     mock_controller.hass = None  # Forzamos la rama síncrona
-    mock_controller._yaml = (
-        "test.yaml"  # El código lee directamente getattr(controller, "_yaml")
-    )
+    mock_controller.yaml_file = "test.yaml"
 
     loader = YamlConfigLoader(mock_controller)
 
@@ -1122,7 +1120,7 @@ async def test_async_initialize_poll_parsing() -> None:
         mock_controller.log_prefix = "[Test]"
         mock_controller.device_id = "dev_123"
         mock_controller.unique_id = "uid_123"
-        mock_controller._yaml = "test.yaml"
+        mock_controller.yaml_file = "test.yaml"
         mock_controller.hass = None
 
         # Aislamiento Total Nivel 2: Nuevo Loader
@@ -1260,7 +1258,7 @@ async def test_async_initialize_yaml_deep_fallbacks(mock_controller) -> None:
     clear_yaml_cache()
 
     loader = YamlConfigLoader(mock_controller)
-    mock_controller._yaml = "test.yaml"
+    mock_controller.yaml_file = "test.yaml"
     mock_controller.hass = None
 
     # MAGICMOCK TRAP: _config auto-creates as Mock. Must explicitly overwrite.
@@ -1319,7 +1317,7 @@ async def test_async_initialize_explicit_yaml_data(mock_controller) -> None:
 
     clear_yaml_cache()
     loader = YamlConfigLoader(mock_controller)
-    mock_controller._yaml = "test.yaml"
+    mock_controller.yaml_file = "test.yaml"
     mock_controller.hass = None
 
     # Configure clean controller
@@ -1376,7 +1374,7 @@ async def test_async_initialize_executor_job(mock_controller) -> None:
     clear_yaml_cache()
 
     loader = YamlConfigLoader(mock_controller)
-    mock_controller._yaml = "test.yaml"
+    mock_controller.yaml_file = "test.yaml"
 
     # Create mock hass registering executor calls
     mock_controller.hass = AsyncMock()
@@ -1438,7 +1436,7 @@ async def test_async_initialize_connection_raw8888_args(mock_controller) -> None
     )  # Sincronizamos para el getattr anidado
     mock_controller._session = "RAW_SESSION_OBJECT"
     mock_controller.ip_address = "10.0.0.99"
-    mock_controller._yaml = "test_raw.yaml"
+    mock_controller.yaml_file = "test_raw.yaml"
 
     # Inject real coroutine to simulate Home Assistant executor
     async def mock_async_add_executor_job(*args, **kwargs):
