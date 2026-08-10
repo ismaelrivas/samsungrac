@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -53,8 +52,6 @@ from .state import ClimateIPDeviceState
 _LOGGER = logging.getLogger(__name__)
 
 CONST_CONTROLLER_TYPE = "yaml"
-SAMSUNG_PRIMARY_DEVICE_SENTINEL = "0"
-
 
 @register_controller
 class YamlController(ClimateController):
@@ -102,7 +99,7 @@ class YamlController(ClimateController):
             logger = _LOGGER
 
         super().__init__(config, logger)  # pragma: no mutate
-        self._config = dict(config)
+        self._config = config
 
         self.hass = hass
         self._session = session
@@ -128,18 +125,8 @@ class YamlController(ClimateController):
         # Callbacks — instance-level None sentinels allow callers (e.g. samsung_2878)
         # to distinguish "callback configured" from "not configured" via truthiness.
         # The base class provides no-op method fallbacks for direct invocation.
-        self.on_token_refreshed: Callable[[str], None] | None = None
-        self.get_current_state_callback: Callable[[], dict[str, Any] | None] | None = (
-            None
-        )
-        self.on_push_update_callback: Callable[[dict[str, Any] | None], None] | None = (
-            None
-        )
-        self.on_ssl_config_updated: Callable[[dict[str, Any]], None] | None = None
-        self.request_refresh_callback: Callable[[], None] | None = None
-        self.on_connection_failed_callback: Callable[[], None] | None = None
-        self.on_offline_callback: Callable[[str], None] | None = None
-        self.discovered_devices: list[dict[str, Any]] | None = None
+
+        
         self._debug = bool(config.get(CONF_DEBUG, False))
 
         self._temperature_unit: str = (
@@ -149,7 +136,6 @@ class YamlController(ClimateController):
         )
         self._attributes: dict[str, Any] = {"controller": self.id}
 
-        self._shared_raw_client: Any | None = None
         self._obj_id_cache: dict[str, DeviceProperty] | None = None
         self._cached_static_modes: tuple[tuple[HVACMode, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]] | None = None
 
@@ -192,7 +178,7 @@ class YamlController(ClimateController):
         if (
             self._unique_id
             and self._device_id
-            and self._device_id != SAMSUNG_PRIMARY_DEVICE_SENTINEL
+            and self._device_id != MAIN_DEVICE_ID
         ):
             if f"_{self._device_id}" not in str(self._unique_id):
                 return f"{self._unique_id}_{self._device_id}"
@@ -292,7 +278,7 @@ class YamlController(ClimateController):
                     new_value,
                 )  # pragma: no mutate
                 target_device_id = device_id or self.device_id
-                if not target_device_id or target_device_id == MAIN_DEVICE_ID:
+                if target_device_id in (None, "", MAIN_DEVICE_ID):
                     target_device_id = self._unique_id
 
                 return await op.async_set_value(new_value, target_device_id)
@@ -341,14 +327,14 @@ class YamlController(ClimateController):
         """O(1) lazy-loaded cache for property/operation/sensor lookup by internal ID."""
         if self._obj_id_cache is None:
             self._obj_id_cache = {
-                getattr(op, "id"): op
+                op.id: op
                 for collection in (
                     self.loader.operations,
                     self.loader.properties,
                     self.loader.sensors,
                 )
                 for op in collection.values()
-                if getattr(op, "id", None) is not None
+                if op.id is not None
             }
         return self._obj_id_cache
 
@@ -576,5 +562,24 @@ class YamlController(ClimateController):
         self._shared_raw_client = client
 
     async def async_refresh_from_connection(self) -> None:
-        """Refresh the controller's properties from the connection's internal state."""
+        """Refresh the controller's properties from the connection's internal state.
+        
+        Obligatory implementation to fulfill ClimateController's strict ABC contract.
+        Acts as a safe no-op for YAML-based devices.
+        """
         pass
+    
+    def on_token_refreshed(self, new_token: str) -> None:
+        """Callback invoked when the underlying connection refreshes an auth token.
+        
+        Acts as a safe no-op. Subclasses or specific connection handlers can 
+        override or observe this if token persistence is required.
+        """
+        pass
+
+    def get_current_state_callback(self) -> dict[str, Any] | None:
+        """Callback invoked by external pollers to request the raw current state.
+        
+        Acts as a safe no-op returning None.
+        """
+        return None
