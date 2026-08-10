@@ -53,6 +53,7 @@ _LOGGER = logging.getLogger(__name__)
 
 CONST_CONTROLLER_TYPE = "yaml"
 
+
 @register_controller
 class YamlController(ClimateController):
     """YAML-based controller mapped as a clean Facade pattern over composition."""
@@ -76,7 +77,7 @@ class YamlController(ClimateController):
                 config[CONF_UNIQUE_ID] = (
                     f"{base_unique_id}_{device_id}"
                     if base_unique_id
-                    else f"Unknown_{device_id}"
+                    else device_id
                 )
             else:
                 config[CONF_UNIQUE_ID] = base_unique_id
@@ -89,7 +90,6 @@ class YamlController(ClimateController):
             config = dict(config)
 
         # Fallback resolution for CONF_CONFIG_FILE based on CONF_DEVICE_TYPE
-        # Applies unconditionally whether config came from ConfigEntry or dict.
         if not config.get(CONF_CONFIG_FILE):
             device_type = config.get(CONF_DEVICE_TYPE)
             if device_type and device_type in DEVICE_TYPE_TO_CONFIG_FILE:
@@ -104,7 +104,7 @@ class YamlController(ClimateController):
         self.hass = hass
         self._session = session
 
-        # Purge non-serializable objects from configuration clone
+        # Purge non-serializable objects from configuration
         self._config.pop("hass", None)  # pragma: no mutate
         self._config.pop("session", None)  # pragma: no mutate
         self._config.pop("logger", None)  # pragma: no mutate
@@ -122,11 +122,6 @@ class YamlController(ClimateController):
 
         self._unique_id = _raw_uid
 
-        # Callbacks — instance-level None sentinels allow callers (e.g. samsung_2878)
-        # to distinguish "callback configured" from "not configured" via truthiness.
-        # The base class provides no-op method fallbacks for direct invocation.
-
-        
         self._debug = bool(config.get(CONF_DEBUG, False))
 
         self._temperature_unit: str = (
@@ -137,7 +132,15 @@ class YamlController(ClimateController):
         self._attributes: dict[str, Any] = {"controller": self.id}
 
         self._obj_id_cache: dict[str, DeviceProperty] | None = None
-        self._cached_static_modes: tuple[tuple[HVACMode, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]] | None = None
+        self._cached_static_modes: (
+            tuple[
+                tuple[HVACMode, ...],
+                tuple[str, ...],
+                tuple[str, ...],
+                tuple[str, ...],
+            ]
+            | None
+        ) = None
 
         self.loader = YamlConfigLoader(self)
         self.poller = YamlStatePoller(self)
@@ -180,7 +183,7 @@ class YamlController(ClimateController):
             and self._device_id
             and self._device_id != MAIN_DEVICE_ID
         ):
-            if f"_{self._device_id}" not in str(self._unique_id):
+            if f"_{self._device_id}" not in self._unique_id:
                 return f"{self._unique_id}_{self._device_id}"
         return self._unique_id
 
@@ -563,23 +566,23 @@ class YamlController(ClimateController):
 
     async def async_refresh_from_connection(self) -> None:
         """Refresh the controller's properties from the connection's internal state.
-        
+
         Obligatory implementation to fulfill ClimateController's strict ABC contract.
         Acts as a safe no-op for YAML-based devices.
         """
         pass
-    
+
     def on_token_refreshed(self, new_token: str) -> None:
         """Callback invoked when the underlying connection refreshes an auth token.
-        
-        Acts as a safe no-op. Subclasses or specific connection handlers can 
+
+        Acts as a safe no-op. Subclasses or specific connection handlers can
         override or observe this if token persistence is required.
         """
         pass
 
     def get_current_state_callback(self) -> dict[str, Any] | None:
         """Callback invoked by external pollers to request the raw current state.
-        
+
         Acts as a safe no-op returning None.
         """
         return None
