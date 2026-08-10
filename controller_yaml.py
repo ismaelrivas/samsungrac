@@ -248,7 +248,7 @@ class YamlController(ClimateController):
     @property
     def id(self) -> str | None:
         """Return the unique id of the controller."""
-        return self._unique_id
+        return self.unique_id
 
     async def update_state(self) -> bool:
         """Asynchronously update the state of the controller from the device."""
@@ -301,7 +301,7 @@ class YamlController(ClimateController):
                     e,
                 )
                 raise
-            except Exception as e:
+            except (TimeoutError, OSError, ValueError) as e:
                 _LOGGER.warning(
                     "%s Unexpected error setting property '%s' with value '%s': %s",
                     self.log_prefix,
@@ -431,7 +431,7 @@ class YamlController(ClimateController):
     def pure_device_state(self) -> dict[str, Any]:
         """Return the unmutated pure network state of the device."""
         pure = self.poller.pure_network_state
-        if pure:
+        if pure is not None and len(pure) > 0:
             return pure
         return self.device_state
 
@@ -439,7 +439,7 @@ class YamlController(ClimateController):
     def device_state(self) -> dict[str, Any]:
         """Return the current device state via the poller's public interface."""
         state = self.poller.device_state
-        if state:
+        if state is not None and len(state) > 0:
             return state
         if self.loader.state_getter:
             return self.loader.state_getter.value or {}
@@ -538,7 +538,7 @@ class YamlController(ClimateController):
         """Merge incoming push updates or responses into the memory state."""
         return await self.poller.async_merge_device_state(new_data)
 
-    def clear_pending_updates(self, keys: list[str]) -> None:
+    async def async_clear_pending_updates(self, keys: list[str]) -> None:
         """Clear specific pending updates (anti-flicker locks) on failure."""
         self.poller.clear_pending_updates(keys)
 
