@@ -733,6 +733,12 @@ class ClimateIpConfigFlow(
         entry_data = {
             k: v for k, v in self.flow_data.items() if k not in transient_keys
         }
+
+        if CONF_DEVICE_ID in entry_data:
+            dev_id = str(entry_data[CONF_DEVICE_ID]).strip()
+            if dev_id in ("0", "main", "", "None"):
+                del entry_data[CONF_DEVICE_ID]
+
         return self.async_create_entry(title=title, data=entry_data)
 
     async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:

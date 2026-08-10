@@ -113,14 +113,14 @@ class YamlController(ClimateController):
         self._device_id = config.get(CONF_DEVICE_ID)
         self._token = config.get(CONF_TOKEN)
 
-        _raw_uid = (
-            config.get(CONF_UNIQUE_ID) or config.get(CONF_MAC) or self._ip_address
-        )
+        base_unique_id = config_entry.unique_id if config_entry else config.get(CONF_UNIQUE_ID)
 
-        if not self._device_id:
-            self._device_id = _raw_uid
-
-        self._unique_id = _raw_uid
+        # If device_id exists and is a real sub-device (neither "main" nor "0"):
+        if self._device_id and self._device_id not in (MAIN_DEVICE_ID, "0"):
+            self._unique_id = f"{base_unique_id}_{self._device_id}" if base_unique_id else self._device_id
+        else:
+            # Monosplit / Main device: Pure MAC address without suffixes
+            self._unique_id = base_unique_id
 
         self._debug = bool(config.get(CONF_DEBUG, False))
 
