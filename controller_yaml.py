@@ -86,11 +86,17 @@ class YamlController(ClimateController):
 
             if device_id:
                 config[CONF_DEVICE_ID] = device_id
-            device_type = config.get(CONF_DEVICE_TYPE)
-            if device_type:
-                config[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE.get(device_type)
         elif config is None:
             config = {}
+        else:
+            config = dict(config)
+
+        # Fallback resolution for CONF_CONFIG_FILE based on CONF_DEVICE_TYPE
+        # Applies unconditionally whether config came from ConfigEntry or dict.
+        if not config.get(CONF_CONFIG_FILE):
+            device_type = config.get(CONF_DEVICE_TYPE)
+            if device_type and device_type in DEVICE_TYPE_TO_CONFIG_FILE:
+                config[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE[device_type]
 
         if logger is None:
             logger = _LOGGER
@@ -106,6 +112,8 @@ class YamlController(ClimateController):
         self._config.pop("session", None)  # pragma: no mutate
         self._config.pop("logger", None)  # pragma: no mutate
 
+        # _yaml is read by YamlConfigLoader.async_initialize via getattr(controller, "_yaml")
+        self._yaml: str | None = config.get(CONF_CONFIG_FILE)
         self._ip_address = config.get(CONF_IP_ADDRESS) or config.get(CONF_HOST)
         self._device_id = config.get(CONF_DEVICE_ID)
         self._token = config.get(CONF_TOKEN)
@@ -119,7 +127,9 @@ class YamlController(ClimateController):
 
         self._unique_id = _raw_uid
 
-        # Precise callback type definitions
+        # Callbacks — instance-level None sentinels allow callers (e.g. samsung_2878)
+        # to distinguish "callback configured" from "not configured" via truthiness.
+        # The base class provides no-op method fallbacks for direct invocation.
         self.on_token_refreshed: Callable[[str], None] | None = None
         self.get_current_state_callback: Callable[[], dict[str, Any] | None] | None = (
             None
