@@ -15,6 +15,8 @@ DOMAIN = "climate_ip"
 ISSUE_CONNECTION_FAILED = "connection_failed"
 
 # --- Configurable Options ---
+ATTR_IS_AVAILABLE = "is_available"
+CONF_ENTRY_ID = "entry_id"
 CONF_POLL_INTERVAL = "poll_interval"
 DEFAULT_POLL_INTERVAL = 60
 MIN_POLL_INTERVAL = 5

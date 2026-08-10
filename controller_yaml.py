@@ -33,14 +33,18 @@ if TYPE_CHECKING:
     from .connection import ClimateConnection
 
 from .const import (
+    ATTR_IS_AVAILABLE,
     CONF_CONFIG_FILE,
+    CONF_CONTROLLER,
     CONF_DEBUG,
     CONF_DEVICE_ID,
     CONF_DEVICE_TYPE,
+    CONF_ENTRY_ID,
     CONF_TEMP_NATIVE_CURRENT,
     CONF_TEMP_NATIVE_TARGET,
     DEVICE_TYPE_TO_CONFIG_FILE,
     MAIN_DEVICE_ID,
+    WIFI_KIT_MGMT_ID,
 )
 from .controller import ClimateController, register_controller
 from .controller_yaml_config import YamlConfigLoader
@@ -70,7 +74,7 @@ class YamlController(ClimateController):
         """Initialize the YAML controller from a config dictionary or ConfigEntry."""
         if config is None and config_entry is not None:
             config = {**config_entry.data, **config_entry.options}
-            config["entry_id"] = config_entry.entry_id
+            config[CONF_ENTRY_ID] = config_entry.entry_id
 
             base_unique_id = config_entry.unique_id
             if device_id and device_id != MAIN_DEVICE_ID:
@@ -90,9 +94,9 @@ class YamlController(ClimateController):
             config = dict(config)
 
         # Fallback resolution for CONF_CONFIG_FILE based on CONF_DEVICE_TYPE
-        if not config.get(CONF_CONFIG_FILE):
+        if config.get(CONF_CONFIG_FILE) is None:
             device_type = config.get(CONF_DEVICE_TYPE)
-            if device_type and device_type in DEVICE_TYPE_TO_CONFIG_FILE:
+            if device_type is not None and device_type in DEVICE_TYPE_TO_CONFIG_FILE:
                 config[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE[device_type]
 
         if logger is None:
@@ -116,7 +120,7 @@ class YamlController(ClimateController):
         base_unique_id = config_entry.unique_id if config_entry else config.get(CONF_UNIQUE_ID)
 
         # If device_id exists and is a real sub-device (neither "main" nor "0"):
-        if self._device_id and self._device_id not in (MAIN_DEVICE_ID, "0"):
+        if self._device_id and self._device_id not in (MAIN_DEVICE_ID, WIFI_KIT_MGMT_ID):
             self._unique_id = f"{base_unique_id}_{self._device_id}" if base_unique_id else self._device_id
         else:
             # Monosplit / Main device: Pure MAC address without suffixes
@@ -129,7 +133,7 @@ class YamlController(ClimateController):
             or self._config.get(CONF_TEMP_NATIVE_CURRENT)
             or UnitOfTemperature.CELSIUS
         )
-        self._attributes: dict[str, Any] = {"controller": self.id}
+        self._attributes: dict[str, Any] = {CONF_CONTROLLER: self.id}
 
         self._obj_id_cache: dict[str, DeviceProperty] | None = None
         self._cached_static_modes: (
@@ -222,7 +226,7 @@ class YamlController(ClimateController):
     @property
     def host(self) -> str | None:
         """Return the host or IP address."""
-        return self._ip_address
+        return self.ip_address
 
     @property
     def debug(self) -> bool:
@@ -237,8 +241,8 @@ class YamlController(ClimateController):
     @property
     def available(self) -> bool:
         """Return True if the controller is connected and available."""
-        if self.connection:
-            return self.connection.get_diagnostics().get("is_available", True)
+        if self.connection is not None:
+            return self.connection.get_diagnostics().get(ATTR_IS_AVAILABLE, True)
         return True
 
     @property
@@ -271,7 +275,7 @@ class YamlController(ClimateController):
             return False
 
         op = self.get_property_object(property_name)
-        if op and hasattr(op, "async_set_value"):
+        if isinstance(op, DeviceProperty):
             try:
                 self.poller.register_pending_update(property_name, new_value)
                 _LOGGER.debug(  # pragma: no mutate
@@ -320,9 +324,6 @@ class YamlController(ClimateController):
         """Return the current value of a property by name using safe extraction."""
         obj = self.get_property_object(property_name)
         value = obj.value if obj else self._attributes.get(property_name)
-
-        if value == STATE_UNKNOWN:
-            return None
         return value
 
     @property
@@ -449,9 +450,16 @@ class YamlController(ClimateController):
         """Return the strictly typed state representation of the device."""
         try:
             raw_hvac = self.get_property(ATTR_HVAC_MODE)
-            hvac_mode = (
-                HVACMode(str(raw_hvac).lower()) if raw_hvac is not None else None
-            )
+            hvac_mode: HVACMode | None = None
+            if raw_hvac is not None:
+                try:
+                    hvac_mode = HVACMode(str(raw_hvac).lower())
+                except ValueError:
+                    _LOGGER.warning(
+                        "%s Invalid HVAC mode string received: %s",
+                        self.log_prefix,
+                        raw_hvac,
+                    )
 
             raw_target = self.get_property(ATTR_TEMPERATURE)
             target_temp = float(raw_target) if raw_target is not None else None
@@ -530,7 +538,7 @@ class YamlController(ClimateController):
         """Merge incoming push updates or responses into the memory state."""
         return await self.poller.async_merge_device_state(new_data)
 
-    async def async_clear_pending_updates(self, keys: list[str]) -> None:
+    def clear_pending_updates(self, keys: list[str]) -> None:
         """Clear specific pending updates (anti-flicker locks) on failure."""
         self.poller.clear_pending_updates(keys)
 
