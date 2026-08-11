@@ -299,16 +299,16 @@ def mock_yaml_controller():
 
 @pytest.mark.asyncio
 async def test_update_state_delegation(mock_yaml_controller) -> None:
-    """Kills mutants in update_state (evaluates boolean return)."""
-    # Scenario 1: Poller returns dict (success) -> update_state must return True
+    """Kills mutants in async_update_state."""
+    # Scenario 1: Poller returns dict (success)
     mock_yaml_controller.poller.async_update_state = AsyncMock(
         return_value={"power": "on"}
     )
-    assert await mock_yaml_controller.update_state() is True
+    assert await mock_yaml_controller.async_update_state() == {"power": "on"}
 
-    # Scenario 2: Poller returns None (failure) -> update_state must return False
+    # Scenario 2: Poller returns None (failure)
     mock_yaml_controller.poller.async_update_state = AsyncMock(return_value=None)
-    assert await mock_yaml_controller.update_state() is False
+    assert await mock_yaml_controller.async_update_state() is None
 
 
 def test_get_property_object_hierarchy(mock_yaml_controller) -> None:

@@ -72,8 +72,8 @@ class DummyController(ClimateController):
     def debug(self) -> bool:
         return False
 
-    async def update_state(self) -> bool:
-        return True
+    async def async_update_state(self) -> dict[str, Any] | None:
+        return {}
 
     async def async_set_property(self, property_name: str, new_value) -> bool:
         return True

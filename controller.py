@@ -135,10 +135,6 @@ class ClimateController[T](ABC):
         """Return the debug state of the controller."""
 
     @abstractmethod
-    async def update_state(self) -> bool:
-        """Asynchronously update the state of the controller from the device."""
-
-    @abstractmethod
     async def async_set_property(self, property_name: str, new_value: Any) -> bool:
         """Asynchronously set the value of a property on the device."""
 
