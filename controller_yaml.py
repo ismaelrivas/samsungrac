@@ -152,7 +152,7 @@ class YamlController(ClimateController):
             self._temperature_unit = str(current_temp_unit)
         else:
             self._temperature_unit = UnitOfTemperature.CELSIUS
-        self._attributes: dict[str, Any] = {CONF_CONTROLLER: self.id}
+        self._attributes: dict[str, Any] = {}
 
         self._obj_id_cache: dict[str, DeviceProperty] | None = None
         self._cached_static_modes: (
@@ -167,6 +167,7 @@ class YamlController(ClimateController):
 
         self.loader = YamlConfigLoader(self)
         self.poller = YamlStatePoller(self)
+        self._attributes[CONF_CONTROLLER] = self.id
 
     @staticmethod
     def match_type(controller_type: str) -> bool:
@@ -410,7 +411,8 @@ class YamlController(ClimateController):
     @property
     def service_schema_map(self) -> dict[str, Any] | None:
         """Return the voluptuous service schema map."""
-        return self.loader.service_schema_map
+        raw = self.loader.service_schema_map
+        return dict(raw) if raw is not None else None
 
     @property
     def operations(self) -> list[str]:
@@ -436,14 +438,15 @@ class YamlController(ClimateController):
     def last_poll_data(self) -> dict[str, Any] | None:
         """Return the last raw poll response, useful for diagnostics."""
         if self.loader.state_getter is not None:
-            return self.loader.state_getter.value
+            raw = self.loader.state_getter.value
+            return dict(raw) if isinstance(raw, dict) else raw
         return None
 
     @property
     def connection_diagnostics(self) -> dict[str, Any]:
         """Return connection diagnostic info from the underlying connection."""
         if self.connection is not None:
-            return self.connection.get_diagnostics()
+            return dict(self.connection.get_diagnostics())
         return {}
 
     @property
@@ -520,28 +523,39 @@ class YamlController(ClimateController):
             preset_mode = str(raw_preset) if raw_preset is not None else None
 
             if self._cached_static_modes is None:
-                raw_hvac_modes = self.get_property_all_values(ATTR_HVAC_MODE) or []
+                raw_hvac_modes = self.get_property_all_values(ATTR_HVAC_MODE)
+                hvac_modes_list = raw_hvac_modes if raw_hvac_modes is not None else []
+
+                raw_fan_modes = self.get_property_all_values(ATTR_FAN_MODE)
+                fan_modes_list = raw_fan_modes if raw_fan_modes is not None else []
+
+                raw_swing_modes = self.get_property_all_values(ATTR_SWING_MODE)
+                swing_modes_list = raw_swing_modes if raw_swing_modes is not None else []
+
+                raw_preset_modes = self.get_property_all_values(ATTR_PRESET_MODE)
+                preset_modes_list = raw_preset_modes if raw_preset_modes is not None else []
+
                 self._cached_static_modes = (
                     tuple(
                         mode
-                        for m in raw_hvac_modes
+                        for m in hvac_modes_list
                         if m is not None
                         for mode in [self._safe_parse_hvac_mode(m)]
                         if mode is not None
                     ),
                     tuple(
                         str(m)
-                        for m in (self.get_property_all_values(ATTR_FAN_MODE) or [])
+                        for m in fan_modes_list
                         if m is not None
                     ),
                     tuple(
                         str(m)
-                        for m in (self.get_property_all_values(ATTR_SWING_MODE) or [])
+                        for m in swing_modes_list
                         if m is not None
                     ),
                     tuple(
                         str(m)
-                        for m in (self.get_property_all_values(ATTR_PRESET_MODE) or [])
+                        for m in preset_modes_list
                         if m is not None
                     ),
                 )
