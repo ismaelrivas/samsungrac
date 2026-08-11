@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Protocol, TypeVar, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 ATTR_POWER = "power"
 CLIMATE_CONTROLLERS: list[type[ClimateController]] = []
@@ -130,8 +130,8 @@ class ClimateController(ABC):
 
         base_part, _, sub_part = ident.partition("_")
         clean_mac = base_part.replace(":", "").replace("-", "")
-        mac_suffix = clean_mac[-6:] if clean_mac else "NO_ID"
-        if sub_part and sub_part not in ("main", "0", mac_suffix, clean_mac):
+        mac_suffix = clean_mac[-6:] if len(clean_mac) > 0 else "NO_ID"
+        if len(sub_part) > 0 and sub_part not in ("main", "0", mac_suffix, clean_mac):
             return f"[{mac_suffix}:{sub_part}]"
         return f"[{mac_suffix}]"
 

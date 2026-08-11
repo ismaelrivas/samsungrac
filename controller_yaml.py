@@ -225,7 +225,7 @@ class YamlController(ClimateController):
     @property
     def config(self) -> dict[str, Any]:
         """Return the controller configuration dictionary."""
-        return self._config
+        return dict(self._config)
 
     @property
     def token(self) -> str | None:
@@ -262,7 +262,7 @@ class YamlController(ClimateController):
     def available(self) -> bool:
         """Return True if the controller is connected and available."""
         if self.connection is not None:
-            return self.connection.get_diagnostics().get(ATTR_IS_AVAILABLE, True)
+            return bool(self.connection.get_diagnostics().get(ATTR_IS_AVAILABLE, True))
         return True
 
     @property
