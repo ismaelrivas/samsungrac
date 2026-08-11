@@ -78,16 +78,16 @@ class YamlController(ClimateController):
             config[CONF_ENTRY_ID] = config_entry.entry_id
 
             base_unique_id = config_entry.unique_id
-            if device_id and device_id != MAIN_DEVICE_ID:
+            if device_id is not None and device_id != MAIN_DEVICE_ID:
                 config[CONF_UNIQUE_ID] = (
                     f"{base_unique_id}_{device_id}"
-                    if base_unique_id
+                    if base_unique_id is not None
                     else device_id
                 )
             else:
                 config[CONF_UNIQUE_ID] = base_unique_id
 
-            if device_id:
+            if device_id is not None:
                 config[CONF_DEVICE_ID] = device_id
         elif config is None:
             config = {}
@@ -129,7 +129,7 @@ class YamlController(ClimateController):
         base_unique_id = config_entry.unique_id if config_entry else config.get(CONF_UNIQUE_ID)
 
         # If device_id exists and is a real sub-device (neither "main" nor "0"):
-        if self._device_id and self._device_id not in (MAIN_DEVICE_ID, WIFI_KIT_MGMT_ID):
+        if self._device_id is not None and self._device_id not in (MAIN_DEVICE_ID, WIFI_KIT_MGMT_ID):
             self._unique_id = f"{base_unique_id}_{self._device_id}" if base_unique_id is not None else self._device_id
         else:
             # Monosplit / Main device: Pure MAC address without suffixes
@@ -137,11 +137,15 @@ class YamlController(ClimateController):
 
         self._debug = bool(config.get(CONF_DEBUG, False))
 
-        self._temperature_unit: str = (
-            self._config.get(CONF_TEMP_NATIVE_TARGET)
-            or self._config.get(CONF_TEMP_NATIVE_CURRENT)
-            or UnitOfTemperature.CELSIUS
-        )
+        target_temp_unit = self._config.get(CONF_TEMP_NATIVE_TARGET)
+        current_temp_unit = self._config.get(CONF_TEMP_NATIVE_CURRENT)
+
+        if target_temp_unit is not None:
+            self._temperature_unit = str(target_temp_unit)
+        elif current_temp_unit is not None:
+            self._temperature_unit = str(current_temp_unit)
+        else:
+            self._temperature_unit = UnitOfTemperature.CELSIUS
         self._attributes: dict[str, Any] = {CONF_CONTROLLER: self.id}
 
         self._obj_id_cache: dict[str, DeviceProperty] | None = None
@@ -362,7 +366,7 @@ class YamlController(ClimateController):
             return obj
 
         mapped_op_id = self.poller.get_hass_attr_for_op_id(property_name)
-        if mapped_op_id and mapped_op_id != property_name:
+        if mapped_op_id is not None and mapped_op_id != property_name:
             obj = self._objects_by_id.get(mapped_op_id)
             if obj is not None:
                 return obj
@@ -377,7 +381,7 @@ class YamlController(ClimateController):
     def get_property_all_values(self, property_name: str) -> list[str] | None:
         """Return the complete, unfiltered list of values for a property."""
         prop = self.get_property_object(property_name)
-        if prop and prop.all_values:
+        if prop is not None and prop.all_values is not None and len(prop.all_values) > 0:
             return prop.all_values
 
         _LOGGER.debug(  # pragma: no mutate
@@ -451,7 +455,8 @@ class YamlController(ClimateController):
         if state is not None and len(state) > 0:
             return state
         if self.loader.state_getter is not None:
-            return self.loader.state_getter.value or {}
+            getter_value = self.loader.state_getter.value
+            return getter_value if getter_value is not None else {}
         return {}
 
     def _safe_parse_hvac_mode(self, raw_mode: Any) -> HVACMode | None:
