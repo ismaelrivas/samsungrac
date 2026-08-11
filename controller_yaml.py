@@ -135,7 +135,12 @@ class YamlController(ClimateController):
             # Monosplit / Main device: Pure MAC address without suffixes
             self._unique_id = base_unique_id
 
-        self._debug = bool(config.get(CONF_DEBUG, False))
+        # Strict Boolean Parsing (Guarded against string casting trap like 'false' -> True)
+        raw_debug = config.get(CONF_DEBUG, False)
+        if isinstance(raw_debug, str):
+            self._debug = raw_debug.lower() in ("true", "1", "yes", "on")
+        else:
+            self._debug = bool(raw_debug)
 
         target_temp_unit = self._config.get(CONF_TEMP_NATIVE_TARGET)
         current_temp_unit = self._config.get(CONF_TEMP_NATIVE_CURRENT)
@@ -293,7 +298,7 @@ class YamlController(ClimateController):
                     property_name,
                     new_value,
                 )  # pragma: no mutate
-                target_device_id = device_id or self.device_id
+                target_device_id = device_id if device_id is not None else self.device_id
                 if target_device_id in (None, "", MAIN_DEVICE_ID):
                     target_device_id = self._unique_id
 
@@ -461,6 +466,9 @@ class YamlController(ClimateController):
 
     def _safe_parse_hvac_mode(self, raw_mode: Any) -> HVACMode | None:
         """Safely parse HVAC mode, returning None on invalid value."""
+        if raw_mode is None:
+            return None
+
         try:
             return HVACMode(str(raw_mode).lower())
         except ValueError:
