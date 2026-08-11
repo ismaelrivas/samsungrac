@@ -248,7 +248,7 @@ class DeviceProperty:
     @property
     def name(self) -> str:
         """Return the friendly name of the property, or the ID if not set."""
-        return self._friendly_name or self._name
+        return self._friendly_name if self._friendly_name is not None else self._name
 
     @property
     def all_values(self) -> list[Any]:
@@ -597,7 +597,7 @@ class DeviceOperation(DeviceProperty):
             "value": dev_value,
             "device_id": duid,
             "duid": duid,
-            "device_state": device_state or {},
+            "device_state": device_state if device_state is not None else {},
         }
         conn_tmpl = getattr(connection, "_connection_template", None)
         template_to_use = self.connection_template if self.connection_template is not None else conn_tmpl
@@ -648,7 +648,7 @@ class DeviceOperation(DeviceProperty):
 
         if connection.is_async_native:
             try:
-                duid_for_render = device_id or getattr(
+                duid_for_render = device_id if device_id is not None else getattr(
                     self._controller, "device_id", None
                 )
                 if not duid_for_render:
@@ -695,15 +695,15 @@ class DeviceOperation(DeviceProperty):
                             self._controller.poller, "_pure_network_state", None
                         )
                         if isinstance(pure_state, dict):
-                            state_node = getattr(self, "_state_node", None) or self.id
+                            state_node = getattr(self, "_state_node", None)
+                            if state_node is None or len(str(state_node)) == 0:
+                                state_node = self.id
                             if hasattr(
                                 self._controller.poller, "_set_dict_value_by_path"
                             ):
                                 self._controller.poller._set_dict_value_by_path(
                                     pure_state, state_node, dev_value
                                 )
-                            if hasattr(self, "apply_optimistic_cascades"):
-                                self.apply_optimistic_cascades(pure_state, v, dev_value)
                     return True
                 return False
             except (CannotConnect, AuthError) as e:
@@ -966,31 +966,7 @@ class ModeOperation(BasicDeviceOperation):
             list_attribute_name: self.values,
         }
 
-    def apply_optimistic_cascades(
-        self, state: dict[str, Any], value: Any, dev_val: Any
-    ) -> None:
-        """Optimistically cascade state changes for mode operations (e.g. hvac_mode -> power)."""
-        if self._id in (ATTR_HVAC_MODE, "hvac"):
-            if isinstance(state, dict):
-                target_nodes = [state]
-                if (
-                    "Devices" in state
-                    and isinstance(state["Devices"], list)
-                    and len(state["Devices"]) > 0
-                    and isinstance(state["Devices"][0], dict)
-                ):
-                    target_nodes.append(state["Devices"][0])
-                val_str = str(value).lower() if value is not None else ""
-                power_target = (
-                    "Off"
-                    if val_str in ("off", STATE_OFF)
-                    else ("On" if len(val_str) > 0 else None)
-                )
-                if power_target is not None:
-                    for target in target_nodes:
-                        op_node = target.setdefault("Operation", {})
-                        if isinstance(op_node, dict):
-                            op_node["power"] = power_target
+
 
 
 @register_property
@@ -1024,34 +1000,7 @@ class SwitchOperation(BasicDeviceOperation):
             return True
         return False
 
-    def apply_optimistic_cascades(
-        self, state: dict[str, Any], value: Any, dev_val: Any
-    ) -> None:
-        """Optimistically cascade state changes for switch operations (e.g. power switch -> Operation.power)."""
-        if self._id in ("power", "power_switch", "switch"):
-            if isinstance(state, dict):
-                target_nodes = [state]
-                if (
-                    "Devices" in state
-                    and isinstance(state["Devices"], list)
-                    and len(state["Devices"]) > 0
-                    and isinstance(state["Devices"][0], dict)
-                ):
-                    target_nodes.append(state["Devices"][0])
-                val_str = str(value).lower() if value is not None else ""
-                power_target = None
-                if val_str in ("off", STATE_OFF, "false"):
-                    power_target = "Off"
-                elif val_str in ("on", STATE_ON, "true"):
-                    power_target = "On"
-                elif dev_val in ("Off", "On"):
-                    power_target = dev_val
 
-                if power_target is not None:
-                    for target in target_nodes:
-                        op_node = target.setdefault("Operation", {})
-                        if isinstance(op_node, dict):
-                            op_node["power"] = power_target
 
 
 class BasicNumericOperation(DeviceOperation):

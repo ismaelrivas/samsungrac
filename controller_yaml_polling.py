@@ -1089,7 +1089,8 @@ class YamlStatePoller:
         # 💥 SILENT CASCADES: Lock the predicted UI state, but DO NOT send to the AC
         for k, v in update_result.items():
             if k not in corrections and k != property_name:  # pragma: no mutate
-                self.register_pending_update(k, v)
+                if k not in self._pending_updates:
+                    self.register_pending_update(k, v)
 
         # 💥 CASCADE SHIELD: Do NOT register predictive corrections as hard locks.
         # This allows dynamic predictions (like fan=auto in Dry mode) to automatically revert
