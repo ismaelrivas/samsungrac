@@ -114,7 +114,8 @@ class YamlController(ClimateController):
         for non_serializable in NON_SERIALIZABLE_KEYS:
             self._config.pop(non_serializable, None)  # pragma: no mutate
 
-        self._ip_address = config.get(CONF_IP_ADDRESS) or config.get(CONF_HOST)
+        ip_from_config = config.get(CONF_IP_ADDRESS)
+        self._ip_address = ip_from_config if ip_from_config is not None else config.get(CONF_HOST)
         if self._ip_address is None:
             _LOGGER.warning(
                 "%s Neither %s nor %s present in configuration",
@@ -484,16 +485,7 @@ class YamlController(ClimateController):
         """Return the strictly typed state representation of the device."""
         try:
             raw_hvac = self.get_property(ATTR_HVAC_MODE)
-            hvac_mode: HVACMode | None = None
-            if raw_hvac is not None:
-                try:
-                    hvac_mode = HVACMode(str(raw_hvac).lower())
-                except ValueError:
-                    _LOGGER.warning(
-                        "%s Invalid HVAC mode string received: %s",
-                        self.log_prefix,
-                        raw_hvac,
-                    )
+            hvac_mode = self._safe_parse_hvac_mode(raw_hvac)
 
             raw_target = self.get_property(ATTR_TEMPERATURE)
             target_temp: float | None = None
@@ -588,8 +580,7 @@ class YamlController(ClimateController):
     def clear_state_cache(self) -> None:
         """Clear cached state in poller and static mode cache to prevent ghosting."""
         self._cached_static_modes = None
-        if self.poller is not None:
-            self.poller.clear_state_cache()
+        self.poller.clear_state_cache()
 
     async def async_merge_device_state(self, new_data: dict[str, Any]) -> bool:
         """Merge incoming push updates or responses into the memory state."""

@@ -111,7 +111,7 @@ class ClimateController[T](ABC):
     @property
     def host(self) -> str | None:
         """Return the host or IP address of the controller."""
-        return getattr(self, "ip_address", None)
+        return self.ip_address  # type: ignore[attr-defined]  # Subclasses MUST define ip_address
 
     @property
     def log_prefix(self) -> str:
@@ -135,7 +135,9 @@ class ClimateController[T](ABC):
         """Return the debug state of the controller."""
 
     @abstractmethod
-    async def async_set_property(self, property_name: str, new_value: Any) -> bool:
+    async def async_set_property(
+        self, property_name: str, new_value: Any, device_id: str | None = None
+    ) -> bool:
         """Asynchronously set the value of a property on the device."""
 
     @abstractmethod
