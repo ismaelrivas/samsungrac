@@ -1,4 +1,4 @@
-""""YAML-based climate device controller for the climate_ip integration."""
+"""YAML-based climate device controller for the climate_ip integration."""
 
 from __future__ import annotations
 
@@ -480,6 +480,21 @@ class YamlController(ClimateController):
             )
             return None
 
+    def _safe_parse_temperature(self, raw_value: Any, label: str) -> float | None:
+        """Safely parse a temperature value, returning None on invalid input."""
+        if raw_value is None:
+            return None
+        try:
+            return float(raw_value)
+        except (ValueError, TypeError):
+            _LOGGER.warning(
+                "%s Invalid %s value: %s",
+                self.log_prefix,
+                label,
+                raw_value,
+            )
+            return None
+
     @property
     def climate_state(self) -> ClimateIPDeviceState:
         """Return the strictly typed state representation of the device."""
@@ -487,29 +502,13 @@ class YamlController(ClimateController):
             raw_hvac = self.get_property(ATTR_HVAC_MODE)
             hvac_mode = self._safe_parse_hvac_mode(raw_hvac)
 
-            raw_target = self.get_property(ATTR_TEMPERATURE)
-            target_temp: float | None = None
-            if raw_target is not None:
-                try:
-                    target_temp = float(raw_target)
-                except (ValueError, TypeError):
-                    _LOGGER.warning(
-                        "%s Invalid target temperature value: %s",
-                        self.log_prefix,
-                        raw_target,
-                    )
+            target_temp = self._safe_parse_temperature(
+                self.get_property(ATTR_TEMPERATURE), "target temperature"
+            )
 
-            raw_current = self.get_property(ATTR_CURRENT_TEMPERATURE)
-            current_temp: float | None = None
-            if raw_current is not None:
-                try:
-                    current_temp = float(raw_current)
-                except (ValueError, TypeError):
-                    _LOGGER.warning(
-                        "%s Invalid current temperature value: %s",
-                        self.log_prefix,
-                        raw_current,
-                    )
+            current_temp = self._safe_parse_temperature(
+                self.get_property(ATTR_CURRENT_TEMPERATURE), "current temperature"
+            )
 
             raw_fan = self.get_property(ATTR_FAN_MODE)
             fan_mode = str(raw_fan) if raw_fan is not None else None
@@ -580,6 +579,7 @@ class YamlController(ClimateController):
     def clear_state_cache(self) -> None:
         """Clear cached state in poller and static mode cache to prevent ghosting."""
         self._cached_static_modes = None
+        self._obj_id_cache = None
         self.poller.clear_state_cache()
 
     async def async_merge_device_state(self, new_data: dict[str, Any]) -> bool:

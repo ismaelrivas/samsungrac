@@ -10,9 +10,6 @@ from typing import Any, Protocol, TypeVar, runtime_checkable
 ATTR_POWER = "power"
 CLIMATE_CONTROLLERS: list[type[ClimateController]] = []
 
-_T = TypeVar("_T")
-
-
 class ControllerError(Exception):
     """Base exception for controller errors."""
 
@@ -48,7 +45,7 @@ class ControllerInterface(Protocol):
     def on_connection_failed_callback(self) -> None: ...
 
 
-class ClimateController[T](ABC):
+class ClimateController(ABC):
     """Abstract base class for a device controller. Enforcement through ABC."""
 
     # pylint: disable=import-outside-toplevel,too-many-public-methods,useless-return
@@ -121,7 +118,16 @@ class ClimateController[T](ABC):
     @property
     def log_prefix(self) -> str:
         """Standardized log prefix."""
-        ident = str(self.unique_id or self.name or "NO_ID")
+        uid = self.unique_id
+        nm = self.name
+        
+        if uid is not None:
+            ident = str(uid)
+        elif nm is not None:
+            ident = str(nm)
+        else:
+            ident = "NO_ID"
+
         base_part, _, sub_part = ident.partition("_")
         clean_mac = base_part.replace(":", "").replace("-", "")
         mac_suffix = clean_mac[-6:] if clean_mac else "NO_ID"
