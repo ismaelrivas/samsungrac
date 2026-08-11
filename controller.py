@@ -73,6 +73,7 @@ class ClimateController(ABC):
 
     @property
     def connection(self) -> Any | None:
+        """Return the active connection object."""
         return self._connection
 
     @property

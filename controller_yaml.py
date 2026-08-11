@@ -389,7 +389,7 @@ class YamlController(ClimateController):
         """Return the complete, unfiltered list of values for a property."""
         prop = self.get_property_object(property_name)
         if prop is not None and prop.all_values is not None and len(prop.all_values) > 0:
-            return prop.all_values
+            return list(prop.all_values)
 
         _LOGGER.debug(  # pragma: no mutate
             "%s Cannot get values for '%s': not an operation or missing all_values",
@@ -417,12 +417,12 @@ class YamlController(ClimateController):
     @property
     def operations(self) -> list[str]:
         """Return the list of settable operation names."""
-        return self.loader.operations_list
+        return list(self.loader.operations_list)
 
     @property
     def attributes(self) -> list[str]:
         """Return the list of read-only attribute names."""
-        return self.loader.properties_list
+        return list(self.loader.properties_list)
 
     @property
     def sensors(self) -> list[DeviceProperty]:
@@ -454,7 +454,7 @@ class YamlController(ClimateController):
         """Return the unmutated pure network state of the device."""
         pure = self.poller.pure_network_state
         if pure is not None and len(pure) > 0:
-            return pure
+            return dict(pure)
         return self.device_state
 
     @property
@@ -462,10 +462,10 @@ class YamlController(ClimateController):
         """Return the current device state via the poller's public interface."""
         state = self.poller.device_state
         if state is not None and len(state) > 0:
-            return state
+            return dict(state)
         if self.loader.state_getter is not None:
             getter_value = self.loader.state_getter.value
-            return getter_value if getter_value is not None else {}
+            return dict(getter_value) if getter_value is not None else {}
         return {}
 
     def _safe_parse_hvac_mode(self, raw_mode: Any) -> HVACMode | None:

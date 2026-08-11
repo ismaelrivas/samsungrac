@@ -161,35 +161,35 @@ class DeviceProperty:
     def _raw_device_state(self) -> dict[str, Any]:
         """Safely extract the raw JSON dictionary required by YAML templates."""
         raw_dict = None
-        if self._controller and hasattr(self._controller, "pure_device_state"):
+        if self._controller is not None and hasattr(self._controller, "pure_device_state"):
             ctrl_pure = self._controller.pure_device_state
-            if isinstance(ctrl_pure, dict) and ctrl_pure:
+            if isinstance(ctrl_pure, dict) and len(ctrl_pure) > 0:
                 raw_dict = ctrl_pure
         if (
-            not raw_dict
-            and self._controller
+            raw_dict is None
+            and self._controller is not None
             and hasattr(self._controller, "device_state")
         ):
             ctrl_state = self._controller.device_state
-            if isinstance(ctrl_state, dict) and ctrl_state:
+            if isinstance(ctrl_state, dict) and len(ctrl_state) > 0:
                 raw_dict = ctrl_state
         if (
-            not raw_dict
-            and self._status_getter
+            raw_dict is None
+            and self._status_getter is not None
             and isinstance(self._status_getter.value, dict)
         ):
             raw_dict = self._status_getter.value
         if (
-            not raw_dict
-            and self._controller
+            raw_dict is None
+            and self._controller is not None
             and hasattr(self._controller, "get_property")
         ):
             status_prop = self._controller.get_property("status")
-            if status_prop and isinstance(status_prop.value, dict):
+            if status_prop is not None and isinstance(status_prop.value, dict):
                 raw_dict = status_prop.value
-        if not raw_dict and isinstance(self._device_state, dict):
+        if raw_dict is None and isinstance(self._device_state, dict):
             raw_dict = self._device_state
-        if not raw_dict:
+        if raw_dict is None:
             import dataclasses
 
             if dataclasses.is_dataclass(self._device_state):
@@ -201,10 +201,10 @@ class DeviceProperty:
             isinstance(raw_dict, dict)
             and "Devices" in raw_dict
             and isinstance(raw_dict["Devices"], list)
-            and raw_dict["Devices"]
+            and len(raw_dict["Devices"]) > 0
         ):
-            return raw_dict["Devices"][0]
-        return raw_dict
+            return dict(raw_dict["Devices"][0])
+        return dict(raw_dict) if isinstance(raw_dict, dict) else {}
 
     def is_valid(self, device_state: dict[str, Any] | None) -> bool:
         """Return True if this property is valid for the given device state."""
@@ -437,12 +437,12 @@ class GetJsonStatus(DeviceProperty):
         super_result = super().load_from_yaml(node)
 
         if (
-            self._connection
+            self._connection is not None
             and self._connection.is_async_native
-            and not self._connection_template
+            and self._connection_template is None
         ):
             conn_tmpl = getattr(self._connection, "_connection_template", None)
-            if conn_tmpl:
+            if conn_tmpl is not None:
                 _LOGGER.debug(
                     "%s [GetJsonStatus] Inheriting connection_template from connection object.",
                     self.log_prefix,
@@ -600,9 +600,9 @@ class DeviceOperation(DeviceProperty):
             "device_state": device_state or {},
         }
         conn_tmpl = getattr(connection, "_connection_template", None)
-        template_to_use = self.connection_template or conn_tmpl
+        template_to_use = self.connection_template if self.connection_template is not None else conn_tmpl
 
-        if template_to_use:
+        if template_to_use is not None:
             rendered = template_to_use.render(**render_ctx)
             try:
                 operation_params = json_loads(rendered)
@@ -611,7 +611,7 @@ class DeviceOperation(DeviceProperty):
         else:
             operation_params = dict(getattr(connection, "_params", {}))
 
-        if not operation_params:
+        if operation_params is None or len(operation_params) == 0:
             _LOGGER.error(
                 "%s [_resolve_async_params] No params or template found.",
                 self.log_prefix,
@@ -620,7 +620,7 @@ class DeviceOperation(DeviceProperty):
 
         base_params: dict[str, Any] = {}
         base_template = getattr(connection, "_connection_template", None)
-        if base_template and base_template is not template_to_use:
+        if base_template is not None and base_template is not template_to_use:
             try:
                 base_params = json_loads(base_template.render(**render_ctx))
             except JSON_DECODE_EXCEPTIONS:
@@ -819,24 +819,27 @@ class BasicDeviceOperation(DeviceOperation):
     @property
     def all_values(self) -> list[Any]:
         """Return the complete, unfiltered list of values."""
-        return self._values
+        return list(self._values)
 
     @property
     def values(self) -> list[Any]:
         """Return a list of valid values, which can be dynamic."""
         if not self._value_validation_templates:
-            return self._values
+            return list(self._values)
 
         hvac_node = None
         if isinstance(self._device_state, dict):
             hvac_prop = self._controller.loader.operations.get(
                 ATTR_HVAC_MODE
-            ) or self._controller.loader.operations.get("hvac")
-            if hvac_prop:
+            )
+            if hvac_prop is None:
+                hvac_prop = self._controller.loader.operations.get("hvac")
+                
+            if hvac_prop is not None:
                 state_node = getattr(
                     hvac_prop, "state_node", getattr(hvac_prop, "_state_node", None)
                 )
-                if isinstance(state_node, str) and state_node:
+                if isinstance(state_node, str) and len(state_node) > 0:
                     hvac_node = get_value_by_path(
                         self._device_state, state_node.split(".")
                     )
@@ -864,8 +867,9 @@ class BasicDeviceOperation(DeviceOperation):
             self._values_cache[cache_key] = valid_values
 
         if (
-            sorted(valid_values) != sorted(self._last_valid_values)
-            and self._last_valid_values
+            len(valid_values) > 0
+            and len(self._last_valid_values) > 0
+            and sorted(valid_values) != sorted(self._last_valid_values)
         ):
             _LOGGER.debug(
                 "%s Valid values for '%s' changed to: %s",
@@ -873,15 +877,15 @@ class BasicDeviceOperation(DeviceOperation):
                 self.name,
                 valid_values,
             )  # pragma: no mutate
-            if self._controller and self._id == ATTR_FAN_MODE:
+            if self._controller is not None and self._id == ATTR_FAN_MODE:
                 _LOGGER.debug(
                     "%s Setting fan_modes_list_changed_pending_flicker flag",
                     self.log_prefix,
                 )  # pragma: no mutate
-                self._controller._fan_modes_list_changed_pending_flicker = True
+                self._controller.fan_modes_list_changed_pending_flicker = True
 
-        self._last_valid_values = valid_values
-        return valid_values
+        self._last_valid_values = list(valid_values)
+        return list(valid_values)
 
     def match_value(self, value: Any) -> bool:
         """Check if value matches the operation. True if the value is correct."""
@@ -972,7 +976,7 @@ class ModeOperation(BasicDeviceOperation):
                 if (
                     "Devices" in state
                     and isinstance(state["Devices"], list)
-                    and state["Devices"]
+                    and len(state["Devices"]) > 0
                     and isinstance(state["Devices"][0], dict)
                 ):
                     target_nodes.append(state["Devices"][0])
@@ -980,9 +984,9 @@ class ModeOperation(BasicDeviceOperation):
                 power_target = (
                     "Off"
                     if val_str in ("off", STATE_OFF)
-                    else ("On" if val_str else None)
+                    else ("On" if len(val_str) > 0 else None)
                 )
-                if power_target:
+                if power_target is not None:
                     for target in target_nodes:
                         op_node = target.setdefault("Operation", {})
                         if isinstance(op_node, dict):
@@ -1030,7 +1034,7 @@ class SwitchOperation(BasicDeviceOperation):
                 if (
                     "Devices" in state
                     and isinstance(state["Devices"], list)
-                    and state["Devices"]
+                    and len(state["Devices"]) > 0
                     and isinstance(state["Devices"][0], dict)
                 ):
                     target_nodes.append(state["Devices"][0])
@@ -1043,7 +1047,7 @@ class SwitchOperation(BasicDeviceOperation):
                 elif dev_val in ("Off", "On"):
                     power_target = dev_val
 
-                if power_target:
+                if power_target is not None:
                     for target in target_nodes:
                         op_node = target.setdefault("Operation", {})
                         if isinstance(op_node, dict):
