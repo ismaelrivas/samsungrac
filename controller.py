@@ -109,9 +109,14 @@ class ClimateController[T](ABC):
         """Return the device id of the controller."""
 
     @property
+    @abstractmethod
+    def ip_address(self) -> str | None:
+        """Contract: Subclasses must expose their IP address."""
+
+    @property
     def host(self) -> str | None:
         """Return the host or IP address of the controller."""
-        return self.ip_address  # type: ignore[attr-defined]  # Subclasses MUST define ip_address
+        return self.ip_address
 
     @property
     def log_prefix(self) -> str:
