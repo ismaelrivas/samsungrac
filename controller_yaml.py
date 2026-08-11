@@ -73,11 +73,9 @@ class YamlController(ClimateController):
     ) -> None:
         """Initialize the YAML controller from a config dictionary or ConfigEntry."""
         if config is None and config_entry is not None:
-            config = {
-                **config_entry.data,
-                **config_entry.options,
-                CONF_ENTRY_ID: config_entry.entry_id,
-            }
+            config = dict(config_entry.data)
+            config.update(config_entry.options)
+            config[CONF_ENTRY_ID] = config_entry.entry_id
 
             base_unique_id = config_entry.unique_id
             if device_id and device_id != MAIN_DEVICE_ID:
@@ -132,7 +130,7 @@ class YamlController(ClimateController):
 
         # If device_id exists and is a real sub-device (neither "main" nor "0"):
         if self._device_id and self._device_id not in (MAIN_DEVICE_ID, WIFI_KIT_MGMT_ID):
-            self._unique_id = f"{base_unique_id}_{self._device_id}" if base_unique_id else self._device_id
+            self._unique_id = f"{base_unique_id}_{self._device_id}" if base_unique_id is not None else self._device_id
         else:
             # Monosplit / Main device: Pure MAC address without suffixes
             self._unique_id = base_unique_id
@@ -238,7 +236,7 @@ class YamlController(ClimateController):
     @property
     def host(self) -> str | None:
         """Return the host or IP address."""
-        return self._ip_address
+        return self.ip_address
 
     @property
     def debug(self) -> bool:
@@ -261,14 +259,6 @@ class YamlController(ClimateController):
     def id(self) -> str | None:
         """Return the unique id of the controller."""
         return self.unique_id
-
-    async def update_state(self) -> bool:
-        """Asynchronously update the state of the controller from the device.
-
-        Fulfills ABC requirement from ClimateController.
-        """
-        result = await self.async_update_state()
-        return result is not None
 
     async def initialize(self) -> bool:
         """Perform initial YAML configuration loading and set up the base connection."""
@@ -338,7 +328,9 @@ class YamlController(ClimateController):
     def get_property(self, property_name: str) -> Any:
         """Return the current value of a property by name using safe extraction."""
         obj = self.get_property_object(property_name)
-        return obj.value if obj is not None else self._attributes.get(property_name)
+        if obj is not None:
+            return obj.value
+        return self._attributes.get(property_name)
 
     @property
     def _objects_by_id(self) -> dict[str, DeviceProperty]:
@@ -433,7 +425,9 @@ class YamlController(ClimateController):
     @property
     def last_poll_data(self) -> dict[str, Any] | None:
         """Return the last raw poll response, useful for diagnostics."""
-        return self.loader.state_getter.value if self.loader.state_getter else None
+        if self.loader.state_getter is not None:
+            return self.loader.state_getter.value
+        return None
 
     @property
     def connection_diagnostics(self) -> dict[str, Any]:
@@ -456,7 +450,7 @@ class YamlController(ClimateController):
         state = self.poller.device_state
         if state is not None and len(state) > 0:
             return state
-        if self.loader.state_getter:
+        if self.loader.state_getter is not None:
             return self.loader.state_getter.value or {}
         return {}
 
@@ -534,14 +528,17 @@ class YamlController(ClimateController):
                     tuple(
                         str(m)
                         for m in (self.get_property_all_values(ATTR_FAN_MODE) or [])
+                        if m is not None
                     ),
                     tuple(
                         str(m)
                         for m in (self.get_property_all_values(ATTR_SWING_MODE) or [])
+                        if m is not None
                     ),
                     tuple(
                         str(m)
                         for m in (self.get_property_all_values(ATTR_PRESET_MODE) or [])
+                        if m is not None
                     ),
                 )
 
