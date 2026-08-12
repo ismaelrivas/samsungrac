@@ -160,9 +160,9 @@ class YamlController(ClimateController):
         current_temp_unit = self._config.get(CONF_TEMP_NATIVE_CURRENT)
 
         if target_temp_unit is not None:
-            self._temperature_unit = str(target_temp_unit)
+            self._temperature_unit = UnitOfTemperature(str(target_temp_unit))
         elif current_temp_unit is not None:
-            self._temperature_unit = str(current_temp_unit)
+            self._temperature_unit = UnitOfTemperature(str(current_temp_unit))
         else:
             self._temperature_unit = UnitOfTemperature.CELSIUS
         self._attributes: dict[str, Any] = {}

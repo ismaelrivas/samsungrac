@@ -67,7 +67,16 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def render_template(template: Template, **kwargs: Any) -> Any:
-    """Render a Jinja2 template synchronously using the native HA Template contract."""
+    """Render a Jinja2 template synchronously or asynchronously depending on the context."""
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+        is_running = loop.is_running()
+    except RuntimeError:
+        is_running = False
+
+    if is_running:
+        return template.async_render(kwargs, parse_result=True)
     return template.render(kwargs, parse_result=True)
 
 
@@ -218,14 +227,17 @@ class DeviceProperty:
             else:
                 raw_dict = {}
 
-        if (
-            isinstance(raw_dict, dict)
-            and "Devices" in raw_dict
-            and isinstance(raw_dict["Devices"], list)
-            and bool(raw_dict["Devices"])
-        ):
-            return dict(raw_dict["Devices"][0])
-        return dict(raw_dict) if isinstance(raw_dict, dict) else {}
+        if isinstance(raw_dict, dict):
+            device_id = self._controller.device_id or "XXXX"
+            cache = getattr(self._controller.loader, "_parsed_yaml_cache", {})
+            id_map = cache.get(device_id, {}).get("device", {}).get("identifiers", {})
+            path = id_map.get("path_to_devices", ["Devices"])
+            
+            devices_list = get_value_by_path(raw_dict, path)
+            if isinstance(devices_list, list) and devices_list:
+                return dict(devices_list[0])
+            return dict(raw_dict)
+        return {}
 
     def is_valid(self, device_state: dict[str, Any] | None) -> bool:
         """Return True if this property is valid for the given device state."""
@@ -523,16 +535,19 @@ class GetJsonStatus(DeviceProperty):
 
             render_context: dict[str, Any] = getattr(connection, "_params", {}).copy()
 
-            if dev_id := getattr(self._controller, "device_id", None):
-                render_context["device_id"] = dev_id
-                render_context.setdefault(KEY_DUID, dev_id)
-
             cfg = getattr(connection, "_cfg", getattr(connection, "config", None))
-            if cfg:
-                if duid := getattr(cfg, KEY_DUID, None):
-                    render_context.setdefault(KEY_DUID, duid)
-                if token := getattr(cfg, "token", None):
-                    render_context.setdefault("token", token)
+            duid_from_cfg = cfg.get(KEY_DUID) if isinstance(cfg, dict) else getattr(cfg, KEY_DUID, None)
+            
+            duid_for_render = self._controller.device_id or duid_from_cfg
+            if not duid_for_render:
+                raise ValueError("Could not resolve device_id/duid for async command parameter rendering")
+            
+            render_context["device_id"] = duid_for_render
+            render_context.setdefault(KEY_DUID, duid_for_render)
+            
+            token_from_cfg = cfg.get("token") if isinstance(cfg, dict) else getattr(cfg, "token", None)
+            if token_from_cfg:
+                render_context.setdefault("token", token_from_cfg)
 
             response_text: str | None = None  # pragma: no mutate
             params_str = render_template(self.connection_template, **render_context)
@@ -696,14 +711,11 @@ class DeviceOperation(DeviceProperty):
 
         if connection.is_async_native:
             try:
-                duid_for_render = device_id if device_id is not None else getattr(
-                    self._controller, "device_id", None
-                )
+                cfg = getattr(connection, "_cfg", getattr(connection, "config", None))
+                duid_from_cfg = cfg.get(KEY_DUID) if isinstance(cfg, dict) else getattr(cfg, KEY_DUID, None)
+                duid_for_render = device_id or self._controller.device_id or duid_from_cfg
                 if not duid_for_render:
-                    cfg = getattr(
-                        connection, "_cfg", getattr(connection, "config", None)
-                    )
-                    duid_for_render = getattr(cfg, KEY_DUID, None) if cfg else None
+                    raise ValueError("Could not resolve device_id/duid for async command parameter rendering")
 
                 # dev_value is already calculated and validated above
                 params = self._resolve_async_params(
@@ -735,12 +747,8 @@ class DeviceOperation(DeviceProperty):
                 )
                 if response is not None:
                     if self._controller:
-                        pure_state = self._controller.poller._pure_network_state
-                        if isinstance(pure_state, dict):
-                            state_node = self._state_node or self.id
-                            self._controller.poller._set_dict_value_by_path(
-                                pure_state, state_node, dev_value
-                            )
+                        state_node = self._state_node or self.id
+                        self._controller.poller.update_pure_state_path(state_node, dev_value)
                     return True
                 return False
             except (CannotConnect, AuthError) as e:
@@ -997,8 +1005,11 @@ class ModeOperation(BasicDeviceOperation):
             ATTR_FAN_MODE: ATTR_FAN_MODES,
             ATTR_PRESET_MODE: ATTR_PRESET_MODES,
             ATTR_SWING_MODE: ATTR_SWING_MODES,
+            "fan_max_mode": "fan_max_modes",
         }
-        list_attribute_name = mode_map.get(self._id, f"{self.name}_modes")
+        list_attribute_name = mode_map.get(self._id)
+        if list_attribute_name is None:
+            raise KeyError(f"Unmapped operation name: {self._id}")
 
         return {
             self.id: self.value,
@@ -1092,16 +1103,10 @@ class BasicNumericOperation(DeviceOperation):
 
     def convert_hass_to_dev(self, ha_value: Any) -> Any:
         """Convert HASS state value to the device's expected value, clamped to min/max."""
-        # If no bounds set, pass raw value directly.
-        if self._min is None and self._max is None:
-            return ha_value
-
         try:
-            # Strict sanitization: force float cast for arithmetic.
             v = float(ha_value)
-        except (ValueError, TypeError):
-            # If HA passes 'unknown' or 'unavailable', bypass math calculation.
-            return ha_value
+        except (ValueError, TypeError) as err:
+            raise ValueError(f"Invalid numeric value: {ha_value}") from err
 
         min_bound = self._min if self._min is not None else float("-inf")
         max_bound = self._max if self._max is not None else float("inf")
@@ -1158,9 +1163,12 @@ class TemperatureOperation(BasicNumericOperation):
             try:
                 unit = render_template(self._unit_template, device_state=device_state)
                 device_unit = _parse_temperature_unit(unit, strict=False)
-            except (TemplateError, TypeError, ValueError) as e:  # pylint: disable=broad-exception-caught
+            except TemplateError as err:
+                _LOGGER.error("%s Error rendering unit template for %s: %s", self.log_prefix, self.id, err)
+                raise HomeAssistantError(f"Error rendering unit template: {err}") from err
+            except (TypeError, ValueError) as e:  # pylint: disable=broad-exception-caught
                 _LOGGER.debug(
-                    "Error rendering unit template: %s", e
+                    "Error parsing unit template: %s", e
                 )  # pragma: no mutate
 
         v = STATE_UNKNOWN
@@ -1169,7 +1177,10 @@ class TemperatureOperation(BasicNumericOperation):
                 v = render_template(self.status_template, device_state=device_state)
                 if isinstance(v, str):
                     v = v.strip()
-            except (TemplateError, TypeError, ValueError) as e:  # pylint: disable=broad-exception-caught
+            except TemplateError as err:
+                _LOGGER.error("%s Error rendering status template for %s: %s", self.log_prefix, self.id, err)
+                raise HomeAssistantError(f"Error rendering status template: {err}") from err
+            except (TypeError, ValueError) as e:  # pylint: disable=broad-exception-caught
                 _LOGGER.debug(
                     "%s Dry-run error for %s: %s", self.log_prefix, self.id, e
                 )  # pragma: no mutate
@@ -1200,7 +1211,10 @@ class TemperatureOperation(BasicNumericOperation):
             try:
                 unit = render_template(self._unit_template, device_state=device_state)
                 self._device_unit = _parse_temperature_unit(unit, strict=True)
-            except (TemplateError, TypeError, ValueError):  # pylint: disable=broad-exception-caught
+            except TemplateError as err:
+                _LOGGER.error("%s Could not render unit template for '%s': %s", self.log_prefix, self.id, err)
+                raise HomeAssistantError(f"Could not render unit template: {err}") from err
+            except (TypeError, ValueError):  # pylint: disable=broad-exception-caught
                 _LOGGER.debug(
                     "%s Could not render unit template for '%s'. Using last known device unit.",
                     self.log_prefix,
