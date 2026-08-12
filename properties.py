@@ -47,6 +47,14 @@ from .const import (
     KEY_RAW_PAYLOAD,
     KEY_STATUS,
     KEY_URL,
+    HTTP_METHOD_GET,
+    DEFAULT_ENDPOINT_DEVICES,
+    DEFAULT_ENDPOINT_DEVICE_MAIN,
+    DEFAULT_FALLBACK_DEVICE_ID,
+    KEY_YAML_DEVICE,
+    KEY_YAML_IDENTIFIERS,
+    KEY_YAML_PATH_TO_DEVICES,
+    DEFAULT_DEVICES_PATH,
     LEGACY_YAML_TO_ATTR_MAP,
     MEASUREMENT_DEVICE_CLASSES,
     MODE_PROPERTY_SUFFIX,
@@ -67,17 +75,8 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def render_template(template: Template, **kwargs: Any) -> Any:
-    """Render a Jinja2 template synchronously or asynchronously depending on the context."""
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        is_running = loop.is_running()
-    except RuntimeError:
-        is_running = False
-
-    if is_running:
-        return template.async_render(kwargs, parse_result=True)
-    return template.render(kwargs, parse_result=True)
+    """Render a Jinja2 template strictly using async execution within the event loop."""
+    return template.async_render(kwargs, parse_result=True)
 
 
 def _parse_temperature_unit(unit: str | UnitOfTemperature | Any, strict: bool = False) -> Any:
@@ -228,10 +227,10 @@ class DeviceProperty:
                 raw_dict = {}
 
         if isinstance(raw_dict, dict):
-            device_id = self._controller.device_id or "XXXX"
-            cache = getattr(self._controller.loader, "_parsed_yaml_cache", {})
-            id_map = cache.get(device_id, {}).get("device", {}).get("identifiers", {})
-            path = id_map.get("path_to_devices", ["Devices"])
+            device_id = self._controller.device_id or DEFAULT_FALLBACK_DEVICE_ID
+            cache = self._controller.loader.parsed_yaml_cache
+            id_map = cache.get(device_id, {}).get(KEY_YAML_DEVICE, {}).get(KEY_YAML_IDENTIFIERS, {})
+            path = id_map.get(KEY_YAML_PATH_TO_DEVICES, DEFAULT_DEVICES_PATH)
             
             devices_list = get_value_by_path(raw_dict, path)
             if isinstance(devices_list, list) and devices_list:
@@ -249,8 +248,8 @@ class DeviceProperty:
             v = render_template(
                 self.validation_template, device_state=self._raw_device_state
             )
-            result = str(v).lower() == VALIDATION_SUCCESS_TOKEN
-            return result
+            return str(v).strip().lower() == VALIDATION_SUCCESS_TOKEN
+
         except (TemplateError, TypeError, ValueError) as e:
             _LOGGER.error(
                 "%s Error rendering validation template for %s: %s",
@@ -535,8 +534,14 @@ class GetJsonStatus(DeviceProperty):
 
             render_context: dict[str, Any] = getattr(connection, "_params", {}).copy()
 
-            cfg = getattr(connection, "_cfg", getattr(connection, "config", None))
-            duid_from_cfg = cfg.get(KEY_DUID) if isinstance(cfg, dict) else getattr(cfg, KEY_DUID, None)
+            cfg = connection.config if connection is not None else None
+            duid_from_cfg = (
+                cfg.get(KEY_DUID)
+                if isinstance(cfg, dict)
+                else getattr(cfg, KEY_DUID, None)
+                if cfg is not None
+                else None
+            )
             
             duid_for_render = self._controller.device_id or duid_from_cfg
             if not duid_for_render:
@@ -545,7 +550,13 @@ class GetJsonStatus(DeviceProperty):
             render_context["device_id"] = duid_for_render
             render_context.setdefault(KEY_DUID, duid_for_render)
             
-            token_from_cfg = cfg.get("token") if isinstance(cfg, dict) else getattr(cfg, "token", None)
+            token_from_cfg = (
+                cfg.get("token")
+                if isinstance(cfg, dict)
+                else getattr(cfg, "token", None)
+                if cfg is not None
+                else None
+            )
             if token_from_cfg:
                 render_context.setdefault("token", token_from_cfg)
 
@@ -558,18 +569,22 @@ class GetJsonStatus(DeviceProperty):
                     params = json_loads(params_str)
                 except (ValueError, TypeError):
                     params = None
-                    if hasattr(params_str, "replace"):
+                    if isinstance(params_str, str):
                         try:
                             # Heuristic fallback for legacy YAML templates with single quotes
                             sanitized_str = params_str.replace("'", '"')
                             params = json_loads(sanitized_str)
-                        except (ValueError, TypeError, AttributeError):
-                            pass
+                        except (ValueError, TypeError, AttributeError) as err:
+                            _LOGGER.debug(
+                                "%s Legacy single-quote JSON normalization failed for template output: %s",
+                                self.log_prefix,
+                                err,
+                            )
 
             if isinstance(params, dict):
                 response_text, _ = await connection.async_execute(
-                    params.get(KEY_METHOD) or "GET",
-                    params.get(KEY_URL) or "/devices",
+                    params.get(KEY_METHOD) or HTTP_METHOD_GET,
+                    params.get(KEY_URL) or DEFAULT_ENDPOINT_DEVICES,
                     None,
                     params.get(KEY_HEADERS) or {},
                     _is_poll=True,
@@ -649,13 +664,17 @@ class DeviceOperation(DeviceProperty):
                     operation_params = json_loads(rendered)
                 except (ValueError, TypeError):
                     operation_params = None
-                    if hasattr(rendered, "replace"):
+                    if isinstance(rendered, str):
                         try:
                             # Heuristic fallback for legacy YAML templates with single quotes
                             sanitized_str = rendered.replace("'", '"')
                             operation_params = json_loads(sanitized_str)
-                        except (ValueError, TypeError, AttributeError):
-                            pass
+                        except (ValueError, TypeError, AttributeError) as err:
+                            _LOGGER.debug(
+                                "%s Legacy single-quote JSON normalization failed for template output: %s",
+                                self.log_prefix,
+                                err,
+                            )
 
             if not isinstance(operation_params, dict):
                 return {KEY_RAW_PAYLOAD: rendered}
@@ -739,8 +758,8 @@ class DeviceOperation(DeviceProperty):
 
                 data_payload = json_dumps(params["json"]) if "json" in params else None
                 response, _ = await connection.async_execute(
-                    params.get(KEY_METHOD) or "GET",
-                    params.get(KEY_URL) or "/devices/0",
+                    params.get(KEY_METHOD) or HTTP_METHOD_GET,
+                    params.get(KEY_URL) or DEFAULT_ENDPOINT_DEVICE_MAIN,
                     data_payload,
                     params.get(KEY_HEADERS) or {},
                     device_state=current_full_state,
@@ -882,9 +901,7 @@ class BasicDeviceOperation(DeviceOperation):
                 hvac_prop = self._controller.loader.operations.get(KEY_HVAC)
                 
             if hvac_prop is not None:
-                state_node = getattr(
-                    hvac_prop, "state_node", getattr(hvac_prop, "_state_node", None)
-                )
+                state_node = hvac_prop.state_node if hvac_prop is not None else None
                 if isinstance(state_node, str) and bool(state_node):
                     hvac_node = get_value_by_path(
                         self._device_state, state_node.split(".")
@@ -1005,11 +1022,8 @@ class ModeOperation(BasicDeviceOperation):
             ATTR_FAN_MODE: ATTR_FAN_MODES,
             ATTR_PRESET_MODE: ATTR_PRESET_MODES,
             ATTR_SWING_MODE: ATTR_SWING_MODES,
-            "fan_max_mode": "fan_max_modes",
         }
-        list_attribute_name = mode_map.get(self._id)
-        if list_attribute_name is None:
-            raise KeyError(f"Unmapped operation name: {self._id}")
+        list_attribute_name = mode_map.get(self._id, f"{self._id}s")
 
         return {
             self.id: self.value,

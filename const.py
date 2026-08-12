@@ -25,6 +25,18 @@ KEY_URL: final = "url"
 KEY_HEADERS: final = "headers"
 KEY_RAW_PAYLOAD: final = "_raw"
 
+# --- Hardcoded String Extracted Constants ---
+HTTP_METHOD_GET: final = "GET"
+DEFAULT_ENDPOINT_DEVICES: final = "/devices"
+DEFAULT_ENDPOINT_DEVICE_MAIN: final = "/devices/0"
+
+DEFAULT_FALLBACK_DEVICE_ID: final = "XXXX"
+KEY_YAML_DEVICE: final = "device"
+KEY_YAML_IDENTIFIERS: final = "identifiers"
+KEY_YAML_PATH_TO_DEVICES: final = "path_to_devices"
+DEFAULT_DEVICES_PATH: final = ["Devices"]
+DEVICE_ID_DELIMITER: final = "_"
+
 # --- Configurable Options ---
 ATTR_IS_AVAILABLE = "is_available"
 CONF_ENTRY_ID = "entry_id"

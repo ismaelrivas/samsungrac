@@ -50,6 +50,7 @@ from .const import (
     NON_SERIALIZABLE_KEYS,
     TRUTHY_STRINGS,
     WIFI_KIT_MGMT_ID,
+    DEVICE_ID_DELIMITER,
 )
 from .controller import ClimateController, register_controller
 from .controller_yaml_config import YamlConfigLoader
@@ -81,14 +82,14 @@ class YamlController(ClimateController):
         self.poller: Any | None = None
 
         if config is None and config_entry is not None:
-            config = dict(config_entry.data)
-            config.update(config_entry.options)
+            merged_data = {**config_entry.data, **config_entry.options}
+            config = dict(merged_data)
             config[CONF_ENTRY_ID] = config_entry.entry_id
 
             base_unique_id = config_entry.unique_id
             if device_id is not None and device_id != MAIN_DEVICE_ID:
                 config[CONF_UNIQUE_ID] = (
-                    f"{base_unique_id}_{device_id}"
+                    f"{base_unique_id}{DEVICE_ID_DELIMITER}{device_id}"
                     if base_unique_id is not None
                     else device_id
                 )
@@ -131,7 +132,7 @@ class YamlController(ClimateController):
 
         # If device_id exists and is a real sub-device (neither "main" nor "0"):
         if self._device_id is not None and self._device_id not in (MAIN_DEVICE_ID, WIFI_KIT_MGMT_ID):
-            self._unique_id = f"{base_unique_id}_{self._device_id}" if base_unique_id is not None else self._device_id
+            self._unique_id = f"{base_unique_id}{DEVICE_ID_DELIMITER}{self._device_id}" if base_unique_id is not None else self._device_id
         else:
             # Monosplit / Main device: Pure MAC address without suffixes
             self._unique_id = base_unique_id
@@ -223,7 +224,7 @@ class YamlController(ClimateController):
             and self._device_id != MAIN_DEVICE_ID
             and self._device_id != self._unique_id
         ):
-            suffix = f"_{self._device_id}"
+            suffix = f"{DEVICE_ID_DELIMITER}{self._device_id}"
             if not self._unique_id.endswith(suffix):
                 return f"{self._unique_id}{suffix}"
         return self._unique_id
@@ -263,7 +264,7 @@ class YamlController(ClimateController):
     @property
     def host(self) -> str | None:
         """Return the host or IP address."""
-        return self.ip_address
+        return self._ip_address
 
     @property
     def debug(self) -> bool:
@@ -285,7 +286,7 @@ class YamlController(ClimateController):
     @property
     def id(self) -> str | None:
         """Return the unique id of the controller."""
-        return self.unique_id
+        return self._unique_id
 
     async def initialize(self) -> bool:
         """Perform initial YAML configuration loading and set up the base connection."""
@@ -405,7 +406,7 @@ class YamlController(ClimateController):
     def get_property_all_values(self, property_name: str) -> list[str] | None:
         """Return the complete, unfiltered list of values for a property."""
         prop = self.get_property_object(property_name)
-        if prop is not None and bool(prop.all_values):
+        if prop is not None and len(prop.all_values) > 0:
             return list(prop.all_values)
 
         _LOGGER.debug(  # pragma: no mutate
@@ -470,7 +471,7 @@ class YamlController(ClimateController):
     def pure_device_state(self) -> dict[str, Any]:
         """Return the unmutated pure network state of the device."""
         pure = self.poller.pure_network_state
-        if pure:
+        if pure is not None and len(pure) > 0:
             return dict(pure)
         return self.device_state
 
@@ -478,7 +479,7 @@ class YamlController(ClimateController):
     def device_state(self) -> dict[str, Any]:
         """Return the current device state via the poller's public interface."""
         state = self.poller.device_state
-        if state:
+        if state is not None and len(state) > 0:
             return dict(state)
         if self.loader.state_getter is not None:
             getter_value = self.loader.state_getter.value
@@ -489,6 +490,8 @@ class YamlController(ClimateController):
         """Safely parse HVAC mode, returning None on invalid value."""
         if raw_mode is None:
             return None
+        if isinstance(raw_mode, HVACMode):
+            return raw_mode
 
         try:
             return HVACMode(str(raw_mode).lower())
@@ -663,7 +666,7 @@ class YamlController(ClimateController):
         Obligatory implementation to fulfill ClimateController's strict ABC contract.
         Acts as a safe no-op for YAML-based devices.
         """
-        pass
+        return
 
     def on_token_refreshed(self, new_token: str) -> None:
         """Callback invoked when the underlying connection refreshes an auth token.
@@ -671,7 +674,7 @@ class YamlController(ClimateController):
         Acts as a safe no-op. Subclasses or specific connection handlers can
         override or observe this if token persistence is required.
         """
-        pass
+        return
 
     def get_current_state_callback(self) -> dict[str, Any] | None:
         """Callback invoked by external pollers to request the raw current state.
