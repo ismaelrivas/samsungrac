@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import final
+
 from homeassistant.components.climate import ClimateEntityFeature
 from homeassistant.components.climate.const import (
     ATTR_FAN_MODE,
@@ -13,6 +15,15 @@ from homeassistant.const import UnitOfTemperature
 
 DOMAIN = "climate_ip"
 ISSUE_CONNECTION_FAILED = "connection_failed"
+
+NON_SERIALIZABLE_KEYS: final = ("hass", "session", "logger")
+TRUTHY_STRINGS: final = ("true", "1", "yes", "on")
+DEFAULT_CONTROLLER_NAME: final = "Unknown"
+KEY_DUID: final = "duid"
+KEY_METHOD: final = "method"
+KEY_URL: final = "url"
+KEY_HEADERS: final = "headers"
+KEY_RAW_PAYLOAD: final = "_raw"
 
 # --- Configurable Options ---
 ATTR_IS_AVAILABLE = "is_available"

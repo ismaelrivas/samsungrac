@@ -39,8 +39,13 @@ from .const import (
     CONFIG_DEVICE_VALIDATION_TEMPLATE,
     CONFIG_TYPE,
     DEFAULT_JSON_STATUS_PAYLOAD,
+    KEY_DUID,
+    KEY_HEADERS,
     KEY_HVAC,
+    KEY_METHOD,
+    KEY_RAW_PAYLOAD,
     KEY_STATUS,
+    KEY_URL,
     LEGACY_YAML_TO_ATTR_MAP,
     MEASUREMENT_DEVICE_CLASSES,
     MODE_PROPERTY_SUFFIX,
@@ -119,6 +124,7 @@ def create_status_getter(
     return None
 
 
+@register_property
 class DeviceProperty:
     """Base class for a device property (read-only or read-write)."""
 
@@ -144,6 +150,7 @@ class DeviceProperty:
         self._validation_template_raw: Any = None
         self._device_state: dict[str, Any] | None = None
         self._state_node: str | None = None
+        self._type: str | None = None
 
         self._friendly_name: str | None = None
         self._device_class: str | None = None
@@ -173,7 +180,7 @@ class DeviceProperty:
         raw_dict = None
         if self._controller is not None and hasattr(self._controller, "pure_device_state"):
             ctrl_pure = self._controller.pure_device_state
-            if isinstance(ctrl_pure, dict) and len(ctrl_pure) > 0:
+            if isinstance(ctrl_pure, dict) and bool(ctrl_pure):
                 raw_dict = ctrl_pure
         if (
             raw_dict is None
@@ -181,7 +188,7 @@ class DeviceProperty:
             and hasattr(self._controller, "device_state")
         ):
             ctrl_state = self._controller.device_state
-            if isinstance(ctrl_state, dict) and len(ctrl_state) > 0:
+            if isinstance(ctrl_state, dict) and bool(ctrl_state):
                 raw_dict = ctrl_state
         if (
             raw_dict is None
@@ -211,7 +218,7 @@ class DeviceProperty:
             isinstance(raw_dict, dict)
             and "Devices" in raw_dict
             and isinstance(raw_dict["Devices"], list)
-            and len(raw_dict["Devices"]) > 0
+            and bool(raw_dict["Devices"])
         ):
             return dict(raw_dict["Devices"][0])
         return dict(raw_dict) if isinstance(raw_dict, dict) else {}
@@ -316,7 +323,7 @@ class DeviceProperty:
     @property
     def value_is_string(self) -> bool:
         """Return True if the property value should be treated as a string."""
-        return getattr(self, "_type", None) in (
+        return self._type in (
             "string",
             "enum",
         ) or self.device_class in ("enum", "problem")
@@ -512,12 +519,12 @@ class GetJsonStatus(DeviceProperty):
 
             if dev_id := getattr(self._controller, "device_id", None):
                 render_context["device_id"] = dev_id
-                render_context.setdefault("duid", dev_id)
+                render_context.setdefault(KEY_DUID, dev_id)
 
             cfg = getattr(connection, "_cfg", getattr(connection, "config", None))
             if cfg:
-                if duid := getattr(cfg, "duid", None):
-                    render_context.setdefault("duid", duid)
+                if duid := getattr(cfg, KEY_DUID, None):
+                    render_context.setdefault(KEY_DUID, duid)
                 if token := getattr(cfg, "token", None):
                     render_context.setdefault("token", token)
 
@@ -530,10 +537,10 @@ class GetJsonStatus(DeviceProperty):
 
             if isinstance(params, dict):
                 response_text, _ = await connection.async_execute(
-                    params.get("method"),
-                    params.get("url"),
+                    params.get(KEY_METHOD),
+                    params.get(KEY_URL),
                     None,
-                    params.get("headers"),
+                    params.get(KEY_HEADERS),
                     _is_poll=True,
                 )
             else:
@@ -596,7 +603,7 @@ class DeviceOperation(DeviceProperty):
         render_ctx = {
             "value": dev_value,
             "device_id": duid,
-            "duid": duid,
+            KEY_DUID: duid,
             "device_state": device_state if device_state is not None else {},
         }
         conn_tmpl = getattr(connection, "_connection_template", None)
@@ -607,11 +614,11 @@ class DeviceOperation(DeviceProperty):
             try:
                 operation_params = json_loads(rendered)
             except JSON_DECODE_EXCEPTIONS:
-                return {"_raw": rendered}
+                return {KEY_RAW_PAYLOAD: rendered}
         else:
             operation_params = dict(getattr(connection, "_params", {}))
 
-        if operation_params is None or len(operation_params) == 0:
+        if not operation_params:
             _LOGGER.error(
                 "%s [_resolve_async_params] No params or template found.",
                 self.log_prefix,
@@ -655,7 +662,7 @@ class DeviceOperation(DeviceProperty):
                     cfg = getattr(
                         connection, "_cfg", getattr(connection, "config", None)
                     )
-                    duid_for_render = getattr(cfg, "duid", None) if cfg else None
+                    duid_for_render = getattr(cfg, KEY_DUID, None) if cfg else None
 
                 # dev_value is already calculated and validated above
                 params = self._resolve_async_params(
@@ -669,20 +676,20 @@ class DeviceOperation(DeviceProperty):
                     )  # pragma: no mutate
                     return False
 
-                if params.get("_raw"):
+                if params.get(KEY_RAW_PAYLOAD):
                     _LOGGER.debug(
                         "%s [async_set_value] Sending raw (non-JSON) payload.",
                         self.log_prefix,
                     )  # pragma: no mutate
-                    await connection.async_execute(None, None, params["_raw"], None)
+                    await connection.async_execute(None, None, params[KEY_RAW_PAYLOAD], None)
                     return True
 
                 data_payload = json_dumps(params["json"]) if "json" in params else None
                 response, _ = await connection.async_execute(
-                    params.get("method"),
-                    params.get("url"),
+                    params.get(KEY_METHOD),
+                    params.get(KEY_URL),
                     data_payload,
-                    params.get("headers"),
+                    params.get(KEY_HEADERS),
                     device_state=current_full_state,
                 )
                 if response is not None:
@@ -696,7 +703,7 @@ class DeviceOperation(DeviceProperty):
                         )
                         if isinstance(pure_state, dict):
                             state_node = getattr(self, "_state_node", None)
-                            if state_node is None or len(str(state_node)) == 0:
+                            if not state_node:
                                 state_node = self.id
                             if hasattr(
                                 self._controller.poller, "_set_dict_value_by_path"
@@ -786,7 +793,7 @@ class BasicDeviceOperation(DeviceOperation):
 
             if node is not None:
                 node_values = node.get(CONFIG_DEVICE_OPERATION_VALUES, {})
-                if len(node_values) == 0:
+                if not node_values:
                     return False
 
                 for ha_value in node_values.keys():
@@ -839,7 +846,7 @@ class BasicDeviceOperation(DeviceOperation):
                 state_node = getattr(
                     hvac_prop, "state_node", getattr(hvac_prop, "_state_node", None)
                 )
-                if isinstance(state_node, str) and len(state_node) > 0:
+                if isinstance(state_node, str) and bool(state_node):
                     hvac_node = get_value_by_path(
                         self._device_state, state_node.split(".")
                     )
@@ -867,8 +874,8 @@ class BasicDeviceOperation(DeviceOperation):
             self._values_cache[cache_key] = valid_values
 
         if (
-            len(valid_values) > 0
-            and len(self._last_valid_values) > 0
+            bool(valid_values)
+            and bool(self._last_valid_values)
             and sorted(valid_values) != sorted(self._last_valid_values)
         ):
             _LOGGER.debug(
@@ -967,14 +974,12 @@ class ModeOperation(BasicDeviceOperation):
         }
 
 
-
-
-@register_property
-class DevicePropertyRegistered(DeviceProperty):
-    """Registered property wrapper for string type properties."""
-
 class UniqueIdProperty(DeviceProperty):
-    """Property representing a unique identifier."""
+    """Property representing a unique identifier.
+
+    Used as a type discriminator in sensor.py to bypass numeric parsing
+    and preserve the raw string value (e.g. MAC addresses, device IDs).
+    """
 
 
 @register_property
@@ -1072,10 +1077,6 @@ class BasicNumericOperation(DeviceOperation):
             return self._max
 
         return ha_value
-
-
-class NumericOperation(BasicNumericOperation):
-    """Operation for numeric values."""
 
 
 @register_property

@@ -40,11 +40,15 @@ from .const import (
     CONF_DEVICE_ID,
     CONF_DEVICE_TYPE,
     CONF_ENTRY_ID,
+    CONF_NAME,
     CONF_TEMP_NATIVE_CURRENT,
     CONF_TEMP_NATIVE_TARGET,
     DEFAULT_CONF_CONTROLLER,
+    DEFAULT_CONTROLLER_NAME,
     DEVICE_TYPE_TO_CONFIG_FILE,
     MAIN_DEVICE_ID,
+    NON_SERIALIZABLE_KEYS,
+    TRUTHY_STRINGS,
     WIFI_KIT_MGMT_ID,
 )
 from .controller import ClimateController, register_controller
@@ -57,7 +61,6 @@ from .state import ClimateIPDeviceState
 _LOGGER = logging.getLogger(__name__)
 
 CONST_CONTROLLER_TYPE = DEFAULT_CONF_CONTROLLER
-NON_SERIALIZABLE_KEYS = ("hass", "session", "logger")
 
 
 @register_controller
@@ -78,9 +81,7 @@ class YamlController(ClimateController):
         self.poller: Any | None = None
 
         if config is None and config_entry is not None:
-            config = dict(config_entry.data)
-            config.update(config_entry.options)
-            config[CONF_ENTRY_ID] = config_entry.entry_id
+            config = {**config_entry.data, **config_entry.options, CONF_ENTRY_ID: config_entry.entry_id}
 
             base_unique_id = config_entry.unique_id
             if device_id is not None and device_id != MAIN_DEVICE_ID:
@@ -149,7 +150,7 @@ class YamlController(ClimateController):
         # Strict Boolean Parsing (Guarded against string casting trap like 'false' -> True)
         raw_debug = config.get(CONF_DEBUG, False)
         if isinstance(raw_debug, str):
-            self._debug = raw_debug.lower() in ("true", "1", "yes", "on")
+            self._debug = raw_debug.lower() in TRUTHY_STRINGS
         else:
             self._debug = bool(raw_debug)
 
@@ -209,10 +210,7 @@ class YamlController(ClimateController):
         """Return the controller name."""
         if self.loader is not None and self.loader.name:
             return self.loader.name
-        cfg = getattr(self, "_config", None)
-        if cfg and isinstance(cfg, dict):
-            return str(cfg.get("name", "Unknown"))
-        return "Unknown"
+        return str(self._config.get(CONF_NAME, DEFAULT_CONTROLLER_NAME))
 
     @property
     def unique_id(self) -> str | None:
@@ -405,7 +403,7 @@ class YamlController(ClimateController):
     def get_property_all_values(self, property_name: str) -> list[str] | None:
         """Return the complete, unfiltered list of values for a property."""
         prop = self.get_property_object(property_name)
-        if prop is not None and prop.all_values is not None and len(prop.all_values) > 0:
+        if prop is not None and bool(prop.all_values):
             return list(prop.all_values)
 
         _LOGGER.debug(  # pragma: no mutate
@@ -470,7 +468,7 @@ class YamlController(ClimateController):
     def pure_device_state(self) -> dict[str, Any]:
         """Return the unmutated pure network state of the device."""
         pure = self.poller.pure_network_state
-        if pure is not None and len(pure) > 0:
+        if bool(pure):
             return dict(pure)
         return self.device_state
 
@@ -478,7 +476,7 @@ class YamlController(ClimateController):
     def device_state(self) -> dict[str, Any]:
         """Return the current device state via the poller's public interface."""
         state = self.poller.device_state
-        if state is not None and len(state) > 0:
+        if bool(state):
             return dict(state)
         if self.loader.state_getter is not None:
             getter_value = self.loader.state_getter.value
