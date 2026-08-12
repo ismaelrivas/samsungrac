@@ -81,7 +81,9 @@ class YamlController(ClimateController):
         self.poller: Any | None = None
 
         if config is None and config_entry is not None:
-            config = {**config_entry.data, **config_entry.options, CONF_ENTRY_ID: config_entry.entry_id}
+            config = dict(config_entry.data)
+            config.update(config_entry.options)
+            config[CONF_ENTRY_ID] = config_entry.entry_id
 
             base_unique_id = config_entry.unique_id
             if device_id is not None and device_id != MAIN_DEVICE_ID:
@@ -208,7 +210,7 @@ class YamlController(ClimateController):
     @property
     def name(self) -> str:
         """Return the controller name."""
-        if self.loader is not None and self.loader.name:
+        if self.loader is not None and self.loader.name is not None:
             return self.loader.name
         return str(self._config.get(CONF_NAME, DEFAULT_CONTROLLER_NAME))
 
@@ -468,7 +470,7 @@ class YamlController(ClimateController):
     def pure_device_state(self) -> dict[str, Any]:
         """Return the unmutated pure network state of the device."""
         pure = self.poller.pure_network_state
-        if bool(pure):
+        if pure:
             return dict(pure)
         return self.device_state
 
@@ -476,7 +478,7 @@ class YamlController(ClimateController):
     def device_state(self) -> dict[str, Any]:
         """Return the current device state via the poller's public interface."""
         state = self.poller.device_state
-        if bool(state):
+        if state:
             return dict(state)
         if self.loader.state_getter is not None:
             getter_value = self.loader.state_getter.value
@@ -527,14 +529,15 @@ class YamlController(ClimateController):
         raw_preset_modes = self.get_property_all_values(ATTR_PRESET_MODE)
         preset_modes_list = raw_preset_modes if raw_preset_modes is not None else []
 
+        parsed_hvac_modes: list[HVACMode] = []
+        for m in hvac_modes_list:
+            if m is not None:
+                parsed_mode = self._safe_parse_hvac_mode(m)
+                if parsed_mode is not None:
+                    parsed_hvac_modes.append(parsed_mode)
+
         return (
-            tuple(
-                mode
-                for m in hvac_modes_list
-                if m is not None
-                for mode in [self._safe_parse_hvac_mode(m)]
-                if mode is not None
-            ),
+            tuple(parsed_hvac_modes),
             tuple(
                 str(m)
                 for m in fan_modes_list

@@ -66,25 +66,15 @@ from .helpers import get_value_by_path
 _LOGGER = logging.getLogger(__name__)
 
 
-from unittest.mock import NonCallableMock
+def render_template(template: Template, **kwargs: Any) -> Any:
+    """Render a Jinja2 template synchronously using the native HA Template contract."""
+    return template.render(kwargs, parse_result=True)
 
-
-def render_template(template: Any, **kwargs: Any) -> Any:
-    """Render a template safely, using async_render if available on HA Template, else render."""
-    async_render = getattr(template, "async_render", None)
-    if callable(async_render) and not isinstance(template, NonCallableMock):
-        return async_render(**kwargs)
-    return template.render(**kwargs)
-
-
-UNIT_MAP: dict[str, str] = {}  # Backward-compatibility alias for tests
 
 def _parse_temperature_unit(unit: str | UnitOfTemperature | Any, strict: bool = False) -> Any:
     """Strictly parse and validate temperature unit strings."""
     if isinstance(unit, UnitOfTemperature):
         return unit
-    if unit in UNIT_MAP:
-        return UNIT_MAP[unit]
     if not isinstance(unit, str):
         if strict:
             raise ValueError(f"Invalid temperature unit: {unit}")
@@ -892,10 +882,11 @@ class BasicDeviceOperation(DeviceOperation):
                         self._device_state, state_node.split(".")
                     )
         cache_key_prop = self._controller.get_property(ATTR_HVAC_MODE)
+        cache_key_id = cache_key_prop.id if cache_key_prop is not None else "none"
         cache_key = (
-            f"{cache_key_prop}_{hvac_node}"
+            f"{cache_key_id}_{hvac_node}"
             if hvac_node is not None
-            else str(cache_key_prop)
+            else cache_key_id
         )
 
         if cache_key in self._values_cache:
