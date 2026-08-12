@@ -1600,11 +1600,13 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
             dummy_fail_network,
             ("arg1",),
             {"kw": 1},
+            debouncer._generation,
         )
         debouncer._pending_payloads["prop_gen"] = (
             dummy_fail_generic,
             ("arg2",),
             {"kw": 2},
+            debouncer._generation,
         )
 
         callback_fire_delayed = mock_async_call_later.call_args[0][2]

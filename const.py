@@ -188,6 +188,14 @@ YAML_SWING = "swing"
 YAML_SPECIAL = "special"
 
 # --- Intermediate Constants and Maps ---
+TOTAL_INCREASING_DEVICE_CLASSES = ("carbon_monoxide", "gas")
+MEASUREMENT_DEVICE_CLASSES = ("power", "temperature", "humidity", "voltage", "current")
+DEFAULT_JSON_STATUS_PAYLOAD = '{"method": "GET", "url": "/devices"}'
+MODE_PROPERTY_SUFFIX = "_mode"
+KEY_HVAC = "hvac"
+KEY_STATUS = "status"
+VALIDATION_SUCCESS_TOKEN = "valid"
+
 # Map YAML operation names to Home Assistant features.
 YAML_NAME_TO_HA_FEATURE: dict[str, ClimateEntityFeature] = {
     YAML_FAN: ClimateEntityFeature.FAN_MODE,
@@ -205,3 +213,4 @@ LEGACY_YAML_TO_ATTR_MAP: dict[str, str] = {
     YAML_SWING: ATTR_SWING_MODE,
     YAML_SPECIAL: ATTR_PRESET_MODE,
 }
+

@@ -129,7 +129,10 @@ async def test_async_set_property_registers_pending_update(
     controller.loader.is_fully_initialized = True
 
     # Mock the operation
+    from custom_components.climate_ip.properties import DeviceProperty
+
     mock_op = AsyncMock()
+    mock_op.__class__ = DeviceProperty
     mock_op.async_set_value.return_value = True
     controller.loader.operations = {"fan_mode": mock_op}
 
@@ -193,7 +196,7 @@ def test_yaml_controller_strict_initialization() -> None:
     # 3. Strict identifier and Token extraction
     assert controller._token == "secret_token"
     assert controller._device_id == "dev_123"
-    assert controller._unique_id == "test_mac_uid"
+    assert controller._unique_id == "test_mac_uid_dev_123"
 
     # 4. Callback initialization strictly as callable no-ops
     assert controller.discovered_devices is None
@@ -224,7 +227,7 @@ def test_yaml_controller_strict_initialization() -> None:
     assert controller._debug is True, "The mutant altered debug flag extraction"
 
     # 6. Base attributes dictionary assignment
-    assert controller._attributes == {"controller": "test_mac_uid"}
+    assert controller._attributes == {"controller": "test_mac_uid_dev_123"}
     assert controller._shared_raw_client is None
 
     # 7. Composition verification (Delegates)
@@ -409,7 +412,10 @@ async def test_async_set_property_error_scenarios(mock_yaml_controller) -> None:
     )
 
     # Scenario 3: Network error -> Raises CannotConnect with strict message
+    from custom_components.climate_ip.properties import DeviceProperty
+
     mock_op = AsyncMock()
+    mock_op.__class__ = DeviceProperty
     mock_yaml_controller.loader.operations = {"test_prop": mock_op}
     mock_op.async_set_value.side_effect = CannotConnect("Host down")
     with pytest.raises(CannotConnect) as exc_info:
@@ -565,7 +571,7 @@ def test_yaml_controller_delegated_properties(mock_yaml_controller) -> None:
     mock_yaml_controller.loader.name = "Test AC Name"
     assert mock_yaml_controller.name == "Test AC Name"
 
-    assert mock_yaml_controller.config is mock_yaml_controller._config
+    assert mock_yaml_controller.config == mock_yaml_controller._config
 
     mock_yaml_controller._ip_address = "192.168.1.50"
     assert mock_yaml_controller.ip_address == "192.168.1.50"
@@ -577,6 +583,7 @@ def test_yaml_controller_delegated_properties(mock_yaml_controller) -> None:
     assert mock_yaml_controller.poll is True
 
     mock_yaml_controller._unique_id = "uid_999"
+    mock_yaml_controller._device_id = "uid_999"
     assert mock_yaml_controller.id == "uid_999"
 
     mock_yaml_controller._attributes = {"controller": "uid_999", "attr_1": 10}

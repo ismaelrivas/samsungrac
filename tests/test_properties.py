@@ -28,6 +28,7 @@ from custom_components.climate_ip.const import (
     CONFIG_DEVICE_OPERATION_VALUES,
     CONFIG_DEVICE_VALIDATION_TEMPLATE,
     CONFIG_TYPE,
+    DEFAULT_JSON_STATUS_PAYLOAD,
     PROPERTY_TYPE_MODE,
     PROPERTY_TYPE_SWITCH,
     STATUS_GETTER_JSON,
@@ -116,7 +117,6 @@ async def test_device_property_init(mock_connection, mock_controller):
     assert prop._feature_flag is None
     assert prop.log_prefix == "[TestController]"
     assert prop.all_values == []
-    assert prop.values == []
 
 
 async def test_device_property_load_from_yaml(mock_connection, mock_controller):
@@ -433,7 +433,7 @@ async def test_malformed_xml_buffer(mock_connection, mock_controller) -> None:
     prop = DeviceProperty("test_prop", mock_connection, mock_controller)
     prop._value = "STATE_ON"
     # To simulate malformed XML resulting in empty dictionary from defusedxml during property update mapping
-    await prop.async_update_state(device_state_override={}, _debug=False)
+    await prop.async_update_state(device_state_override={})
     assert prop.value == "STATE_ON"
 
 
@@ -1984,7 +1984,7 @@ async def test_get_json_status_load_from_yaml_default_template():
     res = g.load_from_yaml({"type": STATUS_GETTER_JSON})
     assert res is True
     assert g._connection_template is not None
-    assert g._connection_template.render() == '{ "method": "GET", "url": "/devices" }'
+    assert g._connection_template.render() == DEFAULT_JSON_STATUS_PAYLOAD
 
 
 async def test_get_json_status_async_update_missing_params_attr():

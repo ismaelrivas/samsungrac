@@ -313,6 +313,7 @@ async def test_command_execution_fails_with_unconfigured_duid():
         "mac": None,  # MAC no configurada
     }
     conn = ConnectionSamsung2878(hass_config, MagicMock(), hass=MagicMock())
+    conn.start_listening = MagicMock()
     conn._reconnect_retries = 1  # Forzamos estado de reintento/no listo
 
     # Si la conexión no está lista por falta de DUID/configuración, async_execute debe lanzar CannotConnect

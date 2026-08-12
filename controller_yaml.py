@@ -20,8 +20,10 @@ from homeassistant.const import (
     ATTR_TEMPERATURE,
     CONF_HOST,
     CONF_IP_ADDRESS,
+    CONF_MAC,
     CONF_TOKEN,
     CONF_UNIQUE_ID,
+    STATE_UNKNOWN,
     UnitOfTemperature,
 )
 from homeassistant.exceptions import HomeAssistantError
@@ -72,6 +74,9 @@ class YamlController(ClimateController):
         device_id: str | None = None,
     ) -> None:
         """Initialize the YAML controller from a config dictionary or ConfigEntry."""
+        self.loader: Any | None = None
+        self.poller: Any | None = None
+
         if config is None and config_entry is not None:
             config = dict(config_entry.data)
             config.update(config_entry.options)
@@ -114,6 +119,23 @@ class YamlController(ClimateController):
         for non_serializable in NON_SERIALIZABLE_KEYS:
             self._config.pop(non_serializable, None)  # pragma: no mutate
 
+        self._device_id = config.get(CONF_DEVICE_ID)
+        self._token = config.get(CONF_TOKEN)
+
+        base_unique_id = config_entry.unique_id if config_entry else config.get(CONF_UNIQUE_ID)
+        if base_unique_id is None:
+            base_unique_id = config.get(CONF_MAC)
+
+        # If device_id exists and is a real sub-device (neither "main" nor "0"):
+        if self._device_id is not None and self._device_id not in (MAIN_DEVICE_ID, WIFI_KIT_MGMT_ID):
+            self._unique_id = f"{base_unique_id}_{self._device_id}" if base_unique_id is not None else self._device_id
+        else:
+            # Monosplit / Main device: Pure MAC address without suffixes
+            self._unique_id = base_unique_id
+
+        if self._device_id is None:
+            self._device_id = self._unique_id
+
         ip_from_config = config.get(CONF_IP_ADDRESS)
         self._ip_address = ip_from_config if ip_from_config is not None else config.get(CONF_HOST)
         if self._ip_address is None:
@@ -123,18 +145,6 @@ class YamlController(ClimateController):
                 CONF_IP_ADDRESS,
                 CONF_HOST,
             )
-
-        self._device_id = config.get(CONF_DEVICE_ID)
-        self._token = config.get(CONF_TOKEN)
-
-        base_unique_id = config_entry.unique_id if config_entry else config.get(CONF_UNIQUE_ID)
-
-        # If device_id exists and is a real sub-device (neither "main" nor "0"):
-        if self._device_id is not None and self._device_id not in (MAIN_DEVICE_ID, WIFI_KIT_MGMT_ID):
-            self._unique_id = f"{base_unique_id}_{self._device_id}" if base_unique_id is not None else self._device_id
-        else:
-            # Monosplit / Main device: Pure MAC address without suffixes
-            self._unique_id = base_unique_id
 
         # Strict Boolean Parsing (Guarded against string casting trap like 'false' -> True)
         raw_debug = config.get(CONF_DEBUG, False)
@@ -197,7 +207,12 @@ class YamlController(ClimateController):
     @property
     def name(self) -> str:
         """Return the controller name."""
-        return self.loader.name
+        if self.loader is not None and self.loader.name:
+            return self.loader.name
+        cfg = getattr(self, "_config", None)
+        if cfg and isinstance(cfg, dict):
+            return str(cfg.get("name", "Unknown"))
+        return "Unknown"
 
     @property
     def unique_id(self) -> str | None:
@@ -206,6 +221,7 @@ class YamlController(ClimateController):
             self._unique_id is not None
             and self._device_id is not None
             and self._device_id != MAIN_DEVICE_ID
+            and self._device_id != self._unique_id
         ):
             suffix = f"_{self._device_id}"
             if not self._unique_id.endswith(suffix):
@@ -339,9 +355,10 @@ class YamlController(ClimateController):
     def get_property(self, property_name: str) -> Any:
         """Return the current value of a property by name using safe extraction."""
         obj = self.get_property_object(property_name)
-        if obj is not None:
-            return obj.value
-        return self._attributes.get(property_name)
+        val = obj.value if obj is not None else self._attributes.get(property_name)
+        if val == STATE_UNKNOWN:
+            return None
+        return val
 
     @property
     def _objects_by_id(self) -> dict[str, DeviceProperty]:
@@ -594,7 +611,8 @@ class YamlController(ClimateController):
         """Clear cached state in poller and static mode cache to prevent ghosting."""
         self._cached_static_modes = None
         self._obj_id_cache = None
-        self.poller.clear_state_cache()
+        if self.poller is not None:
+            self.poller.clear_state_cache()
 
     async def async_merge_device_state(self, new_data: dict[str, Any]) -> bool:
         """Merge incoming push updates or responses into the memory state."""

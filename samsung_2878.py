@@ -326,7 +326,7 @@ class ConnectionSamsung2878(Connection):
                     "%s Missing 'token' parameter", self.log_prefix
                 )  # pragma: no mutate
                 return False
-            if not self._cfg.duid:
+            if not self._cfg.duid or not self._cfg.duid.strip():
                 _LOGGER.error(
                     "%s Missing 'mac' parameter", self.log_prefix
                 )  # pragma: no mutate

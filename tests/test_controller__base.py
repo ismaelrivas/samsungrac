@@ -65,6 +65,14 @@ class DummyController(ClimateController):
         return "device_123"
 
     @property
+    def ip_address(self) -> str | None:
+        return getattr(self, "_ip_address", "192.168.1.100")
+
+    @ip_address.setter
+    def ip_address(self, value: str | None) -> None:
+        self._ip_address = value
+
+    @property
     def name(self) -> str | None:
         return self._name
 
@@ -263,5 +271,5 @@ def test_controller_host_property() -> None:
     controller.ip_address = "192.168.1.50"
     assert controller.host == "192.168.1.50"
 
-    del controller.ip_address
+    controller.ip_address = None
     assert controller.host is None

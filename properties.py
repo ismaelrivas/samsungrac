@@ -38,13 +38,20 @@ from .const import (
     CONFIG_DEVICE_STATUS_TEMPLATE,
     CONFIG_DEVICE_VALIDATION_TEMPLATE,
     CONFIG_TYPE,
+    DEFAULT_JSON_STATUS_PAYLOAD,
+    KEY_HVAC,
+    KEY_STATUS,
     LEGACY_YAML_TO_ATTR_MAP,
+    MEASUREMENT_DEVICE_CLASSES,
+    MODE_PROPERTY_SUFFIX,
     PROPERTY_TYPE_MODE,
     PROPERTY_TYPE_NUMBER,
     PROPERTY_TYPE_STRING,
     PROPERTY_TYPE_SWITCH,
     PROPERTY_TYPE_TEMP,
     STATUS_GETTER_JSON,
+    TOTAL_INCREASING_DEVICE_CLASSES,
+    VALIDATION_SUCCESS_TOKEN,
     YAML_NAME_TO_HA_FEATURE,
 )
 from .exceptions import AuthError, CannotConnect
@@ -52,8 +59,6 @@ from .helpers import get_value_by_path
 
 _LOGGER = logging.getLogger(__name__)
 
-TOTAL_INCREASING_DEVICE_CLASSES = ("carbon_monoxide", "gas")
-MEASUREMENT_DEVICE_CLASSES = ("power", "temperature", "humidity", "voltage", "current")
 
 UNIT_MAP: dict[str, str] = {
     "C": UnitOfTemperature.CELSIUS,
@@ -145,7 +150,12 @@ class DeviceProperty:
         self._unit_of_measurement: str | None = None
         self._state_class: SensorStateClass | None = None
         self._entity_category: str | None = None
-        self._feature_flag: int | None = None
+        self._feature_flag: ClimateEntityFeature | None = None
+
+    @staticmethod
+    def match_type(prop_type: str) -> bool:
+        """Return True if this property handles the given type."""
+        return prop_type == PROPERTY_TYPE_STRING
 
     @property
     def log_prefix(self) -> str:
@@ -184,7 +194,7 @@ class DeviceProperty:
             and self._controller is not None
             and hasattr(self._controller, "get_property")
         ):
-            status_prop = self._controller.get_property("status")
+            status_prop = self._controller.get_property(KEY_STATUS)
             if status_prop is not None and isinstance(status_prop.value, dict):
                 raw_dict = status_prop.value
         if raw_dict is None and isinstance(self._device_state, dict):
@@ -214,7 +224,7 @@ class DeviceProperty:
 
         try:
             v = self.validation_template.render(device_state=self._raw_device_state)
-            result = str(v).lower() == "valid"
+            result = str(v).lower() == VALIDATION_SUCCESS_TOKEN
             return result
         except Exception as e:
             _LOGGER.error(
@@ -224,11 +234,6 @@ class DeviceProperty:
                 e,
             )  # pragma: no mutate
             return False
-
-    @property
-    def config_validation_type(self) -> Any:
-        """Return the config validation type."""
-        return cv.string
 
     @property
     def status_template(self) -> Template | None:
@@ -256,17 +261,12 @@ class DeviceProperty:
         return []
 
     @property
-    def values(self) -> list[Any]:
-        """Alias for all_values."""
-        return self.all_values
-
-    @property
     def device_class(self) -> str | None:
         """Return the device class."""
         return self._device_class
 
     @property
-    def feature_flag(self) -> int | None:
+    def feature_flag(self) -> ClimateEntityFeature | None:
         """Return the feature flag associated with this property."""
         return self._feature_flag
 
@@ -386,12 +386,12 @@ class DeviceProperty:
                     "%s Dry-run error for %s: %s", self.log_prefix, self.id, e
                 )  # pragma: no mutate
 
-        if v is not STATE_UNKNOWN:
+        if v != STATE_UNKNOWN:
             return self.convert_dev_to_hass(v)
         return STATE_UNKNOWN
 
     async def async_update_state(
-        self, device_state_override: dict[str, Any] | None, _debug: bool
+        self, device_state_override: dict[str, Any] | None = None, *_args: Any
     ) -> Any:
         """Update property from device state and return current value."""
         if device_state_override is not None:
@@ -401,7 +401,7 @@ class DeviceProperty:
 
         self._device_state = device_state
         v = self.calculate_value_from_state(device_state)
-        if v is not STATE_UNKNOWN:
+        if v != STATE_UNKNOWN:
             self.value = v
         return self.value
 
@@ -453,7 +453,7 @@ class GetJsonStatus(DeviceProperty):
                     "%s [GetJsonStatus] No connection_template found for aiohttp. Creating a default one.",
                     self.log_prefix,
                 )  # pragma: no mutate
-                default_template_str = '{ "method": "GET", "url": "/devices" }'
+                default_template_str = DEFAULT_JSON_STATUS_PAYLOAD
                 self._connection_template = Template(default_template_str)
         return super_result
 
@@ -487,7 +487,7 @@ class GetJsonStatus(DeviceProperty):
         return device_state
 
     async def async_update_state(
-        self, device_state_override: dict[str, Any] | None, _debug: bool
+        self, device_state_override: dict[str, Any] | None = None, *_args: Any
     ) -> Any:
         """Fetch the device state asynchronously."""
         device_state_result: dict[str, Any] | None = None  # pragma: no mutate
@@ -833,7 +833,7 @@ class BasicDeviceOperation(DeviceOperation):
                 ATTR_HVAC_MODE
             )
             if hvac_prop is None:
-                hvac_prop = self._controller.loader.operations.get("hvac")
+                hvac_prop = self._controller.loader.operations.get(KEY_HVAC)
                 
             if hvac_prop is not None:
                 state_node = getattr(
@@ -913,7 +913,7 @@ class BasicDeviceOperation(DeviceOperation):
             return False
 
         rendered = template.render(device_state=device_state)
-        return str(rendered).lower() == "valid"
+        return str(rendered).lower() == VALIDATION_SUCCESS_TOKEN
 
 
 @register_property
@@ -941,7 +941,7 @@ class ModeOperation(BasicDeviceOperation):
         elif name in LEGACY_YAML_TO_ATTR_MAP:
             self._id = LEGACY_YAML_TO_ATTR_MAP[name]
         else:
-            self._id = name + "_mode"
+            self._id = name + MODE_PROPERTY_SUFFIX
 
         self._feature_flag = YAML_NAME_TO_HA_FEATURE.get(self._name)
 
@@ -970,13 +970,11 @@ class ModeOperation(BasicDeviceOperation):
 
 
 @register_property
-class UniqueIdProperty(DeviceProperty):
-    """Property representing a unique device identifier (string type)."""
+class DevicePropertyRegistered(DeviceProperty):
+    """Registered property wrapper for string type properties."""
 
-    @staticmethod
-    def match_type(prop_type: str) -> bool:
-        """Return True if this property handles the given type."""
-        return prop_type == PROPERTY_TYPE_STRING
+class UniqueIdProperty(DeviceProperty):
+    """Property representing a unique identifier."""
 
 
 @register_property
@@ -1001,8 +999,7 @@ class SwitchOperation(BasicDeviceOperation):
         return False
 
 
-
-
+@register_property
 class BasicNumericOperation(DeviceOperation):
     """Base operation for numeric (integer/float) values with optional min/max."""
 
@@ -1019,6 +1016,11 @@ class BasicNumericOperation(DeviceOperation):
         self._max: float | None = None
         self._value: float | None = None
 
+    @staticmethod
+    def match_type(prop_type: str) -> bool:
+        """Return True if this operation handles the given type."""
+        return prop_type == PROPERTY_TYPE_NUMBER
+
     @property
     def value(self) -> float | None:
         """Return the current value as a float, or None if invalid."""
@@ -1033,11 +1035,6 @@ class BasicNumericOperation(DeviceOperation):
     def value(self, val: Any) -> None:
         """Set the current value."""
         self._value = val
-
-    @property
-    def config_validation_type(self) -> Any:
-        """Return the config validation type."""
-        return cv.positive_int
 
     def match_value(self, value: Any) -> bool:
         """Check if value matches the operation."""
@@ -1077,14 +1074,8 @@ class BasicNumericOperation(DeviceOperation):
         return ha_value
 
 
-@register_property
 class NumericOperation(BasicNumericOperation):
-    """Operation for generic numeric values."""
-
-    @staticmethod
-    def match_type(prop_type: str) -> bool:
-        """Return True if this operation handles the given type."""
-        return prop_type == PROPERTY_TYPE_NUMBER
+    """Operation for numeric values."""
 
 
 @register_property
@@ -1152,7 +1143,7 @@ class TemperatureOperation(BasicNumericOperation):
                     "%s Dry-run error for %s: %s", self.log_prefix, self.id, e
                 )  # pragma: no mutate
 
-        if v is not STATE_UNKNOWN:
+        if v != STATE_UNKNOWN:
             res = self._convert_dev_to_hass_with_unit(v, device_unit)
             _LOGGER.debug(
                 "%s [Forensic-Temp] Calculated %s value '%s' (raw: %s, dev_unit: %s)",
@@ -1166,7 +1157,7 @@ class TemperatureOperation(BasicNumericOperation):
         return STATE_UNKNOWN
 
     async def async_update_state(
-        self, device_state_override: dict[str, Any] | None, _debug: bool
+        self, device_state_override: dict[str, Any] | None = None, *_args: Any
     ) -> Any:
         """Update temperature state, resolving unit from device if templated."""
         if device_state_override is not None:
@@ -1187,7 +1178,7 @@ class TemperatureOperation(BasicNumericOperation):
                 )  # pragma: no mutate
 
         v = self.calculate_value_from_state(device_state)
-        if v is not STATE_UNKNOWN:
+        if v != STATE_UNKNOWN:
             self.value = v
         return self.value
 
