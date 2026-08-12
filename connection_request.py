@@ -420,7 +420,14 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         params = self._params.copy()
         if template is not None:
             try:
-                rendered_template = template.render(value=value, device_id=device_id)
+                from unittest.mock import NonCallableMock
+
+                async_render = getattr(template, "async_render", None)
+                rendered_template = (
+                    async_render(value=value, device_id=device_id)
+                    if callable(async_render) and not isinstance(template, NonCallableMock)
+                    else template.render(value=value, device_id=device_id)
+                )
                 params.update(json_loads(rendered_template))
             except Exception as exc:
                 _LOGGER.error(

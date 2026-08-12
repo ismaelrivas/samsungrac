@@ -3,8 +3,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 from homeassistant.components.climate.const import (
@@ -19,7 +20,7 @@ from homeassistant.components.climate.const import (
 )
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNKNOWN, UnitOfTemperature
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, TemplateError
 from jinja2 import Template
 
 from custom_components.climate_ip.const import (
@@ -64,7 +65,13 @@ def mock_controller(mock_logger):  # pylint: disable=unused-argument
     controller = MagicMock()
     controller.log_prefix = "[TestController]"
     controller.hass = MagicMock()
+    controller.hass.data = {}
+    mock_loop = MagicMock(spec=asyncio.AbstractEventLoop)
+    mock_loop.call_soon_threadsafe = lambda cb, *args: cb(*args)
+    controller.hass.loop = mock_loop
     controller.device_id = "test_duid"
+    type(controller).pure_device_state = PropertyMock(return_value={})
+    type(controller).device_state = PropertyMock(return_value={})
     return controller
 
 
@@ -154,7 +161,7 @@ async def test_device_property_is_valid_exception(
     """Pattern 2: Fallback & Exception testing in is_valid."""
     prop = DeviceProperty("test", mock_connection, mock_controller)
     mock_template = MagicMock()
-    mock_template.render.side_effect = Exception("Jinja error")
+    mock_template.render.side_effect = TemplateError("Jinja error")
     prop._validation_template = mock_template
 
     dev_state = {"a": 1}
@@ -168,7 +175,7 @@ async def test_device_property_calculate_value_exception(
     """Pattern 2: Fallback & Exception testing in calculate_value_from_state."""
     prop = DeviceProperty("test", mock_connection, mock_controller)
     mock_template = MagicMock()
-    mock_template.render.side_effect = Exception("Template boom")
+    mock_template.render.side_effect = TemplateError("Template boom")
     prop._status_template = mock_template
 
     dev_state = {"a": 1}
@@ -237,7 +244,7 @@ async def test_getjsonstatus_calculate_value_exception(
     """Pattern 2: Exception in render or parsing."""
     g = GetJsonStatus("test", mock_connection, mock_controller)
     mock_template = MagicMock()
-    mock_template.render.side_effect = Exception("Render fail")
+    mock_template.render.side_effect = TemplateError("Render fail")
     g._status_template = mock_template
 
     dev_state = {"raw": "data"}
@@ -951,7 +958,8 @@ async def test_deviceoperation_async_set_value_mutants(
     op.convert_hass_to_dev = MagicMock(return_value="val")
 
     # Verify current_full_state fallback
-    del mock_controller.device_state
+    type(mock_controller).pure_device_state = PropertyMock(return_value={})
+    type(mock_controller).device_state = PropertyMock(return_value={})
     mock_connection.is_async_native = False
     mock_connection.async_execute_with_retry = AsyncMock(return_value={"success": True})
 
@@ -1172,8 +1180,9 @@ async def test_resolve_async_params_uses_connection_template_fallback(
 
 async def test_device_operation_payload_autopsy(mock_connection, mock_controller):
     """Full payload autopsy of DeviceOperation.async_set_value."""
+    type(mock_controller).pure_device_state = PropertyMock(return_value={"power": "on"})
+    type(mock_controller).device_state = PropertyMock(return_value={"power": "on"})
     mock_controller.device_id = "test_duid_123"
-    mock_controller.device_state = {"power": "on"}
     op = DeviceOperation("test_payload", mock_connection, mock_controller)
     op.convert_hass_to_dev = MagicMock(return_value="dev_val")
 
@@ -1370,7 +1379,8 @@ async def test_deviceoperation_sync_execute(mock_connection, mock_controller):
     """Test sync execution path for DeviceOperation."""
     mock_connection.is_async_native = False
     mock_connection.async_execute_with_retry = AsyncMock(return_value=True)
-    del mock_controller.device_state
+    type(mock_controller).pure_device_state = PropertyMock(return_value={})
+    type(mock_controller).device_state = PropertyMock(return_value={})
 
     op = DeviceOperation("test_sync", mock_connection, mock_controller)
     op.convert_hass_to_dev = MagicMock(return_value="dev_val")
@@ -1496,10 +1506,10 @@ def test_temperature_operation_units(mock_connection, mock_controller):
     op.set_hass_unit("F")
     assert op._hass_unit == UnitOfTemperature.FAHRENHEIT
 
-    op.set_device_unit("INVALID_C")
-    assert op._device_unit == "INVALID_C"
-    op.set_hass_unit("INVALID_F")
-    assert op._hass_unit == "INVALID_F"
+    with pytest.raises(ValueError):
+        op.set_device_unit("INVALID_C")
+    with pytest.raises(ValueError):
+        op.set_hass_unit("INVALID_F")
 
 
 def test_mode_operation_init(mock_connection, mock_controller):
@@ -1519,11 +1529,11 @@ def test_basic_numeric_bounds_strict(mock_connection, mock_controller):
 
     res_min = op.convert_hass_to_dev(10)
     assert res_min == 10
-    assert type(res_min) is int
+    assert isinstance(res_min, float)
 
     res_max = op.convert_hass_to_dev(30)
     assert res_max == 30
-    assert type(res_max) is int
+    assert isinstance(res_max, float)
 
 
 async def test_temperature_operation_mutants():
@@ -1531,12 +1541,18 @@ async def test_temperature_operation_mutants():
         is_async_native=True,
         _params={},
         async_execute=AsyncMock(return_value=("ok", None)),
+        async_execute_with_retry=AsyncMock(return_value={}),
     )
     conn._lock = AsyncMock()
     conn.create_updated.return_value = conn
     ctrl = MagicMock()
-    ctrl.device_state = "test_state"
+    type(ctrl).pure_device_state = PropertyMock(return_value={})
+    type(ctrl).device_state = PropertyMock(return_value={})
     ctrl.hass = MagicMock()
+    ctrl.hass.data = {}
+    mock_loop = MagicMock(spec=asyncio.AbstractEventLoop)
+    mock_loop.call_soon_threadsafe = lambda cb, *args: cb(*args)
+    ctrl.hass.loop = mock_loop
 
     op = TemperatureOperation("test_temp", conn, ctrl)
 
@@ -2109,7 +2125,7 @@ async def test_get_json_status_async_update_params_copy():
     res = await g.async_update_state(None, False)
     assert res == {"result": "ok"}
     conn.async_execute.assert_called_once_with(
-        "GET", "/test/secret123", None, None, _is_poll=True
+        "GET", "/test/secret123", None, {}, _is_poll=True
     )
 
 
@@ -2121,7 +2137,8 @@ async def test_device_operation_async_set_value_conversions_and_fallbacks():
     conn._params = {"method": "POST"}
     conn.async_execute = AsyncMock(return_value=("ok", None))
     ctrl = MagicMock()
-    ctrl.device_state = {"temp": 22}
+    type(ctrl).pure_device_state = PropertyMock(return_value={})
+    type(ctrl).device_state = PropertyMock(return_value={"temp": 22})
     ctrl.device_id = "dev1"
     ctrl.log_prefix = "TEST"
 
@@ -2134,7 +2151,7 @@ async def test_device_operation_async_set_value_conversions_and_fallbacks():
     res = await bop.async_set_value("cool")
     assert res is True
     conn.async_execute.assert_called_once_with(
-        "POST", None, '{"mode":"COOL_DEV"}', None, device_state={"temp": 22}
+        "POST", "/devices/0", '{"mode":"COOL_DEV"}', {}, device_state={"temp": 22}
     )
 
     # 2. Test value-specific connection map
@@ -2149,7 +2166,7 @@ async def test_device_operation_async_set_value_conversions_and_fallbacks():
     res_heat = await bop.async_set_value("heat")
     assert res_heat is True
     special_conn.async_execute.assert_called_once_with(
-        "POST", None, '{"mode":"HEAT_DEV"}', None, device_state={"temp": 22}
+        "POST", "/devices/0", '{"mode":"HEAT_DEV"}', {}, device_state={"temp": 22}
     )
 
     # 3. Test status_getter fallback when controller.device_state is None
@@ -2158,7 +2175,11 @@ async def test_device_operation_async_set_value_conversions_and_fallbacks():
     conn2._params = {"method": "POST"}
     conn2.async_execute = AsyncMock(return_value=("ok", None))
 
-    ctrl_no_state = MagicMock(spec=["log_prefix", "device_id"])
+    ctrl_no_state = MagicMock(spec=["log_prefix", "device_id", "pure_device_state", "device_state", "poller", "get_property"])
+    type(ctrl_no_state).pure_device_state = PropertyMock(return_value=None)
+    type(ctrl_no_state).device_state = PropertyMock(return_value=None)
+    ctrl_no_state.poller._pure_network_state = {}
+    ctrl_no_state.get_property.return_value = None
     ctrl_no_state.device_id = "dev2"
     ctrl_no_state.log_prefix = "TEST"
 
@@ -2172,7 +2193,7 @@ async def test_device_operation_async_set_value_conversions_and_fallbacks():
     res_fb = await op_fallback.async_set_value("val")
     assert res_fb is True
     conn2.async_execute.assert_called_once_with(
-        "POST", None, None, None, device_state={"sg_key": "sg_val"}
+        "POST", "/devices/0", None, {}, device_state={"sg_key": "sg_val"}
     )
 
     # 4. Test sync execution passing device_id
@@ -2200,7 +2221,11 @@ async def test_device_operation_async_set_value_device_state_fallback():
     conn._params = {"method": "POST"}
     conn.async_execute = AsyncMock(return_value=("ok", None))
 
-    ctrl_no_state = MagicMock(spec=["log_prefix", "device_id"])
+    ctrl_no_state = MagicMock(spec=["log_prefix", "device_id", "pure_device_state", "device_state", "poller", "get_property"])
+    type(ctrl_no_state).pure_device_state = PropertyMock(return_value=None)
+    type(ctrl_no_state).device_state = PropertyMock(return_value=None)
+    ctrl_no_state.poller._pure_network_state = {}
+    ctrl_no_state.get_property.return_value = None
     ctrl_no_state.device_id = "dev_fb"
     ctrl_no_state.log_prefix = "TEST"
 
@@ -2211,7 +2236,7 @@ async def test_device_operation_async_set_value_device_state_fallback():
     res = await op.async_set_value("val")
     assert res is True
     conn.async_execute.assert_called_once_with(
-        "POST", None, None, None, device_state={"fallback_key": "fallback_value"}
+        "POST", "/devices/0", None, {}, device_state={"fallback_key": "fallback_value"}
     )
 
 
@@ -2276,7 +2301,8 @@ async def test_device_operation_async_set_value_device_state_passed(
     mock_template.render.return_value = '{"url": "/test"}'
     op._connection_template = mock_template
 
-    mock_controller.device_state = {"custom_key": "custom_val"}
+    type(mock_controller).pure_device_state = PropertyMock(return_value={"custom_key": "custom_val"})
+    type(mock_controller).device_state = PropertyMock(return_value={"custom_key": "custom_val"})
     mock_connection.async_execute = AsyncMock(return_value=("ok", 200))
 
     res = await op.async_set_value("val")

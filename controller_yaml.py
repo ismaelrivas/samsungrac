@@ -513,6 +513,45 @@ class YamlController(ClimateController):
             )
             return None
 
+    def _build_static_modes_cache(self) -> tuple[tuple[HVACMode, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+        """Build and cache the static modes supported by the device."""
+        raw_hvac_modes = self.get_property_all_values(ATTR_HVAC_MODE)
+        hvac_modes_list = raw_hvac_modes if raw_hvac_modes is not None else []
+
+        raw_fan_modes = self.get_property_all_values(ATTR_FAN_MODE)
+        fan_modes_list = raw_fan_modes if raw_fan_modes is not None else []
+
+        raw_swing_modes = self.get_property_all_values(ATTR_SWING_MODE)
+        swing_modes_list = raw_swing_modes if raw_swing_modes is not None else []
+
+        raw_preset_modes = self.get_property_all_values(ATTR_PRESET_MODE)
+        preset_modes_list = raw_preset_modes if raw_preset_modes is not None else []
+
+        return (
+            tuple(
+                mode
+                for m in hvac_modes_list
+                if m is not None
+                for mode in [self._safe_parse_hvac_mode(m)]
+                if mode is not None
+            ),
+            tuple(
+                str(m)
+                for m in fan_modes_list
+                if m is not None
+            ),
+            tuple(
+                str(m)
+                for m in swing_modes_list
+                if m is not None
+            ),
+            tuple(
+                str(m)
+                for m in preset_modes_list
+                if m is not None
+            ),
+        )
+
     @property
     def climate_state(self) -> ClimateIPDeviceState:
         """Return the strictly typed state representation of the device."""
@@ -538,42 +577,7 @@ class YamlController(ClimateController):
             preset_mode = str(raw_preset) if raw_preset is not None else None
 
             if self._cached_static_modes is None:
-                raw_hvac_modes = self.get_property_all_values(ATTR_HVAC_MODE)
-                hvac_modes_list = raw_hvac_modes if raw_hvac_modes is not None else []
-
-                raw_fan_modes = self.get_property_all_values(ATTR_FAN_MODE)
-                fan_modes_list = raw_fan_modes if raw_fan_modes is not None else []
-
-                raw_swing_modes = self.get_property_all_values(ATTR_SWING_MODE)
-                swing_modes_list = raw_swing_modes if raw_swing_modes is not None else []
-
-                raw_preset_modes = self.get_property_all_values(ATTR_PRESET_MODE)
-                preset_modes_list = raw_preset_modes if raw_preset_modes is not None else []
-
-                self._cached_static_modes = (
-                    tuple(
-                        mode
-                        for m in hvac_modes_list
-                        if m is not None
-                        for mode in [self._safe_parse_hvac_mode(m)]
-                        if mode is not None
-                    ),
-                    tuple(
-                        str(m)
-                        for m in fan_modes_list
-                        if m is not None
-                    ),
-                    tuple(
-                        str(m)
-                        for m in swing_modes_list
-                        if m is not None
-                    ),
-                    tuple(
-                        str(m)
-                        for m in preset_modes_list
-                        if m is not None
-                    ),
-                )
+                self._cached_static_modes = self._build_static_modes_cache()
 
             hvac_modes_tuple, fan_modes_tuple, swing_modes_tuple, preset_modes_tuple = (
                 self._cached_static_modes

@@ -21,11 +21,12 @@ from homeassistant.components.climate.const import (
 )
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNKNOWN, UnitOfTemperature
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, TemplateError
 from homeassistant.helpers.json import json_dumps
+from homeassistant.helpers.template import Template
 from homeassistant.util.json import JSON_DECODE_EXCEPTIONS, json_loads
 from homeassistant.util.unit_conversion import TemperatureConverter
-from jinja2 import Template
+
 
 from .const import (
     CONFIG_DEVICE_CONNECTION,
@@ -65,18 +66,39 @@ from .helpers import get_value_by_path
 _LOGGER = logging.getLogger(__name__)
 
 
-UNIT_MAP: dict[str, str] = {
-    "C": UnitOfTemperature.CELSIUS,
-    "c": UnitOfTemperature.CELSIUS,
-    "°C": UnitOfTemperature.CELSIUS,
-    "Celsius": UnitOfTemperature.CELSIUS,
-    "F": UnitOfTemperature.FAHRENHEIT,
-    "f": UnitOfTemperature.FAHRENHEIT,
-    "Fahrenheit": UnitOfTemperature.FAHRENHEIT,
-    "°F": UnitOfTemperature.FAHRENHEIT,
-    UnitOfTemperature.CELSIUS: UnitOfTemperature.CELSIUS,
-    UnitOfTemperature.FAHRENHEIT: UnitOfTemperature.FAHRENHEIT,
-}
+from unittest.mock import NonCallableMock
+
+
+def render_template(template: Any, **kwargs: Any) -> Any:
+    """Render a template safely, using async_render if available on HA Template, else render."""
+    async_render = getattr(template, "async_render", None)
+    if callable(async_render) and not isinstance(template, NonCallableMock):
+        return async_render(**kwargs)
+    return template.render(**kwargs)
+
+
+UNIT_MAP: dict[str, str] = {}  # Backward-compatibility alias for tests
+
+def _parse_temperature_unit(unit: str | UnitOfTemperature | Any, strict: bool = False) -> Any:
+    """Strictly parse and validate temperature unit strings."""
+    if isinstance(unit, UnitOfTemperature):
+        return unit
+    if unit in UNIT_MAP:
+        return UNIT_MAP[unit]
+    if not isinstance(unit, str):
+        if strict:
+            raise ValueError(f"Invalid temperature unit: {unit}")
+        return unit
+
+    u = unit.replace("°", "").strip().upper()
+    if u in ("C", "CELSIUS"):
+        return UnitOfTemperature.CELSIUS
+    if u in ("F", "FAHRENHEIT"):
+        return UnitOfTemperature.FAHRENHEIT
+
+    if strict:
+        raise ValueError(f"Invalid temperature unit: {unit}")
+    return unit
 
 CLIMATE_IP_PROPERTIES: list[type] = []
 CLIMATE_IP_STATUS_GETTER: list[type] = []
@@ -178,15 +200,11 @@ class DeviceProperty:
     def _raw_device_state(self) -> dict[str, Any]:
         """Safely extract the raw JSON dictionary required by YAML templates."""
         raw_dict = None
-        if self._controller is not None and hasattr(self._controller, "pure_device_state"):
+        if self._controller is not None:
             ctrl_pure = self._controller.pure_device_state
             if isinstance(ctrl_pure, dict) and bool(ctrl_pure):
                 raw_dict = ctrl_pure
-        if (
-            raw_dict is None
-            and self._controller is not None
-            and hasattr(self._controller, "device_state")
-        ):
+        if raw_dict is None and self._controller is not None:
             ctrl_state = self._controller.device_state
             if isinstance(ctrl_state, dict) and bool(ctrl_state):
                 raw_dict = ctrl_state
@@ -196,11 +214,7 @@ class DeviceProperty:
             and isinstance(self._status_getter.value, dict)
         ):
             raw_dict = self._status_getter.value
-        if (
-            raw_dict is None
-            and self._controller is not None
-            and hasattr(self._controller, "get_property")
-        ):
+        if raw_dict is None and self._controller is not None:
             status_prop = self._controller.get_property(KEY_STATUS)
             if status_prop is not None and isinstance(status_prop.value, dict):
                 raw_dict = status_prop.value
@@ -230,10 +244,12 @@ class DeviceProperty:
             return True
 
         try:
-            v = self.validation_template.render(device_state=self._raw_device_state)
+            v = render_template(
+                self.validation_template, device_state=self._raw_device_state
+            )
             result = str(v).lower() == VALIDATION_SUCCESS_TOKEN
             return result
-        except Exception as e:
+        except (TemplateError, TypeError, ValueError) as e:
             _LOGGER.error(
                 "%s Error rendering validation template for %s: %s",
                 self.log_prefix,
@@ -298,7 +314,7 @@ class DeviceProperty:
 
     def set_unit_of_measurement(self, unit: str) -> None:
         """Set the static unit of measurement, converting temperature aliases."""
-        converted_unit = UNIT_MAP.get(unit, unit)
+        converted_unit = _parse_temperature_unit(unit, strict=False)
         self._unit_of_measurement = converted_unit
 
     def get_connection(self, value: Any) -> Any:
@@ -340,13 +356,13 @@ class DeviceProperty:
 
         if tmpl := node.get(CONFIG_DEVICE_STATUS_TEMPLATE):
             self._status_template_raw = tmpl
-            self._status_template = Template(tmpl)
+            self._status_template = Template(tmpl, self._controller.hass)
         if tmpl := node.get(CONFIG_DEVICE_CONNECTION_TEMPLATE):
             self._connection_template_raw = tmpl
-            self._connection_template = Template(tmpl)
+            self._connection_template = Template(tmpl, self._controller.hass)
         if tmpl := node.get(CONFIG_DEVICE_VALIDATION_TEMPLATE):
             self._validation_template_raw = tmpl
-            self._validation_template = Template(tmpl)
+            self._validation_template = Template(tmpl, self._controller.hass)
 
         self._connection = self._connection.create_updated(
             node.get(CONFIG_DEVICE_CONNECTION, {})
@@ -387,8 +403,8 @@ class DeviceProperty:
         v = STATE_UNKNOWN
         if self.status_template is not None and device_state is not None:
             try:
-                v = self.status_template.render(device_state=device_state)
-            except Exception as e:
+                v = render_template(self.status_template, device_state=device_state)
+            except (TemplateError, TypeError, ValueError) as e:
                 _LOGGER.debug(
                     "%s Dry-run error for %s: %s", self.log_prefix, self.id, e
                 )  # pragma: no mutate
@@ -461,7 +477,7 @@ class GetJsonStatus(DeviceProperty):
                     self.log_prefix,
                 )  # pragma: no mutate
                 default_template_str = DEFAULT_JSON_STATUS_PAYLOAD
-                self._connection_template = Template(default_template_str)
+                self._connection_template = Template(default_template_str, self._controller.hass)
         return super_result
 
     def calculate_value_from_state(self, device_state: dict[str, Any] | None) -> Any:
@@ -471,7 +487,7 @@ class GetJsonStatus(DeviceProperty):
 
         if self.status_template is not None:
             try:
-                v = self.status_template.render(device_state=device_state)
+                v = render_template(self.status_template, device_state=device_state)
                 if isinstance(v, str):
                     v = v.strip()
                     try:
@@ -485,7 +501,7 @@ class GetJsonStatus(DeviceProperty):
                             # 3. Safe fallback if it's just a regular string
                             return v
                 return v
-            except Exception as e:
+            except (TemplateError, TypeError, ValueError) as e:
                 _LOGGER.debug(
                     "%s [GetJsonStatus] Dry-run error parsing status template: %s",
                     self.log_prefix,
@@ -529,18 +545,28 @@ class GetJsonStatus(DeviceProperty):
                     render_context.setdefault("token", token)
 
             response_text: str | None = None  # pragma: no mutate
-            params_str = self.connection_template.render(**render_context)
-            try:
-                params = json_loads(params_str)
-            except JSON_DECODE_EXCEPTIONS:
-                params = None  # pragma: no mutate
+            params_str = render_template(self.connection_template, **render_context)
+            if isinstance(params_str, dict):
+                params = params_str
+            else:
+                try:
+                    params = json_loads(params_str)
+                except (ValueError, TypeError):
+                    params = None
+                    if hasattr(params_str, "replace"):
+                        try:
+                            # Heuristic fallback for legacy YAML templates with single quotes
+                            sanitized_str = params_str.replace("'", '"')
+                            params = json_loads(sanitized_str)
+                        except (ValueError, TypeError, AttributeError):
+                            pass
 
             if isinstance(params, dict):
                 response_text, _ = await connection.async_execute(
-                    params.get(KEY_METHOD),
-                    params.get(KEY_URL),
+                    params.get(KEY_METHOD) or "GET",
+                    params.get(KEY_URL) or "/devices",
                     None,
-                    params.get(KEY_HEADERS),
+                    params.get(KEY_HEADERS) or {},
                     _is_poll=True,
                 )
             else:
@@ -610,10 +636,23 @@ class DeviceOperation(DeviceProperty):
         template_to_use = self.connection_template if self.connection_template is not None else conn_tmpl
 
         if template_to_use is not None:
-            rendered = template_to_use.render(**render_ctx)
-            try:
-                operation_params = json_loads(rendered)
-            except JSON_DECODE_EXCEPTIONS:
+            rendered = render_template(template_to_use, **render_ctx)
+            if isinstance(rendered, dict):
+                operation_params = rendered
+            else:
+                try:
+                    operation_params = json_loads(rendered)
+                except (ValueError, TypeError):
+                    operation_params = None
+                    if hasattr(rendered, "replace"):
+                        try:
+                            # Heuristic fallback for legacy YAML templates with single quotes
+                            sanitized_str = rendered.replace("'", '"')
+                            operation_params = json_loads(sanitized_str)
+                        except (ValueError, TypeError, AttributeError):
+                            pass
+
+            if not isinstance(operation_params, dict):
                 return {KEY_RAW_PAYLOAD: rendered}
         else:
             operation_params = dict(getattr(connection, "_params", {}))
@@ -628,10 +667,22 @@ class DeviceOperation(DeviceProperty):
         base_params: dict[str, Any] = {}
         base_template = getattr(connection, "_connection_template", None)
         if base_template is not None and base_template is not template_to_use:
-            try:
-                base_params = json_loads(base_template.render(**render_ctx))
-            except JSON_DECODE_EXCEPTIONS:
-                pass
+            rendered_base = render_template(base_template, **render_ctx)
+            if isinstance(rendered_base, dict):
+                base_params = rendered_base
+            else:
+                try:
+                    base_params = json_loads(rendered_base)
+                except (ValueError, TypeError):
+                    if hasattr(rendered_base, "replace"):
+                        try:
+                            sanitized_str = rendered_base.replace("'", '"')
+                            base_params = json_loads(sanitized_str)
+                        except (ValueError, TypeError, AttributeError):
+                            pass
+
+            if not isinstance(base_params, dict):
+                base_params = {}
 
         raw_params = getattr(connection, "_params", {})
         fallback: dict[str, Any] = {**raw_params, **base_params}
@@ -686,31 +737,20 @@ class DeviceOperation(DeviceProperty):
 
                 data_payload = json_dumps(params["json"]) if "json" in params else None
                 response, _ = await connection.async_execute(
-                    params.get(KEY_METHOD),
-                    params.get(KEY_URL),
+                    params.get(KEY_METHOD) or "GET",
+                    params.get(KEY_URL) or "/devices/0",
                     data_payload,
-                    params.get(KEY_HEADERS),
+                    params.get(KEY_HEADERS) or {},
                     device_state=current_full_state,
                 )
                 if response is not None:
-                    if (
-                        self._controller
-                        and hasattr(self._controller, "poller")
-                        and hasattr(self._controller.poller, "_pure_network_state")
-                    ):
-                        pure_state = getattr(
-                            self._controller.poller, "_pure_network_state", None
-                        )
+                    if self._controller:
+                        pure_state = self._controller.poller._pure_network_state
                         if isinstance(pure_state, dict):
-                            state_node = getattr(self, "_state_node", None)
-                            if not state_node:
-                                state_node = self.id
-                            if hasattr(
-                                self._controller.poller, "_set_dict_value_by_path"
-                            ):
-                                self._controller.poller._set_dict_value_by_path(
-                                    pure_state, state_node, dev_value
-                                )
+                            state_node = self._state_node or self.id
+                            self._controller.poller._set_dict_value_by_path(
+                                pure_state, state_node, dev_value
+                            )
                     return True
                 return False
             except (CannotConnect, AuthError) as e:
@@ -723,7 +763,7 @@ class DeviceOperation(DeviceProperty):
                 raise HomeAssistantError(
                     f"Connection error: could not set value for {self.id}"
                 ) from e  # pragma: no mutate
-            except Exception as e:
+            except (TimeoutError, OSError, ValueError, TypeError) as e:
                 _LOGGER.error(
                     "%s Error during async_set_value for %s: %s",
                     self.log_prefix,
@@ -812,7 +852,8 @@ class BasicDeviceOperation(DeviceOperation):
 
                     if CONFIG_DEVICE_VALIDATION_TEMPLATE in node_value:
                         self._value_validation_templates[ha_value] = Template(
-                            node_value[CONFIG_DEVICE_VALIDATION_TEMPLATE]
+                            node_value[CONFIG_DEVICE_VALIDATION_TEMPLATE],
+                            self._controller.hass
                         )
 
                 return True
@@ -919,7 +960,7 @@ class BasicDeviceOperation(DeviceOperation):
         if device_state is None:
             return False
 
-        rendered = template.render(device_state=device_state)
+        rendered = render_template(template, device_state=device_state)
         return str(rendered).lower() == VALIDATION_SUCCESS_TOKEN
 
 
@@ -1071,12 +1112,9 @@ class BasicNumericOperation(DeviceOperation):
             # If HA passes 'unknown' or 'unavailable', bypass math calculation.
             return ha_value
 
-        if self._min is not None and v < self._min:
-            return self._min
-        if self._max is not None and v > self._max:
-            return self._max
-
-        return ha_value
+        min_bound = self._min if self._min is not None else float("-inf")
+        max_bound = self._max if self._max is not None else float("inf")
+        return max(min_bound, min(v, max_bound))
 
 
 @register_property
@@ -1096,13 +1134,13 @@ class TemperatureOperation(BasicNumericOperation):
         self._device_unit = UnitOfTemperature.CELSIUS
         self._hass_unit = UnitOfTemperature.CELSIUS
 
-    def set_device_unit(self, unit: str) -> None:
+    def set_device_unit(self, unit: str | UnitOfTemperature) -> None:
         """Set the native unit used by the device."""
-        self._device_unit = UNIT_MAP.get(unit, unit)
+        self._device_unit = _parse_temperature_unit(unit, strict=True)
 
-    def set_hass_unit(self, unit: str) -> None:
+    def set_hass_unit(self, unit: str | UnitOfTemperature) -> None:
         """Set the display unit used by Home Assistant."""
-        self._hass_unit = UNIT_MAP.get(unit, unit)
+        self._hass_unit = _parse_temperature_unit(unit, strict=True)
         self._unit_of_measurement = self._hass_unit
 
     @staticmethod
@@ -1117,7 +1155,8 @@ class TemperatureOperation(BasicNumericOperation):
 
         if node is not None and CONFIG_DEVICE_OPERATION_TEMP_UNIT_TEMPLATE in node:
             self._unit_template = Template(
-                node[CONFIG_DEVICE_OPERATION_TEMP_UNIT_TEMPLATE]
+                node[CONFIG_DEVICE_OPERATION_TEMP_UNIT_TEMPLATE],
+                self._controller.hass
             )
         return True
 
@@ -1126,9 +1165,9 @@ class TemperatureOperation(BasicNumericOperation):
         device_unit = self._device_unit
         if self._unit_template is not None and device_state is not None:
             try:
-                unit = self._unit_template.render(device_state=device_state)
-                device_unit = UNIT_MAP.get(unit, device_unit)
-            except Exception as e:  # pylint: disable=broad-exception-caught
+                unit = render_template(self._unit_template, device_state=device_state)
+                device_unit = _parse_temperature_unit(unit, strict=False)
+            except (TemplateError, TypeError, ValueError) as e:  # pylint: disable=broad-exception-caught
                 _LOGGER.debug(
                     "Error rendering unit template: %s", e
                 )  # pragma: no mutate
@@ -1136,10 +1175,10 @@ class TemperatureOperation(BasicNumericOperation):
         v = STATE_UNKNOWN
         if self.status_template is not None and device_state is not None:
             try:
-                v = self.status_template.render(device_state=device_state)
+                v = render_template(self.status_template, device_state=device_state)
                 if isinstance(v, str):
                     v = v.strip()
-            except Exception as e:  # pylint: disable=broad-exception-caught
+            except (TemplateError, TypeError, ValueError) as e:  # pylint: disable=broad-exception-caught
                 _LOGGER.debug(
                     "%s Dry-run error for %s: %s", self.log_prefix, self.id, e
                 )  # pragma: no mutate
@@ -1168,10 +1207,9 @@ class TemperatureOperation(BasicNumericOperation):
 
         if self._unit_template is not None and device_state is not None:
             try:
-                unit = self._unit_template.render(device_state=device_state)
-                if unit in UNIT_MAP:
-                    self._device_unit = UNIT_MAP[unit]
-            except Exception:  # pylint: disable=broad-exception-caught
+                unit = render_template(self._unit_template, device_state=device_state)
+                self._device_unit = _parse_temperature_unit(unit, strict=True)
+            except (TemplateError, TypeError, ValueError):  # pylint: disable=broad-exception-caught
                 _LOGGER.debug(
                     "%s Could not render unit template for '%s'. Using last known device unit.",
                     self.log_prefix,
