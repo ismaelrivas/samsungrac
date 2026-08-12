@@ -62,14 +62,16 @@ class PropertyDebouncer:
     """Debounces outgoing commands per property to shield hardware from request flooding."""
 
     def __init__(
-        self, coordinator: SamsungClimateCoordinator, delay: float = 2.0
+        self, coordinator: "SamsungClimateCoordinator", delay: float = 1.0
     ) -> None:
         """Initialize the property debouncer."""
         self.coordinator = coordinator
         self.delay = delay
         self._timers: dict[str, Callable[[], None]] = {}
-        self._pending_payloads: dict[str, tuple[Any, tuple, dict]] = {}
+        # 🛡️ Updated typing to include the Generation ID (int) at the end of the tuple
+        self._pending_payloads: dict[str, tuple[Any, tuple, dict, int]] = {}
         self._last_activities: dict[str, float] = {}
+        self._generation: int = 0  # 🛡️ The core of the Anti-Zombie Shield
 
     @property
     def hass(self) -> HomeAssistant:
@@ -77,7 +79,14 @@ class PropertyDebouncer:
         return self.coordinator.hass
 
     def cancel_all(self) -> None:
-        """Cancel all active timers and clear pending payloads."""
+        """Cancel all active timers, clear pending payloads, and poison active zombies."""
+        self._generation += 1  # 💥 Global poisoning: any queued task will be invalidated
+        
+        _LOGGER.debug(
+            "[Debouncer] Purge requested. Generation incremented to %s",
+            self._generation
+        )
+
         for unsub in self._timers.values():
             if unsub:
                 unsub()
@@ -140,7 +149,8 @@ class PropertyDebouncer:
                 property_name,
             )  # pragma: no mutate
 
-        self._pending_payloads[property_name] = (coroutine_func, args, kwargs)
+        # 🛡️ Package the payload with the CURRENT Generation ID
+        self._pending_payloads[property_name] = (coroutine_func, args, kwargs, self._generation)
 
         def _fire_delayed(prop_or_now: Any = None) -> None:
             prop = prop_or_now if isinstance(prop_or_now, str) else property_name
@@ -148,7 +158,8 @@ class PropertyDebouncer:
             payload = self._pending_payloads.pop(prop, None)
 
             if payload:
-                func, p_args, p_kwargs = payload
+                # 🛡️ Unpack the generation ID captured when the task was queued
+                func, p_args, p_kwargs, captured_generation = payload
                 exec_time = time.time()
                 self._last_activities[prop] = exec_time
                 _LOGGER.debug(
@@ -157,6 +168,18 @@ class PropertyDebouncer:
                 )  # pragma: no mutate
 
                 async def _task_runner() -> None:
+                    # 🛡️ THE ANTI-ZOMBIE SHIELD: 
+                    # The timer expired, but the background task just entered the Event Loop.
+                    # We check if the user smashed another button invoking cancel_all() in the meantime.
+                    if self._generation != captured_generation:
+                        _LOGGER.debug(
+                            "[Debouncer] 🧟 Zombie task intercepted and destroyed for '%s'. Task Gen: %s vs Current Gen: %s",
+                            prop,
+                            captured_generation,
+                            self._generation,
+                        )
+                        return
+
                     try:
                         await func(*p_args, **p_kwargs)
                     except (TimeoutError, UpdateFailed, CannotConnect, OSError) as err:
@@ -194,7 +217,6 @@ class PropertyDebouncer:
             self.delay,
         )  # pragma: no mutate
         return True
-
 
 class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     """Manages data fetching for Samsung Climate devices."""
