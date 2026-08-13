@@ -637,7 +637,7 @@ class YamlController(ClimateController):
 
     async def async_predict_and_correct_state(
         self, current_hass_state: Any, property_name: str, new_value: Any
-    ) -> tuple[ClimateEntityFeature | int, dict[str, Any]]:
+    ) -> tuple[ClimateEntityFeature, dict[str, Any]]:
         """Predict expected state changes based on a command."""
         return await self.poller.async_predict_and_correct_state(
             current_hass_state, property_name, new_value
