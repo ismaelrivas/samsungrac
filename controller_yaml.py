@@ -436,7 +436,9 @@ class YamlController(ClimateController):
         prop = self.get_property_object(property_name)
         if prop is not None:
             all_vals = prop.all_values
-            if isinstance(all_vals, (list, tuple, set)):
+            if all_vals is not None:
+                if not isinstance(all_vals, (list, tuple, set)):
+                    raise TypeError(f"Expected iterable for {property_name} all_vals, got {type(all_vals).__name__}")
                 return [
                     str(v)
                     for v in all_vals
