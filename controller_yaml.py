@@ -243,7 +243,10 @@ class YamlController(ClimateController):
         """Return the controller name."""
         if self.loader is not None and self.loader.name is not None:
             return self.loader.name
-        return str(self._config.get(CONF_NAME, DEFAULT_CONTROLLER_NAME))
+        raw_name = self._config.get(CONF_NAME)
+        if isinstance(raw_name, str) and raw_name.strip():
+            return raw_name
+        return DEFAULT_CONTROLLER_NAME
 
     @staticmethod
     def _is_subdevice(device_id: Any) -> bool:
