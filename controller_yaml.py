@@ -30,6 +30,8 @@ if TYPE_CHECKING:
     from .connection import ClimateConnection
 
 from .const import (
+    DOMAIN,
+    ERR_PROPERTY_SET_FAILED,
     ATTR_IS_AVAILABLE,
     CONF_CONFIG_FILE,
     CONF_CONTROLLER,
@@ -365,8 +367,8 @@ class YamlController(ClimateController):
                 raise
             except (TimeoutError, OSError) as e:
                 raise ServiceValidationError(
-                    translation_domain="climate_ip",
-                    translation_key="property_set_failed",
+                    translation_domain=DOMAIN,
+                    translation_key=ERR_PROPERTY_SET_FAILED,
                     translation_placeholders={"property": property_name, "error": str(e)}
                 ) from e
 

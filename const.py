@@ -15,6 +15,7 @@ from homeassistant.const import UnitOfTemperature
 
 DOMAIN = "climate_ip"
 ISSUE_CONNECTION_FAILED = "connection_failed"
+ERR_PROPERTY_SET_FAILED = "property_set_failed"
 
 NON_SERIALIZABLE_KEYS: final = ("hass", "session", "logger")
 TRUTHY_STRINGS: final = ("true", "1", "yes", "on")
