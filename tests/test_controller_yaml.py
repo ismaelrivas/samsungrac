@@ -166,7 +166,7 @@ def test_yaml_controller_strict_initialization() -> None:
         CONF_IP_ADDRESS: "192.168.1.100",
         CONF_DEVICE_ID: "dev_123",
         CONF_TOKEN: "secret_token",
-        "unique_id": "test_mac_uid",
+        "mac": "test_mac_uid",
         "debug": True,
     }
 

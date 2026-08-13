@@ -77,12 +77,8 @@ class YamlController(ClimateController):
         entry_data[CONF_ENTRY_ID] = config_entry.entry_id
 
         base_unique_id = config_entry.unique_id
-        if device_id is not None and device_id != MAIN_DEVICE_ID:
-            entry_data[CONF_UNIQUE_ID] = (
-                f"{base_unique_id}{ID_DELIMITER}{device_id}"
-                if base_unique_id is not None
-                else device_id
-            )
+        if base_unique_id is not None and device_id is not None and cls._is_subdevice(device_id):
+            entry_data[CONF_UNIQUE_ID] = f"{base_unique_id}{ID_DELIMITER}{device_id}"
         else:
             entry_data[CONF_UNIQUE_ID] = base_unique_id
 
@@ -148,16 +144,13 @@ class YamlController(ClimateController):
         self._device_id = config.get(CONF_DEVICE_ID)
         self._token = config.get(CONF_TOKEN)
 
-        base_unique_id = config_entry.unique_id if config_entry is not None else config.get(CONF_UNIQUE_ID)
-        if base_unique_id is None:
+        self._unique_id = config.get(CONF_UNIQUE_ID)
+        if self._unique_id is None:
             base_unique_id = config.get(CONF_MAC)
-
-        # If device_id exists and is a real sub-device (neither "main" nor "0"):
-        if self._is_subdevice(self._device_id):
-            self._unique_id = f"{base_unique_id}{ID_DELIMITER}{self._device_id}" if base_unique_id is not None else self._device_id
-        else:
-            # Monosplit / Main device: Pure MAC address without suffixes
-            self._unique_id = base_unique_id
+            if self._is_subdevice(self._device_id):
+                self._unique_id = f"{base_unique_id}{ID_DELIMITER}{self._device_id}" if base_unique_id is not None else self._device_id
+            else:
+                self._unique_id = base_unique_id
 
         if self._device_id is None:
             self._device_id = self._unique_id
