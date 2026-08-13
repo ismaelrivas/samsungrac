@@ -20,6 +20,7 @@ from homeassistant.components.climate.const import (
     ATTR_SWING_MODES,
 )
 from homeassistant.components.sensor import SensorStateClass
+from homeassistant.components.sensor.const import SensorDeviceClass
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNKNOWN, UnitOfTemperature
 from homeassistant.exceptions import HomeAssistantError, TemplateError
 from homeassistant.helpers.json import json_dumps
@@ -47,14 +48,6 @@ from .const import (
     KEY_RAW_PAYLOAD,
     KEY_STATUS,
     KEY_URL,
-    HTTP_METHOD_GET,
-    DEFAULT_ENDPOINT_DEVICES,
-    DEFAULT_ENDPOINT_DEVICE_MAIN,
-    DEFAULT_FALLBACK_DEVICE_ID,
-    KEY_YAML_DEVICE,
-    KEY_YAML_IDENTIFIERS,
-    KEY_YAML_PATH_TO_DEVICES,
-    DEFAULT_DEVICES_PATH,
     LEGACY_YAML_TO_ATTR_MAP,
     MEASUREMENT_DEVICE_CLASSES,
     MODE_PROPERTY_SUFFIX,
@@ -74,9 +67,13 @@ from .helpers import get_value_by_path
 _LOGGER = logging.getLogger(__name__)
 
 
-def render_template(template: Template, **kwargs: Any) -> Any:
+def render_template(template: Template | Any, **kwargs: Any) -> Any:
     """Render a Jinja2 template strictly using async execution within the event loop."""
-    return template.async_render(kwargs, parse_result=True)
+    if hasattr(template, "async_render"):
+        return template.async_render(kwargs, parse_result=True)
+    if hasattr(template, "render"):
+        return template.render(**kwargs)
+    return str(template)
 
 
 def _parse_temperature_unit(unit: str | UnitOfTemperature | Any, strict: bool = False) -> Any:
@@ -227,13 +224,31 @@ class DeviceProperty:
                 raw_dict = {}
 
         if isinstance(raw_dict, dict):
-            device_id = self._controller.device_id or DEFAULT_FALLBACK_DEVICE_ID
-            cache = self._controller.loader.parsed_yaml_cache
-            id_map = cache.get(device_id, {}).get(KEY_YAML_DEVICE, {}).get(KEY_YAML_IDENTIFIERS, {})
-            path = id_map.get(KEY_YAML_PATH_TO_DEVICES, DEFAULT_DEVICES_PATH)
+            device_id = getattr(self._controller, "device_id", None) or "XXXX"
+            loader = getattr(self._controller, "loader", None)
+            cache = getattr(loader, "parsed_yaml_cache", {}) if loader is not None else {}
+            id_map = cache.get(device_id, {}).get("device", {}).get("identifiers", {})
+            path = id_map.get("path_to_devices")
             
+            if not path:
+                return dict(raw_dict)
+                
             devices_list = get_value_by_path(raw_dict, path)
-            if isinstance(devices_list, list) and devices_list:
+            if isinstance(devices_list, list) and len(devices_list) > 0:
+                id_path = id_map.get("id", ["id"])
+                
+                # Strict match by device_id
+                for dev in devices_list:
+                    dev_id = get_value_by_path(dev, id_path)
+                    if dev_id is not None and str(dev_id) == str(device_id):
+                        return dict(dev)
+                
+                # Fallback: Find the first AC unit (must have a 'Mode' key to exclude WiFi-Kit)
+                for dev in devices_list:
+                    if "Mode" in dev:
+                        return dict(dev)
+                        
+                # Absolute fallback
                 return dict(devices_list[0])
             return dict(raw_dict)
         return {}
@@ -343,7 +358,7 @@ class DeviceProperty:
         return self._type in (
             "string",
             "enum",
-        ) or self.device_class in ("enum", "problem")
+        ) or self.device_class in (SensorDeviceClass.ENUM, SensorDeviceClass.PROBLEM)
 
     def load_from_yaml(self, node: dict[str, Any] | None) -> bool:
         """Load configuration from a YAML node dictionary."""
@@ -525,7 +540,7 @@ class GetJsonStatus(DeviceProperty):
             return None
 
         if connection.is_async_native:
-            if not self.connection_template:
+            if self.connection_template is None:
                 _LOGGER.error(
                     "%s [GetJsonStatus] Connection template is missing for async execution.",
                     self.log_prefix,
@@ -534,7 +549,7 @@ class GetJsonStatus(DeviceProperty):
 
             render_context: dict[str, Any] = getattr(connection, "_params", {}).copy()
 
-            cfg = connection.config if connection is not None else None
+            cfg = getattr(connection, "config", {}) if connection is not None else None
             duid_from_cfg = (
                 cfg.get(KEY_DUID)
                 if isinstance(cfg, dict)
@@ -543,8 +558,8 @@ class GetJsonStatus(DeviceProperty):
                 else None
             )
             
-            duid_for_render = self._controller.device_id or duid_from_cfg
-            if not duid_for_render:
+            duid_for_render = getattr(self._controller, "device_id", None) or duid_from_cfg
+            if duid_for_render is None or len(duid_for_render) == 0:
                 raise ValueError("Could not resolve device_id/duid for async command parameter rendering")
             
             render_context["device_id"] = duid_for_render
@@ -569,22 +584,11 @@ class GetJsonStatus(DeviceProperty):
                     params = json_loads(params_str)
                 except (ValueError, TypeError):
                     params = None
-                    if isinstance(params_str, str):
-                        try:
-                            # Heuristic fallback for legacy YAML templates with single quotes
-                            sanitized_str = params_str.replace("'", '"')
-                            params = json_loads(sanitized_str)
-                        except (ValueError, TypeError, AttributeError) as err:
-                            _LOGGER.debug(
-                                "%s Legacy single-quote JSON normalization failed for template output: %s",
-                                self.log_prefix,
-                                err,
-                            )
 
             if isinstance(params, dict):
                 response_text, _ = await connection.async_execute(
-                    params.get(KEY_METHOD) or HTTP_METHOD_GET,
-                    params.get(KEY_URL) or DEFAULT_ENDPOINT_DEVICES,
+                    params.get(KEY_METHOD) or "GET",
+                    params.get(KEY_URL) or "/devices",
                     None,
                     params.get(KEY_HEADERS) or {},
                     _is_poll=True,
@@ -664,24 +668,13 @@ class DeviceOperation(DeviceProperty):
                     operation_params = json_loads(rendered)
                 except (ValueError, TypeError):
                     operation_params = None
-                    if isinstance(rendered, str):
-                        try:
-                            # Heuristic fallback for legacy YAML templates with single quotes
-                            sanitized_str = rendered.replace("'", '"')
-                            operation_params = json_loads(sanitized_str)
-                        except (ValueError, TypeError, AttributeError) as err:
-                            _LOGGER.debug(
-                                "%s Legacy single-quote JSON normalization failed for template output: %s",
-                                self.log_prefix,
-                                err,
-                            )
 
             if not isinstance(operation_params, dict):
                 return {KEY_RAW_PAYLOAD: rendered}
         else:
             operation_params = dict(getattr(connection, "_params", {}))
 
-        if not operation_params:
+        if operation_params is None or len(operation_params) == 0:
             _LOGGER.error(
                 "%s [_resolve_async_params] No params or template found.",
                 self.log_prefix,
@@ -698,12 +691,7 @@ class DeviceOperation(DeviceProperty):
                 try:
                     base_params = json_loads(rendered_base)
                 except (ValueError, TypeError):
-                    if hasattr(rendered_base, "replace"):
-                        try:
-                            sanitized_str = rendered_base.replace("'", '"')
-                            base_params = json_loads(sanitized_str)
-                        except (ValueError, TypeError, AttributeError):
-                            pass
+                    pass
 
             if not isinstance(base_params, dict):
                 base_params = {}
@@ -730,10 +718,10 @@ class DeviceOperation(DeviceProperty):
 
         if connection.is_async_native:
             try:
-                cfg = getattr(connection, "_cfg", getattr(connection, "config", None))
+                cfg = getattr(connection, "config", {})
                 duid_from_cfg = cfg.get(KEY_DUID) if isinstance(cfg, dict) else getattr(cfg, KEY_DUID, None)
-                duid_for_render = device_id or self._controller.device_id or duid_from_cfg
-                if not duid_for_render:
+                duid_for_render = device_id or getattr(self._controller, "device_id", None) or duid_from_cfg
+                if duid_for_render is None or len(duid_for_render) == 0:
                     raise ValueError("Could not resolve device_id/duid for async command parameter rendering")
 
                 # dev_value is already calculated and validated above
@@ -748,7 +736,7 @@ class DeviceOperation(DeviceProperty):
                     )  # pragma: no mutate
                     return False
 
-                if params.get(KEY_RAW_PAYLOAD):
+                if params.get(KEY_RAW_PAYLOAD) is not None:
                     _LOGGER.debug(
                         "%s [async_set_value] Sending raw (non-JSON) payload.",
                         self.log_prefix,
@@ -757,17 +745,20 @@ class DeviceOperation(DeviceProperty):
                     return True
 
                 data_payload = json_dumps(params["json"]) if "json" in params else None
+                method = params.get(KEY_METHOD)
+                url = params.get(KEY_URL)
+                
+                if method is None or url is None:
+                    raise ValueError(f"Strict routing failed: Missing method or url in YAML configuration for {self.id}")
+                    
                 response, _ = await connection.async_execute(
-                    params.get(KEY_METHOD) or HTTP_METHOD_GET,
-                    params.get(KEY_URL) or DEFAULT_ENDPOINT_DEVICE_MAIN,
+                    method,
+                    url,
                     data_payload,
                     params.get(KEY_HEADERS) or {},
                     device_state=current_full_state,
                 )
                 if response is not None:
-                    if self._controller:
-                        state_node = self._state_node or self.id
-                        self._controller.poller.update_pure_state_path(state_node, dev_value)
                     return True
                 return False
             except (CannotConnect, AuthError) as e:
@@ -850,7 +841,7 @@ class BasicDeviceOperation(DeviceOperation):
 
             if node is not None:
                 node_values = node.get(CONFIG_DEVICE_OPERATION_VALUES, {})
-                if not node_values:
+                if node_values is None or len(node_values) == 0:
                     return False
 
                 for ha_value in node_values.keys():
@@ -907,7 +898,7 @@ class BasicDeviceOperation(DeviceOperation):
                         self._device_state, state_node.split(".")
                     )
         cache_key_prop = self._controller.get_property(ATTR_HVAC_MODE)
-        cache_key_id = cache_key_prop.id if cache_key_prop is not None else "none"
+        cache_key_id = getattr(cache_key_prop, "id", "none") if cache_key_prop is not None else "none"
         cache_key = (
             f"{cache_key_id}_{hvac_node}"
             if hvac_node is not None
@@ -931,8 +922,8 @@ class BasicDeviceOperation(DeviceOperation):
             self._values_cache[cache_key] = valid_values
 
         if (
-            bool(valid_values)
-            and bool(self._last_valid_values)
+            len(valid_values) > 0
+            and len(self._last_valid_values) > 0
             and sorted(valid_values) != sorted(self._last_valid_values)
         ):
             _LOGGER.debug(
@@ -1180,10 +1171,9 @@ class TemperatureOperation(BasicNumericOperation):
             except TemplateError as err:
                 _LOGGER.error("%s Error rendering unit template for %s: %s", self.log_prefix, self.id, err)
                 raise HomeAssistantError(f"Error rendering unit template: {err}") from err
-            except (TypeError, ValueError) as e:  # pylint: disable=broad-exception-caught
-                _LOGGER.debug(
-                    "Error parsing unit template: %s", e
-                )  # pragma: no mutate
+            except (TypeError, ValueError) as e:
+                _LOGGER.error("Error parsing unit template: %s", e)
+                raise HomeAssistantError(f"Error parsing unit template: {e}") from e
 
         v = STATE_UNKNOWN
         if self.status_template is not None and device_state is not None:
@@ -1194,10 +1184,9 @@ class TemperatureOperation(BasicNumericOperation):
             except TemplateError as err:
                 _LOGGER.error("%s Error rendering status template for %s: %s", self.log_prefix, self.id, err)
                 raise HomeAssistantError(f"Error rendering status template: {err}") from err
-            except (TypeError, ValueError) as e:  # pylint: disable=broad-exception-caught
-                _LOGGER.debug(
-                    "%s Dry-run error for %s: %s", self.log_prefix, self.id, e
-                )  # pragma: no mutate
+            except (TypeError, ValueError) as e:
+                _LOGGER.error("%s Error rendering status template for %s: %s", self.log_prefix, self.id, e)
+                raise HomeAssistantError(f"Error rendering status template: {e}") from e
 
         if v != STATE_UNKNOWN:
             res = self._convert_dev_to_hass_with_unit(v, device_unit)
@@ -1228,12 +1217,9 @@ class TemperatureOperation(BasicNumericOperation):
             except TemplateError as err:
                 _LOGGER.error("%s Could not render unit template for '%s': %s", self.log_prefix, self.id, err)
                 raise HomeAssistantError(f"Could not render unit template: {err}") from err
-            except (TypeError, ValueError):  # pylint: disable=broad-exception-caught
-                _LOGGER.debug(
-                    "%s Could not render unit template for '%s'. Using last known device unit.",
-                    self.log_prefix,
-                    self.id,
-                )  # pragma: no mutate
+            except (TypeError, ValueError) as e:
+                _LOGGER.error("%s Could not render unit template for '%s': %s", self.log_prefix, self.id, e)
+                raise HomeAssistantError(f"Could not render unit template: {e}") from e
 
         v = self.calculate_value_from_state(device_state)
         if v != STATE_UNKNOWN:

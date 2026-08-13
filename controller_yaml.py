@@ -50,7 +50,6 @@ from .const import (
     NON_SERIALIZABLE_KEYS,
     TRUTHY_STRINGS,
     WIFI_KIT_MGMT_ID,
-    DEVICE_ID_DELIMITER,
 )
 from .controller import ClimateController, register_controller
 from .controller_yaml_config import YamlConfigLoader
@@ -89,7 +88,7 @@ class YamlController(ClimateController):
             base_unique_id = config_entry.unique_id
             if device_id is not None and device_id != MAIN_DEVICE_ID:
                 config[CONF_UNIQUE_ID] = (
-                    f"{base_unique_id}{DEVICE_ID_DELIMITER}{device_id}"
+                    f"{base_unique_id}_{device_id}"
                     if base_unique_id is not None
                     else device_id
                 )
@@ -126,13 +125,13 @@ class YamlController(ClimateController):
         self._device_id = config.get(CONF_DEVICE_ID)
         self._token = config.get(CONF_TOKEN)
 
-        base_unique_id = config_entry.unique_id if config_entry else config.get(CONF_UNIQUE_ID)
+        base_unique_id = config_entry.unique_id if config_entry is not None else config.get(CONF_UNIQUE_ID)
         if base_unique_id is None:
             base_unique_id = config.get(CONF_MAC)
 
         # If device_id exists and is a real sub-device (neither "main" nor "0"):
         if self._device_id is not None and self._device_id not in (MAIN_DEVICE_ID, WIFI_KIT_MGMT_ID):
-            self._unique_id = f"{base_unique_id}{DEVICE_ID_DELIMITER}{self._device_id}" if base_unique_id is not None else self._device_id
+            self._unique_id = f"{base_unique_id}_{self._device_id}" if base_unique_id is not None else self._device_id
         else:
             # Monosplit / Main device: Pure MAC address without suffixes
             self._unique_id = base_unique_id
@@ -224,8 +223,8 @@ class YamlController(ClimateController):
             and self._device_id != MAIN_DEVICE_ID
             and self._device_id != self._unique_id
         ):
-            suffix = f"{DEVICE_ID_DELIMITER}{self._device_id}"
-            if not self._unique_id.endswith(suffix):
+            suffix = f"_{self._device_id}"
+            if self._unique_id.endswith(suffix) is False:
                 return f"{self._unique_id}{suffix}"
         return self._unique_id
 
@@ -299,7 +298,7 @@ class YamlController(ClimateController):
         device_id: str | None = None,
     ) -> bool:
         """Asynchronously set a property on the device."""
-        if not self.loader.is_fully_initialized:
+        if self.loader.is_fully_initialized is False:
             _LOGGER.error(  # pragma: no mutate
                 "%s Cannot set property '%s': controller not fully initialized",
                 self.log_prefix,
@@ -406,8 +405,10 @@ class YamlController(ClimateController):
     def get_property_all_values(self, property_name: str) -> list[str] | None:
         """Return the complete, unfiltered list of values for a property."""
         prop = self.get_property_object(property_name)
-        if prop is not None and len(prop.all_values) > 0:
-            return list(prop.all_values)
+        if prop is not None:
+            all_vals = getattr(prop, "all_values", None)
+            if isinstance(all_vals, (list, tuple, set)) and len(all_vals) > 0:
+                return list(all_vals)
 
         _LOGGER.debug(  # pragma: no mutate
             "%s Cannot get values for '%s': not an operation or missing all_values",
