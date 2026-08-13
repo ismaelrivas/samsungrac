@@ -160,6 +160,9 @@
     },
     "auth_failed_turned_off": {
       "message": "L'authentification a échoué. Veuillez vous assurer que le climatiseur est en mode veille (ÉTEINT) avant de commencer le processus d'appairage."
+    },
+    "property_set_failed": {
+      "message": "Échec de la définition de la propriété '{property}' : {error}"
     }
   },
   "issues": {

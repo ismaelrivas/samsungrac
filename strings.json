@@ -160,6 +160,9 @@
         },
         "auth_failed_turned_off": {
             "message": "Authentication failed. Please ensure the AC is in standby (OFF) before starting the pairing process."
+        },
+        "property_set_failed": {
+            "message": "Failed to set property '{property}': {error}"
         }
     },
     "issues": {

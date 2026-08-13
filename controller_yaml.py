@@ -22,7 +22,7 @@ from homeassistant.const import (
     CONF_UNIQUE_ID,
     STATE_UNKNOWN,
 )
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 if TYPE_CHECKING:
     import aiohttp
@@ -361,9 +361,10 @@ class YamlController(ClimateController):
                 )
                 raise
             except (TimeoutError, OSError) as e:
-                # TODO(architecture): Align with ServiceValidationError if called from user-facing service
-                raise HomeAssistantError(
-                    f"Failed to set property '{property_name}': {e}"
+                raise ServiceValidationError(
+                    translation_domain="climate_ip",
+                    translation_key="property_set_failed",
+                    translation_placeholders={"property": property_name, "error": str(e)}
                 ) from e
 
         _LOGGER.error(  # pragma: no mutate

@@ -160,6 +160,9 @@
     },
     "auth_failed_turned_off": {
       "message": "Authentifizierung fehlgeschlagen. Bitte stellen Sie sicher, dass sich die Klimaanlage im Standby-Modus (AUS) befindet, bevor Sie mit dem Kopplungsvorgang beginnen."
+    },
+    "property_set_failed": {
+      "message": "Fehler beim Festlegen der Eigenschaft '{property}': {error}"
     }
   },
   "issues": {
