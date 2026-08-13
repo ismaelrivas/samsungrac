@@ -312,7 +312,7 @@ class YamlController(ClimateController):
         device_id: str | None = None,
     ) -> bool:
         """Asynchronously set a property on the device."""
-        if not self.loader.is_fully_initialized:
+        if self.loader.is_fully_initialized is not True:
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
                 translation_key=ERR_CONTROLLER_NOT_INITIALIZED,
