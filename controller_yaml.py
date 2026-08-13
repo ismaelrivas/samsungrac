@@ -81,8 +81,9 @@ class YamlController(ClimateController):
         self.poller: Any | None = None
 
         if config is None and config_entry is not None:
-            merged_data = {**config_entry.data, **config_entry.options}
-            config = dict(merged_data)
+            config = dict(config_entry.data)
+            if config_entry.options:
+                config.update(config_entry.options)
             config[CONF_ENTRY_ID] = config_entry.entry_id
 
             base_unique_id = config_entry.unique_id
@@ -472,7 +473,7 @@ class YamlController(ClimateController):
     def pure_device_state(self) -> dict[str, Any]:
         """Return the unmutated pure network state of the device."""
         pure = self.poller.pure_network_state
-        if pure is not None and len(pure) > 0:
+        if isinstance(pure, dict) and bool(pure):
             return dict(pure)
         return self.device_state
 

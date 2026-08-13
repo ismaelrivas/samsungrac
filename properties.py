@@ -922,8 +922,8 @@ class BasicDeviceOperation(DeviceOperation):
             self._values_cache[cache_key] = valid_values
 
         if (
-            len(valid_values) > 0
-            and len(self._last_valid_values) > 0
+            bool(valid_values)
+            and bool(self._last_valid_values)
             and sorted(valid_values) != sorted(self._last_valid_values)
         ):
             _LOGGER.debug(
