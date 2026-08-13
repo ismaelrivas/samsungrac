@@ -245,6 +245,8 @@ class YamlController(ClimateController):
     @device_id.setter
     def device_id(self, value: str | None) -> None:
         """Strictly update instance state. Do NOT rebuild immutable config."""
+        if value is not None and not isinstance(value, str):
+            raise TypeError(f"Expected str for device_id, got {type(value).__name__}")
         self._device_id = value
 
     @property
@@ -260,6 +262,8 @@ class YamlController(ClimateController):
     @token.setter
     def token(self, value: str | None) -> None:
         """Strictly update instance state. Do NOT rebuild immutable config."""
+        if value is not None and not isinstance(value, str):
+            raise TypeError(f"Expected str for token, got {type(value).__name__}")
         self._token = value
 
     @property
