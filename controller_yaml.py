@@ -307,10 +307,7 @@ class YamlController(ClimateController):
         """Return True if the controller is connected and available."""
         if self.connection is None:
             return False
-        diag = self.connection.get_diagnostics()
-        if ATTR_IS_AVAILABLE in diag:
-            return bool(diag[ATTR_IS_AVAILABLE])
-        return True
+        return bool(self.connection.get_diagnostics().get(ATTR_IS_AVAILABLE, True))
 
     @property
     def id(self) -> str | None:
@@ -639,7 +636,7 @@ class YamlController(ClimateController):
 
     async def async_predict_and_correct_state(
         self, current_hass_state: Any, property_name: str, new_value: Any
-    ) -> tuple[ClimateEntityFeature, dict[str, Any]]:
+    ) -> tuple[ClimateEntityFeature | int, dict[str, Any]]:
         """Predict expected state changes based on a command."""
         return await self.poller.async_predict_and_correct_state(
             current_hass_state, property_name, new_value
