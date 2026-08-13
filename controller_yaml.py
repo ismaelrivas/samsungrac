@@ -436,8 +436,12 @@ class YamlController(ClimateController):
         prop = self.get_property_object(property_name)
         if prop is not None:
             all_vals = prop.all_values
-            if isinstance(all_vals, (list, tuple, set)) and all_vals:
-                return list(all_vals)
+            if isinstance(all_vals, (list, tuple, set)):
+                return [
+                    str(v)
+                    for v in all_vals
+                    if v is not None and not isinstance(v, bool)
+                ]
 
         _LOGGER.debug(  # pragma: no mutate
             "%s Cannot get values for '%s': not an operation or missing all_values",
@@ -500,20 +504,23 @@ class YamlController(ClimateController):
     @property
     def pure_device_state(self) -> dict[str, Any]:
         """Return the unmutated pure network state of the device."""
-        pure = self.poller.pure_network_state
-        if isinstance(pure, dict) and pure:
-            return dict(pure)
+        if self.poller is not None:
+            pure = self.poller.pure_network_state
+            if isinstance(pure, dict):
+                return dict(pure)
         return self.device_state
 
     @property
     def device_state(self) -> dict[str, Any]:
         """Return the current device state via the poller's public interface."""
-        state = self.poller.device_state
-        if isinstance(state, dict) and state:
-            return dict(state)
-        if self.loader.state_getter is not None:
+        if self.poller is not None:
+            state = self.poller.device_state
+            if isinstance(state, dict):
+                return dict(state)
+        if self.loader is not None and self.loader.state_getter is not None:
             getter_value = self.loader.state_getter.value
-            return dict(getter_value) if isinstance(getter_value, dict) else {}
+            if isinstance(getter_value, dict):
+                return dict(getter_value)
         return {}
 
     def _safe_parse_hvac_mode(self, raw_mode: Any) -> HVACMode | None:
