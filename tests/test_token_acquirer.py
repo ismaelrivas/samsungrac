@@ -297,7 +297,7 @@ async def test_successful_pairing_and_token(acquirer):
             ) as mock_timeout:
                 config = await acquirer.async_initiate_pairing()
                 assert config == {"cert": None, "verify_mode": ssl.CERT_NONE}
-                import mutmut.state; print("ACTIVE KEY:", mutmut.state.active_mutant_key); print("CALLS:", mock_writer.write.call_args_list); mock_writer.write.assert_called_with(b'<Request Type="GetToken" />\r\n')
+                mock_writer.write.assert_called_with(b'<Request Type="GetToken" />\r\n')
 
                 token = await acquirer.async_wait_for_token()
                 assert token == "11112222-3333-4444-5555-666677778888"
