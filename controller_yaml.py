@@ -21,7 +21,6 @@ from homeassistant.const import (
     CONF_TOKEN,
     CONF_UNIQUE_ID,
     STATE_UNKNOWN,
-    UnitOfTemperature,
 )
 from homeassistant.exceptions import HomeAssistantError
 
@@ -45,6 +44,7 @@ from .const import (
     DEFAULT_CONF_TEMP_UNIT,
     DEFAULT_CONTROLLER_NAME,
     DEVICE_TYPE_TO_CONFIG_FILE,
+    EXCLUDED_SUBDEVICE_IDS,
     ID_DELIMITER,
     LABEL_CURRENT_TEMP,
     LABEL_TARGET_TEMP,
@@ -81,9 +81,9 @@ class YamlController(ClimateController):
         self.poller: Any | None = None
 
         if config is None and config_entry is not None:
-            entry_data = dict(config_entry.data)
-            entry_data.update(config_entry.options)
-            entry_data[CONF_ENTRY_ID] = config_entry.entry_id
+            raw_data = dict(config_entry.data)
+            raw_options = dict(config_entry.options)
+            entry_data = {**raw_data, **raw_options, CONF_ENTRY_ID: config_entry.entry_id}
 
             base_unique_id = config_entry.unique_id
             if device_id is not None and device_id != MAIN_DEVICE_ID:
@@ -224,7 +224,9 @@ class YamlController(ClimateController):
     @staticmethod
     def _is_subdevice(device_id: str | None) -> bool:
         """Return True if device_id represents a sub-device."""
-        return device_id is not None and device_id not in (MAIN_DEVICE_ID, WIFI_KIT_MGMT_ID)
+        if device_id is None or not isinstance(device_id, str) or len(device_id.strip()) == 0:
+            return False
+        return device_id not in EXCLUDED_SUBDEVICE_IDS
 
     @property
     def unique_id(self) -> str | None:
@@ -330,7 +332,7 @@ class YamlController(ClimateController):
                     property_name,
                     new_value,
                 )  # pragma: no mutate
-                target_device_id = device_id if device_id is not None else self.device_id
+                target_device_id = device_id if (device_id is not None and isinstance(device_id, str) and len(device_id.strip()) > 0) else self.device_id
                 if target_device_id is None or target_device_id == MAIN_DEVICE_ID:
                     target_device_id = self._unique_id
 
@@ -412,7 +414,7 @@ class YamlController(ClimateController):
         prop = self.get_property_object(property_name)
         if prop is not None:
             all_vals = prop.all_values
-            if isinstance(all_vals, (list, tuple, set)) and bool(all_vals):
+            if isinstance(all_vals, (list, tuple, set)) and all_vals:
                 return list(all_vals)
 
         _LOGGER.debug(  # pragma: no mutate
@@ -477,7 +479,7 @@ class YamlController(ClimateController):
     def pure_device_state(self) -> dict[str, Any]:
         """Return the unmutated pure network state of the device."""
         pure = self.poller.pure_network_state
-        if isinstance(pure, dict) and bool(pure):
+        if isinstance(pure, dict) and pure:
             return dict(pure)
         return self.device_state
 
@@ -485,7 +487,7 @@ class YamlController(ClimateController):
     def device_state(self) -> dict[str, Any]:
         """Return the current device state via the poller's public interface."""
         state = self.poller.device_state
-        if isinstance(state, dict) and bool(state):
+        if isinstance(state, dict) and state:
             return dict(state)
         if self.loader.state_getter is not None:
             getter_value = self.loader.state_getter.value

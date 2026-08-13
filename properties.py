@@ -3,9 +3,9 @@
 
 from __future__ import annotations
 
-import ast
 import dataclasses
 import logging
+import math
 from typing import Any, final
 
 from homeassistant.components.climate import ClimateEntityFeature
@@ -55,6 +55,7 @@ from .const import (
     ID_DELIMITER,
     KEY_DEVICE_CONFIG,
     KEY_DEVICE_MODE,
+    KEY_DEVICE_STATE,
     KEY_DUID,
     KEY_HEADERS,
     KEY_HVAC,
@@ -99,7 +100,10 @@ def render_template(template: Template | str | Any, **kwargs: Any) -> Any:
             return async_render(variables=kwargs, parse_result=True)
     render_func = getattr(template, "render", None)
     if callable(render_func):
-        return render_func(**kwargs)
+        try:
+            return render_func(kwargs)
+        except TypeError:
+            return render_func(**kwargs)
     return str(template)
 
 
@@ -259,11 +263,11 @@ class DeviceProperty:
             id_map = cache.get(device_id, {}).get(KEY_DEVICE_CONFIG, {}).get(KEY_IDENTIFIERS, {})
             path = id_map.get(KEY_PATH_TO_DEVICES)
             
-            if path is None or len(path) == 0:
+            if not path:
                 return dict(raw_dict)
                 
             devices_list = get_value_by_path(raw_dict, path)
-            if isinstance(devices_list, list) and bool(devices_list):
+            if isinstance(devices_list, list) and devices_list:
                 id_path = id_map.get(CONF_SUBDEVICE_ID, [CONF_SUBDEVICE_ID])
                 
                 # Strict match by device_id
@@ -450,8 +454,10 @@ class DeviceProperty:
                     SensorDeviceClass.PRESSURE,
                 ):
                     self._state_class = SensorStateClass.MEASUREMENT
-            except ValueError:
-                pass
+            except ValueError as e:
+                raise ValueError(
+                    f"Invalid sensor device class '{self._device_class}' in YAML node for property '{self._id}'"
+                ) from e
 
         return True
 
@@ -525,9 +531,7 @@ class GetJsonStatus(DeviceProperty):
             and self._connection.is_async_native
             and self._connection_template is None
         ):
-            conn_tmpl = getattr(self._connection, "connection_template", None)
-            if conn_tmpl is None:
-                conn_tmpl = getattr(self._connection, "_connection_template", None)
+            conn_tmpl = getattr(self._connection, "connection_template", None) or getattr(self._connection, "_connection_template", None)
             if conn_tmpl is not None:
                 _LOGGER.debug(
                     "%s [GetJsonStatus] Inheriting connection_template from connection object.",
@@ -658,9 +662,9 @@ class GetJsonStatus(DeviceProperty):
         self._json_status = device_state_result
 
         if device_state_result is not None:
-            self._attrs = {"device_state": json_dumps(device_state_result)}
+            self._attrs = {KEY_DEVICE_STATE: json_dumps(device_state_result)}
         else:
-            self._attrs = {"device_state": None}
+            self._attrs = {KEY_DEVICE_STATE: None}
 
         return self.value
 
@@ -947,8 +951,8 @@ class BasicDeviceOperation(DeviceOperation):
             self._values_cache[cache_key] = valid_values
 
         if (
-            bool(valid_values)
-            and bool(self._last_valid_values)
+            valid_values
+            and self._last_valid_values
             and sorted(valid_values) != sorted(self._last_valid_values)
         ):
             _LOGGER.debug(
@@ -1119,7 +1123,8 @@ class BasicNumericOperation(DeviceOperation):
         if isinstance(value, bool):
             return False
         try:
-            return self.convert_hass_to_dev(float(value)) == value
+            converted = float(self.convert_hass_to_dev(float(value)))
+            return math.isclose(converted, float(value), rel_tol=1e-7)
         except (ValueError, TypeError):
             return False
 

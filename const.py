@@ -44,6 +44,7 @@ CONF_USE_HTTP = "use_http"
 CONFIG_ENTRY_VERSION = 2
 MAIN_DEVICE_ID = "main"
 WIFI_KIT_MGMT_ID = "0"
+EXCLUDED_SUBDEVICE_IDS: final = (MAIN_DEVICE_ID, WIFI_KIT_MGMT_ID)
 
 CONF_DEVICE_TYPE = "device_type"
 CONF_CONFIG_FILE = "config_file"
@@ -226,6 +227,7 @@ KEY_DEVICE_CONFIG: final = "device"
 KEY_IDENTIFIERS: final = "identifiers"
 KEY_PATH_TO_DEVICES: final = "path_to_devices"
 KEY_DEVICE_MODE: final = "Mode"
+KEY_DEVICE_STATE: final = "device_state"
 DEFAULT_CACHE_KEY_ID: final = "none"
 
 # Map YAML operation names to Home Assistant features.
