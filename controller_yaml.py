@@ -40,6 +40,9 @@ from .const import (
     ERR_UNREGISTERED_PROPERTY,
     ERR_CACHE_UNINITIALIZED,
     ERR_INVALID_STATE_TYPE,
+    ERR_MISSING_IP,
+    ERR_MISSING_DIAGNOSTICS,
+    ERR_COERCING_STATE,
     ATTR_IS_AVAILABLE,
     CONF_CONFIG_FILE,
     CONF_CONTROLLER,
@@ -125,7 +128,7 @@ class YamlController(ClimateController):
         elif config is not None:
             config = dict(config)
         else:
-            raise ValueError(f"{ERR_MISSING_INIT_CONFIG}")
+            raise ValueError(ERR_MISSING_INIT_CONFIG)
 
         # Fallback resolution for CONF_CONFIG_FILE based on CONF_DEVICE_TYPE
         if config.get(CONF_CONFIG_FILE) is None:
@@ -166,7 +169,7 @@ class YamlController(ClimateController):
             
         resolved_ip = raw_ip if raw_ip and raw_ip.strip() else raw_host
         if not resolved_ip or not resolved_ip.strip():
-            raise ValueError(f"Integration requires {CONF_IP_ADDRESS} or {CONF_HOST} to be explicitly set")
+            raise ValueError(ERR_MISSING_IP)
         self._ip_address = resolved_ip.strip()
 
         # Strict Boolean Parsing (Guarded against string casting trap like 'false' -> True)
@@ -302,7 +305,7 @@ class YamlController(ClimateController):
             return False
         diag = self.connection.get_diagnostics()
         if ATTR_IS_AVAILABLE not in diag:
-            raise KeyError(f"Diagnostics missing strict {ATTR_IS_AVAILABLE} key")
+            raise KeyError(ERR_MISSING_DIAGNOSTICS)
             
         is_avail = diag[ATTR_IS_AVAILABLE]
         if not isinstance(is_avail, bool):
@@ -396,7 +399,7 @@ class YamlController(ClimateController):
     def _objects_by_id(self) -> dict[str, DeviceProperty]:
         """O(1) lazy-loaded cache for property/operation/sensor lookup by internal ID."""
         if self.loader.is_fully_initialized is not True:
-            raise RuntimeError(f"{ERR_CACHE_UNINITIALIZED}")
+            raise RuntimeError(ERR_CACHE_UNINITIALIZED)
 
         if self._obj_id_cache is None:
             self._obj_id_cache = {
@@ -638,7 +641,7 @@ class YamlController(ClimateController):
             )
         except (ValueError, TypeError) as err:
             _LOGGER.error(
-                "%s Error coercing typed ClimateIPDeviceState: %s", self.log_prefix, err
+                "%s %s: %s", self.log_prefix, ERR_COERCING_STATE, err
             )
             raise
 

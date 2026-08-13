@@ -23,6 +23,9 @@ ERR_MISSING_INIT_CONFIG = "missing_init_config"
 ERR_UNREGISTERED_PROPERTY = "unregistered_property"
 ERR_CACHE_UNINITIALIZED = "cache_uninitialized"
 ERR_INVALID_STATE_TYPE = "invalid_state_type"
+ERR_MISSING_IP = "missing_ip"
+ERR_MISSING_DIAGNOSTICS = "missing_diagnostics"
+ERR_COERCING_STATE = "error_coercing_state"
 
 NON_SERIALIZABLE_KEYS: final = ("hass", "session", "logger")
 TRUTHY_STRINGS: final = ("true", "1", "yes", "on")
