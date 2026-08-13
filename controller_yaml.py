@@ -371,6 +371,9 @@ class YamlController(ClimateController):
     @property
     def _objects_by_id(self) -> dict[str, DeviceProperty]:
         """O(1) lazy-loaded cache for property/operation/sensor lookup by internal ID."""
+        if self.loader.is_fully_initialized is not True:
+            raise RuntimeError("Cannot build _objects_by_id cache before loader is fully initialized.")
+
         if self._obj_id_cache is None:
             self._obj_id_cache = {
                 op.id: op

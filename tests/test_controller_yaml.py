@@ -286,6 +286,7 @@ def mock_yaml_controller():
     ):
         controller = YamlController(config_input, mock_logger)
 
+        controller.loader.is_fully_initialized = True
         controller.loader.operations = {}
         controller.loader.properties = {}
         controller.loader.sensors = {}
