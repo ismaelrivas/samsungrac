@@ -170,8 +170,8 @@ class YamlController(ClimateController):
         if raw_host is not None and not isinstance(raw_host, str):
             raise TypeError(f"{CONF_HOST} must be a string")
             
-        resolved_ip = raw_ip if raw_ip and raw_ip.strip() else raw_host
-        if not resolved_ip or not resolved_ip.strip():
+        resolved_ip = raw_ip if raw_ip is not None and raw_ip.strip() != "" else raw_host
+        if resolved_ip is None or resolved_ip.strip() == "":
             raise ValueError(ERR_MISSING_IP)
         self._ip_address = resolved_ip.strip()
 
@@ -214,7 +214,10 @@ class YamlController(ClimateController):
     @property
     def yaml_file(self) -> str | None:
         """Return the YAML configuration file path from config."""
-        return self._config.get(CONF_CONFIG_FILE)
+        val = self._config.get(CONF_CONFIG_FILE)
+        if val is not None and not isinstance(val, str):
+            raise TypeError(f"Expected str for {CONF_CONFIG_FILE}, got {type(val).__name__}")
+        return val
 
     @property
     def connection(self) -> ClimateConnection | None:
