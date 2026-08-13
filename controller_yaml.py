@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import types
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.climate import (
@@ -134,8 +135,7 @@ class YamlController(ClimateController):
             logger = _LOGGER
 
         super().__init__(config, logger)  # pragma: no mutate
-        
-        import types
+
         self._config = types.MappingProxyType(
             {k: v for k, v in config.items() if k not in NON_SERIALIZABLE_KEYS}
         )
@@ -260,8 +260,6 @@ class YamlController(ClimateController):
     @device_id.setter
     def device_id(self, value: str | None) -> None:
         """Update the device ID and its internal configuration."""
-        import types
-        
         self._device_id = value
         new_config = dict(self._config)
         new_config[CONF_DEVICE_ID] = value
@@ -280,8 +278,6 @@ class YamlController(ClimateController):
     @token.setter
     def token(self, value: str | None) -> None:
         """Update the authentication token."""
-        import types
-        
         self._token = value
         new_config = dict(self._config)
         new_config[CONF_TOKEN] = value
