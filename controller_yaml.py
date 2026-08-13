@@ -57,7 +57,6 @@ from .const import (
     LABEL_CURRENT_TEMP,
     LABEL_TARGET_TEMP,
     MAIN_DEVICE_ID,
-    NON_SERIALIZABLE_KEYS,
 )
 from .controller import ClimateController, register_controller
 from .controller_yaml_config import YamlConfigLoader
@@ -139,9 +138,7 @@ class YamlController(ClimateController):
 
         super().__init__(config, logger)
 
-        self._config = types.MappingProxyType(
-            {k: v for k, v in config.items() if k not in NON_SERIALIZABLE_KEYS}
-        )
+        self._config = types.MappingProxyType(dict(config))
 
         self.hass = hass
         self._session = session

@@ -160,8 +160,6 @@ def test_yaml_controller_strict_initialization() -> None:
 
     # Configure a complete input dictionary
     config_input = {
-        "hass": "should_be_popped",
-        "session": "should_be_popped",
         CONF_CONFIG_FILE: "test_config.yaml",
         CONF_IP_ADDRESS: "192.168.1.100",
         CONF_DEVICE_ID: "dev_123",
@@ -181,11 +179,7 @@ def test_yaml_controller_strict_initialization() -> None:
             config_input, mock_logger, mock_hass, mock_session
         )
 
-    # 1. Mutants: Verify that 'hass' and 'session' were extracted from config.
-    assert "hass" not in controller._config, "The mutant avoided calling pop('hass')"
-    assert (
-        "session" not in controller._config
-    ), "The mutant avoided calling pop('session')"
+    # 1. Verify delegate injections
     assert controller.hass is mock_hass
     assert controller._session is mock_session
     assert controller._logger is mock_logger
