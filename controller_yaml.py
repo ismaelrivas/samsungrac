@@ -507,11 +507,11 @@ class YamlController(ClimateController):
         """Parse HVAC mode strictly. Raises ValueError/TypeError on invalid input."""
         if raw_mode is None:
             return None
-        if isinstance(raw_mode, bool):
-            raise TypeError(f"HVAC mode cannot be a boolean, got {raw_mode}")
         if isinstance(raw_mode, HVACMode):
             return raw_mode
-        return HVACMode(str(raw_mode).lower())
+        if not isinstance(raw_mode, str):
+            raise TypeError(f"HVAC mode must be a string or HVACMode, got {type(raw_mode).__name__}")
+        return HVACMode(raw_mode.lower())
 
     def _safe_parse_temperature(self, raw_value: Any, label: str) -> float | None:
         """Parse temperature strictly. Raises ValueError/TypeError on invalid input."""
