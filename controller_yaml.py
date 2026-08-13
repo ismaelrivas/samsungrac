@@ -409,7 +409,7 @@ class YamlController(ClimateController):
         prop = self.get_property_object(property_name)
         if prop is not None:
             all_vals = prop.all_values
-            if isinstance(all_vals, (list, tuple, set)) and len(all_vals) > 0:
+            if isinstance(all_vals, (list, tuple, set)) and all_vals:
                 return list(all_vals)
 
         _LOGGER.debug(  # pragma: no mutate
@@ -474,7 +474,7 @@ class YamlController(ClimateController):
     def pure_device_state(self) -> dict[str, Any]:
         """Return the unmutated pure network state of the device."""
         pure = self.poller.pure_network_state
-        if isinstance(pure, dict) and bool(pure):
+        if isinstance(pure, dict) and pure:
             return dict(pure)
         return self.device_state
 
@@ -482,7 +482,7 @@ class YamlController(ClimateController):
     def device_state(self) -> dict[str, Any]:
         """Return the current device state via the poller's public interface."""
         state = self.poller.device_state
-        if isinstance(state, dict) and bool(state):
+        if isinstance(state, dict) and state:
             return dict(state)
         if self.loader.state_getter is not None:
             getter_value = self.loader.state_getter.value

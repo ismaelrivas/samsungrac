@@ -222,9 +222,9 @@ class DeviceProperty:
                 raw_dict = {}
 
         if isinstance(raw_dict, dict):
-            device_id = getattr(self._controller, "device_id", None) or "XXXX"
-            loader = getattr(self._controller, "loader", None)
-            cache = getattr(loader, "parsed_yaml_cache", {}) if loader is not None else {}
+            device_id = self._controller.device_id if self._controller is not None else "XXXX"
+            loader = self._controller.loader if self._controller is not None else None
+            cache = loader.parsed_yaml_cache if loader is not None else {}
             id_map = cache.get(device_id, {}).get("device", {}).get("identifiers", {})
             path = id_map.get("path_to_devices")
             
