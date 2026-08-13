@@ -149,12 +149,12 @@ class YamlController(ClimateController):
         self._session = session
         self._shared_raw_client: Any | None = None
 
-        self._device_id = config.get(CONF_DEVICE_ID)
-        self._token = config.get(CONF_TOKEN)
+        self._device_id = config[CONF_DEVICE_ID] if CONF_DEVICE_ID in config else None
+        self._token = config[CONF_TOKEN] if CONF_TOKEN in config else None
 
-        self._unique_id = config.get(CONF_UNIQUE_ID)
+        self._unique_id = config[CONF_UNIQUE_ID] if CONF_UNIQUE_ID in config else None
         if self._unique_id is None:
-            base_unique_id = config.get(CONF_MAC)
+            base_unique_id = config[CONF_MAC] if CONF_MAC in config else None
             if self._is_subdevice(self._device_id):
                 self._unique_id = f"{base_unique_id}{ID_DELIMITER}{self._device_id}" if base_unique_id is not None else self._device_id
             else:
@@ -163,8 +163,8 @@ class YamlController(ClimateController):
         if self._device_id is None:
             self._device_id = self._unique_id
 
-        raw_ip = config.get(CONF_IP_ADDRESS)
-        raw_host = config.get(CONF_HOST)
+        raw_ip = config[CONF_IP_ADDRESS] if CONF_IP_ADDRESS in config else None
+        raw_host = config[CONF_HOST] if CONF_HOST in config else None
         
         if raw_ip is not None and not isinstance(raw_ip, str):
             raise TypeError(f"{CONF_IP_ADDRESS} must be a string")
@@ -177,7 +177,7 @@ class YamlController(ClimateController):
         self._ip_address = resolved_ip.strip()
 
         # Strict Boolean Parsing (Guarded against string casting trap like 'false' -> True)
-        raw_debug = config.get(CONF_DEBUG, False)
+        raw_debug = config[CONF_DEBUG] if CONF_DEBUG in config else False
         if not isinstance(raw_debug, bool):
             raise TypeError(f"Expected strict bool for {CONF_DEBUG}, got {type(raw_debug).__name__}")
         self._debug = raw_debug
