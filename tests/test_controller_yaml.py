@@ -539,30 +539,11 @@ def test_yaml_controller_climate_state_mapping(
     )
 
 def test_yaml_controller_unique_id_property(mock_yaml_controller) -> None:
-    """Kills mutants in unique_id property by testing all combinations."""
-    # 1. Sub-device with simple unique_id -> _device_id suffix
-    mock_yaml_controller._unique_id = "mac_123"
-    mock_yaml_controller._device_id = "sub_1"
-    assert mock_yaml_controller.unique_id == "mac_123_sub_1"
-
-    # 2. Sub-device that already includes _device_id in unique_id -> No duplication
+    """Verifies that unique_id property returns the pre-computed _unique_id."""
     mock_yaml_controller._unique_id = "mac_123_sub_1"
-    mock_yaml_controller._device_id = "sub_1"
     assert mock_yaml_controller.unique_id == "mac_123_sub_1"
 
-    # 3. Main device with device_id "main" -> Keeps original unique_id
-    mock_yaml_controller._unique_id = "mac_123"
-    mock_yaml_controller._device_id = "main"
-    assert mock_yaml_controller.unique_id == "mac_123"
-
-    # 4. device_id is None -> Returns unique_id
-    mock_yaml_controller._unique_id = "mac_123"
-    mock_yaml_controller._device_id = None
-    assert mock_yaml_controller.unique_id == "mac_123"
-
-    # 5. unique_id is None -> Returns None
     mock_yaml_controller._unique_id = None
-    mock_yaml_controller._device_id = "sub_1"
     assert mock_yaml_controller.unique_id is None
 
 

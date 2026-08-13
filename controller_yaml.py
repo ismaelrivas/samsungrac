@@ -258,15 +258,7 @@ class YamlController(ClimateController):
 
     @property
     def unique_id(self) -> str | None:
-        """Return the unique ID of this controller."""
-        if (
-            self._unique_id is not None
-            and self._is_subdevice(self._device_id)
-            and self._device_id != self._unique_id
-        ):
-            suffix = f"{ID_DELIMITER}{self._device_id}"
-            if not self._unique_id.endswith(suffix):
-                return f"{self._unique_id}{suffix}"
+        """Return the pre-computed unique ID of this controller."""
         return self._unique_id
 
     @property
