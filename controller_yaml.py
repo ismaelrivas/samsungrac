@@ -81,22 +81,22 @@ class YamlController(ClimateController):
     def _extract_config_from_entry(
         cls, config_entry: ConfigEntry, device_id: str | None
     ) -> dict[str, Any]:
-        """Extract static config strictly, merging data and options for modern HA compatibility."""
-        entry_data = dict(config_entry.data)
-        entry_data.update(config_entry.options)
-        entry_data[CONF_ENTRY_ID] = config_entry.entry_id
-        
+        """Extract config enforcing Flow Segregation and the Immutability Shield."""
         base_unique_id = config_entry.unique_id
-        entry_data[CONF_UNIQUE_ID] = (
+        resolved_unique_id = (
             f"{base_unique_id}{ID_DELIMITER}{device_id}" 
             if base_unique_id is not None and device_id is not None and cls._is_subdevice(device_id) 
             else base_unique_id
         )
 
-        if device_id is not None:
-            entry_data[CONF_DEVICE_ID] = device_id
-            
-        return entry_data
+        # Functional state construction with zero direct dictionary assignments
+        return {
+            **config_entry.data,
+            **config_entry.options,
+            CONF_ENTRY_ID: config_entry.entry_id,
+            CONF_UNIQUE_ID: resolved_unique_id,
+            **({CONF_DEVICE_ID: device_id} if device_id is not None else {})
+        }
 
     @classmethod
     def from_config_entry(
@@ -152,9 +152,10 @@ class YamlController(ClimateController):
         self._device_id = config[CONF_DEVICE_ID] if CONF_DEVICE_ID in config else None
         self._token = config[CONF_TOKEN] if CONF_TOKEN in config else None
 
-        self._unique_id = config[CONF_UNIQUE_ID] if CONF_UNIQUE_ID in config else None
+        self._unique_id = config.get(CONF_UNIQUE_ID)
         if self._unique_id is None:
-            base_unique_id = config[CONF_MAC] if CONF_MAC in config else None
+            base_mac = config.get(CONF_MAC)
+            base_unique_id = base_mac if base_mac is not None and bool(str(base_mac).strip()) else None
             if self._is_subdevice(self._device_id):
                 self._unique_id = f"{base_unique_id}{ID_DELIMITER}{self._device_id}" if base_unique_id is not None else self._device_id
             else:
