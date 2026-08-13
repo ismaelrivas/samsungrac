@@ -372,7 +372,7 @@ class YamlController(ClimateController):
                     e,
                 )
                 raise
-            except (TimeoutError, OSError, ValueError) as e:
+            except (TimeoutError, OSError) as e:
                 raise HomeAssistantError(
                     f"Failed to set property '{property_name}': {e}"
                 ) from e

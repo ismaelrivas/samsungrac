@@ -422,9 +422,14 @@ async def test_async_set_property_error_scenarios(mock_yaml_controller) -> None:
         await mock_yaml_controller.async_set_property("test_prop", "val")
     assert "Host down" in str(exc_info.value)
 
-    # Scenario 4: Generic exception -> Raises HomeAssistantError
-    mock_op.async_set_value.side_effect = ValueError("Boom")
+    # Scenario 4: Network/OS exceptions -> Raises HomeAssistantError
+    mock_op.async_set_value.side_effect = TimeoutError("Timeout")
     with pytest.raises(HomeAssistantError):
+        await mock_yaml_controller.async_set_property("test_prop", "val")
+
+    # Scenario 5: Programming bugs / ValueErrors -> Raises natively (Fail-Fast)
+    mock_op.async_set_value.side_effect = ValueError("Boom")
+    with pytest.raises(ValueError):
         await mock_yaml_controller.async_set_property("test_prop", "val")
 
 
