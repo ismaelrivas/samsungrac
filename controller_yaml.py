@@ -156,10 +156,13 @@ class YamlController(ClimateController):
         if self._device_id is None:
             self._device_id = self._unique_id
 
-        resolved_ip = config.get(CONF_IP_ADDRESS) or config.get(CONF_HOST)
+        resolved_ip = config.get(CONF_IP_ADDRESS)
+        if resolved_ip is None or (isinstance(resolved_ip, str) and len(resolved_ip.strip()) == 0):
+            resolved_ip = config.get(CONF_HOST)
+
         if isinstance(resolved_ip, str):
             ip_str = resolved_ip.strip()
-            self._ip_address = ip_str or None
+            self._ip_address = ip_str if len(ip_str) > 0 else None
         else:
             self._ip_address = None
 
@@ -227,7 +230,7 @@ class YamlController(ClimateController):
         if self.loader.name is not None:
             return self.loader.name
         raw_name = self._config.get(CONF_NAME)
-        if isinstance(raw_name, str) and raw_name.strip():
+        if isinstance(raw_name, str) and len(raw_name.strip()) > 0:
             return raw_name
         return DEFAULT_CONTROLLER_NAME
 
@@ -238,7 +241,7 @@ class YamlController(ClimateController):
             return False
         if not isinstance(device_id, str):
             raise TypeError(f"Expected str for device_id, got {type(device_id).__name__}")
-        if not device_id.strip():
+        if len(device_id.strip()) == 0:
             return False
         return device_id not in EXCLUDED_SUBDEVICE_IDS
 
@@ -343,7 +346,7 @@ class YamlController(ClimateController):
                     property_name,
                     new_value,
                 )  # pragma: no mutate
-                target_device_id = device_id if (device_id is not None and isinstance(device_id, str) and device_id.strip()) else self.device_id
+                target_device_id = device_id if (device_id is not None and isinstance(device_id, str) and len(device_id.strip()) > 0) else self.device_id
                 if target_device_id is None or target_device_id == MAIN_DEVICE_ID:
                     target_device_id = self._unique_id
 
