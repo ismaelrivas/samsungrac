@@ -409,7 +409,7 @@ class YamlController(ClimateController):
         prop = self.get_property_object(property_name)
         if prop is not None:
             all_vals = prop.all_values
-            if isinstance(all_vals, (list, tuple, set)) and all_vals:
+            if isinstance(all_vals, (list, tuple, set)) and len(all_vals) != 0:
                 return list(all_vals)
 
         _LOGGER.debug(  # pragma: no mutate
