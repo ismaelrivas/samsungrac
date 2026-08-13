@@ -364,6 +364,10 @@ class YamlController(ClimateController):
             translation_placeholders={"property": property_name}
         )
 
+    def has_property(self, property_name: str) -> bool:
+        """Return True if the property is structurally mapped."""
+        return self.get_property_object(property_name) is not None or property_name in self._attributes
+
     def get_property(self, property_name: str) -> Any:
         """Return the current value of a property by name using safe extraction."""
         obj = self.get_property_object(property_name)
@@ -571,18 +575,18 @@ class YamlController(ClimateController):
                 self._cached_static_modes
             )
 
-            raw_hvac = self.get_property(ATTR_HVAC_MODE)
+            raw_hvac = self.get_property(ATTR_HVAC_MODE) if self.has_property(ATTR_HVAC_MODE) else None
             hvac_mode = self._safe_parse_hvac_mode(raw_hvac)
 
             target_temp = self._safe_parse_temperature(
-                self.get_property(ATTR_TEMPERATURE), LABEL_TARGET_TEMP
+                self.get_property(ATTR_TEMPERATURE) if self.has_property(ATTR_TEMPERATURE) else None, LABEL_TARGET_TEMP
             )
 
             current_temp = self._safe_parse_temperature(
-                self.get_property(ATTR_CURRENT_TEMPERATURE), LABEL_CURRENT_TEMP
+                self.get_property(ATTR_CURRENT_TEMPERATURE) if self.has_property(ATTR_CURRENT_TEMPERATURE) else None, LABEL_CURRENT_TEMP
             )
 
-            raw_fan = self.get_property(ATTR_FAN_MODE)
+            raw_fan = self.get_property(ATTR_FAN_MODE) if self.has_property(ATTR_FAN_MODE) else None
             fan_mode = None
             if raw_fan is not None:
                 if not isinstance(raw_fan, str):
@@ -591,7 +595,7 @@ class YamlController(ClimateController):
                     raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_FAN_MODE}]: {raw_fan}")
                 fan_mode = raw_fan
 
-            raw_swing = self.get_property(ATTR_SWING_MODE)
+            raw_swing = self.get_property(ATTR_SWING_MODE) if self.has_property(ATTR_SWING_MODE) else None
             swing_mode = None
             if raw_swing is not None:
                 if not isinstance(raw_swing, str):
@@ -600,7 +604,7 @@ class YamlController(ClimateController):
                     raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_SWING_MODE}]: {raw_swing}")
                 swing_mode = raw_swing
 
-            raw_preset = self.get_property(ATTR_PRESET_MODE)
+            raw_preset = self.get_property(ATTR_PRESET_MODE) if self.has_property(ATTR_PRESET_MODE) else None
             preset_mode = None
             if raw_preset is not None:
                 if not isinstance(raw_preset, str):

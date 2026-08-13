@@ -104,6 +104,7 @@ def test_yaml_controller_coverage_boost() -> None:
 
     # 3. Test climate_state (executes extraction, sanitization, and strict conversion)
     controller.get_property = MagicMock(return_value=None)
+    controller.has_property = MagicMock(return_value=True)
     controller.get_property_all_values = MagicMock(return_value=[])
 
     state = controller.climate_state
@@ -511,6 +512,7 @@ def test_yaml_controller_climate_state_mapping(
         return f"val_{prop}"
 
     mock_yaml_controller.get_property = MagicMock(side_effect=mock_get_prop)
+    mock_yaml_controller.has_property = MagicMock(return_value=True)
 
     mock_yaml_controller._attributes = {
         ATTR_HVAC_MODES: ["auto", "heat"],
