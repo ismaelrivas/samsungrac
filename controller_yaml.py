@@ -44,6 +44,7 @@ from .const import (
     CONF_TEMP_NATIVE_CURRENT,
     CONF_TEMP_NATIVE_TARGET,
     DEFAULT_CONF_CONTROLLER,
+    DEFAULT_CONF_TEMP_UNIT,
     DEFAULT_CONTROLLER_NAME,
     DEVICE_TYPE_TO_CONFIG_FILE,
     MAIN_DEVICE_ID,
@@ -165,7 +166,7 @@ class YamlController(ClimateController):
         elif current_temp_unit is not None:
             self._temperature_unit = UnitOfTemperature(str(current_temp_unit))
         else:
-            self._temperature_unit = UnitOfTemperature.CELSIUS
+            self._temperature_unit = DEFAULT_CONF_TEMP_UNIT
         self._attributes: dict[str, Any] = {}
 
         self._obj_id_cache: dict[str, DeviceProperty] | None = None
@@ -225,7 +226,7 @@ class YamlController(ClimateController):
             and self._device_id != self._unique_id
         ):
             suffix = f"_{self._device_id}"
-            if self._unique_id.endswith(suffix) is False:
+            if not self._unique_id.endswith(suffix):
                 return f"{self._unique_id}{suffix}"
         return self._unique_id
 
@@ -264,7 +265,7 @@ class YamlController(ClimateController):
     @property
     def host(self) -> str | None:
         """Return the host or IP address."""
-        return self._ip_address
+        return self.ip_address
 
     @property
     def debug(self) -> bool:
@@ -299,7 +300,7 @@ class YamlController(ClimateController):
         device_id: str | None = None,
     ) -> bool:
         """Asynchronously set a property on the device."""
-        if self.loader.is_fully_initialized is False:
+        if not self.loader.is_fully_initialized:
             _LOGGER.error(  # pragma: no mutate
                 "%s Cannot set property '%s': controller not fully initialized",
                 self.log_prefix,

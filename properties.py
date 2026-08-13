@@ -4,10 +4,10 @@
 from __future__ import annotations
 
 import ast
+import dataclasses
 import logging
 from typing import Any
 
-import homeassistant.helpers.config_validation as cv
 from homeassistant.components.climate import ClimateEntityFeature
 from homeassistant.components.climate import (
     ATTR_FAN_MODE,
@@ -216,8 +216,6 @@ class DeviceProperty:
         if raw_dict is None and isinstance(self._device_state, dict):
             raw_dict = self._device_state
         if raw_dict is None:
-            import dataclasses
-
             if dataclasses.is_dataclass(self._device_state):
                 raw_dict = dataclasses.asdict(self._device_state)
             else:
@@ -230,11 +228,11 @@ class DeviceProperty:
             id_map = cache.get(device_id, {}).get("device", {}).get("identifiers", {})
             path = id_map.get("path_to_devices")
             
-            if path is None or len(path) == 0:
+            if not path:
                 return dict(raw_dict)
                 
             devices_list = get_value_by_path(raw_dict, path)
-            if isinstance(devices_list, list) and bool(devices_list):
+            if isinstance(devices_list, list) and devices_list:
                 id_path = id_map.get("id", ["id"])
                 
                 # Strict match by device_id
@@ -356,7 +354,7 @@ class DeviceProperty:
     def value_is_string(self) -> bool:
         """Return True if the property value should be treated as a string."""
         return self._type in (
-            "string",
+            PROPERTY_TYPE_STRING,
             "enum",
         ) or self.device_class in (SensorDeviceClass.ENUM, SensorDeviceClass.PROBLEM)
 
@@ -586,11 +584,13 @@ class GetJsonStatus(DeviceProperty):
                     params = None
 
             if isinstance(params, dict):
+                raw_params = getattr(connection, "_params", {})
+                final_params = {**raw_params, **params}
                 response_text, _ = await connection.async_execute(
-                    params.get(KEY_METHOD) or "GET",
-                    params.get(KEY_URL) or "/devices",
+                    final_params.get(KEY_METHOD),
+                    final_params.get(KEY_URL),
                     None,
-                    params.get(KEY_HEADERS) or {},
+                    final_params.get(KEY_HEADERS) or {},
                     _is_poll=True,
                 )
             else:
