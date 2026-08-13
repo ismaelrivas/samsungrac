@@ -555,44 +555,35 @@ class YamlController(ClimateController):
             )
             return None
 
-    def _build_static_modes_cache(self) -> tuple[tuple[HVACMode, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    def _build_static_modes_cache(
+        self,
+    ) -> tuple[
+        tuple[HVACMode, ...],
+        tuple[str, ...],
+        tuple[str, ...],
+        tuple[str, ...],
+    ]:
         """Build and cache the static modes supported by the device."""
-        raw_hvac_modes = self.get_property_all_values(ATTR_HVAC_MODE)
-        hvac_modes_list = raw_hvac_modes if raw_hvac_modes is not None else []
-
-        raw_fan_modes = self.get_property_all_values(ATTR_FAN_MODE)
-        fan_modes_list = raw_fan_modes if raw_fan_modes is not None else []
-
-        raw_swing_modes = self.get_property_all_values(ATTR_SWING_MODE)
-        swing_modes_list = raw_swing_modes if raw_swing_modes is not None else []
-
-        raw_preset_modes = self.get_property_all_values(ATTR_PRESET_MODE)
-        preset_modes_list = raw_preset_modes if raw_preset_modes is not None else []
-
-        parsed_hvac_modes: list[HVACMode] = []
-        for m in hvac_modes_list:
-            if m is not None:
-                parsed_mode = self._safe_parse_hvac_mode(m)
-                if parsed_mode is not None:
-                    parsed_hvac_modes.append(parsed_mode)
-
+        hvac_modes_list = self.get_property_all_values(ATTR_HVAC_MODE) or []
+        fan_modes_list = self.get_property_all_values(ATTR_FAN_MODE) or []
+        swing_modes_list = self.get_property_all_values(ATTR_SWING_MODE) or []
+        preset_modes_list = self.get_property_all_values(ATTR_PRESET_MODE) or []
+        parsed_hvac_modes = [
+            mode
+            for m in hvac_modes_list
+            if (mode := self._safe_parse_hvac_mode(m)) is not None
+        ]
+        def _filter_str_modes(modes: list[Any]) -> tuple[str, ...]:
+            return tuple(
+                str(m)
+                for m in modes
+                if m is not None and not isinstance(m, bool)
+            )
         return (
             tuple(parsed_hvac_modes),
-            tuple(
-                str(m)
-                for m in fan_modes_list
-                if m is not None
-            ),
-            tuple(
-                str(m)
-                for m in swing_modes_list
-                if m is not None
-            ),
-            tuple(
-                str(m)
-                for m in preset_modes_list
-                if m is not None
-            ),
+            _filter_str_modes(fan_modes_list),
+            _filter_str_modes(swing_modes_list),
+            _filter_str_modes(preset_modes_list),
         )
 
     @property

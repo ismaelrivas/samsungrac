@@ -615,10 +615,15 @@ def test_yaml_controller_device_state(mock_yaml_controller) -> None:
     mock_yaml_controller.poller.device_state = {"poller_key": "val1"}
     assert mock_yaml_controller.device_state == {"poller_key": "val1"}
 
+    # An empty dictionary is a valid state; we DO NOT fall back to loader.
     mock_yaml_controller.poller.device_state = {}
     mock_state_getter = MagicMock()
     mock_state_getter.value = {"loader_key": "val2"}
     mock_yaml_controller.loader.state_getter = mock_state_getter
+    assert mock_yaml_controller.device_state == {}
+
+    # None forces fallback to loader.state_getter
+    mock_yaml_controller.poller.device_state = None
     assert mock_yaml_controller.device_state == {"loader_key": "val2"}
 
     mock_yaml_controller.loader.state_getter = None
