@@ -452,9 +452,10 @@ def test_yaml_controller_available_property(mock_yaml_controller) -> None:
     mock_yaml_controller.loader.connection = conn_mock
     assert mock_yaml_controller.available is False
 
-    # Scenario 3: connection present but diagnostic dict lacks key (Fallback True)
+    # Scenario 3: connection present but diagnostic dict lacks key (Fail-Fast KeyError)
     conn_mock.get_diagnostics.return_value = {"other_key": "data"}
-    assert mock_yaml_controller.available is True
+    with pytest.raises(KeyError):
+        _ = mock_yaml_controller.available
 
 
 def test_yaml_controller_sensors_property(mock_yaml_controller) -> None:

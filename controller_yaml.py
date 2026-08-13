@@ -287,7 +287,11 @@ class YamlController(ClimateController):
         """Return True if the controller is connected and available."""
         if self.connection is None:
             return False
-        is_avail = self.connection.get_diagnostics().get(ATTR_IS_AVAILABLE, True)
+        diag = self.connection.get_diagnostics()
+        if ATTR_IS_AVAILABLE not in diag:
+            raise KeyError(f"Diagnostics missing strict {ATTR_IS_AVAILABLE} key")
+            
+        is_avail = diag[ATTR_IS_AVAILABLE]
         if not isinstance(is_avail, bool):
             raise TypeError(f"Expected bool for {ATTR_IS_AVAILABLE}, got {type(is_avail).__name__}")
         return is_avail
