@@ -206,6 +206,14 @@ MODE_PROPERTY_SUFFIX = "_mode"
 KEY_HVAC = "hvac"
 KEY_STATUS = "status"
 VALIDATION_SUCCESS_TOKEN = "valid"
+LABEL_TARGET_TEMP: final = "target_temperature"
+LABEL_CURRENT_TEMP: final = "current_temperature"
+FALLBACK_DEVICE_ID: final = "XXXX"
+KEY_DEVICE_CONFIG: final = "device"
+KEY_IDENTIFIERS: final = "identifiers"
+KEY_PATH_TO_DEVICES: final = "path_to_devices"
+KEY_DEVICE_MODE: final = "Mode"
+DEFAULT_CACHE_KEY_ID: final = "none"
 
 # Map YAML operation names to Home Assistant features.
 YAML_NAME_TO_HA_FEATURE: dict[str, ClimateEntityFeature] = {

@@ -1702,7 +1702,7 @@ async def test_device_operation_resolve_async_params_condition_flip():
 async def test_get_json_status_load_from_yaml_inherits_connection_template():
     """Test load_from_yaml inherits _connection_template from connection object."""
     custom_tmpl = Template('{"method": "POST", "method": "GET", "url": "/test", "url": "/inherited_endpoint"}')
-    conn = MagicMock(is_async_native=True, _connection_template=custom_tmpl)
+    conn = MagicMock(is_async_native=True, connection_template=custom_tmpl)
     conn.create_updated.return_value = conn
     ctrl = MagicMock()
     ctrl.loader = MagicMock()
@@ -1760,9 +1760,14 @@ def test_basicdeviceoperation_values_hvac_mode_key(mock_connection, mock_control
     op._value_validation_templates = {"on": MagicMock()}
     mock_hvac_op = MagicMock()
     mock_hvac_op.state_node = "hvac_state"
-    # Set loader operations to ONLY have "hvac_mode" key
-    mock_controller.loader.operations = {"hvac_mode": mock_hvac_op}
-    mock_controller.get_property.return_value = "cool"
+    
+    mock_loader = MagicMock()
+    mock_loader.operations = {"hvac_mode": mock_hvac_op}
+    mock_controller.loader = mock_loader
+
+    mock_prop = MagicMock()
+    mock_prop.id = "none"
+    mock_controller.get_property.return_value = mock_prop
     op._device_state = {"hvac_state": "cool"}
 
     # Must resolve mock_hvac_op via "hvac_mode" key and use hvac_state in cache key

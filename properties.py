@@ -40,11 +40,17 @@ from .const import (
     CONFIG_DEVICE_STATUS_TEMPLATE,
     CONFIG_DEVICE_VALIDATION_TEMPLATE,
     CONFIG_TYPE,
+    DEFAULT_CACHE_KEY_ID,
     DEFAULT_JSON_STATUS_PAYLOAD,
+    FALLBACK_DEVICE_ID,
+    KEY_DEVICE_CONFIG,
+    KEY_DEVICE_MODE,
     KEY_DUID,
     KEY_HEADERS,
     KEY_HVAC,
+    KEY_IDENTIFIERS,
     KEY_METHOD,
+    KEY_PATH_TO_DEVICES,
     KEY_RAW_PAYLOAD,
     KEY_STATUS,
     KEY_URL,
@@ -222,11 +228,11 @@ class DeviceProperty:
                 raw_dict = {}
 
         if isinstance(raw_dict, dict):
-            device_id = self._controller.device_id if self._controller is not None else "XXXX"
+            device_id = self._controller.device_id if self._controller is not None else FALLBACK_DEVICE_ID
             loader = self._controller.loader if self._controller is not None else None
             cache = loader.parsed_yaml_cache if loader is not None else {}
-            id_map = cache.get(device_id, {}).get("device", {}).get("identifiers", {})
-            path = id_map.get("path_to_devices")
+            id_map = cache.get(device_id, {}).get(KEY_DEVICE_CONFIG, {}).get(KEY_IDENTIFIERS, {})
+            path = id_map.get(KEY_PATH_TO_DEVICES)
             
             if not path:
                 return dict(raw_dict)
@@ -243,7 +249,7 @@ class DeviceProperty:
                 
                 # Fallback: Find the first AC unit (must have a 'Mode' key to exclude WiFi-Kit)
                 for dev in devices_list:
-                    if "Mode" in dev:
+                    if KEY_DEVICE_MODE in dev:
                         return dict(dev)
                         
                 # Absolute fallback
@@ -478,7 +484,9 @@ class GetJsonStatus(DeviceProperty):
             and self._connection.is_async_native
             and self._connection_template is None
         ):
-            conn_tmpl = getattr(self._connection, "_connection_template", None)
+            conn_tmpl = getattr(self._connection, "connection_template", None)
+            if conn_tmpl is None:
+                conn_tmpl = getattr(self._connection, "_connection_template", None)
             if conn_tmpl is not None:
                 _LOGGER.debug(
                     "%s [GetJsonStatus] Inheriting connection_template from connection object.",
@@ -898,12 +906,20 @@ class BasicDeviceOperation(DeviceOperation):
                         self._device_state, state_node.split(".")
                     )
         cache_key_prop = self._controller.get_property(ATTR_HVAC_MODE)
-        cache_key_id = getattr(cache_key_prop, "id", "none") if cache_key_prop is not None else "none"
+        cache_key_id = DEFAULT_CACHE_KEY_ID
+        if cache_key_prop is not None:
+            if isinstance(cache_key_prop, DeviceProperty):
+                cache_key_id = cache_key_prop.id
+            elif isinstance(cache_key_prop, str):
+                cache_key_id = cache_key_prop
+            elif hasattr(cache_key_prop, "id") and isinstance(getattr(cache_key_prop, "id"), str):
+                cache_key_id = cache_key_prop.id
         cache_key = (
             f"{cache_key_id}_{hvac_node}"
             if hvac_node is not None
             else cache_key_id
         )
+
 
         if cache_key in self._values_cache:
             valid_values = self._values_cache[cache_key]
@@ -922,8 +938,8 @@ class BasicDeviceOperation(DeviceOperation):
             self._values_cache[cache_key] = valid_values
 
         if (
-            bool(valid_values)
-            and bool(self._last_valid_values)
+            len(valid_values) > 0
+            and len(self._last_valid_values) > 0
             and sorted(valid_values) != sorted(self._last_valid_values)
         ):
             _LOGGER.debug(
@@ -1022,12 +1038,18 @@ class ModeOperation(BasicDeviceOperation):
         }
 
 
+@register_property
 class UniqueIdProperty(DeviceProperty):
     """Property representing a unique identifier.
 
     Used as a type discriminator in sensor.py to bypass numeric parsing
     and preserve the raw string value (e.g. MAC addresses, device IDs).
     """
+
+    @staticmethod
+    def match_type(prop_type: str) -> bool:
+        """Return True if this property handles the given type."""
+        return prop_type == "unique_id"
 
 
 @register_property

@@ -443,9 +443,9 @@ def test_yaml_controller_setters_strict_assignment(mock_yaml_controller) -> None
 
 def test_yaml_controller_available_property(mock_yaml_controller) -> None:
     """Kills mutants in available property across all 3 branches."""
-    # Scenario 1: connection is None -> Fallback to True
+    # Scenario 1: connection is None -> Disconnected entity evaluates to False
     mock_yaml_controller.loader.connection = None
-    assert mock_yaml_controller.available is True
+    assert mock_yaml_controller.available is False
 
     # Scenario 2: connection present but returns is_available=False
     conn_mock = MagicMock()

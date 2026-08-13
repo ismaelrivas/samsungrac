@@ -47,6 +47,8 @@ from .const import (
     DEFAULT_CONF_TEMP_UNIT,
     DEFAULT_CONTROLLER_NAME,
     DEVICE_TYPE_TO_CONFIG_FILE,
+    LABEL_CURRENT_TEMP,
+    LABEL_TARGET_TEMP,
     MAIN_DEVICE_ID,
     NON_SERIALIZABLE_KEYS,
     TRUTHY_STRINGS,
@@ -82,9 +84,7 @@ class YamlController(ClimateController):
         self.poller: Any | None = None
 
         if config is None and config_entry is not None:
-            config = dict(config_entry.data)
-            if config_entry.options:
-                config.update(config_entry.options)
+            config = {**config_entry.data, **config_entry.options}
             config[CONF_ENTRY_ID] = config_entry.entry_id
 
             base_unique_id = config_entry.unique_id
@@ -142,7 +142,8 @@ class YamlController(ClimateController):
             self._device_id = self._unique_id
 
         ip_from_config = config.get(CONF_IP_ADDRESS)
-        self._ip_address = ip_from_config if ip_from_config is not None else config.get(CONF_HOST)
+        resolved_ip = ip_from_config if ip_from_config is not None else config.get(CONF_HOST)
+        self._ip_address = str(resolved_ip).strip() if resolved_ip else None
         if self._ip_address is None:
             _LOGGER.warning(
                 "%s Neither %s nor %s present in configuration",
@@ -280,9 +281,9 @@ class YamlController(ClimateController):
     @property
     def available(self) -> bool:
         """Return True if the controller is connected and available."""
-        if self.connection is not None:
-            return bool(self.connection.get_diagnostics().get(ATTR_IS_AVAILABLE, True))
-        return True
+        if self.connection is None:
+            return False
+        return bool(self.connection.get_diagnostics().get(ATTR_IS_AVAILABLE, True))
 
     @property
     def id(self) -> str | None:
@@ -474,7 +475,7 @@ class YamlController(ClimateController):
     def pure_device_state(self) -> dict[str, Any]:
         """Return the unmutated pure network state of the device."""
         pure = self.poller.pure_network_state
-        if isinstance(pure, dict) and pure:
+        if isinstance(pure, dict) and len(pure) > 0:
             return dict(pure)
         return self.device_state
 
@@ -482,7 +483,7 @@ class YamlController(ClimateController):
     def device_state(self) -> dict[str, Any]:
         """Return the current device state via the poller's public interface."""
         state = self.poller.device_state
-        if isinstance(state, dict) and state:
+        if isinstance(state, dict) and len(state) > 0:
             return dict(state)
         if self.loader.state_getter is not None:
             getter_value = self.loader.state_getter.value
@@ -569,11 +570,11 @@ class YamlController(ClimateController):
             hvac_mode = self._safe_parse_hvac_mode(raw_hvac)
 
             target_temp = self._safe_parse_temperature(
-                self.get_property(ATTR_TEMPERATURE), "target temperature"
+                self.get_property(ATTR_TEMPERATURE), LABEL_TARGET_TEMP
             )
 
             current_temp = self._safe_parse_temperature(
-                self.get_property(ATTR_CURRENT_TEMPERATURE), "current temperature"
+                self.get_property(ATTR_CURRENT_TEMPERATURE), LABEL_CURRENT_TEMP
             )
 
             raw_fan = self.get_property(ATTR_FAN_MODE)
