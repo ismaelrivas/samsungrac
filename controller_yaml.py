@@ -348,25 +348,17 @@ class YamlController(ClimateController):
                 if device_id is not None and not isinstance(device_id, str):
                     raise TypeError(f"device_id must be a string, got {type(device_id).__name__}")
                 
-                target_device_id = device_id if (device_id and device_id.strip()) else self.device_id
+                target_device_id = device_id if (device_id is not None and device_id.strip() != "") else self.device_id
                 if target_device_id is None or target_device_id == MAIN_DEVICE_ID:
                     target_device_id = self._unique_id
 
                 return await op.async_set_value(new_value, target_device_id)
-            except (
-                CannotConnect,
-                HomeAssistantError,
-            ) as e:
-                _LOGGER.debug(
-                    "%s Setting property '%s' with value '%s' failed: %s",
-                    self.log_prefix,
-                    property_name,
-                    new_value,
-                    e,
-                )
+            except (CannotConnect, HomeAssistantError):
+                self.poller.clear_pending_updates([property_name])
                 raise
             except (TimeoutError, OSError) as e:
-                raise ServiceValidationError(
+                self.poller.clear_pending_updates([property_name])
+                raise HomeAssistantError(
                     translation_domain=DOMAIN,
                     translation_key=ERR_PROPERTY_SET_FAILED,
                     translation_placeholders={"property": property_name, "error": str(e)}
