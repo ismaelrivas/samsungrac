@@ -580,32 +580,29 @@ class YamlController(ClimateController):
             raw_fan = self.get_property(ATTR_FAN_MODE)
             fan_mode = None
             if raw_fan is not None:
-                if isinstance(raw_fan, bool):
-                    raise TypeError(f"Fan mode cannot be a boolean, got {raw_fan}")
-                fan_str = str(raw_fan)
-                if len(fan_modes_tuple) > 0 and fan_str not in fan_modes_tuple:
-                    raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_FAN_MODE}]: {fan_str}")
-                fan_mode = fan_str
+                if not isinstance(raw_fan, str):
+                    raise TypeError(f"Fan mode must be a string, got {type(raw_fan).__name__}")
+                if raw_fan not in fan_modes_tuple:
+                    raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_FAN_MODE}]: {raw_fan}")
+                fan_mode = raw_fan
 
             raw_swing = self.get_property(ATTR_SWING_MODE)
             swing_mode = None
             if raw_swing is not None:
-                if isinstance(raw_swing, bool):
-                    raise TypeError(f"Swing mode cannot be a boolean, got {raw_swing}")
-                swing_str = str(raw_swing)
-                if len(swing_modes_tuple) > 0 and swing_str not in swing_modes_tuple:
-                    raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_SWING_MODE}]: {swing_str}")
-                swing_mode = swing_str
+                if not isinstance(raw_swing, str):
+                    raise TypeError(f"Swing mode must be a string, got {type(raw_swing).__name__}")
+                if raw_swing not in swing_modes_tuple:
+                    raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_SWING_MODE}]: {raw_swing}")
+                swing_mode = raw_swing
 
             raw_preset = self.get_property(ATTR_PRESET_MODE)
             preset_mode = None
             if raw_preset is not None:
-                if isinstance(raw_preset, bool):
-                    raise TypeError(f"Preset mode cannot be a boolean, got {raw_preset}")
-                preset_str = str(raw_preset)
-                if len(preset_modes_tuple) > 0 and preset_str not in preset_modes_tuple:
-                    raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_PRESET_MODE}]: {preset_str}")
-                preset_mode = preset_str
+                if not isinstance(raw_preset, str):
+                    raise TypeError(f"Preset mode must be a string, got {type(raw_preset).__name__}")
+                if raw_preset not in preset_modes_tuple:
+                    raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_PRESET_MODE}]: {raw_preset}")
+                preset_mode = raw_preset
 
             return ClimateIPDeviceState(
                 hvac_mode=hvac_mode,
