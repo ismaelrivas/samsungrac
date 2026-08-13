@@ -251,11 +251,8 @@ class YamlController(ClimateController):
 
     @device_id.setter
     def device_id(self, value: str | None) -> None:
-        """Update the device ID and its internal configuration."""
+        """Strictly update instance state. Do NOT rebuild immutable config."""
         self._device_id = value
-        new_config = dict(self._config)
-        new_config[CONF_DEVICE_ID] = value
-        self._config = types.MappingProxyType(new_config)
 
     @property
     def config(self) -> dict[str, Any]:
@@ -269,11 +266,8 @@ class YamlController(ClimateController):
 
     @token.setter
     def token(self, value: str | None) -> None:
-        """Update the authentication token."""
+        """Strictly update instance state. Do NOT rebuild immutable config."""
         self._token = value
-        new_config = dict(self._config)
-        new_config[CONF_TOKEN] = value
-        self._config = types.MappingProxyType(new_config)
 
     @property
     def ip_address(self) -> str | None:

@@ -439,12 +439,10 @@ def test_yaml_controller_setters_strict_assignment(mock_yaml_controller) -> None
     # 1. device_id
     mock_yaml_controller.device_id = "target_dev_id"
     assert mock_yaml_controller._device_id == "target_dev_id"
-    assert mock_yaml_controller._config[CONF_DEVICE_ID] == "target_dev_id"
 
     # 2. token
     mock_yaml_controller.token = "target_token"
     assert mock_yaml_controller._token == "target_token"
-    assert mock_yaml_controller._config[CONF_TOKEN] == "target_token"
 
 
 def test_yaml_controller_available_property(mock_yaml_controller) -> None:
