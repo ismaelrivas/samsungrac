@@ -4,6 +4,9 @@ import logging
 import types
 from typing import TYPE_CHECKING, Any
 
+import voluptuous as vol
+import homeassistant.helpers.config_validation as cv
+
 from homeassistant.components.climate import (
     ATTR_CURRENT_TEMPERATURE,
     ATTR_FAN_MODE,
@@ -55,8 +58,6 @@ from .const import (
     LABEL_TARGET_TEMP,
     MAIN_DEVICE_ID,
     NON_SERIALIZABLE_KEYS,
-    TRUTHY_STRINGS,
-    FALSY_STRINGS,
 )
 from .controller import ClimateController, register_controller
 from .controller_yaml_config import YamlConfigLoader
@@ -171,15 +172,10 @@ class YamlController(ClimateController):
 
         # Strict Boolean Parsing (Guarded against string casting trap like 'false' -> True)
         raw_debug = config.get(CONF_DEBUG, False)
-        if isinstance(raw_debug, bool):
-            self._debug = raw_debug
-        elif isinstance(raw_debug, str):
-            lower_debug = raw_debug.lower()
-            if lower_debug not in TRUTHY_STRINGS and lower_debug not in FALSY_STRINGS:
-                raise ValueError(f"Invalid boolean string for {CONF_DEBUG}: {raw_debug}")
-            self._debug = lower_debug in TRUTHY_STRINGS
-        else:
-            raise TypeError(f"Invalid type for {CONF_DEBUG}: {type(raw_debug).__name__}")
+        try:
+            self._debug = cv.boolean(raw_debug)
+        except vol.Invalid as exc:
+            raise ValueError(f"Invalid boolean value for {CONF_DEBUG}: {raw_debug}") from exc
 
         target_temp_unit = self._config.get(CONF_TEMP_NATIVE_TARGET)
         current_temp_unit = self._config.get(CONF_TEMP_NATIVE_CURRENT)
