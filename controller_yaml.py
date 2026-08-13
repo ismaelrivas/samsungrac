@@ -77,8 +77,9 @@ class YamlController(ClimateController):
     def _extract_config_from_entry(
         cls, config_entry: ConfigEntry, device_id: str | None
     ) -> dict[str, Any]:
-        """Extract config and options as a pure dict for strict instantiation."""
-        entry_data = {**config_entry.data, **config_entry.options, CONF_ENTRY_ID: config_entry.entry_id}
+        """Extract static config strictly. Options must be handled dynamically."""
+        entry_data = dict(config_entry.data)
+        entry_data[CONF_ENTRY_ID] = config_entry.entry_id
         
         base_unique_id = config_entry.unique_id
         entry_data[CONF_UNIQUE_ID] = (
