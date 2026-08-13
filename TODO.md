@@ -40,4 +40,6 @@
     - Automatically integrates with `controller_yaml_polling.py` via `hasattr(prop, "apply_optimistic_cascades")`.
   - **Benefits**: Completely decouples state cascading from Python source code, restoring purity to the YAML controller and enabling custom cascade rules for any AC protocol/brand strictly through YAML configuration.
 
-
+- [ ] **Poller Contracts Verification (Technical Audit)**
+  - **Criticality Reason**: This is an architectural observation. As long as `YamlStatePoller` respects debounce timings and does not flood the Event Loop with blocking requests (correctly emulating `DataUpdateCoordinator`), the abstraction is tolerated.
+  - **Action**: Schedule a secondary review of `controller_yaml_polling.py` to ensure it correctly implements `async_config_entry_first_refresh` and does not leak synchronous exceptions.
