@@ -159,11 +159,15 @@ class YamlController(ClimateController):
         raw_ip = config.get(CONF_IP_ADDRESS)
         raw_host = config.get(CONF_HOST)
         
-        resolved_ip = raw_ip if isinstance(raw_ip, str) and raw_ip.strip() != "" else raw_host
-        self._ip_address = resolved_ip.strip() if isinstance(resolved_ip, str) and resolved_ip.strip() != "" else None
-
-        if self._ip_address is None:
+        if raw_ip is not None and not isinstance(raw_ip, str):
+            raise TypeError(f"{CONF_IP_ADDRESS} must be a string")
+        if raw_host is not None and not isinstance(raw_host, str):
+            raise TypeError(f"{CONF_HOST} must be a string")
+            
+        resolved_ip = raw_ip if raw_ip and raw_ip.strip() else raw_host
+        if not resolved_ip or not resolved_ip.strip():
             raise ValueError(f"Integration requires {CONF_IP_ADDRESS} or {CONF_HOST} to be explicitly set")
+        self._ip_address = resolved_ip.strip()
 
         # Strict Boolean Parsing (Guarded against string casting trap like 'false' -> True)
         raw_debug = config.get(CONF_DEBUG, False)
