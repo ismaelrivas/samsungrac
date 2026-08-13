@@ -402,16 +402,18 @@ class YamlController(ClimateController):
             raise RuntimeError(ERR_CACHE_UNINITIALIZED)
 
         if self._obj_id_cache is None:
-            self._obj_id_cache = {
-                op.id: op
-                for collection in (
-                    self.loader.operations,
-                    self.loader.properties,
-                    self.loader.sensors,
-                )
-                for op in collection.values()
-                if op.id is not None
-            }
+            cache = {}
+            for collection in (
+                self.loader.operations,
+                self.loader.properties,
+                self.loader.sensors,
+            ):
+                for op in collection.values():
+                    if op.id is not None:
+                        if op.id in cache:
+                            raise ValueError(f"Duplicate internal ID found: {op.id}")
+                        cache[op.id] = op
+            self._obj_id_cache = cache
         return self._obj_id_cache
 
     def get_property_object(self, property_name: str) -> DeviceProperty | None:
