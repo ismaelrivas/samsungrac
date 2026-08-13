@@ -468,7 +468,7 @@ class YamlConfigLoader:
         self.operations_list = list(self.operations.keys())
         self.properties_list = list(self.properties.keys())
         self.is_fully_initialized = True
-        _LOGGER.warning(
+        _LOGGER.debug(
             "%s [DEBUG INIT] Finished initialization! Operations mapped: %s",
             self.controller.log_prefix,
             self.operations_list,
