@@ -234,7 +234,7 @@ class DeviceProperty:
                 return dict(raw_dict)
                 
             devices_list = get_value_by_path(raw_dict, path)
-            if isinstance(devices_list, list) and len(devices_list) > 0:
+            if isinstance(devices_list, list) and bool(devices_list):
                 id_path = id_map.get("id", ["id"])
                 
                 # Strict match by device_id

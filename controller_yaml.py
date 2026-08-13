@@ -481,11 +481,11 @@ class YamlController(ClimateController):
     def device_state(self) -> dict[str, Any]:
         """Return the current device state via the poller's public interface."""
         state = self.poller.device_state
-        if state is not None and len(state) > 0:
+        if isinstance(state, dict) and bool(state):
             return dict(state)
         if self.loader.state_getter is not None:
             getter_value = self.loader.state_getter.value
-            return dict(getter_value) if getter_value is not None else {}
+            return dict(getter_value) if isinstance(getter_value, dict) else {}
         return {}
 
     def _safe_parse_hvac_mode(self, raw_mode: Any) -> HVACMode | None:
@@ -668,7 +668,7 @@ class YamlController(ClimateController):
         Obligatory implementation to fulfill ClimateController's strict ABC contract.
         Acts as a safe no-op for YAML-based devices.
         """
-        return
+        _LOGGER.debug("%s Refresh from connection requested (no-op)", self.log_prefix)
 
     def on_token_refreshed(self, new_token: str) -> None:
         """Callback invoked when the underlying connection refreshes an auth token.
@@ -676,7 +676,7 @@ class YamlController(ClimateController):
         Acts as a safe no-op. Subclasses or specific connection handlers can
         override or observe this if token persistence is required.
         """
-        return
+        _LOGGER.debug("%s Token refreshed callback received", self.log_prefix)
 
     def get_current_state_callback(self) -> dict[str, Any] | None:
         """Callback invoked by external pollers to request the raw current state.
