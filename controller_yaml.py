@@ -164,8 +164,8 @@ class YamlController(ClimateController):
         raw_ip = config.get(CONF_IP_ADDRESS)
         raw_host = config.get(CONF_HOST)
         
-        resolved_ip = raw_ip if isinstance(raw_ip, str) and len(raw_ip.strip()) > 0 else raw_host
-        self._ip_address = resolved_ip.strip() if isinstance(resolved_ip, str) and len(resolved_ip.strip()) > 0 else None
+        resolved_ip = raw_ip if isinstance(raw_ip, str) and raw_ip.strip() != "" else raw_host
+        self._ip_address = resolved_ip.strip() if isinstance(resolved_ip, str) and resolved_ip.strip() != "" else None
 
         if self._ip_address is None:
             raise ValueError(f"Integration requires {CONF_IP_ADDRESS} or {CONF_HOST} to be explicitly set")
@@ -224,7 +224,7 @@ class YamlController(ClimateController):
         if self.loader.name is not None:
             return self.loader.name
         raw_name = self._config.get(CONF_NAME)
-        if isinstance(raw_name, str) and len(raw_name.strip()) > 0:
+        if isinstance(raw_name, str) and raw_name.strip() != "":
             return raw_name
         return DEFAULT_CONTROLLER_NAME
 
@@ -235,7 +235,7 @@ class YamlController(ClimateController):
             return False
         if not isinstance(device_id, str):
             raise TypeError(f"Expected str for device_id, got {type(device_id).__name__}")
-        if len(device_id.strip()) == 0:
+        if device_id.strip() == "":
             return False
         return device_id not in EXCLUDED_SUBDEVICE_IDS
 
@@ -338,7 +338,7 @@ class YamlController(ClimateController):
                     property_name,
                     new_value,
                 )
-                target_device_id = device_id if (device_id is not None and isinstance(device_id, str) and len(device_id.strip()) > 0) else self.device_id
+                target_device_id = device_id if (device_id is not None and isinstance(device_id, str) and device_id.strip() != "") else self.device_id
                 if target_device_id is None or target_device_id == MAIN_DEVICE_ID:
                     target_device_id = self._unique_id
 
@@ -589,25 +589,31 @@ class YamlController(ClimateController):
 
             raw_fan = self.get_property(ATTR_FAN_MODE)
             fan_mode = None
-            if raw_fan is not None and not isinstance(raw_fan, bool):
+            if raw_fan is not None:
+                if isinstance(raw_fan, bool):
+                    raise TypeError(f"Fan mode cannot be a boolean, got {raw_fan}")
                 fan_str = str(raw_fan)
-                if len(fan_modes_tuple) > 0 and fan_str not in fan_modes_tuple:
+                if fan_modes_tuple and fan_str not in fan_modes_tuple:
                     raise ValueError(f"Device returned invalid fan mode: {fan_str}")
                 fan_mode = fan_str
 
             raw_swing = self.get_property(ATTR_SWING_MODE)
             swing_mode = None
-            if raw_swing is not None and not isinstance(raw_swing, bool):
+            if raw_swing is not None:
+                if isinstance(raw_swing, bool):
+                    raise TypeError(f"Swing mode cannot be a boolean, got {raw_swing}")
                 swing_str = str(raw_swing)
-                if len(swing_modes_tuple) > 0 and swing_str not in swing_modes_tuple:
+                if swing_modes_tuple and swing_str not in swing_modes_tuple:
                     raise ValueError(f"Device returned invalid swing mode: {swing_str}")
                 swing_mode = swing_str
 
             raw_preset = self.get_property(ATTR_PRESET_MODE)
             preset_mode = None
-            if raw_preset is not None and not isinstance(raw_preset, bool):
+            if raw_preset is not None:
+                if isinstance(raw_preset, bool):
+                    raise TypeError(f"Preset mode cannot be a boolean, got {raw_preset}")
                 preset_str = str(raw_preset)
-                if len(preset_modes_tuple) > 0 and preset_str not in preset_modes_tuple:
+                if preset_modes_tuple and preset_str not in preset_modes_tuple:
                     raise ValueError(f"Device returned invalid preset mode: {preset_str}")
                 preset_mode = preset_str
 
