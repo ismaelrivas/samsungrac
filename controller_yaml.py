@@ -665,8 +665,11 @@ class YamlController(ClimateController):
         """Return True if the device uses push-based updates."""
         if self.connection is None:
             return False
-
-        return self.connection.is_push_supported
+        
+        is_push = self.connection.is_push_supported
+        if not isinstance(is_push, bool):
+            raise TypeError(f"Expected bool for is_push_supported, got {type(is_push).__name__}")
+        return is_push
 
     @property
     def shared_raw_client(self) -> Any | None:
