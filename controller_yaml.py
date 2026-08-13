@@ -118,10 +118,10 @@ class YamlController(ClimateController):
 
         if config is None and config_entry is not None:
             config = self._extract_config_from_entry(config_entry, device_id)
-        elif config is None:
-            config = {}
-        else:
+        elif config is not None:
             config = dict(config)
+        else:
+            raise ValueError("Neither config dict nor ConfigEntry was provided to YamlController")
 
         # Fallback resolution for CONF_CONFIG_FILE based on CONF_DEVICE_TYPE
         if config.get(CONF_CONFIG_FILE) is None:
