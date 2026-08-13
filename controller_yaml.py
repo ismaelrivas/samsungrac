@@ -39,6 +39,10 @@ from .const import (
     ERR_PROPERTY_NOT_FOUND,
     ERR_PROPERTY_SET_FAILED,
     ERR_INVALID_DEVICE_MODE,
+    ERR_MISSING_INIT_CONFIG,
+    ERR_UNREGISTERED_PROPERTY,
+    ERR_CACHE_UNINITIALIZED,
+    ERR_INVALID_STATE_TYPE,
     ATTR_IS_AVAILABLE,
     CONF_CONFIG_FILE,
     CONF_CONTROLLER,
@@ -124,7 +128,7 @@ class YamlController(ClimateController):
         elif config is not None:
             config = dict(config)
         else:
-            raise ValueError("Neither config dict nor ConfigEntry was provided to YamlController")
+            raise ValueError(f"{ERR_MISSING_INIT_CONFIG}")
 
         # Fallback resolution for CONF_CONFIG_FILE based on CONF_DEVICE_TYPE
         if config.get(CONF_CONFIG_FILE) is None:
@@ -371,7 +375,7 @@ class YamlController(ClimateController):
         elif property_name in self._attributes:
             val = self._attributes[property_name]
         else:
-            raise KeyError(f"Property '{property_name}' is not registered in object or attributes.")
+            raise KeyError(f"{ERR_UNREGISTERED_PROPERTY}: '{property_name}'")
         if val is None or val == STATE_UNKNOWN:
             return None
         return val
@@ -380,7 +384,7 @@ class YamlController(ClimateController):
     def _objects_by_id(self) -> dict[str, DeviceProperty]:
         """O(1) lazy-loaded cache for property/operation/sensor lookup by internal ID."""
         if self.loader.is_fully_initialized is not True:
-            raise RuntimeError("Cannot build _objects_by_id cache before loader is fully initialized.")
+            raise RuntimeError(f"{ERR_CACHE_UNINITIALIZED}")
 
         if self._obj_id_cache is None:
             self._obj_id_cache = {
@@ -496,7 +500,7 @@ class YamlController(ClimateController):
         """Return the unmutated pure network state of the device."""
         pure = self.poller.pure_network_state
         if not isinstance(pure, dict):
-            raise TypeError(f"pure_network_state must be a dict, got {type(pure).__name__}")
+            raise TypeError(f"{ERR_INVALID_STATE_TYPE}: pure_network_state got {type(pure).__name__}")
         return dict(pure)
 
     @property
@@ -504,7 +508,7 @@ class YamlController(ClimateController):
         """Return the current device state via the poller's public interface."""
         state = self.poller.device_state
         if not isinstance(state, dict):
-            raise TypeError(f"device_state must be a dict, got {type(state).__name__}")
+            raise TypeError(f"{ERR_INVALID_STATE_TYPE}: device_state got {type(state).__name__}")
         return dict(state)
 
     def _safe_parse_hvac_mode(self, raw_mode: Any) -> HVACMode | None:

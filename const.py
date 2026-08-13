@@ -19,6 +19,10 @@ ERR_PROPERTY_SET_FAILED = "property_set_failed"
 ERR_CONTROLLER_NOT_INITIALIZED = "controller_not_initialized"
 ERR_PROPERTY_NOT_FOUND = "property_not_found"
 ERR_INVALID_DEVICE_MODE = "invalid_device_mode"
+ERR_MISSING_INIT_CONFIG = "missing_init_config"
+ERR_UNREGISTERED_PROPERTY = "unregistered_property"
+ERR_CACHE_UNINITIALIZED = "cache_uninitialized"
+ERR_INVALID_STATE_TYPE = "invalid_state_type"
 
 NON_SERIALIZABLE_KEYS: final = ("hass", "session", "logger")
 TRUTHY_STRINGS: final = ("true", "1", "yes", "on")
