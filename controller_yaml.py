@@ -447,11 +447,6 @@ class YamlController(ClimateController):
             if obj is not None:
                 return obj
 
-        _LOGGER.warning(
-            "%s Property object '%s' not found.",
-            self.log_prefix,
-            property_name,
-        )
         return None
 
     def get_property_all_values(self, property_name: str) -> list[str] | None:
