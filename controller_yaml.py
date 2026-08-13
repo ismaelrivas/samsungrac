@@ -506,24 +506,14 @@ class YamlController(ClimateController):
     @property
     def pure_device_state(self) -> dict[str, Any]:
         """Return the unmutated pure network state of the device."""
-        if self.poller is not None:
-            pure = self.poller.pure_network_state
-            if isinstance(pure, dict):
-                return dict(pure)
-        return self.device_state
+        pure = self.poller.pure_network_state
+        return dict(pure) if isinstance(pure, dict) else self.device_state
 
     @property
     def device_state(self) -> dict[str, Any]:
         """Return the current device state via the poller's public interface."""
-        if self.poller is not None:
-            state = self.poller.device_state
-            if isinstance(state, dict):
-                return dict(state)
-        if self.loader is not None and self.loader.state_getter is not None:
-            getter_value = self.loader.state_getter.value
-            if isinstance(getter_value, dict):
-                return dict(getter_value)
-        return {}
+        state = self.poller.device_state
+        return dict(state) if isinstance(state, dict) else {}
 
     def _safe_parse_hvac_mode(self, raw_mode: Any) -> HVACMode | None:
         """Parse HVAC mode strictly. Raises ValueError/TypeError on invalid input."""

@@ -627,11 +627,8 @@ def test_yaml_controller_device_state(mock_yaml_controller) -> None:
     mock_yaml_controller.loader.state_getter = mock_state_getter
     assert mock_yaml_controller.device_state == {}
 
-    # None forces fallback to loader.state_getter
+    # None returns an empty dict (Single Source of Truth, no fallback)
     mock_yaml_controller.poller.device_state = None
-    assert mock_yaml_controller.device_state == {"loader_key": "val2"}
-
-    mock_yaml_controller.loader.state_getter = None
     assert mock_yaml_controller.device_state == {}
 
 
