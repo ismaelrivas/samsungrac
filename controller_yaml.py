@@ -222,7 +222,11 @@ class YamlController(ClimateController):
         if self.loader.name is not None:
             return self.loader.name
         raw_name = self._config.get(CONF_NAME)
-        if isinstance(raw_name, str) and raw_name.strip() != "":
+        if raw_name is not None:
+            if not isinstance(raw_name, str):
+                raise TypeError(f"Expected str for {CONF_NAME}")
+            if not raw_name.strip():
+                raise ValueError(f"{CONF_NAME} cannot be empty")
             return raw_name
         return DEFAULT_CONTROLLER_NAME
 
