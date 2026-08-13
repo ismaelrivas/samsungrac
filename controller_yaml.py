@@ -57,7 +57,7 @@ from .controller import ClimateController, register_controller
 from .controller_yaml_config import YamlConfigLoader
 from .controller_yaml_polling import YamlStatePoller
 from .exceptions import CannotConnect
-from .properties import DeviceProperty
+from .properties import DeviceProperty, _parse_temperature_unit
 from .state import ClimateIPDeviceState
 
 _LOGGER = logging.getLogger(__name__)
@@ -130,7 +130,7 @@ class YamlController(ClimateController):
             base_unique_id = config.get(CONF_MAC)
 
         # If device_id exists and is a real sub-device (neither "main" nor "0"):
-        if self._device_id is not None and self._device_id not in (MAIN_DEVICE_ID, WIFI_KIT_MGMT_ID):
+        if self._is_subdevice(self._device_id):
             self._unique_id = f"{base_unique_id}{ID_DELIMITER}{self._device_id}" if base_unique_id is not None else self._device_id
         else:
             # Monosplit / Main device: Pure MAC address without suffixes
@@ -142,7 +142,7 @@ class YamlController(ClimateController):
         ip_from_config = config.get(CONF_IP_ADDRESS)
         resolved_ip = ip_from_config if ip_from_config is not None else config.get(CONF_HOST)
         resolved_str = str(resolved_ip).strip() if resolved_ip is not None else ""
-        self._ip_address = resolved_str if resolved_str != "" else None
+        self._ip_address = resolved_str if len(resolved_str) != 0 else None
         if self._ip_address is None:
             _LOGGER.warning(
                 "%s Neither %s nor %s present in configuration",
@@ -161,10 +161,9 @@ class YamlController(ClimateController):
         target_temp_unit = self._config.get(CONF_TEMP_NATIVE_TARGET)
         current_temp_unit = self._config.get(CONF_TEMP_NATIVE_CURRENT)
 
-        if target_temp_unit is not None:
-            self._temperature_unit = UnitOfTemperature(str(target_temp_unit))
-        elif current_temp_unit is not None:
-            self._temperature_unit = UnitOfTemperature(str(current_temp_unit))
+        raw_unit = target_temp_unit if target_temp_unit is not None else current_temp_unit
+        if raw_unit is not None:
+            self._temperature_unit = _parse_temperature_unit(raw_unit, strict=False)
         else:
             self._temperature_unit = DEFAULT_CONF_TEMP_UNIT
         self._attributes: dict[str, Any] = {}
@@ -216,13 +215,17 @@ class YamlController(ClimateController):
             return self.loader.name
         return str(self._config.get(CONF_NAME, DEFAULT_CONTROLLER_NAME))
 
+    @staticmethod
+    def _is_subdevice(device_id: str | None) -> bool:
+        """Return True if device_id represents a sub-device."""
+        return device_id is not None and device_id not in (MAIN_DEVICE_ID, WIFI_KIT_MGMT_ID)
+
     @property
     def unique_id(self) -> str | None:
         """Return the unique ID of this controller."""
         if (
             self._unique_id is not None
-            and self._device_id is not None
-            and self._device_id != MAIN_DEVICE_ID
+            and self._is_subdevice(self._device_id)
             and self._device_id != self._unique_id
         ):
             suffix = f"{ID_DELIMITER}{self._device_id}"
@@ -460,7 +463,7 @@ class YamlController(ClimateController):
         """Return the last raw poll response, useful for diagnostics."""
         if self.loader.state_getter is not None:
             raw = self.loader.state_getter.value
-            return dict(raw) if isinstance(raw, dict) else raw
+            return dict(raw) if isinstance(raw, dict) else None
         return None
 
     @property
@@ -577,13 +580,25 @@ class YamlController(ClimateController):
             )
 
             raw_fan = self.get_property(ATTR_FAN_MODE)
-            fan_mode = str(raw_fan) if raw_fan is not None else None
+            fan_mode = (
+                str(raw_fan)
+                if raw_fan is not None and not isinstance(raw_fan, bool)
+                else None
+            )
 
             raw_swing = self.get_property(ATTR_SWING_MODE)
-            swing_mode = str(raw_swing) if raw_swing is not None else None
+            swing_mode = (
+                str(raw_swing)
+                if raw_swing is not None and not isinstance(raw_swing, bool)
+                else None
+            )
 
             raw_preset = self.get_property(ATTR_PRESET_MODE)
-            preset_mode = str(raw_preset) if raw_preset is not None else None
+            preset_mode = (
+                str(raw_preset)
+                if raw_preset is not None and not isinstance(raw_preset, bool)
+                else None
+            )
 
             if self._cached_static_modes is None:
                 self._cached_static_modes = self._build_static_modes_cache()
