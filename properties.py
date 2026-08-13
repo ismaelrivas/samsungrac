@@ -119,22 +119,9 @@ def render_template(template: Template | str | None | Any, **kwargs: Any) -> Any
     """Render Jinja2 template strictly using Home Assistant's Template.async_render."""
     if template is None or isinstance(template, str):
         return template
-    if hasattr(template, "async_render") and callable(getattr(template, "async_render", None)):
-        try:
-            return template.async_render(kwargs, parse_result=True)
-        except TypeError:
-            try:
-                return template.async_render(kwargs)
-            except TypeError:
-                return template.async_render(**kwargs)
-    if hasattr(template, "render") and callable(getattr(template, "render", None)):
-        try:
-            return template.render(kwargs)
-        except TypeError:
-            return template.render(**kwargs)
-    if not isinstance(template, Template):
-        raise TypeError(f"Expected Template or str, got {type(template).__name__}")
-    return template.async_render(kwargs, parse_result=True)
+    if isinstance(template, Template):
+        return template.async_render(kwargs, parse_result=True)
+    raise TypeError(f"Expected HomeAssistant Template or str, got {type(template).__name__}")
 
 
 def _parse_temperature_unit(unit: str | UnitOfTemperature | Any, strict: bool = False) -> Any:

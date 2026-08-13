@@ -71,21 +71,9 @@ class YamlController(ClimateController):
     def _extract_config_from_entry(
         cls, config_entry: ConfigEntry, device_id: str | None, logger: logging.Logger
     ) -> dict[str, Any]:
-        """Extract and merge config and options from a ConfigEntry."""
-        entry_data = dict(config_entry.data)
-        
-        if config_entry.options:
-            # Explicit collision detection
-            for key, val in config_entry.options.items():
-                if key in entry_data and entry_data[key] != val:
-                    logger.debug(
-                        "ConfigEntry collision for key '%s': data='%s' vs options='%s'. Preferring options.",
-                        key,
-                        entry_data[key],
-                        val,
-                    )
-                entry_data[key] = val
-
+        """Extract and merge config and options from a ConfigEntry immutably."""
+        # Deterministic dictionary merge: options strictly override data
+        entry_data = {**config_entry.data, **config_entry.options}
         entry_data[CONF_ENTRY_ID] = config_entry.entry_id
 
         base_unique_id = config_entry.unique_id
