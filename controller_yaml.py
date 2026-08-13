@@ -57,7 +57,6 @@ from .const import (
     NON_SERIALIZABLE_KEYS,
     TRUTHY_STRINGS,
     FALSY_STRINGS,
-    WIFI_KIT_MGMT_ID,
 )
 from .controller import ClimateController, register_controller
 from .controller_yaml_config import YamlConfigLoader
@@ -137,7 +136,7 @@ class YamlController(ClimateController):
         if logger is None:
             logger = _LOGGER
 
-        super().__init__(config, logger)  # pragma: no mutate
+        super().__init__(config, logger)
 
         self._config = types.MappingProxyType(
             {k: v for k, v in config.items() if k not in NON_SERIALIZABLE_KEYS}
@@ -337,12 +336,12 @@ class YamlController(ClimateController):
         if isinstance(op, DeviceProperty):
             try:
                 self.poller.register_pending_update(property_name, new_value)
-                _LOGGER.debug(  # pragma: no mutate
+                _LOGGER.debug(
                     "%s Registered pending update for '%s': %s",
                     self.log_prefix,
                     property_name,
                     new_value,
-                )  # pragma: no mutate
+                )
                 target_device_id = device_id if (device_id is not None and isinstance(device_id, str) and len(device_id.strip()) > 0) else self.device_id
                 if target_device_id is None or target_device_id == MAIN_DEVICE_ID:
                     target_device_id = self._unique_id
@@ -425,7 +424,7 @@ class YamlController(ClimateController):
             "%s Property object '%s' not found.",
             self.log_prefix,
             property_name,
-        )  # pragma: no mutate
+        )
         return None
 
     def get_property_all_values(self, property_name: str) -> list[str] | None:
@@ -443,11 +442,11 @@ class YamlController(ClimateController):
                     res.append(str(v))
                 return res
 
-        _LOGGER.debug(  # pragma: no mutate
+        _LOGGER.debug(
             "%s Cannot get values for '%s': not an operation or missing all_values",
             self.log_prefix,
             property_name,
-        )  # pragma: no mutate
+        )
         return None
 
     @property
@@ -629,7 +628,7 @@ class YamlController(ClimateController):
         except (ValueError, TypeError) as err:
             _LOGGER.error(
                 "%s Error coercing typed ClimateIPDeviceState: %s", self.log_prefix, err
-            )  # pragma: no mutate
+            )
             raise
 
     async def async_get_status(self) -> dict[str, Any] | None:
