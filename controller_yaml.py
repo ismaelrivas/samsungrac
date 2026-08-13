@@ -532,8 +532,10 @@ class YamlController(ClimateController):
 
     def _safe_parse_temperature(self, raw_value: Any, label: str) -> float | None:
         """Parse temperature strictly. Raises ValueError/TypeError on invalid input."""
-        if raw_value is None or isinstance(raw_value, bool):
+        if raw_value is None:
             return None
+        if isinstance(raw_value, bool):
+            raise TypeError(f"Temperature for {label} cannot be a boolean, got {raw_value}")
         return float(raw_value)
 
     def _build_static_modes_cache(
