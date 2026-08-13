@@ -517,6 +517,8 @@ class YamlController(ClimateController):
         """Parse HVAC mode strictly. Raises ValueError/TypeError on invalid input."""
         if raw_mode is None:
             return None
+        if isinstance(raw_mode, bool):
+            raise TypeError(f"HVAC mode cannot be a boolean, got {raw_mode}")
         if isinstance(raw_mode, HVACMode):
             return raw_mode
         return HVACMode(str(raw_mode).lower())
