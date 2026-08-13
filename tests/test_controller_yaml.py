@@ -349,8 +349,9 @@ def test_get_property_value_extraction(mock_yaml_controller) -> None:
     # Scenario 3: Value found is STATE_UNKNOWN, must convert to None
     assert mock_yaml_controller.get_property("unknown_attr") is None
 
-    # Scenario 4: Non-existent key, returns None
-    assert mock_yaml_controller.get_property("missing_key") is None
+    # Scenario 4: Non-existent key, raises KeyError (Zero-Trust)
+    with pytest.raises(KeyError):
+        mock_yaml_controller.get_property("missing_key")
 
 
 def test_get_property_all_values(mock_yaml_controller) -> None:

@@ -183,7 +183,10 @@ class YamlController(ClimateController):
         if isinstance(raw_debug, bool):
             self._debug = raw_debug
         elif isinstance(raw_debug, str):
-            self._debug = raw_debug.lower() in TRUTHY_STRINGS
+            lower_debug = raw_debug.lower()
+            if lower_debug not in TRUTHY_STRINGS and lower_debug not in ("false", "0", "no", "off"):
+                raise ValueError(f"Invalid boolean string for {CONF_DEBUG}: {raw_debug}")
+            self._debug = lower_debug in TRUTHY_STRINGS
         else:
             raise TypeError(f"Invalid type for {CONF_DEBUG}: {type(raw_debug).__name__}")
 
@@ -310,7 +313,10 @@ class YamlController(ClimateController):
         """Return True if the controller is connected and available."""
         if self.connection is None:
             return False
-        return bool(self.connection.get_diagnostics().get(ATTR_IS_AVAILABLE, True))
+        is_avail = self.connection.get_diagnostics().get(ATTR_IS_AVAILABLE, True)
+        if not isinstance(is_avail, bool):
+            raise TypeError(f"Expected bool for {ATTR_IS_AVAILABLE}, got {type(is_avail).__name__}")
+        return is_avail
 
     @property
     def id(self) -> str | None:
@@ -378,7 +384,12 @@ class YamlController(ClimateController):
     def get_property(self, property_name: str) -> Any:
         """Return the current value of a property by name using safe extraction."""
         obj = self.get_property_object(property_name)
-        val = obj.value if obj is not None else self._attributes.get(property_name)
+        if obj is not None:
+            val = obj.value
+        elif property_name in self._attributes:
+            val = self._attributes[property_name]
+        else:
+            raise KeyError(f"Property '{property_name}' is not registered in object or attributes.")
         if val is None or val == STATE_UNKNOWN:
             return None
         return val
@@ -531,10 +542,14 @@ class YamlController(ClimateController):
         tuple[str, ...],
     ]:
         """Build and cache the static modes supported by the device."""
-        hvac_modes_list = self.get_property_all_values(ATTR_HVAC_MODE) or []
-        fan_modes_list = self.get_property_all_values(ATTR_FAN_MODE) or []
-        swing_modes_list = self.get_property_all_values(ATTR_SWING_MODE) or []
-        preset_modes_list = self.get_property_all_values(ATTR_PRESET_MODE) or []
+        hvac_raw = self.get_property_all_values(ATTR_HVAC_MODE)
+        hvac_modes_list = [] if hvac_raw is None else hvac_raw
+        fan_raw = self.get_property_all_values(ATTR_FAN_MODE)
+        fan_modes_list = [] if fan_raw is None else fan_raw
+        swing_raw = self.get_property_all_values(ATTR_SWING_MODE)
+        swing_modes_list = [] if swing_raw is None else swing_raw
+        preset_raw = self.get_property_all_values(ATTR_PRESET_MODE)
+        preset_modes_list = [] if preset_raw is None else preset_raw
         parsed_hvac_modes = [
             mode
             for m in hvac_modes_list
