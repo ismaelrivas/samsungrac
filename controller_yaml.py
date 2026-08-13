@@ -56,6 +56,7 @@ from .const import (
     MAIN_DEVICE_ID,
     NON_SERIALIZABLE_KEYS,
     TRUTHY_STRINGS,
+    FALSY_STRINGS,
     WIFI_KIT_MGMT_ID,
 )
 from .controller import ClimateController, register_controller
@@ -179,7 +180,7 @@ class YamlController(ClimateController):
             self._debug = raw_debug
         elif isinstance(raw_debug, str):
             lower_debug = raw_debug.lower()
-            if lower_debug not in TRUTHY_STRINGS and lower_debug not in ("false", "0", "no", "off"):
+            if lower_debug not in TRUTHY_STRINGS and lower_debug not in FALSY_STRINGS:
                 raise ValueError(f"Invalid boolean string for {CONF_DEBUG}: {raw_debug}")
             self._debug = lower_debug in TRUTHY_STRINGS
         else:

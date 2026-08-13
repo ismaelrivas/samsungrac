@@ -21,6 +21,7 @@ ERR_PROPERTY_NOT_FOUND = "property_not_found"
 
 NON_SERIALIZABLE_KEYS: final = ("hass", "session", "logger")
 TRUTHY_STRINGS: final = ("true", "1", "yes", "on")
+FALSY_STRINGS: final = ("false", "0", "no", "off")
 DEFAULT_CONTROLLER_NAME: final = "Unknown"
 KEY_DUID: final = "duid"
 KEY_METHOD: final = "method"
