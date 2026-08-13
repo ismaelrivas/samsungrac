@@ -4,9 +4,6 @@ import logging
 import types
 from typing import TYPE_CHECKING, Any
 
-import voluptuous as vol
-import homeassistant.helpers.config_validation as cv
-
 from homeassistant.components.climate import (
     ATTR_CURRENT_TEMPERATURE,
     ATTR_FAN_MODE,
