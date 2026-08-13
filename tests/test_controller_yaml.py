@@ -465,14 +465,14 @@ def test_yaml_controller_available_property(mock_yaml_controller) -> None:
 
 
 def test_yaml_controller_sensors_property(mock_yaml_controller) -> None:
-    """Kills mutant in list comprehension for sensors property."""
+    """Validates absolute structural integrity enforcement in the sensors property."""
     mock_sensor = MagicMock()
     mock_yaml_controller.loader.sensors = {"valid_sensor": mock_sensor}
     mock_yaml_controller.loader.sensors_list = ["valid_sensor", "ghost_sensor"]
 
-    res = mock_yaml_controller.sensors
-    assert len(res) == 1, "Sensor filtering included invalid elements"
-    assert res[0] is mock_sensor
+    import pytest
+    with pytest.raises(KeyError, match="ghost_sensor"):
+        _ = mock_yaml_controller.sensors
 
 
 def test_yaml_controller_is_push_device_strict(mock_yaml_controller) -> None:

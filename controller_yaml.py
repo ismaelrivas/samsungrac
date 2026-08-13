@@ -103,8 +103,7 @@ class YamlController(ClimateController):
     ) -> YamlController:
         """Create a YamlController instance directly from a ConfigEntry."""
         log = logger or _LOGGER
-        config = cls._extract_config_from_entry(config_entry, device_id)
-        return cls(config=config, logger=log, hass=hass, session=session, config_entry=config_entry, device_id=device_id)
+        return cls(logger=log, hass=hass, session=session, config_entry=config_entry, device_id=device_id)
 
     def __init__(
         self,
@@ -476,11 +475,7 @@ class YamlController(ClimateController):
     def sensors(self) -> list[DeviceProperty]:
         """Return a list of all defined sensor property objects."""
         sensors_dict = self.loader.sensors
-        return [
-            sensors_dict[n]
-            for n in self.loader.sensors_list
-            if n in sensors_dict
-        ]
+        return [sensors_dict[n] for n in self.loader.sensors_list]
 
     @property
     def last_poll_data(self) -> dict[str, Any] | None:
