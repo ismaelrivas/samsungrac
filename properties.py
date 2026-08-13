@@ -6,7 +6,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import math
-from typing import Any, final
+from typing import Any, Protocol, final, runtime_checkable
 
 from homeassistant.components.climate import ClimateEntityFeature
 from homeassistant.components.climate import (
@@ -90,23 +90,51 @@ from .helpers import get_value_by_path
 _LOGGER = logging.getLogger(__name__)
 
 
-def render_template(template: Template | str | Any, **kwargs: Any) -> Any:
-    """Render Jinja2 template strictly using Home Assistant async_render or render interface."""
+@runtime_checkable
+class ConnectionWithParams(Protocol):
+    """Connection that supports parameter-based execution."""
+    _params: dict[str, Any]
+    _connection_template: Template | None
+    connection_template: Template | None
+    config: dict[str, Any]
+    is_async_native: bool
+
+    async def async_execute(
+        self,
+        method: str | None,
+        url: str | None,
+        data: Any,
+        headers: dict[str, Any] | None,
+        **kwargs: Any
+    ) -> tuple[str | None, dict[str, Any] | None]: ...
+
+    async def async_execute_with_retry(
+        self, template: Any, value: Any, device_state: Any = None, device_id: str | None = None
+    ) -> Any: ...
+
+    def create_updated(self, yaml_node: dict[str, Any] | None) -> Any: ...
+
+
+def render_template(template: Template | str | None | Any, **kwargs: Any) -> Any:
+    """Render Jinja2 template strictly using Home Assistant's Template.async_render."""
     if template is None or isinstance(template, str):
         return template
-    async_render = getattr(template, "async_render", None)
-    if callable(async_render):
+    if hasattr(template, "async_render") and callable(getattr(template, "async_render", None)):
         try:
-            return async_render(kwargs, parse_result=True)
+            return template.async_render(kwargs, parse_result=True)
         except TypeError:
-            return async_render(variables=kwargs, parse_result=True)
-    render_func = getattr(template, "render", None)
-    if callable(render_func):
+            try:
+                return template.async_render(kwargs)
+            except TypeError:
+                return template.async_render(**kwargs)
+    if hasattr(template, "render") and callable(getattr(template, "render", None)):
         try:
-            return render_func(kwargs)
+            return template.render(kwargs)
         except TypeError:
-            return render_func(**kwargs)
-    return str(template)
+            return template.render(**kwargs)
+    if not isinstance(template, Template):
+        raise TypeError(f"Expected Template or str, got {type(template).__name__}")
+    return template.async_render(kwargs, parse_result=True)
 
 
 def _parse_temperature_unit(unit: str | UnitOfTemperature | Any, strict: bool = False) -> Any:
@@ -187,7 +215,7 @@ class DeviceProperty:
     def __init__(
         self,
         name: str,
-        connection: Any,
+        connection: ConnectionWithParams,
         controller: Any,
         status_getter: Any | None = None,
     ) -> None:
@@ -230,65 +258,66 @@ class DeviceProperty:
         """Return the property ID."""
         return self._id
 
+    def _resolve_raw_state_source(self) -> dict[str, Any] | None:
+        """Resolve the raw state dictionary from the controller or status getter."""
+        if self._controller is not None:
+            if isinstance(self._controller.pure_device_state, dict) and self._controller.pure_device_state:
+                return self._controller.pure_device_state
+            if isinstance(self._controller.device_state, dict) and self._controller.device_state:
+                return self._controller.device_state
+
+        if self._status_getter is not None and isinstance(self._status_getter.value, dict):
+            return self._status_getter.value
+
+        if self._controller is not None:
+            status_prop = self._controller.get_property(KEY_STATUS)
+            if status_prop is not None and isinstance(status_prop.value, dict):
+                return status_prop.value
+
+        if isinstance(self._device_state, dict):
+            return self._device_state
+        if dataclasses.is_dataclass(self._device_state):
+            return dataclasses.asdict(self._device_state)
+        return None
+
+    def _route_to_subdevice(self, raw_dict: dict[str, Any]) -> dict[str, Any]:
+        """Route the raw state to the correct subdevice if applicable."""
+        device_id = self._controller.device_id if self._controller is not None else FALLBACK_DEVICE_ID
+        loader = self._controller.loader if self._controller is not None else None
+        cache = loader.parsed_yaml_cache if loader is not None else {}
+        id_map = cache.get(device_id, {}).get(KEY_DEVICE_CONFIG, {}).get(KEY_IDENTIFIERS, {})
+        path = id_map.get(KEY_PATH_TO_DEVICES)
+
+        if path is None:
+            return dict(raw_dict)
+
+        devices_list = get_value_by_path(raw_dict, path)
+        if not isinstance(devices_list, list) or not devices_list:
+            return dict(raw_dict)
+
+        id_path = id_map.get(CONF_SUBDEVICE_ID, [CONF_SUBDEVICE_ID])
+
+        # Strict match by device_id
+        for dev in devices_list:
+            dev_id = get_value_by_path(dev, id_path)
+            if dev_id is not None and str(dev_id) == str(device_id):
+                return dict(dev)
+
+        # Fallback: Find the first AC unit (must have a 'Mode' key to exclude WiFi-Kit)
+        for dev in devices_list:
+            if KEY_DEVICE_MODE in dev:
+                return dict(dev)
+
+        # Absolute fallback
+        return dict(devices_list[0])
+
     @property
     def _raw_device_state(self) -> dict[str, Any]:
         """Safely extract the raw JSON dictionary required by YAML templates."""
-        raw_dict = None
-        if self._controller is not None:
-            ctrl_pure = self._controller.pure_device_state
-            if isinstance(ctrl_pure, dict) and ctrl_pure:
-                raw_dict = ctrl_pure
-        if raw_dict is None and self._controller is not None:
-            ctrl_state = self._controller.device_state
-            if isinstance(ctrl_state, dict) and ctrl_state:
-                raw_dict = ctrl_state
-        if (
-            raw_dict is None
-            and self._status_getter is not None
-            and isinstance(self._status_getter.value, dict)
-        ):
-            raw_dict = self._status_getter.value
-        if raw_dict is None and self._controller is not None:
-            status_prop = self._controller.get_property(KEY_STATUS)
-            if status_prop is not None and isinstance(status_prop.value, dict):
-                raw_dict = status_prop.value
-        if raw_dict is None and isinstance(self._device_state, dict):
-            raw_dict = self._device_state
+        raw_dict = self._resolve_raw_state_source()
         if raw_dict is None:
-            if dataclasses.is_dataclass(self._device_state):
-                raw_dict = dataclasses.asdict(self._device_state)
-            else:
-                raw_dict = {}
-
-        if isinstance(raw_dict, dict):
-            device_id = self._controller.device_id if self._controller is not None else FALLBACK_DEVICE_ID
-            loader = self._controller.loader if self._controller is not None else None
-            cache = loader.parsed_yaml_cache if loader is not None else {}
-            id_map = cache.get(device_id, {}).get(KEY_DEVICE_CONFIG, {}).get(KEY_IDENTIFIERS, {})
-            path = id_map.get(KEY_PATH_TO_DEVICES)
-            
-            if path is None:
-                return dict(raw_dict)
-                
-            devices_list = get_value_by_path(raw_dict, path)
-            if isinstance(devices_list, list) and devices_list:
-                id_path = id_map.get(CONF_SUBDEVICE_ID, [CONF_SUBDEVICE_ID])
-                
-                # Strict match by device_id
-                for dev in devices_list:
-                    dev_id = get_value_by_path(dev, id_path)
-                    if dev_id is not None and str(dev_id) == str(device_id):
-                        return dict(dev)
-                
-                # Fallback: Find the first AC unit (must have a 'Mode' key to exclude WiFi-Kit)
-                for dev in devices_list:
-                    if KEY_DEVICE_MODE in dev:
-                        return dict(dev)
-                        
-                # Absolute fallback
-                return dict(devices_list[0])
-            return dict(raw_dict)
-        return {}
+            return {}
+        return self._route_to_subdevice(raw_dict)
 
     def is_valid(self, device_state: dict[str, Any] | None) -> bool:
         """Return True if this property is valid for the given device state."""
@@ -346,7 +375,11 @@ class DeviceProperty:
         return self._feature_flag
 
     def set_device_state_for_values(self, device_state: dict[str, Any]) -> None:
-        """Update internal state or values based on the current device state."""
+        """
+        Optional override hook.
+        Update internal state or values based on the current device state.
+        Subclasses should override this method if they need to update dynamically.
+        """
         pass
 
     @property
@@ -458,10 +491,8 @@ class DeviceProperty:
                     SensorDeviceClass.PRESSURE,
                 ):
                     self._state_class = SensorStateClass.MEASUREMENT
-            except ValueError as e:
-                raise ValueError(
-                    f"Invalid sensor device class '{self._device_class}' in YAML node for property '{self._id}'"
-                ) from e
+            except ValueError:
+                pass
 
         return True
 
@@ -512,7 +543,7 @@ class GetJsonStatus(DeviceProperty):
     def __init__(
         self,
         name: str,
-        connection: Any,
+        connection: ConnectionWithParams,
         controller: Any,
         status_getter: Any | None = None,
     ) -> None:
@@ -532,15 +563,11 @@ class GetJsonStatus(DeviceProperty):
 
         if (
             self._connection is not None
-            and self._connection.is_async_native
+            and getattr(self._connection, "is_async_native", False)
             and self._connection_template is None
         ):
             conn_tmpl = getattr(self._connection, "connection_template", None) or getattr(self._connection, "_connection_template", None)
             if conn_tmpl is not None:
-                _LOGGER.debug(
-                    "%s [GetJsonStatus] Inheriting connection_template from connection object.",
-                    self.log_prefix,
-                )  # pragma: no mutate
                 self._connection_template = conn_tmpl
             else:
                 _LOGGER.debug(
@@ -596,7 +623,7 @@ class GetJsonStatus(DeviceProperty):
                 )  # pragma: no mutate
                 return None
 
-            render_context: dict[str, Any] = getattr(connection, "_params", {}).copy()
+            render_context: dict[str, Any] = dict(connection._params)
 
             cfg = connection.config if isinstance(connection.config, dict) else {}
             duid_from_cfg = cfg.get(KEY_DUID)
@@ -623,7 +650,7 @@ class GetJsonStatus(DeviceProperty):
                     params = None
 
             if isinstance(params, dict):
-                raw_params = getattr(connection, "_params", {})
+                raw_params = connection._params
                 final_params = {**raw_params, **params}
                 response_text, _ = await connection.async_execute(
                     final_params.get(KEY_METHOD),
@@ -683,7 +710,7 @@ class DeviceOperation(DeviceProperty):
 
     def _resolve_async_params(
         self,
-        connection: Any,
+        connection: ConnectionWithParams,
         dev_value: Any,
         duid: str | None = None,
         device_state: dict[str, Any] | None = None,
@@ -742,6 +769,8 @@ class DeviceOperation(DeviceProperty):
                 base_params = {}
 
         raw_params = getattr(connection, "_params", {})
+        if not isinstance(raw_params, dict):
+            raw_params = {}
         fallback: dict[str, Any] = {**raw_params, **base_params}
 
         return {**fallback, **operation_params}
@@ -840,7 +869,7 @@ class BasicDeviceOperation(DeviceOperation):
     def __init__(
         self,
         name: str,
-        connection: Any,
+        connection: ConnectionWithParams,
         controller: Any,
         status_getter: Any | None = None,
     ) -> None:
@@ -866,8 +895,8 @@ class BasicDeviceOperation(DeviceOperation):
             self._feature_flag = YAML_NAME_TO_HA_FEATURE.get(self._name)
 
             if node is not None:
-                node_values = node.get(CONFIG_DEVICE_OPERATION_VALUES, {})
-                if not node_values:
+                node_values = node.get(CONFIG_DEVICE_OPERATION_VALUES)
+                if not isinstance(node_values, dict) or not node_values:
                     return False
 
                 for ha_value in node_values.keys():
@@ -894,7 +923,10 @@ class BasicDeviceOperation(DeviceOperation):
         return False
 
     def set_device_state_for_values(self, device_state: dict[str, Any] | None) -> None:
-        """Set the device state to be used by the ``values`` property."""
+        """
+        Optional override hook.
+        Update the operation's known device state and invalidate the valid values cache.
+        """
         self._device_state = device_state
         self._values_cache.clear()
 
@@ -903,17 +935,13 @@ class BasicDeviceOperation(DeviceOperation):
         """Return the complete, unfiltered list of values."""
         return list(self._values)
 
-    @property
-    def values(self) -> list[Any]:
-        """Return a list of valid values, which can be dynamic."""
-        if not self._value_validation_templates:
-            return list(self._values)
-
-        hvac_node = None
+    def _resolve_hvac_node(self) -> str | None:
+        """Resolve the current HVAC node state."""
         hvac_prop = None
         if self._controller is not None:
-            hvac_prop = self._controller.get_property_object(ATTR_HVAC_MODE) if self._controller is not None else None
+            hvac_prop = self._controller.get_property_object(ATTR_HVAC_MODE)
         state_node = hvac_prop.state_node if hvac_prop is not None else None
+        
         if not isinstance(state_node, str) and self._controller is not None:
             loader = self._controller.loader
             if loader is not None and isinstance(loader.operations, dict):
@@ -924,42 +952,45 @@ class BasicDeviceOperation(DeviceOperation):
         if hvac_prop is not None and isinstance(self._device_state, dict):
             state_node = hvac_prop.state_node
             if isinstance(state_node, str) and bool(state_node):
-                hvac_node = get_value_by_path(
-                    self._device_state, state_node.split(".")
-                )
+                return get_value_by_path(self._device_state, state_node.split("."))
+        return None
 
+    def _compute_cache_key(self, hvac_node: str | None) -> str:
+        """Compute a deterministic cache key."""
         cache_key_prop = self._controller.get_property(ATTR_HVAC_MODE) if self._controller is not None else None
         cache_key_id = DEFAULT_CACHE_KEY_ID
+        
         if isinstance(cache_key_prop, DeviceProperty):
             cache_key_id = cache_key_prop.id
         elif isinstance(cache_key_prop, str):
             cache_key_id = cache_key_prop
-        elif cache_key_prop is not None:
+        elif hasattr(cache_key_prop, "id"):
             cache_key_id = cache_key_prop.id
+            
+        return f"{cache_key_id}{ID_DELIMITER}{hvac_node}" if hvac_node is not None else cache_key_id
 
-        cache_key = (
-            f"{cache_key_id}{ID_DELIMITER}{hvac_node}"
-            if hvac_node is not None
-            else cache_key_id
-        )
-
-
+    def _validate_and_cache(self, cache_key: str) -> list[Any]:
+        """Validate all values against the current state and cache them."""
         if cache_key in self._values_cache:
-            valid_values = self._values_cache[cache_key]
-        else:
-            _LOGGER.debug(
-                "%s Cache miss for '%s' with key '%s'. Calculating values",
-                self.log_prefix,
-                self.name,
-                cache_key,
-            )  # pragma: no mutate
-            valid_values = [
-                ha_value
-                for ha_value in self._values
-                if self.is_value_valid(ha_value, self._device_state)
-            ]
-            self._values_cache[cache_key] = valid_values
+            return self._values_cache[cache_key]
+            
+        _LOGGER.debug(
+            "%s Cache miss for '%s' with key '%s'. Calculating values",
+            self.log_prefix,
+            self.name,
+            cache_key,
+        )  # pragma: no mutate
+        
+        valid_values = [
+            ha_value
+            for ha_value in self._values
+            if self.is_value_valid(ha_value, self._device_state)
+        ]
+        self._values_cache[cache_key] = valid_values
+        return valid_values
 
+    def _detect_value_changes(self, valid_values: list[Any]) -> None:
+        """Detect if the valid values have changed and trigger updates if necessary."""
         if (
             valid_values
             and self._last_valid_values
@@ -978,6 +1009,17 @@ class BasicDeviceOperation(DeviceOperation):
                 )  # pragma: no mutate
                 self._controller.fan_modes_list_changed_pending_flicker = True
 
+    @property
+    def values(self) -> list[Any]:
+        """Return a list of valid values, which can be dynamic."""
+        if not self._value_validation_templates:
+            return list(self._values)
+
+        hvac_node = self._resolve_hvac_node()
+        cache_key = self._compute_cache_key(hvac_node)
+        valid_values = self._validate_and_cache(cache_key)
+        
+        self._detect_value_changes(valid_values)
         self._last_valid_values = list(valid_values)
         return list(valid_values)
 
@@ -1017,7 +1059,7 @@ class ModeOperation(BasicDeviceOperation):
     def __init__(
         self,
         name: str,
-        connection: Any,
+        connection: ConnectionWithParams,
         controller: Any,
         status_getter: Any | None = None,
     ) -> None:
@@ -1100,7 +1142,7 @@ class BasicNumericOperation(DeviceOperation):
     def __init__(
         self,
         name: str,
-        connection: Any,
+        connection: ConnectionWithParams,
         controller: Any,
         status_getter: Any | None = None,
     ) -> None:
@@ -1175,7 +1217,7 @@ class TemperatureOperation(BasicNumericOperation):
     def __init__(
         self,
         name: str,
-        connection: Any,
+        connection: ConnectionWithParams,
         controller: Any,
         status_getter: Any | None = None,
     ) -> None:

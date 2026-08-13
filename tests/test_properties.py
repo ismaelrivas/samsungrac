@@ -105,7 +105,7 @@ async def test_device_property_init(mock_connection, mock_controller):
     assert prop._name == "test_id"
     assert prop.id == "test_id"
     assert prop._feature_flag is None
-    assert prop.value == STATE_UNKNOWN
+    assert prop.value is None
     assert prop._connection == mock_connection
     assert prop._controller == mock_controller
     assert prop._status_getter == "mock_getter"
@@ -179,7 +179,7 @@ async def test_device_property_calculate_value_exception(
     prop._status_template = mock_template
 
     dev_state = {"a": 1}
-    assert prop.calculate_value_from_state(dev_state) == STATE_UNKNOWN
+    assert prop.calculate_value_from_state(dev_state) is None
     assert "Dry-run error" in caplog.text
 
 
@@ -1380,7 +1380,7 @@ async def test_device_property_remaining_mutants():
     # calculate_value_from_state boolean or
     with patch("custom_components.climate_ip.properties._LOGGER.debug") as mock_debug:
         op._status_template = None
-        assert op.calculate_value_from_state({"val": "ok"}) == STATE_UNKNOWN
+        assert op.calculate_value_from_state({"val": "ok"}) is None
         mock_debug.assert_not_called()
 
     # async_update_state

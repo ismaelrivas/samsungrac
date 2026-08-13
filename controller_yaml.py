@@ -20,6 +20,7 @@ from homeassistant.const import (
     CONF_MAC,
     CONF_TOKEN,
     CONF_UNIQUE_ID,
+    STATE_UNKNOWN,
 )
 from homeassistant.exceptions import HomeAssistantError
 
@@ -66,6 +67,56 @@ _LOGGER = logging.getLogger(__name__)
 class YamlController(ClimateController):
     """YAML-based controller mapped as a clean Facade pattern over composition."""
 
+    @classmethod
+    def _extract_config_from_entry(
+        cls, config_entry: ConfigEntry, device_id: str | None, logger: logging.Logger
+    ) -> dict[str, Any]:
+        """Extract and merge config and options from a ConfigEntry."""
+        entry_data = dict(config_entry.data)
+        
+        if config_entry.options:
+            # Explicit collision detection
+            for key, val in config_entry.options.items():
+                if key in entry_data and entry_data[key] != val:
+                    logger.debug(
+                        "ConfigEntry collision for key '%s': data='%s' vs options='%s'. Preferring options.",
+                        key,
+                        entry_data[key],
+                        val,
+                    )
+                entry_data[key] = val
+
+        entry_data[CONF_ENTRY_ID] = config_entry.entry_id
+
+        base_unique_id = config_entry.unique_id
+        if device_id is not None and device_id != MAIN_DEVICE_ID:
+            entry_data[CONF_UNIQUE_ID] = (
+                f"{base_unique_id}{ID_DELIMITER}{device_id}"
+                if base_unique_id is not None
+                else device_id
+            )
+        else:
+            entry_data[CONF_UNIQUE_ID] = base_unique_id
+
+        if device_id is not None:
+            entry_data[CONF_DEVICE_ID] = device_id
+            
+        return entry_data
+
+    @classmethod
+    def from_config_entry(
+        cls,
+        config_entry: ConfigEntry,
+        hass: HomeAssistant | None = None,
+        session: aiohttp.ClientSession | None = None,
+        device_id: str | None = None,
+        logger: logging.Logger | None = None,
+    ) -> YamlController:
+        """Create a YamlController instance directly from a ConfigEntry."""
+        log = logger or _LOGGER
+        config = cls._extract_config_from_entry(config_entry, device_id, log)
+        return cls(config=config, logger=log, hass=hass, session=session, config_entry=config_entry, device_id=device_id)
+
     def __init__(
         self,
         config: dict[str, Any] | None = None,
@@ -78,26 +129,11 @@ class YamlController(ClimateController):
         """Initialize the YAML controller from a config dictionary or ConfigEntry."""
         self.loader: Any | None = None
         self.poller: Any | None = None
+        
+        log = logger or _LOGGER
 
         if config is None and config_entry is not None:
-            entry_data = dict(config_entry.data)
-            if config_entry.options:
-                entry_data.update(config_entry.options)
-            entry_data[CONF_ENTRY_ID] = config_entry.entry_id
-
-            base_unique_id = config_entry.unique_id
-            if device_id is not None and device_id != MAIN_DEVICE_ID:
-                entry_data[CONF_UNIQUE_ID] = (
-                    f"{base_unique_id}{ID_DELIMITER}{device_id}"
-                    if base_unique_id is not None
-                    else device_id
-                )
-            else:
-                entry_data[CONF_UNIQUE_ID] = base_unique_id
-
-            if device_id is not None:
-                entry_data[CONF_DEVICE_ID] = device_id
-            config = entry_data
+            config = self._extract_config_from_entry(config_entry, device_id, log)
         elif config is None:
             config = {}
         else:
@@ -222,9 +258,13 @@ class YamlController(ClimateController):
         return str(self._config.get(CONF_NAME, DEFAULT_CONTROLLER_NAME))
 
     @staticmethod
-    def _is_subdevice(device_id: str | None) -> bool:
+    def _is_subdevice(device_id: Any) -> bool:
         """Return True if device_id represents a sub-device."""
-        if device_id is None or not isinstance(device_id, str) or not device_id.strip():
+        if device_id is None:
+            return False
+        if not isinstance(device_id, str):
+            raise TypeError(f"Expected str for device_id, got {type(device_id).__name__}")
+        if not device_id.strip():
             return False
         return device_id not in EXCLUDED_SUBDEVICE_IDS
 
@@ -365,7 +405,7 @@ class YamlController(ClimateController):
         """Return the current value of a property by name using safe extraction."""
         obj = self.get_property_object(property_name)
         val = obj.value if obj is not None else self._attributes.get(property_name)
-        return val
+        return None if val == STATE_UNKNOWN else val
 
     @property
     def _objects_by_id(self) -> dict[str, DeviceProperty]:
