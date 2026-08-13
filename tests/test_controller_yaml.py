@@ -25,7 +25,7 @@ from homeassistant.const import (
     CONF_TOKEN,
     STATE_UNKNOWN,
 )
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from custom_components.climate_ip.const import (
     CONF_CONFIG_FILE,
@@ -401,15 +401,15 @@ async def test_async_merge_and_predict_delegation(mock_yaml_controller) -> None:
 @pytest.mark.asyncio
 async def test_async_set_property_error_scenarios(mock_yaml_controller) -> None:
     """Kills mutants in async_set_property asserting failures and exceptions."""
-    # Scenario 1: Uninitialized controller -> returns False
+    # Scenario 1: Uninitialized controller -> raises ServiceValidationError
     mock_yaml_controller.loader.is_fully_initialized = False
-    assert await mock_yaml_controller.async_set_property("prop", "val") is False
+    with pytest.raises(ServiceValidationError):
+        await mock_yaml_controller.async_set_property("prop", "val")
     mock_yaml_controller.loader.is_fully_initialized = True  # Restore state
 
-    # Scenario 2: Property does not exist -> returns False
-    assert (
-        await mock_yaml_controller.async_set_property("missing_prop", "val") is False
-    )
+    # Scenario 2: Property does not exist -> raises ServiceValidationError
+    with pytest.raises(ServiceValidationError):
+        await mock_yaml_controller.async_set_property("missing_prop", "val")
 
     # Scenario 3: Network error -> Raises CannotConnect with strict message
     from custom_components.climate_ip.properties import DeviceProperty

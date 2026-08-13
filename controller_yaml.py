@@ -327,12 +327,11 @@ class YamlController(ClimateController):
     ) -> bool:
         """Asynchronously set a property on the device."""
         if not self.loader.is_fully_initialized:
-            _LOGGER.error(  # pragma: no mutate
-                "%s Cannot set property '%s': controller not fully initialized",
-                self.log_prefix,
-                property_name,
-            )  # pragma: no mutate
-            return False
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="err_controller_not_initialized",
+                translation_placeholders={"property": property_name}
+            )
 
         op = self.get_property_object(property_name)
         if isinstance(op, DeviceProperty):
@@ -368,12 +367,11 @@ class YamlController(ClimateController):
                     translation_placeholders={"property": property_name, "error": str(e)}
                 ) from e
 
-        _LOGGER.error(  # pragma: no mutate
-            "%s Failed to set property '%s': property not found",
-            self.log_prefix,
-            property_name,
-        )  # pragma: no mutate
-        return False
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="err_property_not_found",
+            translation_placeholders={"property": property_name}
+        )
 
     def get_property(self, property_name: str) -> Any:
         """Return the current value of a property by name using safe extraction."""
