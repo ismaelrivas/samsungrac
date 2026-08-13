@@ -139,10 +139,13 @@ class YamlController(ClimateController):
         if self._device_id is None:
             self._device_id = self._unique_id
 
-        ip_from_config = config.get(CONF_IP_ADDRESS)
-        resolved_ip = ip_from_config if ip_from_config is not None else config.get(CONF_HOST)
-        resolved_str = str(resolved_ip).strip() if resolved_ip is not None else ""
-        self._ip_address = resolved_str if len(resolved_str) != 0 else None
+        resolved_ip = config.get(CONF_IP_ADDRESS) or config.get(CONF_HOST)
+        if resolved_ip is None or isinstance(resolved_ip, bool):
+            self._ip_address = None
+        else:
+            ip_str = str(resolved_ip).strip()
+            self._ip_address = ip_str if bool(ip_str) else None
+
         if self._ip_address is None:
             _LOGGER.warning(
                 "%s Neither %s nor %s present in configuration",
@@ -153,10 +156,12 @@ class YamlController(ClimateController):
 
         # Strict Boolean Parsing (Guarded against string casting trap like 'false' -> True)
         raw_debug = config.get(CONF_DEBUG, False)
-        if isinstance(raw_debug, str):
+        if isinstance(raw_debug, bool):
+            self._debug = raw_debug
+        elif isinstance(raw_debug, str):
             self._debug = raw_debug.lower() in TRUTHY_STRINGS
         else:
-            self._debug = bool(raw_debug)
+            raise TypeError(f"Invalid type for {CONF_DEBUG}: {type(raw_debug).__name__}")
 
         target_temp_unit = self._config.get(CONF_TEMP_NATIVE_TARGET)
         current_temp_unit = self._config.get(CONF_TEMP_NATIVE_CURRENT)
@@ -186,7 +191,9 @@ class YamlController(ClimateController):
     @staticmethod
     def match_type(controller_type: str) -> bool:
         """Return True if the given type string matches this controller."""
-        return str(controller_type).lower() == DEFAULT_CONF_CONTROLLER
+        if not isinstance(controller_type, str):
+            raise TypeError(f"Expected str for controller_type, got {type(controller_type).__name__}")
+        return controller_type.lower() == DEFAULT_CONF_CONTROLLER
 
     @property
     def yaml_file(self) -> str | None:
@@ -361,9 +368,7 @@ class YamlController(ClimateController):
         """Return the current value of a property by name using safe extraction."""
         obj = self.get_property_object(property_name)
         val = obj.value if obj is not None else self._attributes.get(property_name)
-        if val == STATE_UNKNOWN:
-            return None
-        return val
+        return val if val != STATE_UNKNOWN and val is not None else None
 
     @property
     def _objects_by_id(self) -> dict[str, DeviceProperty]:

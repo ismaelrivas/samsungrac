@@ -6,7 +6,7 @@ from __future__ import annotations
 import ast
 import dataclasses
 import logging
-from typing import Any
+from typing import Any, final
 
 from homeassistant.components.climate import ClimateEntityFeature
 from homeassistant.components.climate import (
@@ -120,6 +120,14 @@ def _parse_temperature_unit(unit: str | UnitOfTemperature | Any, strict: bool = 
     if strict:
         raise ValueError(f"Invalid temperature unit: {unit}")
     return unit
+
+
+HA_MODE_ATTRIBUTES: final[frozenset[str]] = frozenset({
+    ATTR_HVAC_MODE,
+    ATTR_FAN_MODE,
+    ATTR_PRESET_MODE,
+    ATTR_SWING_MODE,
+})
 
 CLIMATE_IP_PROPERTIES: list[type] = []
 CLIMATE_IP_STATUS_GETTER: list[type] = []
@@ -926,12 +934,13 @@ class BasicDeviceOperation(DeviceOperation):
         if self._controller is not None:
             if hasattr(self._controller, "get_property_object"):
                 hvac_prop = self._controller.get_property_object(ATTR_HVAC_MODE)
-                if hvac_prop is None or type(hvac_prop).__name__ in ("MagicMock", "Mock", "AsyncMock"):
-                    loader_ops = getattr(getattr(self._controller, "loader", None), "operations", {})
-                    if isinstance(loader_ops, dict) and ATTR_HVAC_MODE in loader_ops:
-                        hvac_prop = loader_ops[ATTR_HVAC_MODE]
-                    elif isinstance(loader_ops, dict) and KEY_HVAC in loader_ops:
-                        hvac_prop = loader_ops[KEY_HVAC]
+            if hvac_prop is None or not isinstance(getattr(hvac_prop, "state_node", None), str):
+                loader = getattr(self._controller, "loader", None)
+                ops = getattr(loader, "operations", None)
+                if isinstance(ops, dict):
+                    fallback_prop = ops.get(ATTR_HVAC_MODE) or ops.get(KEY_HVAC)
+                    if fallback_prop is not None:
+                        hvac_prop = fallback_prop
 
         if hvac_prop is not None and isinstance(self._device_state, dict):
             state_node = getattr(hvac_prop, "state_node", None)
@@ -1038,18 +1047,12 @@ class ModeOperation(BasicDeviceOperation):
         """Initialise the mode operation and resolve the HA property ID."""
         super().__init__(name, connection, controller, status_getter)
 
-        ha_names = {
-            ATTR_HVAC_MODE,
-            ATTR_FAN_MODE,
-            ATTR_PRESET_MODE,
-            ATTR_SWING_MODE,
-        }
-        if name in ha_names:
+        if name in HA_MODE_ATTRIBUTES:
             self._id = name
         elif name in LEGACY_YAML_TO_ATTR_MAP:
             self._id = LEGACY_YAML_TO_ATTR_MAP[name]
         else:
-            self._id = name + MODE_PROPERTY_SUFFIX
+            self._id = f"{name}{MODE_PROPERTY_SUFFIX}"
 
         self._feature_flag = YAML_NAME_TO_HA_FEATURE.get(self._name)
 
