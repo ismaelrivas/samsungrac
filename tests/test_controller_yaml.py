@@ -634,9 +634,10 @@ def test_yaml_controller_device_state(mock_yaml_controller) -> None:
     mock_yaml_controller.loader.state_getter = mock_state_getter
     assert mock_yaml_controller.device_state == {}
 
-    # None returns an empty dict (Single Source of Truth, no fallback)
+    # None must Fail-Fast (Absolute Zero Doctrine)
     mock_yaml_controller.poller.device_state = None
-    assert mock_yaml_controller.device_state == {}
+    with pytest.raises(TypeError):
+        _ = mock_yaml_controller.device_state
 
 
 @pytest.mark.asyncio
