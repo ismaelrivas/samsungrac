@@ -24,6 +24,8 @@ KEY_METHOD: final = "method"
 KEY_URL: final = "url"
 KEY_HEADERS: final = "headers"
 KEY_RAW_PAYLOAD: final = "_raw"
+ID_DELIMITER: final = "_"
+
 
 # --- Configurable Options ---
 ATTR_IS_AVAILABLE = "is_available"
@@ -162,6 +164,11 @@ CONFIG_DEVICE_VALIDATION_TEMPLATE = "validation_template"
 CONFIG_DEVICE_CONDITION_TEMPLATE = "condition_template"
 CONFIG_DEVICE_POWER_TEMPLATE = "power_template"
 CONFIG_DEVICE_CONNECTION_TYPE = "type"
+CONFIG_STATE_NODE = "state_node"
+CONFIG_DEVICE_CLASS = "device_class"
+CONFIG_UNIT_OF_MEASUREMENT = "unit_of_measurement"
+CONFIG_ENTITY_CATEGORY = "entity_category"
+CONFIG_STATE_CLASS = "state_class"
 
 CONF_DEBUG = "debug"
 ERROR_MESSAGE = "ERROR"
@@ -185,6 +192,7 @@ PROPERTY_TYPE_SWITCH = "switch"
 PROPERTY_TYPE_NUMBER = "number"
 PROPERTY_TYPE_TEMP = "temperature"
 PROPERTY_TYPE_STRING = "string"
+PROPERTY_TYPE_ENUM = "enum"
 STATUS_GETTER_JSON = "json_status"
 
 # --- Default Climate Values ---

@@ -1,11 +1,8 @@
-"""YAML-based climate device controller for the climate_ip integration."""
-
 from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any
 
-import aiohttp
 from homeassistant.components.climate import (
     ATTR_CURRENT_TEMPERATURE,
     ATTR_FAN_MODE,
@@ -29,6 +26,7 @@ from homeassistant.const import (
 from homeassistant.exceptions import HomeAssistantError
 
 if TYPE_CHECKING:
+    import aiohttp
     from homeassistant.core import HomeAssistant
     from .connection import ClimateConnection
 
@@ -47,6 +45,7 @@ from .const import (
     DEFAULT_CONF_TEMP_UNIT,
     DEFAULT_CONTROLLER_NAME,
     DEVICE_TYPE_TO_CONFIG_FILE,
+    ID_DELIMITER,
     LABEL_CURRENT_TEMP,
     LABEL_TARGET_TEMP,
     MAIN_DEVICE_ID,
@@ -62,8 +61,6 @@ from .properties import DeviceProperty
 from .state import ClimateIPDeviceState
 
 _LOGGER = logging.getLogger(__name__)
-
-CONST_CONTROLLER_TYPE = DEFAULT_CONF_CONTROLLER
 
 
 @register_controller
@@ -114,15 +111,13 @@ class YamlController(ClimateController):
             logger = _LOGGER
 
         super().__init__(config, logger)  # pragma: no mutate
-        self._config = config
+        self._config = {
+            k: v for k, v in config.items() if k not in NON_SERIALIZABLE_KEYS
+        }
 
         self.hass = hass
         self._session = session
         self._shared_raw_client: Any | None = None
-
-        # Purge non-serializable objects from configuration
-        for non_serializable in NON_SERIALIZABLE_KEYS:
-            self._config.pop(non_serializable, None)  # pragma: no mutate
 
         self._device_id = config.get(CONF_DEVICE_ID)
         self._token = config.get(CONF_TOKEN)
@@ -133,7 +128,7 @@ class YamlController(ClimateController):
 
         # If device_id exists and is a real sub-device (neither "main" nor "0"):
         if self._device_id is not None and self._device_id not in (MAIN_DEVICE_ID, WIFI_KIT_MGMT_ID):
-            self._unique_id = f"{base_unique_id}_{self._device_id}" if base_unique_id is not None else self._device_id
+            self._unique_id = f"{base_unique_id}{ID_DELIMITER}{self._device_id}" if base_unique_id is not None else self._device_id
         else:
             # Monosplit / Main device: Pure MAC address without suffixes
             self._unique_id = base_unique_id
@@ -143,7 +138,8 @@ class YamlController(ClimateController):
 
         ip_from_config = config.get(CONF_IP_ADDRESS)
         resolved_ip = ip_from_config if ip_from_config is not None else config.get(CONF_HOST)
-        self._ip_address = str(resolved_ip).strip() if resolved_ip else None
+        resolved_str = str(resolved_ip).strip() if resolved_ip is not None else ""
+        self._ip_address = resolved_str if len(resolved_str) > 0 else None
         if self._ip_address is None:
             _LOGGER.warning(
                 "%s Neither %s nor %s present in configuration",
@@ -188,7 +184,7 @@ class YamlController(ClimateController):
     @staticmethod
     def match_type(controller_type: str) -> bool:
         """Return True if the given type string matches this controller."""
-        return str(controller_type).lower() == CONST_CONTROLLER_TYPE
+        return str(controller_type).lower() == DEFAULT_CONF_CONTROLLER
 
     @property
     def yaml_file(self) -> str | None:
@@ -508,8 +504,8 @@ class YamlController(ClimateController):
             return None
 
     def _safe_parse_temperature(self, raw_value: Any, label: str) -> float | None:
-        """Safely parse a temperature value, returning None on invalid input."""
-        if raw_value is None:
+        """Safely parse a temperature value, returning None on invalid input or booleans."""
+        if raw_value is None or isinstance(raw_value, bool):
             return None
         try:
             return float(raw_value)

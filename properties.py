@@ -30,8 +30,10 @@ from homeassistant.util.unit_conversion import TemperatureConverter
 
 
 from .const import (
+    CONFIG_DEVICE_CLASS,
     CONFIG_DEVICE_CONNECTION,
     CONFIG_DEVICE_CONNECTION_TEMPLATE,
+    CONFIG_DEVICE_NAME,
     CONFIG_DEVICE_OPERATION_NUMBER_MAX,
     CONFIG_DEVICE_OPERATION_NUMBER_MIN,
     CONFIG_DEVICE_OPERATION_TEMP_UNIT_TEMPLATE,
@@ -39,10 +41,15 @@ from .const import (
     CONFIG_DEVICE_OPERATION_VALUES,
     CONFIG_DEVICE_STATUS_TEMPLATE,
     CONFIG_DEVICE_VALIDATION_TEMPLATE,
+    CONFIG_ENTITY_CATEGORY,
+    CONFIG_STATE_CLASS,
+    CONFIG_STATE_NODE,
     CONFIG_TYPE,
+    CONFIG_UNIT_OF_MEASUREMENT,
     DEFAULT_CACHE_KEY_ID,
     DEFAULT_JSON_STATUS_PAYLOAD,
     FALLBACK_DEVICE_ID,
+    ID_DELIMITER,
     KEY_DEVICE_CONFIG,
     KEY_DEVICE_MODE,
     KEY_DUID,
@@ -57,6 +64,7 @@ from .const import (
     LEGACY_YAML_TO_ATTR_MAP,
     MEASUREMENT_DEVICE_CLASSES,
     MODE_PROPERTY_SUFFIX,
+    PROPERTY_TYPE_ENUM,
     PROPERTY_TYPE_MODE,
     PROPERTY_TYPE_NUMBER,
     PROPERTY_TYPE_STRING,
@@ -79,6 +87,8 @@ def render_template(template: Template | Any, **kwargs: Any) -> Any:
         return template.async_render(kwargs, parse_result=True)
     if hasattr(template, "render"):
         return template.render(**kwargs)
+    if isinstance(template, str):
+        return template
     return str(template)
 
 
@@ -86,10 +96,10 @@ def _parse_temperature_unit(unit: str | UnitOfTemperature | Any, strict: bool = 
     """Strictly parse and validate temperature unit strings."""
     if isinstance(unit, UnitOfTemperature):
         return unit
-    if not isinstance(unit, str):
+    if isinstance(unit, bool) or not isinstance(unit, str):
         if strict:
             raise ValueError(f"Invalid temperature unit: {unit}")
-        return unit
+        return UnitOfTemperature.CELSIUS
 
     u = unit.replace("°", "").strip().upper()
     if u in ("C", "CELSIUS"):
@@ -234,7 +244,7 @@ class DeviceProperty:
             id_map = cache.get(device_id, {}).get(KEY_DEVICE_CONFIG, {}).get(KEY_IDENTIFIERS, {})
             path = id_map.get(KEY_PATH_TO_DEVICES)
             
-            if not path:
+            if path is None or len(path) == 0:
                 return dict(raw_dict)
                 
             devices_list = get_value_by_path(raw_dict, path)
@@ -361,7 +371,7 @@ class DeviceProperty:
         """Return True if the property value should be treated as a string."""
         return self._type in (
             PROPERTY_TYPE_STRING,
-            "enum",
+            PROPERTY_TYPE_ENUM,
         ) or self.device_class in (SensorDeviceClass.ENUM, SensorDeviceClass.PROBLEM)
 
     def load_from_yaml(self, node: dict[str, Any] | None) -> bool:
@@ -369,9 +379,9 @@ class DeviceProperty:
         if node is None:
             return False
 
-        self._type = node.get("type")
+        self._type = node.get(CONFIG_TYPE)
 
-        if state_node := node.get("state_node"):
+        if state_node := node.get(CONFIG_STATE_NODE):
             self._state_node = state_node
 
         if tmpl := node.get(CONFIG_DEVICE_STATUS_TEMPLATE):
@@ -393,13 +403,13 @@ class DeviceProperty:
             self._unit_of_measurement,
             self._entity_category,
         ) = (
-            node.get("name"),
-            node.get("device_class"),
-            node.get("unit_of_measurement"),
-            node.get("entity_category"),
+            node.get(CONFIG_DEVICE_NAME),
+            node.get(CONFIG_DEVICE_CLASS),
+            node.get(CONFIG_UNIT_OF_MEASUREMENT),
+            node.get(CONFIG_ENTITY_CATEGORY),
         )
 
-        if raw_state_class := node.get("state_class"):
+        if raw_state_class := node.get(CONFIG_STATE_CLASS):
             try:
                 self._state_class = SensorStateClass(raw_state_class)
             except ValueError as e:
@@ -779,7 +789,7 @@ class DeviceOperation(DeviceProperty):
                 raise HomeAssistantError(
                     f"Connection error: could not set value for {self.id}"
                 ) from e  # pragma: no mutate
-            except (TimeoutError, OSError, ValueError, TypeError) as e:
+            except (TimeoutError, OSError) as e:
                 _LOGGER.error(
                     "%s Error during async_set_value for %s: %s",
                     self.log_prefix,
@@ -907,15 +917,16 @@ class BasicDeviceOperation(DeviceOperation):
                     )
         cache_key_prop = self._controller.get_property(ATTR_HVAC_MODE)
         cache_key_id = DEFAULT_CACHE_KEY_ID
-        if cache_key_prop is not None:
-            if isinstance(cache_key_prop, DeviceProperty):
-                cache_key_id = cache_key_prop.id
-            elif isinstance(cache_key_prop, str):
-                cache_key_id = cache_key_prop
-            elif hasattr(cache_key_prop, "id") and isinstance(getattr(cache_key_prop, "id"), str):
-                cache_key_id = cache_key_prop.id
+        if isinstance(cache_key_prop, DeviceProperty):
+            cache_key_id = cache_key_prop.id
+        elif isinstance(cache_key_prop, str):
+            cache_key_id = cache_key_prop
+        elif cache_key_prop is not None:
+            prop_id = getattr(cache_key_prop, "id", None)
+            if isinstance(prop_id, str):
+                cache_key_id = prop_id
         cache_key = (
-            f"{cache_key_id}_{hvac_node}"
+            f"{cache_key_id}{ID_DELIMITER}{hvac_node}"
             if hvac_node is not None
             else cache_key_id
         )
@@ -1098,8 +1109,8 @@ class BasicNumericOperation(DeviceOperation):
 
     @property
     def value(self) -> float | None:
-        """Return the current value as a float, or None if invalid."""
-        if self._value is None:
+        """Return the current value as a float, or None if invalid or boolean."""
+        if self._value is None or isinstance(self._value, bool):
             return None
         try:
             return float(self._value)
@@ -1130,6 +1141,8 @@ class BasicNumericOperation(DeviceOperation):
 
     def convert_hass_to_dev(self, ha_value: Any) -> Any:
         """Convert HASS state value to the device's expected value, clamped to min/max."""
+        if isinstance(ha_value, bool):
+            raise ValueError(f"Invalid numeric value: {ha_value}")
         try:
             v = float(ha_value)
         except (ValueError, TypeError) as err:
@@ -1268,6 +1281,10 @@ class TemperatureOperation(BasicNumericOperation):
 
     def convert_hass_to_dev(self, ha_value: Any) -> float:
         """Convert HASS temperature to device unit, clamped to min/max."""
+        if isinstance(ha_value, bool):
+            raise ValueError(
+                f"Invalid payload: Cannot set temperature to '{ha_value}'"
+            )
         try:
             # Mandatory strict sanitization.
             v = float(ha_value)
