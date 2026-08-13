@@ -687,8 +687,5 @@ def test_yaml_controller_untested_properties_and_cache() -> None:
     assert controller.poller.fan_modes_list_changed_pending_flicker is True
 
     # 3. clear_state_cache
-    controller.clear_state_cache()  # With poller
+    controller.clear_state_cache()
     controller.poller.clear_state_cache.assert_called_once()
-
-    controller.poller = None
-    controller.clear_state_cache()  # Without poller, should safely do nothing

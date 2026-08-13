@@ -111,8 +111,8 @@ class YamlController(ClimateController):
         device_id: str | None = None,
     ) -> None:
         """Initialize the YAML controller from a config dictionary or ConfigEntry."""
-        self.loader: Any | None = None
-        self.poller: Any | None = None
+        self.loader: YamlConfigLoader = YamlConfigLoader(self)
+        self.poller: YamlStatePoller = YamlStatePoller(self)
         
         log = logger or _LOGGER
 
@@ -200,8 +200,6 @@ class YamlController(ClimateController):
             | None
         ) = None
 
-        self.loader = YamlConfigLoader(self)
-        self.poller = YamlStatePoller(self)
         self._attributes[CONF_CONTROLLER] = self.id
 
     @staticmethod
@@ -219,7 +217,7 @@ class YamlController(ClimateController):
     @property
     def connection(self) -> ClimateConnection | None:
         """Override base connection to point strictly to the loader's active connection."""
-        return self.loader.connection if self.loader is not None else None
+        return self.loader.connection
 
     @property
     def fan_modes_list_changed_pending_flicker(self) -> bool:
@@ -234,7 +232,7 @@ class YamlController(ClimateController):
     @property
     def name(self) -> str:
         """Return the controller name."""
-        if self.loader is not None and self.loader.name is not None:
+        if self.loader.name is not None:
             return self.loader.name
         raw_name = self._config.get(CONF_NAME)
         if isinstance(raw_name, str) and raw_name.strip():
@@ -302,7 +300,7 @@ class YamlController(ClimateController):
     @property
     def poll(self) -> bool | None:
         """Return the polling state from the YAML configuration."""
-        return self.loader.poll if self.loader is not None else None
+        return self.loader.poll
 
     @property
     def available(self) -> bool:
@@ -390,8 +388,6 @@ class YamlController(ClimateController):
     def _objects_by_id(self) -> dict[str, DeviceProperty]:
         """O(1) lazy-loaded cache for property/operation/sensor lookup by internal ID."""
         if self._obj_id_cache is None:
-            if self.loader is None:
-                return {}
             self._obj_id_cache = {
                 op.id: op
                 for collection in (
@@ -462,25 +458,23 @@ class YamlController(ClimateController):
     @property
     def service_schema_map(self) -> dict[str, Any] | None:
         """Return the voluptuous service schema map."""
-        if self.loader is None or self.loader.service_schema_map is None:
+        if self.loader.service_schema_map is None:
             return None
         return dict(self.loader.service_schema_map)
 
     @property
     def operations(self) -> list[str]:
         """Return the list of settable operation names."""
-        return list(self.loader.operations_list) if self.loader is not None else []
+        return list(self.loader.operations_list)
 
     @property
     def attributes(self) -> list[str]:
         """Return the list of read-only attribute names."""
-        return list(self.loader.properties_list) if self.loader is not None else []
+        return list(self.loader.properties_list)
 
     @property
     def sensors(self) -> list[DeviceProperty]:
         """Return a list of all defined sensor property objects."""
-        if self.loader is None:
-            return []
         sensors_dict = self.loader.sensors
         return [
             sensors_dict[n]
@@ -633,8 +627,7 @@ class YamlController(ClimateController):
         """Clear cached state in poller and static mode cache to prevent ghosting."""
         self._cached_static_modes = None
         self._obj_id_cache = None
-        if self.poller is not None:
-            self.poller.clear_state_cache()
+        self.poller.clear_state_cache()
 
     async def async_merge_device_state(self, new_data: dict[str, Any]) -> bool:
         """Merge incoming push updates or responses into the memory state."""
