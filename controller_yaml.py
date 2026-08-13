@@ -373,6 +373,7 @@ class YamlController(ClimateController):
                 )
                 raise
             except (TimeoutError, OSError) as e:
+                # TODO(architecture): Align with ServiceValidationError if called from user-facing service
                 raise HomeAssistantError(
                     f"Failed to set property '{property_name}': {e}"
                 ) from e
@@ -532,36 +533,18 @@ class YamlController(ClimateController):
         return {}
 
     def _safe_parse_hvac_mode(self, raw_mode: Any) -> HVACMode | None:
-        """Safely parse HVAC mode, returning None on invalid value."""
+        """Parse HVAC mode strictly. Raises ValueError/TypeError on invalid input."""
         if raw_mode is None:
             return None
         if isinstance(raw_mode, HVACMode):
             return raw_mode
-
-        try:
-            return HVACMode(str(raw_mode).lower())
-        except (ValueError, TypeError):
-            _LOGGER.warning(
-                "%s Invalid HVAC mode string received for cache: %s",
-                self.log_prefix,
-                raw_mode,
-            )
-            return None
+        return HVACMode(str(raw_mode).lower())
 
     def _safe_parse_temperature(self, raw_value: Any, label: str) -> float | None:
-        """Safely parse a temperature value, returning None on invalid input or booleans."""
+        """Parse temperature strictly. Raises ValueError/TypeError on invalid input."""
         if raw_value is None or isinstance(raw_value, bool):
             return None
-        try:
-            return float(raw_value)
-        except (ValueError, TypeError):
-            _LOGGER.warning(
-                "%s Invalid %s value: %s",
-                self.log_prefix,
-                label,
-                raw_value,
-            )
-            return None
+        return float(raw_value)
 
     def _build_static_modes_cache(
         self,
