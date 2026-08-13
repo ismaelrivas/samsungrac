@@ -81,10 +81,11 @@ class YamlController(ClimateController):
         self.poller: Any | None = None
 
         if config is None and config_entry is not None:
-            config = dict(config_entry.data)
-            if config_entry.options:
-                config.update(config_entry.options)
-            config[CONF_ENTRY_ID] = config_entry.entry_id
+            config = {
+                **config_entry.data,
+                **config_entry.options,
+                CONF_ENTRY_ID: config_entry.entry_id,
+            }
 
             base_unique_id = config_entry.unique_id
             if device_id is not None and device_id != MAIN_DEVICE_ID:
@@ -141,7 +142,7 @@ class YamlController(ClimateController):
         ip_from_config = config.get(CONF_IP_ADDRESS)
         resolved_ip = ip_from_config if ip_from_config is not None else config.get(CONF_HOST)
         resolved_str = str(resolved_ip).strip() if resolved_ip is not None else ""
-        self._ip_address = resolved_str if len(resolved_str) > 0 else None
+        self._ip_address = resolved_str if resolved_str != "" else None
         if self._ip_address is None:
             _LOGGER.warning(
                 "%s Neither %s nor %s present in configuration",
@@ -318,7 +319,7 @@ class YamlController(ClimateController):
                     new_value,
                 )  # pragma: no mutate
                 target_device_id = device_id if device_id is not None else self.device_id
-                if target_device_id in (None, "", MAIN_DEVICE_ID):
+                if target_device_id is None or target_device_id == MAIN_DEVICE_ID:
                     target_device_id = self._unique_id
 
                 return await op.async_set_value(new_value, target_device_id)
@@ -473,7 +474,7 @@ class YamlController(ClimateController):
     def pure_device_state(self) -> dict[str, Any]:
         """Return the unmutated pure network state of the device."""
         pure = self.poller.pure_network_state
-        if isinstance(pure, dict) and bool(pure):
+        if isinstance(pure, dict) and len(pure) != 0:
             return dict(pure)
         return self.device_state
 
@@ -481,7 +482,7 @@ class YamlController(ClimateController):
     def device_state(self) -> dict[str, Any]:
         """Return the current device state via the poller's public interface."""
         state = self.poller.device_state
-        if isinstance(state, dict) and bool(state):
+        if isinstance(state, dict) and len(state) != 0:
             return dict(state)
         if self.loader.state_getter is not None:
             getter_value = self.loader.state_getter.value

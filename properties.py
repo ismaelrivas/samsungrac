@@ -30,6 +30,8 @@ from homeassistant.util.unit_conversion import TemperatureConverter
 
 
 from .const import (
+    CONF_SUBDEVICE_ID,
+    CONF_TOKEN_KEY,
     CONFIG_DEVICE_CLASS,
     CONFIG_DEVICE_CONNECTION,
     CONFIG_DEVICE_CONNECTION_TEMPLATE,
@@ -87,10 +89,12 @@ _LOGGER = logging.getLogger(__name__)
 
 def render_template(template: Template | Any, **kwargs: Any) -> Any:
     """Render a Jinja2 template strictly using async execution within the event loop."""
-    if hasattr(template, "async_render"):
-        return template.async_render(kwargs, parse_result=True)
-    if hasattr(template, "render"):
-        return template.render(**kwargs)
+    async_render = getattr(template, "async_render", None)
+    if callable(async_render):
+        return async_render(kwargs, parse_result=True)
+    render_func = getattr(template, "render", None)
+    if callable(render_func):
+        return render_func(**kwargs)
     if isinstance(template, str):
         return template
     return str(template)
@@ -217,11 +221,11 @@ class DeviceProperty:
         raw_dict = None
         if self._controller is not None:
             ctrl_pure = self._controller.pure_device_state
-            if isinstance(ctrl_pure, dict) and bool(ctrl_pure):
+            if isinstance(ctrl_pure, dict) and len(ctrl_pure) != 0:
                 raw_dict = ctrl_pure
         if raw_dict is None and self._controller is not None:
             ctrl_state = self._controller.device_state
-            if isinstance(ctrl_state, dict) and bool(ctrl_state):
+            if isinstance(ctrl_state, dict) and len(ctrl_state) != 0:
                 raw_dict = ctrl_state
         if (
             raw_dict is None
@@ -248,12 +252,12 @@ class DeviceProperty:
             id_map = cache.get(device_id, {}).get(KEY_DEVICE_CONFIG, {}).get(KEY_IDENTIFIERS, {})
             path = id_map.get(KEY_PATH_TO_DEVICES)
             
-            if not path:
+            if path is None or len(path) == 0:
                 return dict(raw_dict)
                 
             devices_list = get_value_by_path(raw_dict, path)
-            if isinstance(devices_list, list) and devices_list:
-                id_path = id_map.get("id", ["id"])
+            if isinstance(devices_list, list) and len(devices_list) != 0:
+                id_path = id_map.get(CONF_SUBDEVICE_ID, [CONF_SUBDEVICE_ID])
                 
                 # Strict match by device_id
                 for dev in devices_list:
@@ -580,14 +584,14 @@ class GetJsonStatus(DeviceProperty):
             render_context.setdefault(KEY_DUID, duid_for_render)
             
             token_from_cfg = (
-                cfg.get("token")
+                cfg.get(CONF_TOKEN_KEY)
                 if isinstance(cfg, dict)
-                else getattr(cfg, "token", None)
+                else getattr(cfg, CONF_TOKEN_KEY, None)
                 if cfg is not None
                 else None
             )
             if token_from_cfg:
-                render_context.setdefault("token", token_from_cfg)
+                render_context.setdefault(CONF_TOKEN_KEY, token_from_cfg)
 
             response_text: str | None = None  # pragma: no mutate
             params_str = render_template(self.connection_template, **render_context)
@@ -947,8 +951,8 @@ class BasicDeviceOperation(DeviceOperation):
             self._values_cache[cache_key] = valid_values
 
         if (
-            bool(valid_values)
-            and bool(self._last_valid_values)
+            len(valid_values) != 0
+            and len(self._last_valid_values) != 0
             and sorted(valid_values) != sorted(self._last_valid_values)
         ):
             _LOGGER.debug(
@@ -1124,7 +1128,7 @@ class BasicNumericOperation(DeviceOperation):
         """Check if value matches the operation."""
         try:
             return self.convert_hass_to_dev(float(value)) == value
-        except ValueError:
+        except (ValueError, TypeError):
             return False
 
     def load_from_yaml(self, node: dict[str, Any] | None) -> bool:
