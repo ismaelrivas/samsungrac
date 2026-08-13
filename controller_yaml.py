@@ -103,8 +103,8 @@ class YamlController(ClimateController):
         logger: logging.Logger | None = None,
     ) -> YamlController:
         """Create a YamlController instance directly from a ConfigEntry."""
-        log = logger or _LOGGER
-        return cls(logger=log, hass=hass, session=session, config_entry=config_entry, device_id=device_id)
+        logger = logger if logger is not None else _LOGGER
+        return cls(logger=logger, hass=hass, session=session, config_entry=config_entry, device_id=device_id)
 
     def __init__(
         self,
@@ -118,8 +118,6 @@ class YamlController(ClimateController):
         """Initialize the YAML controller from a config dictionary or ConfigEntry."""
         self.loader: YamlConfigLoader = YamlConfigLoader(self)
         self.poller: YamlStatePoller = YamlStatePoller(self)
-        
-        log = logger or _LOGGER
 
         if config is None and config_entry is not None:
             config = self._extract_config_from_entry(config_entry, device_id)
@@ -134,9 +132,7 @@ class YamlController(ClimateController):
             if device_type is not None and device_type in DEVICE_TYPE_TO_CONFIG_FILE:
                 config[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE[device_type]
 
-        if logger is None:
-            logger = _LOGGER
-
+        logger = logger if logger is not None else _LOGGER
         super().__init__(config, logger)
 
         self._config = types.MappingProxyType(dict(config))
