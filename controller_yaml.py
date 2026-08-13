@@ -220,15 +220,6 @@ class YamlController(ClimateController):
         """Override base connection to point strictly to the loader's active connection."""
         return self.loader.connection
 
-    @property
-    def fan_modes_list_changed_pending_flicker(self) -> bool:
-        """Expose the flicker flag from the poller delegate."""
-        return self.poller.fan_modes_list_changed_pending_flicker
-
-    @fan_modes_list_changed_pending_flicker.setter
-    def fan_modes_list_changed_pending_flicker(self, value: bool) -> None:
-        """Set the flicker flag on the poller delegate."""
-        self.poller.fan_modes_list_changed_pending_flicker = value
 
     @property
     def name(self) -> str:
