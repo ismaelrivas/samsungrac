@@ -172,10 +172,9 @@ class YamlController(ClimateController):
 
         # Strict Boolean Parsing (Guarded against string casting trap like 'false' -> True)
         raw_debug = config.get(CONF_DEBUG, False)
-        try:
-            self._debug = cv.boolean(raw_debug)
-        except vol.Invalid as exc:
-            raise ValueError(f"Invalid boolean value for {CONF_DEBUG}: {raw_debug}") from exc
+        if not isinstance(raw_debug, bool):
+            raise TypeError(f"Expected strict bool for {CONF_DEBUG}, got {type(raw_debug).__name__}")
+        self._debug = raw_debug
 
         target_temp_unit = self._config.get(CONF_TEMP_NATIVE_TARGET)
         current_temp_unit = self._config.get(CONF_TEMP_NATIVE_CURRENT)
