@@ -133,8 +133,11 @@ class YamlController(ClimateController):
         # Fallback resolution for CONF_CONFIG_FILE based on CONF_DEVICE_TYPE
         if config.get(CONF_CONFIG_FILE) is None:
             device_type = config.get(CONF_DEVICE_TYPE)
-            if device_type is not None and device_type in DEVICE_TYPE_TO_CONFIG_FILE:
-                config[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE[device_type]
+            if device_type is not None:
+                if not isinstance(device_type, str):
+                    raise TypeError(f"Expected str for {CONF_DEVICE_TYPE}, got {type(device_type).__name__}")
+                if device_type in DEVICE_TYPE_TO_CONFIG_FILE:
+                    config[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE[device_type]
 
         logger = logger if logger is not None else _LOGGER
         super().__init__(config, logger)
