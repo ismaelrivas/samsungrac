@@ -18,6 +18,7 @@ ISSUE_CONNECTION_FAILED = "connection_failed"
 ERR_PROPERTY_SET_FAILED = "property_set_failed"
 ERR_CONTROLLER_NOT_INITIALIZED = "controller_not_initialized"
 ERR_PROPERTY_NOT_FOUND = "property_not_found"
+ERR_INVALID_DEVICE_MODE = "invalid_device_mode"
 
 NON_SERIALIZABLE_KEYS: final = ("hass", "session", "logger")
 TRUTHY_STRINGS: final = ("true", "1", "yes", "on")
