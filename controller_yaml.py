@@ -32,6 +32,8 @@ if TYPE_CHECKING:
 
 from .const import (
     DOMAIN,
+    ERR_CONTROLLER_NOT_INITIALIZED,
+    ERR_PROPERTY_NOT_FOUND,
     ERR_PROPERTY_SET_FAILED,
     ATTR_IS_AVAILABLE,
     CONF_CONFIG_FILE,
@@ -329,7 +331,7 @@ class YamlController(ClimateController):
         if not self.loader.is_fully_initialized:
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
-                translation_key="err_controller_not_initialized",
+                translation_key=ERR_CONTROLLER_NOT_INITIALIZED,
                 translation_placeholders={"property": property_name}
             )
 
@@ -369,7 +371,7 @@ class YamlController(ClimateController):
 
         raise ServiceValidationError(
             translation_domain=DOMAIN,
-            translation_key="err_property_not_found",
+            translation_key=ERR_PROPERTY_NOT_FOUND,
             translation_placeholders={"property": property_name}
         )
 

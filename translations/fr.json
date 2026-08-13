@@ -163,6 +163,12 @@
     },
     "property_set_failed": {
       "message": "Échec de la définition de la propriété '{property}' : {error}"
+    },
+    "controller_not_initialized": {
+      "message": "Impossible de définir la propriété '{property}' : le contrôleur n'est pas entièrement initialisé."
+    },
+    "property_not_found": {
+      "message": "Échec de la définition de la propriété '{property}' : propriété introuvable."
     }
   },
   "issues": {

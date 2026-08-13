@@ -163,6 +163,12 @@
         },
         "property_set_failed": {
             "message": "Failed to set property '{property}': {error}"
+        },
+        "controller_not_initialized": {
+            "message": "Cannot set property '{property}': controller is not fully initialized."
+        },
+        "property_not_found": {
+            "message": "Failed to set property '{property}': property not found."
         }
     },
     "issues": {

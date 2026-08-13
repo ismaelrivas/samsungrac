@@ -163,6 +163,12 @@
     },
     "property_set_failed": {
       "message": "Fehler beim Festlegen der Eigenschaft '{property}': {error}"
+    },
+    "controller_not_initialized": {
+      "message": "Eigenschaft '{property}' kann nicht gesetzt werden: Controller ist nicht vollständig initialisiert."
+    },
+    "property_not_found": {
+      "message": "Fehler beim Festlegen der Eigenschaft '{property}': Eigenschaft nicht gefunden."
     }
   },
   "issues": {

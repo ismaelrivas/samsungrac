@@ -163,6 +163,12 @@
     },
     "property_set_failed": {
       "message": "Error al establecer la propiedad '{property}': {error}"
+    },
+    "controller_not_initialized": {
+      "message": "No se puede establecer la propiedad '{property}': el controlador no está completamente inicializado."
+    },
+    "property_not_found": {
+      "message": "Error al establecer la propiedad '{property}': propiedad no encontrada."
     }
   },
   "issues": {
