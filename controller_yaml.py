@@ -70,9 +70,9 @@ class YamlController(ClimateController):
     @classmethod
     def _extract_config_from_entry(
         cls, config_entry: ConfigEntry, device_id: str | None
-    ) -> dict[str, Any]:
-        """Extract and merge config and options from a ConfigEntry immutably."""
-        # Deterministic dictionary merge: options strictly override data
+    ) -> "types.MappingProxyType[str, Any]":
+        """Extract config and options as an immutable MappingProxyType."""
+        import types
         entry_data = {**config_entry.data, **config_entry.options}
         entry_data[CONF_ENTRY_ID] = config_entry.entry_id
 
@@ -85,7 +85,7 @@ class YamlController(ClimateController):
         if device_id is not None:
             entry_data[CONF_DEVICE_ID] = device_id
             
-        return entry_data
+        return types.MappingProxyType(entry_data)
 
     @classmethod
     def from_config_entry(
@@ -117,7 +117,7 @@ class YamlController(ClimateController):
         log = logger or _LOGGER
 
         if config is None and config_entry is not None:
-            config = self._extract_config_from_entry(config_entry, device_id)
+            config = dict(self._extract_config_from_entry(config_entry, device_id))
         elif config is not None:
             config = dict(config)
         else:
