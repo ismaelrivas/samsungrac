@@ -81,24 +81,23 @@ class YamlController(ClimateController):
         self.poller: Any | None = None
 
         if config is None and config_entry is not None:
-            config = {
-                **config_entry.data,
-                **config_entry.options,
-                CONF_ENTRY_ID: config_entry.entry_id,
-            }
+            entry_data = dict(config_entry.data)
+            entry_data.update(config_entry.options)
+            entry_data[CONF_ENTRY_ID] = config_entry.entry_id
 
             base_unique_id = config_entry.unique_id
             if device_id is not None and device_id != MAIN_DEVICE_ID:
-                config[CONF_UNIQUE_ID] = (
+                entry_data[CONF_UNIQUE_ID] = (
                     f"{base_unique_id}{ID_DELIMITER}{device_id}"
                     if base_unique_id is not None
                     else device_id
                 )
             else:
-                config[CONF_UNIQUE_ID] = base_unique_id
+                entry_data[CONF_UNIQUE_ID] = base_unique_id
 
             if device_id is not None:
-                config[CONF_DEVICE_ID] = device_id
+                entry_data[CONF_DEVICE_ID] = device_id
+            config = entry_data
         elif config is None:
             config = {}
         else:
@@ -144,7 +143,7 @@ class YamlController(ClimateController):
             self._ip_address = None
         else:
             ip_str = str(resolved_ip).strip()
-            self._ip_address = ip_str if bool(ip_str) else None
+            self._ip_address = ip_str if ip_str != "" else None
 
         if self._ip_address is None:
             _LOGGER.warning(
@@ -168,7 +167,7 @@ class YamlController(ClimateController):
 
         raw_unit = target_temp_unit if target_temp_unit is not None else current_temp_unit
         if raw_unit is not None:
-            self._temperature_unit = _parse_temperature_unit(raw_unit, strict=False)
+            self._temperature_unit = _parse_temperature_unit(raw_unit, strict=True)
         else:
             self._temperature_unit = DEFAULT_CONF_TEMP_UNIT
         self._attributes: dict[str, Any] = {}
@@ -292,7 +291,10 @@ class YamlController(ClimateController):
         """Return True if the controller is connected and available."""
         if self.connection is None:
             return False
-        return bool(self.connection.get_diagnostics().get(ATTR_IS_AVAILABLE, True))
+        diag = self.connection.get_diagnostics()
+        if ATTR_IS_AVAILABLE in diag:
+            return bool(diag[ATTR_IS_AVAILABLE])
+        return True
 
     @property
     def id(self) -> str | None:
@@ -346,13 +348,6 @@ class YamlController(ClimateController):
                 )
                 raise
             except (TimeoutError, OSError, ValueError) as e:
-                _LOGGER.warning(
-                    "%s Unexpected error setting property '%s' with value '%s': %s",
-                    self.log_prefix,
-                    property_name,
-                    new_value,
-                    e,
-                )
                 raise HomeAssistantError(
                     f"Failed to set property '{property_name}': {e}"
                 ) from e
@@ -417,7 +412,7 @@ class YamlController(ClimateController):
         prop = self.get_property_object(property_name)
         if prop is not None:
             all_vals = prop.all_values
-            if isinstance(all_vals, (list, tuple, set)) and len(all_vals) != 0:
+            if isinstance(all_vals, (list, tuple, set)) and bool(all_vals):
                 return list(all_vals)
 
         _LOGGER.debug(  # pragma: no mutate
@@ -482,7 +477,7 @@ class YamlController(ClimateController):
     def pure_device_state(self) -> dict[str, Any]:
         """Return the unmutated pure network state of the device."""
         pure = self.poller.pure_network_state
-        if isinstance(pure, dict) and len(pure) != 0:
+        if isinstance(pure, dict) and bool(pure):
             return dict(pure)
         return self.device_state
 
@@ -490,7 +485,7 @@ class YamlController(ClimateController):
     def device_state(self) -> dict[str, Any]:
         """Return the current device state via the poller's public interface."""
         state = self.poller.device_state
-        if isinstance(state, dict) and len(state) != 0:
+        if isinstance(state, dict) and bool(state):
             return dict(state)
         if self.loader.state_getter is not None:
             getter_value = self.loader.state_getter.value

@@ -89,13 +89,14 @@ _LOGGER = logging.getLogger(__name__)
 
 def render_template(template: Template | str | Any, **kwargs: Any) -> Any:
     """Render a Jinja2 template strictly using async execution when available within the event loop."""
-    if template is None:
-        return None
-    if isinstance(template, str):
+    if template is None or isinstance(template, str):
         return template
     async_render = getattr(template, "async_render", None)
     if callable(async_render):
-        return async_render(kwargs, parse_result=True)
+        try:
+            return async_render(kwargs, parse_result=True)
+        except TypeError:
+            return async_render(variables=kwargs, parse_result=True)
     render_func = getattr(template, "render", None)
     if callable(render_func):
         return render_func(**kwargs)
@@ -106,16 +107,12 @@ def _parse_temperature_unit(unit: str | UnitOfTemperature | Any, strict: bool = 
     """Strictly parse and validate temperature unit strings."""
     if isinstance(unit, UnitOfTemperature):
         return unit
-    if isinstance(unit, bool) or not isinstance(unit, str):
-        if strict:
-            raise ValueError(f"Invalid temperature unit: {unit}")
-        return UnitOfTemperature.CELSIUS
-
-    u = unit.replace(DEGREE_SYMBOL, "").strip().upper()
-    if u in TEMP_UNIT_CELSIUS_ALIASES:
-        return UnitOfTemperature.CELSIUS
-    if u in TEMP_UNIT_FAHRENHEIT_ALIASES:
-        return UnitOfTemperature.FAHRENHEIT
+    if isinstance(unit, str) and not isinstance(unit, bool):
+        u = unit.replace(DEGREE_SYMBOL, "").strip().upper()
+        if u in TEMP_UNIT_CELSIUS_ALIASES:
+            return UnitOfTemperature.CELSIUS
+        if u in TEMP_UNIT_FAHRENHEIT_ALIASES:
+            return UnitOfTemperature.FAHRENHEIT
 
     if strict:
         raise ValueError(f"Invalid temperature unit: {unit}")
@@ -231,11 +228,11 @@ class DeviceProperty:
         raw_dict = None
         if self._controller is not None:
             ctrl_pure = self._controller.pure_device_state
-            if isinstance(ctrl_pure, dict) and len(ctrl_pure) != 0:
+            if isinstance(ctrl_pure, dict) and bool(ctrl_pure):
                 raw_dict = ctrl_pure
         if raw_dict is None and self._controller is not None:
             ctrl_state = self._controller.device_state
-            if isinstance(ctrl_state, dict) and len(ctrl_state) != 0:
+            if isinstance(ctrl_state, dict) and bool(ctrl_state):
                 raw_dict = ctrl_state
         if (
             raw_dict is None
@@ -266,7 +263,7 @@ class DeviceProperty:
                 return dict(raw_dict)
                 
             devices_list = get_value_by_path(raw_dict, path)
-            if isinstance(devices_list, list) and len(devices_list) != 0:
+            if isinstance(devices_list, list) and bool(devices_list):
                 id_path = id_map.get(CONF_SUBDEVICE_ID, [CONF_SUBDEVICE_ID])
                 
                 # Strict match by device_id
@@ -593,29 +590,17 @@ class GetJsonStatus(DeviceProperty):
 
             render_context: dict[str, Any] = getattr(connection, "_params", {}).copy()
 
-            cfg = getattr(connection, "config", {}) if connection is not None else None
-            duid_from_cfg = (
-                cfg.get(KEY_DUID)
-                if isinstance(cfg, dict)
-                else getattr(cfg, KEY_DUID, None)
-                if cfg is not None
-                else None
-            )
+            cfg = connection.config if isinstance(connection.config, dict) else {}
+            duid_from_cfg = cfg.get(KEY_DUID)
             
-            duid_for_render = getattr(self._controller, "device_id", None) or duid_from_cfg
-            if not duid_for_render:
+            duid_for_render = self._controller.device_id if self._controller is not None else duid_from_cfg
+            if duid_for_render is None or duid_for_render == "":
                 raise ValueError("Could not resolve device_id/duid for async command parameter rendering")
             
             render_context["device_id"] = duid_for_render
             render_context.setdefault(KEY_DUID, duid_for_render)
             
-            token_from_cfg = (
-                cfg.get(CONF_TOKEN_KEY)
-                if isinstance(cfg, dict)
-                else getattr(cfg, CONF_TOKEN_KEY, None)
-                if cfg is not None
-                else None
-            )
+            token_from_cfg = cfg.get(CONF_TOKEN_KEY)
             if token_from_cfg:
                 render_context.setdefault(CONF_TOKEN_KEY, token_from_cfg)
 
@@ -764,10 +749,10 @@ class DeviceOperation(DeviceProperty):
 
         if connection.is_async_native:
             try:
-                cfg = getattr(connection, "config", {})
-                duid_from_cfg = cfg.get(KEY_DUID) if isinstance(cfg, dict) else getattr(cfg, KEY_DUID, None)
-                duid_for_render = device_id or getattr(self._controller, "device_id", None) or duid_from_cfg
-                if duid_for_render is None or len(duid_for_render) == 0:
+                cfg = connection.config if isinstance(connection.config, dict) else {}
+                duid_from_cfg = cfg.get(KEY_DUID)
+                duid_for_render = device_id or (self._controller.device_id if self._controller is not None else None) or duid_from_cfg
+                if duid_for_render is None or duid_for_render == "":
                     raise ValueError("Could not resolve device_id/duid for async command parameter rendering")
 
                 # dev_value is already calculated and validated above
@@ -808,23 +793,10 @@ class DeviceOperation(DeviceProperty):
                     return True
                 return False
             except (CannotConnect, AuthError) as e:
-                _LOGGER.warning(
-                    "%s Failed to set value for %s: connection error: %s",
-                    self.log_prefix,
-                    self.id,
-                    e,
-                )  # pragma: no mutate
                 raise HomeAssistantError(
                     f"Connection error: could not set value for {self.id}"
                 ) from e  # pragma: no mutate
             except (TimeoutError, OSError) as e:
-                _LOGGER.error(
-                    "%s Error during async_set_value for %s: %s",
-                    self.log_prefix,
-                    self.id,
-                    e,
-                    exc_info=True,
-                )  # pragma: no mutate
                 raise HomeAssistantError(
                     f"Unexpected error when setting {self.id}"
                 ) from e  # pragma: no mutate
@@ -835,12 +807,6 @@ class DeviceOperation(DeviceProperty):
                 )
                 return True
             except (CannotConnect, AuthError) as e:
-                _LOGGER.warning(
-                    "%s Failed to set value for %s: connection error: %s",
-                    self.log_prefix,
-                    self.id,
-                    e,
-                )  # pragma: no mutate
                 raise HomeAssistantError(
                     f"Connection error: could not set value for {self.id}"
                 ) from e  # pragma: no mutate
@@ -932,18 +898,17 @@ class BasicDeviceOperation(DeviceOperation):
         hvac_node = None
         hvac_prop = None
         if self._controller is not None:
-            if hasattr(self._controller, "get_property_object"):
-                hvac_prop = self._controller.get_property_object(ATTR_HVAC_MODE)
-            if hvac_prop is None or not isinstance(getattr(hvac_prop, "state_node", None), str):
-                loader = getattr(self._controller, "loader", None)
-                ops = getattr(loader, "operations", None)
-                if isinstance(ops, dict):
-                    fallback_prop = ops.get(ATTR_HVAC_MODE) or ops.get(KEY_HVAC)
-                    if fallback_prop is not None:
-                        hvac_prop = fallback_prop
+            hvac_prop = self._controller.get_property_object(ATTR_HVAC_MODE) if self._controller is not None else None
+        state_node = hvac_prop.state_node if hvac_prop is not None else None
+        if not isinstance(state_node, str) and self._controller is not None:
+            loader = self._controller.loader
+            if loader is not None and isinstance(loader.operations, dict):
+                fallback_prop = loader.operations.get(ATTR_HVAC_MODE) or loader.operations.get(KEY_HVAC)
+                if fallback_prop is not None:
+                    hvac_prop = fallback_prop
 
         if hvac_prop is not None and isinstance(self._device_state, dict):
-            state_node = getattr(hvac_prop, "state_node", None)
+            state_node = hvac_prop.state_node
             if isinstance(state_node, str) and bool(state_node):
                 hvac_node = get_value_by_path(
                     self._device_state, state_node.split(".")
@@ -956,9 +921,7 @@ class BasicDeviceOperation(DeviceOperation):
         elif isinstance(cache_key_prop, str):
             cache_key_id = cache_key_prop
         elif cache_key_prop is not None:
-            prop_id = getattr(cache_key_prop, "id", None)
-            if isinstance(prop_id, str):
-                cache_key_id = prop_id
+            cache_key_id = cache_key_prop.id
 
         cache_key = (
             f"{cache_key_id}{ID_DELIMITER}{hvac_node}"
@@ -984,8 +947,8 @@ class BasicDeviceOperation(DeviceOperation):
             self._values_cache[cache_key] = valid_values
 
         if (
-            len(valid_values) != 0
-            and len(self._last_valid_values) != 0
+            bool(valid_values)
+            and bool(self._last_valid_values)
             and sorted(valid_values) != sorted(self._last_valid_values)
         ):
             _LOGGER.debug(
@@ -1070,9 +1033,7 @@ class ModeOperation(BasicDeviceOperation):
             ATTR_PRESET_MODE: ATTR_PRESET_MODES,
             ATTR_SWING_MODE: ATTR_SWING_MODES,
         }
-        list_attribute_name = mode_map.get(self._id)
-        if list_attribute_name is None:
-            list_attribute_name = f"{self._id}s"
+        list_attribute_name = mode_map.get(self._id, f"{self._id}s")
 
         return {
             self.id: self.value,
@@ -1283,10 +1244,8 @@ class TemperatureOperation(BasicNumericOperation):
                 unit = render_template(self._unit_template, device_state=device_state)
                 self._device_unit = _parse_temperature_unit(unit, strict=True)
             except TemplateError as err:
-                _LOGGER.error("%s Could not render unit template for '%s': %s", self.log_prefix, self.id, err)
                 raise HomeAssistantError(f"Could not render unit template: {err}") from err
             except (TypeError, ValueError) as e:
-                _LOGGER.error("%s Could not render unit template for '%s': %s", self.log_prefix, self.id, e)
                 raise HomeAssistantError(f"Could not render unit template: {e}") from e
 
         v = self.calculate_value_from_state(device_state)
