@@ -139,7 +139,7 @@ def render_template(template: Template | str | None | Any, **kwargs: Any) -> Any
     raise TypeError(f"Expected HomeAssistant Template or str, got {type(template).__name__}")
 
 
-def _parse_temperature_unit(unit: str | UnitOfTemperature | Any, strict: bool = False) -> Any:
+def _parse_temperature_unit(unit: str | UnitOfTemperature | Any) -> Any:
     """Strictly parse and validate temperature unit strings."""
     if isinstance(unit, UnitOfTemperature):
         return unit
@@ -150,9 +150,14 @@ def _parse_temperature_unit(unit: str | UnitOfTemperature | Any, strict: bool = 
         if u in TEMP_UNIT_FAHRENHEIT_ALIASES:
             return UnitOfTemperature.FAHRENHEIT
 
-    if strict:
-        raise ValueError(f"Invalid temperature unit: {unit}")
-    return unit
+    raise ValueError(f"Invalid temperature unit: {unit}")
+
+def _normalize_unit(unit: str | UnitOfTemperature | Any) -> Any:
+    """Normalize temperature aliases, otherwise return unchanged (for non-temp units)."""
+    try:
+        return _parse_temperature_unit(unit)
+    except ValueError:
+        return unit
 
 
 HA_MODE_ATTRIBUTES: final[frozenset[str]] = frozenset({
@@ -401,7 +406,7 @@ class DeviceProperty:
 
     def set_unit_of_measurement(self, unit: str) -> None:
         """Set the static unit of measurement, converting temperature aliases."""
-        converted_unit = _parse_temperature_unit(unit, strict=False)
+        converted_unit = _normalize_unit(unit)
         self._unit_of_measurement = converted_unit
 
     def get_connection(self, value: Any) -> Any:
@@ -1231,11 +1236,11 @@ class TemperatureOperation(BasicNumericOperation):
 
     def set_device_unit(self, unit: str | UnitOfTemperature) -> None:
         """Set the native unit used by the device."""
-        self._device_unit = _parse_temperature_unit(unit, strict=True)
+        self._device_unit = _parse_temperature_unit(unit)
 
     def set_hass_unit(self, unit: str | UnitOfTemperature) -> None:
         """Set the display unit used by Home Assistant."""
-        self._hass_unit = _parse_temperature_unit(unit, strict=True)
+        self._hass_unit = _parse_temperature_unit(unit)
         self._unit_of_measurement = self._hass_unit
 
     @staticmethod
@@ -1261,7 +1266,7 @@ class TemperatureOperation(BasicNumericOperation):
         if self._unit_template is not None and device_state is not None:
             try:
                 unit = render_template(self._unit_template, device_state=device_state)
-                device_unit = _parse_temperature_unit(unit, strict=False)
+                device_unit = _parse_temperature_unit(unit)
             except TemplateError as err:
                 _LOGGER.error("%s Error rendering unit template for %s: %s", self.log_prefix, self.id, err)
                 raise HomeAssistantError(f"Error rendering unit template: {err}") from err
@@ -1307,7 +1312,7 @@ class TemperatureOperation(BasicNumericOperation):
         if self._unit_template is not None and device_state is not None:
             try:
                 unit = render_template(self._unit_template, device_state=device_state)
-                self._device_unit = _parse_temperature_unit(unit, strict=True)
+                self._device_unit = _parse_temperature_unit(unit)
             except TemplateError as err:
                 raise HomeAssistantError(f"Could not render unit template: {err}") from err
             except (TypeError, ValueError) as e:

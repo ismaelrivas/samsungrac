@@ -187,7 +187,7 @@ class YamlController(ClimateController):
 
         raw_unit = target_temp_unit if target_temp_unit is not None else current_temp_unit
         if raw_unit is not None:
-            self._temperature_unit = _parse_temperature_unit(raw_unit, strict=True)
+            self._temperature_unit = _parse_temperature_unit(raw_unit)
         else:
             self._temperature_unit = DEFAULT_CONF_TEMP_UNIT
         self._attributes: dict[str, Any] = {}

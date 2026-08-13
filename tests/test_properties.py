@@ -1185,8 +1185,8 @@ async def test_temperatureoperation_remaining_mutants():
     # calculate_value_from_state unit fallback
     op._device_unit = UnitOfTemperature.FAHRENHEIT
     op._unit_template = Template(hass=MagicMock(data={}), template="{{ device_state.unit }}")
-    op.calculate_value_from_state({"unit": "unknown"})
-    assert op._device_unit == UnitOfTemperature.FAHRENHEIT
+    with pytest.raises(HomeAssistantError, match="Error parsing unit template"):
+        op.calculate_value_from_state({"unit": "unknown"})
 
     op._unit_template = None
     op.calculate_value_from_state({"val": "10"})
