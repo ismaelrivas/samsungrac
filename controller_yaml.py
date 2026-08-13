@@ -342,7 +342,10 @@ class YamlController(ClimateController):
                     property_name,
                     new_value,
                 )
-                target_device_id = device_id if (device_id is not None and isinstance(device_id, str) and device_id.strip() != "") else self.device_id
+                if device_id is not None and not isinstance(device_id, str):
+                    raise TypeError(f"device_id must be a string, got {type(device_id).__name__}")
+                
+                target_device_id = device_id if (device_id and device_id.strip()) else self.device_id
                 if target_device_id is None or target_device_id == MAIN_DEVICE_ID:
                     target_device_id = self._unique_id
 
