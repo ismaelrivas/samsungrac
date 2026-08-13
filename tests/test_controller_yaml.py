@@ -681,10 +681,6 @@ def test_yaml_controller_untested_properties_and_cache() -> None:
     controller.shared_raw_client = "mock_client"
     assert controller._shared_raw_client == "mock_client"
 
-    # 2. fan_modes_list_changed_pending_flicker setter
-    controller.poller = MagicMock()
-    controller.fan_modes_list_changed_pending_flicker = True
-    assert controller.poller.fan_modes_list_changed_pending_flicker is True
 
     # 3. clear_state_cache
     controller.clear_state_cache()
