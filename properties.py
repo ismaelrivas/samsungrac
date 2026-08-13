@@ -115,12 +115,27 @@ class ConnectionWithParams(Protocol):
     def create_updated(self, yaml_node: dict[str, Any] | None) -> Any: ...
 
 
+_WARNED_TEMPLATE_MESSAGES: set[str] = set()
+
+
+def clear_template_warning_cache() -> None:
+    """Clear the deduplicated template warning cache (e.g. when reloading YAML maps)."""
+    _WARNED_TEMPLATE_MESSAGES.clear()
+
+
+def _template_log_fn(level: int, msg: str) -> None:
+    """Route template variable warnings to debug level, logging each unique message only once."""
+    if msg not in _WARNED_TEMPLATE_MESSAGES:
+        _WARNED_TEMPLATE_MESSAGES.add(msg)
+        _LOGGER.debug("Template variable warning: %s", msg)
+
+
 def render_template(template: Template | str | None | Any, **kwargs: Any) -> Any:
     """Render Jinja2 template strictly using Home Assistant's Template.async_render."""
     if template is None or isinstance(template, str):
         return template
     if isinstance(template, Template):
-        return template.async_render(kwargs, parse_result=True)
+        return template.async_render(kwargs, parse_result=True, log_fn=_template_log_fn)
     raise TypeError(f"Expected HomeAssistant Template or str, got {type(template).__name__}")
 
 
