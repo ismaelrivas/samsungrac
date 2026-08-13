@@ -579,7 +579,7 @@ class YamlController(ClimateController):
                 if isinstance(raw_fan, bool):
                     raise TypeError(f"Fan mode cannot be a boolean, got {raw_fan}")
                 fan_str = str(raw_fan)
-                if fan_modes_tuple and fan_str not in fan_modes_tuple:
+                if len(fan_modes_tuple) > 0 and fan_str not in fan_modes_tuple:
                     raise ValueError(f"Device returned invalid fan mode: {fan_str}")
                 fan_mode = fan_str
 
@@ -589,7 +589,7 @@ class YamlController(ClimateController):
                 if isinstance(raw_swing, bool):
                     raise TypeError(f"Swing mode cannot be a boolean, got {raw_swing}")
                 swing_str = str(raw_swing)
-                if swing_modes_tuple and swing_str not in swing_modes_tuple:
+                if len(swing_modes_tuple) > 0 and swing_str not in swing_modes_tuple:
                     raise ValueError(f"Device returned invalid swing mode: {swing_str}")
                 swing_mode = swing_str
 
@@ -599,7 +599,7 @@ class YamlController(ClimateController):
                 if isinstance(raw_preset, bool):
                     raise TypeError(f"Preset mode cannot be a boolean, got {raw_preset}")
                 preset_str = str(raw_preset)
-                if preset_modes_tuple and preset_str not in preset_modes_tuple:
+                if len(preset_modes_tuple) > 0 and preset_str not in preset_modes_tuple:
                     raise ValueError(f"Device returned invalid preset mode: {preset_str}")
                 preset_mode = preset_str
 
