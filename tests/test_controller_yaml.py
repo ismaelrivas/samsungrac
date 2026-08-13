@@ -291,6 +291,7 @@ def mock_yaml_controller():
         controller.loader.operations = {}
         controller.loader.properties = {}
         controller.loader.sensors = {}
+        controller.loader.name = None
         controller._attributes = {}
 
         return controller

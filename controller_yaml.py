@@ -230,8 +230,14 @@ class YamlController(ClimateController):
     @property
     def name(self) -> str:
         """Return the controller name."""
-        if self.loader.name is not None:
-            return self.loader.name
+        loader_name = self.loader.name
+        if loader_name is not None:
+            if not isinstance(loader_name, str):
+                raise TypeError("Loader name must be a string")
+            if not bool(loader_name.strip()):
+                raise ValueError("Loader name cannot be empty")
+            return loader_name
+
         raw_name = self._config.get(CONF_NAME)
         if raw_name is not None:
             if not isinstance(raw_name, str):
