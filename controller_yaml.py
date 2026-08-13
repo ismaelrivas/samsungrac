@@ -161,15 +161,11 @@ class YamlController(ClimateController):
         if self._device_id is None:
             self._device_id = self._unique_id
 
-        resolved_ip = config.get(CONF_IP_ADDRESS)
-        if resolved_ip is None or (isinstance(resolved_ip, str) and len(resolved_ip.strip()) == 0):
-            resolved_ip = config.get(CONF_HOST)
-
-        if isinstance(resolved_ip, str):
-            ip_str = resolved_ip.strip()
-            self._ip_address = ip_str if len(ip_str) > 0 else None
-        else:
-            self._ip_address = None
+        raw_ip = config.get(CONF_IP_ADDRESS)
+        raw_host = config.get(CONF_HOST)
+        
+        resolved_ip = raw_ip if isinstance(raw_ip, str) and len(raw_ip.strip()) > 0 else raw_host
+        self._ip_address = resolved_ip.strip() if isinstance(resolved_ip, str) and len(resolved_ip.strip()) > 0 else None
 
         if self._ip_address is None:
             raise ValueError(f"Integration requires {CONF_IP_ADDRESS} or {CONF_HOST} to be explicitly set")
