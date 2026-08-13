@@ -226,7 +226,7 @@ class YamlController(ClimateController):
     @property
     def connection(self) -> ClimateConnection | None:
         """Override base connection to point strictly to the loader's active connection."""
-        return self.loader.connection
+        return self.loader.connection if self.loader is not None else None
 
     @property
     def fan_modes_list_changed_pending_flicker(self) -> bool:
@@ -309,7 +309,7 @@ class YamlController(ClimateController):
     @property
     def poll(self) -> bool | None:
         """Return the polling state from the YAML configuration."""
-        return self.loader.poll
+        return self.loader.poll if self.loader is not None else None
 
     @property
     def available(self) -> bool:
@@ -396,6 +396,8 @@ class YamlController(ClimateController):
     def _objects_by_id(self) -> dict[str, DeviceProperty]:
         """O(1) lazy-loaded cache for property/operation/sensor lookup by internal ID."""
         if self._obj_id_cache is None:
+            if self.loader is None:
+                return {}
             self._obj_id_cache = {
                 op.id: op
                 for collection in (
@@ -466,22 +468,25 @@ class YamlController(ClimateController):
     @property
     def service_schema_map(self) -> dict[str, Any] | None:
         """Return the voluptuous service schema map."""
-        raw = self.loader.service_schema_map
-        return dict(raw) if raw is not None else None
+        if self.loader is None or self.loader.service_schema_map is None:
+            return None
+        return dict(self.loader.service_schema_map)
 
     @property
     def operations(self) -> list[str]:
         """Return the list of settable operation names."""
-        return list(self.loader.operations_list)
+        return list(self.loader.operations_list) if self.loader is not None else []
 
     @property
     def attributes(self) -> list[str]:
         """Return the list of read-only attribute names."""
-        return list(self.loader.properties_list)
+        return list(self.loader.properties_list) if self.loader is not None else []
 
     @property
     def sensors(self) -> list[DeviceProperty]:
         """Return a list of all defined sensor property objects."""
+        if self.loader is None:
+            return []
         sensors_dict = self.loader.sensors
         return [
             sensors_dict[n]
