@@ -427,9 +427,9 @@ class YamlController(ClimateController):
                     raise TypeError(f"Expected iterable for {property_name} all_vals, got {type(all_vals).__name__}")
                 res = []
                 for v in all_vals:
-                    if v is None or isinstance(v, bool):
-                        raise TypeError(f"Invalid mode value configured: {v}")
-                    res.append(str(v))
+                    if not isinstance(v, str):
+                        raise TypeError(f"Mode value must be a string, got {type(v).__name__}: {v}")
+                    res.append(v)
                 return res
 
         _LOGGER.debug(
