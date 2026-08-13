@@ -584,7 +584,7 @@ class YamlController(ClimateController):
                     raise TypeError(f"Fan mode cannot be a boolean, got {raw_fan}")
                 fan_str = str(raw_fan)
                 if len(fan_modes_tuple) > 0 and fan_str not in fan_modes_tuple:
-                    raise ValueError(f"{ERR_INVALID_DEVICE_MODE} (fan): {fan_str}")
+                    raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_FAN_MODE}]: {fan_str}")
                 fan_mode = fan_str
 
             raw_swing = self.get_property(ATTR_SWING_MODE)
@@ -594,7 +594,7 @@ class YamlController(ClimateController):
                     raise TypeError(f"Swing mode cannot be a boolean, got {raw_swing}")
                 swing_str = str(raw_swing)
                 if len(swing_modes_tuple) > 0 and swing_str not in swing_modes_tuple:
-                    raise ValueError(f"{ERR_INVALID_DEVICE_MODE} (swing): {swing_str}")
+                    raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_SWING_MODE}]: {swing_str}")
                 swing_mode = swing_str
 
             raw_preset = self.get_property(ATTR_PRESET_MODE)
@@ -604,7 +604,7 @@ class YamlController(ClimateController):
                     raise TypeError(f"Preset mode cannot be a boolean, got {raw_preset}")
                 preset_str = str(raw_preset)
                 if len(preset_modes_tuple) > 0 and preset_str not in preset_modes_tuple:
-                    raise ValueError(f"{ERR_INVALID_DEVICE_MODE} (preset): {preset_str}")
+                    raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_PRESET_MODE}]: {preset_str}")
                 preset_mode = preset_str
 
             return ClimateIPDeviceState(
