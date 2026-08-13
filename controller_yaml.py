@@ -82,7 +82,8 @@ class YamlController(ClimateController):
         cls, config_entry: ConfigEntry, device_id: str | None
     ) -> dict[str, Any]:
         """Extract static config strictly, merging data and options for modern HA compatibility."""
-        entry_data = {**config_entry.data, **config_entry.options}
+        entry_data = dict(config_entry.data)
+        entry_data.update(config_entry.options)
         entry_data[CONF_ENTRY_ID] = config_entry.entry_id
         
         base_unique_id = config_entry.unique_id
