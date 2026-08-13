@@ -406,7 +406,7 @@ class YamlController(ClimateController):
         """Return the complete, unfiltered list of values for a property."""
         prop = self.get_property_object(property_name)
         if prop is not None:
-            all_vals = getattr(prop, "all_values", None)
+            all_vals = prop.all_values
             if isinstance(all_vals, (list, tuple, set)) and len(all_vals) > 0:
                 return list(all_vals)
 

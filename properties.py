@@ -9,7 +9,7 @@ from typing import Any
 
 import homeassistant.helpers.config_validation as cv
 from homeassistant.components.climate import ClimateEntityFeature
-from homeassistant.components.climate.const import (
+from homeassistant.components.climate import (
     ATTR_FAN_MODE,
     ATTR_FAN_MODES,
     ATTR_HVAC_MODE,
@@ -230,7 +230,7 @@ class DeviceProperty:
             id_map = cache.get(device_id, {}).get("device", {}).get("identifiers", {})
             path = id_map.get("path_to_devices")
             
-            if not path:
+            if path is None or len(path) == 0:
                 return dict(raw_dict)
                 
             devices_list = get_value_by_path(raw_dict, path)
@@ -880,7 +880,7 @@ class BasicDeviceOperation(DeviceOperation):
     @property
     def values(self) -> list[Any]:
         """Return a list of valid values, which can be dynamic."""
-        if not self._value_validation_templates:
+        if len(self._value_validation_templates) == 0:
             return list(self._values)
 
         hvac_node = None
@@ -1098,7 +1098,7 @@ class BasicNumericOperation(DeviceOperation):
 
     def load_from_yaml(self, node: dict[str, Any] | None) -> bool:
         """Load configuration from a YAML node dictionary."""
-        if not super().load_from_yaml(node):
+        if super().load_from_yaml(node) is False:
             return False
 
         # node is guaranteed not to be None here
@@ -1151,7 +1151,7 @@ class TemperatureOperation(BasicNumericOperation):
 
     def load_from_yaml(self, node: dict[str, Any] | None) -> bool:
         """Load configuration from a YAML node dictionary."""
-        if not super().load_from_yaml(node):
+        if super().load_from_yaml(node) is False:
             return False
 
         if node is not None and CONFIG_DEVICE_OPERATION_TEMP_UNIT_TEMPLATE in node:
