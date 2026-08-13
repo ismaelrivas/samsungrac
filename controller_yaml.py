@@ -20,7 +20,6 @@ from homeassistant.const import (
     CONF_MAC,
     CONF_TOKEN,
     CONF_UNIQUE_ID,
-    STATE_UNKNOWN,
 )
 from homeassistant.exceptions import HomeAssistantError
 
@@ -81,9 +80,10 @@ class YamlController(ClimateController):
         self.poller: Any | None = None
 
         if config is None and config_entry is not None:
-            raw_data = dict(config_entry.data)
-            raw_options = dict(config_entry.options)
-            entry_data = {**raw_data, **raw_options, CONF_ENTRY_ID: config_entry.entry_id}
+            entry_data = dict(config_entry.data)
+            if config_entry.options:
+                entry_data.update(config_entry.options)
+            entry_data[CONF_ENTRY_ID] = config_entry.entry_id
 
             base_unique_id = config_entry.unique_id
             if device_id is not None and device_id != MAIN_DEVICE_ID:
@@ -139,11 +139,11 @@ class YamlController(ClimateController):
             self._device_id = self._unique_id
 
         resolved_ip = config.get(CONF_IP_ADDRESS) or config.get(CONF_HOST)
-        if resolved_ip is None or isinstance(resolved_ip, bool):
-            self._ip_address = None
+        if isinstance(resolved_ip, str):
+            ip_str = resolved_ip.strip()
+            self._ip_address = ip_str or None
         else:
-            ip_str = str(resolved_ip).strip()
-            self._ip_address = ip_str if ip_str != "" else None
+            self._ip_address = None
 
         if self._ip_address is None:
             _LOGGER.warning(
@@ -224,7 +224,7 @@ class YamlController(ClimateController):
     @staticmethod
     def _is_subdevice(device_id: str | None) -> bool:
         """Return True if device_id represents a sub-device."""
-        if device_id is None or not isinstance(device_id, str) or len(device_id.strip()) == 0:
+        if device_id is None or not isinstance(device_id, str) or not device_id.strip():
             return False
         return device_id not in EXCLUDED_SUBDEVICE_IDS
 
@@ -332,7 +332,7 @@ class YamlController(ClimateController):
                     property_name,
                     new_value,
                 )  # pragma: no mutate
-                target_device_id = device_id if (device_id is not None and isinstance(device_id, str) and len(device_id.strip()) > 0) else self.device_id
+                target_device_id = device_id if (device_id is not None and isinstance(device_id, str) and device_id.strip()) else self.device_id
                 if target_device_id is None or target_device_id == MAIN_DEVICE_ID:
                     target_device_id = self._unique_id
 
@@ -365,7 +365,7 @@ class YamlController(ClimateController):
         """Return the current value of a property by name using safe extraction."""
         obj = self.get_property_object(property_name)
         val = obj.value if obj is not None else self._attributes.get(property_name)
-        return val if val != STATE_UNKNOWN and val is not None else None
+        return val
 
     @property
     def _objects_by_id(self) -> dict[str, DeviceProperty]:
@@ -503,7 +503,7 @@ class YamlController(ClimateController):
 
         try:
             return HVACMode(str(raw_mode).lower())
-        except ValueError:
+        except (ValueError, TypeError):
             _LOGGER.warning(
                 "%s Invalid HVAC mode string received for cache: %s",
                 self.log_prefix,

@@ -21,7 +21,7 @@ from homeassistant.components.climate import (
 )
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.components.sensor.const import SensorDeviceClass
-from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNKNOWN, UnitOfTemperature
+from homeassistant.const import STATE_OFF, STATE_ON, UnitOfTemperature
 from homeassistant.exceptions import HomeAssistantError, TemplateError
 from homeassistant.helpers.json import json_dumps
 from homeassistant.helpers.template import Template
@@ -60,13 +60,13 @@ from .const import (
     KEY_HEADERS,
     KEY_HVAC,
     KEY_IDENTIFIERS,
+    KEY_JSON_PAYLOAD,
     KEY_METHOD,
     KEY_PATH_TO_DEVICES,
     KEY_RAW_PAYLOAD,
     KEY_STATUS,
     KEY_URL,
     LEGACY_YAML_TO_ATTR_MAP,
-    MEASUREMENT_DEVICE_CLASSES,
     MODE_PROPERTY_SUFFIX,
     PROPERTY_TYPE_ENUM,
     PROPERTY_TYPE_MODE,
@@ -78,7 +78,9 @@ from .const import (
     STATUS_GETTER_JSON,
     TEMP_UNIT_CELSIUS_ALIASES,
     TEMP_UNIT_FAHRENHEIT_ALIASES,
-    TOTAL_INCREASING_DEVICE_CLASSES,
+    TMPL_VAR_DEVICE_ID,
+    TMPL_VAR_DEVICE_STATE,
+    TMPL_VAR_VALUE,
     VALIDATION_SUCCESS_TOKEN,
     YAML_NAME_TO_HA_FEATURE,
 )
@@ -89,7 +91,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def render_template(template: Template | str | Any, **kwargs: Any) -> Any:
-    """Render a Jinja2 template strictly using async execution when available within the event loop."""
+    """Render Jinja2 template strictly using Home Assistant async_render or render interface."""
     if template is None or isinstance(template, str):
         return template
     async_render = getattr(template, "async_render", None)
@@ -111,7 +113,7 @@ def _parse_temperature_unit(unit: str | UnitOfTemperature | Any, strict: bool = 
     """Strictly parse and validate temperature unit strings."""
     if isinstance(unit, UnitOfTemperature):
         return unit
-    if isinstance(unit, str) and not isinstance(unit, bool):
+    if isinstance(unit, str):
         u = unit.replace(DEGREE_SYMBOL, "").strip().upper()
         if u in TEMP_UNIT_CELSIUS_ALIASES:
             return UnitOfTemperature.CELSIUS
@@ -130,19 +132,21 @@ HA_MODE_ATTRIBUTES: final[frozenset[str]] = frozenset({
     ATTR_SWING_MODE,
 })
 
-CLIMATE_IP_PROPERTIES: list[type] = []
-CLIMATE_IP_STATUS_GETTER: list[type] = []
+CLIMATE_IP_PROPERTIES: list[type[DeviceProperty]] = []
+CLIMATE_IP_STATUS_GETTER: list[type[GetJsonStatus]] = []
 
 
-def register_property(dev_prop: type) -> type:
+def register_property(dev_prop: type[DeviceProperty]) -> type[DeviceProperty]:
     """Decorate a function to register a property."""
-    CLIMATE_IP_PROPERTIES.append(dev_prop)
+    if dev_prop not in CLIMATE_IP_PROPERTIES:
+        CLIMATE_IP_PROPERTIES.append(dev_prop)
     return dev_prop
 
 
-def register_status_getter(getter: type) -> type:
+def register_status_getter(getter: type[GetJsonStatus]) -> type[GetJsonStatus]:
     """Decorate a function to register a status getter."""
-    CLIMATE_IP_STATUS_GETTER.append(getter)
+    if getter not in CLIMATE_IP_STATUS_GETTER:
+        CLIMATE_IP_STATUS_GETTER.append(getter)
     return getter
 
 
@@ -156,7 +160,7 @@ def create_property(
     """Create a device property from a YAML node. Returns None if no match."""
     for prop in CLIMATE_IP_PROPERTIES:
         if CONFIG_TYPE in node:
-            if prop.match_type(node[CONFIG_TYPE]):  # type: ignore[attr-defined]
+            if prop.match_type(node[CONFIG_TYPE]):
                 op = prop(name, connection_base, controller, status_getter)
                 if op.load_from_yaml(node):
                     return op
@@ -169,7 +173,7 @@ def create_status_getter(
     """Create a status getter from a YAML node. Returns None if no match."""
     for getter in CLIMATE_IP_STATUS_GETTER:
         if CONFIG_TYPE in node:
-            if getter.match_type(node[CONFIG_TYPE]):  # type: ignore[attr-defined]
+            if getter.match_type(node[CONFIG_TYPE]):
                 g = getter(name, connection_base, controller)
                 if g.load_from_yaml(node):
                     return g
@@ -189,7 +193,7 @@ class DeviceProperty:
     ) -> None:
         """Initialise the device property."""
         self._name = name
-        self._value: Any = STATE_UNKNOWN
+        self._value: Any = None
         self._connection = connection
         self._controller = controller
         self._status_getter = status_getter
@@ -232,11 +236,11 @@ class DeviceProperty:
         raw_dict = None
         if self._controller is not None:
             ctrl_pure = self._controller.pure_device_state
-            if isinstance(ctrl_pure, dict) and bool(ctrl_pure):
+            if isinstance(ctrl_pure, dict) and ctrl_pure:
                 raw_dict = ctrl_pure
         if raw_dict is None and self._controller is not None:
             ctrl_state = self._controller.device_state
-            if isinstance(ctrl_state, dict) and bool(ctrl_state):
+            if isinstance(ctrl_state, dict) and ctrl_state:
                 raw_dict = ctrl_state
         if (
             raw_dict is None
@@ -263,7 +267,7 @@ class DeviceProperty:
             id_map = cache.get(device_id, {}).get(KEY_DEVICE_CONFIG, {}).get(KEY_IDENTIFIERS, {})
             path = id_map.get(KEY_PATH_TO_DEVICES)
             
-            if not path:
+            if path is None:
                 return dict(raw_dict)
                 
             devices_list = get_value_by_path(raw_dict, path)
@@ -297,7 +301,6 @@ class DeviceProperty:
                 self.validation_template, device_state=self._raw_device_state
             )
             return str(v).strip().lower() == VALIDATION_SUCCESS_TOKEN
-
         except (TemplateError, TypeError, ValueError) as e:
             _LOGGER.error(
                 "%s Error rendering validation template for %s: %s",
@@ -391,7 +394,7 @@ class DeviceProperty:
         return self._type in (
             PROPERTY_TYPE_STRING,
             PROPERTY_TYPE_ENUM,
-        ) or self.device_class in (SensorDeviceClass.ENUM, SensorDeviceClass.PROBLEM)
+        ) or self.device_class == SensorDeviceClass.ENUM
 
     def load_from_yaml(self, node: dict[str, Any] | None) -> bool:
         """Load configuration from a YAML node dictionary."""
@@ -436,14 +439,15 @@ class DeviceProperty:
                 raise ValueError(
                     f"Invalid state_class '{raw_state_class}' in YAML"
                 ) from e
-        elif self._device_class in TOTAL_INCREASING_DEVICE_CLASSES:
-            self._state_class = SensorStateClass.TOTAL_INCREASING
-        elif self._device_class in MEASUREMENT_DEVICE_CLASSES:
-            self._state_class = SensorStateClass.MEASUREMENT
         elif self._device_class is not None:
             try:
                 dev_class_enum = SensorDeviceClass(self._device_class)
-                if dev_class_enum in (SensorDeviceClass.GAS, SensorDeviceClass.ENERGY, SensorDeviceClass.WATER):
+                if dev_class_enum in (
+                    SensorDeviceClass.GAS,
+                    SensorDeviceClass.ENERGY,
+                    SensorDeviceClass.WATER,
+                    SensorDeviceClass.CO,
+                ):
                     self._state_class = SensorStateClass.TOTAL_INCREASING
                 elif dev_class_enum in (
                     SensorDeviceClass.POWER,
@@ -467,7 +471,7 @@ class DeviceProperty:
 
     def calculate_value_from_state(self, device_state: dict[str, Any] | None) -> Any:
         """Dry-run calculation of the property value."""
-        v = STATE_UNKNOWN
+        v = None
         if self.status_template is not None and device_state is not None:
             try:
                 v = render_template(self.status_template, device_state=device_state)
@@ -476,9 +480,9 @@ class DeviceProperty:
                     "%s Dry-run error for %s: %s", self.log_prefix, self.id, e
                 )  # pragma: no mutate
 
-        if v != STATE_UNKNOWN:
+        if v is not None:
             return self.convert_dev_to_hass(v)
-        return STATE_UNKNOWN
+        return None
 
     async def async_update_state(
         self, device_state_override: dict[str, Any] | None = None, *_args: Any
@@ -491,7 +495,7 @@ class DeviceProperty:
 
         self._device_state = device_state
         v = self.calculate_value_from_state(device_state)
-        if v != STATE_UNKNOWN:
+        if v is not None:
             self.value = v
         return self.value
 
@@ -598,10 +602,10 @@ class GetJsonStatus(DeviceProperty):
             duid_from_cfg = cfg.get(KEY_DUID)
             
             duid_for_render = self._controller.device_id if self._controller is not None else duid_from_cfg
-            if duid_for_render is None or duid_for_render == "":
+            if not duid_for_render:
                 raise ValueError("Could not resolve device_id/duid for async command parameter rendering")
             
-            render_context["device_id"] = duid_for_render
+            render_context[TMPL_VAR_DEVICE_ID] = duid_for_render
             render_context.setdefault(KEY_DUID, duid_for_render)
             
             token_from_cfg = cfg.get(CONF_TOKEN_KEY)
@@ -686,10 +690,10 @@ class DeviceOperation(DeviceProperty):
     ) -> dict[str, Any] | None:
         """Resolve the final {method, url, json, headers} dict for an async command."""
         render_ctx = {
-            "value": dev_value,
-            "device_id": duid,
+            TMPL_VAR_VALUE: dev_value,
+            TMPL_VAR_DEVICE_ID: duid,
             KEY_DUID: duid,
-            "device_state": device_state if device_state is not None else {},
+            TMPL_VAR_DEVICE_STATE: device_state if device_state is not None else {},
         }
         conn_tmpl = getattr(connection, "_connection_template", None)
         template_to_use = self.connection_template if self.connection_template is not None else conn_tmpl
@@ -725,8 +729,14 @@ class DeviceOperation(DeviceProperty):
             else:
                 try:
                     base_params = json_loads(rendered_base)
-                except (ValueError, TypeError):
-                    pass
+                except (ValueError, TypeError) as err:
+                    _LOGGER.warning(
+                        "%s Base parameter template rendered invalid JSON for %s: %s",
+                        self.log_prefix,
+                        self.id,
+                        err,
+                    )
+                    base_params = {}
 
             if not isinstance(base_params, dict):
                 base_params = {}
@@ -756,7 +766,7 @@ class DeviceOperation(DeviceProperty):
                 cfg = connection.config if isinstance(connection.config, dict) else {}
                 duid_from_cfg = cfg.get(KEY_DUID)
                 duid_for_render = device_id or (self._controller.device_id if self._controller is not None else None) or duid_from_cfg
-                if duid_for_render is None or duid_for_render == "":
+                if not duid_for_render:
                     raise ValueError("Could not resolve device_id/duid for async command parameter rendering")
 
                 # dev_value is already calculated and validated above
@@ -779,7 +789,7 @@ class DeviceOperation(DeviceProperty):
                     await connection.async_execute(None, None, params[KEY_RAW_PAYLOAD], None)
                     return True
 
-                data_payload = json_dumps(params["json"]) if "json" in params else None
+                data_payload = json_dumps(params[KEY_JSON_PAYLOAD]) if KEY_JSON_PAYLOAD in params else None
                 method = params.get(KEY_METHOD)
                 url = params.get(KEY_URL)
                 
@@ -1037,7 +1047,9 @@ class ModeOperation(BasicDeviceOperation):
             ATTR_PRESET_MODE: ATTR_PRESET_MODES,
             ATTR_SWING_MODE: ATTR_SWING_MODES,
         }
-        list_attribute_name = mode_map.get(self._id, f"{self._id}s")
+        list_attribute_name = mode_map.get(self._id)
+        if list_attribute_name is None:
+            list_attribute_name = f"{self.id}s"
 
         return {
             self.id: self.value,
@@ -1105,13 +1117,17 @@ class BasicNumericOperation(DeviceOperation):
 
     @property
     def value(self) -> float | None:
-        """Return the current value as a float, or None if invalid or boolean."""
+        """Return the current value as a float, strictly validating numeric types."""
         if self._value is None or isinstance(self._value, bool):
             return None
-        try:
+        if isinstance(self._value, (int, float)):
             return float(self._value)
-        except (ValueError, TypeError):
-            return None
+        if isinstance(self._value, str):
+            try:
+                return float(self._value.strip())
+            except ValueError:
+                return None
+        return None
 
     @value.setter
     def value(self, val: Any) -> None:
@@ -1124,7 +1140,7 @@ class BasicNumericOperation(DeviceOperation):
             return False
         try:
             converted = float(self.convert_hass_to_dev(float(value)))
-            return math.isclose(converted, float(value), rel_tol=1e-7)
+            return round(converted, 2) == round(float(value), 2)
         except (ValueError, TypeError):
             return False
 
@@ -1209,7 +1225,7 @@ class TemperatureOperation(BasicNumericOperation):
                 _LOGGER.error("Error parsing unit template: %s", e)
                 raise HomeAssistantError(f"Error parsing unit template: {e}") from e
 
-        v = STATE_UNKNOWN
+        v = None
         if self.status_template is not None and device_state is not None:
             try:
                 v = render_template(self.status_template, device_state=device_state)
@@ -1222,7 +1238,7 @@ class TemperatureOperation(BasicNumericOperation):
                 _LOGGER.error("%s Error rendering status template for %s: %s", self.log_prefix, self.id, e)
                 raise HomeAssistantError(f"Error rendering status template: {e}") from e
 
-        if v != STATE_UNKNOWN:
+        if v is not None:
             res = self._convert_dev_to_hass_with_unit(v, device_unit)
             _LOGGER.debug(
                 "%s [Forensic-Temp] Calculated %s value '%s' (raw: %s, dev_unit: %s)",
@@ -1233,7 +1249,7 @@ class TemperatureOperation(BasicNumericOperation):
                 device_unit,
             )  # pragma: no mutate
             return res
-        return STATE_UNKNOWN
+        return None
 
     async def async_update_state(
         self, device_state_override: dict[str, Any] | None = None, *_args: Any
@@ -1254,7 +1270,7 @@ class TemperatureOperation(BasicNumericOperation):
                 raise HomeAssistantError(f"Could not render unit template: {e}") from e
 
         v = self.calculate_value_from_state(device_state)
-        if v != STATE_UNKNOWN:
+        if v is not None:
             self.value = v
         return self.value
 

@@ -24,7 +24,12 @@ KEY_METHOD: final = "method"
 KEY_URL: final = "url"
 KEY_HEADERS: final = "headers"
 KEY_RAW_PAYLOAD: final = "_raw"
+KEY_JSON_PAYLOAD: final = "json"
+TMPL_VAR_DEVICE_ID: final = "device_id"
+TMPL_VAR_VALUE: final = "value"
+TMPL_VAR_DEVICE_STATE: final = "device_state"
 ID_DELIMITER: final = "_"
+
 
 
 # --- Configurable Options ---
@@ -213,8 +218,6 @@ YAML_SWING = "swing"
 YAML_SPECIAL = "special"
 
 # --- Intermediate Constants and Maps ---
-TOTAL_INCREASING_DEVICE_CLASSES = ("carbon_monoxide", "gas")
-MEASUREMENT_DEVICE_CLASSES = ("power", "temperature", "humidity", "voltage", "current")
 DEFAULT_JSON_STATUS_PAYLOAD = '{"method": "GET", "url": "/devices"}'
 MODE_PROPERTY_SUFFIX = "_mode"
 KEY_HVAC = "hvac"
