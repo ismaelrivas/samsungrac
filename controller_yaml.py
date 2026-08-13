@@ -70,22 +70,21 @@ class YamlController(ClimateController):
     @classmethod
     def _extract_config_from_entry(
         cls, config_entry: ConfigEntry, device_id: str | None
-    ) -> "types.MappingProxyType[str, Any]":
-        """Extract config and options as an immutable MappingProxyType."""
-        import types
-        entry_data = {**config_entry.data, **config_entry.options}
-        entry_data[CONF_ENTRY_ID] = config_entry.entry_id
-
+    ) -> dict[str, Any]:
+        """Extract config and options as a pure dict for strict instantiation."""
+        entry_data = {**config_entry.data, **config_entry.options, CONF_ENTRY_ID: config_entry.entry_id}
+        
         base_unique_id = config_entry.unique_id
-        if base_unique_id is not None and device_id is not None and cls._is_subdevice(device_id):
-            entry_data[CONF_UNIQUE_ID] = f"{base_unique_id}{ID_DELIMITER}{device_id}"
-        else:
-            entry_data[CONF_UNIQUE_ID] = base_unique_id
+        entry_data[CONF_UNIQUE_ID] = (
+            f"{base_unique_id}{ID_DELIMITER}{device_id}" 
+            if base_unique_id is not None and device_id is not None and cls._is_subdevice(device_id) 
+            else base_unique_id
+        )
 
         if device_id is not None:
             entry_data[CONF_DEVICE_ID] = device_id
             
-        return types.MappingProxyType(entry_data)
+        return entry_data
 
     @classmethod
     def from_config_entry(
@@ -117,7 +116,7 @@ class YamlController(ClimateController):
         log = logger or _LOGGER
 
         if config is None and config_entry is not None:
-            config = dict(self._extract_config_from_entry(config_entry, device_id))
+            config = self._extract_config_from_entry(config_entry, device_id)
         elif config is not None:
             config = dict(config)
         else:
@@ -133,9 +132,11 @@ class YamlController(ClimateController):
             logger = _LOGGER
 
         super().__init__(config, logger)  # pragma: no mutate
-        self._config = {
-            k: v for k, v in config.items() if k not in NON_SERIALIZABLE_KEYS
-        }
+        
+        import types
+        self._config = types.MappingProxyType(
+            {k: v for k, v in config.items() if k not in NON_SERIALIZABLE_KEYS}
+        )
 
         self.hass = hass
         self._session = session
@@ -263,8 +264,12 @@ class YamlController(ClimateController):
     @device_id.setter
     def device_id(self, value: str | None) -> None:
         """Update the device ID and its internal configuration."""
+        import types
+        
         self._device_id = value
-        self._config[CONF_DEVICE_ID] = value
+        new_config = dict(self._config)
+        new_config[CONF_DEVICE_ID] = value
+        self._config = types.MappingProxyType(new_config)
 
     @property
     def config(self) -> dict[str, Any]:
@@ -279,8 +284,12 @@ class YamlController(ClimateController):
     @token.setter
     def token(self, value: str | None) -> None:
         """Update the authentication token."""
+        import types
+        
         self._token = value
-        self._config[CONF_TOKEN] = value
+        new_config = dict(self._config)
+        new_config[CONF_TOKEN] = value
+        self._config = types.MappingProxyType(new_config)
 
     @property
     def ip_address(self) -> str | None:
