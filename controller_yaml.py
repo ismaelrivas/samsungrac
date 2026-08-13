@@ -440,11 +440,12 @@ class YamlController(ClimateController):
             if all_vals is not None:
                 if not isinstance(all_vals, (list, tuple, set)):
                     raise TypeError(f"Expected iterable for {property_name} all_vals, got {type(all_vals).__name__}")
-                return [
-                    str(v)
-                    for v in all_vals
-                    if v is not None and not isinstance(v, bool)
-                ]
+                res = []
+                for v in all_vals:
+                    if v is None or isinstance(v, bool):
+                        raise TypeError(f"Invalid mode value configured: {v}")
+                    res.append(str(v))
+                return res
 
         _LOGGER.debug(  # pragma: no mutate
             "%s Cannot get values for '%s': not an operation or missing all_values",
@@ -558,11 +559,10 @@ class YamlController(ClimateController):
             if (mode := self._safe_parse_hvac_mode(m)) is not None
         ]
         def _filter_str_modes(modes: list[Any]) -> tuple[str, ...]:
-            return tuple(
-                str(m)
-                for m in modes
-                if m is not None and not isinstance(m, bool)
-            )
+            for m in modes:
+                if not isinstance(m, str):
+                    raise TypeError(f"Mode must be a string, got {type(m).__name__}: {m}")
+            return tuple(modes)
         return (
             tuple(parsed_hvac_modes),
             _filter_str_modes(fan_modes_list),
