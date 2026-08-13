@@ -69,7 +69,7 @@ class YamlController(ClimateController):
 
     @classmethod
     def _extract_config_from_entry(
-        cls, config_entry: ConfigEntry, device_id: str | None, logger: logging.Logger
+        cls, config_entry: ConfigEntry, device_id: str | None
     ) -> dict[str, Any]:
         """Extract and merge config and options from a ConfigEntry immutably."""
         # Deterministic dictionary merge: options strictly override data
@@ -102,7 +102,7 @@ class YamlController(ClimateController):
     ) -> YamlController:
         """Create a YamlController instance directly from a ConfigEntry."""
         log = logger or _LOGGER
-        config = cls._extract_config_from_entry(config_entry, device_id, log)
+        config = cls._extract_config_from_entry(config_entry, device_id)
         return cls(config=config, logger=log, hass=hass, session=session, config_entry=config_entry, device_id=device_id)
 
     def __init__(
@@ -121,7 +121,7 @@ class YamlController(ClimateController):
         log = logger or _LOGGER
 
         if config is None and config_entry is not None:
-            config = self._extract_config_from_entry(config_entry, device_id, log)
+            config = self._extract_config_from_entry(config_entry, device_id)
         elif config is None:
             config = {}
         else:
