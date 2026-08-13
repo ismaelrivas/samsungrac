@@ -171,8 +171,8 @@ class YamlController(ClimateController):
         if raw_host is not None and not isinstance(raw_host, str):
             raise TypeError(f"{CONF_HOST} must be a string")
             
-        resolved_ip = raw_ip if raw_ip is not None and raw_ip.strip() != "" else raw_host
-        if resolved_ip is None or resolved_ip.strip() == "":
+        resolved_ip = raw_ip if raw_ip is not None and bool(raw_ip.strip()) else raw_host
+        if not resolved_ip or not bool(resolved_ip.strip()):
             raise ValueError(ERR_MISSING_IP)
         self._ip_address = resolved_ip.strip()
 
@@ -235,7 +235,7 @@ class YamlController(ClimateController):
         if raw_name is not None:
             if not isinstance(raw_name, str):
                 raise TypeError(f"Expected str for {CONF_NAME}")
-            if raw_name.strip() == "":
+            if not bool(raw_name.strip()):
                 raise ValueError(f"{CONF_NAME} cannot be empty")
             return raw_name
         return DEFAULT_CONTROLLER_NAME
@@ -247,7 +247,7 @@ class YamlController(ClimateController):
             return False
         if not isinstance(device_id, str):
             raise TypeError(f"Expected str for device_id, got {type(device_id).__name__}")
-        if device_id.strip() == "":
+        if not bool(device_id.strip()):
             return False
         return device_id not in EXCLUDED_SUBDEVICE_IDS
 
@@ -355,7 +355,7 @@ class YamlController(ClimateController):
                 if device_id is not None and not isinstance(device_id, str):
                     raise TypeError(f"device_id must be a string, got {type(device_id).__name__}")
                 
-                target_device_id = device_id if (device_id is not None and device_id.strip() != "") else self.device_id
+                target_device_id = device_id if (device_id is not None and bool(device_id.strip())) else self.device_id
                 if target_device_id is None or target_device_id == MAIN_DEVICE_ID:
                     target_device_id = self._unique_id
 
