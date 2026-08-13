@@ -93,7 +93,7 @@ def test_yaml_controller_coverage_boost() -> None:
 
     # 2. Test clear_state_cache with and without poller
     controller = YamlController(
-        config={"device_type": "test_device"}, logger=MagicMock()
+        config={"device_type": "test_device", "ip_address": "127.0.0.1"}, logger=MagicMock()
     )
     controller.clear_state_cache()  # Without poller (should pass safely)
 
@@ -265,7 +265,7 @@ def test_yaml_controller_fallback_else_and_debug_default() -> None:
     """Verifies the fallback branch of device_id assignment and default debug value."""
     mock_logger = logging.getLogger("test_logger")
 
-    config_input = {"unique_id": "fallback_mac_only"}
+    config_input = {"unique_id": "fallback_mac_only", "ip_address": "127.0.0.1"}
 
     with (
         patch("custom_components.climate_ip.controller_yaml.YamlConfigLoader"),
@@ -284,7 +284,7 @@ def test_yaml_controller_fallback_else_and_debug_default() -> None:
 def mock_yaml_controller():
     """Fixture to provide an initialized YamlController with mocked delegates."""
     mock_logger = logging.getLogger("test_logger")
-    config_input = {CONF_CONFIG_FILE: "test.yaml", CONF_MAC: "mac123"}
+    config_input = {CONF_CONFIG_FILE: "test.yaml", CONF_MAC: "mac123", "ip_address": "127.0.0.1"}
 
     with (
         patch("custom_components.climate_ip.controller_yaml.YamlConfigLoader"),
@@ -508,6 +508,12 @@ def test_yaml_controller_climate_state_mapping(
             return 22.5
         if prop == "current_temperature":
             return 25.0
+        if prop == ATTR_FAN_MODE:
+            return "high"
+        if prop == ATTR_SWING_MODE:
+            return "on"
+        if prop == ATTR_PRESET_MODE:
+            return "eco"
         return f"val_{prop}"
 
     mock_yaml_controller.get_property = MagicMock(side_effect=mock_get_prop)
@@ -535,9 +541,9 @@ def test_yaml_controller_climate_state_mapping(
         hvac_mode=HVACMode.COOL,
         target_temperature=22.5,
         current_temperature=25.0,
-        fan_mode=f"val_{ATTR_FAN_MODE}",
-        swing_mode=f"val_{ATTR_SWING_MODE}",
-        preset_mode=f"val_{ATTR_PRESET_MODE}",
+        fan_mode="high",
+        swing_mode="on",
+        preset_mode="eco",
         hvac_modes=(HVACMode.AUTO, HVACMode.HEAT),
         fan_modes=("high", "low"),
         swing_modes=("on", "off"),
@@ -675,7 +681,7 @@ def test_yaml_controller_untested_properties_and_cache() -> None:
     """Cover getters, setters, and clear_state_cache to kill untested mutants."""
     mock_logger = logging.getLogger(__name__)
     controller = YamlController(
-        config={"device_type": "test_device"}, logger=mock_logger
+        config={"device_type": "test_device", "ip_address": "127.0.0.1"}, logger=mock_logger
     )
 
     # 1. shared_raw_client setter

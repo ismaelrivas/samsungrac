@@ -171,12 +171,7 @@ class YamlController(ClimateController):
             self._ip_address = None
 
         if self._ip_address is None:
-            _LOGGER.warning(
-                "%s Neither %s nor %s present in configuration",
-                self.log_prefix,
-                CONF_IP_ADDRESS,
-                CONF_HOST,
-            )
+            raise ValueError(f"Integration requires {CONF_IP_ADDRESS} or {CONF_HOST} to be explicitly set")
 
         # Strict Boolean Parsing (Guarded against string casting trap like 'false' -> True)
         raw_debug = config.get(CONF_DEBUG, False)
@@ -572,6 +567,13 @@ class YamlController(ClimateController):
     def climate_state(self) -> ClimateIPDeviceState:
         """Return the strictly typed state representation of the device."""
         try:
+            if self._cached_static_modes is None:
+                self._cached_static_modes = self._build_static_modes_cache()
+
+            hvac_modes_tuple, fan_modes_tuple, swing_modes_tuple, preset_modes_tuple = (
+                self._cached_static_modes
+            )
+
             raw_hvac = self.get_property(ATTR_HVAC_MODE)
             hvac_mode = self._safe_parse_hvac_mode(raw_hvac)
 
@@ -584,32 +586,28 @@ class YamlController(ClimateController):
             )
 
             raw_fan = self.get_property(ATTR_FAN_MODE)
-            fan_mode = (
-                str(raw_fan)
-                if raw_fan is not None and not isinstance(raw_fan, bool)
-                else None
-            )
+            fan_mode = None
+            if raw_fan is not None and not isinstance(raw_fan, bool):
+                fan_str = str(raw_fan)
+                if fan_modes_tuple and fan_str not in fan_modes_tuple:
+                    raise ValueError(f"Device returned invalid fan mode: {fan_str}")
+                fan_mode = fan_str
 
             raw_swing = self.get_property(ATTR_SWING_MODE)
-            swing_mode = (
-                str(raw_swing)
-                if raw_swing is not None and not isinstance(raw_swing, bool)
-                else None
-            )
+            swing_mode = None
+            if raw_swing is not None and not isinstance(raw_swing, bool):
+                swing_str = str(raw_swing)
+                if swing_modes_tuple and swing_str not in swing_modes_tuple:
+                    raise ValueError(f"Device returned invalid swing mode: {swing_str}")
+                swing_mode = swing_str
 
             raw_preset = self.get_property(ATTR_PRESET_MODE)
-            preset_mode = (
-                str(raw_preset)
-                if raw_preset is not None and not isinstance(raw_preset, bool)
-                else None
-            )
-
-            if self._cached_static_modes is None:
-                self._cached_static_modes = self._build_static_modes_cache()
-
-            hvac_modes_tuple, fan_modes_tuple, swing_modes_tuple, preset_modes_tuple = (
-                self._cached_static_modes
-            )
+            preset_mode = None
+            if raw_preset is not None and not isinstance(raw_preset, bool):
+                preset_str = str(raw_preset)
+                if preset_modes_tuple and preset_str not in preset_modes_tuple:
+                    raise ValueError(f"Device returned invalid preset mode: {preset_str}")
+                preset_mode = preset_str
 
             return ClimateIPDeviceState(
                 hvac_mode=hvac_mode,
