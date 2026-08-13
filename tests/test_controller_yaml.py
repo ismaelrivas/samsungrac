@@ -683,5 +683,6 @@ def test_yaml_controller_untested_properties_and_cache() -> None:
 
 
     # 3. clear_state_cache
+    controller.poller = MagicMock()
     controller.clear_state_cache()
     controller.poller.clear_state_cache.assert_called_once()
