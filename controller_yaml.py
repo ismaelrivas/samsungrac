@@ -552,27 +552,27 @@ class YamlController(ClimateController):
         """Build and cache the static modes supported by the device."""
         hvac_raw = self.get_property_all_values(ATTR_HVAC_MODE)
         hvac_modes_list = [] if hvac_raw is None else hvac_raw
+        
         fan_raw = self.get_property_all_values(ATTR_FAN_MODE)
-        fan_modes_list = [] if fan_raw is None else fan_raw
+        fan_modes_tuple = tuple(fan_raw) if fan_raw is not None else ()
+        
         swing_raw = self.get_property_all_values(ATTR_SWING_MODE)
-        swing_modes_list = [] if swing_raw is None else swing_raw
+        swing_modes_tuple = tuple(swing_raw) if swing_raw is not None else ()
+        
         preset_raw = self.get_property_all_values(ATTR_PRESET_MODE)
-        preset_modes_list = [] if preset_raw is None else preset_raw
+        preset_modes_tuple = tuple(preset_raw) if preset_raw is not None else ()
+        
         parsed_hvac_modes = [
             mode
             for m in hvac_modes_list
             if (mode := self._safe_parse_hvac_mode(m)) is not None
         ]
-        def _filter_str_modes(modes: list[Any]) -> tuple[str, ...]:
-            for m in modes:
-                if not isinstance(m, str):
-                    raise TypeError(f"Mode must be a string, got {type(m).__name__}: {m}")
-            return tuple(modes)
+        
         return (
             tuple(parsed_hvac_modes),
-            _filter_str_modes(fan_modes_list),
-            _filter_str_modes(swing_modes_list),
-            _filter_str_modes(preset_modes_list),
+            fan_modes_tuple,
+            swing_modes_tuple,
+            preset_modes_tuple,
         )
 
     @property
