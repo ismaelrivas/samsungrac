@@ -385,7 +385,9 @@ class YamlController(ClimateController):
         """Return the current value of a property by name using safe extraction."""
         obj = self.get_property_object(property_name)
         val = obj.value if obj is not None else self._attributes.get(property_name)
-        return None if val == STATE_UNKNOWN else val
+        if val is None or val == STATE_UNKNOWN:
+            return None
+        return val
 
     @property
     def _objects_by_id(self) -> dict[str, DeviceProperty]:
