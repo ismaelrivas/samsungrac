@@ -48,6 +48,7 @@ from .const import (
     CONFIG_UNIT_OF_MEASUREMENT,
     DEFAULT_CACHE_KEY_ID,
     DEFAULT_JSON_STATUS_PAYLOAD,
+    DEGREE_SYMBOL,
     FALLBACK_DEVICE_ID,
     ID_DELIMITER,
     KEY_DEVICE_CONFIG,
@@ -70,7 +71,10 @@ from .const import (
     PROPERTY_TYPE_STRING,
     PROPERTY_TYPE_SWITCH,
     PROPERTY_TYPE_TEMP,
+    PROPERTY_TYPE_UNIQUE_ID,
     STATUS_GETTER_JSON,
+    TEMP_UNIT_CELSIUS_ALIASES,
+    TEMP_UNIT_FAHRENHEIT_ALIASES,
     TOTAL_INCREASING_DEVICE_CLASSES,
     VALIDATION_SUCCESS_TOKEN,
     YAML_NAME_TO_HA_FEATURE,
@@ -101,10 +105,10 @@ def _parse_temperature_unit(unit: str | UnitOfTemperature | Any, strict: bool = 
             raise ValueError(f"Invalid temperature unit: {unit}")
         return UnitOfTemperature.CELSIUS
 
-    u = unit.replace("°", "").strip().upper()
-    if u in ("C", "CELSIUS"):
+    u = unit.replace(DEGREE_SYMBOL, "").strip().upper()
+    if u in TEMP_UNIT_CELSIUS_ALIASES:
         return UnitOfTemperature.CELSIUS
-    if u in ("F", "FAHRENHEIT"):
+    if u in TEMP_UNIT_FAHRENHEIT_ALIASES:
         return UnitOfTemperature.FAHRENHEIT
 
     if strict:
@@ -244,7 +248,7 @@ class DeviceProperty:
             id_map = cache.get(device_id, {}).get(KEY_DEVICE_CONFIG, {}).get(KEY_IDENTIFIERS, {})
             path = id_map.get(KEY_PATH_TO_DEVICES)
             
-            if path is None or len(path) == 0:
+            if not path:
                 return dict(raw_dict)
                 
             devices_list = get_value_by_path(raw_dict, path)
@@ -523,15 +527,9 @@ class GetJsonStatus(DeviceProperty):
                 if isinstance(v, str):
                     v = v.strip()
                     try:
-                        # 1. Try strictly as JSON (handles 'null', 'true', double quotes)
                         return json_loads(v)
                     except JSON_DECODE_EXCEPTIONS:
-                        try:
-                            # 2. Fallback to Python AST literal (handles 'None', 'True', single quotes)
-                            return ast.literal_eval(v)
-                        except (ValueError, SyntaxError):
-                            # 3. Safe fallback if it's just a regular string
-                            return v
+                        return v
                 return v
             except (TemplateError, TypeError, ValueError) as e:
                 _LOGGER.debug(
@@ -575,7 +573,7 @@ class GetJsonStatus(DeviceProperty):
             )
             
             duid_for_render = getattr(self._controller, "device_id", None) or duid_from_cfg
-            if duid_for_render is None or len(duid_for_render) == 0:
+            if not duid_for_render:
                 raise ValueError("Could not resolve device_id/duid for async command parameter rendering")
             
             render_context["device_id"] = duid_for_render
@@ -692,7 +690,7 @@ class DeviceOperation(DeviceProperty):
         else:
             operation_params = dict(getattr(connection, "_params", {}))
 
-        if operation_params is None or len(operation_params) == 0:
+        if not operation_params:
             _LOGGER.error(
                 "%s [_resolve_async_params] No params or template found.",
                 self.log_prefix,
@@ -859,7 +857,7 @@ class BasicDeviceOperation(DeviceOperation):
 
             if node is not None:
                 node_values = node.get(CONFIG_DEVICE_OPERATION_VALUES, {})
-                if node_values is None or len(node_values) == 0:
+                if not node_values:
                     return False
 
                 for ha_value in node_values.keys():
@@ -898,7 +896,7 @@ class BasicDeviceOperation(DeviceOperation):
     @property
     def values(self) -> list[Any]:
         """Return a list of valid values, which can be dynamic."""
-        if len(self._value_validation_templates) == 0:
+        if not self._value_validation_templates:
             return list(self._values)
 
         hvac_node = None
@@ -949,8 +947,8 @@ class BasicDeviceOperation(DeviceOperation):
             self._values_cache[cache_key] = valid_values
 
         if (
-            len(valid_values) > 0
-            and len(self._last_valid_values) > 0
+            bool(valid_values)
+            and bool(self._last_valid_values)
             and sorted(valid_values) != sorted(self._last_valid_values)
         ):
             _LOGGER.debug(
@@ -1060,7 +1058,7 @@ class UniqueIdProperty(DeviceProperty):
     @staticmethod
     def match_type(prop_type: str) -> bool:
         """Return True if this property handles the given type."""
-        return prop_type == "unique_id"
+        return prop_type == PROPERTY_TYPE_UNIQUE_ID
 
 
 @register_property

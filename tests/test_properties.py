@@ -229,13 +229,12 @@ async def test_getjsonstatus_calculate_value_valid(mock_connection, mock_control
     """Pattern 1 & 2: Strict identity and valid string to JSON conversion."""
     g = GetJsonStatus("test", mock_connection, mock_controller)
     mock_template = MagicMock()
-    # Replace ' with " and True with "True" is part of the code's behavior
-    mock_template.async_render.return_value = "{'key': True}"
+    mock_template.async_render.return_value = '{"key": true}'
     g._status_template = mock_template
 
     dev_state = {"raw": "data"}
     res = g.calculate_value_from_state(dev_state)
-    assert res == {"key": True}  # Dual-parser AST literal_eval preserves boolean True
+    assert res == {"key": True}
 
 
 async def test_getjsonstatus_calculate_value_exception(

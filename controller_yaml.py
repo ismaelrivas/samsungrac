@@ -81,13 +81,15 @@ class YamlController(ClimateController):
         self.poller: Any | None = None
 
         if config is None and config_entry is not None:
-            config = {**config_entry.data, **config_entry.options}
+            config = dict(config_entry.data)
+            if config_entry.options:
+                config.update(config_entry.options)
             config[CONF_ENTRY_ID] = config_entry.entry_id
 
             base_unique_id = config_entry.unique_id
             if device_id is not None and device_id != MAIN_DEVICE_ID:
                 config[CONF_UNIQUE_ID] = (
-                    f"{base_unique_id}_{device_id}"
+                    f"{base_unique_id}{ID_DELIMITER}{device_id}"
                     if base_unique_id is not None
                     else device_id
                 )
@@ -222,7 +224,7 @@ class YamlController(ClimateController):
             and self._device_id != MAIN_DEVICE_ID
             and self._device_id != self._unique_id
         ):
-            suffix = f"_{self._device_id}"
+            suffix = f"{ID_DELIMITER}{self._device_id}"
             if not self._unique_id.endswith(suffix):
                 return f"{self._unique_id}{suffix}"
         return self._unique_id
@@ -471,7 +473,7 @@ class YamlController(ClimateController):
     def pure_device_state(self) -> dict[str, Any]:
         """Return the unmutated pure network state of the device."""
         pure = self.poller.pure_network_state
-        if isinstance(pure, dict) and len(pure) > 0:
+        if isinstance(pure, dict) and bool(pure):
             return dict(pure)
         return self.device_state
 
@@ -479,7 +481,7 @@ class YamlController(ClimateController):
     def device_state(self) -> dict[str, Any]:
         """Return the current device state via the poller's public interface."""
         state = self.poller.device_state
-        if isinstance(state, dict) and len(state) > 0:
+        if isinstance(state, dict) and bool(state):
             return dict(state)
         if self.loader.state_getter is not None:
             getter_value = self.loader.state_getter.value

@@ -193,7 +193,12 @@ PROPERTY_TYPE_NUMBER = "number"
 PROPERTY_TYPE_TEMP = "temperature"
 PROPERTY_TYPE_STRING = "string"
 PROPERTY_TYPE_ENUM = "enum"
+PROPERTY_TYPE_UNIQUE_ID = "unique_id"
 STATUS_GETTER_JSON = "json_status"
+
+TEMP_UNIT_CELSIUS_ALIASES: final = ("C", "CELSIUS")
+TEMP_UNIT_FAHRENHEIT_ALIASES: final = ("F", "FAHRENHEIT")
+DEGREE_SYMBOL: final = "°"
 
 # --- Default Climate Values ---
 DEFAULT_CLIMATE_IP_TEMP_MIN: float = 8.0
