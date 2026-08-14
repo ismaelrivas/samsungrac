@@ -178,8 +178,16 @@
       "description": "El dispositivo **{device_name}** en **{ip_address}** no está localizable. Verifica la alimentación y la conexión a tu red local."
     },
     "auto_healing_raw": {
-      "title": "Samsung Climate IP: Auto-healing ({device_name})",
-      "description": "El dispositivo **{device_name}** ha presentado anomalías de protocolo HTTP (cabeceras malformadas no conformes con RFC 7230 enviadas por el firmware del equipo).\n\nLa integración ha cambiado automáticamente el modo de conexión a **'Robust (raw socket)'** para asegurar la operatividad continua y evitar caídas de red."
+      "title": "Modo de conexión actualizado ({device_name})",
+      "description": "El dispositivo **{device_name}** ha enviado respuestas HTTP no estándar.\n\nEl modo de conexión se ha cambiado automáticamente a **'Robust (raw socket)'** para asegurar la operatividad continua.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Modo de conexión actualizado",
+            "description": "El modo de conexión para **{device_name}** se ha cambiado automáticamente a **'Robust (raw socket)'** para corregir las anomalías de protocolo del equipo.\n\nHaz clic en Enviar para confirmar y cerrar este aviso."
+          }
+        }
+      }
     }
   },
   "selector": {

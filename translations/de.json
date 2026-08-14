@@ -178,8 +178,16 @@
       "description": "Das Gerät **{device_name}** unter **{ip_address}** ist nicht erreichbar. Bitte überprüfen Sie Stromversorgung und Netzwerkverbindung."
     },
     "auto_healing_raw": {
-      "title": "Samsung Climate IP: Auto-Healing ({device_name})",
-      "description": "Das Gerät **{device_name}** wies Anomalien im HTTP-Protokoll auf (fehlerhafte Header gemäß RFC 7230 von der Firmware gesendet).\n\nDie Integration hat den Verbindungsmodus automatisch auf **'Robust (Raw Socket)'** umgestellt, um einen unterbrechungsfreien Betrieb zu gewährleisten."
+      "title": "Verbindungsmodus aktualisiert ({device_name})",
+      "description": "Das Gerät **{device_name}** hat nicht standardkonforme HTTP-Antworten gesendet.\n\nDer Verbindungsmodus wurde automatisch auf **'Robust (Raw Socket)'** umgestellt, um den Betrieb zu sichern.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Verbindungsmodus aktualisiert",
+            "description": "Der Verbindungsmodus für **{device_name}** wurde automatisch auf **'Robust (Raw Socket)'** umgestellt.\n\nKlicken Sie auf Absenden, um diesen Hinweis zu bestätigen."
+          }
+        }
+      }
     }
   },
   "selector": {

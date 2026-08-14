@@ -178,8 +178,16 @@
             "description": "The device **{device_name}** at **{ip_address}** is persistently unreachable. Please verify power and network connection."
         },
         "auto_healing_raw": {
-            "title": "Samsung Climate IP: Auto-healing ({device_name})",
-            "description": "The device **{device_name}** exhibited HTTP protocol anomalies (malformed headers violating RFC 7230 sent by firmware).\n\nThe integration has automatically changed the connection mode to **'Robust (raw socket)'** to ensure continuous operation and prevent connection drops."
+            "title": "Connection mode updated ({device_name})",
+            "description": "The device **{device_name}** sent non-standard HTTP responses.\n\nThe connection mode was automatically switched to **'Robust (raw socket)'** to ensure continuous operation.",
+            "fix_flow": {
+                "step": {
+                    "confirm": {
+                        "title": "Connection mode updated",
+                        "description": "The connection mode for **{device_name}** was automatically switched to **'Robust (raw socket)'** to resolve protocol anomalies.\n\nClick Submit to confirm and dismiss this notice."
+                    }
+                }
+            }
         }
     },
     "selector": {

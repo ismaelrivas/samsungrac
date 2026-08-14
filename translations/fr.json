@@ -178,8 +178,16 @@
       "description": "L'appareil **{device_name}** à l'adresse **{ip_address}** est injoignable. Veuillez vérifier l'alimentation et la connexion réseau."
     },
     "auto_healing_raw": {
-      "title": "Samsung Climate IP : Auto-healing ({device_name})",
-      "description": "L'appareil **{device_name}** a présenté des anomalies de protocole HTTP (en-têtes non conformes à la RFC 7230 envoyés par le micrologiciel).\n\nL'intégration a automatiquement basculé le mode de connexion vers **'Robust (raw socket)'** pour garantir un fonctionnement continu."
+      "title": "Mode de connexion mis à jour ({device_name})",
+      "description": "L'appareil **{device_name}** a envoyé des réponses HTTP non standard.\n\nLe mode de connexion a été automatiquement basculé vers **'Robust (raw socket)'** pour garantir un fonctionnement continu.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Mode de connexion mis à jour",
+            "description": "Le mode de connexion pour **{device_name}** a été automatiquement basculé vers **'Robust (raw socket)'**.\n\nCliquez sur Valider pour confirmer et fermer cet avertissement."
+          }
+        }
+      }
     }
   },
   "selector": {

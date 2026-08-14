@@ -21,6 +21,8 @@ from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.issue_registry import (
     IssueSeverity,
     async_create_issue,
+    async_delete_issue,
+    async_get as async_get_issue_registry,
 )
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
@@ -323,6 +325,31 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 connections=conns,
             )  # pragma: no mutate
 
+        # Clean up auto-healing repair issue on restart if previously dismissed/ignored
+        self._async_cleanup_auto_healing_issue_if_ignored()
+
+    @callback
+    def _async_cleanup_auto_healing_issue_if_ignored(self) -> None:
+        """Delete auto-healing issue from registry if it was ignored/dismissed by the user."""
+        try:
+            safe_device_id = self.unique_id.replace(".", "_").replace(" ", "_")
+            issue_id = f"auto_healing_raw_{safe_device_id}"
+            registry = async_get_issue_registry(self.hass)
+            issue = registry.async_get_issue(DOMAIN, issue_id)
+            if issue is not None and issue.dismissed_version is not None:
+                async_delete_issue(self.hass, DOMAIN, issue_id)
+                _LOGGER.debug(
+                    "%s Cleaned up ignored auto-healing repair issue '%s'",
+                    self.log_prefix,
+                    issue_id,
+                )
+        except Exception as err:  # pylint: disable=broad-exception-caught
+            _LOGGER.debug(
+                "%s Failed to check/cleanup ignored repair issue: %s",
+                self.log_prefix,
+                err,
+            )
+
     @callback
     def _async_save_new_token(self, new_token: str) -> None:
         """Callback to save the renewed token from the network layer."""
@@ -386,11 +413,14 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             self.hass,
             DOMAIN,
             f"auto_healing_raw_{safe_device_id}",
-            is_fixable=False,
+            is_fixable=True,
             is_persistent=False,
             severity=IssueSeverity.WARNING,
             translation_key="auto_healing_raw",
             translation_placeholders={
+                "device_name": device_name,
+            },
+            data={
                 "device_name": device_name,
             },
         )

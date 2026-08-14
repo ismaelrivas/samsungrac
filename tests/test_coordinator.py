@@ -1902,3 +1902,24 @@ async def test_push_update_suppressed_during_active_debouncing(hass: HomeAssista
         coordinator.async_set_updated_data.assert_called_once_with("state_1")
 
 
+async def test_cleanup_auto_healing_issue_if_ignored(hass: HomeAssistant) -> None:
+    """Test that an ignored auto-healing repair issue is deleted upon coordinator init."""
+    from unittest.mock import MagicMock, patch
+    from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
+
+    mock_controller = MagicMock()
+    mock_controller.unique_id = "test_ac_unique"
+    mock_controller.log_prefix = "[TestAC]"
+    mock_entry = MagicMock(options={}, data={})
+
+    mock_registry = MagicMock()
+    mock_issue = MagicMock()
+    mock_issue.dismissed_version = "2026.4.3"
+    mock_registry.async_get_issue.return_value = mock_issue
+
+    with patch("custom_components.climate_ip.coordinator.async_get_issue_registry", return_value=mock_registry), \
+         patch("custom_components.climate_ip.coordinator.async_delete_issue") as mock_delete:
+        coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+        mock_delete.assert_called_once_with(hass, "climate_ip", "auto_healing_raw_test_ac_unique")
+
+
