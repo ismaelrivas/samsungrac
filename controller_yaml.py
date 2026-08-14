@@ -290,7 +290,7 @@ class YamlController(ClimateController):
     @staticmethod
     def _is_subdevice(device_id: str | None) -> bool:
         """Return True if device_id represents a sub-device."""
-        if not device_id or not device_id.strip():
+        if device_id is None or len(device_id.strip()) == 0:
             return False
         return device_id not in EXCLUDED_SUBDEVICE_IDS
 
@@ -442,10 +442,14 @@ class YamlController(ClimateController):
             ):
                 for op in collection.values():
                     op_id = op.id
-                    if op_id and op_id.strip():
+                    if op_id is not None and len(op_id.strip()) > 0:
                         cache[op_id] = op
                         hass_attr = self.poller.get_hass_attr_for_op_id(op_id)
-                        if hass_attr and hass_attr not in cache:
+                        if (
+                            hass_attr is not None
+                            and len(hass_attr.strip()) > 0
+                            and hass_attr not in cache
+                        ):
                             cache[hass_attr] = op
             self._obj_id_cache = cache
         return self._obj_id_cache
