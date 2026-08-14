@@ -166,8 +166,8 @@ class PropertyDebouncer:
         # 🛡️ Package the payload with the CURRENT Generation ID
         self._pending_payloads[property_name] = (coroutine_func, args, kwargs, self._generation)
 
-        def _fire_delayed(prop_or_now: Any = None) -> None:
-            prop = prop_or_now if isinstance(prop_or_now, str) else property_name
+        def _fire_delayed(_now: Any = None) -> None:
+            prop = property_name
             self._timers.pop(prop, None)
             payload = self._pending_payloads.pop(prop, None)
 

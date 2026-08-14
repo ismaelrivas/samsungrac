@@ -1617,27 +1617,22 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
         async def dummy_fail_generic(*args, **kwargs):
             raise ValueError("Generic boom")
 
-        debouncer._pending_payloads["prop_net"] = (
-            dummy_fail_network,
-            ("arg1",),
-            {"kw": 1},
-            debouncer._generation,
-        )
-        debouncer._pending_payloads["prop_gen"] = (
-            dummy_fail_generic,
-            ("arg2",),
-            {"kw": 2},
-            debouncer._generation,
-        )
+        now = time.monotonic()
+        debouncer._last_activities["prop_net"] = now
+        debouncer._last_activities["prop_gen"] = now
 
-        callback_fire_delayed = mock_async_call_later.call_args[0][2]
+        await debouncer.async_execute("prop_net", dummy_fail_network, "arg1", kw=1)
+        callback_net = mock_async_call_later.call_args[0][2]
+
+        await debouncer.async_execute("prop_gen", dummy_fail_generic, "arg2", kw=2)
+        callback_gen = mock_async_call_later.call_args[0][2]
 
         with (
             patch("custom_components.climate_ip.coordinator._LOGGER.debug") as mock_debug,
             patch("custom_components.climate_ip.coordinator._LOGGER.error") as mock_error,
         ):
-            callback_fire_delayed("prop_net")
-            callback_fire_delayed("prop_gen")
+            callback_net()
+            callback_gen()
             assert len(created_tasks) > 0
 
             for task in created_tasks:
