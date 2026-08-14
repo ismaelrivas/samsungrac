@@ -32,6 +32,8 @@ from .const import (
     CONN_METHOD_RAW,
     DEFAULT_ENABLE_POLLING,
     DEFAULT_POLL_INTERVAL,
+    DEFAULT_DEVICE_NAME_PREFIX,
+    DEFAULT_SUBDEVICE_NAME,
     DOMAIN,
     HARDWARE_BREATHING_ROOM_SEC,
     MANUFACTURER_SAMSUNG,
@@ -280,7 +282,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         # Build comprehensive DeviceInfo
         if device_info:
             # Sub-device (e.g., Indoor Unit connected via a MIM-H03)
-            name = device_info.get("name") or "Unknown Unit"
+            name = device_info.get("name") or DEFAULT_SUBDEVICE_NAME
             did = device_info.get("id")
 
             # Avoid redundant "ID XXX (ID XXX (Name))"
@@ -311,7 +313,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
             self.device_info = DeviceInfo(
                 identifiers={(DOMAIN, self.unique_id)},
-                name=self.config_entry.data.get(CONF_NAME, f"Samsung AC {self.unique_id}"),
+                name=self.config_entry.data.get(
+                    CONF_NAME, f"{DEFAULT_DEVICE_NAME_PREFIX} {self.unique_id}"
+                ),
                 manufacturer=MANUFACTURER_SAMSUNG,
                 connections=conns,
             )  # pragma: no mutate
@@ -517,19 +521,28 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 )
                 return True
 
-            poller = getattr(self.controller, "poller", None)
-            pending_updates = getattr(poller, "_pending_updates", None)
-            if pending_updates is not None and prop in pending_updates:
-                current_target = pending_updates[prop][0]
-                if current_target != val:
-                    _LOGGER.debug(
-                        "%s [Debouncer] Command for '%s' (val=%s) was superseded by target %s. Dropping stale command.",
-                        self.log_prefix,
-                        prop,
-                        val,
-                        current_target,
-                    )
-                    return True
+            is_superseded = False
+            if hasattr(self.controller, "is_property_superseded"):
+                res_sup = self.controller.is_property_superseded(prop, val)
+                if isinstance(res_sup, bool):
+                    is_superseded = res_sup
+
+            if not is_superseded:
+                poller = getattr(self.controller, "poller", None)
+                pending_updates = getattr(poller, "_pending_updates", None)
+                if pending_updates is not None and prop in pending_updates:
+                    current_target = pending_updates[prop][0]
+                    if current_target != val:
+                        is_superseded = True
+
+            if is_superseded:
+                _LOGGER.debug(
+                    "%s [Debouncer] Command for '%s' (val=%s) was superseded. Dropping stale command.",
+                    self.log_prefix,
+                    prop,
+                    val,
+                )
+                return True
 
             res = await self.controller.async_set_property(prop, val, device_id)
             await asyncio.sleep(HARDWARE_BREATHING_ROOM_SEC)

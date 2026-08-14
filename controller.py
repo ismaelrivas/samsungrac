@@ -40,6 +40,7 @@ class ControllerInterface(Protocol):
     async def async_shutdown(self) -> None: ...
     async def async_merge_device_state(self, data: dict[str, Any]) -> bool: ...
     async def async_clear_pending_updates(self, keys: list[str]) -> None: ...
+    def is_property_superseded(self, prop: str, val: Any) -> bool: ...
 
     # Contratos de Callbacks
     def register_token_callback(
@@ -253,6 +254,16 @@ class ClimateController(ABC):
     def on_connection_failed_callback(self) -> None:  # noqa: B027
         """Callback invoked on critical connection failures."""
         pass
+
+    def is_property_superseded(self, prop: str, val: Any) -> bool:
+        """Return True if an outgoing property command has been superseded by a newer target."""
+        poller = getattr(self, "poller", None)
+        pending_updates = getattr(poller, "_pending_updates", None)
+        if pending_updates is not None and prop in pending_updates:
+            current_target = pending_updates[prop][0]
+            if current_target != val:
+                return True
+        return False
 
 
 def register_controller(
