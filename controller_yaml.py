@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import aiohttp
 import logging
 import math
 import types
@@ -28,7 +29,6 @@ from homeassistant.const import (
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 if TYPE_CHECKING:
-    import aiohttp
     from homeassistant.core import HomeAssistant
     from .connection import ClimateConnection
 
@@ -420,7 +420,7 @@ class YamlController(ClimateController):
             except HomeAssistantError:
                 self.poller.clear_pending_updates([property_name])
                 raise
-            except (TimeoutError, OSError) as e:
+            except (TimeoutError, OSError, aiohttp.ClientError) as e:
                 self.poller.clear_pending_updates([property_name])
                 raise HomeAssistantError(
                     translation_domain=DOMAIN,
@@ -464,14 +464,12 @@ class YamlController(ClimateController):
         if self._obj_id_cache is None:
             cache: dict[str, DeviceProperty] = {}
             for collection in (
-                self.loader.operations,
-                self.loader.properties,
                 self.loader.sensors,
+                self.loader.properties,
+                self.loader.operations,
             ):
                 for op in collection.values():
                     if op.id is not None:
-                        if op.id in cache:
-                            raise ValueError(f"Duplicate internal ID detected in YAML mapping: {op.id}")
                         cache[op.id] = op
             self._obj_id_cache = cache
         return self._obj_id_cache
