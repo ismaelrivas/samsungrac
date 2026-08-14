@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Callable, Coroutine, Protocol, runtime_checkable
 
 ATTR_POWER = "power"
 CLIMATE_CONTROLLERS: list[type[ClimateController]] = []
@@ -38,6 +38,13 @@ class ControllerInterface(Protocol):
     async def async_clear_pending_updates(self, keys: list[str]) -> None: ...
 
     # Contratos de Callbacks
+    def register_token_callback(
+        self,
+        callback: (
+            Callable[[str], Coroutine[Any, Any, None]] | Callable[[str], None] | None
+        ),
+    ) -> None: ...
+    def on_token_refreshed(self, new_token: str) -> None: ...
     def on_ssl_config_updated(self, ssl_config: dict[str, Any]) -> None: ...
     async def on_push_update_callback(self, data: dict[str, Any]) -> None: ...
     async def request_refresh_callback(self) -> None: ...
@@ -57,6 +64,9 @@ class ClimateController(ABC):
         self._connection: Any = None
         self._shared_raw_client: Any = None
         self.discovered_devices: list[dict[str, Any]] | None = None
+        self._token_refreshed_callback: (
+            Callable[[str], Coroutine[Any, Any, None]] | Callable[[str], None] | None
+        ) = None
 
     @staticmethod
     @abstractmethod
@@ -198,6 +208,22 @@ class ClimateController(ABC):
     # STRICT CONTRACT CALLBACKS (Zero Trust)
     # Define safe default no-op implementations to prevent dynamic hasattr() calls
     # =========================================================================
+
+    def register_token_callback(
+        self,
+        callback: (
+            Callable[[str], Coroutine[Any, Any, None]] | Callable[[str], None] | None
+        ),
+    ) -> None:
+        """Register an explicit token refreshed callback."""
+        self._token_refreshed_callback = callback
+
+    def on_token_refreshed(self, new_token: str) -> None:
+        """Invoke the registered token refreshed callback if present."""
+        if not isinstance(new_token, str) or len(new_token.strip()) == 0:
+            raise TypeError("new_token must be a non-empty string")
+        if self._token_refreshed_callback is not None:
+            self._token_refreshed_callback(new_token)
 
     def on_ssl_config_updated(self, ssl_config: dict[str, Any]) -> None:  # noqa: B027
         """Callback invoked when the network negotiates a new SSL configuration."""

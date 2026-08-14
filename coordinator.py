@@ -236,7 +236,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         self._global_network_lock = asyncio.Lock()
 
         # Inject callbacks into the controller to avoid circular dependencies.
-        self.controller.on_token_refreshed = self._async_save_new_token
+        self.controller.register_token_callback(self._async_save_new_token)
         self.controller.get_current_state_callback = self._get_current_state
         self.controller.on_push_update_callback = (
             self.async_handle_push_update

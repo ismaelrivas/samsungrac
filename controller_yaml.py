@@ -4,7 +4,7 @@ import aiohttp
 import logging
 import math
 import types
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
 from homeassistant.components.climate import (
     ATTR_CURRENT_TEMPERATURE,
@@ -793,13 +793,23 @@ class YamlController(ClimateController):
         """
         _LOGGER.debug("%s Refresh from connection requested (no-op)", self.log_prefix)
 
-    def on_token_refreshed(self, new_token: str) -> None:
-        """Callback invoked when the underlying connection refreshes an auth token.
+    def register_token_callback(
+        self,
+        callback: (
+            Callable[[str], Coroutine[Any, Any, None]] | Callable[[str], None] | None
+        ),
+    ) -> None:
+        """Register an explicit token refreshed callback."""
+        self._token_refreshed_callback = callback
 
-        Acts as a safe no-op. Subclasses or specific connection handlers can
-        override or observe this if token persistence is required.
-        """
-        _LOGGER.debug("%s Token refreshed callback received", self.log_prefix)
+    def on_token_refreshed(self, new_token: str) -> None:
+        """Invoke the registered token refreshed callback if present."""
+        if not isinstance(new_token, str) or len(new_token.strip()) == 0:
+            raise TypeError("new_token must be a non-empty string")
+        if self._token_refreshed_callback is not None:
+            self._token_refreshed_callback(new_token)
+        else:
+            _LOGGER.debug("%s Token refreshed callback received (no handler registered)", self.log_prefix)
 
     def get_current_state_callback(self) -> dict[str, Any] | None:
         """Callback invoked by external pollers to request the raw current state.

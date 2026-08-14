@@ -517,6 +517,9 @@ async def test_save_new_token_updates_config_entry(hass: HomeAssistant) -> None:
     mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
     mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[TokenTest]"
+    mock_controller.register_token_callback.side_effect = (
+        lambda cb: setattr(mock_controller, "on_token_refreshed", cb)
+    )
     mock_entry = MagicMock()
     mock_entry.data = {"host": "192.168.1.10", "token": "old_token"}
     mock_entry.options = {}
@@ -546,6 +549,9 @@ async def test_save_new_token_async_flow(hass: HomeAssistant) -> None:
     mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
     mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[TokenAsyncTest]"
+    mock_controller.register_token_callback.side_effect = (
+        lambda cb: setattr(mock_controller, "on_token_refreshed", cb)
+    )
     mock_entry = MagicMock()
     mock_entry.data = {"host": "192.168.1.10", "token": "old_token"}
     mock_entry.options = {}
@@ -599,6 +605,11 @@ async def test_coordinator_injected_callbacks(hass: HomeAssistant) -> None:
     mock_entry.options = {}
 
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+
+    # Check register_token_callback
+    mock_controller.register_token_callback.assert_called_once_with(
+        coordinator._async_save_new_token
+    )
 
     # Check get_current_state_callback
     assert mock_controller.get_current_state_callback is not None
