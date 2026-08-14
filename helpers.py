@@ -537,12 +537,6 @@ async def async_check_network_reachability(
         )  # pragma: no mutate
 
         if host_obj.is_alive:
-            _LOGGER.debug(  # pragma: no mutate
-                "%s Network diagnostic: Host %s responded to UDP ping (RTT: %sms). Network is OK.",  # pragma: no mutate
-                log_prefix,  # pragma: no mutate
-                host,  # pragma: no mutate
-                host_obj.avg_rtt,  # pragma: no mutate
-            )  # pragma: no mutate
             return True
 
         _LOGGER.debug(  # pragma: no mutate

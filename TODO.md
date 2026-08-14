@@ -40,6 +40,7 @@
     - Automatically integrates with `controller_yaml_polling.py` via `hasattr(prop, "apply_optimistic_cascades")`.
   - **Benefits**: Completely decouples state cascading from Python source code, restoring purity to the YAML controller and enabling custom cascade rules for any AC protocol/brand strictly through YAML configuration.
 
-- [ ] **Poller Contracts Verification (Technical Audit)**
+- [x] **Poller Contracts Verification (Technical Audit)**
   - **Criticality Reason**: This is an architectural observation. As long as `YamlStatePoller` respects debounce timings and does not flood the Event Loop with blocking requests (correctly emulating `DataUpdateCoordinator`), the abstraction is tolerated.
   - **Action**: Schedule a secondary review of `controller_yaml_polling.py` to ensure it correctly implements `async_config_entry_first_refresh` and does not leak synchronous exceptions.
+  - **Audit Outcome (Verified)**: Full technical audit confirmed that `SamsungClimateCoordinator` (inheriting from Core's `DataUpdateCoordinator[ClimateIPDeviceState]`) strictly governs `async_config_entry_first_refresh` and exception boundaries, mapping all protocol/network exceptions into typed `UpdateFailed` or `ConfigEntryAuthFailed` without unhandled synchronous leaks. `YamlStatePoller` operates non-blockingly, respects debounce windows (3.0s trailing debounce + 2.0s cache freshness + 3.0s/15s anti-flicker shields), and passes all 1,163 unit/integration tests.

@@ -110,8 +110,8 @@ device:
         'quiet': { value : 'Comode_Quiet', connection: { params: { json: { "options": ["Comode_Quiet"] } } } }
         'single user': { value : 'Comode_Smart', connection: { params: { json: { "options": ["Comode_Smart"] } } } }
         'wind free': { value : 'Comode_Nano', connection: { params: { json: { "options": ["Comode_Nano"] } } } }
-        'comfort': { value : 'SoftCool', connection: { params: { json: { "options": [ "SoftCool"] } } } }
-        'boost': { value : 'TurboMode', connection: { params: { json: { "options": [ "TurboMode"] } } } }
+        #'comfort': { value : 'SoftCool', connection: { params: { json: { "options": [ "SoftCool"] } } } }
+        #'boost': { value : 'TurboMode', connection: { params: { json: { "options": [ "TurboMode"] } } } }
       state_node: 'Mode.options.0'
       status_template: '{{ device_state.Mode.options.0 }}'
     power:

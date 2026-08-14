@@ -983,14 +983,7 @@ class BasicDeviceOperation(DeviceOperation):
         """Validate all values against the current state and cache them."""
         if cache_key in self._values_cache:
             return self._values_cache[cache_key]
-            
-        _LOGGER.debug(
-            "%s Cache miss for '%s' with key '%s'. Calculating values",
-            self.log_prefix,
-            self.name,
-            cache_key,
-        )  # pragma: no mutate
-        
+
         valid_values = [
             ha_value
             for ha_value in self._values
@@ -1291,16 +1284,7 @@ class TemperatureOperation(BasicNumericOperation):
                 raise HomeAssistantError(f"Error rendering status template: {e}") from e
 
         if v is not None:
-            res = self._convert_dev_to_hass_with_unit(v, device_unit)
-            _LOGGER.debug(
-                "%s [Forensic-Temp] Calculated %s value '%s' (raw: %s, dev_unit: %s)",
-                self.log_prefix,
-                self.id,
-                res,
-                v,
-                device_unit,
-            )  # pragma: no mutate
-            return res
+            return self._convert_dev_to_hass_with_unit(v, device_unit)
         return None
 
     async def async_update_state(

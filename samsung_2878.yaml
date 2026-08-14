@@ -28,7 +28,7 @@ device:
         'off': { value: 'Off' }
         'on': { value: 'On' }
       state_node: 'AC_ADD_BEEP'
-      status_template: '{{ device_state.AC_ADD_BEEP }}'
+      status_template: "{{ device_state.get('AC_ADD_BEEP', '') }}"
       connection_template: '<Request Type="DeviceControl"><Control CommandID="AC_ADD_BEEP" DUID="{{duid}}"><Attr ID="AC_ADD_BEEP" Value="{{value}}" /></Control></Request>'
       validation_template: '{% if "AC_ADD_BEEP" in device_state %}valid{% endif %}'
     auto_clean:

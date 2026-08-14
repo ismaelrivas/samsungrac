@@ -648,8 +648,6 @@ class ConnectionAiohttp8888(Connection):
                     )
 
                 session = await self._get_session()
-                debug_msg = "%s [aiohttp] Using session ID: %s | SSL Context ID: %s"
-                _LOGGER.debug(debug_msg, self.log_prefix, id(session), id(ssl_context))
 
                 method = method or "GET"
                 req_headers = req_headers or {}
