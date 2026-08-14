@@ -88,9 +88,20 @@ class YamlController(ClimateController):
             else base_unique_id
         )
 
-        # Base immutable data from entry creation overridden by dynamic runtime options
+        # Base immutable data from entry creation selectively merged with runtime options
         extracted: dict[str, Any] = dict(config_entry.data)
-        extracted.update(config_entry.options)
+        for key, value in config_entry.options.items():
+            if key not in (
+                CONF_HOST,
+                CONF_IP_ADDRESS,
+                CONF_MAC,
+                CONF_TOKEN,
+                CONF_ENTRY_ID,
+                CONF_DEVICE_ID,
+                CONF_UNIQUE_ID,
+                CONF_DEVICE_TYPE,
+            ):
+                extracted[key] = value
 
         extracted[CONF_ENTRY_ID] = config_entry.entry_id
         extracted[CONF_UNIQUE_ID] = resolved_unique_id
