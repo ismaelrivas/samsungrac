@@ -342,10 +342,7 @@ class YamlController(ClimateController):
         """Return True if the controller is connected and available."""
         if self.connection is None:
             return False
-        is_avail = self.connection.is_available
-        if not isinstance(is_avail, bool):
-            raise TypeError(f"Expected bool for is_available, got {type(is_avail).__name__}")
-        return is_avail
+        return bool(self.connection.is_available)
 
     async def initialize(self) -> bool:
         """Perform initial YAML configuration loading and set up the base connection."""
@@ -513,8 +510,6 @@ class YamlController(ClimateController):
     @property
     def temperature_unit(self) -> UnitOfTemperature:
         """Return the temperature unit in use (resolved at construction time)."""
-        if not isinstance(self._temperature_unit, UnitOfTemperature):
-            raise TypeError(f"Invalid temperature unit instance: {type(self._temperature_unit).__name__}")
         return self._temperature_unit
 
     @property
@@ -746,11 +741,7 @@ class YamlController(ClimateController):
         """Return True if the device uses push-based updates."""
         if self.connection is None:
             return False
-        
-        is_push = self.connection.is_push_supported
-        if not isinstance(is_push, bool):
-            raise TypeError(f"Expected bool for is_push_supported, got {type(is_push).__name__}")
-        return is_push
+        return bool(self.connection.is_push_supported)
 
     async def async_refresh_from_connection(self) -> None:
         """Refresh the controller's properties from the connection's internal state.

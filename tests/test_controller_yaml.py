@@ -459,10 +459,9 @@ def test_yaml_controller_available_property(mock_yaml_controller) -> None:
     conn_mock.is_available = True
     assert mock_yaml_controller.available is True
 
-    # Scenario 4: connection returns non-bool -> Fail-Fast TypeError
-    conn_mock.is_available = "not_a_bool"
-    with pytest.raises(TypeError, match="Expected bool for is_available, got str"):
-        _ = mock_yaml_controller.available
+    # Scenario 4: connection returns truthy value -> Evaluates to True via bool()
+    conn_mock.is_available = "connected"
+    assert mock_yaml_controller.available is True
 
 
 def test_yaml_controller_sensors_property(mock_yaml_controller) -> None:
