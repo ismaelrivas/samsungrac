@@ -13,7 +13,6 @@ from homeassistant.components.climate import (
     ATTR_HVAC_MODE,
     ATTR_PRESET_MODE,
     ATTR_SWING_MODE,
-    ClimateEntityFeature,
     HVACMode,
 )
 from homeassistant.config_entries import ConfigEntry
@@ -94,8 +93,8 @@ class YamlController(ClimateController):
                 raise TypeError(f"Expected str for {CONF_MAC}, got {type(raw_mac).__name__}")
             base_id = raw_mac.strip() if len(raw_mac.strip()) > 0 else None
 
-        if cls._is_subdevice(device_id):
-            sub_id = device_id.strip()  # type: ignore[union-attr]
+        if device_id is not None and cls._is_subdevice(device_id):
+            sub_id = device_id.strip()
             if base_id is not None:
                 if not base_id.endswith(f"{ID_DELIMITER}{sub_id}"):
                     return f"{base_id}{ID_DELIMITER}{sub_id}"
@@ -121,7 +120,7 @@ class YamlController(ClimateController):
 
         extracted[CONF_ENTRY_ID] = config_entry.entry_id
         extracted[CONF_UNIQUE_ID] = resolved_unique_id
-        if device_id is not None and len(device_id.strip()) > 0:
+        if isinstance(device_id, str) and len(device_id.strip()) > 0:
             extracted[CONF_DEVICE_ID] = device_id.strip()
 
         return extracted
@@ -161,13 +160,22 @@ class YamlController(ClimateController):
 
         # Fallback resolution for CONF_CONFIG_FILE based on CONF_DEVICE_TYPE
         raw_config_file = config.get(CONF_CONFIG_FILE)
-        if raw_config_file is None or (isinstance(raw_config_file, str) and len(raw_config_file.strip()) == 0):
+        if raw_config_file is not None and not isinstance(raw_config_file, str):
+            raise TypeError(f"Expected str for {CONF_CONFIG_FILE}, got {type(raw_config_file).__name__}")
+        if raw_config_file is None or len(raw_config_file.strip()) == 0:
             device_type = config.get(CONF_DEVICE_TYPE)
             if device_type is not None:
                 if not isinstance(device_type, str):
                     raise TypeError(f"Expected str for {CONF_DEVICE_TYPE}, got {type(device_type).__name__}")
                 if device_type in DEVICE_TYPE_TO_CONFIG_FILE:
                     config[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE[device_type]
+
+        raw_name = config.get(CONF_NAME)
+        if raw_name is not None:
+            if not isinstance(raw_name, str):
+                raise TypeError(f"Expected str for {CONF_NAME}, got {type(raw_name).__name__}")
+            if len(raw_name.strip()) == 0:
+                raise ValueError(f"{CONF_NAME} cannot be empty")
 
         logger = logger if logger is not None else _LOGGER
         super().__init__(config, logger)
@@ -257,10 +265,7 @@ class YamlController(ClimateController):
     @property
     def yaml_file(self) -> str | None:
         """Return the YAML configuration file path from config."""
-        val = self._config.get(CONF_CONFIG_FILE)
-        if val is not None and not isinstance(val, str):
-            raise TypeError(f"Expected str for {CONF_CONFIG_FILE}, got {type(val).__name__}")
-        return val
+        return self._config.get(CONF_CONFIG_FILE)
 
     @property
     def connection(self) -> Connection | None:
@@ -272,16 +277,11 @@ class YamlController(ClimateController):
         """Return the injected aiohttp client session."""
         return self._session
 
-
     @property
     def name(self) -> str:
         """Return the controller name prioritizing user configuration over YAML loader default."""
         config_name = self._config.get(CONF_NAME)
         if config_name is not None:
-            if not isinstance(config_name, str):
-                raise TypeError(f"Expected str for {CONF_NAME}, got {type(config_name).__name__}")
-            if len(config_name.strip()) == 0:
-                raise ValueError(f"{CONF_NAME} cannot be empty")
             return config_name
 
         loader_name = self.loader.name
@@ -297,7 +297,7 @@ class YamlController(ClimateController):
     @staticmethod
     def _is_subdevice(device_id: str | None) -> bool:
         """Return True if device_id represents a sub-device."""
-        if device_id is None or len(device_id.strip()) == 0:
+        if not isinstance(device_id, str) or len(device_id.strip()) == 0:
             return False
         return device_id.strip() not in EXCLUDED_SUBDEVICE_IDS
 
@@ -723,7 +723,7 @@ class YamlController(ClimateController):
 
     async def async_predict_and_correct_state(
         self, current_hass_state: ClimateIPDeviceState, property_name: str, new_value: Any
-    ) -> tuple[ClimateEntityFeature, dict[str, Any]]:
+    ) -> tuple[Any, dict[str, Any]]:
         """Predict expected state changes based on a command."""
         return await self.poller.async_predict_and_correct_state(
             current_hass_state, property_name, new_value
