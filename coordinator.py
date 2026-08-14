@@ -192,7 +192,13 @@ class PropertyDebouncer:
                         return
 
                     try:
-                        await func(*p_args, **p_kwargs)
+                        success = await func(*p_args, **p_kwargs)
+                        if not success:
+                            _LOGGER.warning(
+                                "[Debouncer] Delayed command for '%s' returned failure. Reverting optimistic state.",
+                                prop,
+                            )
+                            await self.coordinator.async_request_refresh()
                     except (TimeoutError, UpdateFailed, CannotConnect, OSError) as err:
                         _LOGGER.debug(
                             "[Debouncer] Network error executing delayed command for '%s': %s",
@@ -571,7 +577,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                     "%s Not all properties were set successfully. Requesting sync refresh to revert state.",
                     self.log_prefix,
                 )  # pragma: no mutate
-                await self._async_handle_set_property_failure(properties_to_set)
+                raise HomeAssistantError(
+                    f"Failed to set property {property_name} to {new_value}"
+                )
 
         except (CannotConnect, OSError) as err:
             await self._async_handle_set_property_failure(properties_to_set)

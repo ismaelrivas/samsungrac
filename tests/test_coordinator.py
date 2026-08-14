@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.climate_ip.controller import ClimateController
@@ -354,8 +355,9 @@ async def test_optimistic_state_reverts_on_device_failure(hass: HomeAssistant) -
     coordinator.data = mock_controller.climate_state
     coordinator.async_request_refresh = AsyncMock()
 
-    # Device rejects the "dry" command; coordinator must revert state via refresh
-    await coordinator.async_set_property("hvac_mode", "dry")
+    # Device rejects the "dry" command; coordinator must revert state via refresh and raise HomeAssistantError
+    with pytest.raises(HomeAssistantError):
+        await coordinator.async_set_property("hvac_mode", "dry")
 
     coordinator.async_request_refresh.assert_awaited_once()
 
@@ -1261,8 +1263,9 @@ async def test_coordinator_requests_refresh_on_partial_failure(
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
     coordinator.async_request_refresh = AsyncMock()
 
-    # Attempt to set a property (which will fail internally)
-    await coordinator.async_set_property("fan_mode", "high")
+    # Attempt to set a property (which will fail internally and raise HomeAssistantError)
+    with pytest.raises(HomeAssistantError):
+        await coordinator.async_set_property("fan_mode", "high")
 
     # Upon failure, success becomes False and must force a refresh
     coordinator.async_request_refresh.assert_awaited_once()
