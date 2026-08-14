@@ -264,6 +264,11 @@ class YamlController(ClimateController):
         """Override base connection to point strictly to the loader's active connection."""
         return self.loader.connection
 
+    @property
+    def session(self) -> aiohttp.ClientSession | None:
+        """Return the injected aiohttp client session."""
+        return self._session
+
 
     @property
     def name(self) -> str:
