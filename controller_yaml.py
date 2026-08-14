@@ -42,7 +42,6 @@ from .const import (
     ERR_INVALID_STATE_TYPE,
     ERR_MISSING_IP,
     ERR_MISSING_DIAGNOSTICS,
-    ERR_COERCING_STATE,
     ATTR_IS_AVAILABLE,
     CONF_CONFIG_FILE,
     CONF_CONTROLLER,
@@ -599,69 +598,65 @@ class YamlController(ClimateController):
     @property
     def climate_state(self) -> ClimateIPDeviceState:
         """Return the strictly typed state representation of the device."""
-        try:
-            if self._cached_static_modes is None:
-                self._cached_static_modes = self._build_static_modes_cache()
+        if self._cached_static_modes is None:
+            self._cached_static_modes = self._build_static_modes_cache()
 
-            hvac_modes_tuple, fan_modes_tuple, swing_modes_tuple, preset_modes_tuple = (
-                self._cached_static_modes
-            )
+        hvac_modes_tuple, fan_modes_tuple, swing_modes_tuple, preset_modes_tuple = (
+            self._cached_static_modes
+        )
 
-            raw_hvac = self.get_property(ATTR_HVAC_MODE) if self.has_property(ATTR_HVAC_MODE) else None
-            hvac_mode = self._safe_parse_hvac_mode(raw_hvac)
+        raw_hvac = self.get_property(ATTR_HVAC_MODE) if self.has_property(ATTR_HVAC_MODE) else None
+        hvac_mode = self._safe_parse_hvac_mode(raw_hvac)
 
-            target_temp = self._safe_parse_temperature(
-                self.get_property(ATTR_TEMPERATURE) if self.has_property(ATTR_TEMPERATURE) else None, LABEL_TARGET_TEMP
-            )
+        raw_target_temp = self.get_property(ATTR_TEMPERATURE) if self.has_property(ATTR_TEMPERATURE) else None
+        target_temp = self._safe_parse_temperature(raw_target_temp, LABEL_TARGET_TEMP)
 
-            current_temp = self._safe_parse_temperature(
-                self.get_property(ATTR_CURRENT_TEMPERATURE) if self.has_property(ATTR_CURRENT_TEMPERATURE) else None, LABEL_CURRENT_TEMP
-            )
+        raw_current_temp = (
+            self.get_property(ATTR_CURRENT_TEMPERATURE)
+            if self.has_property(ATTR_CURRENT_TEMPERATURE)
+            else None
+        )
+        current_temp = self._safe_parse_temperature(raw_current_temp, LABEL_CURRENT_TEMP)
 
-            raw_fan = self.get_property(ATTR_FAN_MODE) if self.has_property(ATTR_FAN_MODE) else None
-            fan_mode = None
-            if raw_fan is not None:
-                if not isinstance(raw_fan, str):
-                    raise TypeError(f"Fan mode must be a string, got {type(raw_fan).__name__}")
-                if raw_fan not in fan_modes_tuple:
-                    raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_FAN_MODE}]: {raw_fan}")
-                fan_mode = raw_fan
+        raw_fan = self.get_property(ATTR_FAN_MODE) if self.has_property(ATTR_FAN_MODE) else None
+        fan_mode = None
+        if raw_fan is not None:
+            if not isinstance(raw_fan, str):
+                raise TypeError(f"Fan mode must be a string, got {type(raw_fan).__name__}")
+            if raw_fan not in fan_modes_tuple:
+                raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_FAN_MODE}]: {raw_fan}")
+            fan_mode = raw_fan
 
-            raw_swing = self.get_property(ATTR_SWING_MODE) if self.has_property(ATTR_SWING_MODE) else None
-            swing_mode = None
-            if raw_swing is not None:
-                if not isinstance(raw_swing, str):
-                    raise TypeError(f"Swing mode must be a string, got {type(raw_swing).__name__}")
-                if raw_swing not in swing_modes_tuple:
-                    raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_SWING_MODE}]: {raw_swing}")
-                swing_mode = raw_swing
+        raw_swing = self.get_property(ATTR_SWING_MODE) if self.has_property(ATTR_SWING_MODE) else None
+        swing_mode = None
+        if raw_swing is not None:
+            if not isinstance(raw_swing, str):
+                raise TypeError(f"Swing mode must be a string, got {type(raw_swing).__name__}")
+            if raw_swing not in swing_modes_tuple:
+                raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_SWING_MODE}]: {raw_swing}")
+            swing_mode = raw_swing
 
-            raw_preset = self.get_property(ATTR_PRESET_MODE) if self.has_property(ATTR_PRESET_MODE) else None
-            preset_mode = None
-            if raw_preset is not None:
-                if not isinstance(raw_preset, str):
-                    raise TypeError(f"Preset mode must be a string, got {type(raw_preset).__name__}")
-                if raw_preset not in preset_modes_tuple:
-                    raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_PRESET_MODE}]: {raw_preset}")
-                preset_mode = raw_preset
+        raw_preset = self.get_property(ATTR_PRESET_MODE) if self.has_property(ATTR_PRESET_MODE) else None
+        preset_mode = None
+        if raw_preset is not None:
+            if not isinstance(raw_preset, str):
+                raise TypeError(f"Preset mode must be a string, got {type(raw_preset).__name__}")
+            if raw_preset not in preset_modes_tuple:
+                raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_PRESET_MODE}]: {raw_preset}")
+            preset_mode = raw_preset
 
-            return ClimateIPDeviceState(
-                hvac_mode=hvac_mode,
-                target_temperature=target_temp,
-                current_temperature=current_temp,
-                fan_mode=fan_mode,
-                swing_mode=swing_mode,
-                preset_mode=preset_mode,
-                hvac_modes=hvac_modes_tuple,
-                fan_modes=fan_modes_tuple,
-                swing_modes=swing_modes_tuple,
-                preset_modes=preset_modes_tuple,
-            )
-        except (ValueError, TypeError) as err:
-            _LOGGER.error(
-                "%s %s: %s", self.log_prefix, ERR_COERCING_STATE, err
-            )
-            raise
+        return ClimateIPDeviceState(
+            hvac_mode=hvac_mode,
+            target_temperature=target_temp,
+            current_temperature=current_temp,
+            fan_mode=fan_mode,
+            swing_mode=swing_mode,
+            preset_mode=preset_mode,
+            hvac_modes=hvac_modes_tuple,
+            fan_modes=fan_modes_tuple,
+            swing_modes=swing_modes_tuple,
+            preset_modes=preset_modes_tuple,
+        )
 
     async def async_get_status(self) -> dict[str, Any] | None:
         """Fetch the device status using the poller."""
