@@ -60,7 +60,9 @@ class PropertyDebouncer:
     """Debounces outgoing commands per property to shield hardware from request flooding."""
 
     def __init__(
-        self, coordinator: "SamsungClimateCoordinator", delay: float = 1.0
+        self,
+        coordinator: "SamsungClimateCoordinator",
+        delay: float = DEFAULT_DEBOUNCE_DELAY,
     ) -> None:
         """Initialize the property debouncer."""
         self.coordinator = coordinator
