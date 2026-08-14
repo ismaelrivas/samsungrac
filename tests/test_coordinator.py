@@ -1582,6 +1582,7 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
 
     mock_coordinator = MagicMock()
     mock_coordinator.async_request_refresh = AsyncMock()
+    mock_coordinator.controller.async_clear_pending_updates = AsyncMock()
     mock_coordinator.hass = MagicMock()
     mock_coordinator.unique_id = "test_123"
 

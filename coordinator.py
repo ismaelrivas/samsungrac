@@ -73,7 +73,9 @@ class PropertyDebouncer:
         self.delay = delay
         self._timers: dict[str, Callable[[], None]] = {}
         # 🛡️ Updated typing to include the Generation ID (int) at the end of the tuple
-        self._pending_payloads: dict[str, tuple[Any, tuple, dict, int]] = {}
+        self._pending_payloads: dict[
+            str, tuple[Callable[..., Any], tuple[Any, ...], dict[str, Any], int]
+        ] = {}
         self._last_activities: dict[str, float] = {}
         self._generation: int = 0  # 🛡️ The core of the Anti-Zombie Shield
 
@@ -209,6 +211,7 @@ class PropertyDebouncer:
                                 "[Debouncer] Delayed command for '%s' returned failure. Reverting optimistic state.",
                                 prop,
                             )
+                            await self.coordinator.controller.async_clear_pending_updates([prop])
                             await self.coordinator.async_request_refresh()
                     except (TimeoutError, UpdateFailed, CannotConnect, OSError) as err:
                         _LOGGER.debug(
@@ -217,6 +220,7 @@ class PropertyDebouncer:
                             err,
                             exc_info=True,
                         )  # pragma: no mutate
+                        await self.coordinator.controller.async_clear_pending_updates([prop])
                         await self.coordinator.async_request_refresh()
                     except Exception as err:  # pylint: disable=broad-exception-caught
                         _LOGGER.error(
@@ -225,15 +229,23 @@ class PropertyDebouncer:
                             err,
                             exc_info=True,
                         )  # pragma: no mutate
+                        await self.coordinator.controller.async_clear_pending_updates([prop])
                         await self.coordinator.async_request_refresh()
 
+                task_coro = _task_runner()
+                raw_uid = self.coordinator.unique_id or FALLBACK_DEVICE_ID
+                safe_uid = raw_uid.replace(".", "_").replace(" ", "_")
+                task_name = f"{DOMAIN}_{safe_uid}_debouncer_{prop}"
                 if self.coordinator.config_entry is not None:
-                    raw_uid = self.coordinator.unique_id or FALLBACK_DEVICE_ID
-                    safe_uid = raw_uid.replace(".", "_").replace(" ", "_")
                     self.coordinator.config_entry.async_create_background_task(
                         self.hass,
-                        _task_runner(),
-                        name=f"{DOMAIN}_{safe_uid}_debouncer_{prop}",
+                        task_coro,
+                        name=task_name,
+                    )
+                else:
+                    self.hass.async_create_background_task(
+                        task_coro,
+                        name=task_name,
                     )
 
         self._timers[property_name] = async_call_later(
@@ -462,8 +474,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     async def _async_update_data(self) -> ClimateIPDeviceState:
         """Fetch the latest state from the device."""
         try:
-            async with asyncio.timeout(NETWORK_POLL_TIMEOUT):
-                await self.controller.async_get_status()  # pragma: no mutate
+            async with self._global_network_lock:
+                async with asyncio.timeout(NETWORK_POLL_TIMEOUT):
+                    await self.controller.async_get_status()  # pragma: no mutate
             return self._create_device_state()
         except InvalidHeaderError as err:
             opt_method = self.config_entry.options.get(CONF_CONN_METHOD)
