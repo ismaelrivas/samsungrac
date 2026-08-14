@@ -61,7 +61,6 @@ from .const import (
     ID_DELIMITER,
     LABEL_CURRENT_TEMP,
     LABEL_TARGET_TEMP,
-    MAIN_DEVICE_ID,
 )
 from .controller import ClimateController, register_controller
 from .controller_yaml_config import YamlConfigLoader
@@ -373,8 +372,12 @@ class YamlController(ClimateController):
                 if device_id is not None and not isinstance(device_id, str):
                     raise TypeError(f"device_id must be a string, got {type(device_id).__name__}")
                 
-                target_device_id = device_id if (device_id is not None and bool(device_id.strip())) else self.device_id
-                if target_device_id is None or target_device_id == MAIN_DEVICE_ID:
+                target_device_id = (
+                    device_id
+                    if (device_id is not None and len(device_id.strip()) > 0)
+                    else self.device_id
+                )
+                if target_device_id is None or not self._is_subdevice(target_device_id):
                     target_device_id = self._unique_id
 
                 return await op.async_set_value(new_value, target_device_id)
