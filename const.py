@@ -55,6 +55,8 @@ ID_DELIMITER: final = "_"
 
 # --- Configurable Options ---
 ATTR_IS_AVAILABLE = "is_available"
+ATTR_POWER: final = "power"
+DEFAULT_DEBOUNCE_DELAY: final = 3.0
 CONF_ENTRY_ID = "entry_id"
 CONF_POLL_INTERVAL = "poll_interval"
 DEFAULT_POLL_INTERVAL = 60

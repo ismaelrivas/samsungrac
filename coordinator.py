@@ -10,6 +10,7 @@ from datetime import timedelta
 from typing import Any
 
 from homeassistant.components.climate import HVACMode
+from homeassistant.components.climate.const import ATTR_HVAC_MODE
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_MAC
 from homeassistant.core import HomeAssistant, callback
@@ -23,6 +24,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .const import (
+    ATTR_POWER,
     CONF_CONN_METHOD,
     CONF_ENABLE_POLLING,
     CONF_NAME,
@@ -30,6 +32,7 @@ from .const import (
     CONF_SSL_CONFIG_KEY,
     CONF_TOKEN_KEY,
     CONN_METHOD_RAW,
+    DEFAULT_DEBOUNCE_DELAY,
     DEFAULT_ENABLE_POLLING,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_DEVICE_NAME_PREFIX,
@@ -116,7 +119,7 @@ class PropertyDebouncer:
         )
         val_str = str(val).lower() if val is not None else ""
         is_turn_off = (
-            property_name in ("hvac_mode", "power")
+            property_name in (ATTR_HVAC_MODE, ATTR_POWER)
             and val_str in ("off", HVACMode.OFF.value)
         )
 
@@ -237,8 +240,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         """Initialize the data coordinator."""
         self.controller = controller
         self.config_entry = entry
-        self.entry = entry
-        self.debouncer = PropertyDebouncer(self, delay=3.0)
+        self.debouncer = PropertyDebouncer(self, delay=DEFAULT_DEBOUNCE_DELAY)
         self._global_network_lock = asyncio.Lock()
 
         # Inject callbacks into the controller to avoid circular dependencies.
@@ -623,6 +625,11 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     def unique_id(self) -> str:
         """Return the unique ID from the controller."""
         return self.controller.unique_id
+
+    @property
+    def entry(self) -> ConfigEntry:
+        """Alias for config_entry for backwards compatibility."""
+        return self.config_entry
 
     async def async_shutdown(self) -> None:
         """Shut down the coordinator and its controller.
