@@ -440,20 +440,24 @@ def test_yaml_controller_setters_strict_assignment(mock_yaml_controller) -> None
 
 
 def test_yaml_controller_available_property(mock_yaml_controller) -> None:
-    """Kills mutants in available property across all 3 branches."""
+    """Kills mutants in available property across all branches."""
     # Scenario 1: connection is None -> Disconnected entity evaluates to False
     mock_yaml_controller.loader.connection = None
     assert mock_yaml_controller.available is False
 
     # Scenario 2: connection present but returns is_available=False
     conn_mock = MagicMock()
-    conn_mock.get_diagnostics.return_value = {"is_available": False}
+    conn_mock.is_available = False
     mock_yaml_controller.loader.connection = conn_mock
     assert mock_yaml_controller.available is False
 
-    # Scenario 3: connection present but diagnostic dict lacks key (Fail-Fast KeyError)
-    conn_mock.get_diagnostics.return_value = {"other_key": "data"}
-    with pytest.raises(KeyError):
+    # Scenario 3: connection present and returns is_available=True
+    conn_mock.is_available = True
+    assert mock_yaml_controller.available is True
+
+    # Scenario 4: connection returns non-bool -> Fail-Fast TypeError
+    conn_mock.is_available = "not_a_bool"
+    with pytest.raises(TypeError, match="Expected bool for is_available, got str"):
         _ = mock_yaml_controller.available
 
 

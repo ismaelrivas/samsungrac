@@ -173,6 +173,11 @@ class Connection:
         return False
 
     @property
+    def is_available(self) -> bool:
+        """Return True if the connection is currently available."""
+        return True
+
+    @property
     @abstractmethod
     def is_push_supported(self) -> bool:
         """Return True if this connection type supports push updates."""

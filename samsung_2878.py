@@ -158,6 +158,11 @@ class ConnectionSamsung2878(Connection):
         return True
 
     @property
+    def is_available(self) -> bool:
+        """Return True indicating if this connection is currently connected and available."""
+        return self._is_available
+
+    @property
     def is_push_supported(self) -> bool:
         """Return True indicating this connection type supports push updates."""
         return True

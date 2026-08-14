@@ -206,6 +206,11 @@ class ConnectionRaw8888(Connection):
         return True
 
     @property
+    def is_available(self) -> bool:
+        """Return True indicating if this connection is currently connected and available."""
+        return getattr(self, "_is_connected", False)
+
+    @property
     def is_push_supported(self) -> bool:
         """Return True indicating this connection type supports push updates."""
         return False

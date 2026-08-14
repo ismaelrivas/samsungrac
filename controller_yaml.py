@@ -44,8 +44,6 @@ from .const import (
     ERR_CACHE_UNINITIALIZED,
     ERR_INVALID_STATE_TYPE,
     ERR_MISSING_IP,
-    ERR_MISSING_DIAGNOSTICS,
-    ATTR_IS_AVAILABLE,
     CONF_CONFIG_FILE,
     CONF_CONTROLLER,
     CONF_DEBUG,
@@ -371,13 +369,9 @@ class YamlController(ClimateController):
         """Return True if the controller is connected and available."""
         if self.connection is None:
             return False
-        diag = self.connection.get_diagnostics()
-        if ATTR_IS_AVAILABLE not in diag:
-            raise KeyError(ERR_MISSING_DIAGNOSTICS)
-            
-        is_avail = diag[ATTR_IS_AVAILABLE]
+        is_avail = self.connection.is_available
         if not isinstance(is_avail, bool):
-            raise TypeError(f"Expected bool for {ATTR_IS_AVAILABLE}, got {type(is_avail).__name__}")
+            raise TypeError(f"Expected bool for is_available, got {type(is_avail).__name__}")
         return is_avail
 
     async def initialize(self) -> bool:
@@ -533,6 +527,12 @@ class YamlController(ClimateController):
     def state_attributes(self) -> dict[str, Any]:
         """Return a copy of the state attributes dictionary."""
         return dict(self._attributes)
+
+    def update_state_attributes(self, new_attrs: dict[str, Any]) -> None:
+        """Update the internal state attributes dictionary."""
+        if not isinstance(new_attrs, dict):
+            raise TypeError(f"Expected dict for new_attrs, got {type(new_attrs).__name__}")
+        self._attributes = dict(new_attrs)
 
     @property
     def temperature_unit(self) -> UnitOfTemperature:
