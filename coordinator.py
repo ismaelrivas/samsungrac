@@ -10,8 +10,7 @@ from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
-from homeassistant.components.climate import HVACMode
-from homeassistant.components.climate.const import ATTR_HVAC_MODE
+from homeassistant.components.climate import ATTR_HVAC_MODE, HVACMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_MAC, CONF_TOKEN
 from homeassistant.core import HomeAssistant, callback
@@ -45,6 +44,7 @@ from .const import (
     DEFAULT_DEVICE_NAME_PREFIX,
     DEFAULT_SUBDEVICE_NAME,
     DOMAIN,
+    FALLBACK_DEVICE_ID,
     FALSY_STRINGS,
     HARDWARE_BREATHING_ROOM_SEC,
     MANUFACTURER_SAMSUNG,
@@ -226,7 +226,7 @@ class PropertyDebouncer:
                         )  # pragma: no mutate
                         await self.coordinator.async_request_refresh()
 
-                raw_uid = self.coordinator.unique_id or "device"
+                raw_uid = self.coordinator.unique_id or FALLBACK_DEVICE_ID
                 safe_uid = raw_uid.replace(".", "_").replace(" ", "_")
                 self.coordinator.config_entry.async_create_background_task(
                     self.hass,
@@ -425,9 +425,11 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         new_options = {**self.config_entry.options, CONF_CONN_METHOD: CONN_METHOD_RAW}
         self.hass.config_entries.async_update_entry(self.config_entry, options=new_options)
 
+        safe_uid = self.unique_id or FALLBACK_DEVICE_ID
+        safe_device_id = safe_uid.replace(".", "_").replace(" ", "_")
         device_name = (
-            (self.device_info.get("name") if self.device_info else None)
-            or f"{DEFAULT_DEVICE_NAME_PREFIX} {self.unique_id or 'Device'}"
+            self.device_info.get("name")
+            or f"{DEFAULT_DEVICE_NAME_PREFIX} {safe_uid}"
         )
 
         _LOGGER.warning(
@@ -436,9 +438,6 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             "migrated to 'Robust (raw socket)' to preserve full AC control without disconnections.",
             self.log_prefix,
         )
-
-        safe_uid = self.unique_id or "unknown_device"
-        safe_device_id = safe_uid.replace(".", "_").replace(" ", "_")
         async_create_issue(
             self.hass,
             DOMAIN,
