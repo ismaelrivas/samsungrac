@@ -489,10 +489,11 @@ class YamlController(ClimateController):
             if all_vals is not None:
                 if not isinstance(all_vals, (list, tuple, set)):
                     raise TypeError(f"Expected iterable for {property_name} all_vals, got {type(all_vals).__name__}")
-                for v in all_vals:
-                    if not isinstance(v, str):
-                        raise TypeError(f"Mode value must be a string, got {type(v).__name__}: {v}")
-                return list(all_vals)
+                if len(all_vals) > 0:
+                    for v in all_vals:
+                        if not isinstance(v, str):
+                            raise TypeError(f"Mode value must be a string, got {type(v).__name__}: {v}")
+                    return list(all_vals)
 
         _LOGGER.debug(
             "%s Cannot get values for '%s': not an operation or missing all_values",
