@@ -110,10 +110,10 @@ async def test_switch_connection_engine_on_error(hass, coordinator):
                 await coro
             assert "Switching" in str(err)
 
-            expected_options = dict(coordinator.entry.options)
+            expected_options = dict(coordinator.config_entry.options)
             expected_options[CONF_CONN_METHOD] = CONN_METHOD_RAW
             mock_update_entry.assert_called_once_with(
-                coordinator.entry, options=expected_options
+                coordinator.config_entry, options=expected_options
             )
             return
         pytest.fail("UpdateFailed exception was not raised")

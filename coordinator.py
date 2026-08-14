@@ -273,11 +273,12 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             else entry.data.get(CONF_ENABLE_POLLING, DEFAULT_ENABLE_POLLING)
         )  # pragma: no mutate
         opt_interval = entry.options.get(CONF_POLL_INTERVAL)
-        poll_interval_seconds = (
+        raw_interval = (
             opt_interval
             if opt_interval is not None
             else entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
         )  # pragma: no mutate
+        poll_interval_seconds = max(raw_interval, 1)
         update_interval = (
             timedelta(seconds=poll_interval_seconds)
             if (controller.poll and enable_polling)
