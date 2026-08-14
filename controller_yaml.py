@@ -457,10 +457,9 @@ class YamlController(ClimateController):
                     op_id = getattr(op, "id", None)
                     if isinstance(op_id, str) and len(op_id.strip()) > 0:
                         cache[op_id] = op
-                        if hasattr(self, "poller") and self.poller is not None:
-                            hass_attr = self.poller.get_hass_attr_for_op_id(op_id)
-                            if isinstance(hass_attr, str) and hass_attr not in cache:
-                                cache[hass_attr] = op
+                        hass_attr = self.poller.get_hass_attr_for_op_id(op_id)
+                        if isinstance(hass_attr, str) and hass_attr not in cache:
+                            cache[hass_attr] = op
             self._obj_id_cache = cache
         return self._obj_id_cache
 
@@ -479,16 +478,7 @@ class YamlController(ClimateController):
         if property_name in self.loader.sensors:
             return self.loader.sensors[property_name]
 
-        obj = self._objects_by_id.get(property_name)
-        if obj is not None:
-            return obj
-
-        if hasattr(self, "poller") and self.poller is not None:
-            mapped_attr = self.poller.get_hass_attr_for_op_id(property_name)
-            if isinstance(mapped_attr, str) and mapped_attr != property_name:
-                return self._objects_by_id.get(mapped_attr)
-
-        return None
+        return self._objects_by_id.get(property_name)
 
     def get_property_all_values(self, property_name: str) -> list[str] | None:
         """Return the complete, unfiltered list of values for a property."""

@@ -396,9 +396,9 @@ async def test_async_merge_and_predict_delegation(mock_yaml_controller) -> None:
 @pytest.mark.asyncio
 async def test_async_set_property_error_scenarios(mock_yaml_controller) -> None:
     """Kills mutants in async_set_property asserting failures and exceptions."""
-    # Scenario 1: Uninitialized controller -> raises ServiceValidationError
+    # Scenario 1: Uninitialized controller -> raises HomeAssistantError
     mock_yaml_controller.loader.is_fully_initialized = False
-    with pytest.raises(ServiceValidationError):
+    with pytest.raises(HomeAssistantError):
         await mock_yaml_controller.async_set_property("prop", "val")
     mock_yaml_controller.loader.is_fully_initialized = True  # Restore state
 
