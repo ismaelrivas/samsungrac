@@ -155,7 +155,6 @@ class YamlController(ClimateController):
         self._session = session
         self.loader: YamlConfigLoader = YamlConfigLoader(self)
         self.poller: YamlStatePoller = YamlStatePoller(self)
-        self._config = types.MappingProxyType(config)
 
         raw_device_id = config.get(CONF_DEVICE_ID)
         if raw_device_id is not None:
@@ -229,8 +228,8 @@ class YamlController(ClimateController):
             raise TypeError(f"Expected strict bool for {CONF_DEBUG}, got {type(raw_debug).__name__}")
         self._debug = raw_debug
 
-        target_temp_unit = self._config.get(CONF_TEMP_NATIVE_TARGET)
-        current_temp_unit = self._config.get(CONF_TEMP_NATIVE_CURRENT)
+        target_temp_unit = config.get(CONF_TEMP_NATIVE_TARGET)
+        current_temp_unit = config.get(CONF_TEMP_NATIVE_CURRENT)
 
         raw_unit = target_temp_unit if target_temp_unit is not None else current_temp_unit
         if raw_unit is not None:
@@ -238,6 +237,7 @@ class YamlController(ClimateController):
         else:
             self._temperature_unit = DEFAULT_CONF_TEMP_UNIT
         self._attributes: dict[str, Any] = {}
+        self._config = types.MappingProxyType(config)
 
         self._obj_id_cache: dict[str, DeviceProperty] | None = None
         self._cached_static_modes: (
