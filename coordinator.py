@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from enum import Enum
 import logging
 import time
 from collections.abc import Callable
@@ -617,7 +618,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     ) -> None:
         """Set a property on the controller with optimistic prediction and atomic rollback."""
         # 1. Predict (Activates anti-flicker locks in the controller)
-        pred_val = new_value.value if isinstance(new_value, HVACMode) else new_value
+        pred_val = new_value.value if isinstance(new_value, Enum) else new_value
         _, corrections = await self.controller.async_predict_and_correct_state(
             self.data, property_name, pred_val
         )
@@ -639,11 +640,15 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         try:
             results = []
             for prop, val in properties_to_set.items():
-                if isinstance(val, HVACMode):
-                    val = val.value
+                val_to_send = val.value if isinstance(val, Enum) else val
                 results.append(
                     await self.debouncer.async_execute(
-                        prop, self._locked_set_property, prop, val, device_id
+                        prop,
+                        self._locked_set_property,
+                        prop,
+                        val_to_send,
+                        device_id,
+                        val=val_to_send,
                     )
                 )
 
