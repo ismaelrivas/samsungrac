@@ -130,14 +130,12 @@ class YamlController(ClimateController):
         config_entry: ConfigEntry[Any] | None = None,
         device_id: str | None = None,
     ) -> None:
-        """Initialize the YAML controller from a config dictionary or ConfigEntry."""
-        self.loader: YamlConfigLoader = YamlConfigLoader(self)
-        self.poller: YamlStatePoller = YamlStatePoller(self)
-
         if config is None and config_entry is not None:
             config = self._extract_config_from_entry(config_entry, device_id)
-        elif config is not None:
+        elif isinstance(config, (dict, types.MappingProxyType)):
             config = dict(config)
+        elif config is not None:
+            raise TypeError(f"Expected dict for config, got {type(config).__name__}")
         else:
             raise ValueError(ERR_MISSING_INIT_CONFIG)
 
@@ -153,10 +151,11 @@ class YamlController(ClimateController):
         logger = logger if logger is not None else _LOGGER
         super().__init__(config, logger)
 
-        self._config = types.MappingProxyType(dict(config))
-
         self.hass = hass
         self._session = session
+        self.loader: YamlConfigLoader = YamlConfigLoader(self)
+        self.poller: YamlStatePoller = YamlStatePoller(self)
+        self._config = types.MappingProxyType(dict(config))
 
         raw_device_id = config.get(CONF_DEVICE_ID)
         if raw_device_id is not None:
