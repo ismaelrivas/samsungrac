@@ -460,10 +460,12 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             async with asyncio.timeout(NETWORK_POLL_TIMEOUT):
                 await self.controller.async_get_status()  # pragma: no mutate
             return self._create_device_state()
-
         except InvalidHeaderError as err:
-            current_method = self.config_entry.options.get(
-                CONF_CONN_METHOD, self.config_entry.data.get(CONF_CONN_METHOD)
+            opt_method = self.config_entry.options.get(CONF_CONN_METHOD)
+            current_method = (
+                opt_method
+                if opt_method is not None
+                else self.config_entry.data.get(CONF_CONN_METHOD)
             )
             if current_method != CONN_METHOD_RAW:
                 _LOGGER.warning(
