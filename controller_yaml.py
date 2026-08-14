@@ -657,16 +657,9 @@ class YamlController(ClimateController):
     def climate_state(self) -> ClimateIPDeviceState:
         """Return the strictly typed state representation of the device."""
         if self._cached_static_modes is None:
-            static_modes = self._build_static_modes_cache()
-            if self.loader.is_fully_initialized:
-                self._cached_static_modes = static_modes
-            else:
-                return ClimateIPDeviceState(
-                    hvac_modes=static_modes[0],
-                    fan_modes=static_modes[1],
-                    swing_modes=static_modes[2],
-                    preset_modes=static_modes[3],
-                )
+            if not self.loader.is_fully_initialized:
+                return ClimateIPDeviceState()
+            self._cached_static_modes = self._build_static_modes_cache()
 
         hvac_modes_tuple, fan_modes_tuple, swing_modes_tuple, preset_modes_tuple = (
             self._cached_static_modes
