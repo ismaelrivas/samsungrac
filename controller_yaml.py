@@ -76,20 +76,41 @@ class YamlController(ClimateController):
     """YAML-based controller mapped as a clean Facade pattern over composition."""
 
     @classmethod
+    def _resolve_unique_id(
+        cls,
+        raw_unique_id: Any,
+        raw_mac: Any,
+        device_id: str | None,
+    ) -> str | None:
+        """Resolve canonical unique ID incorporating sub-device segmentation."""
+        base_id: str | None = None
+        if raw_unique_id is not None:
+            if not isinstance(raw_unique_id, str):
+                raise TypeError(f"Expected str for {CONF_UNIQUE_ID}, got {type(raw_unique_id).__name__}")
+            base_id = raw_unique_id.strip() if len(raw_unique_id.strip()) > 0 else None
+
+        if base_id is None and raw_mac is not None:
+            if not isinstance(raw_mac, str):
+                raise TypeError(f"Expected str for {CONF_MAC}, got {type(raw_mac).__name__}")
+            base_id = raw_mac.strip() if len(raw_mac.strip()) > 0 else None
+
+        if cls._is_subdevice(device_id):
+            sub_id = device_id.strip()  # type: ignore[union-attr]
+            if base_id is not None:
+                if not base_id.endswith(f"{ID_DELIMITER}{sub_id}"):
+                    return f"{base_id}{ID_DELIMITER}{sub_id}"
+                return base_id
+            return sub_id
+
+        return base_id
+
+    @classmethod
     def _extract_config_from_entry(
         cls, config_entry: ConfigEntry[Any], device_id: str | None
     ) -> dict[str, Any]:
         """Extract config enforcing flow segregation and immutable hardware credentials."""
-        raw_unique_id: str | None = config_entry.unique_id
-        base_unique_id: str | None = (
-            raw_unique_id.strip()
-            if (raw_unique_id is not None and len(raw_unique_id.strip()) > 0)
-            else None
-        )
-        resolved_unique_id: str | None = (
-            f"{base_unique_id}{ID_DELIMITER}{device_id.strip()}"
-            if (base_unique_id is not None and device_id is not None and cls._is_subdevice(device_id))
-            else base_unique_id
+        resolved_unique_id = cls._resolve_unique_id(
+            config_entry.unique_id, config_entry.data.get(CONF_MAC), device_id
         )
 
         # Base immutable data from entry creation selectively merged with runtime options
@@ -176,31 +197,9 @@ class YamlController(ClimateController):
         else:
             self._token = None
 
-        raw_unique_id = config.get(CONF_UNIQUE_ID)
-        if raw_unique_id is not None:
-            if not isinstance(raw_unique_id, str):
-                raise TypeError(f"Expected str for {CONF_UNIQUE_ID}, got {type(raw_unique_id).__name__}")
-            self._unique_id: str | None = raw_unique_id.strip() if len(raw_unique_id.strip()) > 0 else None
-        else:
-            self._unique_id = None
-
-        if self._unique_id is None:
-            raw_mac = config.get(CONF_MAC)
-            if raw_mac is not None:
-                if not isinstance(raw_mac, str):
-                    raise TypeError(f"Expected str for {CONF_MAC}, got {type(raw_mac).__name__}")
-                base_unique_id: str | None = raw_mac.strip() if len(raw_mac.strip()) > 0 else None
-            else:
-                base_unique_id = None
-
-            if self._is_subdevice(self._device_id):
-                self._unique_id = (
-                    f"{base_unique_id}{ID_DELIMITER}{self._device_id}"
-                    if base_unique_id is not None
-                    else self._device_id
-                )
-            else:
-                self._unique_id = base_unique_id
+        self._unique_id = self._resolve_unique_id(
+            config.get(CONF_UNIQUE_ID), config.get(CONF_MAC), self._device_id
+        )
 
         if self._device_id is None:
             self._device_id = self._unique_id
