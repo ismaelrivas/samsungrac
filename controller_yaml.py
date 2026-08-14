@@ -441,12 +441,12 @@ class YamlController(ClimateController):
                 self.loader.operations,
             ):
                 for op in collection.values():
-                    op_id = op.id
-                    if op_id is not None and len(op_id.strip()) > 0:
+                    op_id = getattr(op, "id", None)
+                    if isinstance(op_id, str) and len(op_id.strip()) > 0:
                         cache[op_id] = op
                         hass_attr = self.poller.get_hass_attr_for_op_id(op_id)
                         if (
-                            hass_attr is not None
+                            isinstance(hass_attr, str)
                             and len(hass_attr.strip()) > 0
                             and hass_attr not in cache
                         ):
@@ -481,12 +481,10 @@ class YamlController(ClimateController):
             if all_vals is not None:
                 if not isinstance(all_vals, (list, tuple, set)):
                     raise TypeError(f"Expected iterable for {property_name} all_vals, got {type(all_vals).__name__}")
-                res = []
                 for v in all_vals:
                     if not isinstance(v, str):
                         raise TypeError(f"Mode value must be a string, got {type(v).__name__}: {v}")
-                    res.append(v)
-                return res
+                return [str(v) for v in all_vals]
 
         _LOGGER.debug(
             "%s Cannot get values for '%s': not an operation or missing all_values",
