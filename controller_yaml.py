@@ -5,7 +5,7 @@ import asyncio
 import logging
 import math
 import types
-from typing import TYPE_CHECKING, Any, Callable, Coroutine
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.climate import (
     ATTR_CURRENT_TEMPERATURE,
@@ -61,7 +61,6 @@ from .const import (
     IMMUTABLE_CONFIG_KEYS,
     LABEL_CURRENT_TEMP,
     LABEL_TARGET_TEMP,
-    LEGACY_YAML_TO_ATTR_MAP,
 )
 from .controller import ClimateController, register_controller
 from .controller_yaml_config import YamlConfigLoader
@@ -155,7 +154,7 @@ class YamlController(ClimateController):
         self._session = session
         self.loader: YamlConfigLoader = YamlConfigLoader(self)
         self.poller: YamlStatePoller = YamlStatePoller(self)
-        self._config = types.MappingProxyType(dict(config))
+        self._config = types.MappingProxyType(config)
 
         raw_device_id = config.get(CONF_DEVICE_ID)
         if raw_device_id is not None:
@@ -224,7 +223,7 @@ class YamlController(ClimateController):
         self._ip_address = resolved_ip.strip()
 
         # Strict Boolean Parsing (Guarded against string casting trap like 'false' -> True)
-        raw_debug = config[CONF_DEBUG] if CONF_DEBUG in config else False
+        raw_debug = config.get(CONF_DEBUG, False)
         if not isinstance(raw_debug, bool):
             raise TypeError(f"Expected strict bool for {CONF_DEBUG}, got {type(raw_debug).__name__}")
         self._debug = raw_debug
@@ -313,19 +312,6 @@ class YamlController(ClimateController):
         """Return the device ID of this controller."""
         return self._device_id
 
-    @device_id.setter
-    def device_id(self, value: str | None) -> None:
-        """Strictly update instance state. Do NOT rebuild immutable config."""
-        if value is not None:
-            if not isinstance(value, str):
-                raise TypeError(f"Expected str for device_id, got {type(value).__name__}")
-            stripped = value.strip()
-            if len(stripped) == 0:
-                raise ValueError("device_id cannot be empty")
-            self._device_id = stripped
-        else:
-            self._device_id = None
-
     @property
     def config(self) -> dict[str, Any]:
         """Return the controller configuration dictionary."""
@@ -335,19 +321,6 @@ class YamlController(ClimateController):
     def token(self) -> str | None:
         """Return the authentication token."""
         return self._token
-
-    @token.setter
-    def token(self, value: str | None) -> None:
-        """Strictly update instance state. Do NOT rebuild immutable config."""
-        if value is not None:
-            if not isinstance(value, str):
-                raise TypeError(f"Expected str for token, got {type(value).__name__}")
-            stripped = value.strip()
-            if len(stripped) == 0:
-                raise ValueError("token cannot be empty")
-            self._token = stripped
-        else:
-            self._token = None
 
     @property
     def ip_address(self) -> str | None:
@@ -481,8 +454,13 @@ class YamlController(ClimateController):
                 self.loader.operations,
             ):
                 for op in collection.values():
-                    if op.id is not None:
-                        cache[op.id] = op
+                    op_id = getattr(op, "id", None)
+                    if isinstance(op_id, str) and len(op_id.strip()) > 0:
+                        cache[op_id] = op
+                        if hasattr(self, "poller") and self.poller is not None:
+                            hass_attr = self.poller.get_hass_attr_for_op_id(op_id)
+                            if isinstance(hass_attr, str) and hass_attr not in cache:
+                                cache[hass_attr] = op
             self._obj_id_cache = cache
         return self._obj_id_cache
 
@@ -505,9 +483,10 @@ class YamlController(ClimateController):
         if obj is not None:
             return obj
 
-        mapped_op_id = LEGACY_YAML_TO_ATTR_MAP.get(property_name)
-        if mapped_op_id is not None and mapped_op_id != property_name:
-            return self._objects_by_id.get(mapped_op_id)
+        if hasattr(self, "poller") and self.poller is not None:
+            mapped_attr = self.poller.get_hass_attr_for_op_id(property_name)
+            if isinstance(mapped_attr, str) and mapped_attr != property_name:
+                return self._objects_by_id.get(mapped_attr)
 
         return None
 

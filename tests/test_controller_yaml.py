@@ -429,14 +429,18 @@ async def test_async_set_property_error_scenarios(mock_yaml_controller) -> None:
 
 
 def test_yaml_controller_setters_strict_assignment(mock_yaml_controller) -> None:
-    """Verify property setters assignment."""
+    """Verify that device_id and token are strictly read-only properties without setters."""
     # 1. device_id
-    mock_yaml_controller.device_id = "target_dev_id"
-    assert mock_yaml_controller._device_id == "target_dev_id"
+    mock_yaml_controller._device_id = "target_dev_id"
+    assert mock_yaml_controller.device_id == "target_dev_id"
+    with pytest.raises(AttributeError):
+        mock_yaml_controller.device_id = "new_dev_id"
 
     # 2. token
-    mock_yaml_controller.token = "target_token"
-    assert mock_yaml_controller._token == "target_token"
+    mock_yaml_controller._token = "target_token"
+    assert mock_yaml_controller.token == "target_token"
+    with pytest.raises(AttributeError):
+        mock_yaml_controller.token = "new_token"
 
 
 def test_yaml_controller_available_property(mock_yaml_controller) -> None:
