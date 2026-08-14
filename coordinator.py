@@ -44,6 +44,7 @@ from .const import (
     DEFAULT_DEVICE_NAME_PREFIX,
     DEFAULT_SUBDEVICE_NAME,
     DOMAIN,
+    FALSY_STRINGS,
     HARDWARE_BREATHING_ROOM_SEC,
     MANUFACTURER_SAMSUNG,
     NETWORK_POLL_TIMEOUT,
@@ -123,7 +124,7 @@ class PropertyDebouncer:
             )
             or (
                 property_name == ATTR_POWER
-                and (val is False or val_str in ("off", "false", "0"))
+                and (val is False or val_str in FALSY_STRINGS)
             )
         )
 
