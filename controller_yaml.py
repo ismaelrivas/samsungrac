@@ -417,12 +417,12 @@ class YamlController(ClimateController):
 
     @property
     def _objects_by_id(self) -> dict[str, DeviceProperty]:
-        """O(1) lazy-loaded cache for property/operation/sensor lookup by internal ID."""
+        """O(1) cached lookup dictionary for properties, operations, and sensors."""
         if self.loader.is_fully_initialized is not True:
             raise RuntimeError(ERR_CACHE_UNINITIALIZED)
 
         if self._obj_id_cache is None:
-            cache = {}
+            cache: dict[str, DeviceProperty] = {}
             for collection in (
                 self.loader.operations,
                 self.loader.properties,
@@ -431,7 +431,7 @@ class YamlController(ClimateController):
                 for op in collection.values():
                     if op.id is not None:
                         if op.id in cache:
-                            raise ValueError(f"Duplicate internal ID found: {op.id}")
+                            raise ValueError(f"Duplicate internal ID detected in YAML mapping: {op.id}")
                         cache[op.id] = op
             self._obj_id_cache = cache
         return self._obj_id_cache
