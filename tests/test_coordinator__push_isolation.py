@@ -31,6 +31,7 @@ async def test_valid_push_update_commits():
         )
 
         coordinator = SamsungClimateCoordinator(mock_hass, mock_controller, mock_entry)
+        coordinator.last_update_success = True
         coordinator.data = None
         coordinator.async_set_updated_data = MagicMock()
         coordinator._create_device_state = MagicMock(return_value="new_state")
@@ -62,6 +63,7 @@ async def test_junk_push_update_ignored():
         )
 
         coordinator = SamsungClimateCoordinator(mock_hass, mock_controller, mock_entry)
+        coordinator.last_update_success = True
         coordinator.data = None
         coordinator.async_set_updated_data = MagicMock()
 

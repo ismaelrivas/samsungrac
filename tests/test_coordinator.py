@@ -1877,6 +1877,7 @@ async def test_push_update_suppressed_during_active_debouncing(hass: HomeAssista
         coordinator = SamsungClimateCoordinator(
             hass, mock_controller, MagicMock(options={}, data={})
         )
+        coordinator.last_update_success = True
         coordinator.debouncer = PropertyDebouncer(coordinator, delay=3.0)
         coordinator.async_set_updated_data = MagicMock()
 

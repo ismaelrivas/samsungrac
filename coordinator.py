@@ -467,7 +467,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                         return
 
                     updated_state = self._create_device_state()  # pragma: no mutate
-                    if updated_state != self.data:
+                    if not self.last_update_success or updated_state != self.data:
                         self.async_set_updated_data(updated_state)  # pragma: no mutate
                     else:
                         _LOGGER.debug(
