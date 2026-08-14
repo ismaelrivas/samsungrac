@@ -367,7 +367,7 @@ class YamlController(ClimateController):
             raise TypeError(f"Expected non-empty str for property_name, got {property_name!r}")
 
         if not self.loader.is_fully_initialized:
-            raise ServiceValidationError(
+            raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key=ERR_CONTROLLER_NOT_INITIALIZED,
                 translation_placeholders={"property": property_name},
