@@ -96,8 +96,6 @@ class YamlController(ClimateController):
         extracted[CONF_ENTRY_ID] = config_entry.entry_id
         extracted[CONF_UNIQUE_ID] = resolved_unique_id
         if device_id is not None:
-            if not isinstance(device_id, str):
-                raise TypeError(f"Expected str for device_id, got {type(device_id).__name__}")
             extracted[CONF_DEVICE_ID] = device_id.strip()
 
         return extracted
@@ -247,8 +245,6 @@ class YamlController(ClimateController):
     @staticmethod
     def match_type(controller_type: str) -> bool:
         """Return True if the given type string matches this controller."""
-        if not isinstance(controller_type, str):
-            raise TypeError(f"Expected str for controller_type, got {type(controller_type).__name__}")
         return controller_type.lower() == DEFAULT_CONF_CONTROLLER
 
     @property
@@ -294,11 +290,7 @@ class YamlController(ClimateController):
     @staticmethod
     def _is_subdevice(device_id: str | None) -> bool:
         """Return True if device_id represents a sub-device."""
-        if device_id is None:
-            return False
-        if not isinstance(device_id, str):
-            raise TypeError(f"Expected str for device_id, got {type(device_id).__name__}")
-        if len(device_id.strip()) == 0:
+        if not device_id or not device_id.strip():
             return False
         return device_id not in EXCLUDED_SUBDEVICE_IDS
 

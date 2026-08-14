@@ -244,7 +244,7 @@ class YamlConfigLoader:
                         merged_config,
                         _LOGGER,
                         getattr(self.controller, "hass", None),
-                        getattr(self.controller, "session", None),
+                        getattr(self.controller, "_session", None),
                         getattr(self.controller, "ip_address", None),
                     )
                 elif conn_class.__name__ == "ConnectionRaw8888":
@@ -252,7 +252,7 @@ class YamlConfigLoader:
                         controller_config,
                         _LOGGER,
                         getattr(self.controller, "hass", None),
-                        getattr(self.controller, "session", None),
+                        getattr(self.controller, "_session", None),
                         getattr(self.controller, "ip_address", None),
                     )
                 else:
