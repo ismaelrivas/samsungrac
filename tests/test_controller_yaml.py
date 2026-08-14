@@ -222,7 +222,7 @@ def test_yaml_controller_strict_initialization() -> None:
     assert controller._debug is True, "The mutant altered debug flag extraction"
 
     # 6. Base attributes dictionary assignment
-    assert controller._attributes == {"controller": "test_mac_uid_dev_123"}
+    assert controller._attributes == {}
     assert controller._shared_raw_client is None
 
     # 7. Composition verification (Delegates)

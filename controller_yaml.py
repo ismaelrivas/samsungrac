@@ -253,8 +253,6 @@ class YamlController(ClimateController):
             | None
         ) = None
 
-        self._attributes[CONF_CONTROLLER] = self.id
-
     @staticmethod
     def match_type(controller_type: str) -> bool:
         """Return True if the given type string matches this controller."""
