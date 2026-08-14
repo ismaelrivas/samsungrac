@@ -449,11 +449,11 @@ class YamlController(ClimateController):
                 self.loader.operations,
             ):
                 for op in collection.values():
-                    op_id = getattr(op, "id", None)
-                    if isinstance(op_id, str) and len(op_id.strip()) > 0:
+                    op_id = op.id
+                    if op_id and op_id.strip():
                         cache[op_id] = op
                         hass_attr = self.poller.get_hass_attr_for_op_id(op_id)
-                        if isinstance(hass_attr, str) and hass_attr not in cache:
+                        if hass_attr and hass_attr not in cache:
                             cache[hass_attr] = op
             self._obj_id_cache = cache
         return self._obj_id_cache
