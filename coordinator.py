@@ -364,8 +364,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     @callback
     def _async_on_connection_failed(self) -> None:
         """Callback when connection persistently fails."""
-        self.last_update_success = False
-        self.async_update_listeners()
+        self.async_set_update_error(UpdateFailed("Persistent connection failure"))
 
     @callback
     def _async_handle_persistent_offline(self, reason: str) -> None:
@@ -392,7 +391,10 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             return self._create_device_state()
 
         except InvalidHeaderError as err:
-            if self.config_entry.options.get(CONF_CONN_METHOD) != CONN_METHOD_RAW:
+            current_method = self.config_entry.options.get(
+                CONF_CONN_METHOD, self.config_entry.data.get(CONF_CONN_METHOD)
+            )
+            if current_method != CONN_METHOD_RAW:
                 _LOGGER.warning(
                     "%s Auto-healing to RAW mode triggered", self.log_prefix
                 )  # pragma: no mutate
