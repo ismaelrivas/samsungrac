@@ -116,19 +116,12 @@ class PropertyDebouncer:
         last_activity = self._last_activities.get(property_name, 0.0)
 
         # Immediate execution for turn-off commands (aborts any pending debounced commands across all properties)
-        effective_val = (
-            val
-            if val is not None
-            else (
-                kwargs.get("val")
-                if "val" in kwargs
-                else (
-                    args[1]
-                    if len(args) > 1
-                    else (args[0] if len(args) == 1 else None)
-                )
-            )
-        )
+        effective_val = val if val is not None else kwargs.get("val")
+        if effective_val is None:
+            if len(args) > 1:
+                effective_val = args[1]
+            elif len(args) == 1:
+                effective_val = args[0]
         val_str = str(effective_val).lower() if effective_val is not None else ""
         is_turn_off = (
             (
