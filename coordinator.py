@@ -220,10 +220,11 @@ class PropertyDebouncer:
                         )  # pragma: no mutate
                         await self.coordinator.async_request_refresh()
 
+                safe_uid = self.coordinator.unique_id or "device"
                 self.coordinator.config_entry.async_create_background_task(
                     self.hass,
                     _task_runner(),
-                    name=f"{DOMAIN}_{self.coordinator.unique_id}_debouncer_{prop}",
+                    name=f"{DOMAIN}_{safe_uid}_debouncer_{prop}",
                 )
 
         self._timers[property_name] = async_call_later(
