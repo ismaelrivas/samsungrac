@@ -774,21 +774,3 @@ class YamlController(ClimateController):
         Acts as a safe no-op for YAML-based devices.
         """
         _LOGGER.debug("%s Refresh from connection requested (no-op)", self.log_prefix)
-
-    def register_token_callback(
-        self,
-        callback: (
-            Callable[[str], Coroutine[Any, Any, None]] | Callable[[str], None] | None
-        ),
-    ) -> None:
-        """Register an explicit token refreshed callback."""
-        self._token_refreshed_callback = callback
-
-    def on_token_refreshed(self, new_token: str) -> None:
-        """Invoke the registered token refreshed callback if present."""
-        if not isinstance(new_token, str) or len(new_token.strip()) == 0:
-            raise TypeError("new_token must be a non-empty string")
-        if self._token_refreshed_callback is not None:
-            self._token_refreshed_callback(new_token)
-        else:
-            _LOGGER.debug("%s Token refreshed callback received (no handler registered)", self.log_prefix)
