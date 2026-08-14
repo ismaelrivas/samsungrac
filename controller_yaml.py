@@ -461,7 +461,7 @@ class YamlController(ClimateController):
         elif property_name in self._attributes:
             val = self._attributes[property_name]
         else:
-            raise KeyError(f"{ERR_UNREGISTERED_PROPERTY}: '{property_name}'")
+            raise KeyError(f"{ERR_UNREGISTERED_PROPERTY} [{property_name}]")
         if val is None or val == STATE_UNKNOWN:
             return None
         return val
