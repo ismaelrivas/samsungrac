@@ -22,6 +22,7 @@ from homeassistant.const import (
 
 DOMAIN = "climate_ip"
 ISSUE_CONNECTION_FAILED = "connection_failed"
+ISSUE_AUTO_HEALING_RAW = "auto_healing_raw"
 ERR_PROPERTY_SET_FAILED = "property_set_failed"
 ERR_CONTROLLER_NOT_INITIALIZED = "controller_not_initialized"
 ERR_PROPERTY_NOT_FOUND = "property_not_found"

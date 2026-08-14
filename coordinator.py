@@ -47,6 +47,7 @@ from .const import (
     FALLBACK_DEVICE_ID,
     FALSY_STRINGS,
     HARDWARE_BREATHING_ROOM_SEC,
+    ISSUE_AUTO_HEALING_RAW,
     MANUFACTURER_SAMSUNG,
     MIN_POLL_INTERVAL,
     NETWORK_POLL_TIMEOUT,
@@ -64,7 +65,7 @@ class PropertyDebouncer:
 
     def __init__(
         self,
-        coordinator: "SamsungClimateCoordinator",
+        coordinator: SamsungClimateCoordinator,
         delay: float = DEFAULT_DEBOUNCE_DELAY,
     ) -> None:
         """Initialize the property debouncer."""
@@ -226,13 +227,14 @@ class PropertyDebouncer:
                         )  # pragma: no mutate
                         await self.coordinator.async_request_refresh()
 
-                raw_uid = self.coordinator.unique_id or FALLBACK_DEVICE_ID
-                safe_uid = raw_uid.replace(".", "_").replace(" ", "_")
-                self.coordinator.config_entry.async_create_background_task(
-                    self.hass,
-                    _task_runner(),
-                    name=f"{DOMAIN}_{safe_uid}_debouncer_{prop}",
-                )
+                if self.coordinator.config_entry is not None:
+                    raw_uid = self.coordinator.unique_id or FALLBACK_DEVICE_ID
+                    safe_uid = raw_uid.replace(".", "_").replace(" ", "_")
+                    self.coordinator.config_entry.async_create_background_task(
+                        self.hass,
+                        _task_runner(),
+                        name=f"{DOMAIN}_{safe_uid}_debouncer_{prop}",
+                    )
 
         self._timers[property_name] = async_call_later(
             self.hass, self.delay, _fire_delayed
@@ -272,7 +274,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
         # Determine the update interval with strict None-coalescing
         opt_polling = entry.options.get(CONF_ENABLE_POLLING)
-        enable_polling = (
+        enable_polling = bool(
             opt_polling
             if opt_polling is not None
             else entry.data.get(CONF_ENABLE_POLLING, DEFAULT_ENABLE_POLLING)
@@ -283,10 +285,13 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             if opt_interval is not None
             else entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
         )  # pragma: no mutate
-        poll_interval_seconds = max(raw_interval, MIN_POLL_INTERVAL)
+        try:
+            poll_interval_seconds = max(int(raw_interval), MIN_POLL_INTERVAL)
+        except (ValueError, TypeError):
+            poll_interval_seconds = DEFAULT_POLL_INTERVAL
         update_interval = (
             timedelta(seconds=poll_interval_seconds)
-            if (controller.poll and enable_polling)
+            if (bool(controller.poll) and enable_polling)
             else None
         )  # pragma: no mutate
 
@@ -332,11 +337,17 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 via_device=via_device,
             )  # pragma: no mutate
         else:
-            # Standalone/Parent device (e.g. the Wifi-kit itself or a single AC)
             mac = self.config_entry.data.get(CONF_MAC)  # pragma: no mutate
-            conns = (
-                {(dr.CONNECTION_NETWORK_MAC, dr.format_mac(mac))} if mac else set()
-            )  # pragma: no mutate
+            conns: set[tuple[str, str]] = set()
+            if mac:
+                try:
+                    conns.add((dr.CONNECTION_NETWORK_MAC, dr.format_mac(str(mac))))
+                except (ValueError, TypeError):
+                    _LOGGER.debug(
+                        "%s Malformed MAC address '%s' discarded from DeviceInfo connections",
+                        self.log_prefix,
+                        mac,
+                    )
 
             opt_name = self.config_entry.options.get(CONF_NAME)
             device_name = (
@@ -362,7 +373,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         if not self.unique_id:
             return
         safe_device_id = self.unique_id.replace(".", "_").replace(" ", "_")
-        issue_id = f"auto_healing_raw_{safe_device_id}"
+        issue_id = f"{ISSUE_AUTO_HEALING_RAW}_{safe_device_id}"
         registry = async_get_issue_registry(self.hass)
         issue = registry.async_get_issue(DOMAIN, issue_id)
         if issue is not None and issue.dismissed_version is not None:
@@ -422,7 +433,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         safe_uid = self.unique_id or FALLBACK_DEVICE_ID
         safe_device_id = safe_uid.replace(".", "_").replace(" ", "_")
         device_name = (
-            self.device_info.get("name")
+            self.device_info.get(CONF_NAME)
             or f"{DEFAULT_DEVICE_NAME_PREFIX} {safe_uid}"
         )
 
@@ -435,11 +446,11 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         async_create_issue(
             self.hass,
             DOMAIN,
-            f"auto_healing_raw_{safe_device_id}",
+            f"{ISSUE_AUTO_HEALING_RAW}_{safe_device_id}",
             is_fixable=True,
             is_persistent=False,
             severity=IssueSeverity.WARNING,
-            translation_key="auto_healing_raw",
+            translation_key=ISSUE_AUTO_HEALING_RAW,
             translation_placeholders={
                 "device_name": device_name,
             },
@@ -611,9 +622,12 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     ) -> None:
         """Set a property on the controller with optimistic prediction and atomic rollback."""
         # 1. Predict (Activates anti-flicker locks in the controller)
+        current_state = (
+            self.data if self.data is not None else self._create_device_state()
+        )
         pred_val = new_value.value if isinstance(new_value, Enum) else new_value
         _, corrections = await self.controller.async_predict_and_correct_state(
-            self.data, property_name, pred_val
+            current_state, property_name, pred_val
         )
 
         # 2. Push the fast-tracked predicted state through the coordinator
@@ -719,7 +733,22 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
         self.debouncer.cancel_all()
         await super().async_shutdown()
-        await self.controller.async_shutdown()
+
+        try:
+            await self.controller.async_shutdown()
+        except (TimeoutError, CannotConnect, OSError) as err:
+            _LOGGER.debug(
+                "%s Tolerated network exception during controller shutdown: %s",
+                self.log_prefix,
+                err,
+            )
+        except Exception as err:  # pylint: disable=broad-exception-caught
+            _LOGGER.warning(
+                "%s Unexpected error during controller shutdown: %s",
+                self.log_prefix,
+                err,
+                exc_info=True,
+            )
 
         _LOGGER.debug(
             "%s Coordinator shutdown complete", self.log_prefix
