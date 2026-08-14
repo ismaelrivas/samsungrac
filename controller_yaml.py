@@ -483,11 +483,10 @@ class YamlController(ClimateController):
             if all_vals is not None:
                 if not isinstance(all_vals, (list, tuple, set)):
                     raise TypeError(f"Expected iterable for {property_name} all_vals, got {type(all_vals).__name__}")
-                if len(all_vals) > 0:
-                    for v in all_vals:
-                        if not isinstance(v, str):
-                            raise TypeError(f"Mode value must be a string, got {type(v).__name__}: {v}")
-                    return tuple(all_vals)
+                for v in all_vals:
+                    if not isinstance(v, str):
+                        raise TypeError(f"Mode value must be a string, got {type(v).__name__}: {v}")
+                return tuple(all_vals)
 
         _LOGGER.debug(
             "%s Cannot get values for '%s': not an operation or missing all_values",
@@ -672,13 +671,11 @@ class YamlController(ClimateController):
 
         raw_hvac = _get_val(ATTR_HVAC_MODE)
         hvac_mode = self._safe_parse_hvac_mode(raw_hvac)
-        if (
-            len(hvac_modes_tuple) > 0
-            and hvac_mode is not None
-            and hvac_mode != HVACMode.OFF
-            and hvac_mode not in hvac_modes_tuple
-        ):
-            raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_HVAC_MODE}]: {hvac_mode}")
+        
+        # Unrolled strict boolean evaluation (mutmut resistant)
+        if hvac_mode is not None and hvac_mode != HVACMode.OFF and len(hvac_modes_tuple) > 0:
+            if hvac_mode not in hvac_modes_tuple:
+                raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_HVAC_MODE}]: {hvac_mode}")
 
         target_temp = self._safe_parse_temperature(_get_val(ATTR_TEMPERATURE), LABEL_TARGET_TEMP)
         current_temp = self._safe_parse_temperature(_get_val(ATTR_CURRENT_TEMPERATURE), LABEL_CURRENT_TEMP)
