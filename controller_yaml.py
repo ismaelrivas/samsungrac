@@ -663,7 +663,7 @@ class YamlController(ClimateController):
 
         raw_hvac = _get_val(ATTR_HVAC_MODE)
         hvac_mode = self._safe_parse_hvac_mode(raw_hvac)
-        if hvac_mode is not None and hvac_mode not in hvac_modes_tuple:
+        if hvac_modes_tuple and hvac_mode is not None and hvac_mode not in hvac_modes_tuple:
             raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_HVAC_MODE}]: {hvac_mode}")
 
         raw_target_temp = _get_val(ATTR_TEMPERATURE)
@@ -677,7 +677,7 @@ class YamlController(ClimateController):
         if raw_fan is not None:
             if not isinstance(raw_fan, str):
                 raise TypeError(f"Fan mode must be a string, got {type(raw_fan).__name__}")
-            if raw_fan not in fan_modes_tuple:
+            if fan_modes_tuple and raw_fan not in fan_modes_tuple:
                 raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_FAN_MODE}]: {raw_fan}")
             fan_mode = raw_fan
 
@@ -686,7 +686,7 @@ class YamlController(ClimateController):
         if raw_swing is not None:
             if not isinstance(raw_swing, str):
                 raise TypeError(f"Swing mode must be a string, got {type(raw_swing).__name__}")
-            if raw_swing not in swing_modes_tuple:
+            if swing_modes_tuple and raw_swing not in swing_modes_tuple:
                 raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_SWING_MODE}]: {raw_swing}")
             swing_mode = raw_swing
 
@@ -695,7 +695,7 @@ class YamlController(ClimateController):
         if raw_preset is not None:
             if not isinstance(raw_preset, str):
                 raise TypeError(f"Preset mode must be a string, got {type(raw_preset).__name__}")
-            if raw_preset not in preset_modes_tuple:
+            if preset_modes_tuple and raw_preset not in preset_modes_tuple:
                 raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_PRESET_MODE}]: {raw_preset}")
             preset_mode = raw_preset
 
