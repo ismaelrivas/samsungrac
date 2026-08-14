@@ -395,11 +395,9 @@ class YamlController(ClimateController):
         success = False
         try:
             result = await op.async_set_value(new_value, target_device_id)
-            success = True
+            success = bool(result)
             return result
-        except asyncio.CancelledError:
-            raise
-        except HomeAssistantError:
+        except (asyncio.CancelledError, HomeAssistantError):
             raise
         except (TimeoutError, OSError, aiohttp.ClientError) as err:
             raise HomeAssistantError(
