@@ -36,6 +36,7 @@ from .const import (
     CONF_NAME,
     CONF_POLL_INTERVAL,
     CONF_SSL_CONFIG_KEY,
+    CONF_SUBDEVICE_ID,
     CONF_TOKEN_KEY,
     CONN_METHOD_RAW,
     DEFAULT_DEBOUNCE_DELAY,
@@ -293,8 +294,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         # Build comprehensive DeviceInfo
         if device_info:
             # Sub-device (e.g., Indoor Unit connected via a MIM-H03)
-            name = device_info.get("name") or DEFAULT_SUBDEVICE_NAME
-            did = device_info.get("id")
+            name = device_info.get(CONF_NAME) or DEFAULT_SUBDEVICE_NAME
+            did = device_info.get(CONF_SUBDEVICE_ID)
 
             # Avoid redundant "ID XXX (ID XXX (Name))"
             if did and not name.startswith(f"ID {did}"):
@@ -324,8 +325,11 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
             self.device_info = DeviceInfo(
                 identifiers={(DOMAIN, self.unique_id)},
-                name=self.config_entry.data.get(
-                    CONF_NAME, f"{DEFAULT_DEVICE_NAME_PREFIX} {self.unique_id}"
+                name=self.config_entry.options.get(
+                    CONF_NAME,
+                    self.config_entry.data.get(
+                        CONF_NAME, f"{DEFAULT_DEVICE_NAME_PREFIX} {self.unique_id}"
+                    ),
                 ),
                 manufacturer=MANUFACTURER_SAMSUNG,
                 connections=conns,
@@ -400,12 +404,11 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         new_options = {**self.config_entry.options, CONF_CONN_METHOD: CONN_METHOD_RAW}
         self.hass.config_entries.async_update_entry(self.config_entry, options=new_options)
 
-        if isinstance(self.device_info, dict):
-            device_name = self.device_info.get("name") or f"Samsung AC {self.unique_id}"
-        elif hasattr(self.device_info, "name"):
-            device_name = getattr(self.device_info, "name", None) or f"Samsung AC {self.unique_id}"
-        else:
-            device_name = f"Samsung AC {self.unique_id}"
+        device_name = (
+            self.device_info.get("name")
+            if self.device_info
+            else f"{DEFAULT_DEVICE_NAME_PREFIX} {self.unique_id}"
+        )
 
         _LOGGER.warning(
             "%s Auto-healing to RAW mode activated: The device sent non-standard HTTP responses "
