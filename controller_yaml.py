@@ -542,8 +542,10 @@ class YamlController(ClimateController):
         return dict(self._attributes)
 
     @property
-    def temperature_unit(self) -> UnitOfTemperature | str:
+    def temperature_unit(self) -> UnitOfTemperature:
         """Return the temperature unit in use (resolved at construction time)."""
+        if not isinstance(self._temperature_unit, UnitOfTemperature):
+            raise TypeError(f"Invalid temperature unit instance: {type(self._temperature_unit).__name__}")
         return self._temperature_unit
 
     @property
