@@ -115,8 +115,14 @@ class PropertyDebouncer:
         )
         val_str = str(val).lower() if val is not None else ""
         is_turn_off = (
-            property_name in (ATTR_HVAC_MODE, ATTR_POWER)
-            and val_str in ("off", HVACMode.OFF.value)
+            (
+                property_name == ATTR_HVAC_MODE
+                and (val == HVACMode.OFF or val_str == HVACMode.OFF.value)
+            )
+            or (
+                property_name == ATTR_POWER
+                and (val is False or val_str in ("off", "false", "0"))
+            )
         )
 
         if is_turn_off:
