@@ -30,6 +30,11 @@ device:
   operations:
     hvac: # hvac_mode
       type: modes
+      optimistic_cascades:
+        - target_node: "components.INDOOR1.switch.switch.value"
+          value_map:
+            off: "off"
+            default: "on"
       values:
         auto: {}
         cool: {}

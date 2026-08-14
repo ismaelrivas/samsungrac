@@ -78,6 +78,11 @@ class PropertyDebouncer:
         """Return the HomeAssistant instance from the coordinator."""
         return self.coordinator.hass
 
+    @property
+    def is_active(self) -> bool:
+        """Return True if there are active debouncing timers or pending payloads."""
+        return bool(self._timers or self._pending_payloads)
+
     def cancel_all(self) -> None:
         """Cancel all active timers, clear pending payloads, and poison active zombies."""
         self._generation += 1  # 💥 Global poisoning: any queued task will be invalidated
@@ -458,8 +463,21 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
             if new_data:
                 if await self.controller.async_merge_device_state(new_data):
+                    if hasattr(self, "debouncer") and self.debouncer.is_active:
+                        _LOGGER.debug(
+                            "%s Push update received during active debouncing; suppressing HA broadcast to protect UI buffer",
+                            self.log_prefix,
+                        )  # pragma: no mutate
+                        return
+
                     updated_state = self._create_device_state()  # pragma: no mutate
-                    self.async_set_updated_data(updated_state)  # pragma: no mutate
+                    if updated_state != getattr(self, "data", None):
+                        self.async_set_updated_data(updated_state)  # pragma: no mutate
+                    else:
+                        _LOGGER.debug(
+                            "%s Push update yielded identical typed state; suppressing broadcast to prevent UI flicker",
+                            self.log_prefix,
+                        )  # pragma: no mutate
                 else:
                     _LOGGER.debug(
                         "Push update discarded by controller (validation failed or junk data)."
@@ -492,6 +510,29 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     ) -> bool:
         """Serialize network commands with a global lock and delay to prevent AC drops."""
         async with self._global_network_lock:
+            if hasattr(self, "debouncer") and prop in self.debouncer._pending_payloads:
+                _LOGGER.debug(
+                    "%s [Debouncer] Command for '%s' (val=%s) was superseded while waiting for lock. Dropping stale command.",
+                    self.log_prefix,
+                    prop,
+                    val,
+                )
+                return True
+
+            poller = getattr(self.controller, "poller", None)
+            pending_updates = getattr(poller, "_pending_updates", None)
+            if pending_updates is not None and prop in pending_updates:
+                current_target = pending_updates[prop][0]
+                if current_target != val:
+                    _LOGGER.debug(
+                        "%s [Debouncer] Command for '%s' (val=%s) was superseded by target %s. Dropping stale command.",
+                        self.log_prefix,
+                        prop,
+                        val,
+                        current_target,
+                    )
+                    return True
+
             res = await self.controller.async_set_property(prop, val, device_id)
             await asyncio.sleep(HARDWARE_BREATHING_ROOM_SEC)
             return False if res is False else True

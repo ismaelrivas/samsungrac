@@ -43,6 +43,11 @@ device:
   operations:
     hvac: # hvac_mode
       type: modes
+      optimistic_cascades:
+        - target_node: "AC_FUN_POWER"
+          value_map:
+            off: "Off"
+            default: "On"
       values:
         'cool': { value : 'Cool' }
         'heat': { value : 'Heat' }
@@ -143,8 +148,9 @@ device:
       min: 8
       max: 30
       state_node: 'AC_FUN_TEMPSET'
-      status_template: '{{ device_state.AC_FUN_TEMPSET | float }}'
+      status_template: '{{ device_state.AC_FUN_TEMPSET | float if "AC_FUN_TEMPSET" in device_state else "" }}'
       connection_template: '<Request Type="DeviceControl"><Control CommandID="AC_FUN_TEMPSET" DUID="{{duid}}"><Attr ID="AC_FUN_TEMPSET" Value="{{value | float}}" /></Control></Request>'
+      validation_template: '{% if "AC_FUN_TEMPSET" in device_state %}valid{% endif %}'
   attributes:
     sleep_timer:
       type: number

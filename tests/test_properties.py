@@ -1495,3 +1495,63 @@ async def test_getjsonstatus_calculate_value_json_strict(
     assert result == {"strict_key": "strict_value", "is_active": True}
 
 
+def test_apply_optimistic_cascades_root_and_nested(mock_connection, mock_controller):
+    """Test that apply_optimistic_cascades correctly mutates root and nested state."""
+    prop = DeviceProperty("test_cascades", mock_connection, mock_controller)
+
+    # 1. No config -> no-op
+    state = {"power": "Off"}
+    prop.apply_optimistic_cascades(state, "cool")
+    assert state == {"power": "Off"}
+
+    # 2. Configure cascades
+    prop.load_from_yaml({
+        "optimistic_cascades": [
+            {
+                "target_node": "AC_FUN_POWER",
+                "value_map": {
+                    "off": "Off",
+                    "default": "On",
+                },
+            },
+            {
+                "target_node": "Operation.power",
+                "value_map": {
+                    "off": "Off",
+                    "default": "On",
+                },
+            },
+        ]
+    })
+
+    # Test "cool" -> turns power to "On"
+    state1 = {
+        "AC_FUN_POWER": "Off",
+        "Operation": {"power": "Off"},
+        "Devices": [{"Operation": {"power": "Off"}}],
+    }
+    prop.apply_optimistic_cascades(state1, "cool")
+    assert state1["AC_FUN_POWER"] == "On"
+    assert state1["Operation"]["power"] == "On"
+    assert state1["Devices"][0]["Operation"]["power"] == "On"
+
+    # Test "off" -> turns power to "Off"
+    state2 = {
+        "AC_FUN_POWER": "On",
+        "Operation": {"power": "On"},
+    }
+    prop.apply_optimistic_cascades(state2, "off")
+    assert state2["AC_FUN_POWER"] == "Off"
+    assert state2["Operation"]["power"] == "Off"
+
+    # Test invalid / malformed cascade entries
+    prop._config = {"optimistic_cascades": "invalid_type"}
+    prop.apply_optimistic_cascades(state2, "cool")
+    assert state2["AC_FUN_POWER"] == "Off"
+
+    prop._config = {"optimistic_cascades": [{"target_node": None}]}
+    prop.apply_optimistic_cascades(state2, "cool")
+    assert state2["AC_FUN_POWER"] == "Off"
+
+
+

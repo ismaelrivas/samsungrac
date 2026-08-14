@@ -33,6 +33,11 @@ device:
   operations:
     hvac: # hvac_mode
       type: modes
+      optimistic_cascades:
+        - target_node: "Operation.power"
+          value_map:
+            off: "Off"
+            default: "On"
       connection:
         params: { method: 'PUT', url: 'https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__/' }
       values:

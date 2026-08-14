@@ -252,6 +252,7 @@ class DeviceProperty:
         self._state_class: SensorStateClass | None = None
         self._entity_category: str | None = None
         self._feature_flag: ClimateEntityFeature | None = None
+        self._config: dict[str, Any] = {}
 
     @staticmethod
     def match_type(prop_type: str) -> bool:
@@ -444,6 +445,7 @@ class DeviceProperty:
         if node is None:
             return False
 
+        self._config = dict(node)
         self._type = node.get(CONFIG_TYPE)
 
         if state_node := node.get(CONFIG_STATE_NODE):
@@ -509,6 +511,55 @@ class DeviceProperty:
     def convert_dev_to_hass(self, dev_value: Any) -> Any:
         """Convert device state value to HASS."""
         return dev_value
+
+    def apply_optimistic_cascades(
+        self, state: dict[str, Any], value: Any, _dev_val: Any = None
+    ) -> None:
+        """Optimistically cascade state changes based on YAML configuration."""
+        property_config = getattr(self, "_config", {})
+        cascades = property_config.get("optimistic_cascades", [])
+
+        if not cascades or not isinstance(cascades, list):
+            return
+
+        val_str = str(value).lower() if value is not None else ""
+
+        target_nodes = [state]
+        if (
+            "Devices" in state
+            and isinstance(state["Devices"], list)
+            and len(state["Devices"]) > 0
+            and isinstance(state["Devices"][0], dict)
+        ):
+            target_nodes.append(state["Devices"][0])
+
+        for cascade_rule in cascades:
+            if not isinstance(cascade_rule, dict):
+                continue
+            target_path = cascade_rule.get("target_node")
+            value_map = cascade_rule.get("value_map", {})
+
+            if not target_path or not value_map or not isinstance(value_map, dict):
+                continue
+
+            new_val = value_map.get(val_str)
+            if new_val is None:
+                new_val = value_map.get("default")
+
+            if new_val is not None:
+                path_parts = str(target_path).split(".")
+
+                for target_node in target_nodes:
+                    current_level = target_node
+                    for part in path_parts[:-1]:
+                        if part not in current_level or not isinstance(
+                            current_level[part], dict
+                        ):
+                            current_level[part] = {}
+                        current_level = current_level[part]
+
+                    final_key = path_parts[-1]
+                    current_level[final_key] = new_val
 
     def calculate_value_from_state(self, device_state: dict[str, Any] | None) -> Any:
         """Dry-run calculation of the property value."""

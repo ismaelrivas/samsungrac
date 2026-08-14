@@ -1805,3 +1805,82 @@ async def test_debouncer_per_property_independence() -> None:
     await debouncer.async_execute("temperature", func_temp_2, "temperature", "20.0")
     assert "temperature" in debouncer._pending_payloads
     assert debouncer._pending_payloads["temperature"][1] == ("temperature", "20.0")
+
+
+@pytest.mark.asyncio
+async def test_locked_set_property_drops_superseded_commands(hass: HomeAssistant) -> None:
+    """Test that _locked_set_property drops stale commands if superseded while waiting for lock."""
+    with patch(
+        "custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__",
+        return_value=None,
+    ):
+        from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
+
+        mock_controller = MagicMock()
+        mock_controller.async_set_property = AsyncMock(return_value=True)
+        mock_controller.log_prefix = "[Test]"
+
+        coordinator = SamsungClimateCoordinator(
+            hass, mock_controller, MagicMock(options={}, data={})
+        )
+        coordinator.debouncer = PropertyDebouncer(coordinator, delay=3.0)
+
+        # 1. Superseded via pending_payloads
+        coordinator.debouncer._pending_payloads["temperature"] = (MagicMock(), (), {}, 1)
+        res = await coordinator._locked_set_property("temperature", "18.0")
+        assert res is True
+        mock_controller.async_set_property.assert_not_called()
+
+        # 2. Superseded via poller._pending_updates
+        coordinator.debouncer._pending_payloads.clear()
+        mock_poller = MagicMock()
+        mock_poller._pending_updates = {"temperature": ("20.0", 12345.0)}
+        mock_controller.poller = mock_poller
+
+        res2 = await coordinator._locked_set_property("temperature", "18.0")
+        assert res2 is True
+        mock_controller.async_set_property.assert_not_called()
+
+        # 3. Matching target value executes normally
+        res3 = await coordinator._locked_set_property("temperature", "20.0")
+        assert res3 is True
+        mock_controller.async_set_property.assert_called_once_with("temperature", "20.0", None)
+
+
+@pytest.mark.asyncio
+async def test_push_update_suppressed_during_active_debouncing(hass: HomeAssistant) -> None:
+    """Test that push updates do not broadcast to HA while debouncer is actively holding pending commands."""
+    with patch(
+        "custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__",
+        return_value=None,
+    ):
+        from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
+
+        mock_controller = MagicMock()
+        mock_controller.async_merge_device_state = AsyncMock(return_value=True)
+        mock_controller.log_prefix = "[Test]"
+
+        coordinator = SamsungClimateCoordinator(
+            hass, mock_controller, MagicMock(options={}, data={})
+        )
+        coordinator.debouncer = PropertyDebouncer(coordinator, delay=3.0)
+        coordinator.async_set_updated_data = MagicMock()
+
+        # 1. Debouncer is active (timer or payload present)
+        coordinator.debouncer._pending_payloads["temperature"] = (MagicMock(), (), {}, 1)
+        assert coordinator.debouncer.is_active is True
+
+        await coordinator.async_handle_push_update({"AC_FUN_OPMODE": "Dry"})
+        mock_controller.async_merge_device_state.assert_called_once()
+        coordinator.async_set_updated_data.assert_not_called()
+
+        # 2. Debouncer clears -> push update broadcasts normally
+        coordinator.debouncer._pending_payloads.clear()
+        assert coordinator.debouncer.is_active is False
+        coordinator._create_device_state = MagicMock(return_value="state_1")
+        coordinator.data = "state_0"
+
+        await coordinator.async_handle_push_update({"AC_FUN_OPMODE": "Cool"})
+        coordinator.async_set_updated_data.assert_called_once_with("state_1")
+
+

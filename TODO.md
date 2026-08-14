@@ -15,7 +15,7 @@
   - Replace `from jinja2 import Template` with the HA native template engine.
   - *Benefit*: Gives users access to the full suite of Home Assistant Jinja filters (`regex_findall`, `as_timestamp`, `match`, etc.) within the YAML device configurations, adhering to HA best practices.
 
-- [ ] **Data-Driven Optimistic Cascades via YAML (Option B)**: Shift optimistic state cascades (such as toggling `Operation.power` to `"Off"` when `hvac_mode` is set to `"off"`, or `"On"` when set to heating/cooling) from hardcoded Python logic directly into declarative YAML property configurations.
+- [x] **Data-Driven Optimistic Cascades via YAML (Option B)**: Shift optimistic state cascades (such as toggling `Operation.power` to `"Off"` when `hvac_mode` is set to `"off"`, or `"On"` when set to heating/cooling) from hardcoded Python logic directly into declarative YAML property configurations.
   - **Specification Artifact**: See detailed architectural design and implementation specification in [dynamic_optimistic_cascades_spec.md](file:///home/cogollo/.gemini/antigravity-ide/brain/7183440b-47c1-4c93-8106-21796edf9a10/dynamic_optimistic_cascades_spec.md).
   - **YAML Schema Spec**: Add an `optimistic_cascades` block under property operations in device configuration files (e.g., `samsung_2878.yaml`, `samsungrac.yaml`):
     ```yaml
