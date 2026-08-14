@@ -413,9 +413,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         self.hass.config_entries.async_update_entry(self.config_entry, options=new_options)
 
         device_name = (
-            self.device_info.get("name")
-            if self.device_info
-            else f"{DEFAULT_DEVICE_NAME_PREFIX} {self.unique_id}"
+            (self.device_info.get("name") if self.device_info else None)
+            or f"{DEFAULT_DEVICE_NAME_PREFIX} {self.unique_id or 'Device'}"
         )
 
         _LOGGER.warning(
@@ -446,9 +445,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     async def _async_update_data(self) -> ClimateIPDeviceState:
         """Fetch the latest state from the device."""
         try:
-            await asyncio.wait_for(
-                self.controller.async_get_status(), timeout=NETWORK_POLL_TIMEOUT
-            )  # pragma: no mutate
+            async with asyncio.timeout(NETWORK_POLL_TIMEOUT):
+                await self.controller.async_get_status()  # pragma: no mutate
             return self._create_device_state()
 
         except InvalidHeaderError as err:
@@ -683,7 +681,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     async def _async_handle_set_property_failure(
         self, properties: dict[str, Any]
     ) -> None:
-        """Clear pending updates and request refresh on command failure."""
+        """Clear pending updates and cancel pending debounces on command failure."""
+        self.debouncer.cancel_all()
         await self.controller.async_clear_pending_updates(list(properties.keys()))
         await self.async_request_refresh()
 
@@ -712,7 +711,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         )  # pragma: no mutate
 
         self.debouncer.cancel_all()
-        super().async_shutdown()
+        await super().async_shutdown()
         await self.controller.async_shutdown()
 
         _LOGGER.debug(

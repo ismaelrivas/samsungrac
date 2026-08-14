@@ -1185,7 +1185,7 @@ async def test_async_set_property_raises_update_failed_on_exception_with_message
 
 async def test_coordinator_enforces_strict_timeout(hass: HomeAssistant) -> None:
     """Verify that the coordinator enforces a 30.0 second timeout on device polling."""
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import AsyncMock, MagicMock, patch
 
     from custom_components.climate_ip.const import NETWORK_POLL_TIMEOUT
     from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
@@ -1193,23 +1193,23 @@ async def test_coordinator_enforces_strict_timeout(hass: HomeAssistant) -> None:
     mock_controller = MagicMock()
     mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
     mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
+    mock_controller.async_get_status = AsyncMock(return_value={})
     mock_entry = MagicMock()
     mock_entry.options = {}
     mock_entry.data = {}
 
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
 
-    # Intercept asyncio.wait_for directly in the coordinator module
+    # Intercept asyncio.timeout directly in the coordinator module
     with patch(
-        "custom_components.climate_ip.coordinator.asyncio.wait_for"
-    ) as mock_wait:
+        "custom_components.climate_ip.coordinator.asyncio.timeout"
+    ) as mock_timeout:
+        mock_timeout.return_value.__aenter__ = AsyncMock()
+        mock_timeout.return_value.__aexit__ = AsyncMock(return_value=None)
         await coordinator._async_update_data()
 
         # Validate that it was called with the exact timeout
-        mock_wait.assert_called_once()
-        assert (
-            mock_wait.call_args.kwargs.get("timeout") == NETWORK_POLL_TIMEOUT
-        ), "The network timeout was altered"
+        mock_timeout.assert_called_once_with(NETWORK_POLL_TIMEOUT)
 
 
 async def test_coordinator_unwraps_hvac_enum_before_sending(
