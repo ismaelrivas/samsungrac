@@ -516,7 +516,7 @@ def test_yaml_controller_climate_state_mapping(
     mock_yaml_controller.has_property = MagicMock(return_value=True)
 
     mock_yaml_controller._attributes = {
-        ATTR_HVAC_MODES: ["auto", "heat"],
+        ATTR_HVAC_MODES: ["auto", "heat", "cool"],
         ATTR_FAN_MODES: ["high", "low"],
         ATTR_SWING_MODES: ["on", "off"],
         ATTR_PRESET_MODES: ["eco"],
@@ -524,7 +524,7 @@ def test_yaml_controller_climate_state_mapping(
 
     mock_yaml_controller.loader = MagicMock()
     mock_yaml_controller.loader.operations = {
-        "hvac_mode": MagicMock(id="hvac_mode", all_values=["auto", "heat"]),
+        "hvac_mode": MagicMock(id="hvac_mode", all_values=["auto", "heat", "cool"]),
         "target_temperature": MagicMock(id="target_temperature"),
         "current_temperature": MagicMock(id="current_temperature"),
         "fan_mode": MagicMock(id="fan_mode", all_values=["high", "low"]),
@@ -541,7 +541,7 @@ def test_yaml_controller_climate_state_mapping(
         fan_mode="high",
         swing_mode="on",
         preset_mode="eco",
-        hvac_modes=(HVACMode.AUTO, HVACMode.HEAT),
+        hvac_modes=(HVACMode.AUTO, HVACMode.HEAT, HVACMode.COOL),
         fan_modes=("high", "low"),
         swing_modes=("on", "off"),
         preset_modes=("eco",),

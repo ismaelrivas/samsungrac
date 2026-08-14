@@ -23,6 +23,7 @@ from homeassistant.const import (
     CONF_TOKEN,
     CONF_UNIQUE_ID,
     STATE_UNKNOWN,
+    UnitOfTemperature,
 )
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
@@ -65,7 +66,6 @@ from .const import (
 from .controller import ClimateController, register_controller
 from .controller_yaml_config import YamlConfigLoader
 from .controller_yaml_polling import YamlStatePoller
-from .exceptions import CannotConnect
 from .properties import DeviceProperty, _parse_temperature_unit
 from .state import ClimateIPDeviceState
 
@@ -148,16 +148,39 @@ class YamlController(ClimateController):
 
         self.hass = hass
         self._session = session
-        self._shared_raw_client: Any | None = None
 
-        self._device_id = config[CONF_DEVICE_ID] if CONF_DEVICE_ID in config else None
-        self._token = config[CONF_TOKEN] if CONF_TOKEN in config else None
+        raw_device_id = config.get(CONF_DEVICE_ID)
+        if raw_device_id is not None:
+            if not isinstance(raw_device_id, str):
+                raise TypeError(f"Expected str for {CONF_DEVICE_ID}, got {type(raw_device_id).__name__}")
+            if len(raw_device_id.strip()) == 0:
+                raise ValueError(f"{CONF_DEVICE_ID} cannot be empty")
+            self._device_id: str | None = raw_device_id.strip()
+        else:
+            self._device_id = None
 
-        self._unique_id = config.get(CONF_UNIQUE_ID)
+        raw_token = config.get(CONF_TOKEN)
+        if raw_token is not None:
+            if not isinstance(raw_token, str):
+                raise TypeError(f"Expected str for {CONF_TOKEN}, got {type(raw_token).__name__}")
+            if len(raw_token.strip()) == 0:
+                raise ValueError(f"{CONF_TOKEN} cannot be empty")
+            self._token: str | None = raw_token.strip()
+        else:
+            self._token = None
+
+        raw_unique_id = config.get(CONF_UNIQUE_ID)
+        if raw_unique_id is not None:
+            if not isinstance(raw_unique_id, str):
+                raise TypeError(f"Expected str for {CONF_UNIQUE_ID}, got {type(raw_unique_id).__name__}")
+            self._unique_id: str | None = raw_unique_id.strip() if len(raw_unique_id.strip()) > 0 else None
+        else:
+            self._unique_id = None
+
         if self._unique_id is None:
             base_mac = config.get(CONF_MAC)
             base_unique_id = (
-                base_mac
+                base_mac.strip()
                 if (base_mac is not None and isinstance(base_mac, str) and len(base_mac.strip()) > 0)
                 else None
             )
@@ -362,7 +385,10 @@ class YamlController(ClimateController):
         device_id: str | None = None,
     ) -> bool:
         """Asynchronously set a property on the device."""
-        if self.loader.is_fully_initialized is not True:
+        if not isinstance(property_name, str) or len(property_name.strip()) == 0:
+            raise TypeError(f"Expected non-empty str for property_name, got {property_name!r}")
+
+        if not self.loader.is_fully_initialized:
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
                 translation_key=ERR_CONTROLLER_NOT_INITIALIZED,
@@ -391,7 +417,7 @@ class YamlController(ClimateController):
                     target_device_id = self._unique_id
 
                 return await op.async_set_value(new_value, target_device_id)
-            except (CannotConnect, HomeAssistantError):
+            except HomeAssistantError:
                 self.poller.clear_pending_updates([property_name])
                 raise
             except (TimeoutError, OSError) as e:
@@ -410,10 +436,14 @@ class YamlController(ClimateController):
 
     def has_property(self, property_name: str) -> bool:
         """Return True if the property is structurally mapped."""
+        if not isinstance(property_name, str) or len(property_name.strip()) == 0:
+            raise TypeError(f"Expected non-empty str for property_name, got {property_name!r}")
         return self.get_property_object(property_name) is not None or property_name in self._attributes
 
     def get_property(self, property_name: str) -> Any:
         """Return the current value of a property by name using safe extraction."""
+        if not isinstance(property_name, str) or len(property_name.strip()) == 0:
+            raise TypeError(f"Expected non-empty str for property_name, got {property_name!r}")
         obj = self.get_property_object(property_name)
         if obj is not None:
             val = obj.value
@@ -428,7 +458,7 @@ class YamlController(ClimateController):
     @property
     def _objects_by_id(self) -> dict[str, DeviceProperty]:
         """O(1) cached lookup dictionary for properties, operations, and sensors."""
-        if self.loader.is_fully_initialized is not True:
+        if not self.loader.is_fully_initialized:
             raise RuntimeError(ERR_CACHE_UNINITIALIZED)
 
         if self._obj_id_cache is None:
@@ -448,6 +478,12 @@ class YamlController(ClimateController):
 
     def get_property_object(self, property_name: str) -> DeviceProperty | None:
         """Return the property object by name, internal ID, or mapped HASS attribute."""
+        if not isinstance(property_name, str) or len(property_name.strip()) == 0:
+            raise TypeError(f"Expected non-empty str for property_name, got {property_name!r}")
+
+        if not self.loader.is_fully_initialized:
+            return None
+
         if property_name in self.loader.operations:
             return self.loader.operations[property_name]
         if property_name in self.loader.properties:
@@ -461,14 +497,14 @@ class YamlController(ClimateController):
 
         mapped_op_id = self.poller.get_hass_attr_for_op_id(property_name)
         if mapped_op_id is not None and mapped_op_id != property_name:
-            obj = self._objects_by_id.get(mapped_op_id)
-            if obj is not None:
-                return obj
+            return self._objects_by_id.get(mapped_op_id)
 
         return None
 
     def get_property_all_values(self, property_name: str) -> list[str] | None:
         """Return the complete, unfiltered list of values for a property."""
+        if not isinstance(property_name, str) or len(property_name.strip()) == 0:
+            raise TypeError(f"Expected non-empty str for property_name, got {property_name!r}")
         prop = self.get_property_object(property_name)
         if prop is not None:
             all_vals = prop.all_values
@@ -495,7 +531,7 @@ class YamlController(ClimateController):
         return dict(self._attributes)
 
     @property
-    def temperature_unit(self) -> str:
+    def temperature_unit(self) -> UnitOfTemperature | str:
         """Return the temperature unit in use (resolved at construction time)."""
         return self._temperature_unit
 
@@ -624,20 +660,24 @@ class YamlController(ClimateController):
             self._cached_static_modes
         )
 
-        raw_hvac = self.get_property(ATTR_HVAC_MODE) if self.has_property(ATTR_HVAC_MODE) else None
-        hvac_mode = self._safe_parse_hvac_mode(raw_hvac)
+        def _get_val(prop_name: str) -> Any:
+            try:
+                return self.get_property(prop_name)
+            except KeyError:
+                return None
 
-        raw_target_temp = self.get_property(ATTR_TEMPERATURE) if self.has_property(ATTR_TEMPERATURE) else None
+        raw_hvac = _get_val(ATTR_HVAC_MODE)
+        hvac_mode = self._safe_parse_hvac_mode(raw_hvac)
+        if hvac_mode is not None and hvac_mode not in hvac_modes_tuple:
+            raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_HVAC_MODE}]: {hvac_mode}")
+
+        raw_target_temp = _get_val(ATTR_TEMPERATURE)
         target_temp = self._safe_parse_temperature(raw_target_temp, LABEL_TARGET_TEMP)
 
-        raw_current_temp = (
-            self.get_property(ATTR_CURRENT_TEMPERATURE)
-            if self.has_property(ATTR_CURRENT_TEMPERATURE)
-            else None
-        )
+        raw_current_temp = _get_val(ATTR_CURRENT_TEMPERATURE)
         current_temp = self._safe_parse_temperature(raw_current_temp, LABEL_CURRENT_TEMP)
 
-        raw_fan = self.get_property(ATTR_FAN_MODE) if self.has_property(ATTR_FAN_MODE) else None
+        raw_fan = _get_val(ATTR_FAN_MODE)
         fan_mode = None
         if raw_fan is not None:
             if not isinstance(raw_fan, str):
@@ -646,7 +686,7 @@ class YamlController(ClimateController):
                 raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_FAN_MODE}]: {raw_fan}")
             fan_mode = raw_fan
 
-        raw_swing = self.get_property(ATTR_SWING_MODE) if self.has_property(ATTR_SWING_MODE) else None
+        raw_swing = _get_val(ATTR_SWING_MODE)
         swing_mode = None
         if raw_swing is not None:
             if not isinstance(raw_swing, str):
@@ -655,7 +695,7 @@ class YamlController(ClimateController):
                 raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_SWING_MODE}]: {raw_swing}")
             swing_mode = raw_swing
 
-        raw_preset = self.get_property(ATTR_PRESET_MODE) if self.has_property(ATTR_PRESET_MODE) else None
+        raw_preset = _get_val(ATTR_PRESET_MODE)
         preset_mode = None
         if raw_preset is not None:
             if not isinstance(raw_preset, str):
