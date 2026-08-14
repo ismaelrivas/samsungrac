@@ -204,14 +204,11 @@ class PropertyDebouncer:
                         )  # pragma: no mutate
                         await self.coordinator.async_request_refresh()
 
-                def _schedule_task() -> None:
-                    self.coordinator.config_entry.async_create_background_task(
-                        self.hass,
-                        _task_runner(),
-                        name=f"{DOMAIN}_{self.coordinator.unique_id}_debouncer_{prop}",
-                    )
-
-                _dispatch_to_loop(self.hass, _schedule_task)
+                self.coordinator.config_entry.async_create_background_task(
+                    self.hass,
+                    _task_runner(),
+                    name=f"{DOMAIN}_{self.coordinator.unique_id}_debouncer_{prop}",
+                )
 
         self._timers[property_name] = async_call_later(
             self.hass, self.delay, _fire_delayed
@@ -236,6 +233,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     ) -> None:  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
         """Initialize the data coordinator."""
         self.controller = controller
+        self.config_entry = entry
         self.entry = entry
         self.debouncer = PropertyDebouncer(self, delay=3.0)
         self._global_network_lock = asyncio.Lock()
@@ -306,14 +304,14 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             )  # pragma: no mutate
         else:
             # Standalone/Parent device (e.g. the Wifi-kit itself or a single AC)
-            mac = self.entry.data.get(CONF_MAC)  # pragma: no mutate
+            mac = self.config_entry.data.get(CONF_MAC)  # pragma: no mutate
             conns = (
                 {(dr.CONNECTION_NETWORK_MAC, dr.format_mac(mac))} if mac else set()
             )  # pragma: no mutate
 
             self.device_info = DeviceInfo(
                 identifiers={(DOMAIN, self.unique_id)},
-                name=self.entry.data.get(CONF_NAME, f"Samsung AC {self.unique_id}"),
+                name=self.config_entry.data.get(CONF_NAME, f"Samsung AC {self.unique_id}"),
                 manufacturer=MANUFACTURER_SAMSUNG,
                 connections=conns,
             )  # pragma: no mutate
@@ -323,9 +321,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         """Callback to save the renewed token from the network layer."""
 
         def _update_token() -> None:
-            new_data = dict(self.entry.data)  # pragma: no mutate
+            new_data = dict(self.config_entry.data)  # pragma: no mutate
             new_data[CONF_TOKEN_KEY] = new_token
-            self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+            self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
             _LOGGER.info(
                 "%s Persisted new network token to Config Entry.", self.log_prefix
             )  # pragma: no mutate
@@ -338,11 +336,11 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         """Callback to save SSL configuration to the config entry."""
 
         def _update_ssl() -> None:
-            current_data = dict(self.entry.data)  # pragma: no mutate
+            current_data = dict(self.config_entry.data)  # pragma: no mutate
             if current_data.get(CONF_SSL_CONFIG_KEY) != ssl_config:
                 current_data[CONF_SSL_CONFIG_KEY] = ssl_config
                 self.hass.config_entries.async_update_entry(
-                    self.entry, data=current_data
+                    self.config_entry, data=current_data
                 )
                 _LOGGER.info(
                     "%s Persisted SSL config to ConfigEntry data.", self.log_prefix
@@ -369,9 +367,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
     async def _async_switch_to_raw_engine(self) -> None:
         """Switch connection method option to RAW permanently and trigger reload."""
-        new_options = dict(self.entry.options)
+        new_options = dict(self.config_entry.options)
         new_options[CONF_CONN_METHOD] = CONN_METHOD_RAW
-        self.hass.config_entries.async_update_entry(self.entry, options=new_options)
+        self.hass.config_entries.async_update_entry(self.config_entry, options=new_options)
 
     async def _async_update_data(self) -> ClimateIPDeviceState:
         """Fetch the latest state from the device."""
@@ -382,7 +380,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             return self._create_device_state()
 
         except InvalidHeaderError as err:
-            if self.entry.options.get(CONF_CONN_METHOD) != CONN_METHOD_RAW:
+            if self.config_entry.options.get(CONF_CONN_METHOD) != CONN_METHOD_RAW:
                 _LOGGER.warning(
                     "%s Auto-healing to RAW mode triggered", self.log_prefix
                 )  # pragma: no mutate
@@ -535,7 +533,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
             res = await self.controller.async_set_property(prop, val, device_id)
             await asyncio.sleep(HARDWARE_BREATHING_ROOM_SEC)
-            return False if res is False else True
+            return res is not False
 
     async def async_set_property(
         self,
@@ -591,7 +589,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             )
             await self.async_request_refresh()
 
-            if isinstance(err, CannotConnect | asyncio.TimeoutError | OSError):
+            if isinstance(err, CannotConnect | OSError):
                 _LOGGER.error(
                     "%s Network error setting properties: %s",
                     self.log_prefix,
