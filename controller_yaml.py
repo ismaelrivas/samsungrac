@@ -30,7 +30,7 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
-    from .connection import ClimateConnection
+    from .connection import Connection
 
 from .const import (
     DOMAIN,
@@ -269,7 +269,7 @@ class YamlController(ClimateController):
         return val
 
     @property
-    def connection(self) -> ClimateConnection | None:
+    def connection(self) -> Connection | None:
         """Override base connection to point strictly to the loader's active connection."""
         return self.loader.connection
 
