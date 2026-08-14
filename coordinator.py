@@ -360,23 +360,16 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         """Delete auto-healing issue from registry if it was ignored/dismissed by the user."""
         if not self.unique_id:
             return
-        try:
-            safe_device_id = self.unique_id.replace(".", "_").replace(" ", "_")
-            issue_id = f"auto_healing_raw_{safe_device_id}"
-            registry = async_get_issue_registry(self.hass)
-            issue = registry.async_get_issue(DOMAIN, issue_id)
-            if issue is not None and issue.dismissed_version is not None:
-                async_delete_issue(self.hass, DOMAIN, issue_id)
-                _LOGGER.debug(
-                    "%s Cleaned up ignored auto-healing repair issue '%s'",
-                    self.log_prefix,
-                    issue_id,
-                )
-        except Exception as err:  # pylint: disable=broad-exception-caught
+        safe_device_id = self.unique_id.replace(".", "_").replace(" ", "_")
+        issue_id = f"auto_healing_raw_{safe_device_id}"
+        registry = async_get_issue_registry(self.hass)
+        issue = registry.async_get_issue(DOMAIN, issue_id)
+        if issue is not None and issue.dismissed_version is not None:
+            async_delete_issue(self.hass, DOMAIN, issue_id)
             _LOGGER.debug(
-                "%s Failed to check/cleanup ignored repair issue: %s",
+                "%s Cleaned up ignored auto-healing repair issue '%s'",
                 self.log_prefix,
-                err,
+                issue_id,
             )
 
     @callback

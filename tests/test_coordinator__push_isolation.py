@@ -23,6 +23,7 @@ async def test_valid_push_update_commits():
     mock_entry.data = {}
 
     def fake_init(self, *args, **kwargs):
+        self.hass = mock_hass
         self.config_entry = kwargs.get("config_entry", mock_entry)
 
     with patch(
@@ -58,6 +59,7 @@ async def test_junk_push_update_ignored():
     mock_entry.data = {}
 
     def fake_init(self, *args, **kwargs):
+        self.hass = mock_hass
         self.config_entry = kwargs.get("config_entry", mock_entry)
 
     with patch(

@@ -57,6 +57,7 @@ def bind_default_mock_controller_superseded(monkeypatch):
     orig_init = SamsungClimateCoordinator.__init__
 
     def patched_init(self, hass, controller, entry, *args, **kwargs):
+        self.hass = hass
         self.config_entry = entry
         if isinstance(controller, MagicMock):
             controller.is_property_superseded = (
