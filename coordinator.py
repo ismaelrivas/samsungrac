@@ -369,10 +369,10 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         self.controller.clear_state_cache()
         self.async_set_update_error(UpdateFailed(f"Device offline: {reason}"))
 
-    async def _async_switch_to_raw_engine(self) -> None:
-        """Switch connection method option to RAW permanently and trigger reload."""
-        new_options = dict(self.config_entry.options)
-        new_options[CONF_CONN_METHOD] = CONN_METHOD_RAW
+    @callback
+    def _async_switch_to_raw_engine(self) -> None:
+        """Switch connection method option to RAW permanently."""
+        new_options = {**self.config_entry.options, CONF_CONN_METHOD: CONN_METHOD_RAW}
         self.hass.config_entries.async_update_entry(self.config_entry, options=new_options)
 
     async def _async_update_data(self) -> ClimateIPDeviceState:
@@ -388,11 +388,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 _LOGGER.warning(
                     "%s Auto-healing to RAW mode triggered", self.log_prefix
                 )  # pragma: no mutate
-                self.config_entry.async_create_background_task(
-                    self.hass,
-                    self._async_switch_to_raw_engine(),
-                    name=f"{DOMAIN}_{self.unique_id}_auto_heal_raw",
-                )
+                self._async_switch_to_raw_engine()
                 raise UpdateFailed(
                     "Auto-healing in progress: Switching to RAW engine"
                 ) from err
