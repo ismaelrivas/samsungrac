@@ -12,11 +12,11 @@ from typing import Any
 from homeassistant.components.climate import HVACMode
 from homeassistant.components.climate.const import ATTR_HVAC_MODE
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_MAC
+from homeassistant.const import CONF_MAC, CONF_TOKEN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.issue_registry import (
     IssueSeverity,
@@ -37,7 +37,6 @@ from .const import (
     CONF_POLL_INTERVAL,
     CONF_SSL_CONFIG_KEY,
     CONF_SUBDEVICE_ID,
-    CONF_TOKEN_KEY,
     CONN_METHOD_RAW,
     DEFAULT_DEBOUNCE_DELAY,
     DEFAULT_ENABLE_POLLING,
@@ -262,14 +261,18 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         self.controller.on_connection_failed_callback = self._async_on_connection_failed
         self.controller.on_offline_callback = self._async_handle_persistent_offline
 
-        # Determine the update interval from options → data → default.
-        enable_polling = entry.options.get(
-            CONF_ENABLE_POLLING,
-            entry.data.get(CONF_ENABLE_POLLING, DEFAULT_ENABLE_POLLING),
+        # Determine the update interval with strict None-coalescing
+        opt_polling = entry.options.get(CONF_ENABLE_POLLING)
+        enable_polling = (
+            opt_polling
+            if opt_polling is not None
+            else entry.data.get(CONF_ENABLE_POLLING, DEFAULT_ENABLE_POLLING)
         )  # pragma: no mutate
-        poll_interval_seconds = entry.options.get(
-            CONF_POLL_INTERVAL,
-            entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
+        opt_interval = entry.options.get(CONF_POLL_INTERVAL)
+        poll_interval_seconds = (
+            opt_interval
+            if opt_interval is not None
+            else entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
         )  # pragma: no mutate
         update_interval = (
             timedelta(seconds=poll_interval_seconds)
@@ -366,7 +369,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     def _async_save_new_token(self, new_token: str) -> None:
         """Callback to save the renewed token from the network layer."""
         new_data = dict(self.config_entry.data)  # pragma: no mutate
-        new_data[CONF_TOKEN_KEY] = new_token
+        new_data[CONF_TOKEN] = new_token
         self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
         _LOGGER.info(
             "%s Persisted new network token to Config Entry.", self.log_prefix
