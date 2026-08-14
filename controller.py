@@ -41,6 +41,7 @@ class ControllerInterface(Protocol):
     async def async_merge_device_state(self, data: dict[str, Any]) -> bool: ...
     async def async_clear_pending_updates(self, keys: list[str]) -> None: ...
     def is_property_superseded(self, prop: str, val: Any) -> bool: ...
+    def clear_state_cache(self) -> None: ...
 
     # Contratos de Callbacks
     def register_token_callback(
@@ -264,6 +265,12 @@ class ClimateController(ABC):
             if current_target != val:
                 return True
         return False
+
+    def clear_state_cache(self) -> None:
+        """Clear internal state cache."""
+        poller = getattr(self, "poller", None)
+        if poller is not None and hasattr(poller, "clear_state_cache"):
+            poller.clear_state_cache()
 
 
 def register_controller(

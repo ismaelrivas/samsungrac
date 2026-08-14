@@ -47,12 +47,9 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _dispatch_to_loop(hass: HomeAssistant, func: Callable[[], None]) -> None:
-    """Execute func directly if on main thread or in mock test loop, else delegate via call_soon_threadsafe."""
+    """Execute func directly if on the main thread loop, else delegate thread-safely."""
     try:
-        running_loop = asyncio.get_running_loop()
-        if hass.loop is running_loop or not isinstance(
-            hass.loop, asyncio.AbstractEventLoop
-        ):
+        if asyncio.get_running_loop() is hass.loop:
             func()
             return
     except RuntimeError:
@@ -369,8 +366,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             "%s Network layer declared device offline. Forcing UpdateFailed.",
             self.log_prefix,
         )  # pragma: no mutate
-        if hasattr(self.controller, "clear_state_cache"):  # pragma: no mutate
-            self.controller.clear_state_cache()
+        self.controller.clear_state_cache()
         self.async_set_update_error(UpdateFailed(f"Device offline: {reason}"))
 
     async def _async_switch_to_raw_engine(self) -> None:
@@ -409,8 +405,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             raise UpdateFailed(f"Data parsing failed on RAW engine: {err}") from err
 
         except (AuthError, ConfigEntryAuthFailed) as err:
-            if hasattr(self.controller, "clear_state_cache"):  # pragma: no mutate
-                self.controller.clear_state_cache()
+            self.controller.clear_state_cache()
             raise ConfigEntryAuthFailed(
                 f"Authentication failed: {err}"
             ) from err  # pragma: no mutate
@@ -419,8 +414,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             raise  # pragma: no mutate
 
         except (TimeoutError, CannotConnect, ConnectionRefusedError, OSError) as err:
-            if hasattr(self.controller, "clear_state_cache"):  # pragma: no mutate
-                self.controller.clear_state_cache()
+            self.controller.clear_state_cache()
 
             _LOGGER.debug(
                 "%s Network error during state update: %s", self.log_prefix, err
@@ -431,8 +425,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             ) from err  # pragma: no mutate
 
         except (ValueError, TypeError, KeyError) as err:
-            if hasattr(self.controller, "clear_state_cache"):  # pragma: no mutate
-                self.controller.clear_state_cache()
+            self.controller.clear_state_cache()
 
             _LOGGER.error(
                 "%s Data parsing error during update: %s",
@@ -446,8 +439,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             ) from err  # pragma: no mutate
 
         except Exception as err:  # pylint: disable=broad-exception-caught
-            if hasattr(self.controller, "clear_state_cache"):  # pragma: no mutate
-                self.controller.clear_state_cache()
+            self.controller.clear_state_cache()
 
             _LOGGER.critical(
                 "%s Fatal unexpected error during update: %s",

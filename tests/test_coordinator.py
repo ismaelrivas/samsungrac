@@ -1395,10 +1395,7 @@ async def test_coordinator_clears_cache_on_critical_errors(
 
 @pytest.mark.asyncio
 async def test_coordinator_handles_missing_poller_safely(hass: HomeAssistant) -> None:
-    """
-    Aniquila los mutantes en la condición `hasattr(self.controller, "clear_state_cache")`.
-    Si clear_state_cache no existe, no debe romper el flujo de excepciones.
-    """
+    """Verifica que clear_state_cache es invocado directamente al ocurrir un error de parsing."""
     from homeassistant.helpers.update_coordinator import UpdateFailed
 
     mock_controller = MagicMock()
@@ -1408,9 +1405,7 @@ async def test_coordinator_handles_missing_poller_safely(hass: HomeAssistant) ->
     mock_controller.async_get_status = AsyncMock(
         side_effect=ValueError("No poller JSON error")
     )
-
-    # Explicitly remove clear_state_cache attribute to force conditional
-    del mock_controller.clear_state_cache
+    mock_controller.clear_state_cache = MagicMock()
 
     mock_entry = MagicMock()
     mock_entry.options = {}
@@ -1424,11 +1419,12 @@ async def test_coordinator_handles_missing_poller_safely(hass: HomeAssistant) ->
 
         coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
 
-        # Should raise error cleanly without throwing internal AttributeError
         with pytest.raises(
             UpdateFailed, match="Data parsing error: No poller JSON error"
         ):
             await coordinator._async_update_data()
+
+        mock_controller.clear_state_cache.assert_called_once()
 
 
 def test_debouncer_cancel_all_strict_none():
