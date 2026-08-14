@@ -698,11 +698,6 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         """Return the unique ID from the controller."""
         return self.controller.unique_id
 
-    @property
-    def entry(self) -> ConfigEntry:
-        """Alias for config_entry for backwards compatibility."""
-        return self.config_entry
-
     async def async_shutdown(self) -> None:
         """Shut down the coordinator and its controller.
 
