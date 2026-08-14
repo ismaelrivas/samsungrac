@@ -61,13 +61,14 @@ from .const import (
     DEVICE_TYPE_TO_CONFIG_FILE,
     EXCLUDED_SUBDEVICE_IDS,
     ID_DELIMITER,
+    IMMUTABLE_CONFIG_KEYS,
     LABEL_CURRENT_TEMP,
     LABEL_TARGET_TEMP,
 )
 from .controller import ClimateController, register_controller
 from .controller_yaml_config import YamlConfigLoader
 from .controller_yaml_polling import YamlStatePoller
-from .properties import DeviceProperty, _parse_temperature_unit
+from .properties import DeviceProperty, parse_temperature_unit
 from .state import ClimateIPDeviceState
 
 _LOGGER = logging.getLogger(__name__)
@@ -82,6 +83,9 @@ class YamlController(ClimateController):
         cls, config_entry: ConfigEntry[Any], device_id: str | None
     ) -> dict[str, Any]:
         """Extract config enforcing flow segregation and immutable hardware credentials."""
+        if not isinstance(config_entry, ConfigEntry):
+            raise TypeError(f"Expected ConfigEntry, got {type(config_entry).__name__}")
+
         base_unique_id: str | None = config_entry.unique_id
         resolved_unique_id: str | None = (
             f"{base_unique_id}{ID_DELIMITER}{device_id}"
@@ -92,22 +96,15 @@ class YamlController(ClimateController):
         # Base immutable data from entry creation selectively merged with runtime options
         extracted: dict[str, Any] = dict(config_entry.data)
         for key, value in config_entry.options.items():
-            if key not in (
-                CONF_HOST,
-                CONF_IP_ADDRESS,
-                CONF_MAC,
-                CONF_TOKEN,
-                CONF_ENTRY_ID,
-                CONF_DEVICE_ID,
-                CONF_UNIQUE_ID,
-                CONF_DEVICE_TYPE,
-            ):
+            if key not in IMMUTABLE_CONFIG_KEYS:
                 extracted[key] = value
 
         extracted[CONF_ENTRY_ID] = config_entry.entry_id
         extracted[CONF_UNIQUE_ID] = resolved_unique_id
         if device_id is not None:
-            extracted[CONF_DEVICE_ID] = device_id
+            if not isinstance(device_id, str):
+                raise TypeError(f"Expected str for device_id, got {type(device_id).__name__}")
+            extracted[CONF_DEVICE_ID] = device_id.strip()
 
         return extracted
 
@@ -121,6 +118,8 @@ class YamlController(ClimateController):
         logger: logging.Logger | None = None,
     ) -> YamlController:
         """Create a YamlController instance directly from a ConfigEntry."""
+        if not isinstance(config_entry, ConfigEntry):
+            raise TypeError(f"Expected ConfigEntry, got {type(config_entry).__name__}")
         logger = logger if logger is not None else _LOGGER
         return cls(logger=logger, hass=hass, session=session, config_entry=config_entry, device_id=device_id)
 
@@ -238,7 +237,7 @@ class YamlController(ClimateController):
 
         raw_unit = target_temp_unit if target_temp_unit is not None else current_temp_unit
         if raw_unit is not None:
-            self._temperature_unit = _parse_temperature_unit(raw_unit)
+            self._temperature_unit = parse_temperature_unit(raw_unit)
         else:
             self._temperature_unit = DEFAULT_CONF_TEMP_UNIT
         self._attributes: dict[str, Any] = {}

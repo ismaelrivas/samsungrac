@@ -11,7 +11,14 @@ from homeassistant.components.climate.const import (
     ATTR_PRESET_MODE,
     ATTR_SWING_MODE,
 )
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import (
+    CONF_HOST,
+    CONF_IP_ADDRESS,
+    CONF_MAC,
+    CONF_TOKEN,
+    CONF_UNIQUE_ID,
+    UnitOfTemperature,
+)
 
 DOMAIN = "climate_ip"
 ISSUE_CONNECTION_FAILED = "connection_failed"
@@ -71,6 +78,17 @@ CONF_SELECTED_DEVICES = "selected_devices"
 CONF_DEVICES = "devices"
 CONF_DEVICE_ID = "device_id"
 CONF_SUBDEVICE_ID = "id"
+
+IMMUTABLE_CONFIG_KEYS: final[frozenset[str]] = frozenset({
+    CONF_HOST,
+    CONF_IP_ADDRESS,
+    CONF_MAC,
+    CONF_TOKEN,
+    CONF_ENTRY_ID,
+    CONF_DEVICE_ID,
+    CONF_UNIQUE_ID,
+    CONF_DEVICE_TYPE,
+})
 CONF_TEMP_NATIVE_CURRENT = "temp_native_current"
 CONF_TEMP_NATIVE_TARGET = "temp_native_target"
 CONF_TARGET_TEMP_STEP = "target_temperature_step"

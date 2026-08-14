@@ -139,7 +139,7 @@ def render_template(template: Template | str | None | Any, **kwargs: Any) -> Any
     raise TypeError(f"Expected HomeAssistant Template or str, got {type(template).__name__}")
 
 
-def _parse_temperature_unit(unit: str | UnitOfTemperature | Any) -> Any:
+def parse_temperature_unit(unit: str | UnitOfTemperature | Any) -> UnitOfTemperature:
     """Strictly parse and validate temperature unit strings."""
     if isinstance(unit, UnitOfTemperature):
         return unit
@@ -151,6 +151,9 @@ def _parse_temperature_unit(unit: str | UnitOfTemperature | Any) -> Any:
             return UnitOfTemperature.FAHRENHEIT
 
     raise ValueError(f"Invalid temperature unit: {unit}")
+
+
+_parse_temperature_unit = parse_temperature_unit
 
 def _normalize_unit(unit: str | UnitOfTemperature | Any) -> Any:
     """Normalize temperature aliases, otherwise return unchanged (for non-temp units)."""
