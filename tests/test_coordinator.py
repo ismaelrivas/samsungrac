@@ -1441,7 +1441,7 @@ async def test_debouncer_exact_time_boundary():
     async def dummy_coroutine():
         return True
 
-    with patch("custom_components.climate_ip.coordinator.time.time") as mock_time:
+    with patch("custom_components.climate_ip.coordinator.time.monotonic") as mock_time:
         # Ejecución 1: Fija last_execution a 1000.0
         mock_time.return_value = 1000.0
         await debouncer.async_execute("prop1", dummy_coroutine)
@@ -1503,7 +1503,7 @@ async def test_debouncer_exact_time_boundary_mutant():
     async def dummy_coroutine():
         return True
 
-    with patch("custom_components.climate_ip.coordinator.time.time") as mock_time:
+    with patch("custom_components.climate_ip.coordinator.time.monotonic") as mock_time:
         mock_time.return_value = 1000.0
         await debouncer.async_execute("prop1", dummy_coroutine)
 
@@ -1586,7 +1586,7 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
 
         mock_existing_timer = MagicMock()
         debouncer._timers["prop_success"] = mock_existing_timer
-        debouncer._last_activities["prop_success"] = time.time()
+        debouncer._last_activities["prop_success"] = time.monotonic()
 
         async def dummy_success():
             pass
@@ -1617,9 +1617,10 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
 
         callback_fire_delayed = mock_async_call_later.call_args[0][2]
 
-        with patch(
-            "custom_components.climate_ip.coordinator._LOGGER.debug"
-        ) as mock_debug:
+        with (
+            patch("custom_components.climate_ip.coordinator._LOGGER.debug") as mock_debug,
+            patch("custom_components.climate_ip.coordinator._LOGGER.error") as mock_error,
+        ):
             callback_fire_delayed("prop_net")
             callback_fire_delayed("prop_gen")
             assert len(created_tasks) > 0
@@ -1631,11 +1632,12 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
 
         # ARMORED VERIFICATION: Search within intercepted calls
         debug_calls = mock_debug.call_args_list
+        error_calls = mock_error.call_args_list
         net_call = next(
             c for c in debug_calls if "Network error executing" in c.args[0]
         )
         gen_call = next(
-            c for c in debug_calls if "Error executing delayed command" in c.args[0]
+            c for c in error_calls if "Unexpected error executing delayed command" in c.args[0]
         )
 
         # Annihilate mutants changing exc_info to False or removing it
@@ -1672,7 +1674,7 @@ async def test_sniper_debouncer_exact_time_boundary_strict(hass: HomeAssistant):
         return True
 
     # Being exact time 2.0, (2.0 - 0.0 >= 2.0) is True. Mutant (>) will give False.
-    with patch("custom_components.climate_ip.coordinator.time.time", return_value=2.0):
+    with patch("custom_components.climate_ip.coordinator.time.monotonic", return_value=2.0):
         await debouncer.async_execute("prop1", dummy)
 
     assert "prop1" not in debouncer._pending_payloads

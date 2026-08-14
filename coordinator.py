@@ -102,7 +102,7 @@ class PropertyDebouncer:
         self, property_name: str, coroutine_func: Any, *args: Any, **kwargs: Any
     ) -> bool:
         """Execute a command with trailing debouncing per property."""
-        now = time.time()
+        now = time.monotonic()
         last_activity = self._last_activities.get(property_name, 0.0)
 
         # Immediate execution for turn-off commands (aborts any pending debounced commands across all properties)
@@ -115,7 +115,7 @@ class PropertyDebouncer:
         is_turn_off = (
             property_name in ("hvac_mode", "power")
             and val_str in ("off", HVACMode.OFF.value)
-        ) or val_str == "off"
+        )
 
         if is_turn_off:
             _LOGGER.debug(
@@ -165,7 +165,7 @@ class PropertyDebouncer:
             if payload:
                 # 🛡️ Unpack the generation ID captured when the task was queued
                 func, p_args, p_kwargs, captured_generation = payload
-                exec_time = time.time()
+                exec_time = time.monotonic()
                 self._last_activities[prop] = exec_time
                 _LOGGER.debug(
                     "[Debouncer] Executing delayed queued command for property: '%s'",
@@ -196,8 +196,8 @@ class PropertyDebouncer:
                         )  # pragma: no mutate
                         await self.coordinator.async_request_refresh()
                     except Exception as err:  # pylint: disable=broad-exception-caught
-                        _LOGGER.debug(
-                            "[Debouncer] Error executing delayed command for '%s': %s",
+                        _LOGGER.error(
+                            "[Debouncer] Unexpected error executing delayed command for '%s': %s",
                             prop,
                             err,
                             exc_info=True,
@@ -208,7 +208,7 @@ class PropertyDebouncer:
                     self.coordinator.config_entry.async_create_background_task(
                         self.hass,
                         _task_runner(),
-                        name=f"samsung_ac_debouncer_{self.coordinator.unique_id}_{prop}",
+                        name=f"{DOMAIN}_{self.coordinator.unique_id}_debouncer_{prop}",
                     )
 
                 _dispatch_to_loop(self.hass, _schedule_task)
@@ -308,7 +308,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             # Standalone/Parent device (e.g. the Wifi-kit itself or a single AC)
             mac = self.entry.data.get(CONF_MAC)  # pragma: no mutate
             conns = (
-                {(dr.CONNECTION_NETWORK_MAC, mac)} if mac else set()
+                {(dr.CONNECTION_NETWORK_MAC, dr.format_mac(mac))} if mac else set()
             )  # pragma: no mutate
 
             self.device_info = DeviceInfo(
@@ -389,7 +389,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 self.config_entry.async_create_background_task(
                     self.hass,
                     self._async_switch_to_raw_engine(),
-                    "auto_heal_raw",
+                    name=f"{DOMAIN}_{self.unique_id}_auto_heal_raw",
                 )
                 raise UpdateFailed(
                     "Auto-healing in progress: Switching to RAW engine"
