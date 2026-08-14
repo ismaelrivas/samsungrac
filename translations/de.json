@@ -132,6 +132,7 @@
           "connection_method": "Verbindungs-Engine",
           "poll_interval": "Aktualisierungsintervall (Format HH:MM:SS)",
           "enable_polling": "Regelmäßige Abfrage aktivieren",
+          "target_temperature_step": "Ziel-Temperaturschritt",
           "temp_native_current": "Native aktuelle Temperatureinheit",
           "temp_native_target": "Native Ziel-Temperatureinheit"
         }
@@ -173,8 +174,8 @@
   },
   "issues": {
     "connection_failed": {
-      "title": "Verbindung zur Samsung-Klimaanlage unterbrochen ({name})",
-      "description": "Kommunikation mit der Samsung-Klimaanlage **{name}** unter **{host}** fehlgeschlagen. Bitte überprüfen Sie, ob das Gerät eingeschaltet und mit Ihrem lokalen Netzwerk verbunden ist."
+      "title": "{device_name} getrennt ({ip_address})",
+      "description": "Das Gerät **{device_name}** unter **{ip_address}** ist nicht erreichbar. Bitte überprüfen Sie Stromversorgung und Netzwerkverbindung."
     }
   },
   "selector": {
@@ -255,27 +256,21 @@
         "name": "Außeneinheit Version"
       }
     },
-        "binary_sensor": {
-          "connectivity": {
-            "name": "Konnektivität"
-          }
-        },
-        "switch": {
-          "purify": {
-            "name": "Reinigen"
-          },
-          "auto_clean": {
-            "name": "Automatische Reinigung"
-          },
-          "beep": {
-            "name": "Signalton"
-          }
-        },
-        "issues": {
-          "connection_failed": {
-            "title": "{device_name} getrennt ({ip_address})",
-            "description": "Das Gerät {device_name} unter {ip_address} ist nicht erreichbar. Bitte überprüfen Sie Stromversorgung und Netzwerkverbindung."
-          }
-        }
+    "binary_sensor": {
+      "connectivity": {
+        "name": "Konnektivität"
+      }
+    },
+    "switch": {
+      "purify": {
+        "name": "Reinigen"
+      },
+      "auto_clean": {
+        "name": "Automatische Reinigung"
+      },
+      "beep": {
+        "name": "Signalton"
       }
     }
+  }
+}

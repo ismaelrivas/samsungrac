@@ -132,6 +132,7 @@
           "connection_method": "Moteur de connexion",
           "poll_interval": "Intervalle de mise à jour (format HH:MM:SS)",
           "enable_polling": "Activer l'interrogation périodique",
+          "target_temperature_step": "Pas de température cible",
           "temp_native_current": "Unité de température actuelle native",
           "temp_native_target": "Unité de température cible native"
         }
@@ -173,8 +174,8 @@
   },
   "issues": {
     "connection_failed": {
-      "title": "Connexion au climatiseur Samsung perdue ({name})",
-      "description": "Impossible de communiquer avec le climatiseur Samsung **{name}** à l'adresse **{host}**. Veuillez vérifier que l'appareil est sous tension et connecté à votre réseau local."
+      "title": "{device_name} déconnecté ({ip_address})",
+      "description": "L'appareil **{device_name}** à l'adresse **{ip_address}** est injoignable. Veuillez vérifier l'alimentation et la connexion réseau."
     }
   },
   "selector": {
@@ -269,12 +270,6 @@
       },
       "beep": {
         "name": "Bip"
-      }
-    },
-    "issues": {
-      "connection_failed": {
-        "title": "{device_name} déconnecté ({ip_address})",
-        "description": "L'appareil {device_name} à {ip_address} est injoignable. Veuillez vérifier l'alimentation et la connexion réseau."
       }
     }
   }

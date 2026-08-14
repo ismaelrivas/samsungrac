@@ -397,47 +397,54 @@ class YamlController(ClimateController):
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
                 translation_key=ERR_CONTROLLER_NOT_INITIALIZED,
-                translation_placeholders={"property": property_name}
+                translation_placeholders={"property": property_name},
             )
 
         op = self.get_property_object(property_name)
-        if isinstance(op, DeviceProperty):
-            try:
-                self.poller.register_pending_update(property_name, new_value)
-                _LOGGER.debug(
-                    "%s Registered pending update for '%s': %s",
-                    self.log_prefix,
-                    property_name,
-                    new_value,
-                )
-                if device_id is not None and not isinstance(device_id, str):
-                    raise TypeError(f"device_id must be a string, got {type(device_id).__name__}")
-                
-                target_device_id = (
-                    device_id
-                    if (device_id is not None and len(device_id.strip()) > 0)
-                    else self.device_id
-                )
-                if target_device_id is None or not self._is_subdevice(target_device_id):
-                    target_device_id = self._unique_id
+        if not isinstance(op, DeviceProperty):
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key=ERR_PROPERTY_NOT_FOUND,
+                translation_placeholders={"property": property_name},
+            )
 
-                return await op.async_set_value(new_value, target_device_id)
-            except (HomeAssistantError, asyncio.CancelledError):
-                self.poller.clear_pending_updates([property_name])
-                raise
-            except (TimeoutError, OSError, aiohttp.ClientError) as e:
-                self.poller.clear_pending_updates([property_name])
-                raise HomeAssistantError(
-                    translation_domain=DOMAIN,
-                    translation_key=ERR_PROPERTY_SET_FAILED,
-                    translation_placeholders={"property": property_name, "error": str(e)}
-                ) from e
+        if device_id is not None and not isinstance(device_id, str):
+            raise TypeError(f"device_id must be a string, got {type(device_id).__name__}")
 
-        raise ServiceValidationError(
-            translation_domain=DOMAIN,
-            translation_key=ERR_PROPERTY_NOT_FOUND,
-            translation_placeholders={"property": property_name}
+        target_device_id = (
+            device_id
+            if (device_id is not None and len(device_id.strip()) > 0)
+            else self.device_id
         )
+        if target_device_id is None or not self._is_subdevice(target_device_id):
+            target_device_id = self._unique_id
+
+        self.poller.register_pending_update(property_name, new_value)
+        _LOGGER.debug(
+            "%s Registered pending update for '%s': %s",
+            self.log_prefix,
+            property_name,
+            new_value,
+        )
+
+        success = False
+        try:
+            result = await op.async_set_value(new_value, target_device_id)
+            success = True
+            return result
+        except asyncio.CancelledError:
+            raise
+        except HomeAssistantError:
+            raise
+        except (TimeoutError, OSError, aiohttp.ClientError) as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key=ERR_PROPERTY_SET_FAILED,
+                translation_placeholders={"property": property_name, "error": str(err)},
+            ) from err
+        finally:
+            if not success:
+                self.poller.clear_pending_updates([property_name])
 
     def has_property(self, property_name: str) -> bool:
         """Return True if the property is structurally mapped."""

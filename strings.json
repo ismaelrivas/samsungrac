@@ -132,6 +132,7 @@
                     "connection_method": "Connection Engine",
                     "poll_interval": "Update Interval (HH:MM:SS format)",
                     "enable_polling": "Enable Periodic Polling",
+                    "target_temperature_step": "Target Temperature Step",
                     "temp_native_current": "Native Current Temp Unit",
                     "temp_native_target": "Native Target Temp Unit"
                 }

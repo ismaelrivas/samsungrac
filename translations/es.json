@@ -132,6 +132,7 @@
           "connection_method": "Motor de Conexión",
           "poll_interval": "Intervalo de sondeo (segundos o hh:mm:ss)",
           "enable_polling": "Habilitar sondeo periódico",
+          "target_temperature_step": "Paso de Temperatura Objetivo",
           "temp_native_current": "Unidad Nativa Actual (AC -> HA)",
           "temp_native_target": "Unidad Nativa Objetivo (HA -> AC)"
         }
