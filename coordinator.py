@@ -49,16 +49,6 @@ from .state import ClimateIPDeviceState
 _LOGGER = logging.getLogger(__name__)
 
 
-def _dispatch_to_loop(hass: HomeAssistant, func: Callable[[], None]) -> None:
-    """Execute func directly if on the main thread loop, else delegate thread-safely."""
-    try:
-        if asyncio.get_running_loop() is hass.loop:
-            func()
-            return
-    except RuntimeError:
-        pass
-    hass.loop.call_soon_threadsafe(func)
-
 
 class PropertyDebouncer:
     """Debounces outgoing commands per property to shield hardware from request flooding."""
@@ -332,34 +322,25 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     @callback
     def _async_save_new_token(self, new_token: str) -> None:
         """Callback to save the renewed token from the network layer."""
-
-        def _update_token() -> None:
-            new_data = dict(self.config_entry.data)  # pragma: no mutate
-            new_data[CONF_TOKEN_KEY] = new_token
-            self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
-            _LOGGER.info(
-                "%s Persisted new network token to Config Entry.", self.log_prefix
-            )  # pragma: no mutate
-
-        _dispatch_to_loop(self.hass, _update_token)
-
+        new_data = dict(self.config_entry.data)  # pragma: no mutate
+        new_data[CONF_TOKEN_KEY] = new_token
+        self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+        _LOGGER.info(
+            "%s Persisted new network token to Config Entry.", self.log_prefix
+        )  # pragma: no mutate
 
     @callback
     def _async_save_ssl_config(self, ssl_config: dict[str, Any]) -> None:
         """Callback to save SSL configuration to the config entry."""
-
-        def _update_ssl() -> None:
-            current_data = dict(self.config_entry.data)  # pragma: no mutate
-            if current_data.get(CONF_SSL_CONFIG_KEY) != ssl_config:
-                current_data[CONF_SSL_CONFIG_KEY] = ssl_config
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry, data=current_data
-                )
-                _LOGGER.info(
-                    "%s Persisted SSL config to ConfigEntry data.", self.log_prefix
-                )  # pragma: no mutate
-
-        _dispatch_to_loop(self.hass, _update_ssl)
+        current_data = dict(self.config_entry.data)  # pragma: no mutate
+        if current_data.get(CONF_SSL_CONFIG_KEY) != ssl_config:
+            current_data[CONF_SSL_CONFIG_KEY] = ssl_config
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, data=current_data
+            )
+            _LOGGER.info(
+                "%s Persisted SSL config to ConfigEntry data.", self.log_prefix
+            )  # pragma: no mutate
 
     @callback
     def _async_on_connection_failed(self) -> None:
