@@ -22,9 +22,12 @@ async def test_valid_push_update_commits():
     mock_entry.options = {}
     mock_entry.data = {}
 
+    def fake_init(self, *args, **kwargs):
+        self.config_entry = kwargs.get("config_entry", mock_entry)
+
     with patch(
         "custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__",
-        return_value=None,
+        fake_init,
     ):
         from custom_components.climate_ip.coordinator import (
             SamsungClimateCoordinator,
@@ -54,9 +57,12 @@ async def test_junk_push_update_ignored():
     mock_entry.options = {}
     mock_entry.data = {}
 
+    def fake_init(self, *args, **kwargs):
+        self.config_entry = kwargs.get("config_entry", mock_entry)
+
     with patch(
         "custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__",
-        return_value=None,
+        fake_init,
     ):
         from custom_components.climate_ip.coordinator import (
             SamsungClimateCoordinator,
