@@ -521,21 +521,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 )
                 return True
 
-            is_superseded = False
-            if hasattr(self.controller, "is_property_superseded"):
-                res_sup = self.controller.is_property_superseded(prop, val)
-                if isinstance(res_sup, bool):
-                    is_superseded = res_sup
-
-            if not is_superseded:
-                poller = getattr(self.controller, "poller", None)
-                pending_updates = getattr(poller, "_pending_updates", None)
-                if pending_updates is not None and prop in pending_updates:
-                    current_target = pending_updates[prop][0]
-                    if current_target != val:
-                        is_superseded = True
-
-            if is_superseded:
+            if self.controller.is_property_superseded(prop, val):
                 _LOGGER.debug(
                     "%s [Debouncer] Command for '%s' (val=%s) was superseded. Dropping stale command.",
                     self.log_prefix,
@@ -546,7 +532,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
             res = await self.controller.async_set_property(prop, val, device_id)
             await asyncio.sleep(HARDWARE_BREATHING_ROOM_SEC)
-            return res is not False
+            return bool(res)
 
     async def async_set_property(
         self,
@@ -650,6 +636,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         )  # pragma: no mutate
 
         self.debouncer.cancel_all()
+        super().async_shutdown()
         await self.controller.async_shutdown()
 
         _LOGGER.debug(

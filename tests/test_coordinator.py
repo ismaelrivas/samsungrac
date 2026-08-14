@@ -12,6 +12,7 @@ import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
+from custom_components.climate_ip.controller import ClimateController
 from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 from custom_components.climate_ip.coordinator import (
     PropertyDebouncer,
@@ -47,6 +48,21 @@ def bypass_sleeps():
         "custom_components.climate_ip.coordinator.asyncio.sleep", new_callable=AsyncMock
     ) as mock_sleep:
         yield mock_sleep
+
+
+@pytest.fixture(autouse=True)
+def bind_default_mock_controller_superseded(monkeypatch):
+    """Ensure mock controllers implement real ClimateController.is_property_superseded logic by default."""
+    orig_init = SamsungClimateCoordinator.__init__
+
+    def patched_init(self, hass, controller, entry, *args, **kwargs):
+        if isinstance(controller, MagicMock):
+            controller.is_property_superseded = (
+                ClimateController.is_property_superseded.__get__(controller)
+            )
+        return orig_init(self, hass, controller, entry, *args, **kwargs)
+
+    monkeypatch.setattr(SamsungClimateCoordinator, "__init__", patched_init)
 
 
 #####################################################
