@@ -341,6 +341,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     @callback
     def _async_cleanup_auto_healing_issue_if_ignored(self) -> None:
         """Delete auto-healing issue from registry if it was ignored/dismissed by the user."""
+        if not self.unique_id:
+            return
         try:
             safe_device_id = self.unique_id.replace(".", "_").replace(" ", "_")
             issue_id = f"auto_healing_raw_{safe_device_id}"
@@ -417,7 +419,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             self.log_prefix,
         )
 
-        safe_device_id = self.unique_id.replace(".", "_").replace(" ", "_")
+        safe_uid = self.unique_id or "unknown_device"
+        safe_device_id = safe_uid.replace(".", "_").replace(" ", "_")
         async_create_issue(
             self.hass,
             DOMAIN,
