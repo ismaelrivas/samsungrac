@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Coroutine, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Protocol, runtime_checkable
 
 from homeassistant.const import UnitOfTemperature
+
+if TYPE_CHECKING:
+    from .state import ClimateIPDeviceState
 
 ATTR_POWER = "power"
 CLIMATE_CONTROLLERS: list[type[ClimateController]] = []
@@ -29,6 +32,10 @@ class ControllerInterface(Protocol):
     @property
     def unique_id(self) -> str | None: ...
     @property
+    def poll(self) -> bool | None: ...
+    @property
+    def climate_state(self) -> ClimateIPDeviceState: ...
+    @property
     def shared_raw_client(self) -> Any | None: ...
     @shared_raw_client.setter
     def shared_raw_client(self, client: Any | None) -> None: ...
@@ -37,6 +44,9 @@ class ControllerInterface(Protocol):
     async def async_set_property(
         self, property_name: str, new_value: Any, device_id: str | None = None
     ) -> bool: ...
+    async def async_predict_and_correct_state(
+        self, current_hass_state: ClimateIPDeviceState, property_name: str, new_value: Any
+    ) -> tuple[Any, dict[str, Any]]: ...
     async def async_shutdown(self) -> None: ...
     async def async_merge_device_state(self, data: dict[str, Any]) -> bool: ...
     async def async_clear_pending_updates(self, keys: list[str]) -> None: ...
