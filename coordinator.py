@@ -118,11 +118,8 @@ class PropertyDebouncer:
 
         # Immediate execution for turn-off commands (aborts any pending debounced commands across all properties)
         effective_val = val if val is not None else kwargs.get("val")
-        if effective_val is None:
-            if len(args) > 1:
-                effective_val = args[1]
-            elif len(args) == 1:
-                effective_val = args[0]
+        if effective_val is None and args:
+            effective_val = args[1] if len(args) > 1 else args[0]
         val_str = str(effective_val).lower() if effective_val is not None else ""
         is_turn_off = (
             (
@@ -339,14 +336,17 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 {(dr.CONNECTION_NETWORK_MAC, dr.format_mac(mac))} if mac else set()
             )  # pragma: no mutate
 
+            opt_name = self.config_entry.options.get(CONF_NAME)
+            device_name = (
+                opt_name
+                if opt_name is not None
+                else self.config_entry.data.get(
+                    CONF_NAME, f"{DEFAULT_DEVICE_NAME_PREFIX} {safe_uid}"
+                )
+            )
             self.device_info = DeviceInfo(
                 identifiers={(DOMAIN, safe_uid)},
-                name=self.config_entry.options.get(
-                    CONF_NAME,
-                    self.config_entry.data.get(
-                        CONF_NAME, f"{DEFAULT_DEVICE_NAME_PREFIX} {safe_uid}"
-                    ),
-                ),
+                name=device_name,
                 manufacturer=MANUFACTURER_SAMSUNG,
                 connections=conns,
             )  # pragma: no mutate
