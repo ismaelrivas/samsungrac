@@ -640,9 +640,12 @@ class YamlController(ClimateController):
             return None
         if not isinstance(raw_val, str):
             raise TypeError(f"{attr_name} must be a string, got {type(raw_val).__name__}")
-        if allowed_tuple and raw_val not in allowed_tuple:
-            raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{attr_name}]: {raw_val}")
-        return raw_val
+        trimmed = raw_val.strip()
+        if len(trimmed) == 0:
+            return None
+        if len(allowed_tuple) > 0 and trimmed not in allowed_tuple:
+            raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{attr_name}]: {trimmed}")
+        return trimmed
 
     @property
     def climate_state(self) -> ClimateIPDeviceState:
@@ -663,7 +666,7 @@ class YamlController(ClimateController):
         raw_hvac = _get_val(ATTR_HVAC_MODE)
         hvac_mode = self._safe_parse_hvac_mode(raw_hvac)
         if (
-            hvac_modes_tuple
+            len(hvac_modes_tuple) > 0
             and hvac_mode is not None
             and hvac_mode != HVACMode.OFF
             and hvac_mode not in hvac_modes_tuple
@@ -720,7 +723,8 @@ class YamlController(ClimateController):
         )
 
     async def async_shutdown(self) -> None:
-        """Shut down the controller and clean up connections."""
+        """Shut down the controller and clean up connections and memory caches."""
+        self.clear_state_cache()
         await self.poller.async_shutdown()
 
     @property
