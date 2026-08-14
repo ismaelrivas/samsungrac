@@ -45,7 +45,6 @@ from .const import (
     ERR_INVALID_STATE_TYPE,
     ERR_MISSING_IP,
     CONF_CONFIG_FILE,
-    CONF_CONTROLLER,
     CONF_DEBUG,
     CONF_DEVICE_ID,
     CONF_DEVICE_TYPE,
@@ -62,6 +61,7 @@ from .const import (
     IMMUTABLE_CONFIG_KEYS,
     LABEL_CURRENT_TEMP,
     LABEL_TARGET_TEMP,
+    LEGACY_YAML_TO_ATTR_MAP,
 )
 from .controller import ClimateController, register_controller
 from .controller_yaml_config import YamlConfigLoader
@@ -492,7 +492,7 @@ class YamlController(ClimateController):
         if obj is not None:
             return obj
 
-        mapped_op_id = self.poller.get_hass_attr_for_op_id(property_name)
+        mapped_op_id = LEGACY_YAML_TO_ATTR_MAP.get(property_name)
         if mapped_op_id is not None and mapped_op_id != property_name:
             return self._objects_by_id.get(mapped_op_id)
 
