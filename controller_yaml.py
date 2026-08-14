@@ -629,9 +629,11 @@ class YamlController(ClimateController):
         preset_modes_tuple = tuple(preset_raw) if preset_raw is not None else ()
         
         parsed_hvac_modes = tuple(
-            mode
-            for m in hvac_modes_tuple
-            if (mode := self._safe_parse_hvac_mode(m)) is not None
+            dict.fromkeys(
+                mode
+                for m in hvac_modes_tuple
+                if (mode := self._safe_parse_hvac_mode(m)) is not None
+            )
         )
         
         return (
