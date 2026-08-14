@@ -305,7 +305,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         )  # pragma: no mutate
 
         # Build comprehensive DeviceInfo
-        safe_uid = self.unique_id or self.config_entry.unique_id or self.config_entry.entry_id
+        raw_uid = self.unique_id or self.config_entry.unique_id or self.config_entry.entry_id
+        safe_uid = str(raw_uid).strip() if raw_uid else FALLBACK_DEVICE_ID
         if device_info:
             # Sub-device (e.g., Indoor Unit connected via a MIM-H03)
             name = device_info.get(CONF_NAME) or DEFAULT_SUBDEVICE_NAME
@@ -703,7 +704,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         return self.controller.log_prefix
 
     @property
-    def unique_id(self) -> str:
+    def unique_id(self) -> str | None:
         """Return the unique ID from the controller."""
         return self.controller.unique_id
 
