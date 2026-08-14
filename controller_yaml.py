@@ -80,9 +80,14 @@ class YamlController(ClimateController):
         cls, config_entry: ConfigEntry[Any], device_id: str | None
     ) -> dict[str, Any]:
         """Extract config enforcing flow segregation and immutable hardware credentials."""
-        base_unique_id: str | None = config_entry.unique_id
+        raw_unique_id: str | None = config_entry.unique_id
+        base_unique_id: str | None = (
+            raw_unique_id.strip()
+            if (raw_unique_id is not None and len(raw_unique_id.strip()) > 0)
+            else None
+        )
         resolved_unique_id: str | None = (
-            f"{base_unique_id}{ID_DELIMITER}{device_id}"
+            f"{base_unique_id}{ID_DELIMITER}{device_id.strip()}"
             if (base_unique_id is not None and device_id is not None and cls._is_subdevice(device_id))
             else base_unique_id
         )
@@ -95,7 +100,7 @@ class YamlController(ClimateController):
 
         extracted[CONF_ENTRY_ID] = config_entry.entry_id
         extracted[CONF_UNIQUE_ID] = resolved_unique_id
-        if device_id is not None:
+        if device_id is not None and len(device_id.strip()) > 0:
             extracted[CONF_DEVICE_ID] = device_id.strip()
 
         return extracted
