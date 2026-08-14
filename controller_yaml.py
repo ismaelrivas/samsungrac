@@ -233,22 +233,23 @@ class YamlController(ClimateController):
 
     @property
     def name(self) -> str:
-        """Return the controller name."""
+        """Return the controller name prioritizing user configuration over YAML loader default."""
+        config_name = self._config.get(CONF_NAME)
+        if config_name is not None:
+            if not isinstance(config_name, str):
+                raise TypeError(f"Expected str for {CONF_NAME}, got {type(config_name).__name__}")
+            if len(config_name.strip()) == 0:
+                raise ValueError(f"{CONF_NAME} cannot be empty")
+            return config_name
+
         loader_name = self.loader.name
         if loader_name is not None:
             if not isinstance(loader_name, str):
                 raise TypeError("Loader name must be a string")
-            if not bool(loader_name.strip()):
+            if len(loader_name.strip()) == 0:
                 raise ValueError("Loader name cannot be empty")
             return loader_name
 
-        raw_name = self._config.get(CONF_NAME)
-        if raw_name is not None:
-            if not isinstance(raw_name, str):
-                raise TypeError(f"Expected str for {CONF_NAME}")
-            if not bool(raw_name.strip()):
-                raise ValueError(f"{CONF_NAME} cannot be empty")
-            return raw_name
         return DEFAULT_CONTROLLER_NAME
 
     @staticmethod
@@ -338,8 +339,8 @@ class YamlController(ClimateController):
 
     @property
     def id(self) -> str | None:
-        """Return the unique id of the controller."""
-        return self._unique_id
+        """Legacy unique identifier alias mapped strictly to unique_id."""
+        return self.unique_id
 
     async def initialize(self) -> bool:
         """Perform initial YAML configuration loading and set up the base connection."""
@@ -685,7 +686,7 @@ class YamlController(ClimateController):
         self.poller.clear_pending_updates(keys)
 
     async def async_predict_and_correct_state(
-        self, current_hass_state: Any, property_name: str, new_value: Any
+        self, current_hass_state: ClimateIPDeviceState, property_name: str, new_value: Any
     ) -> tuple[ClimateEntityFeature, dict[str, Any]]:
         """Predict expected state changes based on a command."""
         return await self.poller.async_predict_and_correct_state(
