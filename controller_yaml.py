@@ -80,9 +80,6 @@ class YamlController(ClimateController):
         cls, config_entry: ConfigEntry[Any], device_id: str | None
     ) -> dict[str, Any]:
         """Extract config enforcing flow segregation and immutable hardware credentials."""
-        if not isinstance(config_entry, ConfigEntry):
-            raise TypeError(f"Expected ConfigEntry, got {type(config_entry).__name__}")
-
         base_unique_id: str | None = config_entry.unique_id
         resolved_unique_id: str | None = (
             f"{base_unique_id}{ID_DELIMITER}{device_id}"
@@ -115,8 +112,6 @@ class YamlController(ClimateController):
         logger: logging.Logger | None = None,
     ) -> YamlController:
         """Create a YamlController instance directly from a ConfigEntry."""
-        if not isinstance(config_entry, ConfigEntry):
-            raise TypeError(f"Expected ConfigEntry, got {type(config_entry).__name__}")
         logger = logger if logger is not None else _LOGGER
         return cls(logger=logger, hass=hass, session=session, config_entry=config_entry, device_id=device_id)
 
