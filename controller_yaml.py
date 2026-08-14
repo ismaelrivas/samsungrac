@@ -474,8 +474,8 @@ class YamlController(ClimateController):
 
         return self._objects_by_id.get(property_name)
 
-    def get_property_all_values(self, property_name: str) -> list[str] | None:
-        """Return the complete, unfiltered list of values for a property."""
+    def get_property_all_values(self, property_name: str) -> tuple[str, ...] | None:
+        """Return the complete, unfiltered tuple of values for a property."""
         if not isinstance(property_name, str) or len(property_name.strip()) == 0:
             raise TypeError(f"Expected non-empty str for property_name, got {property_name!r}")
         prop = self.get_property_object(property_name)
@@ -488,7 +488,7 @@ class YamlController(ClimateController):
                     for v in all_vals:
                         if not isinstance(v, str):
                             raise TypeError(f"Mode value must be a string, got {type(v).__name__}: {v}")
-                    return list(all_vals)
+                    return tuple(all_vals)
 
         _LOGGER.debug(
             "%s Cannot get values for '%s': not an operation or missing all_values",
@@ -612,16 +612,16 @@ class YamlController(ClimateController):
     ]:
         """Build and cache the static modes supported by the device."""
         hvac_raw = self.get_property_all_values(ATTR_HVAC_MODE)
-        hvac_modes_tuple = tuple(hvac_raw) if hvac_raw is not None else ()
+        hvac_modes_tuple = hvac_raw if hvac_raw is not None else ()
         
         fan_raw = self.get_property_all_values(ATTR_FAN_MODE)
-        fan_modes_tuple = tuple(fan_raw) if fan_raw is not None else ()
+        fan_modes_tuple = fan_raw if fan_raw is not None else ()
         
         swing_raw = self.get_property_all_values(ATTR_SWING_MODE)
-        swing_modes_tuple = tuple(swing_raw) if swing_raw is not None else ()
+        swing_modes_tuple = swing_raw if swing_raw is not None else ()
         
         preset_raw = self.get_property_all_values(ATTR_PRESET_MODE)
-        preset_modes_tuple = tuple(preset_raw) if preset_raw is not None else ()
+        preset_modes_tuple = preset_raw if preset_raw is not None else ()
         
         parsed_hvac_modes = tuple(
             dict.fromkeys(

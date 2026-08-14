@@ -362,7 +362,7 @@ def test_get_property_all_values(mock_yaml_controller) -> None:
     }
 
     # Scenario 1: Object exists and has all_values
-    assert mock_yaml_controller.get_property_all_values("good_op") == ["val1", "val2"]
+    assert mock_yaml_controller.get_property_all_values("good_op") == ("val1", "val2")
 
     # Scenario 2: Object exists but does not have all_values
     assert mock_yaml_controller.get_property_all_values("bad_op") is None
