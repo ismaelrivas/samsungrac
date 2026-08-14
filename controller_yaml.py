@@ -571,6 +571,8 @@ class YamlController(ClimateController):
             return None
         if isinstance(raw_value, bool):
             raise TypeError(f"Temperature for {label} cannot be a boolean, got {raw_value}")
+        if not isinstance(raw_value, (int, float, str)):
+            raise TypeError(f"Expected numeric or string for {label}, got {type(raw_value).__name__}")
         return float(raw_value)
 
     def _build_static_modes_cache(
