@@ -176,6 +176,10 @@
         "connection_failed": {
             "title": "{device_name} - Disconnected ({ip_address})",
             "description": "The device **{device_name}** at **{ip_address}** is persistently unreachable. Please verify power and network connection."
+        },
+        "auto_healing_raw": {
+            "title": "Samsung Climate IP: Auto-healing ({device_name})",
+            "description": "The device **{device_name}** exhibited HTTP protocol anomalies (malformed headers violating RFC 7230 sent by firmware).\n\nThe integration has automatically changed the connection mode to **'Robust (raw socket)'** to ensure continuous operation and prevent connection drops."
         }
     },
     "selector": {

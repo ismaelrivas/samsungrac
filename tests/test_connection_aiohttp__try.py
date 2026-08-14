@@ -150,10 +150,26 @@ async def test_try_connection_invalid_header(
         )
         conn._create_ssl_context = AsyncMock(return_value=MagicMock())
 
-        mock_session.request.side_effect = ValueError("Invalid header token")
+        mock_session.request.side_effect = aiohttp.ClientError("Invalid header token: b'X-API-Version : v1.0.0'")
 
-        with pytest.raises(CannotConnect):
+        with pytest.raises(InvalidHeaderError):
             await conn._try_connection()
+
+
+async def test_async_execute_request_invalid_header(
+    connection_config, mock_logger, mock_hass, mock_session
+):
+    """Test that protocol/header violation during request execution raises InvalidHeaderError."""
+    with patch("os.path.exists", return_value=True):
+        conn = ConnectionAiohttp8888(
+            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+        )
+        conn._create_ssl_context = AsyncMock(return_value=MagicMock())
+
+        mock_session.request.side_effect = aiohttp.ClientError("400, message=\"Invalid header token: b'X-API-Version : v1.0.0'\"")
+
+        with pytest.raises(InvalidHeaderError):
+            await conn._async_execute_request("GET", "https://192.168.1.100:8888/devices", None, None)
 
 
 async def test_try_connection_generic_error(

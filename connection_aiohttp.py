@@ -69,6 +69,31 @@ HEADER_VALUE_CLOSE = "close"
 KEEPALIVE_TIMEOUT = 75
 
 
+def _is_http_protocol_violation(exc: BaseException) -> bool:
+    """Check if exception represents an HTTP protocol/header violation requiring fallback to RAW."""
+    if isinstance(exc, aiohttp.ClientConnectorError):
+        return False
+    if isinstance(
+        exc,
+        (
+            aiohttp.ClientPayloadError,
+            aiohttp.http_exceptions.BadHttpMessage,
+            aiohttp.http_exceptions.InvalidHeader,
+            aiohttp.http_exceptions.LineTooLong,
+        ),
+    ):
+        return True
+    try:
+        exc_str = str(exc).lower()
+    except Exception:
+        exc_str = ""
+    return (
+        "invalid header" in exc_str
+        or "badhttpmessage" in exc_str
+        or "line too long" in exc_str
+    )
+
+
 @register_connection
 class ConnectionAiohttp8888(Connection):
     """
@@ -455,6 +480,15 @@ class ConnectionAiohttp8888(Connection):
                 raise InvalidHeaderError(error_msg) from e
 
             except (aiohttp.ClientError, ValueError) as e:
+                if _is_http_protocol_violation(e):
+                    err_msg = (
+                        "%s [aiohttp_probe] Device HTTP protocol/header violation detected: %s. "
+                        "Switching to 'Robust (raw socket)' engine."
+                    )
+                    _LOGGER.warning(err_msg, self.log_prefix, e)
+                    raise InvalidHeaderError(
+                        f"Protocol violation during probe: {e}"
+                    ) from e
                 warn_msg = (
                     "%s [aiohttp_probe] Initial probe with HTTPS (mTLS) failed: %s."
                 )
@@ -692,6 +726,16 @@ class ConnectionAiohttp8888(Connection):
             aiohttp.ClientConnectorError,
             aiohttp.ClientError,
         ) as e:
+            if _is_http_protocol_violation(e):
+                err_msg = (
+                    "%s [aiohttp] Device HTTP protocol/header violation detected: %s. "
+                    "Switching to 'Robust (raw socket)' engine."
+                )
+                _LOGGER.warning(err_msg, self.log_prefix, e)
+                raise InvalidHeaderError(
+                    f"HTTP header/protocol error on aiohttp: {e}"
+                ) from e
+
             # Adaptive recovery on timeout/connection drop
             if isinstance(e, aiohttp.ClientConnectorError):
                 clean_e = self._format_connector_error(e)
@@ -727,6 +771,16 @@ class ConnectionAiohttp8888(Connection):
                     TimeoutError,
                     OSError,
                 ) as retry_exc:
+                    if _is_http_protocol_violation(retry_exc):
+                        err_msg = (
+                            "%s [aiohttp] Device HTTP protocol/header violation during retry: %s. "
+                            "Switching to 'Robust (raw socket)' engine."
+                        )
+                        _LOGGER.warning(err_msg, self.log_prefix, retry_exc)
+                        raise InvalidHeaderError(
+                            f"HTTP header/protocol error during retry on aiohttp: {retry_exc}"
+                        ) from retry_exc
+
                     err_msg = (
                         "%s [aiohttp] Retry failed even with 'Connection: close': %s"
                     )

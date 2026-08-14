@@ -176,6 +176,10 @@
     "connection_failed": {
       "title": "{device_name} - desconectado ({ip_address})",
       "description": "El dispositivo **{device_name}** en **{ip_address}** no está localizable. Verifica la alimentación y la conexión a tu red local."
+    },
+    "auto_healing_raw": {
+      "title": "Samsung Climate IP: Auto-healing ({device_name})",
+      "description": "El dispositivo **{device_name}** ha presentado anomalías de protocolo HTTP (cabeceras malformadas no conformes con RFC 7230 enviadas por el firmware del equipo).\n\nLa integración ha cambiado automáticamente el modo de conexión a **'Robust (raw socket)'** para asegurar la operatividad continua y evitar caídas de red."
     }
   },
   "selector": {

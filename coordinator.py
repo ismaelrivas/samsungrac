@@ -18,6 +18,10 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.issue_registry import (
+    IssueSeverity,
+    async_create_issue,
+)
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
@@ -359,9 +363,37 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
     @callback
     def _async_switch_to_raw_engine(self) -> None:
-        """Switch connection method option to RAW permanently."""
+        """Switch connection method option to RAW permanently and notify the user."""
         new_options = {**self.config_entry.options, CONF_CONN_METHOD: CONN_METHOD_RAW}
         self.hass.config_entries.async_update_entry(self.config_entry, options=new_options)
+
+        if isinstance(self.device_info, dict):
+            device_name = self.device_info.get("name") or f"Samsung AC {self.unique_id}"
+        elif hasattr(self.device_info, "name"):
+            device_name = getattr(self.device_info, "name", None) or f"Samsung AC {self.unique_id}"
+        else:
+            device_name = f"Samsung AC {self.unique_id}"
+
+        _LOGGER.warning(
+            "%s Auto-healing to RAW mode activated: The device sent non-standard HTTP responses "
+            "(RFC 7230 violation). The connection engine has been automatically and permanently "
+            "migrated to 'Robust (raw socket)' to preserve full AC control without disconnections.",
+            self.log_prefix,
+        )
+
+        safe_device_id = self.unique_id.replace(".", "_").replace(" ", "_")
+        async_create_issue(
+            self.hass,
+            DOMAIN,
+            f"auto_healing_raw_{safe_device_id}",
+            is_fixable=False,
+            is_persistent=False,
+            severity=IssueSeverity.WARNING,
+            translation_key="auto_healing_raw",
+            translation_placeholders={
+                "device_name": device_name,
+            },
+        )
 
     async def _async_update_data(self) -> ClimateIPDeviceState:
         """Fetch the latest state from the device."""
