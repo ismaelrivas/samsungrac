@@ -115,11 +115,6 @@ class ClimateController(ABC):
 
     @property
     @abstractmethod
-    def id(self) -> str | None:
-        """Return the unique id of the controller."""
-
-    @property
-    @abstractmethod
     def unique_id(self) -> str | None:
         """Return the unique id of the controller."""
 

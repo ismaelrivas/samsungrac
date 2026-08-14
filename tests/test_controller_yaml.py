@@ -571,7 +571,7 @@ def test_yaml_controller_delegated_properties(mock_yaml_controller) -> None:
 
     mock_yaml_controller._unique_id = "uid_999"
     mock_yaml_controller._device_id = "uid_999"
-    assert mock_yaml_controller.id == "uid_999"
+    assert mock_yaml_controller.unique_id == "uid_999"
 
     mock_yaml_controller._attributes = {"controller": "uid_999", "attr_1": 10}
     assert mock_yaml_controller.state_attributes == {

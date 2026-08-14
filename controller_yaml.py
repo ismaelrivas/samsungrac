@@ -380,11 +380,6 @@ class YamlController(ClimateController):
             raise TypeError(f"Expected bool for {ATTR_IS_AVAILABLE}, got {type(is_avail).__name__}")
         return is_avail
 
-    @property
-    def id(self) -> str | None:
-        """Legacy unique identifier alias mapped strictly to unique_id."""
-        return self.unique_id
-
     async def initialize(self) -> bool:
         """Perform initial YAML configuration loading and set up the base connection."""
         return await self.loader.async_initialize()
