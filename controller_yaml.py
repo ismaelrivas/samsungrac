@@ -638,6 +638,18 @@ class YamlController(ClimateController):
             preset_modes_tuple,
         )
 
+    def _validate_mode_value(
+        self, raw_val: Any, allowed_tuple: tuple[str, ...], attr_name: str
+    ) -> str | None:
+        """Validate string mode against allowed tuple strictly."""
+        if raw_val is None:
+            return None
+        if not isinstance(raw_val, str):
+            raise TypeError(f"{attr_name} must be a string, got {type(raw_val).__name__}")
+        if allowed_tuple and raw_val not in allowed_tuple:
+            raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{attr_name}]: {raw_val}")
+        return raw_val
+
     @property
     def climate_state(self) -> ClimateIPDeviceState:
         """Return the strictly typed state representation of the device."""
@@ -656,41 +668,19 @@ class YamlController(ClimateController):
 
         raw_hvac = _get_val(ATTR_HVAC_MODE)
         hvac_mode = self._safe_parse_hvac_mode(raw_hvac)
-        if hvac_modes_tuple and hvac_mode is not None and hvac_mode not in hvac_modes_tuple:
+        if (
+            hvac_modes_tuple
+            and hvac_mode is not None
+            and hvac_mode != HVACMode.OFF
+            and hvac_mode not in hvac_modes_tuple
+        ):
             raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_HVAC_MODE}]: {hvac_mode}")
 
-        raw_target_temp = _get_val(ATTR_TEMPERATURE)
-        target_temp = self._safe_parse_temperature(raw_target_temp, LABEL_TARGET_TEMP)
-
-        raw_current_temp = _get_val(ATTR_CURRENT_TEMPERATURE)
-        current_temp = self._safe_parse_temperature(raw_current_temp, LABEL_CURRENT_TEMP)
-
-        raw_fan = _get_val(ATTR_FAN_MODE)
-        fan_mode = None
-        if raw_fan is not None:
-            if not isinstance(raw_fan, str):
-                raise TypeError(f"Fan mode must be a string, got {type(raw_fan).__name__}")
-            if fan_modes_tuple and raw_fan not in fan_modes_tuple:
-                raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_FAN_MODE}]: {raw_fan}")
-            fan_mode = raw_fan
-
-        raw_swing = _get_val(ATTR_SWING_MODE)
-        swing_mode = None
-        if raw_swing is not None:
-            if not isinstance(raw_swing, str):
-                raise TypeError(f"Swing mode must be a string, got {type(raw_swing).__name__}")
-            if swing_modes_tuple and raw_swing not in swing_modes_tuple:
-                raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_SWING_MODE}]: {raw_swing}")
-            swing_mode = raw_swing
-
-        raw_preset = _get_val(ATTR_PRESET_MODE)
-        preset_mode = None
-        if raw_preset is not None:
-            if not isinstance(raw_preset, str):
-                raise TypeError(f"Preset mode must be a string, got {type(raw_preset).__name__}")
-            if preset_modes_tuple and raw_preset not in preset_modes_tuple:
-                raise ValueError(f"{ERR_INVALID_DEVICE_MODE} [{ATTR_PRESET_MODE}]: {raw_preset}")
-            preset_mode = raw_preset
+        target_temp = self._safe_parse_temperature(_get_val(ATTR_TEMPERATURE), LABEL_TARGET_TEMP)
+        current_temp = self._safe_parse_temperature(_get_val(ATTR_CURRENT_TEMPERATURE), LABEL_CURRENT_TEMP)
+        fan_mode = self._validate_mode_value(_get_val(ATTR_FAN_MODE), fan_modes_tuple, ATTR_FAN_MODE)
+        swing_mode = self._validate_mode_value(_get_val(ATTR_SWING_MODE), swing_modes_tuple, ATTR_SWING_MODE)
+        preset_mode = self._validate_mode_value(_get_val(ATTR_PRESET_MODE), preset_modes_tuple, ATTR_PRESET_MODE)
 
         return ClimateIPDeviceState(
             hvac_mode=hvac_mode,
