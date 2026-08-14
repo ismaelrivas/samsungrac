@@ -299,6 +299,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         )  # pragma: no mutate
 
         # Build comprehensive DeviceInfo
+        safe_uid = self.unique_id or self.config_entry.unique_id or self.config_entry.entry_id
         if device_info:
             # Sub-device (e.g., Indoor Unit connected via a MIM-H03)
             name = device_info.get(CONF_NAME) or DEFAULT_SUBDEVICE_NAME
@@ -318,7 +319,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             # NOTE: For sub-devices, we DO NOT include 'connections' (MAC) to prevent
             # Home Assistant from merging multiple units behind the same gateway into one.
             self.device_info = DeviceInfo(
-                identifiers={(DOMAIN, self.unique_id)},
+                identifiers={(DOMAIN, safe_uid)},
                 name=final_name,
                 manufacturer=MANUFACTURER_SAMSUNG,
                 via_device=via_device,
@@ -331,11 +332,11 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             )  # pragma: no mutate
 
             self.device_info = DeviceInfo(
-                identifiers={(DOMAIN, self.unique_id)},
+                identifiers={(DOMAIN, safe_uid)},
                 name=self.config_entry.options.get(
                     CONF_NAME,
                     self.config_entry.data.get(
-                        CONF_NAME, f"{DEFAULT_DEVICE_NAME_PREFIX} {self.unique_id}"
+                        CONF_NAME, f"{DEFAULT_DEVICE_NAME_PREFIX} {safe_uid}"
                     ),
                 ),
                 manufacturer=MANUFACTURER_SAMSUNG,
