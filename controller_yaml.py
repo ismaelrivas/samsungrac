@@ -189,12 +189,14 @@ class YamlController(ClimateController):
             self._unique_id = None
 
         if self._unique_id is None:
-            base_mac = config.get(CONF_MAC)
-            base_unique_id = (
-                base_mac.strip()
-                if (base_mac is not None and isinstance(base_mac, str) and len(base_mac.strip()) > 0)
-                else None
-            )
+            raw_mac = config.get(CONF_MAC)
+            if raw_mac is not None:
+                if not isinstance(raw_mac, str):
+                    raise TypeError(f"Expected str for {CONF_MAC}, got {type(raw_mac).__name__}")
+                base_unique_id: str | None = raw_mac.strip() if len(raw_mac.strip()) > 0 else None
+            else:
+                base_unique_id = None
+
             if self._is_subdevice(self._device_id):
                 self._unique_id = (
                     f"{base_unique_id}{ID_DELIMITER}{self._device_id}"
