@@ -773,16 +773,6 @@ class YamlController(ClimateController):
             raise TypeError(f"Expected bool for is_push_supported, got {type(is_push).__name__}")
         return is_push
 
-    @property
-    def shared_raw_client(self) -> Any | None:
-        """Return the shared raw socket client."""
-        return self._shared_raw_client
-
-    @shared_raw_client.setter
-    def shared_raw_client(self, client: Any | None) -> None:
-        """Set the shared raw socket client."""
-        self._shared_raw_client = client
-
     async def async_refresh_from_connection(self) -> None:
         """Refresh the controller's properties from the connection's internal state.
 
@@ -808,10 +798,3 @@ class YamlController(ClimateController):
             self._token_refreshed_callback(new_token)
         else:
             _LOGGER.debug("%s Token refreshed callback received (no handler registered)", self.log_prefix)
-
-    def get_current_state_callback(self) -> dict[str, Any] | None:
-        """Callback invoked by external pollers to request the raw current state.
-
-        Acts as a safe no-op returning None.
-        """
-        return None

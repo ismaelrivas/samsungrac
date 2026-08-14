@@ -611,11 +611,6 @@ async def test_coordinator_injected_callbacks(hass: HomeAssistant) -> None:
         coordinator._async_save_new_token
     )
 
-    # Check get_current_state_callback
-    assert mock_controller.get_current_state_callback is not None
-    coordinator.data = {"test_state": "active"}
-    assert mock_controller.get_current_state_callback() == {"test_state": "active"}
-
     # Check on_push_update_callback
     assert (
         mock_controller.on_push_update_callback == coordinator.async_handle_push_update

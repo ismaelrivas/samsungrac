@@ -198,9 +198,6 @@ def test_yaml_controller_strict_initialization() -> None:
     assert callable(
         controller.on_token_refreshed
     ), "Must implement the no-op from the class"
-    assert callable(
-        controller.get_current_state_callback
-    ), "Must implement the no-op from the class"
 
     assert callable(
         controller.on_push_update_callback

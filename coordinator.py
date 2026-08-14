@@ -237,7 +237,6 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
         # Inject callbacks into the controller to avoid circular dependencies.
         self.controller.register_token_callback(self._async_save_new_token)
-        self.controller.get_current_state_callback = self._get_current_state
         self.controller.on_push_update_callback = (
             self.async_handle_push_update
         )  # pragma: no mutate
@@ -328,9 +327,6 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
         _dispatch_to_loop(self.hass, _update_token)
 
-    def _get_current_state(self) -> Any:
-        """Callback for the controller to get the current cached state."""
-        return self.data
 
     @callback
     def _async_save_ssl_config(self, ssl_config: dict[str, Any]) -> None:
