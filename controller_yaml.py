@@ -126,6 +126,8 @@ class YamlController(ClimateController):
             config = self._extract_config_from_entry(config_entry, device_id)
         elif isinstance(config, (dict, types.MappingProxyType)):
             config = dict(config)
+            if device_id is not None and CONF_DEVICE_ID not in config:
+                config[CONF_DEVICE_ID] = device_id.strip() if isinstance(device_id, str) else device_id
         elif config is not None:
             raise TypeError(f"Expected dict for config, got {type(config).__name__}")
         else:
