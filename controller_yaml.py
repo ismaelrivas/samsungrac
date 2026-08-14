@@ -253,7 +253,7 @@ class YamlController(ClimateController):
     @staticmethod
     def match_type(controller_type: str) -> bool:
         """Return True if the given type string matches this controller."""
-        return controller_type.lower() == DEFAULT_CONF_CONTROLLER
+        return controller_type.strip().lower() == DEFAULT_CONF_CONTROLLER
 
     @property
     def yaml_file(self) -> str | None:
@@ -300,7 +300,7 @@ class YamlController(ClimateController):
         """Return True if device_id represents a sub-device."""
         if device_id is None or len(device_id.strip()) == 0:
             return False
-        return device_id not in EXCLUDED_SUBDEVICE_IDS
+        return device_id.strip() not in EXCLUDED_SUBDEVICE_IDS
 
     @property
     def unique_id(self) -> str | None:
