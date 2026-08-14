@@ -282,7 +282,7 @@ class YamlController(ClimateController):
         loader_name = self.loader.name
         if loader_name is not None:
             if not isinstance(loader_name, str):
-                raise TypeError("Loader name must be a string")
+                raise TypeError(f"Expected str for loader name, got {type(loader_name).__name__}")
             if len(loader_name.strip()) == 0:
                 raise ValueError("Loader name cannot be empty")
             return loader_name
