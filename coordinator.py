@@ -226,7 +226,8 @@ class PropertyDebouncer:
                         )  # pragma: no mutate
                         await self.coordinator.async_request_refresh()
 
-                safe_uid = self.coordinator.unique_id or "device"
+                raw_uid = self.coordinator.unique_id or "device"
+                safe_uid = raw_uid.replace(".", "_").replace(" ", "_")
                 self.coordinator.config_entry.async_create_background_task(
                     self.hass,
                     _task_runner(),
@@ -256,7 +257,6 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     ) -> None:  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
         """Initialize the data coordinator."""
         self.controller = controller
-        self.config_entry = entry
         self.debouncer = PropertyDebouncer(self, delay=DEFAULT_DEBOUNCE_DELAY)
         self._global_network_lock = asyncio.Lock()
 
