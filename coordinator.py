@@ -104,27 +104,40 @@ class PropertyDebouncer:
         self._pending_payloads.clear()
 
     async def async_execute(
-        self, property_name: str, coroutine_func: Any, *args: Any, **kwargs: Any
+        self,
+        property_name: str,
+        coroutine_func: Any,
+        *args: Any,
+        val: Any = None,
+        **kwargs: Any,
     ) -> bool:
         """Execute a command with trailing debouncing per property."""
         now = time.monotonic()
         last_activity = self._last_activities.get(property_name, 0.0)
 
         # Immediate execution for turn-off commands (aborts any pending debounced commands across all properties)
-        val = (
-            kwargs.get("val")
-            if "val" in kwargs
-            else (args[1] if len(args) > 1 else None)
+        effective_val = (
+            val
+            if val is not None
+            else (
+                kwargs.get("val")
+                if "val" in kwargs
+                else (
+                    args[1]
+                    if len(args) > 1
+                    else (args[0] if len(args) == 1 else None)
+                )
+            )
         )
-        val_str = str(val).lower() if val is not None else ""
+        val_str = str(effective_val).lower() if effective_val is not None else ""
         is_turn_off = (
             (
                 property_name == ATTR_HVAC_MODE
-                and (val == HVACMode.OFF or val_str == HVACMode.OFF.value)
+                and (effective_val == HVACMode.OFF or val_str == HVACMode.OFF.value)
             )
             or (
                 property_name == ATTR_POWER
-                and (val is False or val_str in FALSY_STRINGS)
+                and (effective_val is False or val_str in FALSY_STRINGS)
             )
         )
 
