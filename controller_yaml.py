@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import types
 from typing import TYPE_CHECKING, Any
 
@@ -570,7 +571,14 @@ class YamlController(ClimateController):
             raise TypeError(f"Temperature for {label} cannot be a boolean, got {raw_value}")
         if not isinstance(raw_value, (int, float, str)):
             raise TypeError(f"Expected numeric or string for {label}, got {type(raw_value).__name__}")
-        return float(raw_value)
+        try:
+            val = float(raw_value)
+        except ValueError as err:
+            raise ValueError(f"Invalid numeric string for {label}: '{raw_value}'") from err
+
+        if math.isnan(val) or math.isinf(val):
+            raise ValueError(f"Non-finite temperature value detected for {label}: {val}")
+        return val
 
     def _build_static_modes_cache(
         self,
