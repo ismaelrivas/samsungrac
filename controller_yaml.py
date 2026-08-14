@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import aiohttp
+import asyncio
 import logging
 import math
 import types
@@ -423,7 +424,7 @@ class YamlController(ClimateController):
                     target_device_id = self._unique_id
 
                 return await op.async_set_value(new_value, target_device_id)
-            except HomeAssistantError:
+            except (HomeAssistantError, asyncio.CancelledError):
                 self.poller.clear_pending_updates([property_name])
                 raise
             except (TimeoutError, OSError, aiohttp.ClientError) as e:
