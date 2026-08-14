@@ -85,6 +85,10 @@ class PropertyDebouncer:
         """Return True if there are active debouncing timers or pending payloads."""
         return bool(self._timers or self._pending_payloads)
 
+    def has_pending(self, property_name: str) -> bool:
+        """Return True if a command for the given property is queued."""
+        return property_name in self._pending_payloads
+
     def cancel_all(self) -> None:
         """Cancel all active timers, clear pending payloads, and poison active zombies."""
         self._generation += 1  # 💥 Global poisoning: any queued task will be invalidated
@@ -465,7 +469,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
             if new_data:
                 if await self.controller.async_merge_device_state(new_data):
-                    if hasattr(self, "debouncer") and self.debouncer.is_active:
+                    if self.debouncer.is_active:
                         _LOGGER.debug(
                             "%s Push update received during active debouncing; suppressing HA broadcast to protect UI buffer",
                             self.log_prefix,
@@ -473,7 +477,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                         return
 
                     updated_state = self._create_device_state()  # pragma: no mutate
-                    if updated_state != getattr(self, "data", None):
+                    if updated_state != self.data:
                         self.async_set_updated_data(updated_state)  # pragma: no mutate
                     else:
                         _LOGGER.debug(
@@ -512,7 +516,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     ) -> bool:
         """Serialize network commands with a global lock and delay to prevent AC drops."""
         async with self._global_network_lock:
-            if hasattr(self, "debouncer") and prop in self.debouncer._pending_payloads:
+            if self.debouncer.has_pending(prop):
                 _LOGGER.debug(
                     "%s [Debouncer] Command for '%s' (val=%s) was superseded while waiting for lock. Dropping stale command.",
                     self.log_prefix,
@@ -577,44 +581,50 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                     "%s Not all properties were set successfully. Requesting sync refresh to revert state.",
                     self.log_prefix,
                 )  # pragma: no mutate
-                await self.controller.async_clear_pending_updates(
-                    list(properties_to_set.keys())
-                )
-                await self.async_request_refresh()
+                await self._async_handle_set_property_failure(properties_to_set)
+
+        except (CannotConnect, OSError) as err:
+            await self._async_handle_set_property_failure(properties_to_set)
+            _LOGGER.error(
+                "%s Network error setting properties: %s",
+                self.log_prefix,
+                type(err).__name__,
+            )  # pragma: no mutate
+            raise HomeAssistantError(
+                f"Network error setting property {property_name}: {err}"
+            ) from err  # pragma: no mutate
+
+        except (ValueError, TypeError, KeyError) as err:
+            await self._async_handle_set_property_failure(properties_to_set)
+            _LOGGER.error(
+                "%s Data error setting properties: %s",
+                self.log_prefix,
+                err,
+                exc_info=True,
+            )  # pragma: no mutate
+            raise HomeAssistantError(
+                f"Data error setting property {property_name}: {err}"
+            ) from err  # pragma: no mutate
+
+        except HomeAssistantError:
+            await self._async_handle_set_property_failure(properties_to_set)
+            raise
 
         except Exception as err:  # pylint: disable=broad-exception-caught
-            await self.controller.async_clear_pending_updates(
-                list(properties_to_set.keys())
-            )
-            await self.async_request_refresh()
-
-            if isinstance(err, CannotConnect | OSError):
-                _LOGGER.error(
-                    "%s Network error setting properties: %s",
-                    self.log_prefix,
-                    type(err).__name__,
-                )  # pragma: no mutate
-                raise HomeAssistantError(
-                    f"Network error setting property {property_name}: {err}"
-                ) from err  # pragma: no mutate
-
-            if isinstance(err, ValueError | TypeError | KeyError):
-                _LOGGER.error(
-                    "%s Data error setting properties: %s",
-                    self.log_prefix,
-                    err,
-                    exc_info=True,
-                )  # pragma: no mutate
-                raise HomeAssistantError(
-                    f"Data error setting property {property_name}: {err}"
-                ) from err  # pragma: no mutate
-
+            await self._async_handle_set_property_failure(properties_to_set)
             _LOGGER.error(
                 "%s Error setting properties: %s", self.log_prefix, err, exc_info=True
             )  # pragma: no mutate
             raise HomeAssistantError(
                 f"Failed to set property {property_name}: {err}"
             ) from err  # pragma: no mutate
+
+    async def _async_handle_set_property_failure(
+        self, properties: dict[str, Any]
+    ) -> None:
+        """Clear pending updates and request refresh on command failure."""
+        await self.controller.async_clear_pending_updates(list(properties.keys()))
+        await self.async_request_refresh()
 
     @property
     def log_prefix(self) -> str:
