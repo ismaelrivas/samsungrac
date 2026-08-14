@@ -516,7 +516,7 @@ class YamlController(ClimateController):
         return self._temperature_unit
 
     @property
-    def service_schema_map(self) -> dict[str, Any] | None:
+    def service_schema_map(self) -> dict[Any, Any] | None:
         """Return the voluptuous service schema map."""
         if self.loader.service_schema_map is None:
             return None
