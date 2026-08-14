@@ -47,6 +47,7 @@ from .const import (
     FALSY_STRINGS,
     HARDWARE_BREATHING_ROOM_SEC,
     MANUFACTURER_SAMSUNG,
+    MIN_POLL_INTERVAL,
     NETWORK_POLL_TIMEOUT,
 )
 from .controller import ControllerInterface
@@ -284,7 +285,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             if opt_interval is not None
             else entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
         )  # pragma: no mutate
-        poll_interval_seconds = max(raw_interval, 1)
+        poll_interval_seconds = max(raw_interval, MIN_POLL_INTERVAL)
         update_interval = (
             timedelta(seconds=poll_interval_seconds)
             if (controller.poll and enable_polling)
@@ -380,6 +381,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     @callback
     def _async_save_new_token(self, new_token: str) -> None:
         """Callback to save the renewed token from the network layer."""
+        if self.config_entry.data.get(CONF_TOKEN) == new_token:
+            return
         new_data = dict(self.config_entry.data)  # pragma: no mutate
         new_data[CONF_TOKEN] = new_token
         self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
