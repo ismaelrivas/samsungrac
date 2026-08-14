@@ -79,29 +79,34 @@ class YamlController(ClimateController):
 
     @classmethod
     def _extract_config_from_entry(
-        cls, config_entry: ConfigEntry, device_id: str | None
+        cls, config_entry: ConfigEntry[Any], device_id: str | None
     ) -> dict[str, Any]:
-        """Extract config enforcing Flow Segregation and the Immutability Shield."""
-        base_unique_id = config_entry.unique_id
-        resolved_unique_id = (
-            f"{base_unique_id}{ID_DELIMITER}{device_id}" 
-            if base_unique_id is not None and device_id is not None and cls._is_subdevice(device_id) 
+        """Extract config enforcing flow segregation and immutable hardware credentials."""
+        base_unique_id: str | None = config_entry.unique_id
+        resolved_unique_id: str | None = (
+            f"{base_unique_id}{ID_DELIMITER}{device_id}"
+            if (base_unique_id is not None and device_id is not None and cls._is_subdevice(device_id))
             else base_unique_id
         )
 
-        # Functional state construction with zero direct dictionary assignments
-        return {
-            **config_entry.data,
-            **config_entry.options,
-            CONF_ENTRY_ID: config_entry.entry_id,
-            CONF_UNIQUE_ID: resolved_unique_id,
-            **({CONF_DEVICE_ID: device_id} if device_id is not None else {})
-        }
+        # Base immutable data from entry creation
+        extracted: dict[str, Any] = dict(config_entry.data)
+        # Non-destructive overlay of options
+        for key, value in config_entry.options.items():
+            if key not in extracted or extracted[key] is None:
+                extracted[key] = value
+
+        extracted[CONF_ENTRY_ID] = config_entry.entry_id
+        extracted[CONF_UNIQUE_ID] = resolved_unique_id
+        if device_id is not None:
+            extracted[CONF_DEVICE_ID] = device_id
+
+        return extracted
 
     @classmethod
     def from_config_entry(
         cls,
-        config_entry: ConfigEntry,
+        config_entry: ConfigEntry[Any],
         hass: HomeAssistant | None = None,
         session: aiohttp.ClientSession | None = None,
         device_id: str | None = None,
@@ -117,7 +122,7 @@ class YamlController(ClimateController):
         logger: logging.Logger | None = None,
         hass: HomeAssistant | None = None,
         session: aiohttp.ClientSession | None = None,
-        config_entry: ConfigEntry | None = None,
+        config_entry: ConfigEntry[Any] | None = None,
         device_id: str | None = None,
     ) -> None:
         """Initialize the YAML controller from a config dictionary or ConfigEntry."""
