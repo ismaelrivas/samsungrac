@@ -319,9 +319,12 @@ class YamlController(ClimateController):
         if value is not None:
             if not isinstance(value, str):
                 raise TypeError(f"Expected str for device_id, got {type(value).__name__}")
-            if len(value.strip()) == 0:
+            stripped = value.strip()
+            if len(stripped) == 0:
                 raise ValueError("device_id cannot be empty")
-        self._device_id = value
+            self._device_id = stripped
+        else:
+            self._device_id = None
 
     @property
     def config(self) -> dict[str, Any]:
@@ -339,9 +342,12 @@ class YamlController(ClimateController):
         if value is not None:
             if not isinstance(value, str):
                 raise TypeError(f"Expected str for token, got {type(value).__name__}")
-            if len(value.strip()) == 0:
+            stripped = value.strip()
+            if len(stripped) == 0:
                 raise ValueError("token cannot be empty")
-        self._token = value
+            self._token = stripped
+        else:
+            self._token = None
 
     @property
     def ip_address(self) -> str | None:
@@ -602,7 +608,10 @@ class YamlController(ClimateController):
             return raw_mode
         if not isinstance(raw_mode, str):
             raise TypeError(f"HVAC mode must be a string or HVACMode, got {type(raw_mode).__name__}")
-        return HVACMode(raw_mode.lower())
+        trimmed = raw_mode.strip()
+        if len(trimmed) == 0:
+            return None
+        return HVACMode(trimmed.lower())
 
     def _safe_parse_temperature(self, raw_value: Any, label: str) -> float | None:
         """Parse temperature strictly. Raises ValueError/TypeError on invalid input."""
@@ -612,6 +621,11 @@ class YamlController(ClimateController):
             raise TypeError(f"Temperature for {label} cannot be a boolean, got {raw_value}")
         if not isinstance(raw_value, (int, float, str)):
             raise TypeError(f"Expected numeric or string for {label}, got {type(raw_value).__name__}")
+        if isinstance(raw_value, str):
+            trimmed = raw_value.strip()
+            if len(trimmed) == 0:
+                return None
+            raw_value = trimmed
         try:
             val = float(raw_value)
         except ValueError as err:

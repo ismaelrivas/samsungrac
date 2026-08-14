@@ -7,6 +7,8 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Coroutine, Protocol, runtime_checkable
 
+from homeassistant.const import UnitOfTemperature
+
 ATTR_POWER = "power"
 CLIMATE_CONTROLLERS: list[type[ClimateController]] = []
 
@@ -188,7 +190,7 @@ class ClimateController(ABC):
 
     @property
     @abstractmethod
-    def temperature_unit(self) -> str:
+    def temperature_unit(self) -> UnitOfTemperature:
         """Return the temperature unit of the controller."""
 
     @property
