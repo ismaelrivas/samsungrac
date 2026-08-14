@@ -292,7 +292,7 @@ class YamlController(ClimateController):
         return DEFAULT_CONTROLLER_NAME
 
     @staticmethod
-    def _is_subdevice(device_id: Any) -> bool:
+    def _is_subdevice(device_id: str | None) -> bool:
         """Return True if device_id represents a sub-device."""
         if device_id is None:
             return False
