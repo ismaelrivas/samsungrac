@@ -139,7 +139,8 @@ class YamlController(ClimateController):
             raise ValueError(ERR_MISSING_INIT_CONFIG)
 
         # Fallback resolution for CONF_CONFIG_FILE based on CONF_DEVICE_TYPE
-        if config.get(CONF_CONFIG_FILE) is None:
+        raw_config_file = config.get(CONF_CONFIG_FILE)
+        if raw_config_file is None or (isinstance(raw_config_file, str) and len(raw_config_file.strip()) == 0):
             device_type = config.get(CONF_DEVICE_TYPE)
             if device_type is not None:
                 if not isinstance(device_type, str):
