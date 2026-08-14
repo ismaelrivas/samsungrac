@@ -158,25 +158,37 @@ class YamlController(ClimateController):
         self._unique_id = config.get(CONF_UNIQUE_ID)
         if self._unique_id is None:
             base_mac = config.get(CONF_MAC)
-            base_unique_id = base_mac if base_mac is not None and bool(str(base_mac).strip()) else None
+            base_unique_id = (
+                base_mac
+                if (base_mac is not None and isinstance(base_mac, str) and len(base_mac.strip()) > 0)
+                else None
+            )
             if self._is_subdevice(self._device_id):
-                self._unique_id = f"{base_unique_id}{ID_DELIMITER}{self._device_id}" if base_unique_id is not None else self._device_id
+                self._unique_id = (
+                    f"{base_unique_id}{ID_DELIMITER}{self._device_id}"
+                    if base_unique_id is not None
+                    else self._device_id
+                )
             else:
                 self._unique_id = base_unique_id
 
         if self._device_id is None:
             self._device_id = self._unique_id
 
-        raw_ip = config[CONF_IP_ADDRESS] if CONF_IP_ADDRESS in config else None
-        raw_host = config[CONF_HOST] if CONF_HOST in config else None
+        raw_ip = config.get(CONF_IP_ADDRESS)
+        raw_host = config.get(CONF_HOST)
         
         if raw_ip is not None and not isinstance(raw_ip, str):
             raise TypeError(f"{CONF_IP_ADDRESS} must be a string")
         if raw_host is not None and not isinstance(raw_host, str):
             raise TypeError(f"{CONF_HOST} must be a string")
             
-        resolved_ip = raw_ip if raw_ip is not None and bool(raw_ip.strip()) else raw_host
-        if not resolved_ip or not bool(resolved_ip.strip()):
+        resolved_ip = (
+            raw_ip
+            if (raw_ip is not None and len(raw_ip.strip()) > 0)
+            else raw_host
+        )
+        if resolved_ip is None or len(resolved_ip.strip()) == 0:
             raise ValueError(ERR_MISSING_IP)
         self._ip_address = resolved_ip.strip()
 
@@ -258,7 +270,7 @@ class YamlController(ClimateController):
             return False
         if not isinstance(device_id, str):
             raise TypeError(f"Expected str for device_id, got {type(device_id).__name__}")
-        if not bool(device_id.strip()):
+        if len(device_id.strip()) == 0:
             return False
         return device_id not in EXCLUDED_SUBDEVICE_IDS
 
@@ -278,7 +290,7 @@ class YamlController(ClimateController):
         if value is not None:
             if not isinstance(value, str):
                 raise TypeError(f"Expected str for device_id, got {type(value).__name__}")
-            if not bool(value.strip()):
+            if len(value.strip()) == 0:
                 raise ValueError("device_id cannot be empty")
         self._device_id = value
 
@@ -298,7 +310,7 @@ class YamlController(ClimateController):
         if value is not None:
             if not isinstance(value, str):
                 raise TypeError(f"Expected str for token, got {type(value).__name__}")
-            if not bool(value.strip()):
+            if len(value.strip()) == 0:
                 raise ValueError("token cannot be empty")
         self._token = value
 
