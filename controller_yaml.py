@@ -639,7 +639,7 @@ class YamlController(ClimateController):
     ]:
         """Build and cache the static modes supported by the device."""
         hvac_raw = self.get_property_all_values(ATTR_HVAC_MODE)
-        hvac_modes_list = [] if hvac_raw is None else hvac_raw
+        hvac_modes_tuple = tuple(hvac_raw) if hvac_raw is not None else ()
         
         fan_raw = self.get_property_all_values(ATTR_FAN_MODE)
         fan_modes_tuple = tuple(fan_raw) if fan_raw is not None else ()
@@ -650,14 +650,14 @@ class YamlController(ClimateController):
         preset_raw = self.get_property_all_values(ATTR_PRESET_MODE)
         preset_modes_tuple = tuple(preset_raw) if preset_raw is not None else ()
         
-        parsed_hvac_modes = [
+        parsed_hvac_modes = tuple(
             mode
-            for m in hvac_modes_list
+            for m in hvac_modes_tuple
             if (mode := self._safe_parse_hvac_mode(m)) is not None
-        ]
+        )
         
         return (
-            tuple(parsed_hvac_modes),
+            parsed_hvac_modes,
             fan_modes_tuple,
             swing_modes_tuple,
             preset_modes_tuple,
