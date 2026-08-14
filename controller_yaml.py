@@ -486,7 +486,7 @@ class YamlController(ClimateController):
                 for v in all_vals:
                     if not isinstance(v, str):
                         raise TypeError(f"Mode value must be a string, got {type(v).__name__}: {v}")
-                return [str(v) for v in all_vals]
+                return list(all_vals)
 
         _LOGGER.debug(
             "%s Cannot get values for '%s': not an operation or missing all_values",
