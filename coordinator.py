@@ -50,6 +50,7 @@ from .const import (
     MAX_POLL_INTERVAL,
     MIN_POLL_INTERVAL,
     NETWORK_POLL_TIMEOUT,
+    PREFIX_SUBDEVICE_ID,
 )
 from .controller import ControllerInterface
 from .exceptions import AuthError, CannotConnect, InvalidHeaderError
@@ -329,8 +330,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             did = device_info.get(CONF_SUBDEVICE_ID)
 
             # Avoid redundant "ID XXX (ID XXX (Name))"
-            if did is not None and not name.startswith(f"ID {did}"):
-                final_name = f"ID {did} ({name})"
+            if did is not None and not name.startswith(f"{PREFIX_SUBDEVICE_ID}{did}"):
+                final_name = f"{PREFIX_SUBDEVICE_ID}{did} ({name})"
             else:
                 final_name = name
 

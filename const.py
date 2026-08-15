@@ -41,6 +41,7 @@ FALSY_STRINGS: final = ("false", "0", "no", "off")
 DEFAULT_CONTROLLER_NAME: final = "Unknown"
 DEFAULT_SUBDEVICE_NAME: final = "Unknown Unit"
 DEFAULT_DEVICE_NAME_PREFIX: final = "Samsung AC"
+PREFIX_SUBDEVICE_ID: final = "ID "
 KEY_DUID: final = "duid"
 KEY_METHOD: final = "method"
 KEY_URL: final = "url"
