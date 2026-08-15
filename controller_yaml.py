@@ -704,6 +704,18 @@ class YamlController(ClimateController):
         """Update the entity state values."""
         return await self.poller.async_update_state()
 
+    def is_property_superseded(self, prop: str, val: Any) -> bool:
+        """Return True if an outgoing command has been superseded by a newer target.
+
+        Direct poller access — no getattr/hasattr. Fulfills ClimateController ABC contract.
+        """
+        pending = self.poller._pending_updates
+        if prop in pending:
+            current_target = pending[prop][0]
+            if current_target != val:
+                return True
+        return False
+
     def clear_state_cache(self) -> None:
         """Clear cached state in poller and static mode cache to prevent ghosting."""
         self._cached_static_modes = None

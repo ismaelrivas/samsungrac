@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from custom_components.climate_ip.controller import ClimateController
+
 from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 from custom_components.climate_ip.coordinator import (
     PropertyDebouncer,
@@ -53,16 +53,14 @@ def bypass_sleeps():
 
 @pytest.fixture(autouse=True)
 def bind_default_mock_controller_superseded(monkeypatch):
-    """Ensure mock controllers implement real ClimateController.is_property_superseded logic by default."""
+    """Ensure mock controllers have a safe is_property_superseded default (always False)."""
     orig_init = SamsungClimateCoordinator.__init__
 
     def patched_init(self, hass, controller, entry, *args, **kwargs):
         self.hass = hass
         self.config_entry = entry
         if isinstance(controller, MagicMock):
-            controller.is_property_superseded = (
-                ClimateController.is_property_superseded.__get__(controller)
-            )
+            controller.is_property_superseded = MagicMock(return_value=False)
         return orig_init(self, hass, controller, entry, *args, **kwargs)
 
     monkeypatch.setattr(SamsungClimateCoordinator, "__init__", patched_init)
@@ -1846,11 +1844,11 @@ async def test_locked_set_property_drops_superseded_commands(hass: HomeAssistant
         assert res is True
         mock_controller.async_set_property.assert_not_called()
 
-        # 2. Superseded via poller._pending_updates
+        # 2. Superseded via controller.is_property_superseded
         coordinator.debouncer._pending_payloads.clear()
-        mock_poller = MagicMock()
-        mock_poller._pending_updates = {"temperature": ("20.0", 12345.0)}
-        mock_controller.poller = mock_poller
+        mock_controller.is_property_superseded = MagicMock(
+            side_effect=lambda prop, val: val != "20.0"
+        )
 
         res2 = await coordinator._locked_set_property("temperature", "18.0")
         assert res2 is True

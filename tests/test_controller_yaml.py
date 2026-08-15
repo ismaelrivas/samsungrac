@@ -695,3 +695,23 @@ def test_yaml_controller_untested_properties_and_cache() -> None:
     controller.poller = MagicMock()
     controller.clear_state_cache()
     controller.poller.clear_state_cache.assert_called_once()
+
+
+def test_yaml_controller_is_property_superseded() -> None:
+    """Test is_property_superseded logic under all pending updates states."""
+    mock_logger = logging.getLogger(__name__)
+    controller = YamlController(
+        config={"device_type": "test_device", "ip_address": "127.0.0.1"}, logger=mock_logger
+    )
+    controller.poller._pending_updates = {
+        "target_temperature": (22.0, 100.0),
+    }
+
+    # 1. Property not in pending updates
+    assert controller.is_property_superseded("power", "on") is False
+
+    # 2. Property in pending updates with same value
+    assert controller.is_property_superseded("target_temperature", 22.0) is False
+
+    # 3. Property in pending updates with different value (superseded)
+    assert controller.is_property_superseded("target_temperature", 24.0) is True

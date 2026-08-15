@@ -118,6 +118,12 @@ class DummyController(ClimateController):
     def climate_state(self):
         return None
 
+    def is_property_superseded(self, prop: str, val) -> bool:
+        return False
+
+    def clear_state_cache(self) -> None:
+        pass
+
 
 @pytest.mark.parametrize(
     "unique_id, expected_prefix",

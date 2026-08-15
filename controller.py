@@ -267,21 +267,19 @@ class ClimateController(ABC):
         """Callback invoked on critical connection failures."""
         pass
 
+    @abstractmethod
     def is_property_superseded(self, prop: str, val: Any) -> bool:
-        """Return True if an outgoing property command has been superseded by a newer target."""
-        poller = getattr(self, "poller", None)
-        pending_updates = getattr(poller, "_pending_updates", None)
-        if pending_updates is not None and prop in pending_updates:
-            current_target = pending_updates[prop][0]
-            if current_target != val:
-                return True
-        return False
+        """Return True if an outgoing property command has been superseded by a newer target.
 
+        Subclasses MUST implement via direct poller access. No getattr/hasattr.
+        """
+
+    @abstractmethod
     def clear_state_cache(self) -> None:
-        """Clear internal state cache."""
-        poller = getattr(self, "poller", None)
-        if poller is not None and hasattr(poller, "clear_state_cache"):
-            poller.clear_state_cache()
+        """Clear internal state cache.
+
+        Subclasses MUST implement via direct poller access. No getattr/hasattr.
+        """
 
 
 def register_controller(
