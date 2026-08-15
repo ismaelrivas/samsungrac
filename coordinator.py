@@ -361,14 +361,21 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         else:
             mac = self.config_entry.data.get(CONF_MAC)  # pragma: no mutate
             conns: set[tuple[str, str]] = set()
-            if mac:
-                try:
-                    conns.add((dr.CONNECTION_NETWORK_MAC, dr.format_mac(str(mac))))
-                except (ValueError, TypeError):
+            if mac is not None:
+                mac_str = str(mac).strip()
+                if mac_str:
+                    try:
+                        conns.add((dr.CONNECTION_NETWORK_MAC, dr.format_mac(mac_str)))
+                    except (ValueError, TypeError):
+                        _LOGGER.debug(
+                            "%s Malformed MAC address '%s' discarded from DeviceInfo connections",
+                            self.log_prefix,
+                            mac,
+                        )
+                else:
                     _LOGGER.debug(
-                        "%s Malformed MAC address '%s' discarded from DeviceInfo connections",
+                        "%s Empty MAC address string in config entry, skipping",
                         self.log_prefix,
-                        mac,
                     )
 
             opt_name = self.config_entry.options.get(CONF_NAME)
@@ -460,7 +467,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
         safe_device_id = self.safe_unique_id
         device_name = (
-            self.device_info.get(CONF_NAME)
+            self.device_info.get("name")
             or f"{DEFAULT_DEVICE_NAME_PREFIX} {safe_device_id}"
         )
 
