@@ -44,8 +44,6 @@ from .const import (
     DEFAULT_DEVICE_NAME_PREFIX,
     DEFAULT_SUBDEVICE_NAME,
     DOMAIN,
-    FALLBACK_DEVICE_ID,
-    FALSY_STRINGS,
     HARDWARE_BREATHING_ROOM_SEC,
     ISSUE_AUTO_HEALING_RAW,
     MANUFACTURER_SAMSUNG,
@@ -141,17 +139,7 @@ class PropertyDebouncer:
         effective_val = val if val is not None else (args[1] if len(args) > 1 else None)
         is_turn_off = (
             (property_name == ATTR_HVAC_MODE and effective_val == HVACMode.OFF)
-            or (
-                property_name == ATTR_POWER
-                and effective_val is not None
-                and (
-                    effective_val is False
-                    or (
-                        isinstance(effective_val, str)
-                        and effective_val.lower() in FALSY_STRINGS
-                    )
-                )
-            )
+            or (property_name == ATTR_POWER and effective_val is False)
         )
 
         if is_turn_off:
@@ -779,7 +767,6 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             self.unique_id
             or self.config_entry.unique_id
             or self.config_entry.entry_id
-            or FALLBACK_DEVICE_ID
         )
         return str(raw_uid).strip().replace(".", "_").replace(" ", "_")
 
