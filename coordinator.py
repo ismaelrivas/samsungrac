@@ -93,6 +93,12 @@ class PropertyDebouncer:
         """Return True if a command for the given property is queued."""
         return property_name in self._pending_payloads
 
+    def _cancel_timer(self, property_name: str) -> None:
+        """Cancel and remove an active timer for a property if present."""
+        unsub = self._timers.pop(property_name, None)
+        if unsub is not None:
+            unsub()
+
     def cancel_all(self) -> None:
         """Cancel all active timers, clear pending payloads, and poison active zombies."""
         self._generation += 1  # 💥 Global poisoning: any queued task will be invalidated
@@ -103,7 +109,7 @@ class PropertyDebouncer:
         )
 
         for unsub in self._timers.values():
-            if unsub:
+            if unsub is not None:
                 unsub()
         self._timers.clear()
         self._pending_payloads.clear()
@@ -147,10 +153,7 @@ class PropertyDebouncer:
 
         # Immediate execution if this specific property has not been modified within trailing window
         if now - last_activity >= self.delay:
-            if property_name in self._timers:
-                unsub = self._timers.pop(property_name)
-                if unsub:
-                    unsub()
+            self._cancel_timer(property_name)
             self._pending_payloads.pop(property_name, None)
             self._last_activities[property_name] = now
             _LOGGER.debug(
@@ -164,9 +167,7 @@ class PropertyDebouncer:
         # Rapid command for this property within trailing window: update timestamp and reset timer
         self._last_activities[property_name] = now
         if property_name in self._timers:
-            unsub = self._timers.pop(property_name)
-            if unsub:
-                unsub()
+            self._cancel_timer(property_name)
             _LOGGER.debug(
                 "[Debouncer] Resetting %.1fs countdown timer for property '%s'",
                 self.delay,
@@ -325,7 +326,12 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         safe_uid = str(raw_uid).strip() if raw_uid else FALLBACK_DEVICE_ID
         if device_info:
             # Sub-device (e.g., Indoor Unit connected via a MIM-H03)
-            name = device_info.get(CONF_NAME) or DEFAULT_SUBDEVICE_NAME
+            raw_name = device_info.get(CONF_NAME)
+            name = (
+                str(raw_name).strip()
+                if raw_name and str(raw_name).strip()
+                else DEFAULT_SUBDEVICE_NAME
+            )
             did = device_info.get(CONF_SUBDEVICE_ID)
 
             # Avoid redundant "ID XXX (ID XXX (Name))"
