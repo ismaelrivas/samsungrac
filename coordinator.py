@@ -114,6 +114,11 @@ class PropertyDebouncer:
         self._timers.clear()
         self._pending_payloads.clear()
 
+    async def _async_handle_delayed_failure(self, prop: str) -> None:
+        """Clear pending controller prediction and request coordinator refresh on failure."""
+        await self.coordinator.controller.async_clear_pending_updates([prop])
+        await self.coordinator.async_request_refresh()
+
     async def async_execute(
         self,
         property_name: str,
@@ -212,8 +217,7 @@ class PropertyDebouncer:
                                 "[Debouncer] Delayed command for '%s' returned failure. Reverting optimistic state.",
                                 prop,
                             )
-                            await self.coordinator.controller.async_clear_pending_updates([prop])
-                            await self.coordinator.async_request_refresh()
+                            await self._async_handle_delayed_failure(prop)
                     except (TimeoutError, UpdateFailed, CannotConnect, OSError) as err:
                         _LOGGER.debug(
                             "[Debouncer] Network error executing delayed command for '%s': %s",
@@ -221,8 +225,7 @@ class PropertyDebouncer:
                             err,
                             exc_info=True,
                         )  # pragma: no mutate
-                        await self.coordinator.controller.async_clear_pending_updates([prop])
-                        await self.coordinator.async_request_refresh()
+                        await self._async_handle_delayed_failure(prop)
                     except Exception as err:  # pylint: disable=broad-exception-caught
                         _LOGGER.error(
                             "[Debouncer] Unexpected error executing delayed command for '%s': %s",
@@ -230,8 +233,7 @@ class PropertyDebouncer:
                             err,
                             exc_info=True,
                         )  # pragma: no mutate
-                        await self.coordinator.controller.async_clear_pending_updates([prop])
-                        await self.coordinator.async_request_refresh()
+                        await self._async_handle_delayed_failure(prop)
 
                 task_coro = _task_runner()
                 safe_uid = self.coordinator.safe_unique_id
