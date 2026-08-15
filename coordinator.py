@@ -130,17 +130,15 @@ class PropertyDebouncer:
         property_name: str,
         coroutine_func: Callable[..., Coroutine[Any, Any, bool]],
         *args: Any,
+        val: Any = None,
         **kwargs: Any,
     ) -> bool:
-        """Execute a command with trailing debouncing per property."""
-        # Extract effective value for turn‑off detection (second positional arg if present)
-        effective_val = args[1] if len(args) > 1 else None
         """Execute a command with trailing debouncing per property."""
         now = time.monotonic()
         last_activity = self._last_activities.get(property_name, 0.0)
 
         # Immediate execution for turn-off commands (aborts any pending debounced commands across all properties)
-        # effective_val already extracted from args above
+        effective_val = val if val is not None else (args[1] if len(args) > 1 else None)
         is_turn_off = (
             (property_name == ATTR_HVAC_MODE and effective_val == HVACMode.OFF)
             or (
@@ -703,6 +701,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                         prop,
                         val,
                         device_id,
+                        val=val,
                     )
                 )
 
