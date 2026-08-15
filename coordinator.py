@@ -43,6 +43,10 @@ from .const import (
     DEFAULT_DEVICE_NAME_PREFIX,
     DEFAULT_SUBDEVICE_NAME,
     DOMAIN,
+    ERR_AUTO_HEALING_RAW_IN_PROGRESS,
+    ERR_DEVICE_OFFLINE_PREFIX,
+    ERR_PERSISTENT_CONNECTION_FAILURE,
+    FALSY_STRINGS,
     HARDWARE_BREATHING_ROOM_SEC,
     ISSUE_AUTO_HEALING_RAW,
     MANUFACTURER_SAMSUNG,
@@ -139,11 +143,27 @@ class PropertyDebouncer:
         last_activity = self._last_activities.get(property_name, 0.0)
 
         # Immediate execution for turn-off commands (aborts any pending debounced commands across all properties)
-        assert val is not None, "async_execute requires an explicit 'val' keyword argument."
+        if val is None:
+            raise ValueError(
+                "async_execute requires an explicit 'val' keyword argument."
+            )
         effective_val = val
         is_turn_off = (
-            (property_name == ATTR_HVAC_MODE and effective_val == HVACMode.OFF)
-            or (property_name == ATTR_POWER and effective_val is False)
+            (
+                property_name == ATTR_HVAC_MODE
+                and effective_val in (HVACMode.OFF, HVACMode.OFF.value)
+            )
+            or (
+                property_name == ATTR_POWER
+                and (
+                    effective_val is False
+                    or (
+                        isinstance(effective_val, str)
+                        and effective_val.lower() in FALSY_STRINGS
+                    )
+                    or effective_val == 0
+                )
+            )
         )
 
         if is_turn_off:
@@ -331,7 +351,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         if device_info is not None:
             # Sub-device (e.g., Indoor Unit connected via a MIM-H03)
             raw_name = device_info.get(CONF_NAME)
-            name_str = raw_name.strip() if raw_name is not None else ""
+            name_str = raw_name.strip() if isinstance(raw_name, str) else ""
             name = name_str or DEFAULT_SUBDEVICE_NAME
             did = device_info.get(CONF_SUBDEVICE_ID)
 
@@ -375,12 +395,13 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                     )
 
             opt_name = self.config_entry.options.get(CONF_NAME)
-            raw_name = (
-                opt_name.strip()
-                if opt_name is not None and opt_name.strip() != ""
-                else self.config_entry.data.get(CONF_NAME)
+            data_name = self.config_entry.data.get(CONF_NAME)
+            name_candidate = (
+                opt_name
+                if isinstance(opt_name, str) and opt_name.strip() != ""
+                else data_name
             )
-            name_str = raw_name.strip() if raw_name is not None else ""
+            name_str = name_candidate.strip() if isinstance(name_candidate, str) else ""
             device_name = name_str or f"{DEFAULT_DEVICE_NAME_PREFIX} {safe_uid}"
             self.device_info = DeviceInfo(
                 identifiers={(DOMAIN, safe_uid)},
@@ -395,8 +416,6 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     @callback
     def _async_cleanup_auto_healing_issue_if_ignored(self) -> None:
         """Delete auto-healing issue from registry if it was ignored/dismissed by the user."""
-        if self.unique_id is None:
-            return
         issue_id = self.auto_healing_issue_id
         registry = async_get_issue_registry(self.hass)
         issue = registry.async_get_issue(DOMAIN, issue_id)
@@ -439,7 +458,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         """Callback when connection persistently fails."""
         self.debouncer.cancel_all()
         self.controller.clear_state_cache()
-        self.async_set_update_error(UpdateFailed("Persistent connection failure"))
+        self.async_set_update_error(UpdateFailed(ERR_PERSISTENT_CONNECTION_FAILURE))
 
     @callback
     def _async_handle_persistent_offline(self, reason: str) -> None:
@@ -450,7 +469,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         )  # pragma: no mutate
         self.debouncer.cancel_all()
         self.controller.clear_state_cache()
-        self.async_set_update_error(UpdateFailed(f"Device offline: {reason}"))
+        self.async_set_update_error(UpdateFailed(f"{ERR_DEVICE_OFFLINE_PREFIX}: {reason}"))
 
     @callback
     def _async_switch_to_raw_engine(self) -> None:
@@ -458,7 +477,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         new_options = {**self.config_entry.options, CONF_CONN_METHOD: CONN_METHOD_RAW}
         self.hass.config_entries.async_update_entry(self.config_entry, options=new_options)
 
-        device_name = self.device_info.get("name", self.safe_unique_id)
+        device_name = self.device_info.get("name") or self.safe_unique_id
 
         _LOGGER.warning(
             "%s Auto-healing to RAW mode activated: The device sent non-standard HTTP responses "
@@ -495,9 +514,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                     "%s Auto-healing to RAW mode triggered", self.log_prefix
                 )  # pragma: no mutate
                 self._async_switch_to_raw_engine()
-                raise UpdateFailed(
-                    "Auto-healing in progress: Switching to RAW engine"
-                ) from err
+                raise UpdateFailed(ERR_AUTO_HEALING_RAW_IN_PROGRESS) from err
 
             _LOGGER.error(
                 "%s Invalid header error persists even on the RAW engine. Auto-healing failed: %s",
@@ -506,7 +523,10 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             )  # pragma: no mutate
             raise UpdateFailed(f"Data parsing failed on RAW engine: {err}") from err
 
-        except (AuthError, ConfigEntryAuthFailed) as err:
+        except ConfigEntryAuthFailed:
+            self.controller.clear_state_cache()
+            raise
+        except AuthError as err:
             self.controller.clear_state_cache()
             raise ConfigEntryAuthFailed(
                 f"Authentication failed: {err}"
@@ -598,9 +618,11 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 self.log_prefix,
                 err,
             )
-            raise ConfigEntryAuthFailed(
-                f"Authentication failed: {err}"
-            ) from err  # pragma: no mutate
+            self.async_set_update_error(
+                ConfigEntryAuthFailed(f"Authentication failed: {err}")
+            )
+            if self.config_entry is not None:
+                self.config_entry.async_start_reauth(self.hass)
 
         except Exception as err:  # pylint: disable=broad-exception-caught
             self.controller.clear_state_cache()

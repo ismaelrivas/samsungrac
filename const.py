@@ -34,6 +34,9 @@ ERR_INVALID_STATE_TYPE = "invalid_state_type"
 ERR_MISSING_IP = "missing_ip"
 ERR_MISSING_DIAGNOSTICS = "missing_diagnostics"
 ERR_COERCING_STATE = "error_coercing_state"
+ERR_PERSISTENT_CONNECTION_FAILURE: final = "Persistent connection failure"
+ERR_DEVICE_OFFLINE_PREFIX: final = "Device offline"
+ERR_AUTO_HEALING_RAW_IN_PROGRESS: final = "Auto-healing in progress: Switching to RAW engine"
 
 NON_SERIALIZABLE_KEYS: final = ("hass", "session", "logger")
 TRUTHY_STRINGS: final = ("true", "1", "yes", "on")
