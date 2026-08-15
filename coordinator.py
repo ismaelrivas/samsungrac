@@ -565,7 +565,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 "%s Push update received with data: %s", self.log_prefix, new_data
             )  # pragma: no mutate
 
-            if new_data:
+            if new_data is not None:
                 if await self.controller.async_merge_device_state(new_data):
                     if self.debouncer.is_active:
                         _LOGGER.debug(
@@ -760,8 +760,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         """Return a sanitized unique ID safe for issue registry and task names."""
         raw_uid = (
             self.unique_id
-            or (self.config_entry.unique_id if self.config_entry is not None else None)
-            or (self.config_entry.entry_id if self.config_entry is not None else None)
+            or self.config_entry.unique_id
+            or self.config_entry.entry_id
             or FALLBACK_DEVICE_ID
         )
         return str(raw_uid).strip().replace(".", "_").replace(" ", "_")
