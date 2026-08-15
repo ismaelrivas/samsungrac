@@ -605,12 +605,16 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             ) from err  # pragma: no mutate
 
         except Exception as err:  # pylint: disable=broad-exception-caught
+            self.controller.clear_state_cache()
             _LOGGER.error(
                 "%s Unexpected error during push update: %s",
                 self.log_prefix,
                 err,
                 exc_info=True,
             )  # pragma: no mutate
+            self.async_set_update_error(
+                UpdateFailed(f"Push update failed: {err}")
+            )
 
     def _create_device_state(self) -> ClimateIPDeviceState:
         """Fetch the strictly typed state representation directly from the controller."""
@@ -644,7 +648,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 return True
 
             res = await self.controller.async_set_property(prop, val, device_id)
-        await asyncio.sleep(HARDWARE_BREATHING_ROOM_SEC)
+            await asyncio.sleep(HARDWARE_BREATHING_ROOM_SEC)
         return bool(res)
 
     async def async_set_property(
