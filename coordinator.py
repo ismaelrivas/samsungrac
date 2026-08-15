@@ -475,7 +475,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
         safe_device_id = self.safe_unique_id
         device_name = (
-            self.device_info.get("name")
+            self.device_info.get(CONF_NAME)
             or f"{DEFAULT_DEVICE_NAME_PREFIX} {safe_device_id}"
         )
 
@@ -746,6 +746,10 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             ) from err  # pragma: no mutate
 
         except HomeAssistantError:
+            await self._async_handle_set_property_failure(properties_to_set)
+            raise
+
+        except asyncio.CancelledError:
             await self._async_handle_set_property_failure(properties_to_set)
             raise
 
