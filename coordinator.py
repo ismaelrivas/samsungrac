@@ -187,7 +187,7 @@ class PropertyDebouncer:
             self._timers.pop(prop, None)
             payload = self._pending_payloads.pop(prop, None)
 
-            if payload:
+            if payload is not None:
                 # 🛡️ Unpack the generation ID captured when the task was queued
                 func, p_args, p_kwargs, captured_generation = payload
                 exec_time = time.monotonic()
@@ -329,7 +329,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         # Build comprehensive DeviceInfo
         raw_uid = self.unique_id or self.config_entry.unique_id or self.config_entry.entry_id
         safe_uid = str(raw_uid).strip() if raw_uid else FALLBACK_DEVICE_ID
-        if device_info:
+        if device_info is not None:
             # Sub-device (e.g., Indoor Unit connected via a MIM-H03)
             raw_name = device_info.get(CONF_NAME)
             name = (
@@ -395,7 +395,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     @callback
     def _async_cleanup_auto_healing_issue_if_ignored(self) -> None:
         """Delete auto-healing issue from registry if it was ignored/dismissed by the user."""
-        if not self.unique_id:
+        if self.unique_id is None:
             return
         issue_id = self.auto_healing_issue_id
         registry = async_get_issue_registry(self.hass)
