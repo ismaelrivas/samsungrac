@@ -245,9 +245,10 @@ class PropertyDebouncer:
                         name=task_name,
                     )
                 else:
-                    self.hass.async_create_background_task(
-                        task_coro,
-                        name=task_name,
+                    task_coro.close()
+                    _LOGGER.error(
+                        "[Debouncer] config_entry is None during delayed execution for '%s'. Aborting task.",
+                        prop,
                     )
 
         self._timers[property_name] = async_call_later(
