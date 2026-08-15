@@ -133,9 +133,7 @@ class PropertyDebouncer:
         last_activity = self._last_activities.get(property_name, 0.0)
 
         # Immediate execution for turn-off commands (aborts any pending debounced commands across all properties)
-        effective_val = val if val is not None else kwargs.get("val")
-        if effective_val is None and args:
-            effective_val = args[1] if len(args) > 1 else args[0]
+        effective_val = val
         val_str = str(effective_val).lower() if effective_val is not None else ""
         is_turn_off = (
             (
@@ -183,6 +181,7 @@ class PropertyDebouncer:
         # 🛡️ Package the payload with the CURRENT Generation ID
         self._pending_payloads[property_name] = (coroutine_func, args, kwargs, self._generation)
 
+        @callback
         def _fire_delayed(_now: Any = None) -> None:
             prop = property_name
             self._timers.pop(prop, None)

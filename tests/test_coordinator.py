@@ -1781,16 +1781,16 @@ async def test_debouncer_immediate_turn_off() -> None:
     mock_func = AsyncMock(return_value=True)
 
     # 1. Execute a command to trigger trailing window for temperature
-    await debouncer.async_execute("temperature", mock_func, "temperature", "22.0")
+    await debouncer.async_execute("temperature", mock_func, "temperature", "22.0", val="22.0")
     assert debouncer._last_activities.get("temperature", 0) > 0
 
     # 2. Queue a rapid command for temperature within trailing window
-    await debouncer.async_execute("temperature", mock_func, "temperature", "20.0")
+    await debouncer.async_execute("temperature", mock_func, "temperature", "20.0", val="20.0")
     assert "temperature" in debouncer._pending_payloads
 
     # 3. Issue turn-off command
     off_mock = AsyncMock(return_value=True)
-    await debouncer.async_execute("hvac_mode", off_mock, "hvac_mode", "off")
+    await debouncer.async_execute("hvac_mode", off_mock, "hvac_mode", "off", val="off")
 
     # 4. Pending payloads should be cleared and off command executed immediately
     assert len(debouncer._pending_payloads) == 0
