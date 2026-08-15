@@ -324,7 +324,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         if device_info is not None:
             # Sub-device (e.g., Indoor Unit connected via a MIM-H03)
             raw_name = device_info.get(CONF_NAME)
-            name_str = str(raw_name).strip() if raw_name is not None else ""
+            name_str = raw_name.strip() if raw_name is not None else ""
             name = name_str or DEFAULT_SUBDEVICE_NAME
             did = device_info.get(CONF_SUBDEVICE_ID)
 
@@ -351,8 +351,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             mac = self.config_entry.data.get(CONF_MAC)  # pragma: no mutate
             conns: set[tuple[str, str]] = set()
             if mac is not None:
-                mac_str = str(mac).strip()
-                if mac_str:
+                mac_str = mac.strip()
+                if mac_str != "":
                     try:
                         conns.add((dr.CONNECTION_NETWORK_MAC, dr.format_mac(mac_str)))
                     except (ValueError, TypeError):
@@ -373,7 +373,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 if opt_name is not None and opt_name.strip() != ""
                 else self.config_entry.data.get(CONF_NAME)
             )
-            name_str = str(raw_name).strip() if raw_name is not None else ""
+            name_str = raw_name.strip() if raw_name is not None else ""
             device_name = name_str or f"{DEFAULT_DEVICE_NAME_PREFIX} {safe_uid}"
             self.device_info = DeviceInfo(
                 identifiers={(DOMAIN, safe_uid)},
