@@ -233,8 +233,7 @@ class PropertyDebouncer:
                         await self.coordinator.async_request_refresh()
 
                 task_coro = _task_runner()
-                raw_uid = self.coordinator.unique_id or FALLBACK_DEVICE_ID
-                safe_uid = raw_uid.replace(".", "_").replace(" ", "_")
+                safe_uid = self.coordinator.safe_unique_id
                 task_name = f"{DOMAIN}_{safe_uid}_debouncer_{prop}"
                 if self.coordinator.config_entry is not None:
                     self.coordinator.config_entry.async_create_background_task(
@@ -387,7 +386,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         """Delete auto-healing issue from registry if it was ignored/dismissed by the user."""
         if not self.unique_id:
             return
-        safe_device_id = self.unique_id.replace(".", "_").replace(" ", "_")
+        safe_device_id = self.safe_unique_id
         issue_id = f"{ISSUE_AUTO_HEALING_RAW}_{safe_device_id}"
         registry = async_get_issue_registry(self.hass)
         issue = registry.async_get_issue(DOMAIN, issue_id)
@@ -446,11 +445,10 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         new_options = {**self.config_entry.options, CONF_CONN_METHOD: CONN_METHOD_RAW}
         self.hass.config_entries.async_update_entry(self.config_entry, options=new_options)
 
-        safe_uid = self.unique_id or FALLBACK_DEVICE_ID
-        safe_device_id = safe_uid.replace(".", "_").replace(" ", "_")
+        safe_device_id = self.safe_unique_id
         device_name = (
             self.device_info.get(CONF_NAME)
-            or f"{DEFAULT_DEVICE_NAME_PREFIX} {safe_uid}"
+            or f"{DEFAULT_DEVICE_NAME_PREFIX} {safe_device_id}"
         )
 
         _LOGGER.warning(
@@ -651,9 +649,10 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         predicted_state = self._create_device_state()
         self.async_set_updated_data(predicted_state)
 
-        properties_to_set = {property_name: new_value}
+        properties_to_set: dict[str, Any] = {property_name: pred_val}
         if corrections:
-            properties_to_set.update(corrections)
+            for k, v in corrections.items():
+                properties_to_set[k] = v.value if isinstance(v, Enum) else v
 
         _LOGGER.debug(
             "%s Dispatching commands to controller: %s",
@@ -664,15 +663,14 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         try:
             results = []
             for prop, val in properties_to_set.items():
-                val_to_send = val.value if isinstance(val, Enum) else val
                 results.append(
                     await self.debouncer.async_execute(
                         prop,
                         self._locked_set_property,
                         prop,
-                        val_to_send,
+                        val,
                         device_id,
-                        val=val_to_send,
+                        val=val,
                     )
                 )
 
@@ -738,6 +736,17 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     def unique_id(self) -> str | None:
         """Return the unique ID from the controller."""
         return self.controller.unique_id
+
+    @property
+    def safe_unique_id(self) -> str:
+        """Return a sanitized unique ID safe for issue registry and task names."""
+        raw_uid = (
+            self.unique_id
+            or (self.config_entry.unique_id if self.config_entry is not None else None)
+            or (self.config_entry.entry_id if self.config_entry is not None else None)
+            or FALLBACK_DEVICE_ID
+        )
+        return str(raw_uid).strip().replace(".", "_").replace(" ", "_")
 
     async def async_shutdown(self) -> None:
         """Shut down the coordinator and its controller.
