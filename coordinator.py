@@ -335,16 +335,12 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         )  # pragma: no mutate
 
         # Build comprehensive DeviceInfo
-        raw_uid = self.unique_id or self.config_entry.unique_id or self.config_entry.entry_id
-        safe_uid = str(raw_uid).strip() if raw_uid else FALLBACK_DEVICE_ID
+        safe_uid = self.safe_unique_id
         if device_info is not None:
             # Sub-device (e.g., Indoor Unit connected via a MIM-H03)
             raw_name = device_info.get(CONF_NAME)
-            name = (
-                str(raw_name).strip()
-                if raw_name and str(raw_name).strip()
-                else DEFAULT_SUBDEVICE_NAME
-            )
+            name_str = str(raw_name).strip() if raw_name is not None else ""
+            name = name_str or DEFAULT_SUBDEVICE_NAME
             did = device_info.get(CONF_SUBDEVICE_ID)
 
             # Avoid redundant "ID XXX (ID XXX (Name))"
@@ -392,11 +388,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 if isinstance(opt_name, str) and opt_name.strip()
                 else self.config_entry.data.get(CONF_NAME)
             )
-            device_name = (
-                str(raw_name).strip()
-                if raw_name and str(raw_name).strip()
-                else f"{DEFAULT_DEVICE_NAME_PREFIX} {safe_uid}"
-            )
+            name_str = str(raw_name).strip() if raw_name is not None else ""
+            device_name = name_str or f"{DEFAULT_DEVICE_NAME_PREFIX} {safe_uid}"
             self.device_info = DeviceInfo(
                 identifiers={(DOMAIN, safe_uid)},
                 name=device_name,
