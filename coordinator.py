@@ -282,18 +282,16 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         self.controller.on_connection_failed_callback = self._async_on_connection_failed
         self.controller.on_offline_callback = self._async_handle_persistent_offline
 
-        # Determine the update interval with strict None-coalescing
-        opt_polling = entry.options.get(CONF_ENABLE_POLLING)
+        # Determine the update interval
         enable_polling = bool(
-            opt_polling
-            if opt_polling is not None
-            else entry.data.get(CONF_ENABLE_POLLING, DEFAULT_ENABLE_POLLING)
+            entry.options.get(
+                CONF_ENABLE_POLLING,
+                entry.data.get(CONF_ENABLE_POLLING, DEFAULT_ENABLE_POLLING),
+            )
         )  # pragma: no mutate
-        opt_interval = entry.options.get(CONF_POLL_INTERVAL)
-        raw_interval = (
-            opt_interval
-            if opt_interval is not None
-            else entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
+        raw_interval = entry.options.get(
+            CONF_POLL_INTERVAL,
+            entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
         )  # pragma: no mutate
         try:
             poll_interval_seconds = min(
