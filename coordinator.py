@@ -413,19 +413,22 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     @callback
     def _async_save_ssl_config(self, ssl_config: dict[str, Any]) -> None:
         """Callback to save SSL configuration to the config entry."""
-        current_data = dict(self.config_entry.data)  # pragma: no mutate
-        if current_data.get(CONF_SSL_CONFIG_KEY) != ssl_config:
-            current_data[CONF_SSL_CONFIG_KEY] = ssl_config
-            self.hass.config_entries.async_update_entry(
-                self.config_entry, data=current_data
-            )
-            _LOGGER.info(
-                "%s Persisted SSL config to ConfigEntry data.", self.log_prefix
-            )  # pragma: no mutate
+        if self.config_entry.data.get(CONF_SSL_CONFIG_KEY) == ssl_config:
+            return
+        new_data = dict(self.config_entry.data)  # pragma: no mutate
+        new_data[CONF_SSL_CONFIG_KEY] = ssl_config
+        self.hass.config_entries.async_update_entry(
+            self.config_entry, data=new_data
+        )
+        _LOGGER.info(
+            "%s Persisted SSL config to ConfigEntry data.", self.log_prefix
+        )  # pragma: no mutate
 
     @callback
     def _async_on_connection_failed(self) -> None:
         """Callback when connection persistently fails."""
+        self.debouncer.cancel_all()
+        self.controller.clear_state_cache()
         self.async_set_update_error(UpdateFailed("Persistent connection failure"))
 
     @callback
