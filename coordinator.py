@@ -116,8 +116,7 @@ class PropertyDebouncer:
         )
 
         for unsub in self._timers.values():
-            if unsub is not None:
-                unsub()
+            unsub()
         self._timers.clear()
         self._pending_payloads.clear()
 
@@ -317,7 +316,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             poll_interval_seconds = DEFAULT_POLL_INTERVAL
         update_interval = (
             timedelta(seconds=poll_interval_seconds)
-            if (bool(controller.poll) and enable_polling)
+            if (controller.poll is True and enable_polling)
             else None
         )  # pragma: no mutate
 
@@ -609,6 +608,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                     self.log_prefix,
                 )  # pragma: no mutate
 
+        except asyncio.CancelledError:
+            raise
         except (AuthError, ConfigEntryAuthFailed) as err:
             self.controller.clear_state_cache()
             _LOGGER.error(
