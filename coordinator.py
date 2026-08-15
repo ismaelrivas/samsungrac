@@ -51,6 +51,7 @@ from .const import (
     MIN_POLL_INTERVAL,
     NETWORK_POLL_TIMEOUT,
     PREFIX_SUBDEVICE_ID,
+    TRUTHY_STRINGS,
 )
 from .controller import ControllerInterface
 from .exceptions import AuthError, CannotConnect, InvalidHeaderError
@@ -137,7 +138,8 @@ class PropertyDebouncer:
         last_activity = self._last_activities.get(property_name, 0.0)
 
         # Immediate execution for turn-off commands (aborts any pending debounced commands across all properties)
-        effective_val = val if val is not None else (args[1] if len(args) > 1 else None)
+        assert val is not None, "async_execute requires an explicit 'val' keyword argument."
+        effective_val = val
         is_turn_off = (
             (property_name == ATTR_HVAC_MODE and effective_val == HVACMode.OFF)
             or (property_name == ATTR_POWER and effective_val is False)
@@ -284,12 +286,15 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         self.controller.on_offline_callback = self._async_handle_persistent_offline
 
         # Determine the update interval
-        enable_polling = bool(
-            entry.options.get(
-                CONF_ENABLE_POLLING,
-                entry.data.get(CONF_ENABLE_POLLING, DEFAULT_ENABLE_POLLING),
-            )
-        )  # pragma: no mutate
+        raw_polling = entry.options.get(
+            CONF_ENABLE_POLLING,
+            entry.data.get(CONF_ENABLE_POLLING, DEFAULT_ENABLE_POLLING),
+        )
+        enable_polling = (
+            raw_polling
+            if isinstance(raw_polling, bool)
+            else str(raw_polling).lower() in TRUTHY_STRINGS
+        )
         raw_interval = entry.options.get(
             CONF_POLL_INTERVAL,
             entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
@@ -452,11 +457,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         new_options = {**self.config_entry.options, CONF_CONN_METHOD: CONN_METHOD_RAW}
         self.hass.config_entries.async_update_entry(self.config_entry, options=new_options)
 
-        safe_device_id = self.safe_unique_id
-        device_name = (
-            self.device_info.get(CONF_NAME)
-            or f"{DEFAULT_DEVICE_NAME_PREFIX} {safe_device_id}"
-        )
+        device_name = self.device_info["name"]
 
         _LOGGER.warning(
             "%s Auto-healing to RAW mode activated: The device sent non-standard HTTP responses "
@@ -645,7 +646,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
             res = await self.controller.async_set_property(prop, val, device_id)
             await asyncio.sleep(HARDWARE_BREATHING_ROOM_SEC)
-        return bool(res)
+        if not isinstance(res, bool):
+            raise TypeError(f"Controller.async_set_property returned {type(res)}, expected bool")
+        return res
 
     async def async_set_property(
         self,
@@ -777,11 +780,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     @property
     def connection_method(self) -> str | None:
         """Return the configured connection method (options taking precedence over data)."""
-        opt_method = self.config_entry.options.get(CONF_CONN_METHOD)
-        return (
-            opt_method
-            if opt_method is not None
-            else self.config_entry.data.get(CONF_CONN_METHOD)
+        return self.config_entry.options.get(
+            CONF_CONN_METHOD, self.config_entry.data.get(CONF_CONN_METHOD)
         )
 
     async def async_shutdown(self) -> None:

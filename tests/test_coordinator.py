@@ -1461,11 +1461,11 @@ async def test_debouncer_exact_time_boundary():
     with patch("custom_components.climate_ip.coordinator.time.monotonic") as mock_time:
         # Ejecución 1: Fija last_execution a 1000.0
         mock_time.return_value = 1000.0
-        await debouncer.async_execute("prop1", dummy_coroutine)
+        await debouncer.async_execute("prop1", dummy_coroutine, val="test_val")
 
         # Ejecución 2: Exactamente 2.0 segundos después (el límite)
         mock_time.return_value = 1002.0
-        await debouncer.async_execute("prop1", dummy_coroutine)
+        await debouncer.async_execute("prop1", dummy_coroutine, val="test_val")
 
         # If mutant '>' survives, it will evaluate 2.0 > 2.0 (False) and put it into pending.
         # El código original '>=' evalúa 2.0 >= 2.0 (Verdadero) y lo ejecuta, vaciando pending.
@@ -1522,11 +1522,11 @@ async def test_debouncer_exact_time_boundary_mutant():
 
     with patch("custom_components.climate_ip.coordinator.time.monotonic") as mock_time:
         mock_time.return_value = 1000.0
-        await debouncer.async_execute("prop1", dummy_coroutine)
+        await debouncer.async_execute("prop1", dummy_coroutine, val="test_val")
 
         # Exactly 2.0s later. Original code (>=) executes it. Mutant (>) queues it.
         mock_time.return_value = 1002.0
-        await debouncer.async_execute("prop1", dummy_coroutine)
+        await debouncer.async_execute("prop1", dummy_coroutine, val="test_val")
 
         assert "prop1" not in debouncer._pending_payloads
 
@@ -1610,7 +1610,7 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
             pass
 
         # Cubrir re-encolado
-        await debouncer.async_execute("prop_success", dummy_success)
+        await debouncer.async_execute("prop_success", dummy_success, val="success")
         mock_existing_timer.assert_called_once()
 
         # Exceptions passing kwargs
@@ -1624,10 +1624,10 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
         debouncer._last_activities["prop_net"] = now
         debouncer._last_activities["prop_gen"] = now
 
-        await debouncer.async_execute("prop_net", dummy_fail_network, "arg1", kw=1)
+        await debouncer.async_execute("prop_net", dummy_fail_network, "arg1", kw=1, val="val_net")
         callback_net = mock_async_call_later.call_args[0][2]
 
-        await debouncer.async_execute("prop_gen", dummy_fail_generic, "arg2", kw=2)
+        await debouncer.async_execute("prop_gen", dummy_fail_generic, "arg2", kw=2, val="val_gen")
         callback_gen = mock_async_call_later.call_args[0][2]
 
         with (
@@ -1688,7 +1688,7 @@ async def test_sniper_debouncer_exact_time_boundary_strict(hass: HomeAssistant):
 
     # Being exact time 2.0, (2.0 - 0.0 >= 2.0) is True. Mutant (>) will give False.
     with patch("custom_components.climate_ip.coordinator.time.monotonic", return_value=2.0):
-        await debouncer.async_execute("prop1", dummy)
+        await debouncer.async_execute("prop1", dummy, val="strict_val")
 
     assert "prop1" not in debouncer._pending_payloads
 
@@ -1705,7 +1705,7 @@ async def test_sniper_debouncer_kwargs_and_pop_strict(hass: HomeAssistant):
     async def dummy(*args, **kwargs):
         return args, kwargs
 
-    res = await debouncer.async_execute("test_prop", dummy, "arg1", kw_key="kw_val")
+    res = await debouncer.async_execute("test_prop", dummy, "arg1", kw_key="kw_val", val="test_val")
 
     # Ultra-strict tuple assertion to prevent mutant from returning tuple without kwargs
     assert res == (("arg1",), {"kw_key": "kw_val"})
@@ -1808,16 +1808,16 @@ async def test_debouncer_per_property_independence() -> None:
     func_temp = AsyncMock(return_value=True)
 
     # First hvac_mode command -> immediate
-    await debouncer.async_execute("hvac_mode", func_hvac, "hvac_mode", "heat")
+    await debouncer.async_execute("hvac_mode", func_hvac, "hvac_mode", "heat", val="heat")
     func_hvac.assert_called_once_with("hvac_mode", "heat")
 
     # First temperature command (even if 0.1s later) -> immediate because temperature itself was not modified in 3s
-    await debouncer.async_execute("temperature", func_temp, "temperature", "22.0")
+    await debouncer.async_execute("temperature", func_temp, "temperature", "22.0", val="22.0")
     func_temp.assert_called_once_with("temperature", "22.0")
 
     # Second temperature command (0.1s later) -> rapid, queued with 3s timer for temperature
     func_temp_2 = AsyncMock(return_value=True)
-    await debouncer.async_execute("temperature", func_temp_2, "temperature", "20.0")
+    await debouncer.async_execute("temperature", func_temp_2, "temperature", "20.0", val="20.0")
     assert "temperature" in debouncer._pending_payloads
     assert debouncer._pending_payloads["temperature"][1] == ("temperature", "20.0")
 
