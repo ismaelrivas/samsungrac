@@ -5,10 +5,9 @@ from __future__ import annotations
 import asyncio
 from enum import Enum
 import logging
-import time
 from collections.abc import Callable, Coroutine
 from datetime import timedelta
-from typing import Any
+from typing import Any, Final
 
 from homeassistant.components.climate import ATTR_HVAC_MODE, HVACMode
 from homeassistant.config_entries import ConfigEntry
@@ -59,6 +58,7 @@ from .state import ClimateIPDeviceState
 
 _LOGGER = logging.getLogger(__name__)
 
+DEBOUNCE_QUEUED: Final = True
 
 
 class PropertyDebouncer:
@@ -119,6 +119,7 @@ class PropertyDebouncer:
             unsub()
         self._timers.clear()
         self._pending_payloads.clear()
+        self._last_activities.clear()
 
     async def _async_handle_delayed_failure(self, prop: str) -> None:
         """Clear pending controller prediction and request coordinator refresh on failure."""
@@ -134,7 +135,7 @@ class PropertyDebouncer:
         **kwargs: Any,
     ) -> bool:
         """Execute a command with trailing debouncing per property."""
-        now = time.monotonic()
+        now = self.hass.loop.time()
         last_activity = self._last_activities.get(property_name, 0.0)
 
         # Immediate execution for turn-off commands (aborts any pending debounced commands across all properties)
@@ -155,7 +156,7 @@ class PropertyDebouncer:
             return await coroutine_func(*args, **kwargs)
 
         # Immediate execution if this specific property has not been modified within trailing window
-        if now - last_activity >= self.delay:
+        if property_name not in self._last_activities or (now - last_activity >= self.delay):
             self._cancel_timer(property_name)
             self._pending_payloads.pop(property_name, None)
             self._last_activities[property_name] = now
@@ -188,7 +189,7 @@ class PropertyDebouncer:
             if payload is not None:
                 # 🛡️ Unpack the generation ID captured when the task was queued
                 func, p_args, p_kwargs, captured_generation = payload
-                exec_time = time.monotonic()
+                exec_time = self.hass.loop.time()
                 self._last_activities[prop] = exec_time
                 _LOGGER.debug(
                     "[Debouncer] Executing delayed queued command for property: '%s'",
@@ -257,7 +258,7 @@ class PropertyDebouncer:
             property_name,
             self.delay,
         )  # pragma: no mutate
-        return True
+        return DEBOUNCE_QUEUED
 
 class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     """Manages data fetching for Samsung Climate devices."""
@@ -457,7 +458,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         new_options = {**self.config_entry.options, CONF_CONN_METHOD: CONN_METHOD_RAW}
         self.hass.config_entries.async_update_entry(self.config_entry, options=new_options)
 
-        device_name = self.device_info["name"]
+        device_name = self.device_info.get("name", self.safe_unique_id)
 
         _LOGGER.warning(
             "%s Auto-healing to RAW mode activated: The device sent non-standard HTTP responses "
@@ -645,6 +646,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 return True
 
             res = await self.controller.async_set_property(prop, val, device_id)
+            # Hardware spacing: MUST remain inside lock.
             await asyncio.sleep(HARDWARE_BREATHING_ROOM_SEC)
         if not isinstance(res, bool):
             raise TypeError(f"Controller.async_set_property returned {type(res)}, expected bool")
@@ -765,11 +767,11 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     @property
     def safe_unique_id(self) -> str:
         """Return a sanitized unique ID safe for issue registry and task names."""
-        raw_uid = (
-            self.unique_id
-            or self.config_entry.unique_id
-            or self.config_entry.entry_id
-        )
+        raw_uid = self.unique_id
+        if raw_uid is None or str(raw_uid).strip() == "":
+            raw_uid = self.config_entry.unique_id
+        if raw_uid is None or str(raw_uid).strip() == "":
+            raw_uid = self.config_entry.entry_id
         return str(raw_uid).strip().replace(".", "_").replace(" ", "_")
 
     @property

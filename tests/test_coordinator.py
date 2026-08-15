@@ -1458,18 +1458,16 @@ async def test_debouncer_exact_time_boundary():
     async def dummy_coroutine():
         return True
 
-    with patch("custom_components.climate_ip.coordinator.time.monotonic") as mock_time:
-        # Ejecución 1: Fija last_execution a 1000.0
-        mock_time.return_value = 1000.0
-        await debouncer.async_execute("prop1", dummy_coroutine, val="test_val")
+    mock_coordinator.hass.loop.time.return_value = 1000.0
+    await debouncer.async_execute("prop1", dummy_coroutine, val="test_val")
 
-        # Ejecución 2: Exactamente 2.0 segundos después (el límite)
-        mock_time.return_value = 1002.0
-        await debouncer.async_execute("prop1", dummy_coroutine, val="test_val")
+    # Ejecución 2: Exactamente 2.0 segundos después (el límite)
+    mock_coordinator.hass.loop.time.return_value = 1002.0
+    await debouncer.async_execute("prop1", dummy_coroutine, val="test_val")
 
-        # If mutant '>' survives, it will evaluate 2.0 > 2.0 (False) and put it into pending.
-        # El código original '>=' evalúa 2.0 >= 2.0 (Verdadero) y lo ejecuta, vaciando pending.
-        assert "prop1" not in debouncer._pending_payloads
+    # If mutant '>' survives, it will evaluate 2.0 > 2.0 (False) and put it into pending.
+    # El código original '>=' evalúa 2.0 >= 2.0 (Verdadero) y lo ejecuta, vaciando pending.
+    assert "prop1" not in debouncer._pending_payloads
 
 
 @pytest.mark.asyncio
@@ -1520,15 +1518,14 @@ async def test_debouncer_exact_time_boundary_mutant():
     async def dummy_coroutine():
         return True
 
-    with patch("custom_components.climate_ip.coordinator.time.monotonic") as mock_time:
-        mock_time.return_value = 1000.0
-        await debouncer.async_execute("prop1", dummy_coroutine, val="test_val")
+    mock_coordinator.hass.loop.time.return_value = 1000.0
+    await debouncer.async_execute("prop1", dummy_coroutine, val="test_val")
 
-        # Exactly 2.0s later. Original code (>=) executes it. Mutant (>) queues it.
-        mock_time.return_value = 1002.0
-        await debouncer.async_execute("prop1", dummy_coroutine, val="test_val")
+    # Exactly 2.0s later. Original code (>=) executes it. Mutant (>) queues it.
+    mock_coordinator.hass.loop.time.return_value = 1002.0
+    await debouncer.async_execute("prop1", dummy_coroutine, val="test_val")
 
-        assert "prop1" not in debouncer._pending_payloads
+    assert "prop1" not in debouncer._pending_payloads
 
 
 # def test_coordinator_debouncer_delay_init(hass: HomeAssistant) -> None:
@@ -1584,6 +1581,7 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
     mock_coordinator.async_request_refresh = AsyncMock()
     mock_coordinator.controller.async_clear_pending_updates = AsyncMock()
     mock_coordinator.hass = MagicMock()
+    mock_coordinator.hass.loop.time.return_value = 100.0
     mock_coordinator.unique_id = "test_123"
 
     created_tasks = []
@@ -1604,7 +1602,7 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
 
         mock_existing_timer = MagicMock()
         debouncer._timers["prop_success"] = mock_existing_timer
-        debouncer._last_activities["prop_success"] = time.monotonic()
+        debouncer._last_activities["prop_success"] = 100.0
 
         async def dummy_success():
             pass
@@ -1620,9 +1618,8 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
         async def dummy_fail_generic(*args, **kwargs):
             raise ValueError("Generic boom")
 
-        now = time.monotonic()
-        debouncer._last_activities["prop_net"] = now
-        debouncer._last_activities["prop_gen"] = now
+        debouncer._last_activities["prop_net"] = 100.0
+        debouncer._last_activities["prop_gen"] = 100.0
 
         await debouncer.async_execute("prop_net", dummy_fail_network, "arg1", kw=1, val="val_net")
         callback_net = mock_async_call_later.call_args[0][2]
@@ -1678,17 +1675,17 @@ async def test_sniper_debouncer_exact_time_boundary_strict(hass: HomeAssistant):
     from custom_components.climate_ip.coordinator import PropertyDebouncer
 
     mock_coordinator = MagicMock()
+    mock_coordinator.hass.loop.time.return_value = 2.0
     debouncer = PropertyDebouncer(mock_coordinator, delay=2.0)
 
     # Force exact time to 0.0 so 2.0 - 0.0 is mathematically perfect
-    debouncer._global_last_execution = 0.0
+    debouncer._last_activities["prop1"] = 0.0
 
     async def dummy(*args, **kwargs):
         return True
 
     # Being exact time 2.0, (2.0 - 0.0 >= 2.0) is True. Mutant (>) will give False.
-    with patch("custom_components.climate_ip.coordinator.time.monotonic", return_value=2.0):
-        await debouncer.async_execute("prop1", dummy, val="strict_val")
+    await debouncer.async_execute("prop1", dummy, val="strict_val")
 
     assert "prop1" not in debouncer._pending_payloads
 
@@ -1699,6 +1696,7 @@ async def test_sniper_debouncer_kwargs_and_pop_strict(hass: HomeAssistant):
     from custom_components.climate_ip.coordinator import PropertyDebouncer
 
     mock_coordinator = MagicMock()
+    mock_coordinator.hass.loop.time.return_value = 10.0
     debouncer = PropertyDebouncer(mock_coordinator, delay=2.0)
     debouncer._pending_payloads["test_prop"] = "stale"
 
@@ -1776,6 +1774,7 @@ async def test_debouncer_immediate_turn_off() -> None:
     """Test that turn-off commands cancel pending timers and execute immediately."""
     mock_coordinator = MagicMock()
     mock_coordinator.hass.loop.call_later = MagicMock()
+    mock_coordinator.hass.loop.time.return_value = 100.0
     debouncer = PropertyDebouncer(mock_coordinator, delay=10.0)
 
     mock_func = AsyncMock(return_value=True)
@@ -1802,6 +1801,7 @@ async def test_debouncer_per_property_independence() -> None:
     """Test that each property has an independent debouncer window."""
     mock_coordinator = MagicMock()
     mock_coordinator.hass.loop.call_later = MagicMock()
+    mock_coordinator.hass.loop.time.return_value = 100.0
     debouncer = PropertyDebouncer(mock_coordinator, delay=3.0)
 
     func_hvac = AsyncMock(return_value=True)
