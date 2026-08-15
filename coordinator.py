@@ -49,6 +49,7 @@ from .const import (
     HARDWARE_BREATHING_ROOM_SEC,
     ISSUE_AUTO_HEALING_RAW,
     MANUFACTURER_SAMSUNG,
+    MAX_POLL_INTERVAL,
     MIN_POLL_INTERVAL,
     NETWORK_POLL_TIMEOUT,
 )
@@ -300,7 +301,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             else entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
         )  # pragma: no mutate
         try:
-            poll_interval_seconds = max(int(raw_interval), MIN_POLL_INTERVAL)
+            poll_interval_seconds = min(
+                max(int(raw_interval), MIN_POLL_INTERVAL), MAX_POLL_INTERVAL
+            )
         except (ValueError, TypeError):
             poll_interval_seconds = DEFAULT_POLL_INTERVAL
         update_interval = (
@@ -394,8 +397,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         """Delete auto-healing issue from registry if it was ignored/dismissed by the user."""
         if not self.unique_id:
             return
-        safe_device_id = self.safe_unique_id
-        issue_id = f"{ISSUE_AUTO_HEALING_RAW}_{safe_device_id}"
+        issue_id = self.auto_healing_issue_id
         registry = async_get_issue_registry(self.hass)
         issue = registry.async_get_issue(DOMAIN, issue_id)
         if issue is not None and issue.dismissed_version is not None:
@@ -471,7 +473,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         async_create_issue(
             self.hass,
             DOMAIN,
-            f"{ISSUE_AUTO_HEALING_RAW}_{safe_device_id}",
+            self.auto_healing_issue_id,
             is_fixable=True,
             is_persistent=False,
             severity=IssueSeverity.WARNING,
@@ -492,13 +494,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                     await self.controller.async_get_status()  # pragma: no mutate
             return self._create_device_state()
         except InvalidHeaderError as err:
-            opt_method = self.config_entry.options.get(CONF_CONN_METHOD)
-            current_method = (
-                opt_method
-                if opt_method is not None
-                else self.config_entry.data.get(CONF_CONN_METHOD)
-            )
-            if current_method != CONN_METHOD_RAW:
+            if self.connection_method != CONN_METHOD_RAW:
                 _LOGGER.warning(
                     "%s Auto-healing to RAW mode triggered", self.log_prefix
                 )  # pragma: no mutate
@@ -758,6 +754,21 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             or FALLBACK_DEVICE_ID
         )
         return str(raw_uid).strip().replace(".", "_").replace(" ", "_")
+
+    @property
+    def auto_healing_issue_id(self) -> str:
+        """Return the standardized issue ID for auto-healing to RAW mode."""
+        return f"{ISSUE_AUTO_HEALING_RAW}_{self.safe_unique_id}"
+
+    @property
+    def connection_method(self) -> str | None:
+        """Return the configured connection method (options taking precedence over data)."""
+        opt_method = self.config_entry.options.get(CONF_CONN_METHOD)
+        return (
+            opt_method
+            if opt_method is not None
+            else self.config_entry.data.get(CONF_CONN_METHOD)
+        )
 
     async def async_shutdown(self) -> None:
         """Shut down the coordinator and its controller.
