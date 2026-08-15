@@ -6,7 +6,7 @@ import asyncio
 from enum import Enum
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from datetime import timedelta
 from typing import Any
 
@@ -75,7 +75,13 @@ class PropertyDebouncer:
         self._timers: dict[str, Callable[[], None]] = {}
         # 🛡️ Updated typing to include the Generation ID (int) at the end of the tuple
         self._pending_payloads: dict[
-            str, tuple[Callable[..., Any], tuple[Any, ...], dict[str, Any], int]
+            str,
+            tuple[
+                Callable[..., Coroutine[Any, Any, bool]],
+                tuple[Any, ...],
+                dict[str, Any],
+                int,
+            ],
         ] = {}
         self._last_activities: dict[str, float] = {}
         self._generation: int = 0  # 🛡️ The core of the Anti-Zombie Shield
@@ -123,7 +129,7 @@ class PropertyDebouncer:
     async def async_execute(
         self,
         property_name: str,
-        coroutine_func: Any,
+        coroutine_func: Callable[..., Coroutine[Any, Any, bool]],
         *args: Any,
         val: Any = None,
         **kwargs: Any,
@@ -812,6 +818,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 self.log_prefix,
                 err,
             )
+        except asyncio.CancelledError:
+            _LOGGER.debug("%s Shutdown cancelled", self.log_prefix)
+            raise
         except Exception as err:  # pylint: disable=broad-exception-caught
             _LOGGER.warning(
                 "%s Unexpected error during controller shutdown: %s",

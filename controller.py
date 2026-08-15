@@ -12,7 +12,8 @@ from homeassistant.const import UnitOfTemperature
 if TYPE_CHECKING:
     from .state import ClimateIPDeviceState
 
-ATTR_POWER = "power"
+from .const import ATTR_POWER
+
 CLIMATE_CONTROLLERS: list[type[ClimateController]] = []
 
 class ControllerError(Exception):
