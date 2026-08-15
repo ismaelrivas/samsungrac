@@ -592,6 +592,17 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                     self.log_prefix,
                 )  # pragma: no mutate
 
+        except (AuthError, ConfigEntryAuthFailed) as err:
+            self.controller.clear_state_cache()
+            _LOGGER.error(
+                "%s Authentication failed during push update: %s",
+                self.log_prefix,
+                err,
+            )
+            raise ConfigEntryAuthFailed(
+                f"Authentication failed: {err}"
+            ) from err  # pragma: no mutate
+
         except Exception as err:  # pylint: disable=broad-exception-caught
             _LOGGER.error(
                 "%s Unexpected error during push update: %s",
@@ -632,8 +643,8 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 return True
 
             res = await self.controller.async_set_property(prop, val, device_id)
-            await asyncio.sleep(HARDWARE_BREATHING_ROOM_SEC)
-            return bool(res)
+        await asyncio.sleep(HARDWARE_BREATHING_ROOM_SEC)
+        return bool(res)
 
     async def async_set_property(
         self,
