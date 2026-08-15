@@ -329,14 +329,14 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             did = device_info.get(CONF_SUBDEVICE_ID)
 
             # Avoid redundant "ID XXX (ID XXX (Name))"
-            if did and not name.startswith(f"ID {did}"):
+            if did is not None and not name.startswith(f"ID {did}"):
                 final_name = f"ID {did} ({name})"
             else:
                 final_name = name
 
             # Parent linkage for hierarchical display in HA UI
             via_device = (
-                (DOMAIN, parent_unique_id) if parent_unique_id else None
+                (DOMAIN, parent_unique_id) if parent_unique_id is not None else None
             )  # pragma: no mutate
 
             # NOTE: For sub-devices, we DO NOT include 'connections' (MAC) to prevent
@@ -370,7 +370,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             opt_name = self.config_entry.options.get(CONF_NAME)
             raw_name = (
                 opt_name.strip()
-                if isinstance(opt_name, str) and opt_name.strip()
+                if opt_name is not None and opt_name.strip() != ""
                 else self.config_entry.data.get(CONF_NAME)
             )
             name_str = str(raw_name).strip() if raw_name is not None else ""
