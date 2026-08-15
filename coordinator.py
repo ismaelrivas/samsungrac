@@ -362,12 +362,15 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                     )
 
             opt_name = self.config_entry.options.get(CONF_NAME)
+            raw_name = (
+                opt_name.strip()
+                if isinstance(opt_name, str) and opt_name.strip()
+                else self.config_entry.data.get(CONF_NAME)
+            )
             device_name = (
-                opt_name
-                if opt_name is not None
-                else self.config_entry.data.get(
-                    CONF_NAME, f"{DEFAULT_DEVICE_NAME_PREFIX} {safe_uid}"
-                )
+                str(raw_name).strip()
+                if raw_name and str(raw_name).strip()
+                else f"{DEFAULT_DEVICE_NAME_PREFIX} {safe_uid}"
             )
             self.device_info = DeviceInfo(
                 identifiers={(DOMAIN, safe_uid)},
@@ -433,6 +436,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             "%s Network layer declared device offline. Forcing UpdateFailed.",
             self.log_prefix,
         )  # pragma: no mutate
+        self.debouncer.cancel_all()
         self.controller.clear_state_cache()
         self.async_set_update_error(UpdateFailed(f"Device offline: {reason}"))
 

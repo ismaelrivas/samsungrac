@@ -669,7 +669,7 @@ async def test_offline_callback_forces_update_error(hass: HomeAssistant) -> None
     ):
         mock_controller.on_offline_callback("Ping failed")
 
-        mock_debug.assert_called_once_with(
+        mock_debug.assert_any_call(
             "%s Network layer declared device offline. Forcing UpdateFailed.",
             "[OfflineTest]",
         )
