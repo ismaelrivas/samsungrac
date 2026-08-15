@@ -140,15 +140,18 @@ class PropertyDebouncer:
 
         # Immediate execution for turn-off commands (aborts any pending debounced commands across all properties)
         effective_val = val
-        val_str = str(effective_val).lower() if effective_val is not None else ""
         is_turn_off = (
-            (
-                property_name == ATTR_HVAC_MODE
-                and (effective_val == HVACMode.OFF or val_str == HVACMode.OFF.value)
-            )
+            (property_name == ATTR_HVAC_MODE and effective_val == HVACMode.OFF)
             or (
                 property_name == ATTR_POWER
-                and (effective_val is False or val_str in FALSY_STRINGS)
+                and effective_val is not None
+                and (
+                    effective_val is False
+                    or (
+                        isinstance(effective_val, str)
+                        and effective_val.lower() in FALSY_STRINGS
+                    )
+                )
             )
         )
 
