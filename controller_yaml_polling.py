@@ -30,6 +30,7 @@ from homeassistant.helpers.issue_registry import (
 )
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.util import dt as dt_util
+from homeassistant.util.json import json_loads
 from requests.exceptions import RequestException  # type: ignore[import-untyped]
 
 from .const import (
@@ -40,6 +41,7 @@ from .const import (
 )
 from .exceptions import AuthError, CannotConnect, InvalidHeaderError
 from .helpers import async_check_network_reachability, get_value_by_path
+from .properties import render_template
 from .state import ClimateIPDeviceState
 
 _LOGGER = logging.getLogger(__name__)
@@ -572,7 +574,41 @@ class YamlStatePoller:
                         )
                     while len(current) <= idx:
                         current.append(None)
-                    current[idx] = value
+
+                    # If value is a prefixed option string (e.g. "Spi_Off", "Autoclean_Off", "Comode_Sleep"),
+                    # update the matching option slot in the list by prefix rather than clobbering an unrelated slot.
+                    if isinstance(value, str) and "_" in value:
+                        opt_prefix = value.split("_", 1)[0]
+                        found_idx = next(
+                            (
+                                j
+                                for j, item in enumerate(current)
+                                if isinstance(item, str) and item.startswith(f"{opt_prefix}_")
+                            ),
+                            None,
+                        )
+                        if found_idx is not None:
+                            current[found_idx] = value
+                            return
+
+                    # If target element was an existing prefixed string (e.g. "Sleep_0") and value is raw (e.g. 0),
+                    # preserve the prefix so the prediction dictionary remains 100% faithful to device protocol.
+                    target_val = value
+                    existing = current[idx]
+                    if (
+                        isinstance(existing, str)
+                        and "_" in existing
+                        and not (isinstance(target_val, str) and "_" in target_val)
+                    ):
+                        prefix = existing.split("_", 1)[0]
+                        clean_num = (
+                            int(target_val)
+                            if isinstance(target_val, (int, float)) and target_val == int(target_val)
+                            else target_val
+                        )
+                        target_val = f"{prefix}_{clean_num}"
+
+                    current[idx] = target_val
                 return
 
             if isinstance(current, dict):
@@ -617,6 +653,21 @@ class YamlStatePoller:
                     e,
                     exc_info=True,
                 )
+
+        # If property has a connection_template (e.g. good_sleep formatting 'Sleep_{{ value | int }}'),
+        # evaluate the template so optimistic predictions mirror the real wire protocol representation.
+        conn_tmpl = getattr(prop, "connection_template", None)
+        if conn_tmpl is not None:
+            try:
+                rendered = render_template(conn_tmpl, value=value)
+                if rendered and isinstance(rendered, str):
+                    parsed = json_loads(rendered)
+                    payload = parsed.get("json", parsed) if isinstance(parsed, dict) else parsed
+                    if isinstance(payload, dict) and "options" in payload and isinstance(payload["options"], list):
+                        if payload["options"] and isinstance(payload["options"][0], str):
+                            dev_val = payload["options"][0]
+            except Exception:  # pylint: disable=broad-exception-caught
+                pass
 
         state_node = self._get_state_node_from_prop(prop)
         if state_node and isinstance(state_node, str):
