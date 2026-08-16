@@ -1116,14 +1116,6 @@ class YamlStatePoller:
             if hasattr(conn, "stop_listening"):
                 await _try(conn.stop_listening())
 
-            if hasattr(self.controller, "close_shared_client"):
-                await _try(self.controller.close_shared_client())
-            elif hasattr(self.controller, "_shared_raw_client"):
-                raw_client = self.controller._shared_raw_client
-                if raw_client and hasattr(raw_client, "close"):
-                    await _try(raw_client.close())
-                self.controller._shared_raw_client = None
-
             if hasattr(conn, "close"):
                 await _try(conn.close())
 

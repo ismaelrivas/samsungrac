@@ -228,7 +228,6 @@ def test_controller_base_init_state() -> None:
     controller = DummyController({"test": "config"}, logger)
     assert controller._logger is logger
     assert controller._connection is None
-    assert controller._shared_raw_client is None
     assert controller.discovered_devices is None
 
 

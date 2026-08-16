@@ -36,10 +36,6 @@ class ControllerInterface(Protocol):
     def poll(self) -> bool | None: ...
     @property
     def climate_state(self) -> ClimateIPDeviceState: ...
-    @property
-    def shared_raw_client(self) -> Any | None: ...
-    @shared_raw_client.setter
-    def shared_raw_client(self, client: Any | None) -> None: ...
 
     async def async_get_status(self) -> dict[str, Any] | None: ...
     async def async_set_property(
@@ -79,21 +75,10 @@ class ClimateController(ABC):
         self._logger = logger
         self.hass: Any | None = None
         self._connection: Any = None
-        self._shared_raw_client: Any = None
         self.discovered_devices: list[dict[str, Any]] | None = None
         self._token_refreshed_callback: (
             Callable[[str], Coroutine[Any, Any, None]] | Callable[[str], None] | None
         ) = None
-
-    @property
-    def shared_raw_client(self) -> Any | None:
-        """Return the shared raw socket client."""
-        return self._shared_raw_client
-
-    @shared_raw_client.setter
-    def shared_raw_client(self, client: Any | None) -> None:
-        """Set the shared raw socket client."""
-        self._shared_raw_client = client
 
     @staticmethod
     @abstractmethod

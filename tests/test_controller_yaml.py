@@ -36,7 +36,7 @@ from custom_components.climate_ip.const import (
 )
 from custom_components.climate_ip.controller_yaml import YamlController
 from custom_components.climate_ip.controller_yaml_config import _YAML_FILE_CACHE
-from custom_components.climate_ip.exceptions import CannotConnect
+from custom_components.climate_ip.exceptions import AuthError, CannotConnect
 
 
 @pytest.fixture
@@ -123,7 +123,7 @@ async def test_async_set_property_registers_pending_update(
 ) -> None:
     """Test that async_set_property strictly delegates to poller.register_pending_update."""
     controller = YamlController(
-        yaml_config, mock_logger, hass=mock_hass, session=MagicMock()
+        yaml_config, mock_logger, hass=mock_hass
     )
 
     # Mock loader dependencies
@@ -182,7 +182,6 @@ def test_yaml_controller_strict_initialization() -> None:
 
     # 1. Verify delegate injections
     assert controller.hass is mock_hass
-    assert controller._session is mock_session
     assert controller._logger is mock_logger
 
     # 2. Strict IP Address extraction
@@ -220,7 +219,6 @@ def test_yaml_controller_strict_initialization() -> None:
 
     # 6. Base attributes dictionary assignment
     assert controller._attributes == {}
-    assert controller._shared_raw_client is None
 
     # 7. Composition verification (Delegates)
     assert controller.loader is not None
@@ -406,21 +404,22 @@ async def test_async_set_property_error_scenarios(mock_yaml_controller) -> None:
     with pytest.raises(ServiceValidationError):
         await mock_yaml_controller.async_set_property("missing_prop", "val")
 
-    # Scenario 3: Network error -> Raises CannotConnect with strict message
+    # Scenario 3: Domain network error -> Wrapped as HomeAssistantError
     from custom_components.climate_ip.properties import DeviceProperty
 
     mock_op = AsyncMock()
     mock_op.__class__ = DeviceProperty
     mock_yaml_controller.loader.operations = {"test_prop": mock_op}
     mock_op.async_set_value.side_effect = CannotConnect("Host down")
-    with pytest.raises(CannotConnect) as exc_info:
+    with pytest.raises(HomeAssistantError) as exc_info:
         await mock_yaml_controller.async_set_property("test_prop", "val")
     assert "Host down" in str(exc_info.value)
 
-    # Scenario 4: Network/OS exceptions -> Raises HomeAssistantError
-    mock_op.async_set_value.side_effect = TimeoutError("Timeout")
-    with pytest.raises(HomeAssistantError):
+    # Scenario 4: Domain Auth error -> Wrapped as HomeAssistantError
+    mock_op.async_set_value.side_effect = AuthError("Auth failed")
+    with pytest.raises(HomeAssistantError) as exc_info:
         await mock_yaml_controller.async_set_property("test_prop", "val")
+    assert "Auth failed" in str(exc_info.value)
 
     # Scenario 5: Programming bugs / ValueErrors -> Raises natively (Fail-Fast)
     mock_op.async_set_value.side_effect = ValueError("Boom")
@@ -686,12 +685,7 @@ def test_yaml_controller_untested_properties_and_cache() -> None:
         config={"device_type": "test_device", "ip_address": "127.0.0.1"}, logger=mock_logger
     )
 
-    # 1. shared_raw_client setter
-    controller.shared_raw_client = "mock_client"
-    assert controller._shared_raw_client == "mock_client"
-
-
-    # 3. clear_state_cache
+    # clear_state_cache
     controller.poller = MagicMock()
     controller.clear_state_cache()
     controller.poller.clear_state_cache.assert_called_once()

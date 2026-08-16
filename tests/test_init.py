@@ -155,7 +155,6 @@ def test_hass_not_in_config_dict() -> None:
     """
 
     mock_hass = MagicMock(spec=HomeAssistant)
-    mock_session = MagicMock(spec=aiohttp.ClientSession)
     config: dict = {
         "ip_address": "192.168.1.1",
         "unique_id": "TESTID",
@@ -166,20 +165,15 @@ def test_hass_not_in_config_dict() -> None:
         config=config,
         logger=logging.getLogger("test"),
         hass=mock_hass,
-        session=mock_session,
     )
 
     # Config dict must be clean — no runtime objects
     assert "hass" not in controller._config, (  # type: ignore[attr-defined]
         "hass leaked into YamlController._config"
     )
-    assert "session" not in controller._config, (  # type: ignore[attr-defined]
-        "session leaked into YamlController._config"
-    )
 
     # Runtime objects must be properly stored on the instance
     assert controller.hass is mock_hass
-    assert controller._session is mock_session  # type: ignore[attr-defined]
 
 
 async def test_unload_while_connecting(hass: HomeAssistant) -> None:
@@ -320,9 +314,6 @@ async def test_setup_entry_instantiates_controller_strictly(
         assert (
             "hass" in kwargs and kwargs["hass"] is hass
         ), "The hass argument was not passed correctly"
-        assert (
-            "session" in kwargs and kwargs["session"] is not None
-        ), "The session argument was omitted or is None"
 
         # Mutant 84: Verify standalone injection
         mock_coord_class.assert_called_once_with(
@@ -393,7 +384,6 @@ async def test_setup_entry_multi_device_branch_and_unique_id_logic(
         assert kwargs_a.get("config_entry") is mock_entry, "config_entry was omitted"
         assert kwargs_a.get("logger") is not None, "The logger was omitted"
         assert kwargs_a.get("hass") is hass, "The hass argument is incorrect"
-        assert kwargs_a.get("session") is not None, "The session was omitted"
 
         # Validate Zone B
         kwargs_b = call_args_list[1].kwargs

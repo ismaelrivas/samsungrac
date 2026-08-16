@@ -535,49 +535,10 @@ async def test_async_shutdown_stop_listening_exception():
     assert mock_controller.loader.connection is None
 
 
-async def test_async_shutdown_close_shared_client():
-    mock_controller = MagicMock()
-    poller = YamlStatePoller(mock_controller)
-
-    conn = MagicMock()
-    del conn.stop_listening
-    del conn.close
-    mock_controller.loader.connection = conn
-
-    mock_controller.close_shared_client = AsyncMock(side_effect=ValueError("Boom"))
-
-    with patch(
-        "custom_components.climate_ip.controller_yaml_polling.asyncio.sleep",
-        new_callable=AsyncMock,
-    ):
-        await poller.async_shutdown()  # Should not raise
-    mock_controller.close_shared_client.assert_called_once()
-    assert mock_controller.loader.connection is None
 
 
-async def test_async_shutdown_shared_raw_client():
-    mock_controller = MagicMock()
-    poller = YamlStatePoller(mock_controller)
 
-    conn = MagicMock()
-    del conn.stop_listening
-    del conn.close
-    mock_controller.loader.connection = conn
 
-    del mock_controller.close_shared_client
-
-    raw_client = MagicMock()
-    raw_client.close = AsyncMock(side_effect=ValueError("Boom"))
-    mock_controller._shared_raw_client = raw_client
-
-    with patch(
-        "custom_components.climate_ip.controller_yaml_polling.asyncio.sleep",
-        new_callable=AsyncMock,
-    ):
-        await poller.async_shutdown()  # Should not raise
-    raw_client.close.assert_called_once()
-    assert mock_controller._shared_raw_client is None
-    assert mock_controller.loader.connection is None
 
 
 async def test_async_shutdown_conn_close():
@@ -756,20 +717,7 @@ def test_try_create_repair_issue_missing_hass(mock_create_issue):
     mock_create_issue.assert_not_called()
 
 
-async def test_async_shutdown_raw_client_circuit():
-    """Verify mutant kill for flip if raw_client and hasattr() a or hasattr()"""
-    poller = YamlStatePoller(MagicMock())
-    delattr(poller.controller, "close_shared_client")
 
-    # Inject object without 'close'; using 'or' will fail at runtime when calling close().
-    # 'and' acts as a safe circuit breaker.
-    class DummyClient:
-        pass
-
-    poller.controller._shared_raw_client = DummyClient()
-
-    await poller.async_shutdown()
-    assert poller.controller._shared_raw_client is None
 
 
 async def test_async_update_state_force_connection_errors():
@@ -794,12 +742,4 @@ async def test_async_update_state_force_connection_errors():
     assert str(exc.value) == "Device unreachable: TargetReason"
 
 
-async def test_shutdown_raw_client_missing():
-    """Verify mutant kill de getattr sin fallback en _shared_raw_client (L1049)"""
-    poller = YamlStatePoller(MagicMock())
-    # DESTRUCCIÓN FÍSICA
-    if hasattr(poller.controller, "_shared_raw_client"):
-        delattr(poller.controller, "_shared_raw_client")
 
-    # If mutmut removed None, will raise AttributeError evaluating temporary variable.
-    await poller.async_shutdown()

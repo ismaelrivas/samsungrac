@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import aiohttp
 import asyncio
 import logging
 import math
@@ -64,6 +63,7 @@ from .const import (
 from .controller import ClimateController, register_controller
 from .controller_yaml_config import YamlConfigLoader
 from .controller_yaml_polling import YamlStatePoller
+from .exceptions import AuthError, CannotConnect
 from .properties import DeviceProperty, parse_temperature_unit
 from .state import ClimateIPDeviceState
 
@@ -130,20 +130,18 @@ class YamlController(ClimateController):
         cls,
         config_entry: ConfigEntry[Any],
         hass: HomeAssistant | None = None,
-        session: aiohttp.ClientSession | None = None,
         device_id: str | None = None,
         logger: logging.Logger | None = None,
     ) -> YamlController:
         """Create a YamlController instance directly from a ConfigEntry."""
         logger = logger if logger is not None else _LOGGER
-        return cls(logger=logger, hass=hass, session=session, config_entry=config_entry, device_id=device_id)
+        return cls(logger=logger, hass=hass, config_entry=config_entry, device_id=device_id)
 
     def __init__(
         self,
         config: dict[str, Any] | None = None,
         logger: logging.Logger | None = None,
         hass: HomeAssistant | None = None,
-        session: aiohttp.ClientSession | None = None,
         config_entry: ConfigEntry[Any] | None = None,
         device_id: str | None = None,
     ) -> None:
@@ -181,7 +179,6 @@ class YamlController(ClimateController):
         super().__init__(config, logger)
 
         self.hass = hass
-        self._session = session
         self.loader: YamlConfigLoader = YamlConfigLoader(self)
         self.poller: YamlStatePoller = YamlStatePoller(self)
 
@@ -271,11 +268,6 @@ class YamlController(ClimateController):
     def connection(self) -> Connection | None:
         """Override base connection to point strictly to the loader's active connection."""
         return self.loader.connection
-
-    @property
-    def session(self) -> aiohttp.ClientSession | None:
-        """Return the injected aiohttp client session."""
-        return self._session
 
     @property
     def name(self) -> str:
@@ -398,7 +390,7 @@ class YamlController(ClimateController):
             return result
         except (asyncio.CancelledError, HomeAssistantError):
             raise
-        except (TimeoutError, OSError, aiohttp.ClientError) as err:
+        except (CannotConnect, AuthError) as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key=ERR_PROPERTY_SET_FAILED,
