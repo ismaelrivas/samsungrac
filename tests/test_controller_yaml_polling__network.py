@@ -522,8 +522,6 @@ async def test_async_shutdown_stop_listening_exception():
     mock_controller.loader.connection = conn
 
     # Bypass the others
-    del mock_controller.close_shared_client
-    del mock_controller._shared_raw_client
     del conn.close
 
     with patch(
@@ -535,12 +533,6 @@ async def test_async_shutdown_stop_listening_exception():
     assert mock_controller.loader.connection is None
 
 
-
-
-
-
-
-
 async def test_async_shutdown_conn_close():
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)
@@ -549,9 +541,6 @@ async def test_async_shutdown_conn_close():
     del conn.stop_listening
     conn.close = AsyncMock(side_effect=ValueError("Boom"))
     mock_controller.loader.connection = conn
-
-    del mock_controller.close_shared_client
-    del mock_controller._shared_raw_client
 
     with patch(
         "custom_components.climate_ip.controller_yaml_polling.asyncio.sleep",
