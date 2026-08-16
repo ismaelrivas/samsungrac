@@ -456,8 +456,13 @@ class ConnectionRaw8888(Connection):
             raise
         except AuthError as exc:
             raise AuthError("Invalid token") from exc  # pragma: no mutate
-        except (TimeoutError, OSError) as e:
-            raise CannotConnect(f"Connection failed: {e}") from e  # pragma: no mutate
+        except (
+            ConnectionResetError,
+            BrokenPipeError,
+            TimeoutError,
+            OSError,
+        ) as e:
+            raise CannotConnect(f"Socket error: {e}") from e  # pragma: no mutate
 
     async def close(self) -> None:
         """Close the connection and release resources safely."""

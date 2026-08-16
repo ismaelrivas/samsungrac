@@ -1636,7 +1636,13 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
             for task in created_tasks:
                 await task
 
+        from unittest.mock import call
+
         assert mock_coordinator.async_request_refresh.await_count == 2
+        assert mock_coordinator.controller.async_clear_pending_updates.await_count == 2
+        mock_coordinator.controller.async_clear_pending_updates.assert_has_awaits(
+            [call(["prop_net"]), call(["prop_gen"])], any_order=False
+        )
 
         # ARMORED VERIFICATION: Search within intercepted calls
         debug_calls = mock_debug.call_args_list
@@ -1917,5 +1923,93 @@ async def test_cleanup_auto_healing_issue_if_ignored(hass: HomeAssistant) -> Non
          patch("custom_components.climate_ip.coordinator.async_delete_issue") as mock_delete:
         coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
         mock_delete.assert_called_once_with(hass, "climate_ip", "auto_healing_raw_test_ac_unique")
+
+
+@pytest.mark.asyncio
+async def test_sniper_debouncer_turn_off_type_dispatch() -> None:
+    """Test that PropertyDebouncer.async_execute with ATTR_POWER triggers immediate turn-off bypass for False, 'false', and 0."""
+    from custom_components.climate_ip.const import ATTR_POWER
+
+    mock_coordinator = MagicMock()
+    mock_coordinator.hass.loop.call_later = MagicMock()
+    mock_coordinator.hass.loop.time.return_value = 100.0
+    debouncer = PropertyDebouncer(mock_coordinator, delay=10.0)
+
+    # Test boolean False, string "false", uppercase "FALSE", and integer 0
+    falsy_values = [False, "false", "FALSE", 0]
+
+    for val in falsy_values:
+        # Simulate an active trailing window and pending commands across other properties
+        debouncer._last_activities[ATTR_POWER] = 95.0  # within 10s delay window
+        debouncer._pending_payloads["temperature"] = (MagicMock(), (), {}, 1)
+        debouncer._timers["temperature"] = MagicMock()
+        assert debouncer.is_active is True
+
+        mock_func = AsyncMock(return_value=True)
+
+        # Trigger async_execute with ATTR_POWER and falsy value
+        res = await debouncer.async_execute(ATTR_POWER, mock_func, ATTR_POWER, val, val=val)
+
+        # Verify immediate execution occurred despite active trailing window
+        assert res is True
+        mock_func.assert_called_once_with(ATTR_POWER, val)
+
+        # Verify debouncer queues and timers were purged immediately (turn-off bypass)
+        assert len(debouncer._pending_payloads) == 0
+        assert len(debouncer._timers) == 0
+        assert debouncer.is_active is False
+
+
+@pytest.mark.asyncio
+async def test_sniper_push_update_auth_failed_no_config_entry(hass: HomeAssistant) -> None:
+    """Test push update handles ConfigEntryAuthFailed safely when self.config_entry is None."""
+    from homeassistant.exceptions import ConfigEntryAuthFailed
+    from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
+
+    with patch(
+        "custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__",
+        return_value=None,
+    ):
+        mock_controller = MagicMock()
+        mock_controller.async_merge_device_state = AsyncMock(
+            side_effect=ConfigEntryAuthFailed("Push update token expired")
+        )
+        mock_controller.clear_state_cache = MagicMock()
+        mock_controller.log_prefix = "[PushAuthTest]"
+
+        coordinator = SamsungClimateCoordinator(
+            hass, mock_controller, MagicMock(options={}, data={})
+        )
+        # Explicitly mock self.config_entry to None
+        coordinator.config_entry = None
+        coordinator.async_set_update_error = MagicMock()
+
+        # Trigger push update that raises ConfigEntryAuthFailed
+        await coordinator.async_handle_push_update({"AC_FUN_POWER": "On"})
+
+        # Verify state cache was cleared
+        mock_controller.clear_state_cache.assert_called_once()
+
+        # Verify ConfigEntryAuthFailed was recorded without crashing with AttributeError on reauth
+        coordinator.async_set_update_error.assert_called_once()
+        recorded_err = coordinator.async_set_update_error.call_args[0][0]
+        assert isinstance(recorded_err, ConfigEntryAuthFailed)
+        assert "Push update token expired" in str(recorded_err)
+
+
+@pytest.mark.asyncio
+async def test_sniper_debouncer_handle_delayed_failure_strict_prop() -> None:
+    """Test that PropertyDebouncer._async_handle_delayed_failure passes exact [prop] list to controller."""
+    mock_coordinator = MagicMock()
+    mock_coordinator.controller.async_clear_pending_updates = AsyncMock()
+    mock_coordinator.async_request_refresh = AsyncMock()
+
+    debouncer = PropertyDebouncer(mock_coordinator, delay=3.0)
+    await debouncer._async_handle_delayed_failure("target_temperature")
+
+    mock_coordinator.controller.async_clear_pending_updates.assert_awaited_once_with(["target_temperature"])
+    mock_coordinator.async_request_refresh.assert_awaited_once()
+
+
 
 
