@@ -388,17 +388,18 @@ class YamlController(ClimateController):
             result = await op.async_set_value(new_value, target_device_id)
             success = bool(result)
             return result
-        except (asyncio.CancelledError, HomeAssistantError):
+        except asyncio.CancelledError:
+            await self.async_clear_pending_updates([property_name])
             raise
         except (CannotConnect, AuthError) as err:
-            raise HomeAssistantError(
-                translation_domain=DOMAIN,
-                translation_key=ERR_PROPERTY_SET_FAILED,
-                translation_placeholders={"property": property_name, "error": str(err)},
-            ) from err
+            await self.async_clear_pending_updates([property_name])
+            raise HomeAssistantError(f"Communication failed: {err}") from err
+        except HomeAssistantError:
+            await self.async_clear_pending_updates([property_name])
+            raise
         finally:
             if not success:
-                self.poller.clear_pending_updates([property_name])
+                await self.async_clear_pending_updates([property_name])
 
     def has_property(self, property_name: str) -> bool:
         """Return True if the property is structurally mapped."""
@@ -536,9 +537,11 @@ class YamlController(ClimateController):
 
     @property
     def connection_diagnostics(self) -> dict[str, Any]:
-        """Return connection diagnostic info from the underlying connection."""
-        if self.connection is not None:
-            return dict(self.connection.get_diagnostics())
+        """Return standardized connection diagnostic dictionary from the underlying connection."""
+        if self.connection is not None and hasattr(self.connection, "get_diagnostics"):
+            diag = self.connection.get_diagnostics()
+            if isinstance(diag, dict):
+                return dict(diag)
         return {}
 
     @property
