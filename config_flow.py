@@ -53,10 +53,18 @@ from .const import (
     DOMAIN,
     GLOBAL_HTTP_TIMEOUT,
 )
+import inspect
+import os
+
+from homeassistant.util.yaml import load_yaml
+
 from .exceptions import CannotConnect
 from .options_flow import OptionsFlowHandler
-from .token_acquirer import SamsungTokenAcquirer
-from .token_acquirer_8888 import SamsungTokenAcquirer8888
+from .token_acquirer_yaml import GenericYamlTokenAcquirer
+
+# Backward compatibility aliases for unit tests
+SamsungTokenAcquirer = GenericYamlTokenAcquirer
+SamsungTokenAcquirer8888 = GenericYamlTokenAcquirer
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -86,6 +94,36 @@ class ClimateIpConfigFlow(
         _LOGGER.debug(
             "Initializing new Climate IP config flow handler."
         )  # pragma: no mutate
+
+    async def _load_auth_flow_config(self, device_type: str) -> dict[str, Any]:
+        """Dynamically load the authentication YAML file according to device type."""
+        main_yaml_name = DEVICE_TYPE_TO_CONFIG_FILE.get(device_type)
+        if not main_yaml_name:
+            raise ValueError(f"No configuration file mapping found for device_type: {device_type}")
+        main_yaml_path = os.path.join(os.path.dirname(__file__), main_yaml_name)
+        try:
+            job = self.hass.async_add_executor_job(load_yaml, main_yaml_path)
+            if inspect.isawaitable(job):
+                main_config = await job
+            else:
+                main_config = load_yaml(main_yaml_path)
+        except (TypeError, AttributeError):
+            main_config = load_yaml(main_yaml_path)
+
+        auth_file = main_config.get("device", {}).get("auth_flow_file")
+        if not auth_file:
+            raise ValueError(f"No 'auth_flow_file' found in {main_yaml_name}")
+
+        auth_yaml_path = os.path.join(os.path.dirname(__file__), auth_file)
+        try:
+            job2 = self.hass.async_add_executor_job(load_yaml, auth_yaml_path)
+            if inspect.isawaitable(job2):
+                auth_config = await job2
+            else:
+                auth_config = load_yaml(auth_yaml_path)
+        except (TypeError, AttributeError):
+            auth_config = load_yaml(auth_yaml_path)
+        return auth_config.get("auth_flow", {})
 
     def is_matching(self, other_flow: Self) -> bool:
         """Return True if other_flow matches this flow (same physical device)."""
@@ -265,14 +303,21 @@ class ClimateIpConfigFlow(
                     errors=errors,
                 )
 
-            # 5. Initialize the appropriate token acquirer
-            if is_8888:
-                target_cert = str(cert_val) if cert_val else DEFAULT_CONF_CERT_FILE
-                self.acquirer = SamsungTokenAcquirer8888(
-                    self.hass, ip_addr, target_cert
-                )
-            else:
-                self.acquirer = SamsungTokenAcquirer(self.hass, ip_addr, str(cert_val))
+            # 5. Initialize the generic token acquirer dynamically
+            device_type = self.flow_data.get(
+                CONF_DEVICE_TYPE,
+                DEVICE_TYPE_SAMSUNG_8888 if is_8888 else DEVICE_TYPE_SAMSUNG_2878,
+            )
+            target_cert = str(cert_val) if cert_val else None
+
+            auth_flow_dict = await self._load_auth_flow_config(device_type)
+
+            self.acquirer = GenericYamlTokenAcquirer(
+                self.hass,
+                ip_address=ip_addr,
+                auth_config=auth_flow_dict,
+                cert_path=target_cert,
+            )
 
             return await self.async_step_initiate_pairing()
 
@@ -450,19 +495,19 @@ class ClimateIpConfigFlow(
                     self.flow_data[CONF_DEVICE_TYPE] = DEVICE_TYPE_SAMSUNG_8888
                     target_cert = cert_path if cert_path else DEFAULT_CONF_CERT_FILE
                     self.flow_data[CONF_CERT] = target_cert
-                    self.acquirer = SamsungTokenAcquirer8888(
-                        self.hass, ip_address, target_cert
-                    )
                 elif device_type == DEVICE_TYPE_SAMSUNG_8888:
                     # fmt: off
                     _LOGGER.info('Falling back from port %s to port %s topology.', 8888, 2878)  # pragma: no mutate
                     # fmt: on
                     self.flow_data[CONF_DEVICE_TYPE] = DEVICE_TYPE_SAMSUNG_2878
-                    self.acquirer = SamsungTokenAcquirer(
-                        self.hass,
-                        ip_address,
-                        cert_path,  # pragma: no mutate
-                    )
+
+                new_device_type = self.flow_data[CONF_DEVICE_TYPE]
+                auth_flow_dict = await self._load_auth_flow_config(new_device_type)
+                target_cert_val = cert_path if cert_path else None
+
+                self.acquirer = GenericYamlTokenAcquirer(
+                    self.hass, ip_address, auth_flow_dict, target_cert_val
+                )
 
                 self.task = self.hass.async_create_task(
                     self._initiate_pairing_safe()
@@ -911,17 +956,15 @@ class ClimateIpConfigFlow(
                 _LOGGER.info(
                     "Token absent during reconfigure. Setting up acquirer for discovery."
                 )  # pragma: no mutate
-                target_cert = cert_value if cert_value else DEFAULT_CONF_CERT_FILE
+                target_cert = cert_value if cert_value else None
 
                 # FAIL FAST APPLIED: Direct dictionary access
                 ip_val = str(self.flow_data[CONF_IP_ADDRESS])
 
-                if is_8888:
-                    self.acquirer = SamsungTokenAcquirer8888(
-                        self.hass, ip_val, target_cert
-                    )
-                else:
-                    self.acquirer = SamsungTokenAcquirer(self.hass, ip_val, cert_value)
+                auth_flow_dict = await self._load_auth_flow_config(device_type)
+                self.acquirer = GenericYamlTokenAcquirer(
+                    self.hass, ip_val, auth_flow_dict, target_cert
+                )
                 return await self.async_step_initiate_pairing()
 
             updated_data = {**reconfigure_entry.data, **self.flow_data}

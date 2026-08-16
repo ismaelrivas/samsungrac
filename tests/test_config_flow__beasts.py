@@ -392,7 +392,7 @@ async def test_reconfigure_token_acquirer_ip_empty_fallback():
         patch.object(flow, "_async_resolve_mac_and_set_unique_id", return_value=None),
         patch.object(flow, "_async_validate_cert_path", return_value=True),
         patch(
-            "custom_components.climate_ip.config_flow.SamsungTokenAcquirer"
+            "custom_components.climate_ip.config_flow.GenericYamlTokenAcquirer"
         ) as mock_acquirer,
         patch.object(
             flow, "async_step_initiate_pairing", return_value={"type": "form"}
@@ -402,7 +402,9 @@ async def test_reconfigure_token_acquirer_ip_empty_fallback():
 
         # M209: ip_val must be "" when CONF_IP_ADDRESS is missing from flow_data
         # If mutant sets "XXXX", acquirer receives "XXXX" instead of ""
-        mock_acquirer.assert_called_once_with(flow.hass, "", "test.pem")
+        mock_acquirer.assert_called_once()
+        assert mock_acquirer.call_args[0][1] == ""
+        assert mock_acquirer.call_args[1].get("cert_path") == "test.pem" or mock_acquirer.call_args[0][3] == "test.pem"
 
 
 def test_get_base_samsung_schema_rejects_none_mac_required():
@@ -443,7 +445,7 @@ async def test_reconfigure_token_acquirer_routing():
         patch.object(flow, "_async_resolve_mac_and_set_unique_id", return_value=None),
         patch.object(flow, "_async_validate_cert_path", return_value=True),
         patch(
-            "custom_components.climate_ip.config_flow.SamsungTokenAcquirer"
+            "custom_components.climate_ip.config_flow.GenericYamlTokenAcquirer"
         ) as mock_acquirer,
         patch.object(
             flow, "async_step_initiate_pairing", return_value={"type": "init_pairing"}
@@ -452,7 +454,9 @@ async def test_reconfigure_token_acquirer_routing():
         await flow.async_step_reconfigure_confirm(user_input)
 
         # M214-M219: Verifies that None is not sent or args missing
-        mock_acquirer.assert_called_once_with(flow.hass, "192.168.1.50", "test.pem")
+        mock_acquirer.assert_called_once()
+        assert mock_acquirer.call_args[0][1] == "192.168.1.50"
+        assert mock_acquirer.call_args[1].get("cert_path") == "test.pem" or mock_acquirer.call_args[0][3] == "test.pem"
 
 
 @pytest.mark.asyncio

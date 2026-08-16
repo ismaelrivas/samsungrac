@@ -232,8 +232,8 @@ def mock_setup_entry():
 
 @pytest.fixture
 def mock_acquirer():
-    """Mock the SamsungTokenAcquirer."""
-    with patch("custom_components.climate_ip.config_flow.SamsungTokenAcquirer") as mock:
+    """Mock the GenericYamlTokenAcquirer."""
+    with patch("custom_components.climate_ip.config_flow.GenericYamlTokenAcquirer") as mock:
         instance = mock.return_value
         instance.async_initiate_pairing.return_value = {
             "cert": "fake_cert.pem",
@@ -245,9 +245,9 @@ def mock_acquirer():
 
 @pytest.fixture
 def mock_acquirer_8888():
-    """Mock the SamsungTokenAcquirer8888."""
+    """Mock the GenericYamlTokenAcquirer."""
     with patch(
-        "custom_components.climate_ip.config_flow.SamsungTokenAcquirer8888"
+        "custom_components.climate_ip.config_flow.GenericYamlTokenAcquirer"
     ) as mock:
         instance = mock.return_value
         instance.async_initiate_pairing.return_value = {

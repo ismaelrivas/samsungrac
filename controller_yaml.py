@@ -144,6 +144,8 @@ class YamlController(ClimateController):
         hass: HomeAssistant | None = None,
         config_entry: ConfigEntry[Any] | None = None,
         device_id: str | None = None,
+        session: Any | None = None,
+        **kwargs: Any,
     ) -> None:
         if config is None and config_entry is not None:
             config = self._extract_config_from_entry(config_entry, device_id)
@@ -172,13 +174,16 @@ class YamlController(ClimateController):
         if raw_name is not None:
             if not isinstance(raw_name, str):
                 raise TypeError(f"Expected str for {CONF_NAME}, got {type(raw_name).__name__}")
-            if len(raw_name.strip()) == 0:
-                raise ValueError(f"{CONF_NAME} cannot be empty")
+            if len(raw_name.strip()) > 0:
+                config[CONF_NAME] = raw_name.strip()
+            else:
+                config.pop(CONF_NAME, None)
 
         logger = logger if logger is not None else _LOGGER
         super().__init__(config, logger)
 
         self.hass = hass
+        self._session = session
         self.loader: YamlConfigLoader = YamlConfigLoader(self)
         self.poller: YamlStatePoller = YamlStatePoller(self)
 
@@ -186,9 +191,10 @@ class YamlController(ClimateController):
         if raw_device_id is not None:
             if not isinstance(raw_device_id, str):
                 raise TypeError(f"Expected str for {CONF_DEVICE_ID}, got {type(raw_device_id).__name__}")
-            if len(raw_device_id.strip()) == 0:
-                raise ValueError(f"{CONF_DEVICE_ID} cannot be empty")
-            self._device_id: str | None = raw_device_id.strip()
+            if len(raw_device_id.strip()) > 0:
+                self._device_id = raw_device_id.strip()
+            else:
+                self._device_id = None
         else:
             self._device_id = None
 
@@ -196,9 +202,10 @@ class YamlController(ClimateController):
         if raw_token is not None:
             if not isinstance(raw_token, str):
                 raise TypeError(f"Expected str for {CONF_TOKEN}, got {type(raw_token).__name__}")
-            if len(raw_token.strip()) == 0:
-                raise ValueError(f"{CONF_TOKEN} cannot be empty")
-            self._token: str | None = raw_token.strip()
+            if len(raw_token.strip()) > 0:
+                self._token = raw_token.strip()
+            else:
+                self._token = None
         else:
             self._token = None
 

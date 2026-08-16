@@ -104,6 +104,7 @@ async def _async_setup_single_device(
         device_id=device_id,
         logger=_LOGGER,
         hass=hass,
+        session=session,
     )
 
     try:
