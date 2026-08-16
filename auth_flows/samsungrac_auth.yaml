@@ -1,0 +1,42 @@
+# Authentication flow specification for Samsung modern AC units (Port 8888)
+# Mode: listener (local TCP server on port 8889 + raw TCP request to AC on port 8888)
+
+mode: "listener"
+
+tls_config:
+  default_cert: "ac14k_m.pem"
+  ciphers: "HIGH:!aNULL:!MD5:@SECLEVEL=0"
+  verify_mode: "CERT_NONE"
+
+listener:
+  port: 8889
+  timeout: 60.0
+  success_response: |
+    HTTP/1.1 200 OK
+    Content-Type: text/plain
+    Content-Length: 2
+    Connection: close
+
+    OK
+  error_response: |
+    HTTP/1.1 400 Bad Request
+    Content-Type: text/plain
+    Content-Length: 15
+    Connection: close
+
+    Token not found
+
+request_pairing:
+  method: "raw_tcp"
+  port: 8888
+  path: "/devicetoken/request"
+  headers:
+    Host: "{listener_ip}:{listener_port}"
+    Content-Type: "application/json"
+    Connection: "close"
+  payload: '{"DeviceToken": "xxxxxxxxxxx"}'
+  raw_template: "POST /devicetoken/request HTTP/1.1\r\nHost: {listener_ip}:{listener_port}\r\nContent-Type: application/json\r\nContent-Length: 29\r\nConnection: close\r\n\r\n{\"DeviceToken\": \"xxxxxxxxxxx\"}"
+  timeout: 30.0
+
+extract_template:
+  regex: 'DeviceToken["\s:]+([^"\s}]+)'

@@ -1,6 +1,7 @@
 device:
   name: 'samsungrac'
   poll: True
+  auth_flow_file: 'auth_flows/samsung_2878_auth.yaml'
   #validate_properties: True
   connection:
     type: samsung_2878

@@ -3,6 +3,7 @@
 # Use the following command to determine the appropriate device ID and adjust accordingly the params
 #   curl -v -k -H "Content-Type: application/json" -H "Authorization: Bearer __CLIMATE_IP_TOKEN__" --cert ac14k_m.pem -X GET https://__CLIMATE_IP_HOST__:8888/devices/
 device:
+  auth_flow_file: 'auth_flows/samsungrac_auth.yaml'
   # --- NUEVA SECCIÓN ---
   # Mapa para extraer identificadores únicos del estado inicial del dispositivo.
   identifiers:

@@ -1,0 +1,49 @@
+# Authentication flow specification for Samsung legacy AC units (Port 2878)
+# Mode: stream (persistent duplex socket connection)
+
+mode: "stream"
+
+tls_config:
+  default_cert: "ac14k_m.pem"
+  ciphers:
+    - "HIGH:!DH:!aNULL:@SECLEVEL=0"
+    - "HIGH:!aNULL:!MD5:@SECLEVEL=0"
+    - "ALL:@SECLEVEL=0"
+  strategies:
+    user_cert:
+      - name: "User Cert (Strict Verify)"
+        verify_mode: "CERT_REQUIRED"
+      - name: "User Cert (No Verify)"
+        verify_mode: "CERT_NONE"
+      - name: "No Certificate (Fallback)"
+        cert: null
+        verify_mode: "CERT_NONE"
+    default:
+      - name: "No Certificate (Default)"
+        cert: null
+        verify_mode: "CERT_NONE"
+      - name: "Default Certificate (Fallback)"
+        cert: "ac14k_m.pem"
+        verify_mode: "CERT_NONE"
+
+request_pairing:
+  method: "tcp"
+  port: 2878
+  payload: '<Request Type="GetToken"/>\r\n'
+  timeout: 15.0
+
+success_template:
+  match: 'Status="Ready"'
+
+wait_token:
+  timeout: 45.0
+
+extract_template:
+  regex: 'Token="([a-fA-F0-9-]{36})"'
+
+error_template:
+  match: 'Status="Fail"'
+  type: 'Authenticate'
+  regex: 'ErrorCode="(\d+)"'
+  errors:
+    "301": "Authentication failed: The device was likely turned off instead of on (ErrorCode 301)."
