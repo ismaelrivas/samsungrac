@@ -9,12 +9,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
 
-from custom_components.climate_ip.connection_raw import ConnectionRaw8888
+from custom_components.climate_ip.connection_raw import _HOST_CLIENTS, ConnectionRaw8888
 from custom_components.climate_ip.const import CONF_CERT
 from custom_components.climate_ip.exceptions import CannotConnect
 from custom_components.climate_ip.protocol_8888 import (
     CannotConnect as LibConnError,
 )
+
+
+@pytest.fixture(autouse=True)
+def clean_raw_clients():
+    """Ensure raw clients pool is clean before and after each test."""
+    _HOST_CLIENTS.clear()
+    yield
+    _HOST_CLIENTS.clear()
 
 
 @pytest.fixture
@@ -188,9 +196,7 @@ async def test_get_diagnostics(connection_config, mock_logger, mock_hass):
         conn._is_connected = True
         conn._keep_alive = False
         conn._embedded_command = MagicMock()
-        mock_controller = MagicMock()
-        mock_controller.shared_raw_client = MagicMock()
-        conn._controller = mock_controller
+        _HOST_CLIENTS[("192.168.1.100", 8888)] = MagicMock()
 
         diag_custom = conn.get_diagnostics()
         assert diag_custom == {
@@ -290,12 +296,9 @@ async def test_async_get_client(connection_config, mock_logger, mock_hass):
         with pytest.raises(CannotConnect):
             await conn2.async_get_client()
 
-        # 3. Shared client (with controller)
+        # 3. Shared client (internal host pool)
         conn3 = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
         conn3._params = {"url": "http://test.com:1234/path"}
-        mock_controller = MagicMock()
-        mock_controller.shared_raw_client = None  # Ensure it does not exist
-        conn3.set_controller_ref(mock_controller)
 
         with patch(
             "custom_components.climate_ip.connection_raw.Samsung8888Client"
@@ -304,7 +307,7 @@ async def test_async_get_client(connection_config, mock_logger, mock_hass):
             mock_client_cls.assert_called_once_with(
                 "192.168.1.100", 1234, conn3._cert, log_prefix=conn3.log_prefix
             )
-            assert mock_controller.shared_raw_client == client
+            assert _HOST_CLIENTS[("192.168.1.100", 1234)] == client
 
             # Requesting again should return cached shared client
             mock_client_cls.reset_mock()
@@ -313,13 +316,11 @@ async def test_async_get_client(connection_config, mock_logger, mock_hass):
             mock_client_cls.assert_not_called()
 
         # 3b. Shared client (https and http)
+        _HOST_CLIENTS.clear()
         conn3b = ConnectionRaw8888(
             connection_config, mock_logger, mock_hass, None, None
         )
         conn3b._params = {"url": "https://test.com/path"}
-        mock_controller_b = MagicMock()
-        mock_controller_b.shared_raw_client = None
-        conn3b.set_controller_ref(mock_controller_b)
         with patch(
             "custom_components.climate_ip.connection_raw.Samsung8888Client"
         ) as mock_client_cls:
@@ -332,9 +333,6 @@ async def test_async_get_client(connection_config, mock_logger, mock_hass):
             connection_config, mock_logger, mock_hass, None, None
         )
         conn3c._params = {"url": "http://test.com/path"}
-        mock_controller_c = MagicMock()
-        mock_controller_c.shared_raw_client = None
-        conn3c.set_controller_ref(mock_controller_c)
         with patch(
             "custom_components.climate_ip.connection_raw.Samsung8888Client"
         ) as mock_client_cls:
@@ -345,9 +343,6 @@ async def test_async_get_client(connection_config, mock_logger, mock_hass):
 
         # 4. Shared client, no host raises CannotConnect
         conn4 = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
-        mock_controller2 = MagicMock()
-        mock_controller2.shared_raw_client = None
-        conn4.set_controller_ref(mock_controller2)
         conn4._host = None
         with pytest.raises(CannotConnect):
             await conn4.async_get_client()
@@ -371,14 +366,12 @@ async def test_close(connection_config, mock_logger, mock_hass):
         mock_client.close.assert_called_once()
         assert conn._client is None
 
-        # 3. Close shared client
-        mock_controller = MagicMock()
+        # 3. Close shared client in pool
         mock_shared_client = AsyncMock()
-        mock_controller.shared_raw_client = mock_shared_client
-        conn.set_controller_ref(mock_controller)
+        _HOST_CLIENTS[("192.168.1.100", 8888)] = mock_shared_client
         await conn.close()
         mock_shared_client.close.assert_called_once()
-        assert mock_controller.shared_raw_client is None
+        assert ("192.168.1.100", 8888) not in _HOST_CLIENTS
 
         # 4. Handle exceptions during close
         mock_client2 = AsyncMock()
@@ -387,7 +380,7 @@ async def test_close(connection_config, mock_logger, mock_hass):
 
         mock_shared_client2 = AsyncMock()
         mock_shared_client2.close.side_effect = TimeoutError("timeout")
-        mock_controller.shared_raw_client = mock_shared_client2
+        _HOST_CLIENTS[("192.168.1.100", 8888)] = mock_shared_client2
 
         conn._embedded_command.close.side_effect = TimeoutError("timeout")
 
@@ -401,18 +394,14 @@ async def test_close(connection_config, mock_logger, mock_hass):
         )
         conn_empty._client = None
         conn_empty._embedded_command = None
-        conn_empty._controller = MagicMock()
-        conn_empty._controller.shared_raw_client = None
         await conn_empty.close()  # Should succeed cleanly
-        assert conn_empty._controller.shared_raw_client is None
 
 
 async def test_set_controller_ref(connection_config, mock_logger, mock_hass):
-    """Test setting controller ref and shared client."""
+    """Test setting controller ref."""
     with patch("os.path.exists", return_value=True):
         conn = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
         mock_controller = MagicMock()
-        mock_controller.shared_raw_client = None
 
         # Test basic assignment
         conn.set_controller_ref(mock_controller)
@@ -430,22 +419,22 @@ async def test_set_controller_ref(connection_config, mock_logger, mock_hass):
             mock_controller
         )
 
-        # Also test async_get_client creates shared client
+        # Also test async_get_client creates shared client in pool
         with patch(
             "custom_components.climate_ip.connection_raw.Samsung8888Client"
         ) as mock_client_cls:
             client = await conn.async_get_client()
-            assert client == mock_controller.shared_raw_client
+            assert client == _HOST_CLIENTS[("192.168.1.100", 8888)]
             mock_client_cls.assert_called_once_with(
                 "192.168.1.100", 8888, conn._cert, log_prefix=conn.log_prefix
             )
 
-        # Also test close with controller
+        # Also test close removes from pool
         mock_shared_client = AsyncMock()
-        mock_controller.shared_raw_client = mock_shared_client
+        _HOST_CLIENTS[("192.168.1.100", 8888)] = mock_shared_client
         await conn.close()
         mock_shared_client.close.assert_called_once()
-        assert mock_controller.shared_raw_client is None
+        assert ("192.168.1.100", 8888) not in _HOST_CLIENTS
 
 
 async def test_load_from_yaml(connection_config, mock_logger, mock_hass):
@@ -545,14 +534,12 @@ async def test_async_execute_poll_and_keep_alive(
             client_to_close.close.assert_called_once()
             assert conn._client is None
 
-            # With shared client
-            mock_controller = MagicMock()
-            mock_controller.shared_raw_client = AsyncMock()
-            shared_to_close = mock_controller.shared_raw_client
-            conn.set_controller_ref(mock_controller)
+            # With shared client in pool
+            mock_shared = AsyncMock()
+            _HOST_CLIENTS[("192.168.1.100", 8888)] = mock_shared
             await conn.async_execute("GET", "/poll2", None, None, _is_poll=True)
-            shared_to_close.close.assert_called_once()
-            assert mock_controller.shared_raw_client is None
+            mock_shared.close.assert_called_once()
+            assert ("192.168.1.100", 8888) not in _HOST_CLIENTS
 
             # _is_poll=False -> Does NOT close
             conn._client = AsyncMock()
@@ -895,9 +882,7 @@ async def test_async_execute_defaults(mock_logger):
     mock_client = AsyncMock()
     mock_client.request.return_value = ({"status": "ok"}, None)
 
-    mock_controller = MagicMock()
-    mock_controller.shared_raw_client = mock_client
-    conn._controller = mock_controller
+    _HOST_CLIENTS[("192.168.1.100", 8888)] = mock_client
 
     with patch.object(conn, "async_get_client", return_value=mock_client):
         # 1. Test that when _is_poll is False (by default), the client is NOT closed
@@ -906,7 +891,7 @@ async def test_async_execute_defaults(mock_logger):
         # We explicitly verify that close() was not called (which happens if _is_poll=True)
         mock_client.close.assert_not_called()
         # Ensure the shared client was NOT removed
-        assert mock_controller.shared_raw_client is mock_client
+        assert _HOST_CLIENTS[("192.168.1.100", 8888)] is mock_client
 
         # 2. Test that when _is_probe is False (by default), errors are NOT swallowed
         mock_client.request.side_effect = ClientConnectorError(

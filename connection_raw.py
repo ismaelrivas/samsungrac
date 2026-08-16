@@ -8,15 +8,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlparse
 
+from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.json import json_dumps
 from homeassistant.helpers.template import Template
 from homeassistant.util.json import json_loads
 
 if TYPE_CHECKING:
     from .controller import ClimateController
-
-from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
-from homeassistant.core import HomeAssistant
 
 from .connection import Connection, register_connection
 from .const import (
@@ -39,6 +38,16 @@ DEFAULT_SCHEME_PORTS = {"https": 443, "http": 80}
 HEADER_AUTH = "Authorization"
 HEADER_CONTENT_TYPE = "Content-Type"
 HEADER_VALUE_JSON = "application/json"
+
+# Centralised per-host raw socket client registry.
+# Key: (host, port) tuple.
+# Value: Samsung8888Client instance shared across connection instances for that host/port.
+_HOST_CLIENTS: dict[tuple[str, int], Samsung8888Client] = {}
+
+
+def clear_raw_clients_pool() -> None:
+    """Clear all shared raw clients (for reload/testing isolation)."""
+    _HOST_CLIENTS.clear()
 
 
 @register_connection
@@ -102,15 +111,17 @@ class ConnectionRaw8888(Connection):
 
     def get_diagnostics(self) -> dict[str, Any]:
         """Return diagnostic information about the raw connection."""
+        port = self._extract_port(self._params.get("url"))
+        key = (self._host, port) if self._host else None
         return {
             "is_connected": getattr(self, "_is_connected", False),
             "engine": CONNECTION_TYPE_RAW_8888,
             "keep_alive_enabled": getattr(self, "_keep_alive", False),
             "has_embedded_command": self._embedded_command is not None,
             "has_shared_client": (
-                getattr(self._controller, "shared_raw_client", None) is not None
-                if self._controller
-                else False
+                (key in _HOST_CLIENTS and _HOST_CLIENTS[key] is not None)
+                if key
+                else (self._client is not None)
             ),
         }
 
@@ -131,7 +142,6 @@ class ConnectionRaw8888(Connection):
         self._cert: str | None = self._resolve_cert_path(config.get(CONF_CERT))
         self._controller: ClimateController | None = None
         self._client: Samsung8888Client | None = None
-        self._internal_shared_client: Samsung8888Client | None = None
         self._params: dict[str, Any] = {}
         self._connection_template: Template | None = None
         self.condition_template: Template | None = None
@@ -167,30 +177,22 @@ class ConnectionRaw8888(Connection):
         return DEFAULT_SCHEME_PORTS.get(parsed.scheme, 8888)  # pragma: no mutate
 
     async def async_get_client(self) -> Samsung8888Client:
-        """Get the raw client, initializing it if necessary (shared or standalone)."""
+        """Get the raw client, initializing it if necessary (shared by host/port or standalone)."""
         if not self._host:
             raise CannotConnect(
                 "Host/IP address not provided for RAW connection"
             )  # pragma: no mutate
 
-        if self._controller:
-            client = getattr(self._controller, "shared_raw_client", None)
-            if client is None:
-                port = self._extract_port(self._params.get("url"))
-                client = Samsung8888Client(
-                    self._host, port, self._cert, log_prefix=self.log_prefix
-                )
-                if hasattr(self._controller, "shared_raw_client"):
-                    self._controller.shared_raw_client = client
-                else:
-                    self._internal_shared_client = client
-            return client
+        if self._client is not None:
+            return self._client
 
-        if self._client is None:
-            port = self._extract_port(self._params.get("url"))
-            self._client = Samsung8888Client(
+        port = self._extract_port(self._params.get("url"))
+        key = (self._host, port)
+        if key not in _HOST_CLIENTS or _HOST_CLIENTS[key] is None:
+            _HOST_CLIENTS[key] = Samsung8888Client(
                 self._host, port, self._cert, log_prefix=self.log_prefix
             )
+        self._client = _HOST_CLIENTS[key]
         return self._client
 
     @property
@@ -302,10 +304,11 @@ class ConnectionRaw8888(Connection):
         clients = []
         if self._client:
             clients.append(self._client)
-        if self._controller and getattr(self._controller, "shared_raw_client", None):
-            clients.append(self._controller.shared_raw_client)
-        elif getattr(self, "_internal_shared_client", None):
-            clients.append(self._internal_shared_client)
+        if self._host:
+            port = self._extract_port(self._params.get("url"))
+            key = (self._host, port)
+            if key in _HOST_CLIENTS and _HOST_CLIENTS[key] is not None:
+                clients.append(_HOST_CLIENTS[key])
         return clients
 
     async def _handle_periodic_reset(self, is_poll: bool) -> None:
@@ -315,16 +318,18 @@ class ConnectionRaw8888(Connection):
 
         for client in self._get_active_clients():
             try:
-                await client.close()
+                res = client.close()
+                if hasattr(res, "__await__"):
+                    await res
             except (TimeoutError, OSError) as e:  # pragma: no mutate
                 _LOGGER.debug(
                     "%s [RAW] Ignored error during reset: %s", self.log_prefix, e
                 )
 
         self._client = None
-        self._internal_shared_client = None
-        if self._controller and hasattr(self._controller, "shared_raw_client"):
-            self._controller.shared_raw_client = None
+        if self._host:
+            port = self._extract_port(self._params.get("url"))
+            _HOST_CLIENTS.pop((self._host, port), None)
 
     def _format_request_url(
         self,
@@ -468,7 +473,9 @@ class ConnectionRaw8888(Connection):
         """Close the connection and release resources safely."""
         if self._embedded_command:
             try:
-                await self._embedded_command.close()
+                res = self._embedded_command.close()
+                if hasattr(res, "__await__"):
+                    await res
             except (TimeoutError, OSError) as e:  # pragma: no mutate
                 _LOGGER.debug(
                     "%s [RAW] Ignored error closing embedded command: %s",
@@ -478,13 +485,15 @@ class ConnectionRaw8888(Connection):
 
         for client in self._get_active_clients():
             try:
-                await client.close()
+                res = client.close()
+                if hasattr(res, "__await__"):
+                    await res
             except (TimeoutError, OSError) as e:  # pragma: no mutate
                 _LOGGER.debug(
                     "%s [RAW] Ignored error during cleanup: %s", self.log_prefix, e
                 )
 
         self._client = None
-        self._internal_shared_client = None
-        if self._controller and hasattr(self._controller, "shared_raw_client"):
-            self._controller.shared_raw_client = None
+        if self._host:
+            port = self._extract_port(self._params.get("url"))
+            _HOST_CLIENTS.pop((self._host, port), None)
