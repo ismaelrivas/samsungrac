@@ -1,9 +1,11 @@
+# pylint: disable=protected-access,no-member,redefined-outer-name,too-few-public-methods,line-too-long,missing-class-docstring,missing-function-docstring,unused-argument,arguments-differ,import-outside-toplevel,too-many-public-methods,trailing-newlines
 """Tests for the base ClimateController and create_controller factory."""
 
 from __future__ import annotations
 
 import logging
-from unittest.mock import patch
+from typing import Any
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -278,3 +280,30 @@ def test_controller_host_property() -> None:
 
     controller.ip_address = None
     assert controller.host is None
+
+
+def test_controller_token_callback_lifecycle() -> None:
+    """Test register_token_callback and on_token_refreshed parameter validation and invocation."""
+    logger = logging.getLogger(__name__)
+    controller = DummyController({}, logger)
+
+    # 1. on_token_refreshed without registered callback -> completes cleanly without error
+    controller.on_token_refreshed("initial_token")
+
+    # 2. Register callback and invoke -> callback called with exact token
+    mock_cb = MagicMock()
+    controller.register_token_callback(mock_cb)
+    controller.on_token_refreshed("new_auth_token_xyz")
+    mock_cb.assert_called_once_with("new_auth_token_xyz")
+
+    # 3. Invalid token inputs -> raise TypeError
+    with pytest.raises(TypeError, match="new_token must be a non-empty string"):
+        controller.on_token_refreshed("")
+    with pytest.raises(TypeError, match="new_token must be a non-empty string"):
+        controller.on_token_refreshed("   ")
+    with pytest.raises(TypeError, match="new_token must be a non-empty string"):
+        controller.on_token_refreshed(None)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="new_token must be a non-empty string"):
+        controller.on_token_refreshed(12345)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="new_token must be a non-empty string"):
+        controller.on_token_refreshed(["token"])  # type: ignore[arg-type]
