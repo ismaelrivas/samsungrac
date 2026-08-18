@@ -1,4 +1,4 @@
-# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
+# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,too-many-locals,too-many-statements,unidiomatic-typecheck
 """Tests for ConnectionRaw8888."""
 
 from __future__ import annotations
@@ -19,9 +19,16 @@ from custom_components.climate_ip.protocol_8888 import (
 
 @pytest.fixture(autouse=True)
 def clean_raw_clients():
-    """Ensure raw clients pool is clean before and after each test."""
+    """Ensure raw clients pool is clean before and after each test and prevent live sockets."""
     _HOST_CLIENTS.clear()
-    yield
+    with patch(
+        "custom_components.climate_ip.connection_raw.Samsung8888Client"
+    ) as default_mock_cls:
+        mock_instance = AsyncMock()
+        mock_instance.request = AsyncMock(return_value=('{"result": "ok"}', None))
+        mock_instance.close = AsyncMock()
+        default_mock_cls.return_value = mock_instance
+        yield
     _HOST_CLIENTS.clear()
 
 

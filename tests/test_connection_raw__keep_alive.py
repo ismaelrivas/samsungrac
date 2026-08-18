@@ -1,14 +1,28 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
 """Tests for ConnectionRaw8888 keep-alive logic."""
 
-# pylint: disable=import-outside-toplevel,protected-access,redefined-outer-name
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.climate_ip.connection_raw import ConnectionRaw8888
+from custom_components.climate_ip.connection_raw import _HOST_CLIENTS, ConnectionRaw8888
+
+
+@pytest.fixture(autouse=True)
+def clean_and_mock_raw_clients():
+    """Ensure raw clients pool is clean and no live sockets are ever opened."""
+    _HOST_CLIENTS.clear()
+    with patch(
+        "custom_components.climate_ip.connection_raw.Samsung8888Client"
+    ) as mock_cls:
+        mock_instance = AsyncMock()
+        mock_instance.request = AsyncMock(return_value=('{"result": "ok"}', None))
+        mock_instance.close = AsyncMock()
+        mock_cls.return_value = mock_instance
+        yield mock_cls
+    _HOST_CLIENTS.clear()
 
 
 @pytest.fixture
@@ -36,6 +50,7 @@ async def test_periodic_reset_logic(mock_client):
 
     # Verify close() was called because keep_alive is False and it's a poll
     mock_client.close.assert_called_once()
+    assert conn._client is None
 
 
 async def test_no_reset_on_command(mock_client):
