@@ -1,3 +1,4 @@
+# pylint: disable=protected-access,line-too-long,trailing-newlines
 """Tests for ConfigFlowDiscoveryMixin in config_flow_discovery.py."""
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from custom_components.climate_ip.const import (
     CONF_NAME,
     CONF_SELECTED_DEVICES,
     DEVICE_TYPE_MIM_H03,
+    DEVICE_TYPE_SAMSUNG_2878,
     DEVICE_TYPE_SAMSUNG_8888,
 )
 from custom_components.climate_ip.exceptions import InvalidHeaderError
@@ -222,3 +224,207 @@ async def test_async_step_select_devices_flow():
         assert len(flow.flow_data[CONF_DEVICES]) == 1
         assert flow.flow_data[CONF_DEVICES][0]["id"] == "1"
         mock_set_uid.assert_called_once_with("MAIN_UID", raise_on_progress=False)
+
+
+@pytest.mark.asyncio
+async def test_async_step_discover_uuid_routes_to_mim_h03():
+    """Test async_step_discover_uuid routes to _async_process_mim_h03 when device_type is MIM_H03."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = MagicMock()
+    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03}
+    flow.reauth_entry = None
+    flow.context = {"source": "user"}
+
+    discovered = [
+        {"id": "0", "name": "Coordinator", "uuid": "c_uuid"},
+        {"id": "1", "name": "AC 1", "Mode": True},
+    ]
+
+    with patch.object(flow, "_async_init_discovery_controller") as mock_init:
+        mock_ctrl = MagicMock()
+        mock_ctrl.discovered_devices = discovered
+        mock_ctrl.async_shutdown = AsyncMock()
+        mock_init.return_value = mock_ctrl
+
+        with patch.object(
+            flow, "_async_process_mim_h03", new_callable=AsyncMock
+        ) as mock_process_mim:
+            mock_process_mim.return_value = {
+                "type": FlowResultType.FORM,
+                "step_id": "select_devices",
+            }
+
+            res = await flow.async_step_discover_uuid()
+
+            assert res["type"] == FlowResultType.FORM
+            mock_process_mim.assert_called_once_with(discovered)
+            mock_ctrl.async_shutdown.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_async_step_discover_uuid_routes_to_samsung_8888():
+    """Test async_step_discover_uuid routes to _async_process_samsung_8888_discovery when device_type is SAMSUNG_8888."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = MagicMock()
+    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888}
+    flow.reauth_entry = None
+    flow.context = {"source": "user"}
+
+    discovered = [{"uuid": "SAMSUNG_8888_UUID"}]
+
+    with patch.object(flow, "_async_init_discovery_controller") as mock_init:
+        mock_ctrl = MagicMock()
+        mock_ctrl.discovered_devices = discovered
+        mock_ctrl.async_shutdown = AsyncMock()
+        mock_init.return_value = mock_ctrl
+
+        with patch.object(
+            flow, "_async_process_samsung_8888_discovery", new_callable=AsyncMock
+        ) as mock_process_8888:
+            mock_process_8888.return_value = {"type": FlowResultType.CREATE_ENTRY}
+
+            res = await flow.async_step_discover_uuid()
+
+            assert res["type"] == FlowResultType.CREATE_ENTRY
+            mock_process_8888.assert_called_once_with(discovered)
+            mock_ctrl.async_shutdown.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_async_step_discover_uuid_routes_to_generic_discovery():
+    """Test async_step_discover_uuid routes to _async_process_generic_discovery for generic device types."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = MagicMock()
+    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
+    flow.reauth_entry = None
+    flow.context = {"source": "user"}
+
+    discovered = [
+        {"id": "1", "name": "AC Unit 1"},
+        {"id": "2", "name": "AC Unit 2"},
+    ]
+
+    with patch.object(flow, "_async_init_discovery_controller") as mock_init:
+        mock_ctrl = MagicMock()
+        mock_ctrl.discovered_devices = discovered
+        mock_ctrl.async_shutdown = AsyncMock()
+        mock_init.return_value = mock_ctrl
+
+        with patch.object(
+            flow, "_async_process_generic_discovery", new_callable=AsyncMock
+        ) as mock_process_generic:
+            mock_process_generic.return_value = {
+                "type": FlowResultType.FORM,
+                "step_id": "select_devices",
+            }
+
+            res = await flow.async_step_discover_uuid()
+
+            assert res["type"] == FlowResultType.FORM
+            mock_process_generic.assert_called_once_with(discovered)
+            mock_ctrl.async_shutdown.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_async_step_discover_uuid_invalid_header_shutdown_and_fallback():
+    """Test that InvalidHeaderError shuts down controller before delegating to fallback raw discovery."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = MagicMock()
+    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03}
+    flow.reauth_entry = None
+    flow.context = {"source": "user"}
+
+    mock_ctrl = MagicMock()
+    mock_ctrl.discovered_devices = [{"id": "0", "name": "Coordinator"}]
+    mock_ctrl.async_shutdown = AsyncMock()
+
+    with patch.object(flow, "_async_init_discovery_controller", return_value=mock_ctrl):
+        with patch.object(
+            flow, "_async_process_mim_h03", side_effect=InvalidHeaderError("Malformed header")
+        ):
+            with patch.object(
+                flow, "_async_fallback_raw_discovery", new_callable=AsyncMock
+            ) as mock_fallback:
+                mock_fallback.return_value = {"type": FlowResultType.CREATE_ENTRY}
+
+                res = await flow.async_step_discover_uuid()
+
+                assert res["type"] == FlowResultType.CREATE_ENTRY
+                mock_ctrl.async_shutdown.assert_called()
+                mock_fallback.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_async_step_select_devices_cascades_and_errors():
+    """Test fallback cascades of unique_id in select_devices and error cases."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = MagicMock()
+    flow.reauth_entry = None
+    flow.context = {"source": "user"}
+
+    # 1. Fallback to CONF_MAC when unique_id is missing
+    flow.flow_data = {
+        CONF_DISCOVERED_DEVICES: [{"id": "1", "name": "Unit 1"}],
+        CONF_MAC: "AA:BB:CC:DD:EE:FF",
+    }
+    with (
+        patch.object(flow, "async_set_unique_id", new_callable=AsyncMock) as mock_set_uid,
+        patch.object(flow, "_abort_if_unique_id_configured") as _,
+        patch.object(flow, "_create_entry", new_callable=AsyncMock) as mock_create,
+    ):
+        mock_create.return_value = {"type": FlowResultType.CREATE_ENTRY}
+        res = await flow.async_step_select_devices({CONF_SELECTED_DEVICES: ["1"]})
+        assert res["type"] == FlowResultType.CREATE_ENTRY
+        mock_set_uid.assert_called_once_with("AA:BB:CC:DD:EE:FF", raise_on_progress=False)
+
+    # 2. Fallback to CONF_DEVICE_ID when both unique_id and CONF_MAC are missing
+    flow.flow_data = {
+        CONF_DISCOVERED_DEVICES: [{"id": "1", "name": "Unit 1"}],
+        CONF_DEVICE_ID: "DEV_FALLBACK_123",
+    }
+    with (
+        patch.object(flow, "async_set_unique_id", new_callable=AsyncMock) as mock_set_uid,
+        patch.object(flow, "_abort_if_unique_id_configured") as _,
+        patch.object(flow, "_create_entry", new_callable=AsyncMock) as mock_create,
+    ):
+        mock_create.return_value = {"type": FlowResultType.CREATE_ENTRY}
+        res = await flow.async_step_select_devices({CONF_SELECTED_DEVICES: ["1"]})
+        assert res["type"] == FlowResultType.CREATE_ENTRY
+        mock_set_uid.assert_called_once_with("DEV_FALLBACK_123", raise_on_progress=False)
+
+    # 3. Abort when no unique_id can be resolved
+    flow.flow_data = {
+        CONF_DISCOVERED_DEVICES: [{"id": "1", "name": "Unit 1"}],
+    }
+    with patch.object(flow, "async_abort") as mock_abort:
+        mock_abort.return_value = {"type": FlowResultType.ABORT, "reason": "no_unique_id"}
+        res = await flow.async_step_select_devices({CONF_SELECTED_DEVICES: ["1"]})
+        assert res["type"] == FlowResultType.ABORT
+        mock_abort.assert_called_once_with(reason="no_unique_id")
+
+    # 4. Form re-shown with error when empty list is selected
+    res_empty = await flow.async_step_select_devices({CONF_SELECTED_DEVICES: []})
+    assert res_empty["type"] == FlowResultType.FORM
+    assert res_empty["errors"] == {"base": "no_devices_selected"}
+
+
+@pytest.mark.asyncio
+async def test_mim_h03_discovery_abort_reasons():
+    """Test MIM-H03 specific abort reasons (no coordinator found, no coordinator uuid)."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = MagicMock()
+    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03}
+
+    # 1. No coordinator found at all
+    with patch.object(flow, "async_abort") as mock_abort:
+        mock_abort.return_value = {"type": FlowResultType.ABORT, "reason": "no_coordinator_found"}
+        res = await flow._async_process_mim_h03([{"id": "1", "Mode": True}])
+        assert res["type"] == FlowResultType.ABORT
+        mock_abort.assert_called_once_with(reason="no_coordinator_found")
+
+    # 2. Coordinator found but without UUID
+    with patch.object(flow, "async_abort") as mock_abort:
+        mock_abort.return_value = {"type": FlowResultType.ABORT, "reason": "no_coordinator_uuid"}
+        res = await flow._async_process_mim_h03([{"id": "0", "name": "Coordinator No UUID"}])
+        assert res["type"] == FlowResultType.ABORT
+        mock_abort.assert_called_once_with(reason="no_coordinator_uuid")
