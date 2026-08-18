@@ -1,9 +1,10 @@
-# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
+# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,missing-class-docstring,too-few-public-methods,too-many-return-statements,use-implicit-booleaness-not-comparison,missing-final-newline
 """Tests for YamlController — Phase 2 (executor I/O) and Phase 3 (hass injection) compliance."""
 
 from __future__ import annotations
 
 import logging
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -709,3 +710,222 @@ def test_yaml_controller_is_property_superseded() -> None:
 
     # 3. Property in pending updates with different value (superseded)
     assert controller.is_property_superseded("target_temperature", 24.0) is True
+
+
+def test_from_config_entry_and_extract_config(mock_hass: MagicMock) -> None:
+    """Test from_config_entry factory method and _extract_config_from_entry."""
+    mock_entry = MagicMock()
+    mock_entry.entry_id = "entry_123"
+    mock_entry.unique_id = "uniq_456"
+    mock_entry.data = {
+        CONF_IP_ADDRESS: "192.168.1.50",
+        CONF_CONFIG_FILE: "test.yaml",
+        CONF_MAC: "11:22:33:44:55:66",
+        CONF_TOKEN: "tok_abc",
+    }
+    # Options has a mutable key and an immutable key
+    mock_entry.options = {
+        "debug": True,
+        CONF_IP_ADDRESS: "10.0.0.99",  # Should be ignored (immutable)
+    }
+
+    custom_logger = logging.getLogger("custom_logger")
+    with (
+        patch("custom_components.climate_ip.controller_yaml.YamlConfigLoader"),
+        patch("custom_components.climate_ip.controller_yaml.YamlStatePoller"),
+    ):
+        # 1. Test with custom logger and explicit device_id
+        controller = YamlController.from_config_entry(
+            config_entry=mock_entry,
+            hass=mock_hass,
+            device_id="sub_dev",
+            logger=custom_logger,
+        )
+        assert controller.hass is mock_hass
+        assert controller._logger is custom_logger
+        assert controller._device_id == "sub_dev"
+        assert controller._unique_id == "uniq_456_sub_dev"
+        assert controller._ip_address == "192.168.1.50"  # Immutable key preserved
+        assert controller._debug is True  # Mutable key applied
+
+        # 2. Test with default logger (logger=None) and no device_id
+        controller_default = YamlController.from_config_entry(
+            config_entry=mock_entry,
+            hass=mock_hass,
+            device_id=None,
+        )
+        assert controller_default._logger is not None
+        assert controller_default._device_id == "uniq_456"
+
+        # 3. Test _extract_config_from_entry with empty/whitespace device_id
+        extracted = YamlController._extract_config_from_entry(mock_entry, device_id="   ")
+        assert CONF_DEVICE_ID not in extracted
+        assert extracted["entry_id"] == "entry_123"
+        assert extracted["unique_id"] == "uniq_456"
+
+
+def test_yaml_controller_has_property(mock_yaml_controller) -> None:
+    """Kills mutants in has_property logic and parameter validation."""
+    # 1. Invalid parameter types / empty strings -> raises TypeError
+    with pytest.raises(TypeError):
+        mock_yaml_controller.has_property("")
+    with pytest.raises(TypeError):
+        mock_yaml_controller.has_property("   ")
+    with pytest.raises(TypeError):
+        mock_yaml_controller.has_property(None)  # type: ignore[arg-type]
+    with pytest.raises(TypeError):
+        mock_yaml_controller.has_property(123)  # type: ignore[arg-type]
+
+    # 2. Property present as loader property object (not in _attributes) -> True
+    mock_op = MagicMock()
+    mock_yaml_controller.loader.operations = {"op_prop": mock_op}
+    mock_yaml_controller._attributes = {}
+    assert mock_yaml_controller.has_property("op_prop") is True
+
+    # 3. Property present only in _attributes (not in loader objects) -> True
+    mock_yaml_controller.loader.operations = {}
+    mock_yaml_controller._attributes = {"attr_prop": "val"}
+    assert mock_yaml_controller.has_property("attr_prop") is True
+
+    # 4. Property not in loader and not in _attributes -> False
+    assert mock_yaml_controller.has_property("missing_prop") is False
+
+
+def test_yaml_controller_init_type_errors_and_whitespace_name() -> None:
+    """Kills mutants in __init__ for non-dict config and whitespace name handling."""
+    mock_logger = logging.getLogger("test_logger")
+
+    # 1. config is non-dict and not None -> TypeError (L156)
+    with pytest.raises(TypeError, match="Expected dict for config"):
+        YamlController(config=12345, logger=mock_logger)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="Expected dict for config"):
+        YamlController(config="string_config", logger=mock_logger)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="Expected dict for config"):
+        YamlController(config=["item"], logger=mock_logger)  # type: ignore[arg-type]
+
+    # 2. CONF_NAME is whitespace string -> config.pop(CONF_NAME, None) (L177, L180)
+    config_whitespace_name = {
+        CONF_CONFIG_FILE: "test.yaml",
+        CONF_IP_ADDRESS: "192.168.1.10",
+        "name": "   ",
+    }
+    with (
+        patch("custom_components.climate_ip.controller_yaml.YamlConfigLoader"),
+        patch("custom_components.climate_ip.controller_yaml.YamlStatePoller"),
+    ):
+        controller = YamlController(config_whitespace_name, mock_logger)
+        assert "name" not in controller._config
+
+    # 3. CONF_NAME is valid non-empty string -> stripped and kept
+    config_valid_name = {
+        CONF_CONFIG_FILE: "test.yaml",
+        CONF_IP_ADDRESS: "192.168.1.10",
+        "name": "  Living Room AC  ",
+    }
+    with (
+        patch("custom_components.climate_ip.controller_yaml.YamlConfigLoader"),
+        patch("custom_components.climate_ip.controller_yaml.YamlStatePoller"),
+    ):
+        controller2 = YamlController(config_valid_name, mock_logger)
+        assert controller2._config["name"] == "Living Room AC"
+
+
+def test_yaml_controller_objects_by_id_caching_and_filtering(mock_yaml_controller) -> None:
+    """Kills mutants in _objects_by_id regarding hass_attr filtering, collision, and empty handling."""
+    mock_yaml_controller._obj_id_cache = None
+    mock_yaml_controller.loader.is_fully_initialized = True
+
+    op1 = MagicMock()
+    op1.id = "power_id"
+    op2 = MagicMock()
+    op2.id = "temp_id"
+    op3 = MagicMock()
+    op3.id = "empty_hass_id"
+    op4 = MagicMock()
+    op4.id = "collision_id"
+
+    mock_yaml_controller.loader.sensors = {}
+    mock_yaml_controller.loader.properties = {}
+    mock_yaml_controller.loader.operations = {
+        "op1": op1,
+        "op2": op2,
+        "op3": op3,
+        "op4": op4,
+    }
+
+    def mock_get_hass_attr(op_id: str) -> Any:
+        if op_id == "power_id":
+            return "power_attr"
+        if op_id == "temp_id":
+            return "   "  # Whitespace only string: should NOT be added
+        if op_id == "empty_hass_id":
+            return None  # None: should NOT be added
+        if op_id == "collision_id":
+            return "power_id"  # Collides with existing op_id in cache: should NOT overwrite op1
+        return 123  # Non-string: should NOT be added
+
+    mock_yaml_controller.poller.get_hass_attr_for_op_id = MagicMock(side_effect=mock_get_hass_attr)
+
+    cache = mock_yaml_controller._objects_by_id
+    assert cache["power_id"] is op1
+    assert cache["power_attr"] is op1
+    assert cache["temp_id"] is op2
+    assert "   " not in cache
+    assert "" not in cache
+    assert cache["empty_hass_id"] is op3
+    assert cache["collision_id"] is op4
+    # collision_id's hass_attr was "power_id", so cache["power_id"] must still be op1
+    assert cache["power_id"] is op1
+
+
+def test_yaml_controller_update_state_attributes(mock_yaml_controller) -> None:
+    """Kills mutants in update_state_attributes."""
+    # 1. Valid dict
+    mock_yaml_controller.update_state_attributes({"key": "val"})
+    assert mock_yaml_controller.state_attributes == {"key": "val"}
+
+    # 2. Non-dict input -> raises TypeError
+    with pytest.raises(TypeError, match="Expected dict for new_attrs"):
+        mock_yaml_controller.update_state_attributes("not_a_dict")  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="Expected dict for new_attrs"):
+        mock_yaml_controller.update_state_attributes(None)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="Expected dict for new_attrs"):
+        mock_yaml_controller.update_state_attributes([1, 2, 3])  # type: ignore[arg-type]
+
+
+def test_yaml_controller_pure_device_state(mock_yaml_controller) -> None:
+    """Kills mutants in pure_device_state."""
+    # 1. Valid dict from poller
+    mock_yaml_controller.poller.pure_network_state = {"net_key": "net_val"}
+    assert mock_yaml_controller.pure_device_state == {"net_key": "net_val"}
+
+    # 2. Non-dict from poller -> raises TypeError
+    mock_yaml_controller.poller.pure_network_state = "invalid_non_dict"
+    with pytest.raises(TypeError):
+        _ = mock_yaml_controller.pure_device_state
+
+    mock_yaml_controller.poller.pure_network_state = None
+    with pytest.raises(TypeError):
+        _ = mock_yaml_controller.pure_device_state
+
+
+def test_yaml_controller_safe_parse_temperature(mock_yaml_controller) -> None:
+    """Kills mutants in _safe_parse_temperature including whitespace strings."""
+    # 1. None returns None
+    assert mock_yaml_controller._safe_parse_temperature(None, "temp") is None
+
+    # 2. Empty or whitespace string returns None
+    assert mock_yaml_controller._safe_parse_temperature("", "temp") is None
+    assert mock_yaml_controller._safe_parse_temperature("   ", "temp") is None
+
+    # 3. Numeric string returns float
+    assert mock_yaml_controller._safe_parse_temperature("23.5", "temp") == 23.5
+    assert mock_yaml_controller._safe_parse_temperature(24, "temp") == 24.0
+
+    # 4. Boolean raises TypeError
+    with pytest.raises(TypeError, match="cannot be a boolean"):
+        mock_yaml_controller._safe_parse_temperature(True, "temp")
+
+    # 5. Invalid string raises ValueError
+    with pytest.raises(ValueError, match="Invalid numeric string"):
+        mock_yaml_controller._safe_parse_temperature("invalid_num", "temp")
