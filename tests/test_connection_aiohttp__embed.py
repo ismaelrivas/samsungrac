@@ -8,6 +8,7 @@ from homeassistant.const import CONF_TOKEN
 
 from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
 from custom_components.climate_ip.const import CONF_CERT
+from custom_components.climate_ip.exceptions import CannotConnect
 
 
 @pytest.fixture
@@ -203,3 +204,39 @@ async def test_async_execute_embedded_command_strict(
             headers={},
             device_state={},
         )
+
+
+async def test_execute_embedded_command_connection_error_logs_warning_and_raises(
+    connection_config, mock_logger, mock_hass, mock_session
+):
+    """Kill mutant at L881 (warn_msg = None on embedded command CannotConnect/AuthError)."""
+    with (
+        patch("os.path.exists", return_value=True),
+        patch("custom_components.climate_ip.connection_aiohttp._LOGGER") as mock_module_logger,
+    ):
+        conn = ConnectionAiohttp8888(
+            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+        )
+        conn._shared_state.initialized = True
+        conn._try_connection = AsyncMock()
+
+        embedded_mock = MagicMock()
+        embedded_mock.check_execute_condition = MagicMock(return_value=True)
+        embedded_mock.params = {"url": "/embedded"}
+        embedded_mock.connection_template = None
+        error = CannotConnect("API Failure")
+        embedded_mock.async_execute = AsyncMock(side_effect=error)
+        conn._embedded_command = embedded_mock
+
+        with pytest.raises(CannotConnect):
+            await conn.async_execute(
+                "GET", "/main", data=None, headers={}, device_state={"some": "state"}
+            )
+
+        mock_module_logger.warning.assert_called_with(
+            "%s [async_execute] Embedded command failed due to connection error: %s",
+            conn.log_prefix,
+            error,
+        )
+
+

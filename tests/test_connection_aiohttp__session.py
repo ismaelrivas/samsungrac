@@ -117,3 +117,26 @@ async def test_close_local_session_exception(connection_config, mock_logger, moc
 
         # 6. Verify state was still cleaned up despite the error
         assert conn._shared_state.local_session is None
+
+
+async def test_close_shared_state_lock_runtime_error(connection_config, mock_logger, mock_hass):
+    """Test that RuntimeError during shared state lock is logged correctly to kill mutant at L1028."""
+    with patch(
+        "custom_components.climate_ip.connection_aiohttp._LOGGER"
+    ) as mock_module_logger:
+        conn = ConnectionAiohttp8888(
+            connection_config, mock_logger, mock_hass, None, "192.168.1.100"
+        )
+        lock_mock = MagicMock()
+        lock_error = RuntimeError("Lock corruption simulated")
+        lock_mock.__aenter__ = AsyncMock(side_effect=lock_error)
+        conn._shared_state.lock = lock_mock
+
+        await conn.close()
+
+        mock_module_logger.error.assert_any_call(
+            "%s [aiohttp] Error locking/resetting shared state during close: %s",
+            conn.log_prefix,
+            lock_error,
+        )
+

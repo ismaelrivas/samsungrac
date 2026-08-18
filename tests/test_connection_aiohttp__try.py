@@ -7,7 +7,10 @@ import aiohttp
 import pytest
 from homeassistant.const import CONF_TOKEN
 
-from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
+from custom_components.climate_ip.connection_aiohttp import (
+    ConnectionAiohttp8888,
+    _is_http_protocol_violation,
+)
 from custom_components.climate_ip.const import CONF_CERT
 from custom_components.climate_ip.exceptions import CannotConnect, InvalidHeaderError
 
@@ -198,3 +201,44 @@ async def test_try_connection_already_initialized(
 
         res = await conn._try_connection()
         assert res is None
+
+
+def test_is_http_protocol_violation_line_too_long():
+    """Kill mutant in _is_http_protocol_violation with 'line too long'."""
+    assert _is_http_protocol_violation(Exception("Line Too Long")) is True
+    assert _is_http_protocol_violation(Exception("line too long")) is True
+    assert _is_http_protocol_violation(Exception("invalid header detected")) is True
+    assert _is_http_protocol_violation(Exception("badhttpmessage error")) is True
+    assert _is_http_protocol_violation(Exception("some standard network timeout")) is False
+
+
+async def test_try_connection_https_failure_clears_ssl_and_raises(
+    connection_config, mock_logger, mock_hass, mock_session
+):
+    """Kill mutants at L496 (ssl_context cleared to None) and L503 (error_msg passed)."""
+    with (
+        patch("os.path.exists", return_value=True),
+        patch("custom_components.climate_ip.connection_aiohttp._LOGGER") as mock_module_logger,
+    ):
+        conn = ConnectionAiohttp8888(
+            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+        )
+        fake_ssl = MagicMock()
+        conn._shared_state.ssl_context = fake_ssl
+        conn._create_ssl_context = AsyncMock(return_value=fake_ssl)
+
+        mock_session.request.side_effect = aiohttp.ClientError("SSL handshake failure")
+
+        with pytest.raises(CannotConnect) as exc_info:
+            await conn._try_connection()
+
+        assert str(exc_info.value) == "Connection initialization failed (HTTPS)"
+        assert conn._shared_state.ssl_context is None
+        mock_module_logger.warning.assert_called_with(
+            "%s [aiohttp_probe] Initial probe with HTTPS (mTLS) failed: %s.",
+            conn.log_prefix,
+            mock_session.request.side_effect,
+            exc_info=True,
+        )
+
+

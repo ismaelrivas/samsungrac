@@ -2069,6 +2069,35 @@ async def test_async_execute_skips_optimization_on_mismatch(
         mock_req.assert_called_with("GET", "https://1.1.1.1:8888/other", None, {})
 
 
+@pytest.mark.asyncio
+async def test_async_execute_optimization_with_params_url(
+    mock_session, mock_logger, mock_hass
+):
+    """Kill mutant in probe_url_path = self._params.get('probe_url') or self._params.get('url') or '' at L959."""
+    conn = ConnectionAiohttp8888(
+        config={"token": "tok"},
+        logger=mock_logger,
+        hass=mock_hass,
+        session=mock_session,
+        ip_address="1.1.1.1",
+    )
+    conn._params = {"url": "/devices"}
+
+    with (
+        patch.object(conn, "_try_connection", new_callable=AsyncMock) as mock_try,
+        patch.object(
+            conn, "_async_execute_request", new_callable=AsyncMock
+        ) as mock_req,
+    ):
+        mock_try.return_value = "PROBE_OK"
+
+        res, headers = await conn.async_execute("GET", "/devices", None, {})
+        assert res == "PROBE_OK"
+        assert headers is None
+        mock_req.assert_not_called()
+
+
+
 # ====================================================================================
 # UNTESTED MUTANTS ANNIHILATION
 # ====================================================================================
