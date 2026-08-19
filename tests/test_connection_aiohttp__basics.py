@@ -230,6 +230,7 @@ async def test_create_updated(connection_config, mock_logger, mock_hass, mock_se
         yaml_node_tmpl = {"connection_template": "{{ test }}"}
         new_conn_tmpl = conn.create_updated(yaml_node_tmpl)
         assert new_conn_tmpl._connection_template is not None
+        assert new_conn_tmpl._connection_template.template == "{{ test }}"
         # pylint: enable=duplicate-code
 
 
@@ -423,8 +424,9 @@ def test_create_updated_strict():
     assert new_conn._embedded_command is not None
     assert new_conn._embedded_command._params == {"child": 2}
 
-    # Check condition template was compiled
+    # Check condition template was compiled with exact template string
     assert new_conn._embedded_command.condition_template is not None
+    assert new_conn._embedded_command.condition_template.template == "{{ True }}"
 
 
 async def test_adaptive_keep_alive_fallback(

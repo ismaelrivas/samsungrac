@@ -1,3 +1,4 @@
+# pylint: disable=protected-access,redefined-outer-name,duplicate-code,import-outside-toplevel,missing-docstring,line-too-long
 from __future__ import annotations
 
 import logging
@@ -321,5 +322,47 @@ async def test_try_connection_double_check_lock_already_initialized(
         conn._shared_state.lock = MutatingLock()
         res = await conn._try_connection()
         assert res is None
+
+
+def test_resolve_cert_path_delegates(connection_config, mock_logger, mock_hass, mock_session):
+    """Test _resolve_cert_path passes cert_file to resolve_cert_path helper correctly."""
+    from unittest.mock import ANY
+
+    conn = ConnectionAiohttp8888(
+        connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+    )
+    with patch(
+        "custom_components.climate_ip.connection_aiohttp.resolve_cert_path",
+        return_value="/custom/resolved/cert.pem",
+    ) as mock_helper:
+        res = conn._resolve_cert_path("my_cert.pem")
+        assert res == "/custom/resolved/cert.pem"
+        mock_helper.assert_called_once_with("my_cert.pem", ANY, mock_hass)
+
+
+async def test_try_connection_http_probe_passes_ssl_false(
+    mock_logger, mock_hass, mock_session
+):
+    """Test _try_connection passes ssl=False when probe url starts with http://."""
+    conn = ConnectionAiohttp8888(
+        {"token": "tok", "use_http": True},
+        mock_logger,
+        mock_hass,
+        mock_session,
+        "192.168.1.100",
+    )
+    conn._params = {"url": "http://192.168.1.100:8888/test"}
+
+    mock_response = AsyncMock(status=200)
+    mock_response.text.return_value = "{}"
+    mock_context = AsyncMock()
+    mock_context.__aenter__.return_value = mock_response
+    mock_session.request.return_value = mock_context
+
+    res = await conn._try_connection()
+    assert res == "{}"
+    mock_session.request.assert_called_once()
+    _, kwargs = mock_session.request.call_args
+    assert kwargs["ssl"] is False
 
 
