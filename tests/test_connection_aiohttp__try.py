@@ -61,7 +61,7 @@ async def test_try_connection_success(
         assert res == '{"result": "ok"}'
         assert conn._shared_state.initialized is True
 
-        # ASERCIONES DE CAJA BLANCA: timeout de try_connection
+        # WHITE-BOX ASSERTIONS: try_connection timeout
         mock_session.request.assert_called_once()
         _, kwargs = mock_session.request.call_args
         actual_timeout = kwargs.get("timeout")
