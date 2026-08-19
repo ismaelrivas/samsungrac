@@ -219,6 +219,10 @@ async def test_create_updated(connection_config, mock_logger, mock_hass, mock_se
         assert isinstance(new_conn, ConnectionAiohttp8888)
         assert new_conn is not conn
         assert new_conn._params == {}  # Should be empty as per implementation
+        assert new_conn._hass is mock_hass
+        assert new_conn._session is mock_session
+        assert new_conn._logger is mock_logger
+        assert new_conn._ip_address == "192.168.1.100"
 
         # pylint: disable=import-outside-toplevel,duplicate-code
         # Test with params
@@ -2188,10 +2192,15 @@ async def test_async_execute_embedded_template_sync_render(
     )
 
     class SyncTemplate:
-        def async_render(self, parse_result=False):
+        def __init__(self):
+            self.last_parse_result = None
+
+        def async_render(self, parse_result=False, **kwargs):
+            self.last_parse_result = parse_result
             return '{"method": "POST", "url": "/sync_embed", "json": {"a": 1}}'
 
-    embed_cmd._connection_template = SyncTemplate()
+    tmpl = SyncTemplate()
+    embed_cmd._connection_template = tmpl
     embed_cmd.check_execute_condition = MagicMock(return_value=True)
     embed_cmd.async_execute = AsyncMock()
 
@@ -2206,6 +2215,7 @@ async def test_async_execute_embedded_template_sync_render(
 
     await conn.async_execute("GET", "/main", None, {}, device_state={"state": "on"})
 
+    assert tmpl.last_parse_result is False
     embed_cmd.async_execute.assert_called_once()
     call_kwargs = embed_cmd.async_execute.call_args[1]
     assert call_kwargs["method"] == "POST"
