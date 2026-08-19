@@ -1,4 +1,4 @@
-# pylint: disable=duplicate-code,no-else-return,line-too-long
+# pylint: disable=duplicate-code,no-else-return,line-too-long,abstract-method,too-many-lines,comparison-with-callable
 """
 Asynchronous connection engine for modern Samsung devices (port 8888) using aiohttp.
 This engine implements HTTP Keep-Alive for low latency and correct mTLS.
@@ -23,9 +23,6 @@ from homeassistant.helpers.json import json_dumps
 from homeassistant.helpers.template import Template
 from homeassistant.util.json import json_loads
 
-if TYPE_CHECKING:
-    from .controller_yaml import YamlController
-
 from .connection import Connection, register_connection
 from .const import (
     CONF_CERT,
@@ -46,6 +43,9 @@ from .helpers import (
     mask_sensitive_data,
     resolve_cert_path,
 )
+
+if TYPE_CHECKING:
+    from .controller_yaml import YamlController
 
 
 @dataclass
@@ -209,13 +209,9 @@ class ConnectionAiohttp8888(Connection):
 
         # Consolidated executor call
         if self._cert_path is None and self._raw_cert_path is not None:
-            res = self._hass.async_add_executor_job(
+            self._cert_path = await self._hass.async_add_executor_job(
                 self._resolve_and_verify_cert, self._raw_cert_path
             )
-            if asyncio.iscoroutine(res) or isinstance(res, asyncio.Future):
-                self._cert_path = await res
-            elif isinstance(res, str):
-                self._cert_path = res
 
         has_cert = bool(self._cert_path)
 
@@ -370,11 +366,6 @@ class ConnectionAiohttp8888(Connection):
             if not self._config.get(CONF_USE_HTTP, False):
                 if self._shared_state.ssl_context is None:
                     self._shared_state.ssl_context = await self._create_ssl_context()
-
-            ssl_ctx = self._shared_state.ssl_context
-            if ssl_ctx is None:
-                # Logic for "insecure" / no-cert connection
-                ssl_ctx = False
 
             try:
                 debug_msg = "%s [aiohttp_probe] Probing connection..."
@@ -543,7 +534,7 @@ class ConnectionAiohttp8888(Connection):
             debug_msg = "%s [aiohttp] Created new local session (ID: %s) with connector (ID: %s)."
             _LOGGER.debug(debug_msg, self.log_prefix, id(local_session), id(connector))
 
-        return self._shared_state.local_session
+        return local_session
 
     def _build_full_url(self, url_path: str | None) -> str:
         """Constructs the full URL, handling absolute URLs and standard relative paths."""
@@ -749,7 +740,7 @@ class ConnectionAiohttp8888(Connection):
 
                 # CRITICAL FIX: Persist the state so we don't repeat this penalty
                 self._force_close_connection = True
-                req_headers["Connection"] = "close"
+                req_headers[CONNECTION] = HEADER_VALUE_CLOSE
 
                 # Retry immediately with the new header
                 debug_msg = "%s [aiohttp] Retrying request with 'Connection: close'..."
@@ -903,6 +894,7 @@ class ConnectionAiohttp8888(Connection):
         data: Any,
         headers: dict[str, str] | None,  # Main command's headers
         device_state: dict[str, Any] | None = None,  # Pass device state for conditions
+        _is_probe: bool = False,
         _is_poll: bool = False,
     ) -> tuple[str | None, dict[str, Any] | None]:
         """
@@ -939,18 +931,17 @@ class ConnectionAiohttp8888(Connection):
             local_session = self._shared_state.local_session
             if local_session is not None:
                 self._shared_state.local_session = None
-
-            if local_session and not local_session.closed:
-                debug_msg = (
-                    "%s [Periodic Reset] Closing local session (ID: %s) before poll."
-                )
-                _LOGGER.debug(debug_msg, self.log_prefix, id(local_session))
-                # Ensure the session close process is awaited
-                try:
-                    await local_session.close()
-                except (aiohttp.ClientError, TimeoutError, OSError) as e:
-                    debug_msg = "%s [Periodic Reset] Error closing local session: %s"
-                    _LOGGER.debug(debug_msg, self.log_prefix, e)
+                if not local_session.closed:
+                    debug_msg = (
+                        "%s [Periodic Reset] Closing local session (ID: %s) before poll."
+                    )
+                    _LOGGER.debug(debug_msg, self.log_prefix, id(local_session))
+                    # Ensure the session close process is awaited
+                    try:
+                        await local_session.close()
+                    except (aiohttp.ClientError, TimeoutError, OSError) as e:
+                        debug_msg = "%s [Periodic Reset] Error closing local session: %s"
+                        _LOGGER.debug(debug_msg, self.log_prefix, e)
 
         # Optimization: Reuse the probe response directly for the initial poll to eliminate duplicate requests
         probe_url_path = ""
@@ -1022,8 +1013,7 @@ class ConnectionAiohttp8888(Connection):
             async with self._shared_state.lock:
                 self._shared_state.initialized = False
                 self._shared_state.ssl_context = None
-                if self._shared_state.local_session is not None:
-                    self._shared_state.local_session = None
+                self._shared_state.local_session = None
         except RuntimeError as e:
             err_msg = (
                 "%s [aiohttp] Error locking/resetting shared state during close: %s"

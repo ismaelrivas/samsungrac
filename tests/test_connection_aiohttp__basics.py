@@ -17,7 +17,11 @@ from custom_components.climate_ip.const import (
     CONF_CERT,
     CONFIG_DEVICE_CONNECTION_PARAMS,
 )
-from custom_components.climate_ip.exceptions import AuthError, CannotConnect
+from custom_components.climate_ip.exceptions import (
+    AuthError,
+    CannotConnect,
+    InvalidHeaderError,
+)
 
 
 @pytest.fixture
@@ -562,22 +566,6 @@ async def test_adaptive_keep_alive_on_timeout_recovery(
 
     # And internal state updated to persist closure on subsequent calls
     assert conn._force_close_connection is True
-
-
-async def test_close_closes_local_session(
-    connection_config, mock_logger, mock_hass, mock_session
-):
-    from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
-
-    with patch("os.path.exists", return_value=True):
-        conn = ConnectionAiohttp8888(
-            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
-        )
-        conn._shared_state.local_session = mock_session
-
-        mock_session.closed = False
-        await conn.close()
-        assert mock_session.close.call_count == 1
 
 
 def test_create_updated_preserves_memory_references(
@@ -2239,3 +2227,148 @@ def test_create_updated_dict_get_default_none(mock_logger, mock_hass, mock_sessi
     )
 
     assert new_conn._params == {"existing": "val", "new_param": "new_val"}
+
+
+def test_prepare_request_headers_no_token_raises_auth_error(mock_logger, mock_hass, mock_session):
+    """Test _prepare_request_headers raises AuthError when current_token is None or empty."""
+    conn = ConnectionAiohttp8888(
+        config={},
+        logger=mock_logger,
+        hass=mock_hass,
+        session=mock_session,
+        ip_address="1.1.1.1",
+    )
+    with pytest.raises(AuthError) as exc_info:
+        conn._prepare_request_headers(None, None, "1.1.1.1", None, "AA:BB")
+    assert "Token not configured" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_async_execute_request_server_error_500(mock_logger, mock_hass, mock_session):
+    """Test _async_execute_request raises CannotConnect when device returns 500 on both initial and retry attempts."""
+    conn = ConnectionAiohttp8888(
+        config={CONF_TOKEN: "valid_token"},
+        logger=mock_logger,
+        hass=mock_hass,
+        session=mock_session,
+        ip_address="1.1.1.1",
+    )
+    mock_response = AsyncMock()
+    mock_response.status = 500
+    mock_response.text.return_value = "Internal Server Error"
+    mock_response.headers = {"Content-Type": "text/plain"}
+    mock_response.raise_for_status = MagicMock(
+        side_effect=aiohttp.ClientResponseError(
+            request_info=MagicMock(), history=(), status=500, message="Internal Error"
+        )
+    )
+    mock_response.version = MagicMock(major=1, minor=1)
+    
+    first_context = AsyncMock()
+    first_context.__aenter__.return_value = mock_response
+
+    # Retry also fails with 500
+    retry_context = AsyncMock()
+    retry_context.__aenter__.side_effect = aiohttp.ClientResponseError(
+        request_info=MagicMock(), history=(), status=500, message="Internal Error on retry"
+    )
+
+    mock_session.request.side_effect = [first_context, retry_context]
+
+    with pytest.raises(CannotConnect) as exc_info:
+        await conn._async_execute_request("GET", "http://1.1.1.1:8888/error", None, {})
+    assert "unexpected error response during retry" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_async_execute_request_retry_protocol_violation(mock_logger, mock_hass, mock_session):
+    """Test _async_execute_request raises InvalidHeaderError if protocol violation happens on retry."""
+    conn = ConnectionAiohttp8888(
+        config={CONF_TOKEN: "valid_token"},
+        logger=mock_logger,
+        hass=mock_hass,
+        session=mock_session,
+        ip_address="1.1.1.1",
+    )
+    conn._force_close_connection = False
+
+    # First request: TimeoutError
+    first_context = AsyncMock()
+    first_context.__aenter__.side_effect = TimeoutError("Initial timeout")
+
+    # Retry request: ClientPayloadError (protocol violation)
+    retry_context = AsyncMock()
+    retry_context.__aenter__.side_effect = aiohttp.ClientPayloadError("Corrupt payload response")
+
+    mock_session.request.side_effect = [first_context, retry_context]
+
+    with pytest.raises(InvalidHeaderError) as exc_info:
+        await conn._async_execute_request("GET", "http://1.1.1.1:8888/test", None, {})
+    assert "HTTP header/protocol error during retry" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_async_execute_request_already_forced_close_fails(mock_logger, mock_hass, mock_session):
+    """Test _async_execute_request raises CannotConnect immediately if already force_close_connection."""
+    conn = ConnectionAiohttp8888(
+        config={CONF_TOKEN: "valid_token"},
+        logger=mock_logger,
+        hass=mock_hass,
+        session=mock_session,
+        ip_address="1.1.1.1",
+    )
+    conn._force_close_connection = True
+
+    mock_context = AsyncMock()
+    mock_context.__aenter__.side_effect = TimeoutError("Unreachable socket")
+    mock_session.request.return_value = mock_context
+
+    with pytest.raises(CannotConnect) as exc_info:
+        await conn._async_execute_request("GET", "http://1.1.1.1:8888/test", None, {})
+    assert "Connection error" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_async_execute_request_parsing_error(mock_logger, mock_hass, mock_session):
+    """Test _async_execute_request raises CannotConnect on UnicodeDecodeError/ValueError."""
+    conn = ConnectionAiohttp8888(
+        config={CONF_TOKEN: "valid_token"},
+        logger=mock_logger,
+        hass=mock_hass,
+        session=mock_session,
+        ip_address="1.1.1.1",
+    )
+    mock_response = AsyncMock()
+    mock_response.text.side_effect = UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+    mock_context = AsyncMock()
+    mock_context.__aenter__.return_value = mock_response
+    mock_session.request.return_value = mock_context
+
+    with pytest.raises(CannotConnect) as exc_info:
+        await conn._async_execute_request("GET", "http://1.1.1.1:8888/test", None, {})
+    assert "Unexpected data parsing error" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_async_execute_periodic_reset_close_error(mock_logger, mock_hass, mock_session):
+    """Test periodic reset handles session close error gracefully without raising."""
+    conn = ConnectionAiohttp8888(
+        config={CONF_TOKEN: "valid_token", "keep_alive": False},
+        logger=mock_logger,
+        hass=mock_hass,
+        session=None,
+        ip_address="1.1.1.1",
+    )
+    conn._shared_state.initialized = True
+    conn._try_connection = AsyncMock(return_value=None)
+
+    local_session = MagicMock()
+    local_session.closed = False
+    local_session.close = AsyncMock(side_effect=aiohttp.ClientError("Close failure"))
+    conn._shared_state.local_session = local_session
+
+    with patch.object(conn, "_async_execute_request", new_callable=AsyncMock) as mock_req:
+        mock_req.return_value = ("{}", {})
+        res, _ = await conn.async_execute("GET", "/test", None, {}, _is_poll=True)
+        assert res == "{}"
+        local_session.close.assert_called_once()

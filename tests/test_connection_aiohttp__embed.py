@@ -23,7 +23,9 @@ def mock_logger():
 
 @pytest.fixture
 def mock_hass():
-    return MagicMock()
+    hass = MagicMock()
+    hass.async_add_executor_job = AsyncMock(side_effect=lambda func, *args: func(*args))
+    return hass
 
 
 @pytest.fixture
@@ -238,5 +240,113 @@ async def test_execute_embedded_command_connection_error_logs_warning_and_raises
             conn.log_prefix,
             error,
         )
+
+
+def test_set_controller_ref_propagates_to_embedded(
+    connection_config, mock_logger, mock_hass, mock_session
+):
+    """Test set_controller_ref sets controller on self and embedded command."""
+    with patch("os.path.exists", return_value=True):
+        conn = ConnectionAiohttp8888(
+            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+        )
+        embedded_mock = MagicMock()
+        conn._embedded_command = embedded_mock
+
+        mock_controller = MagicMock()
+        mock_controller.unique_id = "test_ac"
+        mock_controller.log_prefix = "[test_ac]"
+
+        conn.set_controller_ref(mock_controller)
+
+        assert conn._controller is mock_controller
+        embedded_mock.set_controller_ref.assert_called_once_with(mock_controller)
+
+
+async def test_execute_embedded_command_device_state_none(
+    connection_config, mock_logger, mock_hass, mock_session
+):
+    """Test embedded command is skipped when device_state is None."""
+    with (
+        patch("os.path.exists", return_value=True),
+        patch("custom_components.climate_ip.connection_aiohttp._LOGGER") as mock_module_logger,
+    ):
+        conn = ConnectionAiohttp8888(
+            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+        )
+        conn._shared_state.initialized = True
+        conn._try_connection = AsyncMock()
+
+        embedded_mock = MagicMock()
+        embedded_mock.async_execute = AsyncMock()
+        conn._embedded_command = embedded_mock
+
+        mock_response = AsyncMock(status=200, headers={"Content-Type": "application/json"})
+        mock_response.text.return_value = "{}"
+        mock_response.version = MagicMock(major=1, minor=1)
+        mock_context = AsyncMock()
+        mock_context.__aenter__.return_value = mock_response
+        mock_session.request.return_value = mock_context
+
+        await conn.async_execute("GET", "/main", data=None, headers={}, device_state=None)
+
+        embedded_mock.async_execute.assert_not_called()
+        mock_module_logger.warning.assert_called_with(
+            "%s [async_execute] Embedded command found, but cannot check its condition (device_state is missing). Skipping.",
+            conn.log_prefix,
+        )
+
+
+async def test_execute_embedded_command_network_error(
+    connection_config, mock_logger, mock_hass, mock_session
+):
+    """Test aiohttp.ClientError in embedded command raises CannotConnect."""
+    import aiohttp
+
+    with patch("os.path.exists", return_value=True):
+        conn = ConnectionAiohttp8888(
+            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+        )
+        conn._shared_state.initialized = True
+        conn._try_connection = AsyncMock()
+
+        embedded_mock = MagicMock()
+        embedded_mock.check_execute_condition = MagicMock(return_value=True)
+        embedded_mock.params = {"url": "/embedded"}
+        embedded_mock.connection_template = None
+        embedded_mock.async_execute = AsyncMock(side_effect=aiohttp.ClientError("Socket dropped"))
+        conn._embedded_command = embedded_mock
+
+        with pytest.raises(CannotConnect) as exc_info:
+            await conn.async_execute(
+                "GET", "/main", data=None, headers={}, device_state={"some": "state"}
+            )
+        assert "Embedded command network error" in str(exc_info.value)
+
+
+async def test_execute_embedded_command_parsing_error(
+    connection_config, mock_logger, mock_hass, mock_session
+):
+    """Test ValueError during embedded template parsing raises CannotConnect."""
+    with patch("os.path.exists", return_value=True):
+        conn = ConnectionAiohttp8888(
+            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+        )
+        conn._shared_state.initialized = True
+        conn._try_connection = AsyncMock()
+
+        embedded_mock = MagicMock()
+        embedded_mock.check_execute_condition = MagicMock(return_value=True)
+        embedded_mock.params = {}
+        mock_tmpl = MagicMock()
+        mock_tmpl.async_render.return_value = "invalid json {["
+        embedded_mock.connection_template = mock_tmpl
+        conn._embedded_command = embedded_mock
+
+        with pytest.raises(CannotConnect) as exc_info:
+            await conn.async_execute(
+                "GET", "/main", data=None, headers={}, device_state={"some": "state"}
+            )
+        assert "Embedded command parsing error" in str(exc_info.value)
 
 
