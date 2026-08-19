@@ -194,7 +194,9 @@ class ConnectionAiohttp8888(Connection):
         if not raw_path:
             return None
         path = self._resolve_cert_path(raw_path)
-        return path if path and os.path.exists(path) else None
+        if not path or not os.path.exists(path):
+            return None
+        return path
 
     async def _create_ssl_context(self) -> ssl.SSLContext | None:
         """

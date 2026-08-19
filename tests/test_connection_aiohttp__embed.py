@@ -349,5 +349,3 @@ async def test_execute_embedded_command_parsing_error(
                 "GET", "/main", data=None, headers={}, device_state={"some": "state"}
             )
         assert "Embedded command parsing error" in str(exc_info.value)
-
-

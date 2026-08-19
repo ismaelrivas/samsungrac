@@ -246,12 +246,33 @@ async def test_try_connection_https_failure_clears_ssl_and_raises(
 
 
 def test_resolve_and_verify_cert_none(connection_config, mock_logger, mock_hass, mock_session):
-    """Test _resolve_and_verify_cert returns None when raw_path is None or empty."""
+    """Test _resolve_and_verify_cert returns None when raw_path is None or empty or file missing."""
     conn = ConnectionAiohttp8888(
         connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
     )
     assert conn._resolve_and_verify_cert(None) is None
     assert conn._resolve_and_verify_cert("") is None
+    with (
+        patch.object(conn, "_resolve_cert_path", return_value="/tmp/test_cert.pem"),
+        patch("os.path.exists", return_value=True),
+    ):
+        assert conn._resolve_and_verify_cert("test_cert.pem") == "/tmp/test_cert.pem"
+    with (
+        patch.object(conn, "_resolve_cert_path", return_value="/tmp/test_cert.pem"),
+        patch("os.path.exists", return_value=False),
+    ):
+        assert conn._resolve_and_verify_cert("test_cert.pem") is None
+    with patch.object(conn, "_resolve_cert_path", return_value=None):
+        assert conn._resolve_and_verify_cert("test_cert.pem") is None
+
+
+def test_is_http_protocol_violation_client_connector_error():
+    """Ensure ClientConnectorError is explicitly NOT considered an HTTP protocol violation."""
+    conn_err = aiohttp.ClientConnectorError(
+        aiohttp.client_reqrep.ConnectionKey("127.0.0.1", 8888, False, False, None, None, None),
+        OSError("Connection refused"),
+    )
+    assert _is_http_protocol_violation(conn_err) is False
 
 
 def test_is_http_protocol_violation_str_exception():
@@ -364,5 +385,3 @@ async def test_try_connection_http_probe_passes_ssl_false(
     mock_session.request.assert_called_once()
     _, kwargs = mock_session.request.call_args
     assert kwargs["ssl"] is False
-
-

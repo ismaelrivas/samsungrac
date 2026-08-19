@@ -1,7 +1,6 @@
-# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
+# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,too-many-lines,too-many-locals,use-implicit-booleaness-not-comparison,missing-function-docstring,too-many-arguments,too-many-positional-arguments,too-few-public-methods,missing-class-docstring
 """Tests for ConnectionAiohttp8888."""
 
-# pylint: disable=import-outside-toplevel,protected-access,redefined-outer-name
 from __future__ import annotations
 
 import logging
@@ -207,35 +206,152 @@ async def test_execute_request_connection_error(
 
 
 async def test_create_updated(connection_config, mock_logger, mock_hass, mock_session):
-    """Test create_updated method."""
+    """Test create_updated method thoroughly across all branches."""
     with patch("os.path.exists", return_value=True):
         conn = ConnectionAiohttp8888(
             connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
         )
         conn._params = {"test": "param"}
+        conn._force_close_connection = True
+        conn._cert_path = "/path/to/cert.pem"
 
-        # Test with empty node
+        # 1. Test with None node
+        new_conn_none = conn.create_updated(None)
+        assert isinstance(new_conn_none, ConnectionAiohttp8888)
+        assert new_conn_none is not conn
+        assert new_conn_none._params == {}
+        assert new_conn_none._force_close_connection is True
+        assert new_conn_none._cert_path == "/path/to/cert.pem"
+        assert new_conn_none._shared_state is conn._shared_state
+
+        # 2. Test with empty node
         new_conn = conn.create_updated({})
         assert isinstance(new_conn, ConnectionAiohttp8888)
         assert new_conn is not conn
-        assert new_conn._params == {}  # Should be empty as per implementation
+        assert new_conn._params == {}
         assert new_conn._hass is mock_hass
         assert new_conn._session is mock_session
         assert new_conn._logger is mock_logger
         assert new_conn._ip_address == "192.168.1.100"
 
-        # pylint: disable=import-outside-toplevel,duplicate-code
-        # Test with params
+        # 3. Test with keep_alive override
+        new_conn_ka = conn.create_updated({"keep_alive": False})
+        assert new_conn_ka._keep_alive is False
+
+        # 4. Test with params
         yaml_node = {"params": {"new": "value"}}
         new_conn_params = conn.create_updated(yaml_node)
         assert new_conn_params._params == {"test": "param", "new": "value"}
 
-        # Test with connection_template
+        # 5. Test with params as None (explicit fallback)
+        yaml_node_p_none = {"params": None}
+        new_conn_p_none = conn.create_updated(yaml_node_p_none)
+        assert new_conn_p_none._params == {"test": "param"}
+
+        # 6. Test with connection_template
         yaml_node_tmpl = {"connection_template": "{{ test }}"}
         new_conn_tmpl = conn.create_updated(yaml_node_tmpl)
         assert new_conn_tmpl._connection_template is not None
         assert new_conn_tmpl._connection_template.template == "{{ test }}"
-        # pylint: enable=duplicate-code
+        assert new_conn_tmpl._connection_template.hass is mock_hass
+
+        # 7. Test with nested embedded connection AND condition_template
+        yaml_node_nested = {
+            "connection": {
+                "params": {"nested": "val"},
+                "condition_template": "{{ is_state('climate.ac', 'off') }}",
+            }
+        }
+        new_conn_nested = conn.create_updated(yaml_node_nested)
+        assert new_conn_nested._embedded_command is not None
+        assert isinstance(new_conn_nested._embedded_command, ConnectionAiohttp8888)
+        assert new_conn_nested._embedded_command._params == {"nested": "val"}
+        assert new_conn_nested._embedded_command.condition_template is not None
+        assert (
+            new_conn_nested._embedded_command.condition_template.template
+            == "{{ is_state('climate.ac', 'off') }}"
+        )
+        assert new_conn_nested._embedded_command.condition_template.hass is mock_hass
+
+        # 8. Test with nested embedded connection WITHOUT condition_template
+        yaml_node_nested_no_cond = {
+            "connection": {
+                "params": {"nested2": "val2"},
+            }
+        }
+        new_conn_nested_no_cond = conn.create_updated(yaml_node_nested_no_cond)
+        assert new_conn_nested_no_cond._embedded_command is not None
+        assert new_conn_nested_no_cond._embedded_command.condition_template is None
+
+
+def test_prepare_request_headers_unit(connection_config, mock_logger, mock_hass, mock_session):
+    """Direct unit test for _prepare_request_headers to instantly kill all header mutants."""
+    conn = ConnectionAiohttp8888(
+        connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+    )
+
+    # 1. Standard headers with None input
+    headers = conn._prepare_request_headers(
+        headers=None,
+        current_token="my_token",
+        host="192.168.1.100",
+        dev_id="dev123",
+        mac="AA:BB:CC:DD:EE:FF",
+    )
+    assert headers["Authorization"] == "Bearer my_token"
+    assert headers["Content-Type"] == "application/json"
+    assert "Connection" not in headers
+
+    # 2. Force close connection active
+    conn._force_close_connection = True
+    headers_close = conn._prepare_request_headers(
+        headers={"Custom": "Header"},
+        current_token="my_token",
+        host="192.168.1.100",
+        dev_id="dev123",
+        mac="AA:BB:CC:DD:EE:FF",
+    )
+    assert headers_close["Authorization"] == "Bearer my_token"
+    assert headers_close["Content-Type"] == "application/json"
+    assert headers_close["Custom"] == "Header"
+    assert headers_close["Connection"] == "close"
+
+    # 3. Missing token raises AuthError
+    with pytest.raises(AuthError):
+        conn._prepare_request_headers(
+            headers=None,
+            current_token=None,
+            host="192.168.1.100",
+            dev_id="dev123",
+            mac="AA:BB:CC:DD:EE:FF",
+        )
+
+
+def test_handle_http_version_fallback_unit(connection_config, mock_logger, mock_hass, mock_session):
+    """Direct unit test for _handle_http_version_fallback."""
+    conn = ConnectionAiohttp8888(
+        connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+    )
+
+    # 1. Server speaks HTTP/1.1 -> resets force_close_connection to False
+    conn._force_close_connection = True
+    mock_resp_11 = MagicMock()
+    mock_resp_11.version = aiohttp.HttpVersion(1, 1)
+    conn._handle_http_version_fallback(mock_resp_11)
+    assert conn._force_close_connection is False
+
+    # 2. Server speaks HTTP/1.0 -> sets force_close_connection to True
+    mock_resp_10 = MagicMock()
+    mock_resp_10.version = aiohttp.HttpVersion(1, 0)
+    conn._handle_http_version_fallback(mock_resp_10)
+    assert conn._force_close_connection is True
+
+    # 3. Server provides None version -> sets force_close_connection to True
+    conn._force_close_connection = False
+    mock_resp_none = MagicMock()
+    mock_resp_none.version = None
+    conn._handle_http_version_fallback(mock_resp_none)
+    assert conn._force_close_connection is True
 
 
 # ====================================================================================
@@ -2275,7 +2391,7 @@ async def test_async_execute_request_server_error_500(mock_logger, mock_hass, mo
         )
     )
     mock_response.version = MagicMock(major=1, minor=1)
-    
+
     first_context = AsyncMock()
     first_context.__aenter__.return_value = mock_response
 

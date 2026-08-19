@@ -105,4 +105,3 @@ async def test_close_shared_state_lock_runtime_error(connection_config, mock_log
             conn.log_prefix,
             lock_error,
         )
-

@@ -33,11 +33,25 @@ async def test_get_diagnostics(connection_config, mock_logger, mock_hass):
         conn = ConnectionAiohttp8888(
             connection_config, mock_logger, mock_hass, None, "192.168.1.100"
         )
+        # 1. State with ssl_context None
+        conn._shared_state.initialized = False
+        conn._shared_state.ssl_context = None
+        conn._force_close_connection = False
+
+        diag_initial = conn.get_diagnostics()
+        assert isinstance(diag_initial, dict)
+        assert diag_initial["is_connected"] is False
+        assert diag_initial["force_close_connection"] is False
+        assert diag_initial["keep_alive_enabled"] is True
+        assert diag_initial["has_ssl_context"] is False
+
+        # 2. State with ssl_context present and force_close True
         conn._shared_state.initialized = True
         conn._shared_state.ssl_context = MagicMock()
         conn._force_close_connection = True
 
         diag = conn.get_diagnostics()
+        assert isinstance(diag, dict)
         assert diag["is_connected"] is True
         assert diag["force_close_connection"] is True
         assert diag["keep_alive_enabled"] == conn._keep_alive
