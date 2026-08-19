@@ -545,7 +545,7 @@ class ConnectionAiohttp8888(Connection):
             if self._config.get(CONF_USE_HTTP, False) and full_url.startswith(
                 "https://"
             ):
-                full_url = "http://" + full_url[8:]
+                full_url = full_url.replace("https://", "http://", 1)
         else:
             port = self._config.get(CONF_PORT, DEFAULT_PORT)
             protocol = "http" if self._config.get(CONF_USE_HTTP, False) else "https"
@@ -816,7 +816,7 @@ class ConnectionAiohttp8888(Connection):
                 embedded_cond_result = self._embedded_command.check_execute_condition(
                     device_state
                 )
-                if embedded_cond_result is not None and not embedded_cond_result:
+                if embedded_cond_result is False:
                     debug_msg = "%s [async_execute] Embedded command condition not met. Skipping execution."
                     _LOGGER.debug(debug_msg, self.log_prefix)
                 else:
