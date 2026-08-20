@@ -77,27 +77,7 @@ _KEY_HEADERS = "headers"
 
 def _is_http_protocol_violation(exc: BaseException) -> bool:
     """Check if exception represents an HTTP protocol/header violation requiring fallback to RAW."""
-    if isinstance(exc, aiohttp.ClientConnectorError):
-        return False  # pragma: no mutate
-    if isinstance(
-        exc,
-        (
-            aiohttp.ClientPayloadError,
-            aiohttp.http_exceptions.BadHttpMessage,
-            aiohttp.http_exceptions.InvalidHeader,
-            aiohttp.http_exceptions.LineTooLong,
-        ),
-    ):
-        return True  # pragma: no mutate
-    try:
-        exc_str = str(exc).lower()
-    except Exception:
-        exc_str = ""
-    return (
-        "invalid header" in exc_str
-        or "badhttpmessage" in exc_str
-        or "line too long" in exc_str
-    )  # pragma: no mutate
+    return ConnectionAiohttp8888._is_http_protocol_violation(exc)
 
 
 @register_connection
@@ -241,6 +221,21 @@ class ConnectionAiohttp8888(Connection):
             err_msg = "%s [aiohttp] Failed to create SSL context: %s."
             _LOGGER.error(err_msg, self.log_prefix, e)
             return None
+
+    @staticmethod
+    def _is_http_protocol_violation(exc: BaseException) -> bool:
+        """Check if exception represents an HTTP protocol/header violation requiring fallback to RAW."""
+        if isinstance(exc, aiohttp.ClientConnectorError):
+            return False  # pragma: no mutate
+        return isinstance(
+            exc,
+            (
+                aiohttp.ClientPayloadError,
+                aiohttp.http_exceptions.BadHttpMessage,
+                ValueError,
+                ConnectionError,
+            ),
+        )
 
     @staticmethod
     def match_type(type_str: str) -> bool:
@@ -476,8 +471,12 @@ class ConnectionAiohttp8888(Connection):
                 error_msg = "Device failed to provide response body (missing Content-Length/Close)"
                 raise InvalidHeaderError(error_msg) from e
 
-            except (aiohttp.ClientError, ValueError) as e:
-                if _is_http_protocol_violation(e):
+            except (
+                aiohttp.ClientError,
+                aiohttp.http_exceptions.BadHttpMessage,
+                ValueError,
+            ) as e:
+                if self._is_http_protocol_violation(e):
                     err_msg = (
                         "%s [aiohttp_probe] Device HTTP protocol/header violation detected: %s. "
                         "Switching to 'Robust (raw socket)' engine."
@@ -722,8 +721,9 @@ class ConnectionAiohttp8888(Connection):
             TimeoutError,
             aiohttp.ClientConnectorError,
             aiohttp.ClientError,
+            aiohttp.http_exceptions.BadHttpMessage,
         ) as e:
-            if _is_http_protocol_violation(e):
+            if self._is_http_protocol_violation(e):
                 err_msg = (
                     "%s [aiohttp] Device HTTP protocol/header violation detected: %s. "
                     "Switching to 'Robust (raw socket)' engine."
@@ -765,10 +765,11 @@ class ConnectionAiohttp8888(Connection):
                         return response_text, None
                 except (
                     aiohttp.ClientError,
+                    aiohttp.http_exceptions.BadHttpMessage,
                     TimeoutError,
                     OSError,
                 ) as retry_exc:
-                    if _is_http_protocol_violation(retry_exc):
+                    if self._is_http_protocol_violation(retry_exc):
                         err_msg = (
                             "%s [aiohttp] Device HTTP protocol/header violation during retry: %s. "
                             "Switching to 'Robust (raw socket)' engine."

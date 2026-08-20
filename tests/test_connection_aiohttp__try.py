@@ -156,7 +156,9 @@ async def test_try_connection_invalid_header(
         )
         conn._create_ssl_context = AsyncMock(return_value=MagicMock())
 
-        mock_session.request.side_effect = aiohttp.ClientError("Invalid header token: b'X-API-Version : v1.0.0'")
+        mock_session.request.side_effect = aiohttp.http_exceptions.InvalidHeader(
+            "Invalid header token: b'X-API-Version : v1.0.0'"
+        )
 
         with pytest.raises(InvalidHeaderError):
             await conn._try_connection()
@@ -172,7 +174,9 @@ async def test_async_execute_request_invalid_header(
         )
         conn._create_ssl_context = AsyncMock(return_value=MagicMock())
 
-        mock_session.request.side_effect = aiohttp.ClientError("400, message=\"Invalid header token: b'X-API-Version : v1.0.0'\"")
+        mock_session.request.side_effect = aiohttp.http_exceptions.InvalidHeader(
+            "400, message=\"Invalid header token: b'X-API-Version : v1.0.0'\""
+        )
 
         with pytest.raises(InvalidHeaderError):
             await conn._async_execute_request("GET", "https://192.168.1.100:8888/devices", None, None)
@@ -207,11 +211,13 @@ async def test_try_connection_already_initialized(
 
 
 def test_is_http_protocol_violation_line_too_long():
-    """Kill mutant in _is_http_protocol_violation with 'line too long'."""
-    assert _is_http_protocol_violation(Exception("Line Too Long")) is True
-    assert _is_http_protocol_violation(Exception("line too long")) is True
-    assert _is_http_protocol_violation(Exception("invalid header detected")) is True
-    assert _is_http_protocol_violation(Exception("badhttpmessage error")) is True
+    """Verify structural exception matching for HTTP parser and protocol violations."""
+    assert _is_http_protocol_violation(aiohttp.http_exceptions.LineTooLong("Line too long", 8190, 4096)) is True
+    assert _is_http_protocol_violation(aiohttp.http_exceptions.InvalidHeader("invalid header")) is True
+    assert _is_http_protocol_violation(aiohttp.http_exceptions.BadHttpMessage("bad http message")) is True
+    assert _is_http_protocol_violation(aiohttp.ClientPayloadError("malformed payload")) is True
+    assert _is_http_protocol_violation(ValueError("invalid header character")) is True
+    assert _is_http_protocol_violation(ConnectionError("socket aborted")) is True
     assert _is_http_protocol_violation(Exception("some standard network timeout")) is False
 
 
