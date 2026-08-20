@@ -426,14 +426,12 @@ class ConnectionAiohttp8888(Connection):
                             if transport is not None
                             else None
                         )
-                        if (
-                            ssl_obj is not None
-                            and not asyncio.iscoroutine(ssl_obj)
-                            and hasattr(ssl_obj, "version")
-                        ):
-                            negotiated_tls = ssl_obj.version()
-                        else:
-                            negotiated_tls = "Unknown"
+                        negotiated_tls = "Unknown"
+                        if ssl_obj is not None and not asyncio.iscoroutine(ssl_obj):
+                            try:
+                                negotiated_tls = ssl_obj.version()
+                            except AttributeError:
+                                pass
                         info_msg = "%s [aiohttp] Connection successful. Status: %s. Negotiated TLS: %s"
                         _LOGGER.info(
                             info_msg,
