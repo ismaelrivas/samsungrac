@@ -377,14 +377,14 @@ class ConnectionAiohttp8888(Connection):
 
                 # Generalize Probe URL
                 url_path = ""
-                if self._params:
+                if len(self._params) > 0:
                     url_path = (
                         self._params.get(_KEY_PROBE_URL)
                         or self._params.get(_KEY_URL)
                         or ""
                     )
 
-                if str(url_path).startswith("http"):
+                if url_path is not None and url_path.startswith("http"):
                     debug_msg = "%s [aiohttp_probe] Detected absolute URL, probing: %s"
                     _LOGGER.debug(debug_msg, self.log_prefix, url_path)
 
@@ -834,14 +834,16 @@ class ConnectionAiohttp8888(Connection):
 
                 embedded_template = self._embedded_command.connection_template
                 raw_params = self._embedded_command.params
-                embedded_params = dict(raw_params) if raw_params else {}
+                embedded_params = (
+                    dict(raw_params) if raw_params is not None else {}
+                )
 
                 if embedded_template is not None:
                     embedded_params_str = embedded_template.async_render(
                         parse_result=False
                     )
                     embedded_params = json_loads(embedded_params_str)
-                elif embedded_params:
+                elif len(embedded_params) > 0:
                     debug_msg = "%s [async_execute] Embedded command has no connection_template, using _params directly."
                     _LOGGER.debug(debug_msg, self.log_prefix)
                 else:
@@ -955,7 +957,7 @@ class ConnectionAiohttp8888(Connection):
 
         # Optimization: Reuse the probe response directly for the initial poll to eliminate duplicate requests
         probe_url_path = ""
-        if self._params:
+        if len(self._params) > 0:
             probe_url_path = (
                 self._params.get(_KEY_PROBE_URL)
                 or self._params.get(_KEY_URL)
