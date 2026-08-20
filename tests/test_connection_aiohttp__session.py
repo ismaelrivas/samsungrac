@@ -84,6 +84,9 @@ async def test_close_local_session_exception(connection_config, mock_logger, moc
         # 6. Verify state was still cleaned up despite the error
         assert conn._shared_state.local_session is None
 
+        # 7. Cleanup the real session to prevent pytest warnings
+        await aiohttp.ClientSession.close(local_session)
+
 
 async def test_close_shared_state_lock_runtime_error(connection_config, mock_logger, mock_hass):
     """Test that RuntimeError during shared state lock is logged correctly to kill mutant at L1028."""

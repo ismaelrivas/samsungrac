@@ -32,16 +32,16 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 
 
-# @pytest.fixture(autouse=True)
-# async def force_task_cancellation():
-#     """Teardown guillotine: cancel all lingering background tasks when test finishes."""
-#     yield
-#     current = asyncio.current_task()
-#     pending = [t for t in asyncio.all_tasks() if t is not current and not t.done()]
-#     if pending:
-#         for task in pending:
-#             task.cancel()
-#         await asyncio.gather(*pending, return_exceptions=True)
+@pytest.fixture(autouse=True)
+async def force_task_cancellation():
+    """Teardown guillotine: cancel all lingering background tasks when test finishes."""
+    yield
+    current = asyncio.current_task()
+    pending = [t for t in asyncio.all_tasks() if t is not current and not t.done()]
+    if pending:
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
 
 
 # Ensure we can import the component
@@ -422,7 +422,17 @@ async def ruthless_aiohttp_teardown():
         return
 
     # Teardown: Force close the underlying session if it exists and is open
+    import asyncio
+    
     for conn in list(tracked_conns):
+        # 1. Graceful close (protected by timeout against mutmut infinite loops)
+        try:
+            if hasattr(conn, "close"):
+                await asyncio.wait_for(conn.close(), timeout=1.0)
+        except Exception:
+            pass
+
+        # 2. Ruthless fallback (guillotine)
         try:
             if hasattr(conn, "_shared_state") and conn._shared_state is not None:
                 local_session = getattr(conn._shared_state, "local_session", None)
@@ -434,10 +444,13 @@ async def ruthless_aiohttp_teardown():
                         pass
                 connector = getattr(conn._shared_state, "connector", None)
                 if connector is not None and not getattr(connector, "closed", True):
-                    if asyncio.iscoroutinefunction(connector.close):
-                        await connector.close()
-                    else:
-                        connector.close()
+                    try:
+                        if asyncio.iscoroutinefunction(connector.close):
+                            await connector.close()
+                        else:
+                            connector.close()
+                    except Exception:
+                        pass
             if hasattr(conn, "_session") and conn._session is not None:
                 if not getattr(conn._session, "closed", True):
                     try:
