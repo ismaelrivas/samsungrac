@@ -56,6 +56,7 @@ class AiohttpSharedState:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     ssl_context: ssl.SSLContext | None = None
     local_session: aiohttp.ClientSession | None = None
+    force_close_connection: bool = False
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -73,11 +74,6 @@ _KEY_URL = "url"
 _KEY_JSON = "json"
 _KEY_METHOD = "method"
 _KEY_HEADERS = "headers"
-
-
-def _is_http_protocol_violation(exc: BaseException) -> bool:
-    """Check if exception represents an HTTP protocol/header violation requiring fallback to RAW."""
-    return ConnectionAiohttp8888._is_http_protocol_violation(exc)
 
 
 @register_connection
@@ -127,7 +123,15 @@ class ConnectionAiohttp8888(Connection):
             )
             _LOGGER.error(err_msg)
 
-        self._force_close_connection: bool = False  # pragma: no mutate
+    @property
+    def _force_close_connection(self) -> bool:
+        """Return shared force close connection flag."""
+        return self._shared_state.force_close_connection
+
+    @_force_close_connection.setter
+    def _force_close_connection(self, value: bool) -> None:
+        """Set shared force close connection flag."""
+        self._shared_state.force_close_connection = value
 
     @property
     def log_prefix(self) -> str:
@@ -193,9 +197,10 @@ class ConnectionAiohttp8888(Connection):
 
         # Consolidated executor call
         if self._cert_path is None and self._raw_cert_path is not None:
-            self._cert_path = await self._hass.async_add_executor_job(
+            resolved = await self._hass.async_add_executor_job(
                 self._resolve_and_verify_cert, self._raw_cert_path
             )
+            self._cert_path = resolved if resolved is not None else ""
 
         has_cert = bool(self._cert_path)
 
@@ -492,11 +497,11 @@ class ConnectionAiohttp8888(Connection):
                 self._shared_state.ssl_context = (
                     None  # Clear on failure to allow retries
                 )
-
-            err_msg = "%s [aiohttp_probe] HTTPS (mTLS) connection probe failed. The device is unreachable or the certificate/token is incorrect."
-            _LOGGER.error(err_msg, self.log_prefix)
-            error_msg = "Connection initialization failed (HTTPS)"
-            raise CannotConnect(error_msg) from None
+                err_msg = "%s [aiohttp_probe] HTTPS (mTLS) connection probe failed: %s"
+                _LOGGER.error(err_msg, self.log_prefix, e)
+                raise CannotConnect(
+                    f"Connection initialization failed (HTTPS): {e}"
+                ) from e
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """
@@ -630,7 +635,7 @@ class ConnectionAiohttp8888(Connection):
                     debug_msg,
                     self.log_prefix,
                     response.version.major,
-                    getattr(response.version, "minor", 0),
+                    response.version.minor,
                 )
             self._force_close_connection = True
 
@@ -655,7 +660,7 @@ class ConnectionAiohttp8888(Connection):
         ssl_context = self._shared_state.ssl_context
 
         # Detect if the path is actually an absolute URL (for SmartThings).
-        if full_url.startswith("https://") and not ssl_context:
+        if full_url.startswith("https://") and ssl_context is None:
             ssl_context = await self._create_ssl_context()
 
         # If the final URL is plain HTTP (e.g. test mode), don't use SSL
@@ -762,7 +767,8 @@ class ConnectionAiohttp8888(Connection):
                         timeout=aiohttp.ClientTimeout(total=GLOBAL_HTTP_TIMEOUT),
                     ) as response:
                         response_text = await response.text()
-                        return response_text, None
+                        self._handle_http_version_fallback(response)
+                        return response_text, dict(response.headers)
                 except (
                     aiohttp.ClientError,
                     aiohttp.http_exceptions.BadHttpMessage,
@@ -927,8 +933,7 @@ class ConnectionAiohttp8888(Connection):
         )
 
         # Execute the main command
-        condition_result = self.check_execute_condition(device_state)
-        if condition_result is not None and not condition_result:
+        if not self.check_execute_condition(device_state):
             debug_msg = "%s [async_execute] Condition not met. Skipping execution."
             _LOGGER.debug(debug_msg, self.log_prefix)
             return "{}", {}
@@ -960,7 +965,7 @@ class ConnectionAiohttp8888(Connection):
             )
 
         if (
-            probe_response_text
+            probe_response_text is not None
             and method == "GET"
             and full_url == self._build_full_url(probe_url_path)
         ):
@@ -1003,26 +1008,25 @@ class ConnectionAiohttp8888(Connection):
                 warn_msg = "%s [aiohttp] Error closing embedded command: %s"
                 _LOGGER.warning(warn_msg, self.log_prefix, e)
 
-        # 2. Close the local session if it exists (for keep_alive=False)
-        local_session = self._shared_state.local_session
-        if local_session is not None:
-            debug_msg = "%s [aiohttp] Closing local session (ID: %s)..."
-            _LOGGER.debug(debug_msg, self.log_prefix, id(local_session))
-            try:
-                if not local_session.closed:
-                    await local_session.close()
-            except (aiohttp.ClientError, TimeoutError, OSError) as e:
-                err_msg = "%s [aiohttp] Error closing local session: %s"
-                _LOGGER.error(err_msg, self.log_prefix, e)
-            finally:
-                self._shared_state.local_session = None
-
-        # 3. Reset shared state to allow clean re-initialization
+        # 2. Close the local session and reset shared state under lock
         try:
             async with self._shared_state.lock:
+                local_session = self._shared_state.local_session
+                if local_session is not None:
+                    debug_msg = "%s [aiohttp] Closing local session (ID: %s)..."
+                    _LOGGER.debug(debug_msg, self.log_prefix, id(local_session))
+                    try:
+                        if not local_session.closed:
+                            await local_session.close()
+                    except (aiohttp.ClientError, TimeoutError, OSError) as e:
+                        err_msg = "%s [aiohttp] Error closing local session: %s"
+                        _LOGGER.error(err_msg, self.log_prefix, e)
+                    finally:
+                        self._shared_state.local_session = None
+
                 self._shared_state.initialized = False
                 self._shared_state.ssl_context = None
-                self._shared_state.local_session = None
+                self._shared_state.force_close_connection = False
         except RuntimeError as e:
             err_msg = (
                 "%s [aiohttp] Error locking/resetting shared state during close: %s"

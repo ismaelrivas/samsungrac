@@ -10,7 +10,6 @@ from homeassistant.const import CONF_TOKEN
 
 from custom_components.climate_ip.connection_aiohttp import (
     ConnectionAiohttp8888,
-    _is_http_protocol_violation,
 )
 from custom_components.climate_ip.const import CONF_CERT
 from custom_components.climate_ip.exceptions import CannotConnect, InvalidHeaderError
@@ -212,13 +211,13 @@ async def test_try_connection_already_initialized(
 
 def test_is_http_protocol_violation_line_too_long():
     """Verify structural exception matching for HTTP parser and protocol violations."""
-    assert _is_http_protocol_violation(aiohttp.http_exceptions.LineTooLong("Line too long", 8190, 4096)) is True
-    assert _is_http_protocol_violation(aiohttp.http_exceptions.InvalidHeader("invalid header")) is True
-    assert _is_http_protocol_violation(aiohttp.http_exceptions.BadHttpMessage("bad http message")) is True
-    assert _is_http_protocol_violation(aiohttp.ClientPayloadError("malformed payload")) is True
-    assert _is_http_protocol_violation(ValueError("invalid header character")) is True
-    assert _is_http_protocol_violation(ConnectionError("socket aborted")) is True
-    assert _is_http_protocol_violation(Exception("some standard network timeout")) is False
+    assert ConnectionAiohttp8888._is_http_protocol_violation(aiohttp.http_exceptions.LineTooLong("Line too long", 8190, 4096)) is True
+    assert ConnectionAiohttp8888._is_http_protocol_violation(aiohttp.http_exceptions.InvalidHeader("invalid header")) is True
+    assert ConnectionAiohttp8888._is_http_protocol_violation(aiohttp.http_exceptions.BadHttpMessage("bad http message")) is True
+    assert ConnectionAiohttp8888._is_http_protocol_violation(aiohttp.ClientPayloadError("malformed payload")) is True
+    assert ConnectionAiohttp8888._is_http_protocol_violation(ValueError("invalid header character")) is True
+    assert ConnectionAiohttp8888._is_http_protocol_violation(ConnectionError("socket aborted")) is True
+    assert ConnectionAiohttp8888._is_http_protocol_violation(Exception("some standard network timeout")) is False
 
 
 async def test_try_connection_https_failure_clears_ssl_and_raises(
@@ -241,7 +240,7 @@ async def test_try_connection_https_failure_clears_ssl_and_raises(
         with pytest.raises(CannotConnect) as exc_info:
             await conn._try_connection()
 
-        assert str(exc_info.value) == "Connection initialization failed (HTTPS)"
+        assert "Connection initialization failed (HTTPS)" in str(exc_info.value)
         assert conn._shared_state.ssl_context is None
         mock_module_logger.warning.assert_called_with(
             "%s [aiohttp_probe] Initial probe with HTTPS (mTLS) failed: %s.",
@@ -278,7 +277,7 @@ def test_is_http_protocol_violation_client_connector_error():
         aiohttp.client_reqrep.ConnectionKey("127.0.0.1", 8888, False, False, None, None, None),
         OSError("Connection refused"),
     )
-    assert _is_http_protocol_violation(conn_err) is False
+    assert ConnectionAiohttp8888._is_http_protocol_violation(conn_err) is False
 
 
 def test_is_http_protocol_violation_str_exception():
@@ -287,7 +286,7 @@ def test_is_http_protocol_violation_str_exception():
         def __str__(self):
             raise RuntimeError("Broken __str__")
 
-    assert _is_http_protocol_violation(BrokenStrException()) is False
+    assert ConnectionAiohttp8888._is_http_protocol_violation(BrokenStrException()) is False
 
 
 async def test_try_connection_logs_negotiated_tls_version(
