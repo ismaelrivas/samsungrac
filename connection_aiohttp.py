@@ -202,7 +202,7 @@ class ConnectionAiohttp8888(Connection):
             )
             self._cert_path = resolved if resolved is not None else ""
 
-        has_cert = bool(self._cert_path)
+        has_cert = self._cert_path is not None and len(self._cert_path.strip()) > 0
 
         if not has_cert and not insecure_ssl:
             # Standard Secure Cloud Connection
@@ -251,7 +251,7 @@ class ConnectionAiohttp8888(Connection):
         self, node: dict[str, Any] | None, connection_base: Connection
     ) -> bool:
         """Load configuration from yaml node dictionary."""
-        if node and CONF_KEEP_ALIVE in node:
+        if node is not None and CONF_KEEP_ALIVE in node:
             self._keep_alive = node[CONF_KEEP_ALIVE]
         return True
 
@@ -548,7 +548,7 @@ class ConnectionAiohttp8888(Connection):
 
     def _build_full_url(self, url_path: str | None) -> str:
         """Constructs the full URL, handling absolute URLs and standard relative paths."""
-        if url_path and url_path.startswith("http"):
+        if url_path is not None and url_path.startswith("http"):
             full_url = url_path
             if self._config.get(CONF_USE_HTTP, False) and full_url.startswith(
                 "https://"
@@ -557,7 +557,7 @@ class ConnectionAiohttp8888(Connection):
         else:
             port = self._config.get(CONF_PORT, DEFAULT_PORT)
             protocol = "http" if self._config.get(CONF_USE_HTTP, False) else "https"
-            path = url_path if url_path else ""
+            path = url_path if url_path is not None else ""
             full_url = f"{protocol}://{self._ip_address}:{port}{path}"
 
         return self._format_url(full_url)
@@ -684,7 +684,7 @@ class ConnectionAiohttp8888(Connection):
 
                 session = await self._get_session()
 
-                method = method or "GET"
+                method = method if method is not None and len(method.strip()) > 0 else "GET"
                 req_headers = req_headers or {}
 
                 async with session.request(
