@@ -767,7 +767,10 @@ async def test_http_1_0_forces_connection_close(
     connection_config, mock_logger, mock_hass, mock_session
 ):
     """Tests that an old server forces connection closure."""
-    with patch("os.path.exists", return_value=True):
+    with (
+        patch("os.path.exists", return_value=True),
+        patch("custom_components.climate_ip.helpers.create_samsung_ssl_context", return_value=MagicMock()),
+    ):
         conn = ConnectionAiohttp8888(
             connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
         )

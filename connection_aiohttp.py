@@ -75,6 +75,9 @@ _KEY_JSON = "json"
 _KEY_METHOD = "method"
 _KEY_HEADERS = "headers"
 
+AUTH_BEARER_PREFIX = "Bearer {}"
+DEFAULT_HTTP_METHOD = "GET"
+
 
 @register_connection
 class ConnectionAiohttp8888(Connection):
@@ -167,11 +170,12 @@ class ConnectionAiohttp8888(Connection):
     def _probe_url_path(self) -> str:
         """Centrally resolve the probe or standard URL path from params."""
         if len(self._params) > 0:
-            return (
-                self._params.get(_KEY_PROBE_URL)
-                or self._params.get(_KEY_URL)
-                or ""
-            )
+            probe_url = self._params.get(_KEY_PROBE_URL)
+            if probe_url is not None:
+                return probe_url
+            url = self._params.get(_KEY_URL)
+            if url is not None:
+                return url
         return ""
 
     def set_controller_ref(self, controller: YamlController) -> None:
@@ -236,7 +240,7 @@ class ConnectionAiohttp8888(Connection):
         except (ssl.SSLError, OSError, ValueError) as e:
             err_msg = "%s [aiohttp] Failed to create SSL context: %s."
             _LOGGER.error(err_msg, self.log_prefix, e)
-            return None
+            raise CannotConnect(f"SSL context creation failed: {e}") from e
 
     @staticmethod
     def _is_http_protocol_violation(exc: BaseException) -> bool:
@@ -262,8 +266,10 @@ class ConnectionAiohttp8888(Connection):
         self, node: dict[str, Any] | None, connection_base: Connection
     ) -> bool:
         """Load configuration from yaml node dictionary."""
-        if node is not None and CONF_KEEP_ALIVE in node:
-            self._keep_alive = node[CONF_KEEP_ALIVE]
+        if node is not None:
+            keep_alive = node.get(CONF_KEEP_ALIVE)
+            if keep_alive is not None:
+                self._keep_alive = keep_alive
         return True
 
     def create_updated(
@@ -286,34 +292,33 @@ class ConnectionAiohttp8888(Connection):
         new_connection._cert_path = self._cert_path
 
         if yaml_node is not None:
-            if CONF_KEEP_ALIVE in yaml_node:
-                new_connection._keep_alive = yaml_node[CONF_KEEP_ALIVE]
+            keep_alive = yaml_node.get(CONF_KEEP_ALIVE)
+            if keep_alive is not None:
+                new_connection._keep_alive = keep_alive
 
-            if CONFIG_DEVICE_CONNECTION_TEMPLATE in yaml_node:
+            connection_template = yaml_node.get(CONFIG_DEVICE_CONNECTION_TEMPLATE)
+            if connection_template is not None:
                 new_connection._connection_template = Template(
-                    yaml_node[CONFIG_DEVICE_CONNECTION_TEMPLATE],
+                    connection_template,
                     self._hass,
                 )
             elif CONFIG_DEVICE_CONNECTION_PARAMS in yaml_node:
                 # Explicit extraction to prevent None-unpacking errors
-                node_params = yaml_node.get(CONFIG_DEVICE_CONNECTION_PARAMS) or {}
+                node_params = yaml_node.get(CONFIG_DEVICE_CONNECTION_PARAMS)
+                node_params = node_params if node_params is not None else {}
                 params = {
                     **self._params,
                     **node_params,
                 }
                 new_connection._params.update(params)
 
-            if CONFIG_DEVICE_CONNECTION in yaml_node:
+            embedded_node = yaml_node.get(CONFIG_DEVICE_CONNECTION)
+            if embedded_node is not None:
                 new_connection._embedded_command = new_connection.create_updated(
-                    yaml_node[CONFIG_DEVICE_CONNECTION]
+                    embedded_node
                 )
-                if (
-                    CONFIG_DEVICE_CONDITION_TEMPLATE
-                    in yaml_node[CONFIG_DEVICE_CONNECTION]
-                ):
-                    condition_str = yaml_node[CONFIG_DEVICE_CONNECTION][
-                        CONFIG_DEVICE_CONDITION_TEMPLATE
-                    ]
+                condition_str = embedded_node.get(CONFIG_DEVICE_CONDITION_TEMPLATE)
+                if condition_str is not None:
                     if new_connection._embedded_command is not None:
                         new_connection._embedded_command.condition_template = Template(
                             condition_str,
@@ -374,7 +379,7 @@ class ConnectionAiohttp8888(Connection):
                 return None
 
             current_token, _ = self._auth_context
-            probe_headers = {AUTHORIZATION: f"Bearer {current_token}"}
+            probe_headers = {AUTHORIZATION: AUTH_BEARER_PREFIX.format(current_token)}
 
             # Use the shared state's SSL context, skip for plain HTTP test mode
             if not self._config.get(CONF_USE_HTTP, False):
@@ -404,7 +409,7 @@ class ConnectionAiohttp8888(Connection):
                 )
                 probe_session = await self._get_session()
                 async with probe_session.request(
-                    "GET",
+                    DEFAULT_HTTP_METHOD,
                     probe_url,
                     headers=probe_headers,
                     ssl=test_ssl_ctx,
@@ -602,7 +607,7 @@ class ConnectionAiohttp8888(Connection):
             raise AuthError(exc_msg)
 
         if AUTHORIZATION not in req_headers:
-            req_headers[AUTHORIZATION] = f"Bearer {current_token}"
+            req_headers[AUTHORIZATION] = AUTH_BEARER_PREFIX.format(current_token)
         if CONTENT_TYPE not in req_headers:
             req_headers[CONTENT_TYPE] = HEADER_VALUE_JSON
 
@@ -686,8 +691,7 @@ class ConnectionAiohttp8888(Connection):
 
                 session = await self._get_session()
 
-                method = method if method is not None and len(method.strip()) > 0 else "GET"
-                req_headers = req_headers if req_headers is not None else {}
+                method = method if len(method.strip()) > 0 else DEFAULT_HTTP_METHOD
 
                 async with session.request(
                     method,
@@ -829,7 +833,7 @@ class ConnectionAiohttp8888(Connection):
                 embedded_cond_result = self._embedded_command.check_execute_condition(
                     device_state
                 )
-                if embedded_cond_result is False:
+                if not embedded_cond_result:
                     debug_msg = "%s [async_execute] Embedded command condition not met. Skipping execution."
                     _LOGGER.debug(debug_msg, self.log_prefix)
                 else:
@@ -960,7 +964,7 @@ class ConnectionAiohttp8888(Connection):
         # Optimization: Reuse the probe response directly for the initial poll to eliminate duplicate requests
         if (
             probe_response_text is not None
-            and method == "GET"
+            and method == DEFAULT_HTTP_METHOD
             and full_url == self._build_full_url(self._probe_url_path)
         ):
             debug_msg = "%s [async_execute] OPTIMIZATION: Reusing probe response for initial poll."

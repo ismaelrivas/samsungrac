@@ -12,6 +12,15 @@ from custom_components.climate_ip.const import CONF_CERT
 from custom_components.climate_ip.exceptions import CannotConnect
 
 
+@pytest.fixture(autouse=True)
+def mock_ssl_context_creation():
+    with patch(
+        "custom_components.climate_ip.helpers.create_samsung_ssl_context"
+    ) as mock:
+        mock.return_value = MagicMock()
+        yield mock
+
+
 @pytest.fixture
 def connection_config():
     return {CONF_TOKEN: "test_token", CONF_CERT: "cert.pem"}
