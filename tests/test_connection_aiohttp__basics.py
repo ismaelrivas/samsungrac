@@ -454,7 +454,7 @@ async def test_get_session_args():
 
     from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
 
-    config = {"use_http": True}
+    config = {"use_http": True, CONF_TOKEN: "test_token"}
     conn = ConnectionAiohttp8888(
         config, logging.getLogger(), MagicMock(), MagicMock(), "10.0.0.1"
     )
@@ -498,7 +498,7 @@ async def test_create_ssl_context_strict():
 
     from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
 
-    config = {"insecure_ssl": True}
+    config = {"insecure_ssl": True, CONF_TOKEN: "test_token"}
     conn = ConnectionAiohttp8888(
         config, logging.getLogger(), MagicMock(), MagicMock(), "10.0.0.1"
     )
@@ -522,7 +522,7 @@ def test_create_updated_strict():
     from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
     from custom_components.climate_ip.const import CONFIG_DEVICE_CONNECTION
 
-    config = {}
+    config = {CONF_TOKEN: "test_token"}
     conn = ConnectionAiohttp8888(
         config, logging.getLogger(), MagicMock(), MagicMock(), "10.0.0.1"
     )
@@ -1119,7 +1119,7 @@ def test_resolved_target_ip_precedence_over_config_host():
 
     from homeassistant.const import CONF_HOST, CONF_MAC
 
-    config = {CONF_HOST: "SHOULD_NOT_APPEAR"}
+    config = {CONF_HOST: "SHOULD_NOT_APPEAR", CONF_TOKEN: "test_token"}
     conn = ConnectionAiohttp8888(
         config=config,
         logger=logging.getLogger(),
@@ -1142,7 +1142,7 @@ def test_resolved_target_uses_ip_address_directly():
     from homeassistant.const import CONF_MAC
 
     conn = ConnectionAiohttp8888(
-        config={},
+        config={CONF_TOKEN: "test_token"},
         logger=logging.getLogger(),
         hass=MagicMock(),
         session=MagicMock(),
@@ -1161,7 +1161,7 @@ def test_resolved_target_missing_keys_return_empty_strings():
     import logging
 
     conn = ConnectionAiohttp8888(
-        config={},
+        config={CONF_TOKEN: "test_token"},
         logger=logging.getLogger(),
         hass=MagicMock(),
         session=MagicMock(),
@@ -1209,7 +1209,7 @@ def test_format_url_strict_defaults_and_http_downgrade():
 
     # 1. EMPTY CONFIG: Force code to use .get(key, DEFAULT)
     conn = ConnectionAiohttp8888(
-        config={},
+        config={CONF_TOKEN: "test_token"},
         logger=logging.getLogger(),
         hass=MagicMock(),
         session=MagicMock(),
@@ -1246,7 +1246,7 @@ async def test_get_session_strict_creation_parameters_https():
     """Validate exact parameters of TCPConnector, ClientTimeout, and ClientSession for HTTPS."""
     import logging
 
-    config = {"use_http": False, "keep_alive": False}
+    config = {"use_http": False, "keep_alive": False, CONF_TOKEN: "test_token"}
     conn = ConnectionAiohttp8888(
         config=config,
         logger=logging.getLogger(),
@@ -1290,7 +1290,7 @@ async def test_get_session_strict_creation_parameters_http():
     """Validates that in plain HTTP mode, TCPConnector is created WITHOUT the ssl parameter."""
     import logging
 
-    config = {"use_http": True, "keep_alive": False}
+    config = {"use_http": True, "keep_alive": False, CONF_TOKEN: "test_token"}
     conn = ConnectionAiohttp8888(
         config=config,
         logger=logging.getLogger(),
@@ -1334,7 +1334,7 @@ async def test_get_session_returns_shared_session_when_keep_alive():
 
     injected_session = MagicMock(name="INJECTED_HA_SESSION")
     conn = ConnectionAiohttp8888(
-        config={"keep_alive": True},
+        config={"keep_alive": True, CONF_TOKEN: "test_token"},
         logger=logging.getLogger(),
         hass=MagicMock(),
         session=injected_session,
@@ -1361,7 +1361,7 @@ async def test_get_session_recreates_on_closed_session():
     import logging
 
     conn = ConnectionAiohttp8888(
-        config={"keep_alive": False},
+        config={"keep_alive": False, CONF_TOKEN: "test_token"},
         logger=logging.getLogger(),
         hass=MagicMock(),
         session=MagicMock(),
@@ -1400,7 +1400,7 @@ async def test_get_session_reuses_open_local_session():
     import logging
 
     conn = ConnectionAiohttp8888(
-        config={"keep_alive": False},
+        config={"keep_alive": False, CONF_TOKEN: "test_token"},
         logger=logging.getLogger(),
         hass=MagicMock(),
         session=MagicMock(),
@@ -1435,7 +1435,7 @@ async def test_get_session_fallback_when_shared_session_is_none():
 
     # Configure keep_alive=True but intentionally omit session
     conn = ConnectionAiohttp8888(
-        config={"keep_alive": True},
+        config={"keep_alive": True, CONF_TOKEN: "test_token"},
         logger=logging.getLogger(),
         hass=MagicMock(),
         session=None,  # <--- MUTMUT TRAP
@@ -2363,7 +2363,7 @@ def test_create_updated_dict_get_default_none(mock_logger, mock_hass, mock_sessi
 def test_prepare_request_headers_no_token_raises_auth_error(mock_logger, mock_hass, mock_session):
     """Test _prepare_request_headers raises AuthError when current_token is None or empty."""
     conn = ConnectionAiohttp8888(
-        config={},
+        config={CONF_TOKEN: "valid_token"},
         logger=mock_logger,
         hass=mock_hass,
         session=mock_session,
@@ -2372,6 +2372,20 @@ def test_prepare_request_headers_no_token_raises_auth_error(mock_logger, mock_ha
     with pytest.raises(AuthError) as exc_info:
         conn._prepare_request_headers(None, None, "1.1.1.1", None, "AA:BB")
     assert "Token not configured" in str(exc_info.value)
+
+
+@pytest.mark.parametrize("invalid_token", [None, "", "   "])
+def test_aiohttp_init_without_token_raises_auth_error(invalid_token, mock_logger, mock_hass, mock_session):
+    """Test __init__ immediately raises AuthError when token is missing or empty."""
+    config = {} if invalid_token is None else {CONF_TOKEN: invalid_token}
+    with pytest.raises(AuthError, match=r"\[aiohttp_init\] aiohttp engine started without a token\."):
+        ConnectionAiohttp8888(
+            config=config,
+            logger=mock_logger,
+            hass=mock_hass,
+            session=mock_session,
+            ip_address="192.168.1.100",
+        )
 
 
 @pytest.mark.asyncio

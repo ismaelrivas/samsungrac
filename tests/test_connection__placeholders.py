@@ -56,7 +56,7 @@ async def test_integration_minimal():
 
     # Aiohttp
     conn_aio = ConnectionAiohttp8888(
-        {"ip_address": "h"}, MagicMock(), MagicMock(), MagicMock(), "h"
+        {"ip_address": "h", "token": "t"}, MagicMock(), MagicMock(), MagicMock(), "h"
     )
     assert "h" in conn_aio._format_url("http://__CLIMATE_IP_HOST__")
 

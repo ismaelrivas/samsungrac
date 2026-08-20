@@ -10,7 +10,8 @@ import asyncio
 import logging
 import os
 import ssl
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -53,7 +54,7 @@ class AiohttpSharedState:
     """Strict state container for the aiohttp connection engine."""
 
     initialized: bool = False
-    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    lock: asyncio.Lock | None = None
     ssl_context: ssl.SSLContext | None = None
     local_session: aiohttp.ClientSession | None = None
     force_close_connection: bool = False
@@ -125,6 +126,7 @@ class ConnectionAiohttp8888(Connection):
                 "[aiohttp_init] aiohttp engine started without a token. This will fail."
             )
             _LOGGER.error(err_msg)
+            raise AuthError("[aiohttp_init] aiohttp engine started without a token.")
 
     @property
     def _force_close_connection(self) -> bool:
@@ -303,9 +305,7 @@ class ConnectionAiohttp8888(Connection):
                     self._hass,
                 )
             elif CONFIG_DEVICE_CONNECTION_PARAMS in yaml_node:
-                # Explicit extraction to prevent None-unpacking errors
-                node_params = yaml_node.get(CONFIG_DEVICE_CONNECTION_PARAMS)
-                node_params = node_params if node_params is not None else {}
+                node_params = yaml_node.get(CONFIG_DEVICE_CONNECTION_PARAMS, {}) or {}
                 params = {
                     **self._params,
                     **node_params,
@@ -373,6 +373,9 @@ class ConnectionAiohttp8888(Connection):
         if self._shared_state.initialized:
             return None
 
+        if self._shared_state.lock is None:
+            self._shared_state.lock = asyncio.Lock()
+
         async with self._shared_state.lock:
             # Double-check in case another task initialized it while we were waiting for the lock.
             if self._shared_state.initialized:
@@ -418,11 +421,11 @@ class ConnectionAiohttp8888(Connection):
                     ),
                 ) as response:  # type: ignore[arg-type]
                     if response.status in (
-                        200,
-                        401,
-                        403,
-                        404,
-                        405,
+                        HTTPStatus.OK,
+                        HTTPStatus.UNAUTHORIZED,
+                        HTTPStatus.FORBIDDEN,
+                        HTTPStatus.NOT_FOUND,
+                        HTTPStatus.METHOD_NOT_ALLOWED,
                     ):  # Added 404 and 405 for Not Found / Method Not Allowed
                         # Attempt to log the negotiated TLS version
                         transport = (
@@ -452,7 +455,7 @@ class ConnectionAiohttp8888(Connection):
                         self._shared_state.initialized = True
 
                         # Optimization - Return text for reuse in initial poll
-                        if response.status == 200:
+                        if response.status == HTTPStatus.OK:
                             debug_msg = "%s [aiohttp_probe] Reading response body..."
                             _LOGGER.debug(debug_msg, self.log_prefix)
                             return await response.text()
@@ -489,11 +492,12 @@ class ConnectionAiohttp8888(Connection):
                 ValueError,
             ) as e:
                 if self._is_http_protocol_violation(e):
-                    err_msg = (
+                    _LOGGER.warning(
                         "%s [aiohttp_probe] Device HTTP protocol/header violation detected: %s. "
-                        "Switching to 'Robust (raw socket)' engine."
+                        "Switching to 'Robust (raw socket)' engine.",
+                        self.log_prefix,
+                        e,
                     )
-                    _LOGGER.warning(err_msg, self.log_prefix, e)
                     raise InvalidHeaderError(
                         f"Protocol violation during probe: {e}"
                     ) from e
@@ -706,8 +710,11 @@ class ConnectionAiohttp8888(Connection):
                 # HTTP Version Detection to adjust Keep-Alive
                 self._handle_http_version_fallback(response)
 
-                if response.status != 200:
-                    if response.status in (401, 403):
+                if response.status != HTTPStatus.OK:
+                    if response.status in (
+                        HTTPStatus.UNAUTHORIZED,
+                        HTTPStatus.FORBIDDEN,
+                    ):
                         err_msg = (
                             "%s [aiohttp] Authentication error (status %d). Token: %s"
                         )
@@ -863,9 +870,10 @@ class ConnectionAiohttp8888(Connection):
                         embedded_params, token, host, dev_id, mac
                     )
 
+                    json_payload = embedded_params.get(_KEY_JSON)
                     embedded_data = (
-                        json_dumps(embedded_params.get(_KEY_JSON))
-                        if embedded_params.get(_KEY_JSON) is not None
+                        json_dumps(json_payload)
+                        if json_payload is not None
                         else None
                     )
                     embedded_url = embedded_params.get(_KEY_URL, url)
@@ -1008,6 +1016,8 @@ class ConnectionAiohttp8888(Connection):
 
         # 2. Close the local session and reset shared state under lock
         try:
+            if self._shared_state.lock is None:
+                self._shared_state.lock = asyncio.Lock()
             async with self._shared_state.lock:
                 local_session = self._shared_state.local_session
                 if local_session is not None:
