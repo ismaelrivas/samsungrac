@@ -1,4 +1,4 @@
-# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
+# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,broad-exception-caught,wrong-import-position
 """Fixtures for Climate IP integration tests."""
 
 from __future__ import annotations
@@ -7,6 +7,7 @@ import asyncio
 import os
 import sys
 import warnings
+import weakref
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -393,6 +394,59 @@ async def ruthless_teardown():
 
         # Give one clock cycle for tasks to process cancellation
         await asyncio.gather(*pending_tasks, return_exceptions=True)
+
+
+@pytest.fixture(autouse=True)
+async def ruthless_aiohttp_teardown():
+    """
+    Tracks and force-closes aiohttp sessions created by ConnectionAiohttp8888
+    to prevent event loop starvation during mutations of conn.close().
+    """
+    tracked_conns: weakref.WeakSet[Any] = weakref.WeakSet()
+
+    try:
+        from custom_components.climate_ip.connection_aiohttp import (
+            ConnectionAiohttp8888,
+        )
+
+        original_init = ConnectionAiohttp8888.__init__
+
+        def tracked_init(self, *args, **kwargs):
+            original_init(self, *args, **kwargs)
+            tracked_conns.add(self)
+
+        with patch.object(ConnectionAiohttp8888, "__init__", tracked_init):
+            yield
+    except ImportError:
+        yield
+        return
+
+    # Teardown: Force close the underlying session if it exists and is open
+    for conn in list(tracked_conns):
+        try:
+            if hasattr(conn, "_shared_state") and conn._shared_state is not None:
+                local_session = getattr(conn._shared_state, "local_session", None)
+                if local_session is not None and not getattr(local_session, "closed", True):
+                    try:
+                        import aiohttp
+                        await aiohttp.ClientSession.close(local_session)
+                    except Exception:
+                        pass
+                connector = getattr(conn._shared_state, "connector", None)
+                if connector is not None and not getattr(connector, "closed", True):
+                    if asyncio.iscoroutinefunction(connector.close):
+                        await connector.close()
+                    else:
+                        connector.close()
+            if hasattr(conn, "_session") and conn._session is not None:
+                if not getattr(conn._session, "closed", True):
+                    try:
+                        import aiohttp
+                        await aiohttp.ClientSession.close(conn._session)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
 
 def limit_memory_and_cpu():
