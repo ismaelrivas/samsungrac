@@ -38,10 +38,6 @@ def mock_logger():
     return logging.getLogger("test_logger")
 
 
-class StubHass:
-    def __init__(self):
-        self.async_add_executor_job = AsyncMock(side_effect=lambda func, *args: func(*args))
-
 @pytest.fixture
 def mock_hass():
     return StubHass()
