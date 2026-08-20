@@ -68,6 +68,12 @@ HEADER_VALUE_JSON = "application/json"
 HEADER_VALUE_CLOSE = "close"
 KEEPALIVE_TIMEOUT = 75
 
+_KEY_PROBE_URL = "probe_url"
+_KEY_URL = "url"
+_KEY_JSON = "json"
+_KEY_METHOD = "method"
+_KEY_HEADERS = "headers"
+
 
 def _is_http_protocol_violation(exc: BaseException) -> bool:
     """Check if exception represents an HTTP protocol/header violation requiring fallback to RAW."""
@@ -135,7 +141,7 @@ class ConnectionAiohttp8888(Connection):
 
         self._keep_alive: bool = config.get(CONF_KEEP_ALIVE, True)
 
-        if not self._token:
+        if self._token is None or len(self._token.strip()) == 0:
             err_msg = (
                 "[aiohttp_init] aiohttp engine started without a token. This will fail."
             )
@@ -158,7 +164,7 @@ class ConnectionAiohttp8888(Connection):
     @property
     def _resolved_target(self) -> tuple[str, str]:
         """Strictly and centrally resolve the Host and MAC address."""
-        host = str(self._ip_address) if self._ip_address is not None else ""
+        host = self._ip_address if self._ip_address is not None else ""
         raw_mac = self._params.get(CONF_MAC)
         mac = str(raw_mac) if raw_mac is not None else ""  # pragma: no mutate
         return host, mac
@@ -169,12 +175,8 @@ class ConnectionAiohttp8888(Connection):
         token = self._token
         dev_id = None
         if self._controller is not None:
-            ctrl_config = getattr(self._controller, "config", None)
-            if not isinstance(ctrl_config, dict):
-                ctrl_config = getattr(self._controller, "_config", {})
-            if isinstance(ctrl_config, dict):
-                token = ctrl_config.get(CONF_TOKEN, self._token)
-            dev_id = getattr(self._controller, "device_id", None)
+            token = self._controller.config.get(CONF_TOKEN, self._token)
+            dev_id = self._controller.device_id
         return token, dev_id
 
     def set_controller_ref(self, controller: YamlController) -> None:
@@ -191,10 +193,10 @@ class ConnectionAiohttp8888(Connection):
 
     def _resolve_and_verify_cert(self, raw_path: str | None) -> str | None:
         """Synchronously resolve and verify certificate path."""
-        if not raw_path:
+        if raw_path is None or len(raw_path.strip()) == 0:
             return None
         path = self._resolve_cert_path(raw_path)
-        if not path or not os.path.exists(path):
+        if path is None or len(path.strip()) == 0 or not os.path.exists(path):
             return None
         return path
 
@@ -377,7 +379,9 @@ class ConnectionAiohttp8888(Connection):
                 url_path = ""
                 if self._params:
                     url_path = (
-                        self._params.get("probe_url") or self._params.get("url") or ""
+                        self._params.get(_KEY_PROBE_URL)
+                        or self._params.get(_KEY_URL)
+                        or ""
                     )
 
                 if str(url_path).startswith("http"):
@@ -585,7 +589,7 @@ class ConnectionAiohttp8888(Connection):
         req_headers = headers.copy() if headers is not None else {}
         req_headers = format_placeholders(req_headers, current_token, host, dev_id, mac)
 
-        if not current_token:
+        if current_token is None or len(current_token.strip()) == 0:
             err_msg = "%s [aiohttp] No token available! The request will fail."
             _LOGGER.error(err_msg, self.log_prefix)
             exc_msg = "Token not configured for the aiohttp engine"
@@ -847,12 +851,12 @@ class ConnectionAiohttp8888(Connection):
                     )
 
                     embedded_data = (
-                        json_dumps(embedded_params.get("json"))
-                        if "json" in embedded_params
+                        json_dumps(embedded_params.get(_KEY_JSON))
+                        if _KEY_JSON in embedded_params
                         else None
                     )
-                    embedded_url = embedded_params.get("url", url)
-                    embedded_method = embedded_params.get("method", method)
+                    embedded_url = embedded_params.get(_KEY_URL, url)
+                    embedded_method = embedded_params.get(_KEY_METHOD, method)
 
                     if _LOGGER.isEnabledFor(logging.DEBUG):
                         debug_msg = "%s [async_execute] Executing embedded command with params: %s"
@@ -866,7 +870,7 @@ class ConnectionAiohttp8888(Connection):
                         method=embedded_method,
                         url=embedded_url,
                         data=embedded_data,
-                        headers=embedded_params.get("headers", headers),  # pragma: no mutate
+                        headers=embedded_params.get(_KEY_HEADERS, headers),  # pragma: no mutate
                         device_state=device_state,
                     )
 
@@ -949,7 +953,9 @@ class ConnectionAiohttp8888(Connection):
         probe_url_path = ""
         if self._params:
             probe_url_path = (
-                self._params.get("probe_url") or self._params.get("url") or ""
+                self._params.get(_KEY_PROBE_URL)
+                or self._params.get(_KEY_URL)
+                or ""
             )
 
         if (

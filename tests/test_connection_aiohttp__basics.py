@@ -424,7 +424,7 @@ def test_format_url_variants():
 
     mock_controller = MagicMock()
     mock_controller.device_id = "dev_123"
-    mock_controller._config = {"token": "ctrl_token"}
+    mock_controller.config = {"token": "ctrl_token"}
     conn.set_controller_ref(mock_controller)
 
     # 1. Full URL: Port replacement, HTTP downgrade, and placeholders
@@ -737,7 +737,7 @@ async def test_execution_uses_controller_token_priority(
 
         # Inject controller with dominant token
         mock_controller = MagicMock()
-        mock_controller._config = {"token": "TOKEN_DOMINANTE"}
+        mock_controller.config = {"token": "TOKEN_DOMINANTE"}
         mock_controller.device_id = "DEV_123"
         conn._controller = mock_controller
 
@@ -1024,7 +1024,7 @@ async def test_controller_fallback_to_base_token(mock_session, mock_logger, mock
     mock_session.request.return_value = mock_context
 
     mock_controller = MagicMock()
-    mock_controller._config = {}  # Empty dict, forces fallback to BASE_TOKEN
+    mock_controller.config = {}  # Empty dict, forces fallback to BASE_TOKEN
     conn.set_controller_ref(mock_controller)
 
     await conn._async_execute_request(
@@ -1077,7 +1077,7 @@ def test_format_url_strict_dict_extraction():
     # Controller with dominant token and device_id
     mock_controller = MagicMock()
     mock_controller.device_id = "device_xyz"
-    mock_controller._config = {CONF_TOKEN: "tok_CONTROLLER_dominant"}
+    mock_controller.config = {CONF_TOKEN: "tok_CONTROLLER_dominant"}
     conn.set_controller_ref(mock_controller)
 
     # URL with ALL real placeholders
@@ -2069,7 +2069,7 @@ async def test_try_connection_strict_token_and_port(
 
     # 2. Configure Controller with dominant Token
     mock_ctrl = MagicMock()
-    mock_ctrl._config = {"token": "CTRL_TOK"}
+    mock_ctrl.config = {"token": "CTRL_TOK"}
     conn.set_controller_ref(mock_ctrl)
 
     # Setup mock session
@@ -2111,7 +2111,7 @@ async def test_async_execute_request_header_placeholders(
     conn._params = {"mac": "AA:BB"}
     mock_ctrl = MagicMock()
     mock_ctrl.device_id = "DEV_123"
-    mock_ctrl._config = {}
+    mock_ctrl.config = {}
     conn.set_controller_ref(mock_ctrl)
 
     mock_session.closed = False
