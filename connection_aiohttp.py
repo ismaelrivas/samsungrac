@@ -163,6 +163,17 @@ class ConnectionAiohttp8888(Connection):
             dev_id = self._controller.device_id
         return token, dev_id
 
+    @property
+    def _probe_url_path(self) -> str:
+        """Centrally resolve the probe or standard URL path from params."""
+        if len(self._params) > 0:
+            return (
+                self._params.get(_KEY_PROBE_URL)
+                or self._params.get(_KEY_URL)
+                or ""
+            )
+        return ""
+
     def set_controller_ref(self, controller: YamlController) -> None:
         """Allows the property to set a reference to the main controller."""
         debug_msg = "%s [set_controller_ref] Setting controller reference for connection object."
@@ -272,7 +283,6 @@ class ConnectionAiohttp8888(Connection):
         new_connection._params = {}
         new_connection._controller = self._controller
         new_connection._shared_state = self._shared_state
-        new_connection._force_close_connection = self._force_close_connection
         new_connection._cert_path = self._cert_path
 
         if yaml_node is not None:
@@ -376,13 +386,7 @@ class ConnectionAiohttp8888(Connection):
                 _LOGGER.debug(debug_msg, self.log_prefix)
 
                 # Generalize Probe URL
-                url_path = ""
-                if len(self._params) > 0:
-                    url_path = (
-                        self._params.get(_KEY_PROBE_URL)
-                        or self._params.get(_KEY_URL)
-                        or ""
-                    )
+                url_path = self._probe_url_path
 
                 if url_path is not None and url_path.startswith("http"):
                     debug_msg = "%s [aiohttp_probe] Detected absolute URL, probing: %s"
@@ -627,7 +631,7 @@ class ConnectionAiohttp8888(Connection):
                 )
             self._force_close_connection = False
         else:
-            if not self._force_close_connection and response.version:
+            if not self._force_close_connection and response.version is not None:
                 debug_msg = "%s [aiohttp] Server speaks HTTP/%s.%s. Enforcing 'Connection: close'."
                 _LOGGER.debug(
                     debug_msg,
@@ -857,7 +861,7 @@ class ConnectionAiohttp8888(Connection):
 
                     embedded_data = (
                         json_dumps(embedded_params.get(_KEY_JSON))
-                        if _KEY_JSON in embedded_params
+                        if embedded_params.get(_KEY_JSON) is not None
                         else None
                     )
                     embedded_url = embedded_params.get(_KEY_URL, url)
@@ -954,18 +958,10 @@ class ConnectionAiohttp8888(Connection):
                         _LOGGER.debug(debug_msg, self.log_prefix, e)
 
         # Optimization: Reuse the probe response directly for the initial poll to eliminate duplicate requests
-        probe_url_path = ""
-        if len(self._params) > 0:
-            probe_url_path = (
-                self._params.get(_KEY_PROBE_URL)
-                or self._params.get(_KEY_URL)
-                or ""
-            )
-
         if (
             probe_response_text is not None
             and method == "GET"
-            and full_url == self._build_full_url(probe_url_path)
+            and full_url == self._build_full_url(self._probe_url_path)
         ):
             debug_msg = "%s [async_execute] OPTIMIZATION: Reusing probe response for initial poll."
             _LOGGER.debug(debug_msg, self.log_prefix)
