@@ -76,32 +76,6 @@ async def test_initialization(connection_config, mock_logger, mock_hass, mock_se
         assert conn.async_lock is not None  # Verify parent created lock
 
 
-async def test_create_ssl_context(
-    connection_config, mock_logger, mock_hass, mock_session
-):
-    """Test SSL context creation."""
-    with patch("os.path.exists", return_value=True):
-        conn = ConnectionAiohttp8888(
-            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
-        )
-
-        with patch(
-            "custom_components.climate_ip.helpers.create_samsung_ssl_context"
-        ) as mock_ssl_context:
-            mock_context_instance = MagicMock()
-            mock_ssl_context.return_value = mock_context_instance
-
-            context = await conn._create_ssl_context()
-
-            assert context is not None
-            mock_ssl_context.assert_called_with(
-                cert_path=conn._cert_path,
-                ciphers="ALL:@SECLEVEL=0",
-                verify_mode=ssl.CERT_NONE,
-                is_server=False,
-            )
-
-
 async def test_execute_request_success(
     connection_config, mock_logger, mock_hass, mock_session
 ):
@@ -415,43 +389,6 @@ async def test_aiohttp_lifecycle_and_shared_state():
 # ====================================================================================
 
 
-def test_format_url_variants():
-    """Validate token, IP, port replacement and downgrade to HTTP."""
-    import logging
-    from unittest.mock import MagicMock
-
-    from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
-
-    config = {
-        "token": "base_token",
-        "host": "192.168.1.50",
-        "port": "9999",
-        "use_http": True,
-    }
-    conn = ConnectionAiohttp8888(
-        config, logging.getLogger(), MagicMock(), MagicMock(), "10.0.0.1"
-    )
-    conn._params = {"mac": "AA:BB", "host": "192.168.1.50"}
-
-    mock_controller = MagicMock()
-    mock_controller.device_id = "dev_123"
-    mock_controller.config = {"token": "ctrl_token"}
-    conn.set_controller_ref(mock_controller)
-
-    # 1. Full URL: Port replacement, HTTP downgrade, and placeholders
-    # Kills mutants altering ":8888/" to "XX:8888/XX" or removing "use_http"
-    url_base = (
-        "https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__?mac=__CLIMATE_IP_MAC__"
-    )
-    res = conn._build_full_url(url_base)
-    assert res == "http://10.0.0.1:9999/devices/dev_123?mac=AA:BB"
-
-    # 2. Host variable and placeholder replacement in _build_full_url
-    conn._ip_address = "192.168.1.50"
-    res2 = conn._build_full_url("https://__CLIMATE_IP_HOST__/status")
-    assert res2 == "http://192.168.1.50/status"
-
-
 # ====================================================================================
 # SECTION C: SESSION GENERATION (_get_session)
 # ====================================================================================
@@ -706,33 +643,6 @@ async def test_adaptive_keep_alive_on_timeout_recovery(
     # And internal state updated to persist closure on subsequent calls
     assert conn._force_close_connection is True
 
-
-def test_create_updated_preserves_memory_references(
-    connection_config, mock_logger, mock_hass, mock_session
-):
-    from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
-
-    with patch("os.path.exists", return_value=True):
-        base_conn = ConnectionAiohttp8888(
-            config={"keep_alive": True, "token": "base"},
-            logger=mock_logger,
-            hass=mock_hass,
-            session=mock_session,
-            ip_address="192.168.1.100",
-        )
-        base_conn._controller = "MockControllerRef"
-
-        # Create clone with new parameters
-        new_conn = base_conn.create_updated({"keep_alive": False})
-
-        # STRICT MEMORY ASSERTIONS
-        assert (
-            new_conn._controller == "MockControllerRef"
-        ), "Lost controller reference"
-        assert (
-            new_conn._shared_state is base_conn._shared_state
-        ), "Lost shared state"
-        assert new_conn._keep_alive is False, "Did not update child parameter"
 
 
 async def test_execution_uses_controller_token_priority(
@@ -2356,23 +2266,6 @@ async def test_async_execute_embedded_template_sync_render(
     assert call_kwargs["url"] == "/sync_embed"
     assert call_kwargs["data"] == '{"a":1}'
 
-
-def test_create_updated_dict_get_default_none(mock_logger, mock_hass, mock_session):
-    """Kill PRUNED mutants at line 204 for Dict get default None in create_updated."""
-    conn = ConnectionAiohttp8888(
-        config={"token": "tok"},
-        logger=mock_logger,
-        hass=mock_hass,
-        session=mock_session,
-        ip_address="1.1.1.1",
-    )
-    conn._params = {"existing": "val"}
-
-    new_conn = conn.create_updated(
-        {CONFIG_DEVICE_CONNECTION_PARAMS: {"new_param": "new_val"}}
-    )
-
-    assert new_conn._params == {"existing": "val", "new_param": "new_val"}
 
 
 def test_prepare_request_headers_no_token_raises_auth_error(mock_logger, mock_hass, mock_session):

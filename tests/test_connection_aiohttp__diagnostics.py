@@ -5,6 +5,11 @@ import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.const import CONF_TOKEN
+
+from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
+from custom_components.climate_ip.const import CONF_CERT
+
 
 class StubHass:
     def __init__(self):
@@ -12,6 +17,7 @@ class StubHass:
         self.async_add_executor_job = AsyncMock(spec=["__call__", "return_value"], side_effect=lambda func, *args: func(*args))
     def __repr__(self): return "<SafeHass>"
     def __dir__(self): return ["async_add_executor_job"]
+
 
 class StubSession:
     def __init__(self):
@@ -21,11 +27,6 @@ class StubSession:
         self.close = AsyncMock(spec=["__call__", "return_value"])
     def __repr__(self): return "<SafeSession>"
     def __dir__(self): return ["closed", "request", "close"]
-
-from homeassistant.const import CONF_TOKEN
-
-from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
-from custom_components.climate_ip.const import CONF_CERT
 
 
 @pytest.fixture
@@ -106,29 +107,3 @@ def test_is_available_property(connection_config, mock_logger, mock_hass):
         assert conn.is_available is False
         conn._shared_state.initialized = True
         assert conn.is_available is True
-
-
-async def test_close_embedded_command_exception(connection_config, mock_logger, mock_hass):
-    """Test that an exception during embedded command close is logged and handled gracefully."""
-    import aiohttp
-
-    with (
-        patch("os.path.exists", return_value=True),
-        patch("custom_components.climate_ip.connection_aiohttp._LOGGER") as mock_module_logger,
-    ):
-        conn = ConnectionAiohttp8888(
-            connection_config, mock_logger, mock_hass, None, "192.168.1.100"
-        )
-        embedded_mock = AsyncMock()
-        mock_err = aiohttp.ClientError("Embedded connection error during close")
-        embedded_mock.close.side_effect = mock_err
-        conn._embedded_command = embedded_mock
-
-        await conn.close()
-
-        embedded_mock.close.assert_called_once()
-        mock_module_logger.warning.assert_called_with(
-            "%s [aiohttp] Error closing embedded command: %s",
-            conn.log_prefix,
-            mock_err,
-        )

@@ -305,7 +305,8 @@ class ConnectionAiohttp8888(Connection):
                     self._hass,
                 )
             elif CONFIG_DEVICE_CONNECTION_PARAMS in yaml_node:
-                node_params = yaml_node.get(CONFIG_DEVICE_CONNECTION_PARAMS, {}) or {}
+                node_params = yaml_node.get(CONFIG_DEVICE_CONNECTION_PARAMS)
+                node_params = node_params if node_params is not None else {}
                 params = {
                     **self._params,
                     **node_params,
@@ -474,21 +475,10 @@ class ConnectionAiohttp8888(Connection):
                 exc_msg = f"Device unreachable: {clean_msg}"
                 raise CannotConnect(exc_msg) from e
 
-            # Catch incomplete responses (missing Content-Length) which is common in older devices.
-            except (
-                TimeoutError,
-                aiohttp.ServerTimeoutError,
-                aiohttp.SocketTimeoutError,
-                aiohttp.ClientPayloadError,
-            ) as e:
-                err_msg = "%s [aiohttp_probe] Device protocol violation detected! The device accepted the connection (200 OK) but failed to send a complete response (Timeout/PayloadError: %s). This indicates it does not support standard HTTP/1.1 (missing Content-Length). Switching to 'Robust (raw socket)' engine."
-                _LOGGER.error(err_msg, self.log_prefix, e)
-                error_msg = "Device failed to provide response body (missing Content-Length/Close)"
-                raise InvalidHeaderError(error_msg) from e
-
             except (
                 aiohttp.ClientError,
                 aiohttp.http_exceptions.BadHttpMessage,
+                TimeoutError,
                 ValueError,
             ) as e:
                 if self._is_http_protocol_violation(e):
@@ -695,7 +685,11 @@ class ConnectionAiohttp8888(Connection):
 
                 session = await self._get_session()
 
-                method = method if len(method.strip()) > 0 else DEFAULT_HTTP_METHOD
+                method = (
+                    method.strip()
+                    if (method is not None and method.strip() != "")
+                    else DEFAULT_HTTP_METHOD
+                )
 
                 async with session.request(
                     method,
@@ -848,17 +842,16 @@ class ConnectionAiohttp8888(Connection):
                     _LOGGER.debug(debug_msg, self.log_prefix)
 
                 embedded_template = self._embedded_command.connection_template
-                raw_params = self._embedded_command.params
-                embedded_params = raw_params.copy()
 
                 if embedded_template is not None:
                     embedded_params_str = embedded_template.async_render(
                         parse_result=False
                     )
                     embedded_params = json_loads(embedded_params_str)
-                elif len(embedded_params) > 0:
+                elif len(self._embedded_command.params) > 0:
                     debug_msg = "%s [async_execute] Embedded command has no connection_template, using _params directly."
                     _LOGGER.debug(debug_msg, self.log_prefix)
+                    embedded_params = self._embedded_command.params.copy()
                 else:
                     warn_msg = "%s [async_execute] Embedded command found but it has no connection_template or params."
                     _LOGGER.warning(warn_msg, self.log_prefix)
@@ -1003,16 +996,7 @@ class ConnectionAiohttp8888(Connection):
 
         # 1. Close internal embedded command (if any)
         if self._embedded_command is not None:
-            try:
-                # Zero-Trust OO: Enforce interface compliance
-                await self._embedded_command.close()
-            except (
-                aiohttp.ClientError,
-                TimeoutError,
-                OSError,
-            ) as e:
-                warn_msg = "%s [aiohttp] Error closing embedded command: %s"
-                _LOGGER.warning(warn_msg, self.log_prefix, e)
+            await self._embedded_command.close()
 
         # 2. Close the local session and reset shared state under lock
         try:

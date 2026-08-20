@@ -6,6 +6,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 import pytest
+from homeassistant.const import CONF_TOKEN
+
+from custom_components.climate_ip.connection_aiohttp import (
+    ConnectionAiohttp8888,
+)
+from custom_components.climate_ip.const import CONF_CERT
+from custom_components.climate_ip.exceptions import CannotConnect, InvalidHeaderError
+
 
 class StubHass:
     def __init__(self):
@@ -13,6 +21,7 @@ class StubHass:
         self.async_add_executor_job = AsyncMock(spec=["__call__", "return_value"], side_effect=lambda func, *args: func(*args))
     def __repr__(self): return "<SafeHass>"
     def __dir__(self): return ["async_add_executor_job"]
+
 
 class StubSession:
     def __init__(self):
@@ -22,14 +31,6 @@ class StubSession:
         self.close = AsyncMock(spec=["__call__", "return_value"])
     def __repr__(self): return "<SafeSession>"
     def __dir__(self): return ["closed", "request", "close"]
-
-from homeassistant.const import CONF_TOKEN
-
-from custom_components.climate_ip.connection_aiohttp import (
-    ConnectionAiohttp8888,
-)
-from custom_components.climate_ip.const import CONF_CERT
-from custom_components.climate_ip.exceptions import CannotConnect, InvalidHeaderError
 
 
 @pytest.fixture
@@ -157,7 +158,7 @@ async def test_try_connection_timeout_error(
 
         mock_session.request.side_effect = TimeoutError()
 
-        with pytest.raises(InvalidHeaderError):
+        with pytest.raises(CannotConnect):
             await conn._try_connection()
 
 
