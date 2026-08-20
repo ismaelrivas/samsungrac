@@ -9,6 +9,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 import pytest
+
+class StubHass:
+    def __init__(self):
+        from unittest.mock import AsyncMock
+        self.async_add_executor_job = AsyncMock(side_effect=lambda func, *args: func(*args))
+
+class StubSession:
+    def __init__(self):
+        from unittest.mock import AsyncMock, MagicMock
+        self.closed = False
+        self.request = MagicMock()
+        self.close = AsyncMock()
+
 from homeassistant.const import CONF_TOKEN
 
 from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
@@ -32,19 +45,13 @@ def mock_logger():
 @pytest.fixture
 def mock_hass():
     """Return a mock HomeAssistant instance."""
-    hass = MagicMock()
-
-    async def async_add_executor_job(target, *args):
-        return target(*args)
-
-    hass.async_add_executor_job = AsyncMock(side_effect=async_add_executor_job)
-    return hass
+    return StubHass()
 
 
 @pytest.fixture
 def mock_session():
     """Return a mock aiohttp ClientSession."""
-    return MagicMock(spec=aiohttp.ClientSession)
+    return StubSession()
 
 
 @pytest.fixture
