@@ -22,7 +22,7 @@ def connection_config():
 
 @pytest.fixture
 def mock_logger():
-    return MagicMock(spec=logging.Logger)
+    return logging.getLogger("test_logger")
 
 
 @pytest.fixture

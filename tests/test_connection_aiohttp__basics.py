@@ -26,7 +26,7 @@ from custom_components.climate_ip.exceptions import (
 @pytest.fixture
 def mock_logger():
     """Return a mock Logger instance."""
-    return MagicMock(spec=logging.Logger)
+    return logging.getLogger("test_logger")
 
 
 @pytest.fixture
@@ -529,6 +529,8 @@ def test_create_updated_strict():
     conn._params = {"base": 1}
 
     yaml_node = {
+        "connection_template": "{{ top_level }}",
+        "keep_alive": True,
         CONFIG_DEVICE_CONNECTION: {
             "params": {"child": 2},
             "condition_template": "{{ True }}",
@@ -539,10 +541,14 @@ def test_create_updated_strict():
 
     # Must preserve the base parameter but NOT leak the child parameter to the root
     assert new_conn._params == {}
+    assert new_conn._keep_alive is True
+    assert new_conn._connection_template is not None
+    assert new_conn._connection_template.template == "{{ top_level }}"
 
-    # The embedded command must receive the child parameter
+    # The embedded command must receive the child parameter since it lacks connection_template
     assert new_conn._embedded_command is not None
     assert new_conn._embedded_command._params == {"child": 2}
+    assert new_conn._embedded_command._connection_template is None
 
     # Check condition template was compiled with exact template string
     assert new_conn._embedded_command.condition_template is not None
@@ -1951,7 +1957,7 @@ async def test_async_execute_request_strict_kwargs(
 
 @pytest.mark.asyncio
 async def test_async_execute_request_none_http_version(
-    mock_session, mock_logger, mock_hass
+    mock_session, mock_logger, mock_hass, caplog
 ):
     """Verify mutant kill altering `and response.version` validating logger silence."""
     conn = ConnectionAiohttp8888(
@@ -1972,6 +1978,7 @@ async def test_async_execute_request_none_http_version(
     mock_ctx.__aenter__.return_value = mock_response
     mock_session.request.return_value = mock_ctx
 
+    caplog.set_level(logging.DEBUG)
     await conn._async_execute_request("GET", "https://1.1.1.1:8888/test", None, {})
 
     # MILLIMETRIC ASSERTION
@@ -1979,10 +1986,7 @@ async def test_async_execute_request_none_http_version(
         conn._force_close_connection is True
     ), "Should force close if no version"
     # Verify logger.debug was NOT called with version message
-    for call in mock_logger.debug.call_args_list:
-        assert (
-            "Server speaks HTTP" not in call[0][0]
-        ), "The mutant evaluated True on `and response.version` when it was None"
+    assert not any("Server speaks HTTP" in record.message for record in caplog.records), "The mutant evaluated True on `and response.version` when it was None"
 
 
 @pytest.mark.asyncio
