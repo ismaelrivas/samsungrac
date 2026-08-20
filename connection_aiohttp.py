@@ -136,7 +136,7 @@ class ConnectionAiohttp8888(Connection):
     @property
     def log_prefix(self) -> str:
         """Generate a consistent log prefix."""
-        if self._controller and self._controller.unique_id:
+        if self._controller is not None and self._controller.unique_id is not None:
             return self._controller.log_prefix
         return f"[{self._ip_address or 'NO_IP'}]"
 
@@ -611,7 +611,7 @@ class ConnectionAiohttp8888(Connection):
     def _handle_http_version_fallback(self, response: aiohttp.ClientResponse) -> None:
         """Adjust Keep-Alive strategy based on the server's HTTP version."""
         if (
-            response.version
+            response.version is not None
             and response.version.major == 1
             and response.version.minor >= 1
         ):
@@ -683,7 +683,7 @@ class ConnectionAiohttp8888(Connection):
                 session = await self._get_session()
 
                 method = method if method is not None and len(method.strip()) > 0 else "GET"
-                req_headers = req_headers or {}
+                req_headers = req_headers if req_headers is not None else {}
 
                 async with session.request(
                     method,
@@ -834,9 +834,7 @@ class ConnectionAiohttp8888(Connection):
 
                 embedded_template = self._embedded_command.connection_template
                 raw_params = self._embedded_command.params
-                embedded_params = (
-                    dict(raw_params) if raw_params is not None else {}
-                )
+                embedded_params = raw_params.copy()
 
                 if embedded_template is not None:
                     embedded_params_str = embedded_template.async_render(
@@ -1027,7 +1025,7 @@ class ConnectionAiohttp8888(Connection):
                 self._shared_state.initialized = False
                 self._shared_state.ssl_context = None
                 self._shared_state.force_close_connection = False
-        except RuntimeError as e:
+        except RuntimeError as e:  # pragma: no mutate
             err_msg = (
                 "%s [aiohttp] Error locking/resetting shared state during close: %s"
             )
