@@ -152,6 +152,8 @@ async def test_request_chunked_fallback(client, mock_reader, mock_writer):
 
             assert response == '{"result": "ok"}'
             assert error is None
+            from unittest.mock import call
+            mock_reader.read.assert_has_calls([call(8192), call(8192), call(8192)])
 
 
 async def test_request_auth_error(client, mock_reader, mock_writer):
@@ -346,6 +348,23 @@ async def test_create_ssl_context_options(mock_create_ssl, client):
         ssl, "OP_NO_COMPRESSION", 0
     )
     assert ctx.options == expected_options
+
+    class RejectingSSLContext:
+        def __init__(self):
+            self._options = 0
+        @property
+        def options(self):
+            return self._options
+        @options.setter
+        def options(self, val):
+            # Ignore the OP_NO_COMPRESSION bit
+            self._options = val & ~getattr(ssl, "OP_NO_COMPRESSION", 0)
+
+    mock_create_ssl.return_value = RejectingSSLContext()
+    with patch("custom_components.climate_ip.protocol_8888._LOGGER.debug") as mock_debug:
+        await client._create_ssl_context()
+        call_args = mock_debug.call_args[0]
+        assert "OP_NO_COMPRESSION" not in call_args[2]
 
 
 def test_init_attributes():
@@ -790,13 +809,15 @@ async def test_canonical_timeout_mocking(client, mock_reader, mock_writer):
                 from unittest.mock import call
 
                 assert mock_timeout.call_args_list == [
-                    call(10.0),
-                    call(5.0),
-                    call(10.0),
-                    call(5.0),
-                    call(5.0),
-                    call(10.0),
+                    call(10),
+                    call(5),
+                    call(10),
+                    call(5),
+                    call(5),
+                    call(10),
                 ]
+                for call_arg in mock_timeout.call_args_list:
+                    assert isinstance(call_arg[0][0], int)
 
 
 @patch("custom_components.climate_ip.protocol_8888.async_create_samsung_ssl_context")
