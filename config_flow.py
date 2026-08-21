@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
+from pathlib import Path
 from typing import Any, Self
 
 import voluptuous as vol
@@ -97,14 +97,14 @@ class ClimateIpConfigFlow(
         main_yaml_name = DEVICE_TYPE_TO_CONFIG_FILE.get(device_type)
         if not main_yaml_name:
             raise ValueError(f"No configuration file mapping found for device_type: {device_type}")
-        main_yaml_path = os.path.join(os.path.dirname(__file__), main_yaml_name)
+        main_yaml_path = str(Path(__file__).parent / main_yaml_name)
         main_config = await self.hass.async_add_executor_job(load_yaml, main_yaml_path)
 
         auth_file = main_config.get("device", {}).get("auth_flow_file")
         if not auth_file:
             raise ValueError(f"No 'auth_flow_file' found in {main_yaml_name}")
 
-        auth_yaml_path = os.path.join(os.path.dirname(__file__), auth_file)
+        auth_yaml_path = str(Path(__file__).parent / auth_file)
         auth_config = await self.hass.async_add_executor_job(load_yaml, auth_yaml_path)
         return auth_config.get("auth_flow", {})
 
