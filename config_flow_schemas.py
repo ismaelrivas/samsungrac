@@ -1,3 +1,4 @@
+# pylint: disable=too-few-public-methods,line-too-long,consider-using-in
 # custom_components/climate_ip/config_flow_schemas.py
 """Schema definitions for Climate IP config flow."""
 
@@ -182,7 +183,8 @@ class ConfigFlowSchemasMixin:
             val = self.flow_data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
             interval_str = str(datetime.timedelta(seconds=int(val)))
         except (ValueError, TypeError):
-            interval_str = str(self.flow_data.get(CONF_POLL_INTERVAL, ""))
+            raw_interval = self.flow_data.get(CONF_POLL_INTERVAL)
+            interval_str = str(raw_interval) if raw_interval is not None else ""
 
         token_from_data = self.flow_data.get(CONF_TOKEN)
         if token_from_data:
