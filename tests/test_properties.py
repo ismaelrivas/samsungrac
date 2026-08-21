@@ -19,19 +19,31 @@ from homeassistant.components.climate.const import (
     ATTR_SWING_MODES,
 )
 from homeassistant.components.sensor import SensorStateClass
+from homeassistant.components.sensor.const import SensorDeviceClass
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNKNOWN, UnitOfTemperature
-from homeassistant.exceptions import HomeAssistantError, TemplateError
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.json import json_dumps
 from homeassistant.helpers.template import Template
 
 from custom_components.climate_ip.const import (
+    CONF_SUBDEVICE_ID,
     CONFIG_DEVICE_CONNECTION,
+    CONFIG_DEVICE_OPERATION_TEMP_UNIT_TEMPLATE,
     CONFIG_DEVICE_OPERATION_VALUE,
     CONFIG_DEVICE_OPERATION_VALUES,
     CONFIG_DEVICE_VALIDATION_TEMPLATE,
     CONFIG_TYPE,
     DEFAULT_JSON_STATUS_PAYLOAD,
+    KEY_DEVICE_CONFIG,
+    KEY_DEVICE_MODE,
+    KEY_DEVICE_STATE,
+    KEY_IDENTIFIERS,
+    KEY_PATH_TO_DEVICES,
+    PROPERTY_TYPE_ENUM,
     PROPERTY_TYPE_MODE,
+    PROPERTY_TYPE_STRING,
     PROPERTY_TYPE_SWITCH,
+    PROPERTY_TYPE_TEMP,
     STATUS_GETTER_JSON,
 )
 from custom_components.climate_ip.exceptions import AuthError, CannotConnect
@@ -232,7 +244,7 @@ async def test_mode_operation_mapping(mock_connection, mock_controller):
 
 
 async def test_malformed_xml_buffer(mock_connection, mock_controller) -> None:
-    """Comprobar tolerancia cuando la unidad manda payload parcial/incompleto XML."""
+    """Check tolerance when the unit sends partial or incomplete XML payload."""
     from custom_components.climate_ip.properties import DeviceProperty
 
     prop = DeviceProperty("test_prop", mock_connection, mock_controller)
@@ -249,7 +261,7 @@ async def test_malformed_xml_buffer(mock_connection, mock_controller) -> None:
 
 
 
-async def test_deviceoperation_async_set_value_saneamiento(
+async def test_deviceoperation_async_set_value_sanitization(
     mock_connection, mock_controller, caplog
 ):
     """Test front-end sanitization logic."""
@@ -287,7 +299,7 @@ async def test_deviceoperation_async_set_value_async_native_exceptions(
     op = DeviceOperation("test_op", mock_connection, mock_controller)
     mock_connection.is_async_native = True
 
-    with patch.object(op, "_resolve_async_params", return_value={"method": "PUT", "method": "GET", "url": "/test"}):
+    with patch.object(op, "_resolve_async_params", return_value={"method": "GET", "url": "/test"}):
         mock_connection.async_execute.side_effect = AuthError("Token expired")
         with pytest.raises(HomeAssistantError, match="Connection error"):
             await op.async_set_value("val")
@@ -1364,7 +1376,7 @@ async def test_get_json_status_load_from_yaml_default_template():
 async def test_device_operation_resolve_async_params_missing_attr():
     """Test getattr(connection, '_connection_template') fallback with strict spec."""
     conn = MagicMock(spec=["_params"])
-    conn._params = {"method": "POST", "method": "GET", "url": "/test", "url": "/api"}
+    conn._params = {"method": "GET", "url": "/api"}
     ctrl = MagicMock()
     ctrl.loader = MagicMock()
     ctrl.loader.parsed_yaml_cache = {}
@@ -1374,7 +1386,7 @@ async def test_device_operation_resolve_async_params_missing_attr():
     op._connection_template = None
 
     params = op._resolve_async_params(conn, "val")
-    assert params == {"method": "POST", "method": "GET", "url": "/test", "url": "/api"}
+    assert params == {"method": "GET", "url": "/api"}
 
 
 async def test_device_operation_resolve_async_params_condition_flip():
@@ -1387,18 +1399,18 @@ async def test_device_operation_resolve_async_params_condition_flip():
     ctrl.log_prefix = "TEST"
 
     op = DeviceOperation("test", conn, ctrl)
-    op._connection_template = Template(hass=MagicMock(data={}), template='{"method": "POST", "method": "GET", "url": "/test", "url": "/set"}')
+    op._connection_template = Template(hass=MagicMock(data={}), template='{"method": "GET", "url": "/set"}')
 
     # When base_template is None (because conn has no _connection_template), base_params remains {}
     params = op._resolve_async_params(conn, "val")
-    assert params == {"method": "POST", "method": "GET", "url": "/test", "url": "/set"}
+    assert params == {"method": "GET", "url": "/set"}
 
 
 
 
 async def test_get_json_status_load_from_yaml_inherits_connection_template():
     """Test load_from_yaml inherits _connection_template from connection object."""
-    custom_tmpl = Template(hass=MagicMock(data={}), template='{"method": "POST", "method": "GET", "url": "/test", "url": "/inherited_endpoint"}')
+    custom_tmpl = Template(hass=MagicMock(data={}), template='{"method": "GET", "url": "/inherited_endpoint"}')
     conn = MagicMock(is_async_native=True, connection_template=custom_tmpl)
     conn.create_updated.return_value = conn
     ctrl = MagicMock()
@@ -1414,7 +1426,7 @@ async def test_get_json_status_load_from_yaml_inherits_connection_template():
     assert g._connection_template is custom_tmpl
     assert (
         g._connection_template.render()
-        == '{"method": "POST", "method": "GET", "url": "/test", "url": "/inherited_endpoint"}'
+        == '{"method": "GET", "url": "/inherited_endpoint"}'
     )
 
 
@@ -1495,8 +1507,8 @@ async def test_getjsonstatus_calculate_value_json_strict(
     assert result == {"strict_key": "strict_value", "is_active": True}
 
 
-def test_apply_optimistic_cascades_root_and_nested(mock_connection, mock_controller):
-    """Test that apply_optimistic_cascades correctly mutates root and nested state."""
+def test_apply_optimistic_cascades_comprehensive(mock_connection, mock_controller):
+    """Test that apply_optimistic_cascades correctly mutates root, nested state, and handles edge cases."""
     prop = DeviceProperty("test_cascades", mock_connection, mock_controller)
 
     # 1. No config -> no-op
@@ -1504,7 +1516,29 @@ def test_apply_optimistic_cascades_root_and_nested(mock_connection, mock_control
     prop.apply_optimistic_cascades(state, "cool")
     assert state == {"power": "Off"}
 
-    # 2. Configure cascades
+    # 2. cascades is not a list (string, int, or None) -> early return without mutating
+    prop._config = {"optimistic_cascades": "invalid_type"}
+    state_str = {"power": "Off"}
+    prop.apply_optimistic_cascades(state_str, "cool")
+    assert state_str == {"power": "Off"}
+
+    prop._config = {"optimistic_cascades": 123}
+    state_int = {"power": "Off"}
+    prop.apply_optimistic_cascades(state_int, "cool")
+    assert state_int == {"power": "Off"}
+
+    # 3. state has empty Devices list -> len > 0 check avoids IndexError
+    prop._config = {
+        "optimistic_cascades": [
+            {"target_node": "power", "value_map": {"on": "On"}}
+        ]
+    }
+    state_empty_devs = {"power": "Off", "Devices": []}
+    prop.apply_optimistic_cascades(state_empty_devs, "on")
+    assert state_empty_devs["power"] == "On"
+    assert state_empty_devs["Devices"] == []
+
+    # 4. Standard root and nested cascade execution
     prop.load_from_yaml({
         "optimistic_cascades": [
             {
@@ -1544,14 +1578,370 @@ def test_apply_optimistic_cascades_root_and_nested(mock_connection, mock_control
     assert state2["AC_FUN_POWER"] == "Off"
     assert state2["Operation"]["power"] == "Off"
 
-    # Test invalid / malformed cascade entries
-    prop._config = {"optimistic_cascades": "invalid_type"}
-    prop.apply_optimistic_cascades(state2, "cool")
-    assert state2["AC_FUN_POWER"] == "Off"
+    # 5. Multiple cascade rules with invalid rules in between -> continue vs break
+    prop._config = {
+        "optimistic_cascades": [
+            "invalid_non_dict_rule",
+            {"target_node": None, "value_map": {"on": "On"}},
+            {"target_node": "mode", "value_map": "invalid_value_map"},
+            {"target_node": "power", "value_map": {"on": "On"}},
+            {"target_node": "fan", "value_map": {"on": "High"}},
+        ]
+    }
+    state_multi = {"power": "Off", "fan": "Low"}
+    prop.apply_optimistic_cascades(state_multi, "on")
+    assert state_multi["power"] == "On"
+    assert state_multi["fan"] == "High"
 
-    prop._config = {"optimistic_cascades": [{"target_node": None}]}
-    prop.apply_optimistic_cascades(state2, "cool")
-    assert state2["AC_FUN_POWER"] == "Off"
+    # 6. Intermediate non-dict path replacement
+    prop._config = {
+        "optimistic_cascades": [
+            {"target_node": "nested.sub.key", "value_map": {"on": "active"}}
+        ]
+    }
+    state_nested_override = {"nested": "primitive_string"}
+    prop.apply_optimistic_cascades(state_nested_override, "on")
+    assert isinstance(state_nested_override["nested"], dict)
+    assert state_nested_override["nested"]["sub"]["key"] == "active"
+
+    # 7. Default fallback in value_map
+    prop._config = {
+        "optimistic_cascades": [
+            {"target_node": "status", "value_map": {"on": "On", "default": "Unknown"}}
+        ]
+    }
+    state_default = {"status": "Old"}
+    prop.apply_optimistic_cascades(state_default, "unmapped_val")
+    assert state_default["status"] == "Unknown"
+
+
+def test_template_log_fn_and_clear_cache():
+    """Test _template_log_fn logs unique warning only once and clear_template_warning_cache clears it."""
+    from custom_components.climate_ip.properties import (
+        _WARNED_TEMPLATE_MESSAGES,
+        _template_log_fn,
+        clear_template_warning_cache,
+    )
+
+    clear_template_warning_cache()
+    assert len(_WARNED_TEMPLATE_MESSAGES) == 0
+
+    with patch("custom_components.climate_ip.properties._LOGGER.debug") as mock_debug:
+        _template_log_fn(logging.WARNING, "test warning message 1")
+        assert "test warning message 1" in _WARNED_TEMPLATE_MESSAGES
+        mock_debug.assert_called_once_with("Template variable warning: %s", "test warning message 1")
+
+        # Second call with the same message should not log again
+        mock_debug.reset_mock()
+        _template_log_fn(logging.WARNING, "test warning message 1")
+        mock_debug.assert_not_called()
+
+        # Different message should log
+        _template_log_fn(logging.WARNING, "test warning message 2")
+        mock_debug.assert_called_once_with("Template variable warning: %s", "test warning message 2")
+        assert "test warning message 2" in _WARNED_TEMPLATE_MESSAGES
+
+    clear_template_warning_cache()
+    assert len(_WARNED_TEMPLATE_MESSAGES) == 0
+
+
+def test_device_property_route_to_subdevice():
+    """Test _route_to_subdevice covers path resolution, id matching, mode fallback, and default fallback."""
+    conn = MagicMock()
+    ctrl = MagicMock()
+    ctrl.device_id = "ac_unit_2"
+    ctrl.loader = MagicMock()
+    ctrl.loader.parsed_yaml_cache = {
+        "ac_unit_2": {
+            KEY_DEVICE_CONFIG: {
+                KEY_IDENTIFIERS: {
+                    KEY_PATH_TO_DEVICES: ["Devices"],
+                    CONF_SUBDEVICE_ID: ["id"],
+                }
+            }
+        }
+    }
+    prop = DeviceProperty("test_prop", conn, ctrl)
+
+    # 1. Path is None -> returns copy of raw_dict
+    ctrl.loader.parsed_yaml_cache["ac_unit_2"][KEY_DEVICE_CONFIG][KEY_IDENTIFIERS] = {}
+    raw_dict = {"general": 1}
+    assert prop._route_to_subdevice(raw_dict) == {"general": 1}
+
+    # 2. Path exists, but devices_list is not list or empty
+    ctrl.loader.parsed_yaml_cache["ac_unit_2"][KEY_DEVICE_CONFIG][KEY_IDENTIFIERS] = {
+        KEY_PATH_TO_DEVICES: ["Devices"],
+        CONF_SUBDEVICE_ID: ["id"],
+    }
+    assert prop._route_to_subdevice({"Devices": None}) == {"Devices": None}
+    assert prop._route_to_subdevice({"Devices": []}) == {"Devices": []}
+    assert prop._route_to_subdevice({"Devices": "not_a_list"}) == {"Devices": "not_a_list"}
+
+    # 3. Strict match by device_id across multiple devices
+    devices = [
+        {"id": "ac_unit_1", "name": "Unit 1"},
+        {"id": "ac_unit_2", "name": "Unit 2"},
+        {"id": "ac_unit_3", "name": "Unit 3"},
+    ]
+    routed = prop._route_to_subdevice({"Devices": devices})
+    assert routed == {"id": "ac_unit_2", "name": "Unit 2"}
+
+    # 4. Fallback to first AC unit with KEY_DEVICE_MODE when device_id doesn't match
+    devices_mode_fallback = [
+        {"id": "wifi_kit_0", "wifi": True},
+        {"id": "ac_unknown", KEY_DEVICE_MODE: "Cool", "temp": 24},
+        {"id": "ac_other", KEY_DEVICE_MODE: "Heat", "temp": 21},
+    ]
+    routed_mode = prop._route_to_subdevice({"Devices": devices_mode_fallback})
+    assert routed_mode == {"id": "ac_unknown", KEY_DEVICE_MODE: "Cool", "temp": 24}
+
+    # 5. Absolute fallback (first item) when neither device_id nor KEY_DEVICE_MODE matches
+    devices_abs_fallback = [
+        {"id": "other_1", "power": "on"},
+        {"id": "other_2", "power": "off"},
+    ]
+    routed_abs = prop._route_to_subdevice({"Devices": devices_abs_fallback})
+    assert routed_abs == {"id": "other_1", "power": "on"}
+
+
+def test_device_property_is_valid_strict(mock_connection, mock_controller):
+    """Test is_valid strictly evaluates template and condition flips."""
+    prop = DeviceProperty("test_prop", mock_connection, mock_controller)
+
+    # 1. validation_template is None -> True
+    prop._validation_template = None
+    assert prop.is_valid({"any": "state"}) is True
+
+    # 2. device_state is None -> True
+    prop._validation_template = Template(hass=MagicMock(data={}), template="true")
+    assert prop.is_valid(None) is True
+
+    # 3. validation_template is not None, device_state is not None, template renders "valid" -> True
+    prop._validation_template = Template(
+        hass=MagicMock(data={}),
+        template="{{ 'valid' if device_state.power == 'on' else 'invalid' }}",
+    )
+    assert prop.is_valid({"power": "on"}) is True
+
+    # 4. validation_template is not None, device_state is not None, template renders "invalid" -> False
+    assert prop.is_valid({"power": "off"}) is False
+
+    # 5. TemplateError / Exception -> False
+    prop._validation_template = Template(hass=MagicMock(data={}), template="{{ 1 / 0 }}")
+    assert prop.is_valid({"power": "on"}) is False
+
+
+def test_device_property_value_is_string_matrix(mock_connection, mock_controller):
+    """Test value_is_string property across types and device classes to kill boolean mutants."""
+    prop = DeviceProperty("test_prop", mock_connection, mock_controller)
+
+    # Type is PROPERTY_TYPE_STRING, device_class is None -> True
+    prop._type = PROPERTY_TYPE_STRING
+    prop._device_class = None
+    assert prop.value_is_string is True
+
+    # Type is PROPERTY_TYPE_ENUM, device_class is None -> True
+    prop._type = PROPERTY_TYPE_ENUM
+    prop._device_class = None
+    assert prop.value_is_string is True
+
+    # Type is something else, device_class is SensorDeviceClass.ENUM -> True
+    prop._type = "other_type"
+    prop._device_class = SensorDeviceClass.ENUM
+    assert prop.value_is_string is True
+
+    # Type is something else, device_class is not ENUM (e.g. None or temperature) -> False
+    prop._type = "other_type"
+    prop._device_class = None
+    assert prop.value_is_string is False
+
+    prop._device_class = "temperature"
+    assert prop.value_is_string is False
+
+
+async def test_getjsonstatus_async_update_state_async_native_comprehensive(
+    mock_connection, mock_controller
+):
+    """Test GetJsonStatus.async_update_state in async native mode across all branches and fallbacks."""
+    g = GetJsonStatus("test_getter", mock_connection, mock_controller)
+    mock_connection.is_async_native = True
+    mock_connection._params = {"base_key": "base_val"}
+    mock_connection.config = {"duid": "cfg_duid", "token": "cfg_token"}
+
+    # 1. Connection template is None -> returns None and logs error
+    g._connection_template = None
+    res = await g.async_update_state(None, False)
+    assert res is None
+
+    # 2. DUID resolution failure when neither controller nor config has device_id/duid
+    mock_controller.device_id = None
+    mock_connection.config = {}
+    g._connection_template = Template(hass=MagicMock(data={}), template='{"method": "GET", "url": "/status"}')
+    with pytest.raises(ValueError, match="Could not resolve device_id/duid"):
+        await g.async_update_state(None, False)
+
+    # 3. Successful async native execution with JSON payload template
+    mock_controller.device_id = "ctrl_duid"
+    mock_connection.config = {"token": "my_secret_token"}
+    g._connection_template = Template(
+        hass=MagicMock(data={}),
+        template='{"method": "GET", "url": "/status/{{ device_id }}", "headers": {"Token": "{{ token }}"}}',
+    )
+    mock_connection.async_execute = AsyncMock(
+        return_value=('{"power": "on", "temperature": 22}', None)
+    )
+
+    res = await g.async_update_state(None, False)
+    assert res == {"power": "on", "temperature": 22}
+    assert g.value == {"power": "on", "temperature": 22}
+    assert g._json_status == {"power": "on", "temperature": 22}
+    assert g.state_attributes == {KEY_DEVICE_STATE: json_dumps({"power": "on", "temperature": 22})}
+    mock_connection.async_execute.assert_called_once_with(
+        "GET",
+        "/status/ctrl_duid",
+        None,
+        {"Token": "my_secret_token"},
+        _is_poll=True,
+    )
+
+    # 4. Successful async native execution with raw (non-JSON) string template
+    mock_connection.async_execute.reset_mock()
+    g._connection_template = Template(hass=MagicMock(data={}), template="GET_STATUS_RAW")
+    mock_connection.async_execute = AsyncMock(
+        return_value=('{"raw_result": 1}', None)
+    )
+    res_raw = await g.async_update_state(None, False)
+    assert res_raw == {"raw_result": 1}
+    mock_connection.async_execute.assert_called_once_with(
+        None,
+        None,
+        "GET_STATUS_RAW",
+        None,
+        _is_poll=True,
+    )
+
+    # 5. Response text is None from async_execute -> returns None
+    mock_connection.async_execute = AsyncMock(return_value=(None, None))
+    res_none = await g.async_update_state(None, False)
+    assert res_none is None
+
+    # 6. Response text is invalid JSON -> returns None
+    mock_connection.async_execute = AsyncMock(return_value=("not_json_at_all", None))
+    res_invalid = await g.async_update_state(None, False)
+    assert res_invalid is None
+
+    # 7. Sync mode fallback (is_async_native = False) with None result sets _attrs to None
+    mock_connection.is_async_native = False
+    mock_connection.async_execute_with_retry = AsyncMock(return_value=None)
+    g._connection_template = Template(hass=MagicMock(data={}), template="test")
+    res_sync_none = await g.async_update_state(None, False)
+    assert res_sync_none is None
+    assert g._attrs == {KEY_DEVICE_STATE: None}
+
+
+async def test_deviceoperation_async_set_value_async_native_http_response(
+    mock_connection, mock_controller
+):
+    """Test DeviceOperation.async_set_value in async native mode for response presence, failure, and strict routing."""
+    op = DeviceOperation("test_op", mock_connection, mock_controller)
+    mock_connection.is_async_native = True
+    mock_controller.device_id = "test_duid"
+
+    # 1. Successful HTTP call returns response text -> returns True
+    op._connection_template = Template(
+        hass=MagicMock(data={}),
+        template='{"method": "POST", "url": "/set_state", "json": {"state": "on"}, "headers": {"Content-Type": "json"}}',
+    )
+    mock_connection.async_execute = AsyncMock(return_value=('{"success": true}', None))
+    res = await op.async_set_value("on")
+    assert res is True
+    mock_connection.async_execute.assert_called_once_with(
+        "POST",
+        "/set_state",
+        json_dumps({"state": "on"}),
+        {"Content-Type": "json"},
+        device_state={},
+    )
+
+    # 2. HTTP call returns (None, None) -> returns False
+    mock_connection.async_execute = AsyncMock(return_value=(None, None))
+    res_none = await op.async_set_value("on")
+    assert res_none is False
+
+    # 3. Missing method or url raises ValueError
+    op._connection_template = Template(
+        hass=MagicMock(data={}),
+        template='{"headers": {"Content-Type": "json"}}',
+    )
+    with pytest.raises(ValueError, match="Strict routing failed: Missing method or url"):
+        await op.async_set_value("on")
+
+
+async def test_deviceoperation_resolve_async_params_non_dict_base(
+    mock_connection, mock_controller
+):
+    """Test _resolve_async_params handles base_template rendering a non-dict JSON without TypeError."""
+    op = DeviceOperation("test_op", mock_connection, mock_controller)
+    mock_connection._params = {"default_header": "test_header"}
+    # Base template returns a JSON list instead of a dict
+    mock_connection._connection_template = Template(
+        hass=MagicMock(data={}), template="[1, 2, 3]"
+    )
+    op._connection_template = Template(
+        hass=MagicMock(data={}),
+        template='{"method": "POST", "url": "/api/set"}',
+    )
+
+    params = op._resolve_async_params(mock_connection, "val")
+    # Base params should safely fallback to {} and merge with raw_params and operation_params
+    assert params == {
+        "default_header": "test_header",
+        "method": "POST",
+        "url": "/api/set",
+    }
+
+
+async def test_temperatureoperation_load_from_yaml_unit_template(
+    mock_connection, mock_controller
+):
+    """Test TemperatureOperation.load_from_yaml parses unit_template and handles invalid nodes."""
+    op = TemperatureOperation("test_temp", mock_connection, mock_controller)
+
+    # 1. node is None -> returns False
+    assert op.load_from_yaml(None) is False
+    assert op._unit_template is None
+
+    # 2. node without unit template -> returns True, unit_template is None
+    assert op.load_from_yaml({"type": PROPERTY_TYPE_TEMP}) is True
+    assert op._unit_template is None
+
+    # 3. node with unit template -> returns True, unit_template is compiled Template
+    yaml_node = {
+        "type": PROPERTY_TYPE_TEMP,
+        CONFIG_DEVICE_OPERATION_TEMP_UNIT_TEMPLATE: "{{ device_state.temp_unit }}",
+    }
+    assert op.load_from_yaml(yaml_node) is True
+    assert isinstance(op._unit_template, Template)
+
+
+async def test_temperatureoperation_async_update_state_status_getter(
+    mock_connection, mock_controller
+):
+    """Test TemperatureOperation.async_update_state dynamically resolves unit and value via status_getter."""
+    status_getter = MagicMock()
+    status_getter.value = {"temp_unit": "F", "current_temp": "77"}
+
+    op = TemperatureOperation("test_temp", mock_connection, mock_controller, status_getter)
+    op._unit_template = Template(hass=MagicMock(data={}), template="{{ device_state.temp_unit }}")
+    op._status_template = Template(hass=MagicMock(data={}), template="{{ device_state.current_temp }}")
+    op._hass_unit = UnitOfTemperature.CELSIUS
+
+    # Update without device_state_override to exercise self._status_getter.value branch
+    val = await op.async_update_state()
+    assert val == 25.0
+    assert op.value == 25.0
+    assert op._device_unit == UnitOfTemperature.FAHRENHEIT
+
 
 
 
