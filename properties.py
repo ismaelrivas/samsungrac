@@ -5,10 +5,8 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-import math
 from typing import Any, Protocol, final, runtime_checkable
 
-from homeassistant.components.climate import ClimateEntityFeature
 from homeassistant.components.climate import (
     ATTR_FAN_MODE,
     ATTR_FAN_MODES,
@@ -18,6 +16,7 @@ from homeassistant.components.climate import (
     ATTR_PRESET_MODES,
     ATTR_SWING_MODE,
     ATTR_SWING_MODES,
+    ClimateEntityFeature,
 )
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.components.sensor.const import SensorDeviceClass
@@ -27,7 +26,6 @@ from homeassistant.helpers.json import json_dumps
 from homeassistant.helpers.template import Template
 from homeassistant.util.json import JSON_DECODE_EXCEPTIONS, json_loads
 from homeassistant.util.unit_conversion import TemperatureConverter
-
 
 from .const import (
     CONF_SUBDEVICE_ID,
@@ -517,7 +515,7 @@ class DeviceProperty:
     ) -> None:
         """Optimistically cascade state changes based on YAML configuration."""
         property_config = getattr(self, "_config", {})
-        cascades = property_config.get("optimistic_cascades", [])
+        cascades = property_config.get("optimistic_cascades")
 
         if not cascades or not isinstance(cascades, list):
             return
@@ -537,9 +535,9 @@ class DeviceProperty:
             if not isinstance(cascade_rule, dict):
                 continue
             target_path = cascade_rule.get("target_node")
-            value_map = cascade_rule.get("value_map", {})
+            value_map = cascade_rule.get("value_map")
 
-            if not target_path or not value_map or not isinstance(value_map, dict):
+            if not target_path or not isinstance(value_map, dict):
                 continue
 
             new_val = value_map.get(val_str)

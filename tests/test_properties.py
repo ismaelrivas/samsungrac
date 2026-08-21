@@ -27,16 +27,27 @@ from homeassistant.helpers.template import Template
 
 from custom_components.climate_ip.const import (
     CONF_SUBDEVICE_ID,
+    CONFIG_DEVICE_CLASS,
     CONFIG_DEVICE_CONNECTION,
+    CONFIG_DEVICE_CONNECTION_TEMPLATE,
+    CONFIG_DEVICE_NAME,
+    CONFIG_DEVICE_OPERATION_NUMBER_MAX,
+    CONFIG_DEVICE_OPERATION_NUMBER_MIN,
     CONFIG_DEVICE_OPERATION_TEMP_UNIT_TEMPLATE,
     CONFIG_DEVICE_OPERATION_VALUE,
     CONFIG_DEVICE_OPERATION_VALUES,
+    CONFIG_DEVICE_STATUS_TEMPLATE,
     CONFIG_DEVICE_VALIDATION_TEMPLATE,
+    CONFIG_ENTITY_CATEGORY,
+    CONFIG_STATE_CLASS,
+    CONFIG_STATE_NODE,
     CONFIG_TYPE,
+    CONFIG_UNIT_OF_MEASUREMENT,
     DEFAULT_JSON_STATUS_PAYLOAD,
     KEY_DEVICE_CONFIG,
     KEY_DEVICE_MODE,
     KEY_DEVICE_STATE,
+    KEY_DUID,
     KEY_IDENTIFIERS,
     KEY_PATH_TO_DEVICES,
     PROPERTY_TYPE_ENUM,
@@ -58,10 +69,12 @@ from custom_components.climate_ip.properties import (
     ModeOperation,
     SwitchOperation,
     TemperatureOperation,
+    _template_log_fn,
     create_property,
     create_status_getter,
     register_property,
     register_status_getter,
+    render_template,
 )
 
 
@@ -170,13 +183,108 @@ async def test_device_property_load_state_class_exception(
         prop.load_from_yaml(yaml_node)
 
 
+async def test_device_property_load_from_yaml_immediate_assertions(
+    mock_connection, mock_controller
+):
+    """Pinpoint assertions to instantly kill load_from_yaml mutants with sudden death."""
+    prop = DeviceProperty("test_prop", mock_connection, mock_controller)
 
+    # Line 446: return False on None
+    assert prop.load_from_yaml(None) is False
+
+    node = {
+        CONFIG_TYPE: "test_type",
+        CONFIG_STATE_NODE: "StateNode",
+        CONFIG_DEVICE_STATUS_TEMPLATE: "{{ device_state.power }}",
+        CONFIG_DEVICE_CONNECTION_TEMPLATE: '{"method": "GET"}',
+        CONFIG_DEVICE_VALIDATION_TEMPLATE: "{{ 'valid' }}",
+        CONFIG_DEVICE_CONNECTION: {"url": "/test"},
+        CONFIG_DEVICE_NAME: "Test Name",
+        CONFIG_DEVICE_CLASS: "temperature",
+        CONFIG_UNIT_OF_MEASUREMENT: "°C",
+        CONFIG_ENTITY_CATEGORY: "diagnostic",
+        CONFIG_STATE_CLASS: "measurement",
+    }
+
+    result = prop.load_from_yaml(node)
+    assert result is True
+
+    # Line 449: _type
+    assert prop._type == "test_type"
+
+    # Line 451: _state_node
+    assert prop._state_node == "StateNode"
+
+    # Lines 454-456: _status_template and hass passing
+    assert prop._status_template is not None
+    assert prop._status_template.hass is mock_controller.hass
+    assert prop._status_template_raw == "{{ device_state.power }}"
+
+    # Lines 457-459: _connection_template and hass passing
+    assert prop._connection_template is not None
+    assert prop._connection_template.hass is mock_controller.hass
+    assert prop._connection_template_raw == '{"method": "GET"}'
+
+    # Lines 460-462: _validation_template and hass passing
+    assert prop._validation_template is not None
+    assert prop._validation_template.hass is mock_controller.hass
+    assert prop._validation_template_raw == "{{ 'valid' }}"
+
+    # Lines 464-465: _connection updated
+    assert prop._connection is not None
+    mock_connection.create_updated.assert_called_with({"url": "/test"})
+
+    # Line 473: _friendly_name
+    assert prop._friendly_name == "Test Name"
+
+    # Line 475: _unit_of_measurement
+    assert prop._unit_of_measurement == UnitOfTemperature.CELSIUS
+
+    # Line 476: _entity_category
+    assert prop._entity_category == "diagnostic"
+
+    # Line 479-481: _state_class
+    assert prop._state_class == SensorStateClass.MEASUREMENT
+
+    # Device class automatic state class mapping branches:
+    # Lines 487-496: (GAS, ENERGY, WATER, CO) -> TOTAL_INCREASING
+    for dev_cls in ("gas", "energy", "water", "carbon_monoxide"):
+        p_tot = DeviceProperty("p_tot", mock_connection, mock_controller)
+        assert p_tot.load_from_yaml({"device_class": dev_cls}) is True
+        assert p_tot._state_class == SensorStateClass.TOTAL_INCREASING
+
+    # Lines 497-505: (POWER, TEMPERATURE, HUMIDITY, etc.) -> MEASUREMENT
+    for dev_cls in ("power", "temperature", "humidity", "voltage", "current"):
+        p_meas = DeviceProperty("p_meas", mock_connection, mock_controller)
+        assert p_meas.load_from_yaml({"device_class": dev_cls}) is True
+        assert p_meas._state_class == SensorStateClass.MEASUREMENT
+
+    # Non-sensor or unmapped device class -> state_class remains None
+    p_none = DeviceProperty("p_none", mock_connection, mock_controller)
+    assert p_none.load_from_yaml({"device_class": "battery"}) is True
+    assert p_none._state_class is None
+
+
+def test_x_render_template_strict_kwargs_and_parse_result():
+    """Test x_render_template / render_template strict kwargs and parse_result."""
+    mock_tmpl = MagicMock(spec=Template)
+    mock_tmpl.async_render.return_value = "rendered_value"
+
+    res = render_template(mock_tmpl, device_state={"test": 1}, extra="foo")
+    assert res == "rendered_value"
+    mock_tmpl.async_render.assert_called_once_with(
+        {"device_state": {"test": 1}, "extra": "foo"},
+        parse_result=True,
+        log_fn=_template_log_fn,
+    )
 
 
 async def test_getjsonstatus_init(mock_connection, mock_controller):
     """Assert GetJsonStatus __init__ state to kill mutants."""
     g = GetJsonStatus("json_getter", mock_connection, mock_controller)
     assert g._name == "json_getter"
+    assert g._connection is mock_connection
+    assert g._controller is mock_controller
     # GetJsonStatus passes itself as the status_getter to DeviceProperty
     assert g._status_getter is g
     assert g._json_status is None
@@ -460,11 +568,17 @@ async def test_modeoperation_init(mock_connection, mock_controller):
 
 
 async def test_switchoperation_load_from_yaml(mock_connection, mock_controller):
-    """Test SwitchOperation maps booleans correctly."""
+    """Test SwitchOperation maps booleans correctly and handles edge cases."""
     op = SwitchOperation("test_switch", mock_connection, mock_controller)
     assert SwitchOperation.match_type(PROPERTY_TYPE_SWITCH) is True
     assert SwitchOperation.match_type("other") is False
+    assert SwitchOperation.match_type(PROPERTY_TYPE_MODE) is False
 
+    # Fail cases: None or failed super load_from_yaml
+    assert op.load_from_yaml(None) is False
+    assert op.load_from_yaml({"type": "invalid_unmatched_type"}) is False
+
+    # Normal case: both ON and OFF
     yaml_node = {
         CONFIG_TYPE: PROPERTY_TYPE_SWITCH,
         CONFIG_DEVICE_OPERATION_VALUES: {
@@ -473,8 +587,32 @@ async def test_switchoperation_load_from_yaml(mock_connection, mock_controller):
         },
     }
     assert op.load_from_yaml(yaml_node) is True
+    assert op._values_ha_to_dev_map[False] == "0"
+    assert op._values_ha_to_dev_map[True] == "1"
     assert op.convert_hass_to_dev(True) == "1"
     assert op.convert_hass_to_dev(False) == "0"
+
+    # Edge case: only ON configured
+    op_on_only = SwitchOperation("test_on", mock_connection, mock_controller)
+    assert op_on_only.load_from_yaml({
+        CONFIG_TYPE: PROPERTY_TYPE_SWITCH,
+        CONFIG_DEVICE_OPERATION_VALUES: {
+            STATE_ON: {CONFIG_DEVICE_OPERATION_VALUE: "1"},
+        },
+    }) is True
+    assert op_on_only._values_ha_to_dev_map[True] == "1"
+    assert False not in op_on_only._values_ha_to_dev_map
+
+    # Edge case: only OFF configured
+    op_off_only = SwitchOperation("test_off", mock_connection, mock_controller)
+    assert op_off_only.load_from_yaml({
+        CONFIG_TYPE: PROPERTY_TYPE_SWITCH,
+        CONFIG_DEVICE_OPERATION_VALUES: {
+            STATE_OFF: {CONFIG_DEVICE_OPERATION_VALUE: "0"},
+        },
+    }) is True
+    assert op_off_only._values_ha_to_dev_map[False] == "0"
+    assert True not in op_off_only._values_ha_to_dev_map
 
 
 async def test_basicnumericoperation_value_property(mock_connection, mock_controller):
@@ -669,11 +807,6 @@ async def test_set_device_state_for_values(mock_connection, mock_controller):
 
 async def test_basicnumericoperation_load_from_yaml(mock_connection, mock_controller):
     """Kill mutants in BasicNumericOperation load_from_yaml."""
-    from custom_components.climate_ip.const import (
-        CONFIG_DEVICE_OPERATION_NUMBER_MAX,
-        CONFIG_DEVICE_OPERATION_NUMBER_MIN,
-    )
-
     op = BasicNumericOperation("test", mock_connection, mock_controller)
 
     # 1. Test super() failing returns False
@@ -684,6 +817,7 @@ async def test_basicnumericoperation_load_from_yaml(mock_connection, mock_contro
     assert op.load_from_yaml(yaml_node) is True
     assert op._min is None
     assert op._max is None
+    assert op._connection is mock_connection
 
     # 3. Test explicit min/max
     yaml_node_2 = {
@@ -806,9 +940,11 @@ async def test_temperature_boundaries_exact(mock_connection, mock_controller):
 
     # Below min → clamped
     assert op.convert_hass_to_dev(15.9) == 16.0
+    assert op.convert_hass_to_dev(0.0) == 16.0
 
     # Above max → clamped
     assert op.convert_hass_to_dev(30.1) == 30.0
+    assert op.convert_hass_to_dev(100.0) == 30.0
 
     # None → ValueError
     with pytest.raises(ValueError, match="Invalid payload"):
@@ -928,18 +1064,31 @@ def test_mode_operation_init(mock_connection, mock_controller):
 
 
 def test_basic_numeric_bounds_strict(mock_connection, mock_controller):
-    """Test strict '<=' and '>=' handling."""
+    """Test strict '<=' and '>=' handling and min/max condition flips."""
     op = BasicNumericOperation("test_bounds", mock_connection, mock_controller)
+
+    # Both min and max set
     op._min = 10.0
     op._max = 30.0
+    assert op.convert_hass_to_dev(10) == 10.0
+    assert op.convert_hass_to_dev(30) == 30.0
+    assert op.convert_hass_to_dev(5) == 10.0
+    assert op.convert_hass_to_dev(35) == 30.0
+    assert op.convert_hass_to_dev(20) == 20.0
 
-    res_min = op.convert_hass_to_dev(10)
-    assert res_min == 10
-    assert isinstance(res_min, float)
+    # Only min set (max is None) -> tests line 1262: min_bound condition flip and line 1263: max_bound fallback float('inf')
+    op._min = 10.0
+    op._max = None
+    assert op.convert_hass_to_dev(5) == 10.0
+    assert op.convert_hass_to_dev(10) == 10.0
+    assert op.convert_hass_to_dev(50) == 50.0
 
-    res_max = op.convert_hass_to_dev(30)
-    assert res_max == 30
-    assert isinstance(res_max, float)
+    # Only max set (min is None) -> tests line 1263: max_bound condition flip and line 1262: min_bound fallback float('-inf')
+    op._min = None
+    op._max = 30.0
+    assert op.convert_hass_to_dev(35) == 30.0
+    assert op.convert_hass_to_dev(30) == 30.0
+    assert op.convert_hass_to_dev(-50) == -50.0
 
 
 
@@ -1390,22 +1539,43 @@ async def test_device_operation_resolve_async_params_missing_attr():
 
 
 async def test_device_operation_resolve_async_params_condition_flip():
-    """Test base_template resolution when conn template matches template_to_use."""
-    conn = MagicMock(spec=["_params"])
-    conn._params = {"method": "GET"}
+    """Test base_template resolution when conn template is different or matches template_to_use."""
+    conn = MagicMock(spec=["_params", "_connection_template"])
+    conn._params = {"fallback_key": "val"}
+    conn._connection_template = Template(
+        hass=MagicMock(data={}),
+        template='{"base_param": "from_conn", "url": "/base", "dev": "{{ device_id }}"}',
+    )
     ctrl = MagicMock()
+    ctrl.device_id = "12345"
     ctrl.loader = MagicMock()
     ctrl.loader.parsed_yaml_cache = {}
     ctrl.log_prefix = "TEST"
 
     op = DeviceOperation("test", conn, ctrl)
-    op._connection_template = Template(hass=MagicMock(data={}), template='{"method": "GET", "url": "/set"}')
+    op._connection_template = Template(
+        hass=MagicMock(data={}),
+        template='{"method": "POST", "url": "/set/{{ value }}"}',
+    )
 
-    # When base_template is None (because conn has no _connection_template), base_params remains {}
-    params = op._resolve_async_params(conn, "val")
-    assert params == {"method": "GET", "url": "/set"}
+    # Both op connection_template and conn _connection_template are rendered and merged:
+    params = op._resolve_async_params(conn, "cool", duid="12345")
+    assert params == {
+        "fallback_key": "val",
+        "base_param": "from_conn",
+        "dev": "12345",
+        "method": "POST",
+        "url": "/set/cool",
+    }
 
-
+    # When conn._connection_template is identical to op._connection_template, base_template is skipped
+    conn._connection_template = op._connection_template
+    params_same = op._resolve_async_params(conn, "heat", duid="12345")
+    assert params_same == {
+        "fallback_key": "val",
+        "method": "POST",
+        "url": "/set/heat",
+    }
 
 
 async def test_get_json_status_load_from_yaml_inherits_connection_template():
@@ -1429,6 +1599,31 @@ async def test_get_json_status_load_from_yaml_inherits_connection_template():
         == '{"method": "GET", "url": "/inherited_endpoint"}'
     )
 
+    # Test fallback to _connection_template when connection_template is None
+    conn2 = MagicMock(is_async_native=True, connection_template=None, _connection_template=custom_tmpl)
+    conn2.create_updated.return_value = conn2
+    g2 = GetJsonStatus("test2", conn2, ctrl)
+    g2._connection_template = None
+    assert g2.load_from_yaml({"type": STATUS_GETTER_JSON}) is True
+    assert g2._connection_template is custom_tmpl
+
+    # Test when connection lacks template -> creates default template
+    conn_no_tmpl = MagicMock(is_async_native=True, connection_template=None, _connection_template=None)
+    conn_no_tmpl.create_updated.return_value = conn_no_tmpl
+    g3 = GetJsonStatus("test3", conn_no_tmpl, ctrl)
+    g3._connection_template = None
+    assert g3.load_from_yaml({"type": STATUS_GETTER_JSON}) is True
+    assert g3._connection_template is not None
+    assert g3._connection_template.render() == DEFAULT_JSON_STATUS_PAYLOAD
+
+    # Test when connection is not async native -> does not inherit
+    conn_sync = MagicMock(is_async_native=False, connection_template=custom_tmpl)
+    conn_sync.create_updated.return_value = conn_sync
+    g4 = GetJsonStatus("test4", conn_sync, ctrl)
+    g4._connection_template = None
+    assert g4.load_from_yaml({"type": STATUS_GETTER_JSON}) is True
+    assert g4._connection_template is None
+
 
 async def test_device_property_calculate_value_from_state_valid():
     """Test calculate_value_from_state returns rendered value from template."""
@@ -1443,14 +1638,6 @@ async def test_device_property_calculate_value_from_state_valid():
     assert val == "on"
     assert val is not None
     assert val != STATE_UNKNOWN
-
-
-
-
-
-
-
-
 
 
 def test_load_from_yaml_missing_connection_and_values(mock_connection, mock_controller):
@@ -1484,27 +1671,25 @@ def test_basicdeviceoperation_values_hvac_mode_key(mock_connection, mock_control
     assert op._values_cache["none_cool"] == vals
 
 
-
 async def test_getjsonstatus_calculate_value_json_strict(
     mock_connection, mock_controller
 ):
-    """Kill json_loads(None) mutant by asserting strict JSON parsing output."""
-    from homeassistant.helpers.template import Template
-
-    from custom_components.climate_ip.properties import GetJsonStatus
-
+    """Kill json_loads(None) and render_template parameter mutants."""
     getter = GetJsonStatus("test_json_strict", mock_connection, mock_controller)
-    # Give it a pure, valid JSON string output
-    getter._status_template = Template(hass=MagicMock(data={}), template=
-        '{"strict_key": "strict_value", "is_active": true}'
+    # Give it a template referencing device_state
+    getter._status_template = Template(
+        hass=MagicMock(data={}),
+        template='{"status": "{{ device_state.power }}", "code": {{ device_state.code }}}'
     )
 
-    # Run the calculation
-    result = getter.calculate_value_from_state({"dummy": 1})
+    result = getter.calculate_value_from_state({"power": "active", "code": 100})
 
-    # STRICT ASSERTION: If the mutant returns None, this will fail and kill it.
     assert isinstance(result, dict)
-    assert result == {"strict_key": "strict_value", "is_active": True}
+    assert result == {"status": "active", "code": 100}
+
+    # When status_template is None -> returns device_state directly
+    getter._status_template = None
+    assert getter.calculate_value_from_state({"raw": 1}) == {"raw": 1}
 
 
 def test_apply_optimistic_cascades_comprehensive(mock_connection, mock_controller):
@@ -1613,6 +1798,27 @@ def test_apply_optimistic_cascades_comprehensive(mock_connection, mock_controlle
     state_default = {"status": "Old"}
     prop.apply_optimistic_cascades(state_default, "unmapped_val")
     assert state_default["status"] == "Unknown"
+
+    # 8. Empty/missing optimistic_cascades in config
+    prop._config = {}
+    state_no_cfg = {"power": "Off"}
+    prop.apply_optimistic_cascades(state_no_cfg, "on")
+    assert state_no_cfg == {"power": "Off"}
+
+    # 9. Rules with empty string target_node, empty dict value_map, or None value_map
+    prop._config = {
+        "optimistic_cascades": [
+            {"target_node": "", "value_map": {"on": "On"}},
+            {"target_node": "valid_target", "value_map": {}},
+            {"target_node": "valid_target2", "value_map": None},
+            {"target_node": "power", "value_map": {"on": "On"}},
+        ]
+    }
+    state_edge = {"power": "Off"}
+    prop.apply_optimistic_cascades(state_edge, "on")
+    assert state_edge["power"] == "On"
+    assert "valid_target" not in state_edge
+    assert "valid_target2" not in state_edge
 
 
 def test_template_log_fn_and_clear_cache():
@@ -1774,13 +1980,14 @@ async def test_getjsonstatus_async_update_state_async_native_comprehensive(
     assert res is None
 
     # 2. DUID resolution failure when neither controller nor config has device_id/duid
-    mock_controller.device_id = None
+    g._controller = None
     mock_connection.config = {}
     g._connection_template = Template(hass=MagicMock(data={}), template='{"method": "GET", "url": "/status"}')
     with pytest.raises(ValueError, match="Could not resolve device_id/duid"):
         await g.async_update_state(None, False)
 
     # 3. Successful async native execution with JSON payload template
+    g._controller = mock_controller
     mock_controller.device_id = "ctrl_duid"
     mock_connection.config = {"token": "my_secret_token"}
     g._connection_template = Template(
@@ -1803,6 +2010,27 @@ async def test_getjsonstatus_async_update_state_async_native_comprehensive(
         {"Token": "my_secret_token"},
         _is_poll=True,
     )
+
+    # 3b. DUID fallback from connection.config when controller is None, testing {{ duid }}
+    g._controller = None
+    mock_connection.config = {KEY_DUID: "cfg_duid", "token": "my_token"}
+    g._connection_template = Template(
+        hass=MagicMock(data={}),
+        template='{"method": "GET", "url": "/status/{{ duid }}", "headers": {"Token": "{{ token }}"}}',
+    )
+    mock_connection.async_execute = AsyncMock(
+        return_value=('{"power": "on"}', None)
+    )
+    res_cfg_duid = await g.async_update_state(None, False)
+    assert res_cfg_duid == {"power": "on"}
+    mock_connection.async_execute.assert_called_once_with(
+        "GET",
+        "/status/cfg_duid",
+        None,
+        {"Token": "my_token"},
+        _is_poll=True,
+    )
+    g._controller = mock_controller
 
     # 4. Successful async native execution with raw (non-JSON) string template
     mock_connection.async_execute.reset_mock()
@@ -1837,6 +2065,18 @@ async def test_getjsonstatus_async_update_state_async_native_comprehensive(
     res_sync_none = await g.async_update_state(None, False)
     assert res_sync_none is None
     assert g._attrs == {KEY_DEVICE_STATE: None}
+
+    # 8. Sync mode success verifies self.connection_template passed to async_execute_with_retry
+    mock_connection.is_async_native = False
+    g._connection_template = Template(hass=MagicMock(data={}), template="sync_tmpl")
+    g.value = {"prev_state": 1}
+    mock_connection.async_execute_with_retry = AsyncMock(return_value={"sync_ok": True})
+    res_sync_ok = await g.async_update_state(None, False)
+    assert res_sync_ok == {"sync_ok": True}
+    assert g.value == {"sync_ok": True}
+    mock_connection.async_execute_with_retry.assert_called_once_with(
+        g.connection_template, None, {"prev_state": 1}
+    )
 
 
 async def test_deviceoperation_async_set_value_async_native_http_response(
