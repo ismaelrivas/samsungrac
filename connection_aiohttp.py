@@ -143,7 +143,12 @@ class ConnectionAiohttp8888(Connection):
         """Generate a consistent log prefix."""
         if self._controller is not None and self._controller.unique_id is not None:
             return self._controller.log_prefix
-        return f"[{self._ip_address or 'NO_IP'}]"
+        ip = (
+            self._ip_address
+            if self._ip_address is not None and len(self._ip_address.strip()) > 0
+            else "NO_IP"
+        )
+        return f"[{ip}]"
 
     @property
     def _ssl_context(self) -> ssl.SSLContext | None:
@@ -556,10 +561,11 @@ class ConnectionAiohttp8888(Connection):
             ):
                 full_url = full_url.replace("https://", "http://", 1)  # pragma: no mutate
         else:
+            host, _ = self._resolved_target
             port = self._config.get(CONF_PORT, DEFAULT_PORT)
             protocol = "http" if self._config.get(CONF_USE_HTTP, False) else "https"
             path = url_path if url_path is not None else ""
-            full_url = f"{protocol}://{self._ip_address}:{port}{path}"
+            full_url = f"{protocol}://{host}:{port}{path}"
 
         return self._format_url(full_url)
 
