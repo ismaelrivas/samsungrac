@@ -452,18 +452,24 @@ class DeviceProperty:
         self._config = dict(node)
         self._type = node.get(CONFIG_TYPE)
 
-        if state_node := node.get(CONFIG_STATE_NODE):
+        state_node = node.get(CONFIG_STATE_NODE)
+        if state_node is not None:
             self._state_node = state_node
 
-        if tmpl := node.get(CONFIG_DEVICE_STATUS_TEMPLATE):
+        tmpl = node.get(CONFIG_DEVICE_STATUS_TEMPLATE)
+        if tmpl is not None:
             self._status_template_raw = tmpl
             self._status_template = Template(tmpl, self._controller.hass)
-        if tmpl := node.get(CONFIG_DEVICE_CONNECTION_TEMPLATE):
-            self._connection_template_raw = tmpl
-            self._connection_template = Template(tmpl, self._controller.hass)
-        if tmpl := node.get(CONFIG_DEVICE_VALIDATION_TEMPLATE):
-            self._validation_template_raw = tmpl
-            self._validation_template = Template(tmpl, self._controller.hass)
+        
+        conn_tmpl = node.get(CONFIG_DEVICE_CONNECTION_TEMPLATE)
+        if conn_tmpl is not None:
+            self._connection_template_raw = conn_tmpl
+            self._connection_template = Template(conn_tmpl, self._controller.hass)
+            
+        val_tmpl = node.get(CONFIG_DEVICE_VALIDATION_TEMPLATE)
+        if val_tmpl is not None:
+            self._validation_template_raw = val_tmpl
+            self._validation_template = Template(val_tmpl, self._controller.hass)
 
         self._connection = self._connection.create_updated(
             node.get(CONFIG_DEVICE_CONNECTION, {})
@@ -577,9 +583,8 @@ class DeviceProperty:
             try:
                 v = render_template(self.status_template, device_state=device_state)
             except (TemplateError, TypeError, ValueError) as e:
-                _LOGGER.debug(
-                    "%s Dry-run error for %s: %s", self.log_prefix, self.id, e
-                )  # pragma: no mutate
+                _LOGGER.error("%s Status template evaluation failed for %s: %s", self.log_prefix, self.id, e)
+                raise HomeAssistantError(f"Template evaluation failed for {self.id}: {e}") from e
 
         if v is not None:
             return self.convert_dev_to_hass(v)
@@ -633,10 +638,10 @@ class GetJsonStatus(DeviceProperty):
 
         if (
             self._connection is not None
-            and getattr(self._connection, "is_async_native", False)
+            and self._connection.is_async_native
             and self._connection_template is None
         ):
-            conn_tmpl = getattr(self._connection, "connection_template", None) or getattr(self._connection, "_connection_template", None)
+            conn_tmpl = self._connection.connection_template or self._connection._connection_template
             if conn_tmpl is not None:
                 self._connection_template = conn_tmpl
             else:
@@ -664,11 +669,12 @@ class GetJsonStatus(DeviceProperty):
                         return v
                 return v
             except (TemplateError, TypeError, ValueError) as e:
-                _LOGGER.debug(
-                    "%s [GetJsonStatus] Dry-run error parsing status template: %s",
+                _LOGGER.error(
+                    "%s [GetJsonStatus] Status template evaluation failed: %s",
                     self.log_prefix,
                     e,
-                )  # pragma: no mutate
+                )
+                raise HomeAssistantError(f"Template evaluation failed for {self.id}: {e}") from e
         return device_state
 
     async def async_update_state(
@@ -792,7 +798,7 @@ class DeviceOperation(DeviceProperty):
             KEY_DUID: duid,
             TMPL_VAR_DEVICE_STATE: device_state if device_state is not None else {},
         }
-        conn_tmpl = getattr(connection, "_connection_template", None)
+        conn_tmpl = connection._connection_template
         template_to_use = self.connection_template if self.connection_template is not None else conn_tmpl
 
         if template_to_use is not None:
@@ -819,7 +825,7 @@ class DeviceOperation(DeviceProperty):
             return None
 
         base_params: dict[str, Any] = {}
-        base_template = getattr(connection, "_connection_template", None)
+        base_template = connection._connection_template
         if base_template is not None and base_template is not template_to_use:
             rendered_base = render_template(base_template, **render_ctx)
             if isinstance(rendered_base, dict):

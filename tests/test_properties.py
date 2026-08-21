@@ -1504,9 +1504,11 @@ async def test_get_json_status_load_from_yaml_existing_template():
 
 async def test_get_json_status_load_from_yaml_default_template():
     """Test load_from_yaml creates default template when connection lacks one."""
-    conn = MagicMock(spec=["is_async_native", "create_updated"])
+    conn = MagicMock(spec=["is_async_native", "create_updated", "connection_template", "_connection_template"])
     conn.is_async_native = True
     conn.create_updated.return_value = conn
+    conn.connection_template = None
+    conn._connection_template = None
     ctrl = MagicMock()
     ctrl.loader = MagicMock()
     ctrl.loader.parsed_yaml_cache = {}
@@ -1523,8 +1525,9 @@ async def test_get_json_status_load_from_yaml_default_template():
 
 async def test_device_operation_resolve_async_params_missing_attr():
     """Test getattr(connection, '_connection_template') fallback with strict spec."""
-    conn = MagicMock(spec=["_params"])
+    conn = MagicMock(spec=["_params", "_connection_template"])
     conn._params = {"method": "GET", "url": "/api"}
+    conn._connection_template = None
     ctrl = MagicMock()
     ctrl.loader = MagicMock()
     ctrl.loader.parsed_yaml_cache = {}
