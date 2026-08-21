@@ -92,6 +92,12 @@ async def test_init_path_resolution(mock_hass):
     )
     assert acq1._resolved_cert_path == "/absolute/path/cert.pem"
 
+    # Windows absolute path
+    acq_win = SamsungTokenAcquirer(
+        mock_hass, "1.1.1.1", cert_path="C:\\absolute\\path\\cert.pem"
+    )
+    assert acq_win._resolved_cert_path == "C:\\absolute\\path\\cert.pem"
+
     # Relative path without directory
     acq2 = SamsungTokenAcquirer(mock_hass, "1.1.1.1", cert_path="cert.pem")
     assert "cert.pem" in acq2._resolved_cert_path
