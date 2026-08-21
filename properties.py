@@ -306,7 +306,7 @@ class DeviceProperty:
             return raw_dict
 
         devices_list = get_value_by_path(raw_dict, path)
-        if not isinstance(devices_list, list) or not devices_list:
+        if not isinstance(devices_list, list) or len(devices_list) == 0:
             return raw_dict
 
         id_path = id_map.get(CONF_SUBDEVICE_ID, [CONF_SUBDEVICE_ID])
@@ -973,7 +973,7 @@ class BasicDeviceOperation(DeviceOperation):
 
             if node is not None:
                 node_values = node.get(CONFIG_DEVICE_OPERATION_VALUES)
-                if not isinstance(node_values, dict) or not node_values:
+                if not isinstance(node_values, dict) or len(node_values) == 0:
                     return False
 
                 for ha_value in node_values.keys():
@@ -1076,7 +1076,7 @@ class BasicDeviceOperation(DeviceOperation):
     @property
     def values(self) -> list[Any]:
         """Return a list of valid values, which can be dynamic."""
-        if not self._value_validation_templates:
+        if len(self._value_validation_templates) == 0:
             return list(self._values)
 
         hvac_node = self._resolve_hvac_node()
