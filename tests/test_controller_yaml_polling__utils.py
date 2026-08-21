@@ -233,6 +233,9 @@ def test_clear_pending_updates():
 
     poller.clear_pending_updates(["target_temp"])
     assert "target_temp" not in poller._pending_updates
+    
+    # Kill the mutant that replaces .pop(key, None) with .pop(key)
+    poller.clear_pending_updates(["non_existent_key"])
 
 
 def test_device_key_from_template_regex():

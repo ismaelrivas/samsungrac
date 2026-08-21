@@ -233,6 +233,7 @@ async def test_get_diagnostics(connection_config, mock_logger, mock_hass):
         }
 
         # Test port extraction from url (kills mutant on self._params.get("url"))
+        _HOST_CLIENTS.pop(("192.168.1.100", 8888), None)
         conn._params = {"url": "http://192.168.1.100:9999"}
         _HOST_CLIENTS[("192.168.1.100", 9999)] = MagicMock()
         diag_url = conn.get_diagnostics()
