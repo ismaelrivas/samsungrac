@@ -29,6 +29,9 @@ async def test_mim_h03_discovery_processing():
     """Test MIM-H03 discovery processing for internal coordinator and indoor units."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03}
 
     discovered = [
@@ -63,6 +66,9 @@ async def test_samsung_8888_discovery_processing():
     """Test 8888 device discovery processing."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {CONF_MAC: "001122334455"}
 
     discovered = [{"uuid": "SAMSUNG_8888_UUID"}]
@@ -82,6 +88,9 @@ async def test_init_discovery_controller_failure_and_invalid_header():
     """Test _async_init_discovery_controller handling initialization failure and InvalidHeaderError."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
 
     with patch(
         "custom_components.climate_ip.controller_yaml.YamlController"
@@ -114,6 +123,9 @@ async def test_process_generic_discovery():
     """Test _async_process_generic_discovery."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {}
 
     discovered = [
@@ -138,6 +150,9 @@ async def test_fallback_raw_discovery():
     """Test _async_fallback_raw_discovery success and failure."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {}
 
     with patch(
@@ -160,6 +175,9 @@ async def test_async_step_discover_uuid_blind_device():
     """Test async_step_discover_uuid when no indoor units are discovered (blind device)."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888}
     flow.reauth_entry = None
     flow.context = {"source": "user"}
@@ -193,6 +211,9 @@ async def test_async_step_select_devices_flow():
     """Test async_step_select_devices rendering form and completing entry creation."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {
         CONF_DISCOVERED_DEVICES: [
             {"id": "1", "name": "Unit 1"},
@@ -231,6 +252,9 @@ async def test_async_step_discover_uuid_routes_to_mim_h03():
     """Test async_step_discover_uuid routes to _async_process_mim_h03 when device_type is MIM_H03."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03}
     flow.reauth_entry = None
     flow.context = {"source": "user"}
@@ -266,6 +290,9 @@ async def test_async_step_discover_uuid_routes_to_samsung_8888():
     """Test async_step_discover_uuid routes to _async_process_samsung_8888_discovery when device_type is SAMSUNG_8888."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888}
     flow.reauth_entry = None
     flow.context = {"source": "user"}
@@ -295,6 +322,9 @@ async def test_async_step_discover_uuid_routes_to_generic_discovery():
     """Test async_step_discover_uuid routes to _async_process_generic_discovery for generic device types."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
     flow.reauth_entry = None
     flow.context = {"source": "user"}
@@ -330,6 +360,9 @@ async def test_async_step_discover_uuid_invalid_header_shutdown_and_fallback():
     """Test that InvalidHeaderError shuts down controller before delegating to fallback raw discovery."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03}
     flow.reauth_entry = None
     flow.context = {"source": "user"}
@@ -359,6 +392,9 @@ async def test_async_step_select_devices_cascades_and_errors():
     """Test fallback cascades of unique_id in select_devices and error cases."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.reauth_entry = None
     flow.context = {"source": "user"}
 
@@ -413,6 +449,9 @@ async def test_mim_h03_discovery_abort_reasons():
     """Test MIM-H03 specific abort reasons (no coordinator found, no coordinator uuid)."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03}
 
     # 1. No coordinator found at all

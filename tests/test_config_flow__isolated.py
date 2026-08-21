@@ -210,6 +210,9 @@ async def test_connection_safe_unique_id_empty_fallback():
     """Kills mutants 73-77: unique_id fallback a ''."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
         CONF_IP_ADDRESS: "1.1.1.1",
@@ -347,6 +350,9 @@ async def test_discover_uuid_controller_init_none_is_correct_start():
         CONF_IP_ADDRESS: "1.1.1.1",
     }
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
 
     with patch(
         "custom_components.climate_ip.controller_yaml.YamlController",
@@ -370,6 +376,9 @@ async def test_discover_uuid_hasattr_exact_attribute_name():
         CONF_IP_ADDRESS: "1.1.1.1",
     }
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
 
     with patch(
         "custom_components.climate_ip.controller_yaml.YamlController"
@@ -421,6 +430,9 @@ async def test_discover_uuid_invalid_header_controller_shutdown():
         CONF_IP_ADDRESS: "1.1.1.1",
     }
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
 
     with patch(
         "custom_components.climate_ip.controller_yaml.YamlController"

@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 import logging
 import os
 from typing import Any, Self
@@ -99,28 +98,14 @@ class ClimateIpConfigFlow(
         if not main_yaml_name:
             raise ValueError(f"No configuration file mapping found for device_type: {device_type}")
         main_yaml_path = os.path.join(os.path.dirname(__file__), main_yaml_name)
-        try:
-            job = self.hass.async_add_executor_job(load_yaml, main_yaml_path)  # pragma: no mutate
-            if inspect.isawaitable(job):
-                main_config = await job
-            else:
-                main_config = load_yaml(main_yaml_path)
-        except (TypeError, AttributeError):
-            main_config = load_yaml(main_yaml_path)
+        main_config = await self.hass.async_add_executor_job(load_yaml, main_yaml_path)
 
         auth_file = main_config.get("device", {}).get("auth_flow_file")
         if not auth_file:
             raise ValueError(f"No 'auth_flow_file' found in {main_yaml_name}")
 
         auth_yaml_path = os.path.join(os.path.dirname(__file__), auth_file)
-        try:
-            job2 = self.hass.async_add_executor_job(load_yaml, auth_yaml_path)  # pragma: no mutate
-            if inspect.isawaitable(job2):
-                auth_config = await job2
-            else:
-                auth_config = load_yaml(auth_yaml_path)
-        except (TypeError, AttributeError):
-            auth_config = load_yaml(auth_yaml_path)
+        auth_config = await self.hass.async_add_executor_job(load_yaml, auth_yaml_path)
         return auth_config.get("auth_flow", {})
 
     def is_matching(self, other_flow: Self) -> bool:

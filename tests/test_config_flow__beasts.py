@@ -29,6 +29,9 @@ async def test_rest_api_token_sanitization_mutants():
     """Kills mutants de token (M8, M15, M16, M17, M18, M19, M20, M22, M23)"""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
 
     # 1. Mutant 8: Injects "XXXX" when raw_tok is None
@@ -274,6 +277,9 @@ async def test_rest_api_schema_invalid_poll_interval_except_branch():
     """
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.hass.config_entries.async_entries.return_value = []
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
@@ -298,6 +304,9 @@ def test_rest_api_schema_non_st_with_existing_ip():
     """Kills mutants 53-57: rama else:if ip_default en _get_rest_api_schema (non-SmartThings)."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.hass.config_entries.async_entries.return_value = []
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
@@ -379,6 +388,9 @@ async def test_reconfigure_token_acquirer_ip_empty_fallback():
     """Kills mutant 209: ip_val debe ser '' (no 'XXXX') cuando no hay IP en flow_data."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
         # Without CONF_IP_ADDRESS — forces fallback ip_val = ""
@@ -432,6 +444,9 @@ async def test_reconfigure_token_acquirer_routing():
     """Verify mutant M205 kill y M214-M219: Argumentos exactos pasados al Token Acquirer."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,  # To use base acquirer
         CONF_IP_ADDRESS: "192.168.1.50",
@@ -464,6 +479,9 @@ async def test_reconfigure_success_fallbacks():
     """Verify mutant M234 kill, M242, M246: UI Fallbacks on success."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.hass.config_entries.async_reload = AsyncMock()
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888,
@@ -532,6 +550,9 @@ async def test_rest_api_empty_token_and_reauth_abort():
     """Kills mutants 8 y 91 en REST API."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
 
     # 1. Verify mutant M8 kill (Token vacío fallback a "XXXX")
@@ -568,6 +589,9 @@ def test_rest_api_schema_poll_interval_empty():
     """Kills mutants 18-21 y 53-57 de schemas REST vacíos."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.hass.config_entries.async_entries.return_value = []
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
 

@@ -3083,6 +3083,9 @@ async def test_async_step_reauth_mutants(hass: HomeAssistant) -> None:
 
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.context = {"entry_id": "test_entry_id"}
 
     mock_entry = MagicMock()
