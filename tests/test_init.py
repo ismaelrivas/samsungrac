@@ -1,4 +1,4 @@
-# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,missing-class-docstring,too-few-public-methods
+# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,missing-class-docstring,too-few-public-methods,too-many-lines
 """Test the Climate IP setup and actions."""
 
 from __future__ import annotations
@@ -312,6 +312,10 @@ async def test_setup_entry_instantiates_controller_strictly(
         assert (
             "hass" in kwargs and kwargs["hass"] is hass
         ), "The hass argument was not passed correctly"
+        assert kwargs.get("device_id") == "main", "The device_id argument was omitted or incorrect"
+        assert (
+            kwargs.get("session") is mock_get_session.return_value
+        ), "The session argument was omitted or incorrect"
 
         # Mutant 84: Verify standalone injection
         mock_coord_class.assert_called_once_with(
@@ -429,12 +433,17 @@ async def test_setup_entry_total_initialization_failure(hass: HomeAssistant) -> 
         ):
             await async_setup_entry(hass, mock_entry)
 
+        mock_yaml_class.return_value.async_shutdown.assert_awaited()
+
         # Now test the multi-device branch
+        mock_yaml_class.return_value.async_shutdown.reset_mock()
         mock_entry.data["devices"] = [{"id": "1", "name": "Zone A"}]
         with pytest.raises(
             ConfigEntryNotReady, match="No coordinators could be set up"
         ):
             await async_setup_entry(hass, mock_entry)
+
+        mock_yaml_class.return_value.async_shutdown.assert_awaited()
 
 
 async def test_setup_entry_multi_device_partial_failure(hass: HomeAssistant) -> None:
@@ -580,6 +589,8 @@ async def test_async_setup_entry_controller_transient_network_error(
 
         with pytest.raises(ConfigEntryNotReady):
             await async_setup_entry(hass, mock_entry)
+
+        mock_instance.async_shutdown.assert_awaited_once()
 
 
 async def test_setup_single_device_auth_and_refresh_failures(
@@ -848,7 +859,7 @@ def test_build_device_setup_tasks_device_name_and_id_strict(hass: HomeAssistant)
 
 
 async def test_async_setup_entry_single_device_custom_name(hass: HomeAssistant) -> None:
-    """Test single device setup uses CONF_NAME from entry data (kills M40, M41)."""
+    """Test single device setup uses CONF_NAME from entry data (kills L213 mutants)."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
@@ -862,20 +873,59 @@ async def test_async_setup_entry_single_device_custom_name(hass: HomeAssistant) 
     entry.add_to_hass(hass)
 
     with (
-        patch("custom_components.climate_ip.YamlController") as mock_yaml_class,
-        patch("custom_components.climate_ip.SamsungClimateCoordinator") as mock_coord_class,
+        patch(
+            "custom_components.climate_ip._async_setup_single_device",
+            new_callable=AsyncMock,
+        ) as mock_setup_single,
         patch("custom_components.climate_ip.async_get_clientsession"),
         patch.object(hass.config_entries, "async_forward_entry_setups"),
     ):
-        mock_yaml_class.return_value.initialize = AsyncMock(return_value=True)
-        mock_coord_class.return_value.async_config_entry_first_refresh = AsyncMock()
+        mock_setup_single.return_value = ("main", MagicMock())
 
         result = await async_setup_entry(hass, entry)
         assert result is True
 
-        # Verify kwargs passed to YamlController constructor has device_id="main" (kills M8, M11)
-        yaml_kwargs = mock_yaml_class.call_args.kwargs
-        assert yaml_kwargs["device_id"] == "main"
+        mock_setup_single.assert_awaited_once()
+        args = mock_setup_single.call_args.args
+        assert args[2] == "main"
+        assert args[3] == "Custom Unit Name"
+        assert args[4] is None
+
+
+async def test_async_setup_entry_single_device_fallback_to_title(
+    hass: HomeAssistant,
+) -> None:
+    """Test single device setup falls back to entry.title when CONF_NAME is not in data (kills L213 default mutants)."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "ip_address": "192.168.1.100",
+            "device_type": "samsung_2878",
+        },
+        title="My Custom Title",
+        unique_id="test_fallback_title",
+    )
+    entry.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.climate_ip._async_setup_single_device",
+            new_callable=AsyncMock,
+        ) as mock_setup_single,
+        patch("custom_components.climate_ip.async_get_clientsession"),
+        patch.object(hass.config_entries, "async_forward_entry_setups"),
+    ):
+        mock_setup_single.return_value = ("main", MagicMock())
+
+        result = await async_setup_entry(hass, entry)
+        assert result is True
+
+        mock_setup_single.assert_awaited_once()
+        args = mock_setup_single.call_args.args
+        assert args[2] == "main"
+        assert args[3] == "My Custom Title"
+        assert args[3] != "Unknown"
+        assert args[4] is None
 
 
 async def test_async_setup_entry_multi_device_exception_continues_gathering_for_rollback(
