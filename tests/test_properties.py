@@ -491,7 +491,7 @@ async def test_basicdeviceoperation_dynamic_values(mock_connection, mock_control
 
     op.load_from_yaml(yaml_node)
 
-    mock_mode_prop = MagicMock()
+    mock_mode_prop = MagicMock(spec=DeviceProperty)
     type(mock_mode_prop).value = PropertyMock(return_value="cool")
     mock_mode_prop.id = "none"
     mock_controller.get_property.return_value = mock_mode_prop
@@ -961,19 +961,18 @@ async def test_temperature_boundaries_exact(mock_connection, mock_controller):
 
 
 async def test_getattr_fallback_connection_template(mock_connection, mock_controller):
-    """Verify _connection_template getattr fallback."""
+    """Verify missing _params triggers fail-fast AttributeError."""
     op = DeviceOperation("test_fallback", mock_connection, mock_controller)
 
-    # Test getattr default behavior when attribute is missing
-    if hasattr(mock_connection, "_connection_template"):
-        delattr(mock_connection, "_connection_template")
+    # Test that missing _params strictly fails
     if hasattr(mock_connection, "_params"):
         delattr(mock_connection, "_params")
 
     op.convert_hass_to_dev = MagicMock(return_value="dev_val_raw")
 
-    result = await op.async_set_value("ha_val")
-    assert result is False
+    import pytest
+    with pytest.raises(AttributeError):
+        await op.async_set_value("ha_val")
 
 
 

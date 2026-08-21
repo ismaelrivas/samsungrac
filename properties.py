@@ -507,8 +507,13 @@ class DeviceProperty:
                     SensorDeviceClass.PRESSURE,
                 ):
                     self._state_class = SensorStateClass.MEASUREMENT
-            except ValueError:
-                pass
+            except ValueError as err:
+                _LOGGER.warning(
+                    "%s Invalid device_class '%s' cannot be mapped to state_class: %s",
+                    self.log_prefix,
+                    self._device_class,
+                    err,
+                )
 
         return True
 
@@ -803,7 +808,7 @@ class DeviceOperation(DeviceProperty):
             if not isinstance(operation_params, dict):
                 return {KEY_RAW_PAYLOAD: rendered}
         else:
-            raw_p = getattr(connection, "_params", None)
+            raw_p = connection._params
             operation_params = dict(raw_p) if raw_p is not None and len(raw_p) > 0 else None
 
         if operation_params is None:
@@ -834,7 +839,7 @@ class DeviceOperation(DeviceProperty):
             if not isinstance(base_params, dict):
                 base_params = {}
 
-        raw_params = getattr(connection, "_params", {})
+        raw_params = connection._params
         if not isinstance(raw_params, dict):
             raw_params = {}
         fallback: dict[str, Any] = {**raw_params, **base_params}
@@ -1009,23 +1014,19 @@ class BasicDeviceOperation(DeviceOperation):
 
     def _resolve_hvac_node(self) -> str | None:
         """Resolve the current HVAC node state."""
-        hvac_prop = None
-        if self._controller is not None:
-            hvac_prop = self._controller.get_property_object(ATTR_HVAC_MODE)
-        state_node = hvac_prop.state_node if hvac_prop is not None else None
-        
-        if not isinstance(state_node, str) and self._controller is not None:
+        if self._controller is None or not isinstance(self._device_state, dict):
+            return None
+
+        hvac_prop = self._controller.get_property_object(ATTR_HVAC_MODE)
+        if hvac_prop is None or not isinstance(hvac_prop.state_node, str):
             loader = self._controller.loader
             if loader is not None and isinstance(loader.operations, dict):
-                fallback_prop = loader.operations.get(ATTR_HVAC_MODE) or loader.operations.get(KEY_HVAC)
-                if fallback_prop is not None:
-                    hvac_prop = fallback_prop
+                hvac_prop = loader.operations.get(ATTR_HVAC_MODE) or loader.operations.get(KEY_HVAC)
 
-        if hvac_prop is not None and isinstance(self._device_state, dict):
-            state_node = hvac_prop.state_node
-            if isinstance(state_node, str) and bool(state_node):
-                return get_value_by_path(self._device_state, state_node.split("."))
-        return None
+        if hvac_prop is None or not isinstance(hvac_prop.state_node, str) or not hvac_prop.state_node:
+            return None
+
+        return get_value_by_path(self._device_state, hvac_prop.state_node.split("."))
 
     def _compute_cache_key(self, hvac_node: str | None) -> str:
         """Compute a deterministic cache key."""
@@ -1036,8 +1037,6 @@ class BasicDeviceOperation(DeviceOperation):
             cache_key_id = cache_key_prop.id
         elif isinstance(cache_key_prop, str):
             cache_key_id = cache_key_prop
-        elif hasattr(cache_key_prop, "id"):
-            cache_key_id = cache_key_prop.id
             
         return f"{cache_key_id}{ID_DELIMITER}{hvac_node}" if hvac_node is not None else cache_key_id
 
