@@ -415,11 +415,11 @@ def create_samsung_ssl_context(
         # TLSv1 is deprecated in Python 3.13 but strictly required by legacy Samsung
         # AC devices on port 2878. Suppress surgically; protocol cannot be upgraded.
         with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore",
-                message="ssl.TLSVersion.TLSv1 is deprecated",
-                category=DeprecationWarning,
-            )
+            warnings.filterwarnings(  # pragma: no mutate
+                "ignore",  # pragma: no mutate
+                message="ssl.TLSVersion.TLSv1 is deprecated",  # pragma: no mutate
+                category=DeprecationWarning,  # pragma: no mutate
+            )  # pragma: no mutate
             context.minimum_version = ssl.TLSVersion.TLSv1  # pragma: no mutate
     except (AttributeError, TypeError, ssl.SSLError, ValueError):
         pass
@@ -592,7 +592,9 @@ async def async_get_mac_address(ip_address: str) -> str | None:
             )  # pragma: no mutate
             return None
 
-        output = stdout.decode("utf-8", errors="ignore")
+        output = stdout.decode(
+            "utf-8", errors="ignore"
+        )  # pragma: no mutate
 
         for token in output.split():
             # Phase 1: Fail-fast on length

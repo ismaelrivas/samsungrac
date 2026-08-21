@@ -1,4 +1,4 @@
-# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
+# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,consider-using-from-import,use-implicit-booleaness-not-comparison,missing-function-docstring,missing-class-docstring,too-few-public-methods
 """Tests for the tolerant_header_parsing context manager (H-12) and find_key_in_data."""
 # pylint: disable=broad-exception-caught,import-outside-toplevel
 
@@ -127,6 +127,18 @@ class TestTolerantHeaderParsing:
             response_util.assert_header_parsing is original
         ), "Original function should be restored after all threads complete"
 
+    def test_tolerant_header_parsing_refcount_lifecycle(self):
+        """Muerte súbita for refcount mutants (Targets 6 and 9)."""
+        import custom_components.climate_ip.helpers as h
+
+        assert h._HEADER_PATCH_REFCOUNT == 0
+        with h.tolerant_header_parsing():
+            assert h._HEADER_PATCH_REFCOUNT == 1
+            with h.tolerant_header_parsing():
+                assert h._HEADER_PATCH_REFCOUNT == 2
+            assert h._HEADER_PATCH_REFCOUNT == 1
+        assert h._HEADER_PATCH_REFCOUNT == 0
+
 
 class TestFindKeyInData:
     """Tests for the recursive key finder (validates H-16 cleanup didn't break logic)."""
@@ -173,6 +185,11 @@ class TestFindKeyInData:
         data = {"a": {"target": "first"}, "b": {"target": "second"}}
         result = find_key_in_data(data, "target")
         assert result in ("first", "second")  # DFS order depends on dict ordering
+
+    def test_find_in_list_of_dicts_traversal_non_matching_first(self):
+        """Muerte súbita for Slow Killed Target 13: if item is None in list iteration."""
+        data = [{"other": 1}, {"target": 99}]
+        assert find_key_in_data(data, "target") == 99
 
 
 class TestResolveCertPath:
@@ -251,6 +268,28 @@ class TestResolveCertPath:
 
         res = resolve_cert_path("ac14k_m.pem", base_dir="")
         assert res == str(Path(helpers.__file__).parent / "ac14k_m.pem")
+
+    def test_resolve_cert_path_windows_backslash_with_hass(self):
+        """Kills Mutant Target 6: has_slash Windows backslash check with hass."""
+        from unittest.mock import MagicMock
+
+        from custom_components.climate_ip.helpers import resolve_cert_path
+
+        mock_hass = MagicMock()
+        mock_hass.config.path.return_value = "/ha/config/my_cert.pem"
+
+        res = resolve_cert_path("subdir\\my_cert.pem", "/base/dir", hass=mock_hass)
+        assert res == "/ha/config/my_cert.pem"
+        mock_hass.config.path.assert_called_once_with("subdir\\my_cert.pem")
+
+    def test_resolve_cert_path_windows_backslash_without_hass(self):
+        """Kills Mutant Target 6: has_slash Windows backslash without hass."""
+        from pathlib import Path
+
+        from custom_components.climate_ip.helpers import resolve_cert_path
+
+        res = resolve_cert_path("certs\\ac14k_m.pem", "/base/dir")
+        assert res == str(Path("certs\\ac14k_m.pem"))
 
 
 class TestValidatePollInterval:
@@ -378,6 +417,13 @@ def test_safe_xml_to_dict_text_with_attributes():
     assert result == {"root": {"@id": "5", "#text": "hello"}}
 
 
+def test_safe_xml_to_dict_mixed_content_children_and_text():
+    """Muerte súbita for Slow Killed Targets 16 and 17: elements with children and text."""
+    xml_string = "<parent>leading_text<child>val</child></parent>"
+    result = safe_xml_to_dict(xml_string)
+    assert result == {"parent": {"child": "val", "#text": "leading_text"}}
+
+
 # --- parse_entity_category ---
 def test_parse_entity_category():
     assert parse_entity_category("config") == EntityCategory.CONFIG
@@ -394,6 +440,19 @@ def test_get_value_by_path():
     assert get_value_by_path(data, []) is None
     assert get_value_by_path(None, ["level1"]) is None
     assert get_value_by_path({"level1": "not_a_dict"}, ["level1", "level2"]) is None
+    # Kills Target 5: dict or str cross-type mutations
+    assert get_value_by_path(["item"], ["item"]) is None
+    assert get_value_by_path({0: "val"}, [0]) is None
+    # Kills Target 8: list or int cross-type mutations
+    assert get_value_by_path({"k": "v"}, [0]) is None
+    assert get_value_by_path([1, 2], ["0"]) is None
+    # Kills Targets 9 & 11: negative indexing and out of range
+    assert get_value_by_path([10, 20], [-1]) is None
+    assert get_value_by_path([10, 20], [2]) is None
+    assert get_value_by_path([10, 20], [100]) is None
+    assert get_value_by_path({"a": 1}, ["a", "b"]) is None
+    assert get_value_by_path({"a": [10, 20]}, ["a", -1]) is None
+    assert get_value_by_path({"a": [10, 20]}, ["a", 2]) is None
 
 
 def test_get_value_valid_list_traversal():
@@ -743,6 +802,68 @@ class TestSetValueByPathStrict:
         set_value_by_path(target_list, [1, "sub"], "a")
         assert target_list[1] == {"sub": "a"}
 
+    def test_set_value_alternating_key_types(self):
+        """Kills Mutant Target 8: next_key = path[i - 1]."""
+        from custom_components.climate_ip.helpers import set_value_by_path
+
+        target = {"base": True}
+        set_value_by_path(target, ["a", "b", 0, "c"], "val")
+        assert target == {"base": True, "a": {"b": [{"c": "val"}]}}
+
+    def test_set_value_intermediate_list_empty_extension(self):
+        """Kills Mutant Target 18: if key > len(current) in intermediate list."""
+        from custom_components.climate_ip.helpers import set_value_by_path
+
+        target = {"l": []}
+        set_value_by_path(target, ["l", 0, "a"], "val")
+        assert target == {"l": [{"a": "val"}]}
+
+        target_root = ["init"]
+        set_value_by_path(target_root, [1, 0], "nested_val")
+        assert target_root == ["init", ["nested_val"]]
+
+    def test_set_value_terminal_type_mismatches(self):
+        """Kills Mutants 29 and 31: terminal 'or' mutations."""
+        from custom_components.climate_ip.helpers import set_value_by_path
+
+        # Integer key on dict terminal -> should not mutate or crash
+        d = {"node": {}}
+        set_value_by_path(d, ["node", 0], 123)
+        assert d == {"node": {}}
+
+        # String key on list terminal -> should not mutate or crash
+        l_target = {"node": []}
+        set_value_by_path(l_target, ["node", "invalid"], 123)
+        assert l_target == {"node": []}
+
+    def test_set_value_terminal_list_boundary_extension(self):
+        """Kills Mutant Target 32: if last_key > len(current)."""
+        from custom_components.climate_ip.helpers import set_value_by_path
+
+        target = [10]
+        set_value_by_path(target, [1], 20)
+        assert target == [10, 20]
+
+        target_nested = {"l": [10]}
+        set_value_by_path(target_nested, ["l", 1], 20)
+        assert target_nested == {"l": [10, 20]}
+
+    def test_set_value_intermediate_none_list_element(self):
+        """Muerte súbita for Slow Killed Target 24: if current[key] is not None."""
+        from custom_components.climate_ip.helpers import set_value_by_path
+
+        target = [None, "existing"]
+        set_value_by_path(target, [0, "k"], "v")
+        assert target == [{"k": "v"}, "existing"]
+
+    def test_set_value_intermediate_none_dict_node(self):
+        """Muerte súbita for Target 12: if key not in current or current[key] is None."""
+        from custom_components.climate_ip.helpers import set_value_by_path
+
+        d = {"node": None}
+        set_value_by_path(d, ["node", "leaf"], 10)
+        assert d == {"node": {"leaf": 10}}
+
 
 # --- async_get_mac_address ---
 @pytest.mark.asyncio
@@ -808,3 +929,67 @@ async def test_async_get_mac_address_timeout_zombie_kill(mock_exec):
     assert result is None
     # Ensure the zombie process was terminated
     mock_proc.kill.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("asyncio.create_subprocess_exec")
+async def test_async_get_mac_address_wait_for_timeout_arg(mock_exec):
+    """Kills Mutants 14 & 17: Validates strict 2.0s timeout parameter."""
+    mock_proc = AsyncMock()
+    mock_exec.return_value = mock_proc
+    mock_proc.communicate.return_value = (b"00:11:22:33:44:55", b"")
+
+    with patch("asyncio.wait_for", wraps=asyncio.wait_for) as mock_wait:
+        result = await async_get_mac_address("1.1.1.1")
+        assert result == "00:11:22:33:44:55"
+        assert mock_wait.call_args.kwargs["timeout"] == 2.0
+
+
+@pytest.mark.asyncio
+@patch("asyncio.create_subprocess_exec")
+async def test_async_get_mac_address_token_filtering_and_loop_resilience(mock_exec):
+    """Kills Mutants 25, 33, 44, 49, 51: Validates continue on non-matching tokens."""
+    mock_proc = AsyncMock()
+    mock_exec.return_value = mock_proc
+
+    # 1. Target 25: Header/IP tokens of length != 17 before MAC (continue vs break)
+    mock_proc.communicate.return_value = (
+        b"? (192.168.1.50) at 00:11:22:33:44:55 [ether] on eth0",
+        b"",
+    )
+    assert await async_get_mac_address("192.168.1.50") == "00:11:22:33:44:55"
+
+    # 2. Target 33: Token of len 17 without 5 colons/dashes before MAC (continue vs break)
+    mock_proc.communicate.return_value = (
+        b"12345678901234567 00:11:22:33:44:55",
+        b"",
+    )
+    assert await async_get_mac_address("192.168.1.50") == "00:11:22:33:44:55"
+
+    # 3. Target 44: Token of len 17 with 5 colons and 1 dash (len(cleaned) == 11 != 12) (continue vs break)
+    mock_proc.communicate.return_value = (
+        b"00:11:22:33:44:-5 00:11:22:33:44:55",
+        b"",
+    )
+    assert await async_get_mac_address("192.168.1.50") == "00:11:22:33:44:55"
+
+    # 4. Target 49: Non-hex MAC with 'g' (base 17 mutant accepts 'g', base 16 rejects)
+    mock_proc.communicate.return_value = (b"00:11:22:33:44:gg", b"")
+    assert await async_get_mac_address("192.168.1.50") is None
+
+    mock_proc.communicate.return_value = (
+        b"00:11:22:33:44:gg 00:11:22:33:44:55",
+        b"",
+    )
+    assert await async_get_mac_address("192.168.1.50") == "00:11:22:33:44:55"
+
+    # 5. Target 51: Non-hex MAC with 'z' raising ValueError before valid MAC (continue vs break)
+    mock_proc.communicate.return_value = (
+        b"00:11:22:33:44:zz 00:11:22:33:44:55",
+        b"",
+    )
+    assert await async_get_mac_address("192.168.1.50") == "00:11:22:33:44:55"
+
+    # 6. Slow Killed Target 50: Lowercase return assertion on uppercase input
+    mock_proc.communicate.return_value = (b"AA:BB:CC:DD:EE:FF", b"")
+    assert await async_get_mac_address("192.168.1.50") == "aa:bb:cc:dd:ee:ff"
