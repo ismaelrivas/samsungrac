@@ -270,6 +270,11 @@ KEY_IDENTIFIERS: final = "identifiers"
 KEY_PATH_TO_DEVICES: final = "path_to_devices"
 KEY_DEVICE_MODE: final = "Mode"
 KEY_DEVICE_STATE: final = "device_state"
+KEY_DEVICES: final = "Devices"
+KEY_DEFAULT: final = "default"
+CONFIG_OPTIMISTIC_CASCADES: final = "optimistic_cascades"
+CONFIG_TARGET_NODE: final = "target_node"
+CONFIG_VALUE_MAP: final = "value_map"
 DEFAULT_CACHE_KEY_ID: final = "none"
 
 # Map YAML operation names to Home Assistant features.
@@ -289,4 +294,3 @@ LEGACY_YAML_TO_ATTR_MAP: dict[str, str] = {
     YAML_SWING: ATTR_SWING_MODE,
     YAML_SPECIAL: ATTR_PRESET_MODE,
 }
-

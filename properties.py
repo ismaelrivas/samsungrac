@@ -42,18 +42,23 @@ from .const import (
     CONFIG_DEVICE_STATUS_TEMPLATE,
     CONFIG_DEVICE_VALIDATION_TEMPLATE,
     CONFIG_ENTITY_CATEGORY,
+    CONFIG_OPTIMISTIC_CASCADES,
     CONFIG_STATE_CLASS,
     CONFIG_STATE_NODE,
+    CONFIG_TARGET_NODE,
     CONFIG_TYPE,
     CONFIG_UNIT_OF_MEASUREMENT,
+    CONFIG_VALUE_MAP,
     DEFAULT_CACHE_KEY_ID,
     DEFAULT_JSON_STATUS_PAYLOAD,
     DEGREE_SYMBOL,
     FALLBACK_DEVICE_ID,
     ID_DELIMITER,
+    KEY_DEFAULT,
     KEY_DEVICE_CONFIG,
     KEY_DEVICE_MODE,
     KEY_DEVICE_STATE,
+    KEY_DEVICES,
     KEY_DUID,
     KEY_HEADERS,
     KEY_HVAC,
@@ -298,11 +303,11 @@ class DeviceProperty:
         path = id_map.get(KEY_PATH_TO_DEVICES)
 
         if path is None:
-            return dict(raw_dict)
+            return raw_dict
 
         devices_list = get_value_by_path(raw_dict, path)
         if not isinstance(devices_list, list) or not devices_list:
-            return dict(raw_dict)
+            return raw_dict
 
         id_path = id_map.get(CONF_SUBDEVICE_ID, [CONF_SUBDEVICE_ID])
 
@@ -310,15 +315,16 @@ class DeviceProperty:
         for dev in devices_list:
             dev_id = get_value_by_path(dev, id_path)
             if dev_id is not None and str(dev_id) == str(device_id):
-                return dict(dev)
+                return dev if isinstance(dev, dict) else {}
 
         # Fallback: Find the first AC unit (must have a 'Mode' key to exclude WiFi-Kit)
         for dev in devices_list:
-            if KEY_DEVICE_MODE in dev:
-                return dict(dev)
+            if isinstance(dev, dict) and KEY_DEVICE_MODE in dev:
+                return dev
 
         # Absolute fallback
-        return dict(devices_list[0])
+        first_dev = devices_list[0]
+        return first_dev if isinstance(first_dev, dict) else {}
 
     @property
     def _raw_device_state(self) -> dict[str, Any]:
@@ -514,35 +520,35 @@ class DeviceProperty:
         self, state: dict[str, Any], value: Any, _dev_val: Any = None
     ) -> None:
         """Optimistically cascade state changes based on YAML configuration."""
-        property_config = getattr(self, "_config", {})
-        cascades = property_config.get("optimistic_cascades")
+        property_config = self._config
+        cascades = property_config.get(CONFIG_OPTIMISTIC_CASCADES)
 
-        if not cascades or not isinstance(cascades, list):
+        if cascades is None or not isinstance(cascades, list):
             return
 
         val_str = str(value).lower() if value is not None else ""
 
         target_nodes = [state]
         if (
-            "Devices" in state
-            and isinstance(state["Devices"], list)
-            and len(state["Devices"]) > 0
-            and isinstance(state["Devices"][0], dict)
+            KEY_DEVICES in state
+            and isinstance(state[KEY_DEVICES], list)
+            and len(state[KEY_DEVICES]) > 0
+            and isinstance(state[KEY_DEVICES][0], dict)
         ):
-            target_nodes.append(state["Devices"][0])
+            target_nodes.append(state[KEY_DEVICES][0])
 
         for cascade_rule in cascades:
             if not isinstance(cascade_rule, dict):
                 continue
-            target_path = cascade_rule.get("target_node")
-            value_map = cascade_rule.get("value_map")
+            target_path = cascade_rule.get(CONFIG_TARGET_NODE)
+            value_map = cascade_rule.get(CONFIG_VALUE_MAP)
 
-            if not target_path or not isinstance(value_map, dict):
+            if target_path is None or not isinstance(value_map, dict):
                 continue
 
             new_val = value_map.get(val_str)
             if new_val is None:
-                new_val = value_map.get("default")
+                new_val = value_map.get(KEY_DEFAULT)
 
             if new_val is not None:
                 path_parts = str(target_path).split(".")
@@ -688,14 +694,14 @@ class GetJsonStatus(DeviceProperty):
             duid_from_cfg = cfg.get(KEY_DUID)
             
             duid_for_render = self._controller.device_id if self._controller is not None else duid_from_cfg
-            if not duid_for_render:
+            if duid_for_render is None:
                 raise ValueError("Could not resolve device_id/duid for async command parameter rendering")
             
             render_context[TMPL_VAR_DEVICE_ID] = duid_for_render
             render_context.setdefault(KEY_DUID, duid_for_render)
             
             token_from_cfg = cfg.get(CONF_TOKEN_KEY)
-            if token_from_cfg:
+            if token_from_cfg is not None:
                 render_context.setdefault(CONF_TOKEN_KEY, token_from_cfg)
 
             response_text: str | None = None  # pragma: no mutate
@@ -797,9 +803,10 @@ class DeviceOperation(DeviceProperty):
             if not isinstance(operation_params, dict):
                 return {KEY_RAW_PAYLOAD: rendered}
         else:
-            operation_params = dict(getattr(connection, "_params", {}))
+            raw_p = getattr(connection, "_params", None)
+            operation_params = dict(raw_p) if raw_p is not None and len(raw_p) > 0 else None
 
-        if not operation_params:
+        if operation_params is None:
             _LOGGER.error(
                 "%s [_resolve_async_params] No params or template found.",
                 self.log_prefix,
@@ -853,8 +860,14 @@ class DeviceOperation(DeviceProperty):
             try:
                 cfg = connection.config if isinstance(connection.config, dict) else {}
                 duid_from_cfg = cfg.get(KEY_DUID)
-                duid_for_render = device_id or (self._controller.device_id if self._controller is not None else None) or duid_from_cfg
-                if not duid_for_render:
+                duid_for_render = (
+                    device_id
+                    if device_id is not None
+                    else (self._controller.device_id if self._controller is not None else None)
+                )
+                if duid_for_render is None:
+                    duid_for_render = duid_from_cfg
+                if duid_for_render is None:
                     raise ValueError("Could not resolve device_id/duid for async command parameter rendering")
 
                 # dev_value is already calculated and validated above
