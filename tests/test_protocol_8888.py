@@ -363,8 +363,12 @@ async def test_create_ssl_context_options(mock_create_ssl, client):
     mock_create_ssl.return_value = RejectingSSLContext()
     with patch("custom_components.climate_ip.protocol_8888._LOGGER.debug") as mock_debug:
         await client._create_ssl_context()
-        call_args = mock_debug.call_args[0]
-        assert "OP_NO_COMPRESSION" not in call_args[2]
+        found_opt = False
+        for call_args, _ in mock_debug.call_args_list:
+            if "SSL Optimizations enabled" in call_args[0]:
+                found_opt = True
+                assert "OP_NO_COMPRESSION" not in call_args[2]
+        assert found_opt, "Optimization log missing"
 
 
 def test_init_attributes():
