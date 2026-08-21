@@ -1,13 +1,16 @@
 """Tests designed to kill mutmut Ultra survivors in config_flow.py."""
 import asyncio
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
-
 from homeassistant.const import CONF_DEVICE_ID, CONF_IP_ADDRESS, CONF_MAC
 
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
-from custom_components.climate_ip.const import CONF_DEVICE_TYPE, DEVICE_TYPE_SAMSUNG_2878
+from custom_components.climate_ip.const import (
+    CONF_DEVICE_TYPE,
+    DEVICE_TYPE_SAMSUNG_2878,
+)
+
 
 async def test_kill_auth_file_not_found(hass):
     """Kill ValueError(None) and get("device", None) mutants."""
@@ -113,3 +116,26 @@ async def test_kill_acquirer_auth_flow_dict_reconfigure_confirm(hass):
              pass
          
          mock_acquirer.assert_called_with(hass, "192.168.1.100", auth_dict, None)
+
+
+async def test_kill_auth_flow_dict_extraction(hass):
+    """Kill get('auth_flow', {}) mutants in _load_auth_flow_config."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+
+    # 1. Validar que extrae la sección 'auth_flow' correctamente
+    mock_yaml_main = {"device": {"auth_flow_file": "auth.yaml"}}
+    mock_yaml_auth = {"auth_flow": {"expected_key": "expected_val"}, "other": "ignored"}
+
+    with patch("custom_components.climate_ip.config_flow.load_yaml", side_effect=[mock_yaml_main, mock_yaml_auth]):
+        res = await flow._load_auth_flow_config(DEVICE_TYPE_SAMSUNG_2878)
+        assert res == {"expected_key": "expected_val"}
+        assert res.get("expected_key") == "expected_val"
+
+    # 2. Validar que el fallback {} actúa si 'auth_flow' no existe
+    mock_yaml_no_auth = {"other_section": 123}
+    with patch("custom_components.climate_ip.config_flow.load_yaml", side_effect=[mock_yaml_main, mock_yaml_no_auth]):
+        res_empty = await flow._load_auth_flow_config(DEVICE_TYPE_SAMSUNG_2878)
+        assert res_empty == {}
+        assert isinstance(res_empty, dict)
+

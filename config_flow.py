@@ -5,7 +5,9 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
+import os
 from typing import Any, Self
 
 import voluptuous as vol
@@ -26,6 +28,7 @@ from homeassistant.helpers.selector import (
     SelectSelectorConfig,
     SelectSelectorMode,
 )
+from homeassistant.util.yaml import load_yaml
 
 from . import helpers
 from .config_flow_discovery import ConfigFlowDiscoveryMixin
@@ -53,11 +56,6 @@ from .const import (
     DOMAIN,
     GLOBAL_HTTP_TIMEOUT,
 )
-import inspect
-import os
-
-from homeassistant.util.yaml import load_yaml
-
 from .exceptions import CannotConnect
 from .options_flow import OptionsFlowHandler
 from .token_acquirer_yaml import GenericYamlTokenAcquirer
