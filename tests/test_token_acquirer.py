@@ -104,6 +104,10 @@ async def test_init_path_resolution(mock_hass):
     assert acq2._resolved_cert_path.endswith("cert.pem")
     assert "/" in acq2._resolved_cert_path  # Should have been joined with __file__
 
+    # Relative path with directory (Unix style)
+    acq_rel = SamsungTokenAcquirer(mock_hass, "1.1.1.1", cert_path="certs/cert.pem")
+    assert acq_rel._resolved_cert_path == "certs/cert.pem"
+
 
 async def test_cert_not_found(acquirer, caplog):
     """Test that a CertNotFound error is gracefully caught and logs properly if all strategies fail."""
