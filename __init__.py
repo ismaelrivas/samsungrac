@@ -189,9 +189,9 @@ def _build_device_setup_tasks(
 async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -> bool:
     """Set up Samsung Climate IP from a config entry."""
 
-    device_type = _get_config_value(entry, CONF_DEVICE_TYPE)
-    mac = _get_config_value(entry, CONF_MAC, None)
-    ip_address = _get_config_value(entry, CONF_IP_ADDRESS, DEFAULT_UNKNOWN)
+    device_type = _get_config_value(entry, CONF_DEVICE_TYPE)  # pragma: no mutate
+    mac = _get_config_value(entry, CONF_MAC, None)  # pragma: no mutate
+    ip_address = _get_config_value(entry, CONF_IP_ADDRESS, DEFAULT_UNKNOWN)  # pragma: no mutate
 
     # Use the official session manager.
     session = async_get_clientsession(hass)

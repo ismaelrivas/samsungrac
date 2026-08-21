@@ -1,6 +1,5 @@
-# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
+# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,missing-class-docstring,too-few-public-methods
 """Test the Climate IP setup and actions."""
-# pylint: disable=protected-access,import-outside-toplevel,reimported,redefined-outer-name
 
 from __future__ import annotations
 
@@ -8,7 +7,6 @@ import asyncio
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import aiohttp
 import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -760,3 +758,194 @@ async def test_unload_entry_with_entry_in_setup_retry_prevents_yaml_cache_clear(
         result = await async_unload_entry(hass, mock_entry)
         assert result is True
         mock_clear_cache.assert_not_called()
+
+
+def test_get_config_value_prioritizes_options_and_default() -> None:
+    """Test _get_config_value priority (options over data) and fallback default."""
+    from custom_components.climate_ip import _get_config_value
+
+    entry = MagicMock()
+    entry.options = {"pref_key": "from_options", "shared_key": "opt_val"}
+    entry.data = {"data_key": "from_data", "shared_key": "data_val"}
+
+    # 1. Key in options overrides key in data (kills M1, M2)
+    assert _get_config_value(entry, "shared_key") == "opt_val"
+
+    # 2. Key only in options returns option value
+    assert _get_config_value(entry, "pref_key") == "from_options"
+
+    # 3. Key only in data returns data value
+    assert _get_config_value(entry, "data_key") == "from_data"
+
+    # 4. Key missing from both returns specified default (kills M5, M7)
+    assert _get_config_value(entry, "missing_key", "custom_default") == "custom_default"
+    assert _get_config_value(entry, "missing_key") is None
+
+
+@pytest.mark.asyncio
+async def test_async_safe_shutdown_handles_custom_awaitable_and_sync() -> None:
+    """Test _async_safe_shutdown handles custom awaitable object and sync return (kills M2)."""
+    from custom_components.climate_ip import _async_safe_shutdown
+
+    # Case 1: Custom awaitable object that is NOT a coroutine
+    class CustomAwaitable:
+        """Custom awaitable dummy class for testing _async_safe_shutdown."""
+
+        def __init__(self) -> None:
+            self.awaited = False
+
+        def __await__(self):
+            self.awaited = True
+
+            async def _dummy():
+                pass
+
+            return _dummy().__await__()
+
+    awaitable_obj = CustomAwaitable()
+    target_custom = MagicMock()
+    target_custom.async_shutdown.return_value = awaitable_obj
+
+    await _async_safe_shutdown(target_custom)
+    assert awaitable_obj.awaited is True
+
+    # Case 2: Target without async_shutdown
+    await _async_safe_shutdown(object())
+
+    # Case 3: Target returning None (sync shutdown)
+    target_sync = MagicMock()
+    target_sync.async_shutdown.return_value = None
+    await _async_safe_shutdown(target_sync)
+    target_sync.async_shutdown.assert_called_once()
+
+
+def test_build_device_setup_tasks_device_name_and_id_strict(hass: HomeAssistant) -> None:
+    """Test _build_device_setup_tasks extracts exact device_name and handles fallbacks (kills M4, M5, M28)."""
+    from custom_components.climate_ip import DEFAULT_UNKNOWN, _build_device_setup_tasks
+
+    entry = MagicMock()
+    devices_config = [
+        {"id": "0", "name": "Management Wifi"},  # must be skipped
+        {"id": "1", "name": "Living Room AC"},  # explicit name
+        {"id": "2"},  # missing name -> DEFAULT_UNKNOWN
+    ]
+    session = MagicMock()
+
+    with patch("custom_components.climate_ip._async_setup_single_device") as mock_setup_single:
+        tasks = _build_device_setup_tasks(hass, entry, devices_config, session)
+        assert len(tasks) == 2
+
+        # Verify Unit 1
+        call1_args = mock_setup_single.call_args_list[0].args
+        assert call1_args[2] == "1"
+        assert call1_args[3] == "Living Room AC"
+        assert call1_args[3] != DEFAULT_UNKNOWN
+
+        # Verify Unit 2 fallback
+        call2_args = mock_setup_single.call_args_list[1].args
+        assert call2_args[2] == "2"
+        assert call2_args[3] == DEFAULT_UNKNOWN
+
+
+async def test_async_setup_entry_single_device_custom_name(hass: HomeAssistant) -> None:
+    """Test single device setup uses CONF_NAME from entry data (kills M40, M41)."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "ip_address": "192.168.1.100",
+            "name": "Custom Unit Name",
+            "device_type": "samsung_2878",
+        },
+        title="Entry Title",
+        unique_id="test_custom_name",
+    )
+    entry.add_to_hass(hass)
+
+    with (
+        patch("custom_components.climate_ip.YamlController") as mock_yaml_class,
+        patch("custom_components.climate_ip.SamsungClimateCoordinator") as mock_coord_class,
+        patch("custom_components.climate_ip.async_get_clientsession"),
+        patch.object(hass.config_entries, "async_forward_entry_setups"),
+    ):
+        mock_yaml_class.return_value.initialize = AsyncMock(return_value=True)
+        mock_coord_class.return_value.async_config_entry_first_refresh = AsyncMock()
+
+        result = await async_setup_entry(hass, entry)
+        assert result is True
+
+        # Verify kwargs passed to YamlController constructor has device_id="main" (kills M8, M11)
+        yaml_kwargs = mock_yaml_class.call_args.kwargs
+        assert yaml_kwargs["device_id"] == "main"
+
+
+async def test_async_setup_entry_multi_device_exception_continues_gathering_for_rollback(
+    hass: HomeAssistant,
+) -> None:
+    """Test that when an exception occurs in results, loop continues so ALL booted coordinators roll back (kills M69)."""
+    mock_entry = MagicMock()
+    mock_entry.unique_id = "test_multi_rollback"
+    mock_entry.title = "Rollback AC"
+    mock_entry.data = {
+        "ip_address": "192.168.1.100",
+        CONF_DEVICES: [
+            {"id": "1", "name": "Zone Error"},
+            {"id": "2", "name": "Zone OK 1"},
+            {"id": "3", "name": "Zone OK 2"},
+        ],
+    }
+    mock_entry.options = {}
+    mock_entry.version = 2
+
+    with (
+        patch("custom_components.climate_ip.YamlController") as mock_yaml_class,
+        patch("custom_components.climate_ip.SamsungClimateCoordinator") as mock_coord_class,
+        patch("custom_components.climate_ip.async_get_clientsession"),
+    ):
+        c1 = MagicMock(initialize=AsyncMock(return_value=True), async_shutdown=AsyncMock())
+        c2 = MagicMock(initialize=AsyncMock(return_value=True), async_shutdown=AsyncMock())
+        c3 = MagicMock(initialize=AsyncMock(return_value=True), async_shutdown=AsyncMock())
+        mock_yaml_class.side_effect = [c1, c2, c3]
+
+        coord1 = MagicMock(
+            async_config_entry_first_refresh=AsyncMock(side_effect=ConfigEntryAuthFailed("Auth Fail")),
+            async_shutdown=AsyncMock(),
+        )
+        coord2 = MagicMock(
+            async_config_entry_first_refresh=AsyncMock(),
+            async_shutdown=AsyncMock(),
+        )
+        coord3 = MagicMock(
+            async_config_entry_first_refresh=AsyncMock(),
+            async_shutdown=AsyncMock(),
+        )
+        mock_coord_class.side_effect = [coord1, coord2, coord3]
+
+        with pytest.raises(ConfigEntryAuthFailed):
+            await async_setup_entry(hass, mock_entry)
+
+        # If mutant was 'break' instead of 'continue', coord2 and coord3 are not added to coordinators
+        # and will NOT be shutdown during rollback!
+        coord2.async_shutdown.assert_awaited_once()
+        coord3.async_shutdown.assert_awaited_once()
+
+
+async def test_async_unload_entry_last_entry_clears_yaml_cache_strict(
+    hass: HomeAssistant,
+) -> None:
+    """Test that unloading the last active entry calls clear_yaml_cache (kills M26, M27)."""
+    entry = MagicMock()
+    entry.entry_id = "unloading_entry_id"
+    entry.state = ConfigEntryState.LOADED
+    entry.runtime_data = {"main": MagicMock(async_shutdown=AsyncMock())}
+
+    # hass.config_entries.async_entries returns this entry (and only this entry)
+    hass.config_entries.async_entries = MagicMock(return_value=[entry])
+    hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+
+    with patch("custom_components.climate_ip.clear_yaml_cache") as mock_clear_cache:
+        result = await async_unload_entry(hass, entry)
+        assert result is True
+        # Verify async_entries was called with DOMAIN strictly (kills M26)
+        hass.config_entries.async_entries.assert_called_once_with(DOMAIN)
+        # Verify clear_yaml_cache was called because other_active_entries was empty (kills M27)
+        mock_clear_cache.assert_called_once()
