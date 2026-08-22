@@ -21,7 +21,7 @@ import time
 import warnings
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
+from typing import Any, final
 
 import requests  # type: ignore[import-untyped]
 from homeassistant.helpers.json import json_dumps
@@ -54,8 +54,12 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 CONNECTION_TYPE_REQUEST = "request"
 CONNECTION_TYPE_REQUEST_PRINT = "request_print"
 
-REQUEST_MAX_RETRIES = 3
-REQUEST_RETRY_DELAY = 1.0  # seconds
+REQUEST_MAX_RETRIES: final = 3
+REQUEST_RETRY_DELAY: final = 1.0  # seconds
+DEFAULT_REQUEST_TIMEOUT: final = 30.0
+FAST_FAIL_TIMEOUT_THRESHOLD: final = 12.0
+FAST_FAIL_FIRST_ATTEMPT_TIMEOUT: final = 10.0
+DEFAULT_CIPHERS: final = "ALL:@SECLEVEL=0"
 
 
 class SamsungHTTPAdapter(HTTPAdapter):
@@ -66,7 +70,7 @@ class SamsungHTTPAdapter(HTTPAdapter):
     ) -> Any:
         """Initialize the pool manager with custom SSL context and enforced concurrency."""
         ssl_context = create_samsung_ssl_context(
-            ciphers="ALL:@SECLEVEL=0", verify_mode=ssl.CERT_NONE
+            ciphers=DEFAULT_CIPHERS, verify_mode=ssl.CERT_NONE
         )
 
         pool_kwargs["ssl_context"] = ssl_context
@@ -115,8 +119,8 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
     ) -> None:
         super().__init__(hass_config or {}, _logger, hass=hass)
         self._hass = hass
-        self._params: dict[str, Any] = {"timeout": 30}
-        self._max_retries = 3
+        self._params: dict[str, Any] = {"timeout": DEFAULT_REQUEST_TIMEOUT}
+        self._max_retries = REQUEST_MAX_RETRIES
         self._embedded_command: ConnectionRequestBase | None = (
             None  # An optional nested command.
         )
@@ -147,13 +151,10 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         self._force_close_connection = False
         self._keep_alive_broken = False
 
-        warnings.warn(
-            "The 'request' connection method is deprecated and "
-            "will be removed in a future release. Please switch the "
-            f"connection method for {self.log_prefix} to Modern "
-            "(aiohttp) or Robust (raw socket).",
-            DeprecationWarning,
-            stacklevel=2,
+        _LOGGER.warning(
+            "%s The 'request' connection method is deprecated and will be removed in a "
+            "future release. Switch connection method to Modern (aiohttp) or Robust (raw socket)",
+            self.log_prefix,
         )
 
     def set_controller_ref(self, controller: Any) -> None:
@@ -498,20 +499,20 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                         if "verify" in request_params:
                             del request_params["verify"]
 
-                        current_timeout = request_params.get("timeout", 30)
+                        current_timeout = request_params.get("timeout", DEFAULT_REQUEST_TIMEOUT)
                         if attempt == 0 and not getattr(
                             self, "_force_close_connection", False
                         ):
                             if (
                                 isinstance(current_timeout, int | float)
-                                and current_timeout > 12
+                                and current_timeout > FAST_FAIL_TIMEOUT_THRESHOLD
                             ):
                                 _LOGGER.debug(
                                     "%s [Optimization] Capping timeout to 10s for first "
                                     "attempt to allow retry within window.",
                                     self.log_prefix,
                                 )
-                                request_params["timeout"] = 10.0
+                                request_params["timeout"] = FAST_FAIL_FIRST_ATTEMPT_TIMEOUT
 
                         resp = session.request(**request_params)
 
@@ -598,10 +599,10 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                             # calling .json() or .text, but if we got here, we want to
                             # proactively flag this broken server for future requests so
                             # we don't hang for 10 seconds again.
+                            transfer_encoding = resp.headers.get("Transfer-Encoding", "").casefold()
                             if (
-                                not resp.headers.get("Content-Length")
-                                and not resp.headers.get("Transfer-Encoding")
-                                == "chunked"
+                                "Content-Length" not in resp.headers
+                                and transfer_encoding != "chunked"
                             ):
                                 if not getattr(self, "_force_close_connection", False):
                                     _LOGGER.warning(
