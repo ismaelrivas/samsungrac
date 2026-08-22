@@ -22,42 +22,54 @@ def mock_controller_errors():
     ctrl.log_prefix = "[Test]"
     ctrl.device_id = "dev_error"
     ctrl.unique_id = "uid_error"
+    ctrl.hass = None
+    ctrl.yaml_file = "/test.yaml"
     return ctrl
 
 
 @pytest.mark.asyncio
 async def test_async_initialize_early_exits_bombardment(mock_controller_errors):
-    """Kills the 15 Untested mutants by forcing all legitimate return False paths."""
+    """Kills the Untested mutants by forcing all legitimate return False paths."""
 
-    # 1. Failure: File not specified (None)
-    mock_controller_errors._yaml = None
+    # 1. Failure: File not specified (None) (Targets 28, 29)
+    mock_controller_errors.yaml_file = None
     loader = YamlConfigLoader(mock_controller_errors)
     assert await loader.async_initialize() is False
 
     # 2. Failure: Exception while reading YAML
-    mock_controller_errors._yaml = "test.yaml"
+    mock_controller_errors.yaml_file = "/test_exploding.yaml"
     clear_yaml_cache()
+    loader = YamlConfigLoader(mock_controller_errors)
     with patch(
         "custom_components.climate_ip.controller_yaml_config.load_yaml",
         side_effect=Exception("YAML Explosion"),
     ):
         assert await loader.async_initialize() is False
 
-    # 3. Failure: Empty YAML
+    # 3. Failure: Empty YAML (Targets 65, 66)
+    mock_controller_errors.yaml_file = "/test_empty.yaml"
+    clear_yaml_cache()
+    loader = YamlConfigLoader(mock_controller_errors)
     with patch(
         "custom_components.climate_ip.controller_yaml_config.load_yaml", return_value={}
     ):
         assert await loader.async_initialize() is False
 
-    # 4. Failure: Missing 'device' node
+    # 4. Failure: Missing 'device' node (Targets 76, 77)
+    mock_controller_errors.yaml_file = "/test_missing_device.yaml"
+    clear_yaml_cache()
+    loader = YamlConfigLoader(mock_controller_errors)
     with patch(
         "custom_components.climate_ip.controller_yaml_config.load_yaml",
         return_value={"wrong_node": {}},
     ):
         assert await loader.async_initialize() is False
 
-    # 5. Failure: Without unique_id
+    # 5. Failure: Without unique_id (Targets 138, 139)
+    mock_controller_errors.yaml_file = "/test_no_uid.yaml"
     mock_controller_errors.unique_id = None
+    clear_yaml_cache()
+    loader = YamlConfigLoader(mock_controller_errors)
     with patch(
         "custom_components.climate_ip.controller_yaml_config.load_yaml",
         return_value={"device": {}},
@@ -67,11 +79,15 @@ async def test_async_initialize_early_exits_bombardment(mock_controller_errors):
 
     # 6. Failure: Connection creation fails (ConnectionMatch fails or load_from_yaml returns False)
     mock_conn_class = MagicMock()
+    mock_conn_class.__name__ = "MockConnClass"
     mock_conn_class.match_type.return_value = True  # Type matches...
     mock_conn_instance = MagicMock()
     mock_conn_instance.load_from_yaml.return_value = False  # ...but rejects loading
     mock_conn_class.return_value = mock_conn_instance
 
+    mock_controller_errors.yaml_file = "/test_conn_fail.yaml"
+    clear_yaml_cache()
+    loader = YamlConfigLoader(mock_controller_errors)
     with patch(
         "custom_components.climate_ip.controller_yaml_config.load_yaml",
         return_value={"device": {"connection": {"type": "mock"}}},
@@ -84,9 +100,12 @@ async def test_async_initialize_early_exits_bombardment(mock_controller_errors):
 
     # 7. Failure: Missing 'status' node in YAML (create_status_getter returns None)
     mock_conn_instance.load_from_yaml.return_value = True  # Connection now passes
+    mock_controller_errors.yaml_file = "/test_no_status.yaml"
+    clear_yaml_cache()
+    loader = YamlConfigLoader(mock_controller_errors)
     with patch(
         "custom_components.climate_ip.controller_yaml_config.load_yaml",
-        return_value={"device": {"connection": {}}},
+        return_value={"device": {"connection": {"type": "mock"}}},
     ):
         with patch(
             "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
@@ -97,6 +116,19 @@ async def test_async_initialize_early_exits_bombardment(mock_controller_errors):
                 return_value=None,
             ):
                 assert await loader.async_initialize() is False
+
+    # 8. Failure: No matching connection class found (Targets 208, 209)
+    mock_controller_errors.yaml_file = "/test_no_match.yaml"
+    clear_yaml_cache()
+    loader = YamlConfigLoader(mock_controller_errors)
+    with patch(
+        "custom_components.climate_ip.controller_yaml_config.load_yaml",
+        return_value={"device": {"connection": {"type": "unsupported_type"}}},
+    ), patch(
+        "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
+        [],
+    ):
+        assert await loader.async_initialize() is False
 
 
 @pytest.mark.asyncio
@@ -195,6 +227,7 @@ async def test_async_finish_initialization_config_fallback(mock_controller_error
 
     # Leave only the public one
     mock_controller_errors.config = {"entry_id": "fallback_entry_id"}
+    mock_controller_errors.hass = MagicMock()
     mock_controller_errors.hass.config_entries.async_get_entry = MagicMock()
 
     loader = YamlConfigLoader(mock_controller_errors)
@@ -225,7 +258,8 @@ async def test_async_initialize_config_entry_fetch(mock_controller_errors):
     mock_controller_errors.config = (
         mock_controller_errors._config
     )  # Synchronize fallbacks
-    mock_controller_errors._yaml = "test.yaml"
+    mock_controller_errors.yaml_file = "/test.yaml"
+    mock_controller_errors.hass = MagicMock()
     mock_controller_errors.hass.config_entries.async_get_entry = MagicMock()
 
     # [!] FIX: Inject a real coroutine to simulate Home Assistant's executor and avoid crash
@@ -287,6 +321,7 @@ async def test_apply_temperature_units_simple_sensor_fallback(mock_controller_er
     }
 
     # Configure expected unit (fallback)
+    mock_controller_errors.hass = MagicMock()
     mock_controller_errors.hass.config.units.temperature_unit = "°F"
 
     await loader.async_finish_initialization()

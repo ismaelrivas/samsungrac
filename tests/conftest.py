@@ -33,6 +33,24 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 
 @pytest.fixture(autouse=True)
+def auto_clear_yaml_cache():
+    """Clear YAML file cache before and after each test."""
+    try:
+        from custom_components.climate_ip.controller_yaml_config import clear_yaml_cache
+
+        clear_yaml_cache()
+    except ImportError:
+        pass
+    yield
+    try:
+        from custom_components.climate_ip.controller_yaml_config import clear_yaml_cache
+
+        clear_yaml_cache()
+    except ImportError:
+        pass
+
+
+@pytest.fixture(autouse=True)
 async def force_task_cancellation():
     """Teardown guillotine: cancel all lingering background tasks when test finishes."""
     yield
