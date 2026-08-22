@@ -19,6 +19,7 @@ import logging
 import ssl
 import time
 import warnings
+import weakref
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any, final
@@ -126,9 +127,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         )
         self._controller: Any = None  # Will be set by the property that creates this.
         self._parent: ConnectionRequestBase | None = (
-            None  # Reference to parent connection for upward propagation
         )
-        logging.getLogger("urllib3.connectionpool").setLevel(logging.DEBUG)
         self.update_configuration_from_hass(hass_config)
         self._condition_template: Template | None = None
         self._is_closing = False
@@ -147,7 +146,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         )
 
         # Registry for child connections (embedded commands) to propagate session updates
-        self._children: list[ConnectionRequestBase] = []
+        self._children: weakref.WeakSet[ConnectionRequestBase] = weakref.WeakSet()
         self._force_close_connection = False
         self._keep_alive_broken = False
 
@@ -236,7 +235,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
             not self._session.verify if hasattr(self._session, "verify") else True
         )
         socket_timeout = self._params.get("timeout", None)
-        force_close = getattr(self, "_force_close_connection", False)
+        force_close = self._force_close_connection
 
         return {
             "engine": "requests_sync",
@@ -355,8 +354,9 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         if hass_config is not None:
             cert_file = hass_config.get(CONF_CERT, None)
             if cert_file is not None:
-                if cert_file.find("\\") == -1 and cert_file.find("/") == -1:
-                    cert_file = str(Path(__file__).parent / cert_file)
+                cert_path = Path(cert_file)
+                if not cert_path.is_absolute():
+                    cert_file = str(Path(__file__).parent / cert_path)
 
             self._params[CONF_CERT] = cert_file
 
@@ -378,7 +378,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                     node[CONFIG_DEVICE_CONNECTION]
                 )
                 if self._embedded_command:
-                    self._children.append(self._embedded_command)
+                    self._children.add(self._embedded_command)
                     _LOGGER.debug(
                         "%s [Session Propagation] Registered child connection.",
                         self.log_prefix,
@@ -421,14 +421,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         params = self._params.copy()
         if template is not None:
             try:
-                from unittest.mock import NonCallableMock
-
-                async_render = getattr(template, "async_render", None)
-                rendered_template = (
-                    async_render(value=value, device_id=device_id)
-                    if callable(async_render) and not isinstance(template, NonCallableMock)
-                    else template.render(value=value, device_id=device_id)
-                )
+                rendered_template = template.render(value=value, device_id=device_id)
                 params.update(json_loads(rendered_template))
             except Exception as exc:
                 _LOGGER.error(
@@ -472,7 +465,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                         # to missing Content-Length), we strictly force 'Connection: close'.
                         # pivot: Use a fresh copy of headers to avoid mutating self._params
                         # via shallow reference.
-                        if getattr(self, "_force_close_connection", False):
+                        if self._force_close_connection:
                             # Ensure we don't fail if headers key is missing or None
                             if "headers" not in params or params["headers"] is None:
                                 params["headers"] = {}
@@ -531,8 +524,12 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                                 self.log_prefix,
                                 negotiated_tls,
                             )
-                        except Exception:  # pylint: disable=import-outside-toplevel,broad-exception-caught
-                            pass
+                        except (AttributeError, OSError) as exc:
+                            _LOGGER.debug(
+                                "%s Could not inspect negotiated TLS version: %s",
+                                self.log_prefix,
+                                exc,
+                            )
 
                         # --- HTTP Version Detection ---
                         # Dynamically adjust Keep-Alive support based on server response.
@@ -540,7 +537,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                         if getattr(resp.raw, "version", 0) == 11:
                             # Only re-enable Keep-Alive if it wasn't permanently disabled
                             # due to a protocol violation (like missing Content-Length).
-                            if not getattr(self, "_keep_alive_broken", False):
+                            if not self._keep_alive_broken:
                                 _LOGGER.debug(
                                     "%s [Optimization] Server speaks HTTP/1.1. "
                                     "Re-enabling Keep-Alive.",
@@ -548,7 +545,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                                 )
                                 self._force_close_connection = False
                         elif getattr(resp.raw, "version", 0) == 10:
-                            if not getattr(self, "_force_close_connection", False):
+                            if not self._force_close_connection:
                                 _LOGGER.debug(
                                     "%s [Compatibility] Server speaks HTTP/1.0. "
                                     "Enforcing 'Connection: close'.",
@@ -562,7 +559,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                             try:
                                 json_body = json_loads(resp.content)
                                 log_body = json_dumps(mask_sensitive_data(json_body))
-                            except Exception:  # pylint: disable=import-outside-toplevel,broad-exception-caught
+                            except (AttributeError, TypeError, ValueError, *JSON_DECODE_EXCEPTIONS):
                                 log_body = resp.text
 
                             _LOGGER.debug(
@@ -581,7 +578,8 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                             self.log_prefix,
                             resp.status_code,
                         )
-                        if not resp.text or not resp.text.strip():
+                        text_content = resp.text.strip() if resp.text else ""
+                        if not text_content:
                             _LOGGER.debug(
                                 "%s Response was empty, returning None to trigger a poll.",
                                 self.log_prefix,
@@ -604,7 +602,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                                 "Content-Length" not in resp.headers
                                 and transfer_encoding != "chunked"
                             ):
-                                if not getattr(self, "_force_close_connection", False):
+                                if not self._force_close_connection:
                                     _LOGGER.warning(
                                         "%s [Protocol Violation] Server returned JSON but "
                                         "omitted 'Content-Length' header. "
@@ -681,7 +679,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
 
                     except requests.exceptions.ReadTimeout as e:
                         # --- ADAPTIVE RECOVERY ---
-                        if not getattr(self, "_force_close_connection", False):
+                        if not self._force_close_connection:
                             _LOGGER.warning(
                                 "%s [Legacy] ReadTimeout detected (%s). "
                                 "The device likely violates HTTP protocol "
@@ -732,7 +730,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
 
                     except requests.exceptions.ConnectionError as e:
                         # --- ADAPTIVE RECOVERY for Connection Errors (e.g. RemoteDisconnected) ---
-                        if not getattr(self, "_force_close_connection", False):
+                        if not self._force_close_connection:
                             _LOGGER.debug(
                                 "%s [Legacy] ConnectionError detected (%s). "
                                 "Switching to 'Connection: close' mode for future attempts.",
@@ -900,81 +898,9 @@ class ConnectionRequest(ConnectionRequestBase):  # pylint: disable=import-outsid
         c._controller = self._controller
 
         # Register this new instance as a child so it receives session updates
-        self._children.append(c)
+        self._children.add(c)
 
         return c
-
-
-# Dry-run fixture: sample device response used only by ConnectionRequestPrint.execute()
-# for offline testing without a real device. Not used in production connections.
-test_json: dict[str, Any] = {
-    "Devices": [
-        {
-            "Alarms": [
-                {
-                    "alarmType": "Device",
-                    "code": "FilterAlarm",
-                    "id": "0",
-                    "triggeredTime": "2019-02-25T08:46:01",
-                }
-            ],
-            "ConfigurationLink": {"href": "/devices/0/configuration"},
-            "Diagnosis": {"diagnosisStart": "Ready"},
-            "EnergyConsumption": {"saveLocation": "/files/usage.db"},
-            "InformationLink": {"href": "/devices/0/information"},
-            "Mode": {
-                "modes": ["Auto"],
-                "options": [
-                    "Comode_Off",
-                    "Sleep_0",
-                    "Autoclean_Off",
-                    "Spi_Off",
-                    "FilterCleanAlarm_0",
-                    "OutdoorTemp_63",
-                    "CoolCapa_35",
-                    "WarmCapa_40",
-                    "UsagesDB_254",
-                    "FilterTime_10000",
-                    "OptionCode_54458",
-                    "UpdateAllow_0",
-                    "FilterAlarmTime_500",
-                    "Function_15",
-                    "Volume_100",
-                ],
-                "supportedModes": ["Cool", "Dry", "Wind", "Auto"],
-            },
-            "Operation": {"power": "Off"},
-            "Temperatures": [
-                {
-                    "current": 22.0,
-                    "desired": 25.0,
-                    "id": "0",
-                    "maximum": 30,
-                    "minimum": 16,
-                    "unit": "Celsius",
-                }
-            ],
-            "Wind": {"direction": "Fix", "maxSpeedLevel": 4, "speedLevel": 0},
-            "connected": True,
-            "description": "TP6X_RAC_16K",
-            "id": "0",
-            "name": "RAC",
-            "resources": [
-                "Alarms",
-                "Configuration",
-                "Diagnosis",
-                "EnergyConsumption",
-                "Information",
-                "Mode",
-                "Operation",
-                "Temperatures",
-                "Wind",
-            ],
-            "type": "Air_Conditioner",
-            "uuid": "00000000-0000-0000-0000-000000000000",
-        }
-    ]
-}
 
 
 @register_connection
@@ -1006,4 +932,4 @@ class ConnectionRequestPrint(ConnectionRequestBase):  # pylint: disable=import-o
             self._params,
             device_id,
         )
-        return test_json
+        return {"Devices": [{"Operation": {"power": "Off"}, "connected": True}]}
