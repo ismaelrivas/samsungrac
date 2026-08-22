@@ -250,8 +250,8 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         if self._controller:
             return self._controller.log_prefix
 
-        if getattr(self, "_parent", None):
-            return getattr(self._parent, "log_prefix", "[NO_ID]")
+        if self._parent:
+            return self._parent.log_prefix
 
         fallback_id = None
         if hasattr(self, "config") and isinstance(self.config, dict):
@@ -303,11 +303,11 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         """Explicitly close the session (Synchronous)."""
         self._is_closing = True
         # Only the root connection (no parent) should close the shared session and emit logs.
-        if not getattr(self, "_parent", None):
+        if not self._parent:
             _LOGGER.debug(
                 "%s [ConnectionRequest] _close_sync: Cleanup started.", self.log_prefix
             )
-            if hasattr(self, "_session") and self._session:
+            if self._session:
                 try:
                     self._session.close()
                     _LOGGER.debug(
@@ -493,9 +493,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                             del request_params["verify"]
 
                         current_timeout = request_params.get("timeout", DEFAULT_REQUEST_TIMEOUT)
-                        if attempt == 0 and not getattr(
-                            self, "_force_close_connection", False
-                        ):
+                        if attempt == 0 and not self._force_close_connection:
                             if (
                                 isinstance(current_timeout, int | float)
                                 and current_timeout > FAST_FAIL_TIMEOUT_THRESHOLD
