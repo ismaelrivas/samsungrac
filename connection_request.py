@@ -181,8 +181,8 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         port: str | int = "default"
 
         if self._controller:
-            ip = getattr(self._controller, "ip_address", None)
-            port = getattr(self._controller, "port", port)
+            ip = self._controller.ip_address
+            port = self._controller.port
         elif self._parent:
             # Child connections (embedded commands) delegate to their parent.
             return self._parent.async_lock  # type: ignore[return-value]
@@ -254,11 +254,11 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
             return self._parent.log_prefix
 
         fallback_id = None
-        if hasattr(self, "config") and isinstance(self.config, dict):
+        if self._controller:
             fallback_id = (
-                self.config.get("mac")
-                or self.config.get("unique_id")
-                or self.config.get("name")
+                self._controller.config.get("mac")
+                or self._controller.config.get("unique_id")
+                or self._controller.config.get("name")
             )
 
         if fallback_id:
@@ -413,7 +413,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         token = self._controller.token if self._controller else None
         ip_address = self._controller.ip_address if self._controller else None
         mac = (
-            getattr(self._controller, "config", {}).get("mac")
+            self._controller.config.get("mac")
             if self._controller
             else None
         )
