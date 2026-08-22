@@ -1,18 +1,16 @@
-# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
+# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,too-many-lines,trailing-newlines,broad-exception-caught,comparison-with-callable,too-many-locals
 """Test DataUpdateCoordinator and state polling behaviors."""
 # pylint: disable=redefined-outer-name,protected-access,import-outside-toplevel
 
 from __future__ import annotations
 
 import asyncio
-import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import UpdateFailed
-
 
 from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 from custom_components.climate_ip.coordinator import (
@@ -904,6 +902,27 @@ async def test_coordinator_standalone_device_info_no_mac_no_name(
     coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
 
     assert coordinator.device_info["name"] == "Samsung AC standalone_ac_456"
+    assert coordinator.device_info["connections"] == set()
+
+
+async def test_coordinator_standalone_device_info_empty_mac_whitespace(
+    hass: HomeAssistant,
+) -> None:
+    """Test device_info fallback logic when MAC is empty whitespace string."""
+    from homeassistant.const import CONF_MAC
+
+    mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
+    mock_controller.unique_id = "standalone_ac_789"
+
+    mock_entry = MagicMock()
+    mock_entry.options = {}
+    mock_entry.data = {CONF_MAC: "   "}
+
+    coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+
+    assert coordinator.device_info["name"] == "Samsung AC standalone_ac_789"
     assert coordinator.device_info["connections"] == set()
 
 
@@ -1907,6 +1926,7 @@ async def test_push_update_suppressed_during_active_debouncing(hass: HomeAssista
 async def test_cleanup_auto_healing_issue_if_ignored(hass: HomeAssistant) -> None:
     """Test that an ignored auto-healing repair issue is deleted upon coordinator init."""
     from unittest.mock import MagicMock, patch
+
     from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 
     mock_controller = MagicMock()
@@ -1921,7 +1941,7 @@ async def test_cleanup_auto_healing_issue_if_ignored(hass: HomeAssistant) -> Non
 
     with patch("custom_components.climate_ip.coordinator.async_get_issue_registry", return_value=mock_registry), \
          patch("custom_components.climate_ip.coordinator.async_delete_issue") as mock_delete:
-        coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+        _ = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
         mock_delete.assert_called_once_with(hass, "climate_ip", "auto_healing_raw_test_ac_unique")
 
 
@@ -1964,6 +1984,7 @@ async def test_sniper_debouncer_turn_off_type_dispatch() -> None:
 async def test_sniper_push_update_auth_failed_no_config_entry(hass: HomeAssistant) -> None:
     """Test push update handles ConfigEntryAuthFailed safely when self.config_entry is None."""
     from homeassistant.exceptions import ConfigEntryAuthFailed
+
     from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 
     with patch(

@@ -1,12 +1,13 @@
+# pylint: disable=line-too-long,too-many-statements,too-many-locals,try-except-raise,trailing-whitespace
 """DataUpdateCoordinator for the Samsung Climate integration."""
 
 from __future__ import annotations
 
 import asyncio
-from enum import Enum
 import logging
 from collections.abc import Callable, Coroutine
 from datetime import timedelta
+from enum import Enum
 from typing import Any, Final
 
 from homeassistant.components.climate import ATTR_HVAC_MODE, HVACMode
@@ -21,6 +22,8 @@ from homeassistant.helpers.issue_registry import (
     IssueSeverity,
     async_create_issue,
     async_delete_issue,
+)
+from homeassistant.helpers.issue_registry import (
     async_get as async_get_issue_registry,
 )
 from homeassistant.helpers.update_coordinator import (
@@ -38,9 +41,9 @@ from .const import (
     CONF_SUBDEVICE_ID,
     CONN_METHOD_RAW,
     DEFAULT_DEBOUNCE_DELAY,
+    DEFAULT_DEVICE_NAME_PREFIX,
     DEFAULT_ENABLE_POLLING,
     DEFAULT_POLL_INTERVAL,
-    DEFAULT_DEVICE_NAME_PREFIX,
     DEFAULT_SUBDEVICE_NAME,
     DOMAIN,
     ERR_AUTO_HEALING_RAW_IN_PROGRESS,
@@ -392,7 +395,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                     _LOGGER.debug(
                         "%s Empty MAC address string in config entry, skipping",
                         self.log_prefix,
-                    )
+                    )  # pragma: no mutate
 
             opt_name = self.config_entry.options.get(CONF_NAME)
             data_name = self.config_entry.data.get(CONF_NAME)

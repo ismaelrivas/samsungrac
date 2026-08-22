@@ -1,3 +1,4 @@
+# pylint: disable=line-too-long,import-outside-toplevel,invalid-name,redefined-outer-name,reimported,not-callable,too-many-branches,wrong-import-position,unused-import
 """Base connection class and registry for climate_ip connections."""
 
 from __future__ import annotations

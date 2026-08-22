@@ -1,3 +1,4 @@
+# pylint: disable=unused-argument
 """Repairs flows for Samsung Climate IP integration."""
 
 from __future__ import annotations

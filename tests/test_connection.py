@@ -246,13 +246,13 @@ async def test_async_execute_with_retry_other_exception_wrapped():
 
 def test_check_execute_condition():
     """Test check_execute_condition logic for templates, rendering, and exception handling."""
-    logger = logging.getLogger("test")
-    conn = DummyConnection({}, logger)
+    mock_logger = MagicMock()
+    conn = DummyConnection({}, mock_logger)
 
     # 1. No condition_template -> returns True
     assert conn.check_execute_condition({"state": "on"}) is True
 
-    # 2. Async render template returning "1" -> True
+    # 2. Async render template returning "1" -> True (Kills M57, M58, M59)
     mock_async_tmpl = MagicMock()
     mock_async_tmpl.async_render.return_value = "1"
     conn.condition_template = mock_async_tmpl
@@ -260,16 +260,28 @@ def test_check_execute_condition():
     mock_async_tmpl.async_render.assert_called_once_with(
         {"device_state": {"state": "on"}}
     )
+    mock_logger.debug.assert_called_with(
+        "%s Execute condition result: %s",
+        conn.log_prefix,
+        "1",
+    )
 
     # 3. Async render template returning "0" -> False
     mock_async_tmpl.async_render.return_value = "0"
     assert conn.check_execute_condition({"state": "off"}) is False
 
-    # 4. Render raises Exception -> logs error and returns False
+    # 4. Render raises Exception -> logs error with exc_info=True and returns False (Kills M68, M70, M71, M72)
     mock_err_tmpl = MagicMock()
-    mock_err_tmpl.async_render.side_effect = RuntimeError("Template syntax error")
+    err = RuntimeError("Template syntax error")
+    mock_err_tmpl.async_render.side_effect = err
     conn.condition_template = mock_err_tmpl
     assert conn.check_execute_condition({"state": "on"}) is False
+    mock_logger.error.assert_called_once_with(
+        "%s Error evaluating execute condition, skipping command. Error: %s",
+        conn.log_prefix,
+        err,
+        exc_info=True,
+    )
 
 
 def test_check_execute_condition_default_logger():
@@ -403,11 +415,16 @@ def test_check_execute_condition_dataclass_and_object_conversion():
         def __init__(self) -> None:
             self.mode = "heat"
 
-    conn = DummyConnection({}, logging.getLogger("test"))
+    mock_logger = MagicMock()
+    conn = DummyConnection({}, mock_logger)
 
-    # Case 1: Dataclass instance
+    # Case 1: Dataclass instance (Kills M16, M17)
     conn.condition_template = Template("{{ 1 if device_state.mode == 'cool' and device_state.speed == 3 else 0 }}")
     assert conn.check_execute_condition(StateData()) is True
+    mock_logger.debug.assert_any_call(
+        "%s Translating mapped Dataclass to RAW API dictionary for Jinja evaluation.",
+        conn.log_prefix,
+    )
 
     # Case 2: Generic object with __dict__
     conn.condition_template = Template("{{ 1 if device_state.mode == 'heat' else 0 }}")
