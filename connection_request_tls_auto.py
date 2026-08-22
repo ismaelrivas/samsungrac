@@ -36,6 +36,7 @@ from .const import (
     CONFIG_DEVICE_CONDITION_TEMPLATE,
     CONFIG_DEVICE_CONNECTION,
     CONFIG_DEVICE_CONNECTION_PARAMS,
+    CONNECTION_TYPE_REQUEST_TLS_AUTO,
 )
 from .exceptions import AuthError, CannotConnect, RetryNextAttempt
 from .helpers import format_placeholders, mask_sensitive_data, tolerant_header_parsing
@@ -193,13 +194,13 @@ class ConnectionRequestBase(Connection):
         ip: str | None = None
         port: str | int = "default"
 
-        if self._controller:
+        if self._controller is not None:
             ip = self._controller.ip_address
             port = self._controller.port
-        elif self._parent:
+        elif self._parent is not None:
             return self._parent.async_lock  # type: ignore[return-value]
 
-        if not ip:
+        if ip is None or not ip.strip():
             return self._lock  # Fallback: per-instance lock
 
         key = (str(ip), str(port))
@@ -242,21 +243,21 @@ class ConnectionRequestBase(Connection):
         if hass_config is not None:
             cert_file = hass_config.get(CONF_CERT, None)
             if cert_file is not None:
-                if cert_file.find("\\") == -1 and cert_file.find("/") == -1:
+                if Path(cert_file).name == cert_file:
                     cert_file = str(Path(__file__).parent / cert_file)
 
             self._params[CONF_CERT] = cert_file
 
     def load_from_yaml(self, node: dict[str, Any] | None, connection_base: Any) -> bool:
         # pylint: disable=import-outside-toplevel,protected-access
-        if connection_base:
+        if connection_base is not None:
             self._params.update(connection_base._params.copy())
             self._condition_template = connection_base._condition_template
             self._insecure_ssl = connection_base._insecure_ssl
             self._retry_delay = connection_base._retry_delay
             self._debug = connection_base._debug
 
-        if node:
+        if node is not None:
             self._params.update(node.get(CONFIG_DEVICE_CONNECTION_PARAMS, {}))
             self._insecure_ssl = node.get("insecure_ssl", self._insecure_ssl)
             self._params["timeout"] = node.get("timeout", self._params["timeout"])
@@ -344,7 +345,7 @@ class ConnectionRequestBase(Connection):
                     else template.render(value=value, device_id=device_id)
                 )
                 params.update(json_loads(rendered_template))
-            except Exception as exc:
+            except (ValueError, TypeError) as exc:
                 _LOGGER.error(
                     "%s Error rendering template or parsing JSON: %s",
                     self.log_prefix,
@@ -442,9 +443,8 @@ class ConnectionRequestBase(Connection):
         device_id: str | None = None,
     ) -> Any:
         """Synchronously executes the command."""
-        if self.embedded_command:
-            if hasattr(self.embedded_command, "set_controller_ref"):
-                self.embedded_command.set_controller_ref(self._controller)
+        if self.embedded_command is not None:
+            self.embedded_command.set_controller_ref(self._controller)
             self.embedded_command.execute(template, value, device_state, device_id)
 
         if not self.check_execute_condition(device_state):
@@ -463,7 +463,10 @@ class ConnectionRequestTlsAuto(ConnectionRequestBase):
     @staticmethod
     def match_type(type_str: str) -> bool:
         """Return True if this connection type matches the given type string."""
-        return type_str == CONNECTION_TYPE_TLS_AUTO or type_str == "request_tls_auto"
+        return (
+            type_str == CONNECTION_TYPE_TLS_AUTO
+            or type_str == CONNECTION_TYPE_REQUEST_TLS_AUTO
+        )
 
     # REDUNDANT: create_updated removed here as it is now correctly implemented in the base class.
 
