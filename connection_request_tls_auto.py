@@ -141,18 +141,18 @@ class ConnectionRequestBase(Connection):
     @property
     def log_prefix(self) -> str:
         """Get the log prefix from the controller for consistent logging."""
-        if getattr(self, "_controller", None):
+        if self._controller:
             return self._controller.log_prefix  # type: ignore[no-any-return]
 
-        if getattr(self, "_parent", None):
-            return getattr(self._parent, "log_prefix", "[NO_ID]")
+        if self._parent:
+            return self._parent.log_prefix
 
         fallback_id = None
-        if hasattr(self, "config") and isinstance(self.config, dict):
+        if self._controller:
             fallback_id = (
-                self.config.get("mac")
-                or self.config.get("unique_id")
-                or self.config.get("name")
+                self._controller.config.get("mac")
+                or self._controller.config.get("unique_id")
+                or self._controller.config.get("name")
             )
 
         if fallback_id:
@@ -194,8 +194,8 @@ class ConnectionRequestBase(Connection):
         port: str | int = "default"
 
         if self._controller:
-            ip = getattr(self._controller, "ip_address", None)
-            port = getattr(self._controller, "port", port)
+            ip = self._controller.ip_address
+            port = self._controller.port
         elif self._parent:
             return self._parent.async_lock  # type: ignore[return-value]
 
@@ -289,10 +289,10 @@ class ConnectionRequestBase(Connection):
             self._params.get("timeout", 30),
             self._retry_delay,
             self._debug,
-            hass=getattr(self, "_hass", None),
+            hass=self._hass,
         )
         new_instance.load_from_yaml(yaml_node, self)
-        new_instance._controller = getattr(self, "_controller", None)
+        new_instance._controller = self._controller
         return new_instance
 
     async def async_execute(
@@ -327,7 +327,7 @@ class ConnectionRequestBase(Connection):
         token = self._controller.token if self._controller else None
         ip_address = self._controller.ip_address if self._controller else None
         mac = (
-            getattr(self._controller, "config", {}).get("mac")
+            self._controller.config.get("mac")
             if self._controller
             else None
         )
