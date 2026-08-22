@@ -155,6 +155,11 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
             "future release. Switch connection method to Modern (aiohttp) or Robust (raw socket)",
             self.log_prefix,
         )
+        warnings.warn(
+            "The 'request' connection method is deprecated and will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     def set_controller_ref(self, controller: Any) -> None:
         """Allows the property to set a reference to the main controller."""

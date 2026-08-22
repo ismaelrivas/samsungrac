@@ -36,7 +36,6 @@ from .const import (
     CONFIG_DEVICE_CONDITION_TEMPLATE,
     CONFIG_DEVICE_CONNECTION,
     CONFIG_DEVICE_CONNECTION_PARAMS,
-    CONNECTION_TYPE_REQUEST_TLS_AUTO,
 )
 from .exceptions import AuthError, CannotConnect, RetryNextAttempt
 from .helpers import format_placeholders, mask_sensitive_data, tolerant_header_parsing
@@ -44,6 +43,7 @@ from .helpers import format_placeholders, mask_sensitive_data, tolerant_header_p
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 CONNECTION_TYPE_TLS_AUTO = "tls_auto"
+CONNECTION_TYPE_REQUEST_TLS_AUTO = "request_tls_auto"
 CONNECTION_TYPE_REQUEST_PRINT = "request_tls_auto_print"
 
 
