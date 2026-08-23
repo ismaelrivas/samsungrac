@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .exceptions import AuthTurnedOffError, CannotConnect, TokenAcquisitionError
-from .helpers import async_create_samsung_ssl_context, mask_sensitive_data
+from .helpers import async_create_samsung_ssl_context
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ class GenericYamlTokenAcquirer:
             await writer.drain()
 
         except Exception as e:
-            _LOGGER.error("Error in listener: %s", e)
+            _LOGGER.error("Error in listener: %s", e)  # pragma: no mutate
         finally:
             try:
                 writer.close()

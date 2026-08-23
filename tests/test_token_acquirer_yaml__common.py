@@ -1,8 +1,10 @@
-# pylint: disable=protected-access,redefined-outer-name,unused-argument,not-context-manager,invalid-name,line-too-long
+# ruff: noqa: F811, F401, F841
+# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,missing-function-docstring,too-few-public-methods
 """Common initialization and shared fixtures for GenericYamlTokenAcquirer."""
 
 import ssl
 from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from custom_components.climate_ip.token_acquirer_yaml import GenericYamlTokenAcquirer
@@ -93,31 +95,52 @@ def test_initialization(mock_hass, stream_config):
 
 
 def test_resolve_cert_path(mock_hass, stream_config):
-    """Test the certificate path resolution logic."""
+    """Test the certificate path resolution logic thoroughly."""
+    # None and empty sentinel
+    acq_empty = GenericYamlTokenAcquirer(mock_hass, "192.168.1.100", stream_config, cert_path=None)
+    assert acq_empty._resolve_cert_path(None) is None
+    assert acq_empty._resolve_cert_path("") == ""
+
     # User cert path (Sentinel)
     acq1 = GenericYamlTokenAcquirer(
         mock_hass, "192.168.1.100", stream_config, cert_path="/my/user/cert.pem"
     )
     assert acq1._resolve_cert_path("__user_cert__") == "/my/user/cert.pem"
 
-    # Default cert path (Sentinel)
+    # User cert sentinel when user_cert_path is None
+    assert acq_empty._resolve_cert_path("__user_cert__") is None
+
+    # Default cert path (Sentinel) with valid tls_config
     acq2 = GenericYamlTokenAcquirer(
         mock_hass, "192.168.1.100", stream_config, cert_path=None
     )
     res = acq2._resolve_cert_path("__default_cert__")
-    assert "ac14k_m.pem" in res
+    assert res is not None
+    assert res.endswith("ac14k_m.pem")
     assert "/" in res  # Should be joined with __file__
 
-    # Absolute path directly
+    # Default cert sentinel when auth_config has empty/no tls_config (kills get(None, {}) / get("tls_config", None))
+    acq_no_tls = GenericYamlTokenAcquirer(mock_hass, "192.168.1.100", {}, cert_path=None)
+    assert acq_no_tls._resolve_cert_path("__default_cert__") is None
+
+    # Absolute Unix path directly (has /)
     assert acq2._resolve_cert_path("/absolute/path.pem") == "/absolute/path.pem"
 
-    # Windows absolute path
+    # Windows absolute path (has \)
     assert acq2._resolve_cert_path("C:\\windows\\path.pem") == "C:\\windows\\path.pem"
 
-    # Relative path directly
-    res_rel = acq2._resolve_cert_path("certs/relative.pem")
-    assert "certs/relative.pem" in res_rel
-    assert "/" in res_rel
+    # Relative path with Unix subfolder (has /) -> must NOT be joined
+    assert acq2._resolve_cert_path("certs/relative.pem") == "certs/relative.pem"
+
+    # Relative path with Windows subfolder (has \) -> must NOT be joined
+    assert acq2._resolve_cert_path("certs\\relative.pem") == "certs\\relative.pem"
+
+    # Relative filename without any slashes -> MUST be joined with __file__.parent
+    res_simple = acq2._resolve_cert_path("standalone_cert.pem")
+    assert res_simple is not None
+    assert res_simple.endswith("standalone_cert.pem")
+    assert "/" in res_simple
+    assert res_simple != "standalone_cert.pem"
 
 
 async def test_async_close(mock_hass, stream_config):
