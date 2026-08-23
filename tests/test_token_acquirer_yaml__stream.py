@@ -139,14 +139,33 @@ async def test_connect_stream_strategy_default_verify_mode(mock_hass, stream_con
     acq = GenericYamlTokenAcquirer(mock_hass, "192.168.1.100", stream_config, cert_path="/my/cert.pem")
     mock_reader = AsyncMock()
     mock_writer = AsyncMock()
+    mock_ssl_mod = MagicMock()
+    mock_ssl_mod.CERT_NONE = 99999
 
     with (
+        patch("custom_components.climate_ip.token_acquirer_yaml.ssl", mock_ssl_mod),
         patch("custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context", return_value=MagicMock()) as mock_ssl,
         patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)),
         patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout", return_value=make_mock_timeout_cm()),
     ):
         await acq._connect_stream()
-        assert mock_ssl.call_args_list[0].kwargs["verify_mode"] == ssl.CERT_NONE
+        assert mock_ssl.call_args_list[0].kwargs["verify_mode"] == 99999
+
+
+async def test_connect_stream_default_buffer_size(mock_hass, stream_config):
+    """Test _connect_stream handshake defaults to 4096 when buffer_size is omitted in config."""
+    stream_config.pop("buffer_size", None)
+    acq = GenericYamlTokenAcquirer(mock_hass, "192.168.1.100", stream_config, cert_path="/my/cert.pem")
+    mock_reader = AsyncMock()
+    mock_writer = AsyncMock()
+
+    with (
+        patch("custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context", return_value=MagicMock()),
+        patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)),
+        patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout", return_value=make_mock_timeout_cm()),
+    ):
+        await acq._connect_stream()
+        assert mock_reader.read.call_args_list == [call(4096)]
 
 
 async def test_connect_stream_custom_buffer_size(mock_hass, stream_config):
@@ -515,6 +534,50 @@ async def test_initiate_pairing_stream_timeout_and_custom_buffer(mock_hass, stre
         config = await acq.async_initiate_pairing()
         mock_timeout.assert_called_once_with(15.0)
         mock_reader.read.assert_called_once_with(1024)
+        assert config == {"cert": None, "verify_mode": 0}
+
+
+async def test_initiate_pairing_stream_default_buffer_size(mock_hass, stream_config):
+    """Test initiate pairing in stream mode defaults to buffer_size 4096 when omitted."""
+    stream_config.pop("buffer_size", None)
+    acq = GenericYamlTokenAcquirer(mock_hass, "192.168.1.100", stream_config, cert_path=None)
+
+    mock_reader = AsyncMock()
+    mock_writer = AsyncMock()
+    mock_writer.drain = AsyncMock()
+    mock_reader.read.return_value = b'<Response Type="GetToken" Status="Ready"/>'
+    acq._reader = mock_reader
+    acq._writer = mock_writer
+
+    with (
+        patch.object(acq, "_connect_stream", return_value={"cert": None, "verify_mode": 0}),
+        patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout", return_value=make_mock_timeout_cm()),
+    ):
+        config = await acq.async_initiate_pairing()
+        mock_reader.read.assert_called_once_with(4096)
+        assert config == {"cert": None, "verify_mode": 0}
+
+
+async def test_initiate_pairing_stream_match_and_fallback_extraction(mock_hass, stream_config):
+    """Test that match and fallback_match are extracted using exact default empty strings."""
+    mock_succ_cfg = MagicMock()
+    mock_succ_cfg.get.side_effect = lambda k, default: 'Status="Ready"' if k == "match" else ""
+    stream_config["request_pairing"]["success_template"] = mock_succ_cfg
+    acq = GenericYamlTokenAcquirer(mock_hass, "192.168.1.100", stream_config, cert_path=None)
+
+    mock_reader = AsyncMock()
+    mock_writer = AsyncMock()
+    mock_writer.drain = AsyncMock()
+    mock_reader.read.return_value = b'<Response Type="GetToken" Status="Ready"/>'
+    acq._reader = mock_reader
+    acq._writer = mock_writer
+
+    with (
+        patch.object(acq, "_connect_stream", return_value={"cert": None, "verify_mode": 0}),
+        patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout", return_value=make_mock_timeout_cm()),
+    ):
+        config = await acq.async_initiate_pairing()
+        mock_succ_cfg.get.assert_has_calls([call("match", ""), call("fallback_match", "")])
         assert config == {"cert": None, "verify_mode": 0}
 
 

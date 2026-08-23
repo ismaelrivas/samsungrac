@@ -134,11 +134,17 @@ async def test_start_listener_server_fallback_bind_ip(mock_hass, listener_config
 async def test_initiate_pairing_success(acquirer):
     """Test a successful pairing initiation sending the request with complete assertions."""
     mock_ssl_ctx = MagicMock()
+    captured_timeouts = []
+
+    async def spy_wait_for(coro, timeout=None):
+        captured_timeouts.append(timeout)
+        return await coro
 
     with (
         patch.object(acquirer, "_start_listener_server", new_callable=AsyncMock) as mock_start,
         patch("asyncio.open_connection") as mock_open_connection,
         patch("custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context", return_value=mock_ssl_ctx) as mock_ssl,
+        patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for", side_effect=spy_wait_for),
     ):
         mock_reader = MockStreamReader([b"HTTP/1.1 200 OK\r\n\r\n"])
         mock_writer = MockStreamWriter()
@@ -146,6 +152,7 @@ async def test_initiate_pairing_success(acquirer):
 
         res = await acquirer.async_initiate_pairing()
 
+        assert captured_timeouts == [5.0]
         mock_start.assert_called_once()
         mock_ssl.assert_called_once_with(
             cert_path=acquirer._resolve_cert_path("ac14k_m.pem"),
@@ -395,6 +402,7 @@ async def test_handle_client_default_success_response(mock_hass):
 
     with patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for", side_effect=mock_wait_for):
         await acq._handle_client(mock_reader, mock_writer)
+        assert mock_reader.last_read_size == 4096
         assert acq._received_token == "default_succ_token"
         assert acq._token_received_event.is_set()
         assert mock_writer.written_data == b"HTTP/1.1 200 OK\r\n\r\n"
