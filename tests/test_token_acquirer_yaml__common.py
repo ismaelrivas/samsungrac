@@ -161,12 +161,12 @@ async def test_async_close(mock_hass, stream_config):
     acq._writer = mock_writer
 
     await acq.async_close()
-    
+
     mock_server.close.assert_called_once()
     mock_server.wait_closed.assert_called_once()
     mock_writer.close.assert_called_once()
     mock_writer.wait_closed.assert_called_once()
-    
+
     assert acq._server is None
     assert acq._writer is None
 

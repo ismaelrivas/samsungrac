@@ -155,6 +155,7 @@ async def test_initiate_pairing_success(acquirer):
         mock_open_connection.assert_called_once_with(
             "192.168.1.50", 8888, ssl=mock_ssl_ctx
         )
+        assert mock_reader.last_read_size == 4096
         assert mock_writer.closed is True
         assert mock_writer.wait_closed_called is True
 
@@ -164,7 +165,51 @@ async def test_initiate_pairing_success(acquirer):
         assert "Content-Type: application/json\r\n" in written_text
         assert "Content-Length: 29\r\n" in written_text
         assert '{"DeviceToken":"xxxxxxxxxxx"}' in written_text
-        
+
+        assert res == {"ok": True, "config": "listener_started"}
+
+
+async def test_initiate_pairing_listener_defaults_when_config_empty(mock_hass):
+    """Test initiate pairing fallbacks when request_pairing and tls_config are completely omitted."""
+    acq = GenericYamlTokenAcquirer(
+        mock_hass,
+        "192.168.1.50",
+        {"mode": "listener", "listener": {"port": 8889}},
+        cert_path=None,
+    )
+    mock_ssl_ctx = MagicMock()
+
+    with (
+        patch.object(acq, "_start_listener_server", new_callable=AsyncMock) as mock_start,
+        patch("asyncio.open_connection") as mock_open_connection,
+        patch("custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context", return_value=mock_ssl_ctx) as mock_ssl,
+    ):
+        mock_reader = MockStreamReader([b"HTTP/1.1 200 OK\r\n\r\n"])
+        mock_writer = MockStreamWriter()
+        mock_open_connection.return_value = (mock_reader, mock_writer)
+
+        res = await acq.async_initiate_pairing()
+
+        mock_start.assert_called_once()
+        mock_ssl.assert_called_once_with(
+            cert_path=None,
+            ciphers="HIGH",
+            verify_mode=ssl.CERT_NONE,
+        )
+        mock_open_connection.assert_called_once_with(
+            "192.168.1.50", 8888, ssl=mock_ssl_ctx
+        )
+        assert mock_reader.last_read_size == 4096
+        assert mock_writer.closed is True
+        assert mock_writer.wait_closed_called is True
+
+        written_text = mock_writer.written_data.decode("utf-8")
+        assert written_text.startswith("POST /devicetoken/request HTTP/1.1\r\n")
+        assert "Host: 192.168.1.100:8889\r\n" in written_text
+        # No payload or headers configured -> ends with empty line and empty body
+        assert written_text.endswith("\r\n\r\n")
+        assert "Content-Length" not in written_text
+
         assert res == {"ok": True, "config": "listener_started"}
 
 
@@ -287,15 +332,72 @@ async def test_handle_client_chunk_accumulation_and_regex(acquirer):
     mock_reader = MockStreamReader([chunk])
     mock_writer = MockStreamWriter()
 
-    with patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for", side_effect=mock_wait_for):
+    captured_timeouts = []
+
+    async def spy_wait_for(coro, timeout=None):
+        captured_timeouts.append(timeout)
+        return await coro
+
+    with patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for", side_effect=spy_wait_for):
         await acquirer._handle_client(mock_reader, mock_writer)
 
+        assert captured_timeouts == [10.0]
         assert mock_reader.last_read_size == 4096
         assert acquirer._received_token == "chunked_token_123"
         assert acquirer._token_received_event.is_set()
         assert mock_writer.written_data == b"HTTP/1.1 200 OK\r\n\r\n"
         assert mock_writer.closed is True
         assert mock_writer.wait_closed_called is True
+
+
+async def test_handle_client_custom_buffer_size(mock_hass, listener_config):
+    """Test TCP client handler using configured buffer_size from auth_config."""
+    listener_config["buffer_size"] = 1024
+    acq = GenericYamlTokenAcquirer(mock_hass, "192.168.1.50", listener_config, "ac14k_m.pem")
+    mock_reader = MockStreamReader([b'HTTP/1.1 200 OK\r\nDeviceToken: "buf_token"\r\n'])
+    mock_writer = MockStreamWriter()
+
+    with patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for", side_effect=mock_wait_for):
+        await acq._handle_client(mock_reader, mock_writer)
+        assert mock_reader.last_read_size == 1024
+        assert acq._received_token == "buf_token"
+
+
+async def test_handle_client_explicit_utf8_decoding(mock_hass, listener_config):
+    """Test that client handler decodes payload with explicit utf-8 and ignore errors."""
+    acq = GenericYamlTokenAcquirer(mock_hass, "192.168.1.50", listener_config, "ac14k_m.pem")
+    mock_data = MagicMock(spec=bytes)
+    mock_data.decode.return_value = 'DeviceToken: "explicit_utf8_tok"'
+
+    mock_reader = AsyncMock()
+    mock_reader.read.return_value = mock_data
+    mock_writer = MockStreamWriter()
+
+    with patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for", side_effect=mock_wait_for):
+        await acq._handle_client(mock_reader, mock_writer)
+        mock_data.decode.assert_called_once_with("utf-8", errors="ignore")
+        assert acq._received_token == "explicit_utf8_tok"
+
+
+async def test_handle_client_default_success_response(mock_hass):
+    """Test client handler sending default HTTP/1.1 200 OK when listener config has no success_response."""
+    acq = GenericYamlTokenAcquirer(
+        mock_hass,
+        "192.168.1.50",
+        {
+            "mode": "listener",
+            "extract_template": {"regex": r'DeviceToken:\s*"([^"]+)"'},
+        },
+        cert_path=None,
+    )
+    mock_reader = MockStreamReader([b'DeviceToken: "default_succ_token"'])
+    mock_writer = MockStreamWriter()
+
+    with patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for", side_effect=mock_wait_for):
+        await acq._handle_client(mock_reader, mock_writer)
+        assert acq._received_token == "default_succ_token"
+        assert acq._token_received_event.is_set()
+        assert mock_writer.written_data == b"HTTP/1.1 200 OK\r\n\r\n"
 
 
 async def test_handle_client_custom_success_and_error_responses(mock_hass, listener_config):
