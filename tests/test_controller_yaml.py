@@ -597,6 +597,15 @@ def test_yaml_controller_delegated_properties(mock_yaml_controller) -> None:
     mock_yaml_controller.loader.properties_list = ["attr_curr_temp"]
     assert mock_yaml_controller.attributes == ["attr_curr_temp"]
 
+    # yaml_file & connection properties (Kills M1 Untested)
+    assert mock_yaml_controller.yaml_file == "test.yaml"
+    mock_yaml_controller._config = {}
+    assert mock_yaml_controller.yaml_file is None
+
+    mock_conn = MagicMock()
+    mock_yaml_controller.loader.connection = mock_conn
+    assert mock_yaml_controller.connection is mock_conn
+
 
 def test_yaml_controller_last_poll_data(mock_yaml_controller) -> None:
     """Kills mutants in last_poll_data."""
