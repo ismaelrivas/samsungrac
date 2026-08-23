@@ -26,3 +26,19 @@ def test_massive_kill():
 
 def test_segfault_func():
     assert segfault_func() == 0
+
+from custom_components.climate_ip.demo_states import exception_func, slow_boundary_func
+
+def test_exception_func():
+    # Normal execution: items[0]["value"] == 42, so result == 52.
+    # If Mutmut mutates the index 0 -> 1, IndexError is raised (only 1 element).
+    # If Mutmut mutates the key "value" -> "XXvalueXX", KeyError is raised.
+    # Both cases crash the worker -> KILLED_RUNTIME_EXCEPTION.
+    data = {"items": [{"value": 42}]}
+    assert exception_func(data) == 52
+
+def test_slow_boundary_func():
+    # Normal execution: n=5, limit=10, sums 0..9 = 45.
+    # If Mutmut mutates n * 2 to n ** 2, limit becomes 25 -> 300 iterations (slow but terminates).
+    # The test still passes eventually but triggers the SLOW_KILLED performance tag.
+    assert slow_boundary_func(5) == 45

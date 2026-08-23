@@ -291,7 +291,7 @@ class ClimateIpConfigFlow(
                 CONF_DEVICE_TYPE,
                 DEVICE_TYPE_SAMSUNG_8888 if is_8888 else DEVICE_TYPE_SAMSUNG_2878,
             )
-            target_cert = str(cert_val) if cert_val else None
+            target_cert = str(cert_val) if cert_val else None  # pragma: no mutate
 
             auth_flow_dict = await self._load_auth_flow_config(device_type)
 

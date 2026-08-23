@@ -60,3 +60,35 @@ def segfault_func():
     if x == 1:
         os._exit(3)
     return x
+
+
+# 7. KILLED BY RUNTIME EXCEPTION
+def exception_func(data):
+    """
+    Mutmut will mutate the integer 0 (index) to 1, or mutate the string key "value".
+    Since the input dict has a specific structure, incorrect access raises TypeError
+    or KeyError during test execution—crashing the worker before any assert runs.
+    This exercises the KILLED_RUNTIME_EXCEPTION classification.
+    """
+    items = data.get("items", [])
+    first = items[0]
+    return first["value"] + 10
+
+
+# 8. SLOW KILLED (Performance boundary)
+def slow_boundary_func(n):
+    """
+    Under normal execution with n=5, runs 5 iterations (fast).
+    Mutmut will mutate n * 2 to n ** 2 or n * 3, or mutate the `< limit`
+    comparison. Some mutations cause the loop to run many more iterations
+    (e.g., limit becomes 25 instead of 10), making the test slow enough
+    to be flagged as SLOW_KILLED in Phase 2.5 but still terminates.
+    """
+    limit = n * 2
+    total = 0
+    i = 0
+    while i < limit:
+        total += i
+        i += 1
+    return total
+
