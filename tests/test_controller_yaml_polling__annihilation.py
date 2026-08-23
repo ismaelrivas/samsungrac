@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import time
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
+from homeassistant.helpers.template import Template
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.climate_ip.const import DEVICE_TYPE_MIM_H03
@@ -260,3 +261,145 @@ async def test_mutant_predict_action_removals():
     assert (
         fake_memory_state["power_node"] == "On"
     ), "Mutant survived: _inject_value_into_state was removed!"
+
+
+def test_mutant_inject_value_connection_template_json_key():
+    """KILLS: parsed.get("json", parsed) mutated to parsed.get(None, parsed) in _inject_value_into_state."""
+    poller = YamlStatePoller(MagicMock())
+    target_state = {}
+
+    prop = MagicMock(id="good_sleep")
+    del prop.convert_hass_to_dev
+    prop.connection_template = Template(
+        '{"json": {"options": ["Sleep_{{ value | int }}"]}}',
+        hass=MagicMock(data={}),
+    )
+    poller._get_state_node_from_prop = MagicMock(return_value="Device.GoodSleep")
+
+    poller._inject_value_into_state(prop, target_state, 5)
+
+    # When unmutated: payload = {"options": ["Sleep_5"]}, dev_val becomes "Sleep_5"
+    # When mutated with .get(None, parsed): payload remains {"json": {"options": ["Sleep_5"]}},
+    # "options" not in payload, so dev_val remains 5 != "Sleep_5".
+    assert target_state.get("Device", {}).get("GoodSleep") == "Sleep_5"
+
+
+@pytest.mark.asyncio
+async def test_mutant_predict_and_correct_enum_unwrapping():
+    """KILLS: new_value is None and isinstance(new_value, dict) flips."""
+    poller = YamlStatePoller(MagicMock())
+    poller.controller.loader.is_fully_initialized = True
+
+    fake_memory_state = {"mode_node": "cool"}
+    poller.controller.loader.state_getter = NakedObj(value=fake_memory_state)
+
+    class MockModeEnum:
+        """Mock enum for test."""
+
+        value = "heat"
+
+    fake_prop = MagicMock(id="mode")
+    fake_prop.value = "cool"
+    del fake_prop.convert_hass_to_dev
+    poller.controller.loader.operations = {"mode": fake_prop}
+    poller._get_state_node_from_prop = MagicMock(return_value="mode_node")
+    poller.async_update_properties_from_state = AsyncMock(return_value={})
+
+    enum_val = MockModeEnum()
+    await poller.async_predict_and_correct_state(None, "mode", enum_val)
+
+    # KILLS:
+    # 1. new_value is not None -> new_value is None
+    # 2. not isinstance(new_value, dict) -> isinstance(new_value, dict)
+    assert fake_prop.value == "heat", "Mutant survived: Enum was not unwrapped to .value!"
+    assert fake_memory_state["mode_node"] == "heat"
+    assert not hasattr(
+        fake_prop.value, "value"
+    ), "Property value should be primitive unwrapped string!"
+
+
+@pytest.mark.asyncio
+async def test_mutant_predict_and_correct_dict_with_value_attribute():
+    """KILLS: not isinstance(new_value, dict) mutated to isinstance(new_value, dict)."""
+    poller = YamlStatePoller(MagicMock())
+    poller.controller.loader.is_fully_initialized = True
+
+    fake_memory_state = {"custom_node": {}}
+    poller.controller.loader.state_getter = NakedObj(value=fake_memory_state)
+
+    class CustomDict(dict):
+        """Custom dict with value attribute."""
+
+        value = "should_not_extract_this"
+
+    dict_instance = CustomDict({"real_key": "real_val"})
+
+    fake_prop = MagicMock(id="custom")
+    fake_prop.value = None
+    del fake_prop.convert_hass_to_dev
+    poller.controller.loader.operations = {"custom": fake_prop}
+    poller._get_state_node_from_prop = MagicMock(return_value="custom_node")
+    poller.async_update_properties_from_state = AsyncMock(return_value={})
+
+    await poller.async_predict_and_correct_state(None, "custom", dict_instance)
+
+    # If `not isinstance(new_value, dict)` is mutated to `isinstance(new_value, dict)`:
+    # it WILL extract .value ("should_not_extract_this") instead of keeping the dict instance!
+    assert (
+        fake_prop.value is dict_instance
+    ), "Mutant survived: dict subclass was incorrectly unwrapped!"
+    assert fake_memory_state["custom_node"] == {"real_key": "real_val"}
+
+
+def test_mutant_inject_value_rendered_not_string():
+    """KILLS: if rendered and isinstance(rendered, str): mutated to `or` (M24)."""
+    poller = YamlStatePoller(MagicMock())
+    target_state = {}
+    prop = MagicMock(id="test")
+    del prop.convert_hass_to_dev
+    prop.connection_template = Template("doesnt_matter", hass=MagicMock())
+    poller._get_state_node_from_prop = MagicMock(return_value="Node")
+    
+    # If render_template returns bytes, isinstance(rendered, str) is False.
+    # Unmutated: False. Mutated (or): True, proceeds to json_loads(bytes) which succeeds!
+    # Result: mutated code modifies target_state, unmutated does not.
+    with patch("custom_components.climate_ip.controller_yaml_polling.render_template", return_value=b'{"json": {"options": ["Mutated!"]}}'):
+        poller._inject_value_into_state(prop, target_state, 5)
+        
+    # Unmutated should use the default dev_val (5).
+    # Mutated will parse the bytes and use "Mutated!".
+    assert target_state.get("Node") == 5, "Mutant survived: parsed bytes payload!"
+
+
+def test_mutant_inject_value_no_json_key():
+    """KILLS: parsed.get("json", parsed) mutated to .get("json", None) (M29)."""
+    poller = YamlStatePoller(MagicMock())
+    target_state = {}
+    prop = MagicMock(id="test")
+    del prop.convert_hass_to_dev
+    # The JSON string directly has "options", no "json" key.
+    prop.connection_template = Template('{"options": ["DirectVal"]}', hass=MagicMock(data={}))
+    poller._get_state_node_from_prop = MagicMock(return_value="Node")
+    
+    poller._inject_value_into_state(prop, target_state, 5)
+    
+    # Unmutated: payload becomes {"options": ["DirectVal"]}, extracts "DirectVal".
+    # Mutated: payload becomes None, fails isinstance(payload, dict), dev_val unchanged (5).
+    assert target_state.get("Node") == "DirectVal", "Mutant survived: parsed.get fell back to None!"
+
+
+def test_mutant_inject_value_options_not_list():
+    """KILLS: isinstance(payload['options'], list) mutated to `or` (M34)."""
+    poller = YamlStatePoller(MagicMock())
+    target_state = {}
+    prop = MagicMock(id="test")
+    del prop.convert_hass_to_dev
+    # "options" is a string, not a list!
+    prop.connection_template = Template('{"options": "StringVal"}', hass=MagicMock(data={}))
+    poller._get_state_node_from_prop = MagicMock(return_value="Node")
+    
+    poller._inject_value_into_state(prop, target_state, 5)
+    
+    # Unmutated: isinstance(list) is False, block skipped.
+    # Mutated: `or` makes it True, enters block, payload["options"][0] extracts "S"!
+    assert target_state.get("Node") != "S", "Mutant survived: options list check was bypassed!"

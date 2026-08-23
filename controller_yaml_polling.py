@@ -541,15 +541,6 @@ class YamlStatePoller:
             self._prop_template_key_cache[prop_id] = None
             return None
 
-        template_string = (
-            status_tmpl.template
-            if hasattr(status_tmpl, "template")
-            else str(status_tmpl)
-        )
-        if not template_string:
-            self._prop_template_key_cache[prop_id] = None
-            return None
-
         self._prop_template_key_cache[prop_id] = None
         return None
 
