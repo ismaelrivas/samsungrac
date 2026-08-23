@@ -355,3 +355,36 @@ async def test_handshake_timeout_non_fatal(acquirer):
             # _connect_stream should not raise! It should ignore timeout.
             res = await acquirer._connect_stream()
             assert res is not None
+
+
+async def test_stream_mode_defaults_when_config_empty(mock_hass):
+    """Test stream mode behavior when auth_config is minimal (testing all default fallbacks)."""
+    acq = GenericYamlTokenAcquirer(
+        mock_hass,
+        "192.168.1.100",
+        {"mode": "stream", "request_pairing": {"port": 2878}},
+        cert_path=None,
+    )
+
+    # 1. _connect_stream with empty strategies/ciphers -> raises CannotConnect cleanly without crashing on None
+    with pytest.raises(CannotConnect, match="All YAML TLS strategies failed"):
+        await acq._connect_stream()
+
+    # 2. wait_for_token default timeout 45 and buffer size 4096 when error_template match empty string triggers AuthTurnedOffError
+    mock_reader = AsyncMock()
+    mock_reader.read.return_value = b"Some device response"
+    acq._reader = mock_reader
+
+    mock_timeout_ctx = make_mock_timeout_cm()
+    with patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout", return_value=mock_timeout_ctx) as mock_timeout:
+        with pytest.raises(AuthTurnedOffError, match="Authentication failed: device is turned off or busy."):
+            await acq.async_wait_for_token()
+        mock_timeout.assert_called_once_with(45)
+        mock_reader.read.assert_called_once_with(4096)
+
+    # 3. wait_for_token with non-matching error_template and non-matching extract_template raises TokenAcquisitionError
+    acq.auth_config["error_template"] = {"match": "NOT_PRESENT"}
+    acq.auth_config["extract_template"] = {"regex": r"Token: (.*)"}
+    with patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout", return_value=make_mock_timeout_cm()):
+        with pytest.raises(TokenAcquisitionError, match="Regex failed to extract token from stream."):
+            await acq.async_wait_for_token()

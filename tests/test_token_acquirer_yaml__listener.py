@@ -381,3 +381,44 @@ async def test_handle_client_wait_closed_exception_swallowed(acquirer):
         # Should not raise exception
         await acquirer._handle_client(mock_reader, mock_writer)
         assert mock_writer.closed is True
+
+
+async def test_listener_mode_defaults_when_config_empty(mock_hass):
+    """Test listener mode behavior when auth_config is minimal (testing all default fallbacks)."""
+    acq = GenericYamlTokenAcquirer(mock_hass, "192.168.1.50", {"mode": "listener"}, cert_path=None)
+
+    # 1. Test _start_listener_server default port and ciphers
+    mock_ssl_ctx = MagicMock()
+    mock_server = AsyncMock()
+    with (
+        patch("custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context", return_value=mock_ssl_ctx) as mock_create_ssl,
+        patch("asyncio.start_server", return_value=mock_server) as mock_start_server,
+    ):
+        await acq._start_listener_server()
+        assert mock_start_server.call_args[0][2] == 8889
+        mock_create_ssl.assert_called_once_with(
+            cert_path=None,
+            ciphers="HIGH:!aNULL:!MD5:@SECLEVEL=0",
+            is_server=True,
+        )
+
+    # 2. Test wait_for_token default timeout 60
+    acq._received_token = "token_from_defaults"
+    acq._token_received_event.set()
+    mock_timeout_ctx = make_mock_timeout_cm()
+    with (
+        patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout", return_value=mock_timeout_ctx) as mock_timeout,
+        patch.object(acq, "async_close", new_callable=AsyncMock),
+    ):
+        token = await acq.async_wait_for_token()
+        assert token == "token_from_defaults"
+        mock_timeout.assert_called_once_with(60)
+
+    # 3. Test _handle_client default error response (since no extract_regex is in minimal config)
+    acq._received_token = None
+    mock_reader = MockStreamReader([b'DeviceToken: "extracted_123"'])
+    mock_writer = MockStreamWriter()
+    with patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for", side_effect=mock_wait_for):
+        await acq._handle_client(mock_reader, mock_writer)
+        assert mock_writer.written_data == b"HTTP/1.1 400 Bad Request\r\n\r\n"
+        assert acq._received_token is None
