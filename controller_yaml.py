@@ -4,7 +4,7 @@ import asyncio
 import logging
 import math
 import types
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from homeassistant.components.climate import (
     ATTR_CURRENT_TEMPERATURE,
@@ -311,7 +311,7 @@ class YamlController(ClimateController):
         """Return the controller name prioritizing user configuration over YAML loader default."""
         config_name = self._config.get(CONF_NAME)
         if config_name is not None:
-            return config_name
+            return str(config_name)
 
         loader_name = self.loader.name
         if loader_name is not None:
@@ -537,11 +537,11 @@ class YamlController(ClimateController):
             return None
 
         if property_name in self.loader.operations:
-            return self.loader.operations[property_name]
+            return cast(DeviceProperty, self.loader.operations[property_name])
         if property_name in self.loader.properties:
-            return self.loader.properties[property_name]
+            return cast(DeviceProperty, self.loader.properties[property_name])
         if property_name in self.loader.sensors:
-            return self.loader.sensors[property_name]
+            return cast(DeviceProperty, self.loader.sensors[property_name])
 
         return self._objects_by_id.get(property_name)
 

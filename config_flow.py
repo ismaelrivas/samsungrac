@@ -85,7 +85,7 @@ class ClimateIpConfigFlow(
     def __init__(self) -> None:
         """Initialize the config flow variables."""
         self.flow_data: dict[str, Any] = {}  # pragma: no mutate
-        self.task: asyncio.Task | None = None
+        self.task: asyncio.Task[Any] | None = None
         self.acquirer: Any | None = None
         self.reauth_entry: ConfigEntry | None = None  # pragma: no mutate
 

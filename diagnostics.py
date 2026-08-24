@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.const import CONF_MAC
@@ -107,7 +107,7 @@ def _extract_controller_diagnostics(controller: Any) -> dict[str, Any]:
     if hasattr(controller, "connection_diagnostics") and isinstance(
         getattr(controller, "connection_diagnostics", None), dict
     ):
-        return controller.connection_diagnostics
+        return cast(dict[str, Any], controller.connection_diagnostics)
 
     if hasattr(controller, "get_diagnostics"):
         get_diag = controller.get_diagnostics
@@ -258,4 +258,4 @@ async def async_get_config_entry_diagnostics(
 
     # Apply deep substring walker to redact embedded MAC / DUID patterns from strings
     threat_patterns = _get_mac_threat_patterns(entry)
-    return _deep_redact_substrings(redacted_data, threat_patterns)
+    return cast(dict[str, Any], _deep_redact_substrings(redacted_data, threat_patterns))
