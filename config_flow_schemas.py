@@ -210,13 +210,12 @@ class ConfigFlowSchemasMixin:
                 str  # pragma: no mutate
             )
             schema_dict[vol.Optional(CONF_DEVICE_ID)] = str  # pragma: no mutate
+        elif ip_default:
+            schema_dict[vol.Required(CONF_IP_ADDRESS, default=ip_default)] = (
+                str  # pragma: no mutate
+            )
         else:
-            if ip_default:
-                schema_dict[vol.Required(CONF_IP_ADDRESS, default=ip_default)] = (
-                    str  # pragma: no mutate
-                )
-            else:
-                schema_dict[vol.Required(CONF_IP_ADDRESS)] = str  # pragma: no mutate
+            schema_dict[vol.Required(CONF_IP_ADDRESS)] = str  # pragma: no mutate
 
         schema_dict[vol.Required(CONF_TOKEN, default=default_token)] = (
             str  # pragma: no mutate

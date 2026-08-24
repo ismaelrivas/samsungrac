@@ -8,9 +8,8 @@ import logging
 import os
 from pathlib import Path
 import ssl
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from aiohttp import ClientTimeout
 from homeassistant.config_entries import SOURCE_RECONFIGURE
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 from homeassistant.data_entry_flow import AbortFlow

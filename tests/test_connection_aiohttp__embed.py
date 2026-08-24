@@ -71,7 +71,6 @@ def mock_hass():
 
 @pytest.fixture
 def mock_session():
-    import aiohttp
 
     return StubSession()
 

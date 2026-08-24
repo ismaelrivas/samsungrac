@@ -47,7 +47,6 @@ from homeassistant.const import CONF_TOKEN
 from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
 from custom_components.climate_ip.const import (
     CONF_CERT,
-    CONFIG_DEVICE_CONNECTION_PARAMS,
 )
 from custom_components.climate_ip.exceptions import (
     AuthError,
@@ -461,7 +460,6 @@ async def test_get_session_args():
 async def test_create_ssl_context_strict():
     """Validate security flags and strict ciphers."""
     import logging
-    import ssl
     from unittest.mock import MagicMock, patch
 
     from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888

@@ -236,7 +236,7 @@ class TestResolveCertPath:
         from pathlib import Path
         from unittest.mock import MagicMock
 
-        import custom_components.climate_ip.helpers as helpers
+        from custom_components.climate_ip import helpers
         from custom_components.climate_ip.helpers import resolve_cert_path
 
         mock_hass = MagicMock()
@@ -263,7 +263,7 @@ class TestResolveCertPath:
         """Test resolve_cert_path when base_dir is empty."""
         from pathlib import Path
 
-        import custom_components.climate_ip.helpers as helpers
+        from custom_components.climate_ip import helpers
         from custom_components.climate_ip.helpers import resolve_cert_path
 
         res = resolve_cert_path("ac14k_m.pem", base_dir="")

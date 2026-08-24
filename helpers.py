@@ -145,7 +145,7 @@ _HEADER_PATCH_ORIGINAL_PARSE_HEADERS: Any = None
 
 
 @contextlib.contextmanager
-def tolerant_header_parsing() -> Generator[None, None, None]:
+def tolerant_header_parsing() -> Generator[None]:
     """Context manager that temporarily suppresses urllib3 HeaderParsingError."""
     # pylint: disable=global-statement
     global _HEADER_PATCH_REFCOUNT, _HEADER_PATCH_ORIGINAL_RESPONSE

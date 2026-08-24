@@ -2,7 +2,6 @@
 Tests for demo_states.py
 """
 
-import pytest
 
 from custom_components.climate_ip.demo_states import legit_func, timeout_func
 

@@ -9,7 +9,6 @@ import logging
 from pathlib import Path
 from typing import Any, Self
 
-from aiohttp import ClientTimeout
 from homeassistant.config_entries import (
     SOURCE_RECONFIGURE,
     ConfigEntry,
