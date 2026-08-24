@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-from typing import Any, Final, Protocol, runtime_checkable
+from typing import Any, Final, Protocol, cast, runtime_checkable
 
 from homeassistant.components.climate.const import (
     ATTR_FAN_MODE,
@@ -274,7 +274,7 @@ class DeviceProperty:
     @property
     def log_prefix(self) -> str:
         """Get the log prefix from the controller for consistent logging."""
-        return str(self._controller.log_prefix)
+        return cast(str, self._controller.log_prefix)
 
     @property
     def id(self) -> str:

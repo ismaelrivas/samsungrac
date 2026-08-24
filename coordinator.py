@@ -8,7 +8,7 @@ from collections.abc import Callable, Coroutine
 from datetime import timedelta
 from enum import Enum
 import logging
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from homeassistant.components.climate.const import ATTR_HVAC_MODE, HVACMode
 from homeassistant.config_entries import ConfigEntry
@@ -819,10 +819,12 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     @property
     def connection_method(self) -> str | None:
         """Return the configured connection method (options taking precedence over data)."""
-        res = self.config_entry.options.get(
-            CONF_CONN_METHOD, self.config_entry.data.get(CONF_CONN_METHOD)
+        return cast(
+            str | None,
+            self.config_entry.options.get(
+                CONF_CONN_METHOD, self.config_entry.data.get(CONF_CONN_METHOD)
+            ),
         )
-        return str(res) if res is not None else None
 
     async def async_shutdown(self) -> None:
         """Shut down the coordinator and its controller.

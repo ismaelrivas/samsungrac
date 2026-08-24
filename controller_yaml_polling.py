@@ -311,7 +311,7 @@ class YamlStatePoller:
             st_getter = self.controller.loader.state_getter
             if st_getter and st_getter.value:  # pragma: no mutate
                 # Return RAM state injected with locks to lock the UI without flickering
-                return cast(dict[str, Any], copy.deepcopy(st_getter.value))  # pragma: no mutate
+                return cast(dict[str, Any] | None, copy.deepcopy(st_getter.value))  # pragma: no mutate
             return self._cached_device_state.copy()
 
         device_state = await self.async_update_state()
@@ -502,7 +502,7 @@ class YamlStatePoller:
     def _values_match(val1: Any, val2: Any) -> bool:
         """Check if two values match numerically (float cast) or string-wise (case-insensitive)."""
         if val1 is None or val2 is None:  # pragma: no mutate
-            return bool(val1 == val2)  # pragma: no mutate
+            return cast(bool, val1 == val2)  # pragma: no mutate
         if hasattr(val1, "value") and not isinstance(val1, dict):
             val1 = val1.value  # pragma: no mutate
         if hasattr(val2, "value") and not isinstance(val2, dict):
