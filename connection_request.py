@@ -253,10 +253,10 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
     def log_prefix(self) -> str:
         """Get the log prefix from the controller for consistent logging."""
         if self._controller:
-            return str(self._controller.log_prefix)
+            return cast(str, self._controller.log_prefix)
 
         if self._parent:
-            return str(self._parent.log_prefix)
+            return self._parent.log_prefix
 
         fallback_id = None
         if self._controller:

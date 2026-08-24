@@ -179,10 +179,10 @@ class ConnectionAiohttp8888(Connection):
         if len(self._params) > 0:
             probe_url = self._params.get(_KEY_PROBE_URL)
             if probe_url is not None:
-                return str(probe_url)
+                return cast(str, probe_url)
             url = self._params.get(_KEY_URL)
             if url is not None:
-                return str(url)
+                return cast(str, url)
         return ""
 
     def set_controller_ref(self, controller: YamlController) -> None:
