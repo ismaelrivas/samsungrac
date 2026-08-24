@@ -62,7 +62,7 @@ def make_mock_timeout_cm():
     return ctx
 
 
-async def mock_wait_for(coro, timeout=None):
+async def mock_wait_for(coro, timeout_seconds=None, **kwargs):
     return await coro
 
 
@@ -154,8 +154,8 @@ async def test_initiate_pairing_success(acquirer):
     mock_ssl_ctx = MagicMock()
     captured_timeouts = []
 
-    async def spy_wait_for(coro, timeout=None):
-        captured_timeouts.append(timeout)
+    async def spy_wait_for(coro, timeout_seconds=None, **kwargs):
+        captured_timeouts.append(kwargs.get("timeout", timeout_seconds))
         return await coro
 
     with (
@@ -397,8 +397,8 @@ async def test_handle_client_chunk_accumulation_and_regex(acquirer):
 
     captured_timeouts = []
 
-    async def spy_wait_for(coro, timeout=None):
-        captured_timeouts.append(timeout)
+    async def spy_wait_for(coro, timeout_seconds=None, **kwargs):
+        captured_timeouts.append(kwargs.get("timeout", timeout_seconds))
         return await coro
 
     with patch(
@@ -543,7 +543,7 @@ async def test_handle_client_wait_for_timeout(acquirer):
     mock_reader = MockStreamReader([b""])
     mock_writer = MockStreamWriter()
 
-    async def mock_wait_for_timeout(coro, timeout=None):
+    async def mock_wait_for_timeout(coro, timeout_seconds=None, **kwargs):
         raise TimeoutError("Read timeout in listener")
 
     with patch(

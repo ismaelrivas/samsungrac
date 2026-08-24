@@ -690,7 +690,7 @@ class ConnectionSamsung2878(Connection):
             not initial_msg
         ):  # Read initial message if not already read during plain TCP check
             initial_msg = await self._read_full_response(
-                timeout=self._socket_timeout
+                timeout_sec=self._socket_timeout
             )  # pragma: no mutate
 
         if initial_msg:
@@ -745,7 +745,7 @@ class ConnectionSamsung2878(Connection):
             ) from err  # pragma: no mutate
         await self._write_data(auth_command)
 
-        auth_response = await self._read_full_response(timeout=self._socket_timeout)
+        auth_response = await self._read_full_response(timeout_sec=self._socket_timeout)
         if not auth_response or PROTOCOL_2878_STATUS_OK not in auth_response:
             # Only process the error response if it's not None
             if auth_response:
@@ -810,12 +810,12 @@ class ConnectionSamsung2878(Connection):
 
         return True
 
-    async def _read_full_response(self, timeout: float = 10.0) -> str | None:
+    async def _read_full_response(self, timeout_sec: float = 10.0) -> str | None:
         if not self._reader or self._reader.at_eof():
             return None
         try:
             buffer = b""  # pragma: no mutate
-            async with asyncio.timeout(timeout):
+            async with asyncio.timeout(timeout_sec):
                 while True:
                     chunk = await self._reader.read(4096)
                     if not chunk:
@@ -838,7 +838,7 @@ class ConnectionSamsung2878(Connection):
             _LOGGER.debug(
                 "%s No full response received in %s seconds",
                 self.log_prefix,
-                timeout,
+                timeout_sec,
                 exc_info=True,
             )  # pragma: no mutate
             return buffer.decode("utf-8", errors="ignore") if buffer else None

@@ -73,7 +73,7 @@ async def test_read_full_response_success_and_timeout_args(connection):
     import time
 
     start = time.time()
-    res = await connection._read_full_response(timeout=0.01)
+    res = await connection._read_full_response(timeout_sec=0.01)
     duration = time.time() - start
 
     assert res is None
@@ -82,7 +82,7 @@ async def test_read_full_response_success_and_timeout_args(connection):
 
     # 2. Successful read test
     connection._reader.read = AsyncMock(side_effect=[b"<Response>OK</Response>", b""])
-    res2 = await connection._read_full_response(timeout=10.0)
+    res2 = await connection._read_full_response(timeout_sec=10.0)
     assert res2 == "<Response>OK</Response>"
 
     # 3. Test to kill 'if not chunk:' -> 'if chunk:'
@@ -90,7 +90,7 @@ async def test_read_full_response_success_and_timeout_args(connection):
     # call _close_connection and return BEFORE adding anything to the buffer.
     connection._reader.read = AsyncMock(side_effect=[b"<Response>OK</Response>", b""])
     connection._close_connection = AsyncMock()
-    res3 = await connection._read_full_response(timeout=10.0)
+    res3 = await connection._read_full_response(timeout_sec=10.0)
     assert (
         res3 == "<Response>OK</Response>"
     )  # If mutated, this fails because it would return None or empty string

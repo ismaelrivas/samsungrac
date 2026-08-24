@@ -2231,7 +2231,7 @@ async def test_read_full_response_unified_assault(connection):
     # 2. Mutantes de EOF de Chunk y Decodificación base (Línea 771 y 775)
     # ==========================================================
     connection._reader = FakeReader([b"<Partial>", b""])
-    res = await connection._read_full_response(timeout=1.0)
+    res = await connection._read_full_response(timeout_sec=1.0)
     assert res == "<Partial>"
     connection._close_connection.assert_called()
 
@@ -2239,7 +2239,7 @@ async def test_read_full_response_unified_assault(connection):
     # 3. Concatenation Mutant (Line 778: buffer += chunk)
     # ==========================================================
     connection._reader = FakeReader([b"A", b"B", b""])
-    res2 = await connection._read_full_response(timeout=1.0)
+    res2 = await connection._read_full_response(timeout_sec=1.0)
     assert res2 == "AB", "Concatenation mutant survived"
 
     # ==========================================================
@@ -2247,7 +2247,7 @@ async def test_read_full_response_unified_assault(connection):
     # Inject UTF-8 garbage. Removing "ignore" crashes and returns None.
     # ==========================================================
     connection._reader = FakeReader([b"Valid" + b"\xff\xfe", b""])
-    res3 = await connection._read_full_response(timeout=1.0)
+    res3 = await connection._read_full_response(timeout_sec=1.0)
     assert res3 is not None, "The mutant deleted errors='ignore' and crashed"
     assert "Valid" in res3
 
@@ -2263,7 +2263,7 @@ async def test_read_full_response_unified_assault(connection):
     connection._reader = FakeReader(
         [f"{PROTOCOL_2878_DPLUG}\n".encode(), RuntimeError("Guillotina")]
     )
-    res_a = await connection._read_full_response(timeout=1.0)
+    res_a = await connection._read_full_response(timeout_sec=1.0)
     assert res_a is not None, "Mutant alive: 'or' changed to 'and' in DPLUG"
     assert PROTOCOL_2878_DPLUG in res_a
 
@@ -2271,19 +2271,19 @@ async def test_read_full_response_unified_assault(connection):
     connection._reader = FakeReader(
         [b"<Data></Response>\n", RuntimeError("Guillotina")]
     )
-    res_b = await connection._read_full_response(timeout=1.0)
+    res_b = await connection._read_full_response(timeout_sec=1.0)
     assert res_b is not None, "Mutant alive: 'or' changed to 'and' in </Response>"
     assert "</Response>" in res_b
 
     # 5C: </Update>
     connection._reader = FakeReader([b"<Data></Update>\n", RuntimeError("Guillotina")])
-    res_c = await connection._read_full_response(timeout=1.0)
+    res_c = await connection._read_full_response(timeout_sec=1.0)
     assert res_c is not None, "Mutant alive: 'or' changed to 'and' in </Update>"
     assert "</Update>" in res_c
 
     # 5D: endswith("/>")
     connection._reader = FakeReader([b"<SoloCierre/>\n", RuntimeError("Guillotina")])
-    res_d = await connection._read_full_response(timeout=1.0)
+    res_d = await connection._read_full_response(timeout_sec=1.0)
     assert res_d is not None, "Mutant alive: 'or' changed to 'and' in '/>'"
     assert res_d.endswith("/>")
 
