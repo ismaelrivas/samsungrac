@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+
 class StubHass:
     def __init__(self):
         from unittest.mock import AsyncMock

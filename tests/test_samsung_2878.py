@@ -254,7 +254,9 @@ async def test_reconnection_state_changes_availability():
 def test_malformed_or_missing_mac_fails_yaml_load(invalid_mac: str | None):
     """Test que asegura que si la MAC está ausente o vacía, la carga de YAML falla (devuelve False)."""
     from unittest.mock import MagicMock
+
     from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
+
     from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878
 
     hass_config = {
@@ -281,7 +283,9 @@ def test_malformed_or_missing_mac_fails_yaml_load(invalid_mac: str | None):
 def test_mac_formatting_and_sanitization():
     """Test que verifica que los separadores de la MAC (: y -) se limpian correctamente al generar el DUID."""
     from unittest.mock import MagicMock
+
     from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
+
     from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878
 
     # MAC con formato estándar de red con dos puntos
@@ -302,7 +306,9 @@ def test_mac_formatting_and_sanitization():
 async def test_command_execution_fails_with_unconfigured_duid():
     """Test que verifica que async_execute falla limpiamente si el DUID no está listo o es inválido."""
     from unittest.mock import MagicMock
+
     import pytest
+
     from custom_components.climate_ip.exceptions import CannotConnect
     from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878
 

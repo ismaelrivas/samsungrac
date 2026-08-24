@@ -2,7 +2,9 @@
 Tests for demo_states.py
 """
 import pytest
+
 from custom_components.climate_ip.demo_states import legit_func, timeout_func
+
 
 def test_legit_func():
     # Legitimate test for legit_func.
@@ -19,6 +21,7 @@ def test_timeout_func():
 
 from custom_components.climate_ip.demo_states import massive_kill, segfault_func
 
+
 def test_massive_kill():
     # There are 60 True booleans. Mutmut will try to change each one to False (60 mutants).
     # Since we evaluate all(), any mutation to False will fail this assertion.
@@ -28,6 +31,7 @@ def test_segfault_func():
     assert segfault_func() == 0
 
 from custom_components.climate_ip.demo_states import exception_func, slow_boundary_func
+
 
 def test_exception_func():
     # Normal execution: items[0]["value"] == 42, so result == 52.
