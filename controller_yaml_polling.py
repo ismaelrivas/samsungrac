@@ -653,22 +653,29 @@ class YamlStatePoller:
         if conn_tmpl is not None:
             try:
                 rendered = render_template(conn_tmpl, value=value)
-                if rendered and isinstance(rendered, str):
-                    parsed = json_loads(rendered)
-                    payload = (
-                        parsed.get("json", parsed)
-                        if isinstance(parsed, dict)
-                        else parsed
+                parsed = (
+                    rendered
+                    if isinstance(rendered, dict)
+                    else (
+                        json_loads(rendered)
+                        if rendered and isinstance(rendered, str)
+                        else None
                     )
-                    if (
-                        isinstance(payload, dict)
-                        and "options" in payload
-                        and isinstance(payload["options"], list)
+                )
+                payload = (
+                    parsed.get("json", parsed)
+                    if isinstance(parsed, dict)
+                    else parsed
+                )
+                if (
+                    isinstance(payload, dict)
+                    and "options" in payload
+                    and isinstance(payload["options"], list)
+                ):
+                    if payload["options"] and isinstance(
+                        payload["options"][0], str
                     ):
-                        if payload["options"] and isinstance(
-                            payload["options"][0], str
-                        ):
-                            dev_val = payload["options"][0]
+                        dev_val = payload["options"][0]
             except Exception:  # pylint: disable=broad-exception-caught
                 pass
 

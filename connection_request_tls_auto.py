@@ -16,6 +16,7 @@ frequent TLS renegotiation.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 import copy
 import logging
 from pathlib import Path
@@ -195,8 +196,8 @@ class ConnectionRequestBase(Connection):
         port: str | int = "default"
 
         if self._controller is not None:
-            ip = self._controller.ip_address
-            port = self._controller.port
+            ip = getattr(self._controller, "ip_address", None)
+            port = getattr(self._controller, "port", "default") or "default"
         elif self._parent is not None:
             return self._parent.async_lock  # type: ignore[return-value]
 
@@ -339,7 +340,10 @@ class ConnectionRequestBase(Connection):
                     and not isinstance(template, NonCallableMock)
                     else template.render(value=value, device_id=device_id)
                 )
-                params.update(json_loads(rendered_template))
+                if isinstance(rendered_template, (dict, Mapping)):
+                    params.update(rendered_template)
+                else:
+                    params.update(json_loads(rendered_template))
             except (ValueError, TypeError) as exc:
                 _LOGGER.error(
                     "%s Error rendering template or parsing JSON: %s",
@@ -458,9 +462,9 @@ class ConnectionRequestTlsAuto(ConnectionRequestBase):
     @staticmethod
     def match_type(type_str: str) -> bool:
         """Return True if this connection type matches the given type string."""
-        return (
-            type_str == CONNECTION_TYPE_TLS_AUTO
-            or type_str == CONNECTION_TYPE_REQUEST_TLS_AUTO
+        return type_str in (
+            CONNECTION_TYPE_TLS_AUTO,
+            CONNECTION_TYPE_REQUEST_TLS_AUTO,
         )
 
     # REDUNDANT: create_updated removed here as it is now correctly implemented in the base class.

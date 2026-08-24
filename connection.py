@@ -286,5 +286,9 @@ class Connection:
 # (Moved here from __init__.py / controller_yaml_config.py)
 from .connection_aiohttp import ConnectionAiohttp8888  # noqa: F401, E402
 from .connection_raw import ConnectionRaw8888  # noqa: F401, E402
+from .connection_request import (  # noqa: F401, E402
+    ConnectionRequest,
+    ConnectionRequestPrint,
+)
 from .connection_request_tls_auto import ConnectionRequestTlsAuto  # noqa: F401, E402
 from .samsung_2878 import ConnectionSamsung2878  # noqa: F401, E402

@@ -14,7 +14,7 @@ recovery for protocol violations and adaptive timeout management.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Generator
+from collections.abc import Generator, Mapping
 import contextlib
 import logging
 from pathlib import Path
@@ -185,8 +185,8 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         port: str | int = "default"
 
         if self._controller:
-            ip = self._controller.ip_address
-            port = self._controller.port
+            ip = getattr(self._controller, "ip_address", None)
+            port = getattr(self._controller, "port", "default") or "default"
         elif self._parent:
             # Child connections (embedded commands) delegate to their parent.
             return self._parent.async_lock  # type: ignore[return-value]
@@ -422,7 +422,10 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         if template is not None:
             try:
                 rendered_template = template.render(value=value, device_id=device_id)
-                params.update(json_loads(rendered_template))
+                if isinstance(rendered_template, (dict, Mapping)):
+                    params.update(rendered_template)
+                else:
+                    params.update(json_loads(rendered_template))
             except Exception as exc:
                 _LOGGER.error(
                     "%s Error rendering template or parsing JSON: %s",

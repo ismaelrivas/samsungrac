@@ -4,15 +4,16 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Coroutine, Mapping
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from homeassistant.const import UnitOfTemperature
 
 if TYPE_CHECKING:
     from .state import ClimateIPDeviceState
 
-from .const import ATTR_POWER
+from .const import ATTR_POWER  # noqa: F401
 
 CLIMATE_CONTROLLERS: list[type[ClimateController]] = []
 
@@ -33,6 +34,8 @@ class ControllerInterface(Protocol):
     def log_prefix(self) -> str: ...
     @property
     def unique_id(self) -> str | None: ...
+    @property
+    def port(self) -> int | str | None: ...
     @property
     def poll(self) -> bool | None: ...
     @property
@@ -136,6 +139,14 @@ class ClimateController(ABC):
     def host(self) -> str | None:
         """Return the host or IP address of the controller."""
         return self.ip_address
+
+    @property
+    def port(self) -> int | str | None:
+        """Return the port of the controller if configured."""
+        config = getattr(self, "_config", None)
+        if config is not None and isinstance(config, (dict, Mapping)):
+            return config.get("port")
+        return None
 
     @property
     def log_prefix(self) -> str:

@@ -53,7 +53,6 @@ from .const import (
     ERR_MISSING_INIT_CONFIG,
     ERR_MISSING_IP,
     ERR_PROPERTY_NOT_FOUND,
-    ERR_PROPERTY_SET_FAILED,
     ERR_UNREGISTERED_PROPERTY,
     EXCLUDED_SUBDEVICE_IDS,
     ID_DELIMITER,
@@ -296,6 +295,13 @@ class YamlController(ClimateController):
     def connection(self) -> Connection | None:
         """Override base connection to point strictly to the loader's active connection."""
         return self.loader.connection
+
+    @property
+    def port(self) -> int | str | None:
+        """Return the port of the controller if configured."""
+        if hasattr(self, "_config") and self._config is not None:
+            return self._config.get("port")
+        return None
 
     @property
     def name(self) -> str:

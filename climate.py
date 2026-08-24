@@ -36,12 +36,12 @@ if TYPE_CHECKING:
     from . import ClimateIPConfigEntry
 
 from .const import (
+    ATTR_POWER,
     CONF_TARGET_TEMP_STEP,
     DEFAULT_CLIMATE_IP_TEMP_MAX,
     DEFAULT_CLIMATE_IP_TEMP_MIN,
     DEFAULT_TARGET_TEMP_STEP,
 )
-from .controller import ATTR_POWER
 from .coordinator import SamsungClimateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
