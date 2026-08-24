@@ -807,9 +807,9 @@ class ClimateIpConfigFlow(
             self.flow_data.pop(CONF_TOKEN, None)
 
             device_type = self.flow_data.get(CONF_DEVICE_TYPE)
-            if (
-                device_type == DEVICE_TYPE_SMARTTHINGS_HVAC
-                or device_type == DEVICE_TYPE_SMARTTHINGS_DHW
+            if device_type in (
+                DEVICE_TYPE_SMARTTHINGS_HVAC,
+                DEVICE_TYPE_SMARTTHINGS_DHW,
             ):
                 return await self.async_step_rest_api()
 

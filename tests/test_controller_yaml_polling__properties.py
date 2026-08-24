@@ -104,11 +104,9 @@ def _helper_evict_invalidated_pending_updates(self, push_data=None):
                     conv_val = prop.convert_hass_to_dev(val)
                 except Exception:
                     conv_val = val
-            if (
-                str(dev_val) == str(conv_val)
-                or str(dev_val) == str(val)
-                or dev_val == val
-                or dev_val == conv_val
+            if dev_val in (val, conv_val) or str(dev_val) in (
+                str(val),
+                str(conv_val),
             ):
                 self._pending_updates.pop(prop_id, None)
         elif power_key and push_data.get(power_key) in ("Off", "OFF", "off"):
@@ -981,7 +979,7 @@ async def test_evict_invalidated_pending_updates_float_formatting_match():
     poller = YamlStatePoller(MagicMock())
     temp_op = MagicMock(id="temperature")
     temp_op.calculate_value_from_state = MagicMock(return_value=22.0)
-    temp_op.convert_hass_to_dev.side_effect = lambda v: str(v)
+    temp_op.convert_hass_to_dev.side_effect = str
     poller.controller.loader.operations = {"temperature": temp_op}
     poller.controller.loader.properties = {}
     poller._get_state_node_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
@@ -1006,7 +1004,7 @@ async def test_evict_invalidated_pending_updates_value_mismatch_retained():
     poller = YamlStatePoller(MagicMock())
     temp_op = MagicMock(id="temperature")
     temp_op.calculate_value_from_state = MagicMock(return_value=22.0)
-    temp_op.convert_hass_to_dev.side_effect = lambda v: str(v)
+    temp_op.convert_hass_to_dev.side_effect = str
     poller.controller.loader.operations = {"temperature": temp_op}
     poller.controller.loader.properties = {}
     poller._get_state_node_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
@@ -1030,7 +1028,7 @@ async def test_evict_invalidated_pending_updates_ttl_fallback():
     poller = YamlStatePoller(MagicMock())
     temp_op = MagicMock(id="temperature")
     temp_op.calculate_value_from_state = MagicMock(return_value=22.0)
-    temp_op.convert_hass_to_dev.side_effect = lambda v: str(v)
+    temp_op.convert_hass_to_dev.side_effect = str
     poller.controller.loader.operations = {"temperature": temp_op}
     poller.controller.loader.properties = {}
     poller._get_state_node_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
@@ -1188,7 +1186,7 @@ async def test_evict_invalidated_pending_updates_loop_continuation():
 
     temp_op = MagicMock(id="temperature")
     temp_op.calculate_value_from_state = MagicMock(return_value=22.0)
-    temp_op.convert_hass_to_dev.side_effect = lambda v: str(v)
+    temp_op.convert_hass_to_dev.side_effect = str
     poller.controller.loader.operations = {"temperature": temp_op}
     poller.controller.loader.properties = {}
     poller._get_state_node_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
@@ -1241,7 +1239,7 @@ async def test_evict_invalidated_pending_updates_exact_ttl_boundary(mock_time):
     poller = YamlStatePoller(MagicMock())
     temp_op = MagicMock(id="temperature")
     temp_op.calculate_value_from_state = MagicMock(return_value=22.0)
-    temp_op.convert_hass_to_dev.side_effect = lambda v: str(v)
+    temp_op.convert_hass_to_dev.side_effect = str
     poller.controller.loader.operations = {"temperature": temp_op}
     poller.controller.loader.properties = {}
     poller._get_state_node_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")

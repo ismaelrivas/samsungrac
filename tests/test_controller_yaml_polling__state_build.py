@@ -657,7 +657,7 @@ async def test_async_predict_and_correct_state():
             current_hass_state, "hvac_mode", "heat"
         )
 
-        assert corrections == {} or corrections == {"hvac_mode": "heat"}
+        assert corrections in ({}, {"hvac_mode": "heat"})
 
 
 async def test_async_predict_and_correct_state_edge_cases():
@@ -887,7 +887,7 @@ async def test_predict_and_correct_full_flow():
 
     assert "target_prop" in poller._pending_updates
     assert target_op._value in ("predicted_val", "old")
-    assert c == {"correction": "done"} or c == {}
+    assert c in ({"correction": "done"}, {})
 
 
 async def test_update_state_discovery_fallback():

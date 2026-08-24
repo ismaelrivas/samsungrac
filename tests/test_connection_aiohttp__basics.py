@@ -8,13 +8,20 @@ import ssl
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
+from homeassistant.const import CONF_TOKEN
 import pytest
+
+from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
+from custom_components.climate_ip.const import CONF_CERT
+from custom_components.climate_ip.exceptions import (
+    AuthError,
+    CannotConnect,
+    InvalidHeaderError,
+)
 
 
 class StubHass:
     def __init__(self):
-        from unittest.mock import AsyncMock
-
         self.async_add_executor_job = AsyncMock(
             spec=["__call__", "return_value"],
             side_effect=lambda func, *args: func(*args),
@@ -29,8 +36,6 @@ class StubHass:
 
 class StubSession:
     def __init__(self):
-        from unittest.mock import AsyncMock, MagicMock
-
         self.closed = False
         self.request = MagicMock(spec=["__call__", "return_value"])
         self.close = AsyncMock(spec=["__call__", "return_value"])
@@ -40,19 +45,6 @@ class StubSession:
 
     def __dir__(self):
         return ["closed", "request", "close"]
-
-
-from homeassistant.const import CONF_TOKEN
-
-from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
-from custom_components.climate_ip.const import (
-    CONF_CERT,
-)
-from custom_components.climate_ip.exceptions import (
-    AuthError,
-    CannotConnect,
-    InvalidHeaderError,
-)
 
 
 @pytest.fixture

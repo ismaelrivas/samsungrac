@@ -305,7 +305,7 @@ async def test_successful_pairing_and_token(acquirer):
                 "custom_components.climate_ip.token_acquirer.asyncio.timeout",
                 return_value=mock_timeout_ctx,
             ) as mock_timeout:
-                config = await acquirer.async_initiate_pairing()
+                await acquirer.async_initiate_pairing()
                 mock_writer.write.assert_called_with(b'<Request Type="GetToken" />\r\n')
 
                 token = await acquirer.async_wait_for_token()

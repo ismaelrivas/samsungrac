@@ -46,49 +46,52 @@ async def async_setup_entry(  # pylint: disable=import-outside-toplevel,too-many
             ops = list(ops.values())
 
         for op in ops:
+            resolved_op = op
             if isinstance(op, str):
                 prop_obj = controller.get_property_object(op)
                 if prop_obj is not None:
-                    op = prop_obj
+                    resolved_op = prop_obj
                 else:
                     msg = "Switch setup: Could not find operation object for '%s'"  # pragma: no mutate
                     _LOGGER.error(msg, op)  # pragma: no mutate
                     continue
 
             # We skip 'power' because it's the main control for the climate entity
-            if not hasattr(op, "id"):
+            if not hasattr(resolved_op, "id"):
                 msg = "Switch setup: op has no id! op=%s"  # pragma: no mutate
-                _LOGGER.error(msg, op)  # pragma: no mutate
+                _LOGGER.error(msg, resolved_op)  # pragma: no mutate
                 continue
 
-            if op.id == "power":
+            if resolved_op.id == "power":
                 continue
 
-            if op.match_type(PROPERTY_TYPE_SWITCH):
+            if resolved_op.match_type(PROPERTY_TYPE_SWITCH):
                 raw_device_state = controller.device_state
-                if not op.is_valid(raw_device_state):
+                if not resolved_op.is_valid(raw_device_state):
                     continue
 
                 parsed_category = parse_entity_category(
-                    getattr(op, "entity_category", None)
+                    getattr(resolved_op, "entity_category", None)
                 )
 
-                device_class = getattr(op, "device_class", None)
-                icon = getattr(op, "icon", None)
+                device_class = getattr(resolved_op, "device_class", None)
+                icon = getattr(resolved_op, "icon", None)
                 if not icon and not device_class:
                     icon = "mdi:toggle-switch"
 
                 # Build a modern SwitchEntityDescription from the YAML operation.
                 description = SwitchEntityDescription(
-                    key=op.id,
-                    translation_key=op.id,
+                    key=resolved_op.id,
+                    translation_key=resolved_op.id,
                     name=None,  # Delegated fully to HA translations
                     device_class=device_class,
                     entity_category=parsed_category,
                     icon=icon,
                 )
 
-                entities.append(SamsungClimateSwitch(coordinator, description, op))
+                entities.append(
+                    SamsungClimateSwitch(coordinator, description, resolved_op)
+                )
 
     if entities:
         async_add_entities(entities)

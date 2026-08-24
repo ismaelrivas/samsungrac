@@ -97,6 +97,28 @@ class ControllerInterface(Protocol):
     )
 
 
+def _default_on_ssl_config_updated(_ssl_config: dict[str, Any]) -> None:
+    """Default no-op fallback for SSL configuration update callback."""
+
+
+async def _default_on_push_update_callback(
+    _data: dict[str, Any] | None = None,
+) -> None:
+    """Default no-op fallback for push update callback."""
+
+
+async def _default_request_refresh_callback() -> None:
+    """Default no-op fallback for request refresh callback."""
+
+
+def _default_on_offline_callback(_reason: str) -> None:
+    """Default no-op fallback for offline notification callback."""
+
+
+def _default_on_connection_failed_callback() -> None:
+    """Default no-op fallback for connection failure callback."""
+
+
 class ClimateController(ABC):
     """Abstract base class for a device controller. Enforcement through ABC."""
 
@@ -113,41 +135,19 @@ class ClimateController(ABC):
         ) = None
         self.on_ssl_config_updated: (
             Callable[[dict[str, Any]], Coroutine[Any, Any, None] | None]
-        ) = self._default_on_ssl_config_updated
+        ) = _default_on_ssl_config_updated
         self.on_push_update_callback: (
             Callable[[dict[str, Any] | None], Coroutine[Any, Any, None]]
-        ) = self._default_on_push_update_callback
+        ) = _default_on_push_update_callback
         self.request_refresh_callback: Callable[[], Coroutine[Any, Any, None]] = (
-            self._default_request_refresh_callback
+            _default_request_refresh_callback
         )
         self.on_offline_callback: (
             Callable[[str], Coroutine[Any, Any, None] | None]
-        ) = self._default_on_offline_callback
+        ) = _default_on_offline_callback
         self.on_connection_failed_callback: (
             Callable[[], Coroutine[Any, Any, None] | None]
-        ) = self._default_on_connection_failed_callback
-
-    @staticmethod
-    def _default_on_ssl_config_updated(ssl_config: dict[str, Any]) -> None:
-        pass
-
-    @staticmethod
-    async def _default_on_push_update_callback(
-        data: dict[str, Any] | None = None,
-    ) -> None:
-        pass
-
-    @staticmethod
-    async def _default_request_refresh_callback() -> None:
-        pass
-
-    @staticmethod
-    def _default_on_offline_callback(reason: str) -> None:
-        pass
-
-    @staticmethod
-    def _default_on_connection_failed_callback() -> None:
-        pass
+        ) = _default_on_connection_failed_callback
 
     @staticmethod
     @abstractmethod

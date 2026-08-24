@@ -174,9 +174,9 @@ class ConfigFlowSchemasMixin:
     def _get_rest_api_schema(self) -> vol.Schema:
         """Generate the schema for REST API based devices that require manual token."""
         device_type = self.flow_data[CONF_DEVICE_TYPE]
-        is_st = (
-            device_type == DEVICE_TYPE_SMARTTHINGS_HVAC
-            or device_type == DEVICE_TYPE_SMARTTHINGS_DHW
+        is_st = device_type in (
+            DEVICE_TYPE_SMARTTHINGS_HVAC,
+            DEVICE_TYPE_SMARTTHINGS_DHW,
         )
 
         try:
