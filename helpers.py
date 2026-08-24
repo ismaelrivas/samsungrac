@@ -527,9 +527,9 @@ try:
     _ICMPLIB_AVAILABLE = True
 except ImportError:
     _ICMPLIB_AVAILABLE = False
-    async_ping = None  # type: ignore[assignment]
-    IcmpNameLookupError = None  # type: ignore[assignment, misc]
-    ICMPSocketError = None  # type: ignore[assignment, misc]
+    async_ping = None
+    IcmpNameLookupError = None
+    ICMPSocketError = None
 
 
 async def async_check_network_reachability(
@@ -562,7 +562,7 @@ async def async_check_network_reachability(
         )  # pragma: no mutate
         return False
 
-    except (IcmpNameLookupError, ICMPSocketError) as err:  # type: ignore[misc]
+    except (IcmpNameLookupError, ICMPSocketError) as err:
         _LOGGER.debug(
             "%s Network diagnostic error for %s: %s", log_prefix, host, err
         )  # pragma: no mutate

@@ -31,7 +31,7 @@ from homeassistant.helpers.issue_registry import (
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.util import dt as dt_util
 from homeassistant.util.json import json_loads
-from requests.exceptions import RequestException  # type: ignore[import-untyped]
+from requests.exceptions import RequestException
 
 from .const import (
     CONF_DEVICE_TYPE,

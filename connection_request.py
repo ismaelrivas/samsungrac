@@ -28,9 +28,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.json import json_dumps
 from homeassistant.helpers.template import Template
 from homeassistant.util.json import JSON_DECODE_EXCEPTIONS, json_loads
-import requests  # type: ignore[import-untyped]
-from requests.adapters import HTTPAdapter  # type: ignore[import-untyped]
-from requests.packages.urllib3.exceptions import (  # type: ignore[import-untyped]  # pylint: disable=import-error
+import requests
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.exceptions import (  # pylint: disable=import-error
     InsecureRequestWarning,
 )
 
@@ -190,7 +190,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
             port = getattr(self._controller, "port", "default") or "default"
         elif self._parent:
             # Child connections (embedded commands) delegate to their parent.
-            return self._parent.async_lock  # type: ignore[return-value]
+            return self._parent.async_lock
 
         if not ip:
             return self._lock  # Fallback: per-instance lock
@@ -447,7 +447,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         params = format_placeholders(params, token, ip_address, device_id, mac)
 
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=InsecureRequestWarning)  # type: ignore
+            warnings.filterwarnings("ignore", category=InsecureRequestWarning)
 
             # CRITICAL FIX: Use the persistent session (Keep-Alive)
             # We use a helper context manager to yield the session without closing it,

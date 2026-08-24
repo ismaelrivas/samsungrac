@@ -244,7 +244,7 @@ class YamlConfigLoader:
                 )
                 if conn_class.__name__ == "ConnectionAiohttp8888":
                     merged_config = {**controller_config, **connection_node}
-                    self.connection = conn_class(  # type: ignore[call-arg,assignment]
+                    self.connection = conn_class(
                         merged_config,
                         _LOGGER,
                         getattr(self.controller, "hass", None),
@@ -252,7 +252,7 @@ class YamlConfigLoader:
                         getattr(self.controller, "ip_address", None),
                     )
                 elif conn_class.__name__ == "ConnectionRaw8888":
-                    self.connection = conn_class(  # type: ignore[call-arg,assignment]
+                    self.connection = conn_class(
                         controller_config,
                         _LOGGER,
                         getattr(self.controller, "hass", None),
@@ -264,7 +264,7 @@ class YamlConfigLoader:
                         controller_config,
                         _LOGGER,
                         hass=getattr(self.controller, "hass", None),
-                    )  # type: ignore[call-arg,assignment]
+                    )
 
                 if self.connection and self.connection.load_from_yaml(
                     connection_node, None

@@ -34,12 +34,16 @@ class Connection:
         config: dict[str, Any],
         logger: logging.Logger,
         hass: HomeAssistant | None = None,
+        session: Any = None,
+        ip_address: str | None = None,
     ) -> None:
         """Initialize the connection with config and logger."""
         self._params: dict[str, Any] = {}
         self._logger = logger
         self._config = config
         self._hass: HomeAssistant | None = hass
+        self._session: Any = session
+        self._ip_address: str | None = ip_address
         self._lock = asyncio.Lock()
 
         # FAIL-FAST DOCTRINE: Formalize ghost attributes

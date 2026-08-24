@@ -431,7 +431,7 @@ class ConnectionAiohttp8888(Connection):
                     timeout=aiohttp.ClientTimeout(
                         total=GLOBAL_HTTP_TIMEOUT, sock_read=GLOBAL_HTTP_TIMEOUT // 2
                     ),
-                ) as response:  # type: ignore[arg-type]
+                ) as response:
                     if response.status in (
                         HTTPStatus.OK,
                         HTTPStatus.UNAUTHORIZED,
@@ -547,7 +547,7 @@ class ConnectionAiohttp8888(Connection):
                     keepalive_timeout=KEEPALIVE_TIMEOUT,
                     ssl=ssl_context if ssl_context is not None else True,
                     limit=1,  # pragma: no mutate
-                )  # type: ignore[arg-type]
+                )
 
             timeout = aiohttp.ClientTimeout(
                 total=NETWORK_POLL_TIMEOUT, connect=GLOBAL_HTTP_TIMEOUT

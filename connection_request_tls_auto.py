@@ -28,8 +28,8 @@ import warnings
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.template import Template
 from homeassistant.util.json import JSON_DECODE_EXCEPTIONS, json_loads
-import requests  # type: ignore[import-untyped]
-from requests.adapters import HTTPAdapter  # type: ignore[import-untyped]
+import requests
+from requests.adapters import HTTPAdapter
 from urllib3.exceptions import InsecureRequestWarning
 
 from .connection import _HOST_LOCKS, Connection, register_connection
@@ -145,7 +145,7 @@ class ConnectionRequestBase(Connection):
     def log_prefix(self) -> str:
         """Get the log prefix from the controller for consistent logging."""
         if self._controller:
-            return self._controller.log_prefix  # type: ignore[no-any-return]
+            return self._controller.log_prefix
 
         if self._parent:
             return self._parent.log_prefix
@@ -200,7 +200,7 @@ class ConnectionRequestBase(Connection):
             ip = getattr(self._controller, "ip_address", None)
             port = getattr(self._controller, "port", "default") or "default"
         elif self._parent is not None:
-            return self._parent.async_lock  # type: ignore[return-value]
+            return self._parent.async_lock
 
         if ip is None or not ip.strip():
             return self._lock  # Fallback: per-instance lock

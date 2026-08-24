@@ -73,7 +73,7 @@ class ClimateIpConfigFlow(
     ConfigFlowHelpersMixin,
     ConfigFlowDiscoveryMixin,
     domain=DOMAIN,
-):  # type: ignore[call-arg]
+):
     """Config flow implementing a robust, multi-step pairing process.
 
     Supports legacy Samsung ACs (2878), modern units (8888),
