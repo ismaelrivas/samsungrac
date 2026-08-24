@@ -291,7 +291,7 @@ class YamlStatePoller:
 
     def _update_all_connections_token(self, new_token: str) -> None:
         """Propagate the new token to all active connection engines."""
-        updated_connections: set = set()
+        updated_connections: set[Any] = set()
         for prop in self._all_props():
             if (
                 prop

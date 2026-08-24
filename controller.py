@@ -84,11 +84,17 @@ class ControllerInterface(Protocol):
     ) -> None: ...
     def on_token_refreshed(self, new_token: str) -> None: ...
 
-    on_ssl_config_updated: Callable[[dict[str, Any]], Any]
-    on_push_update_callback: Callable[..., Coroutine[Any, Any, None]]
+    on_ssl_config_updated: (
+        Callable[[dict[str, Any]], Coroutine[Any, Any, None] | None]
+    )
+    on_push_update_callback: (
+        Callable[[dict[str, Any] | None], Coroutine[Any, Any, None]]
+    )
     request_refresh_callback: Callable[[], Coroutine[Any, Any, None]]
-    on_offline_callback: Callable[[str], Any]
-    on_connection_failed_callback: Callable[[], Any]
+    on_offline_callback: Callable[[str], Coroutine[Any, Any, None] | None]
+    on_connection_failed_callback: (
+        Callable[[], Coroutine[Any, Any, None] | None]
+    )
 
 
 class ClimateController(ABC):
@@ -105,28 +111,30 @@ class ClimateController(ABC):
         self._token_refreshed_callback: (
             Callable[[str], Coroutine[Any, Any, None]] | Callable[[str], None] | None
         ) = None
-        self.on_ssl_config_updated: Callable[[dict[str, Any]], Any] = (
-            self._default_on_ssl_config_updated
-        )
-        self.on_push_update_callback: Callable[..., Coroutine[Any, Any, None]] = (
-            self._default_on_push_update_callback
-        )
+        self.on_ssl_config_updated: (
+            Callable[[dict[str, Any]], Coroutine[Any, Any, None] | None]
+        ) = self._default_on_ssl_config_updated
+        self.on_push_update_callback: (
+            Callable[[dict[str, Any] | None], Coroutine[Any, Any, None]]
+        ) = self._default_on_push_update_callback
         self.request_refresh_callback: Callable[[], Coroutine[Any, Any, None]] = (
             self._default_request_refresh_callback
         )
-        self.on_offline_callback: Callable[[str], Any] = (
-            self._default_on_offline_callback
-        )
-        self.on_connection_failed_callback: Callable[[], Any] = (
-            self._default_on_connection_failed_callback
-        )
+        self.on_offline_callback: (
+            Callable[[str], Coroutine[Any, Any, None] | None]
+        ) = self._default_on_offline_callback
+        self.on_connection_failed_callback: (
+            Callable[[], Coroutine[Any, Any, None] | None]
+        ) = self._default_on_connection_failed_callback
 
     @staticmethod
     def _default_on_ssl_config_updated(ssl_config: dict[str, Any]) -> None:
         pass
 
     @staticmethod
-    async def _default_on_push_update_callback(data: dict[str, Any]) -> None:
+    async def _default_on_push_update_callback(
+        data: dict[str, Any] | None = None,
+    ) -> None:
         pass
 
     @staticmethod

@@ -126,7 +126,10 @@ class OptionsFlowHandler(OptionsFlow):
 
         temp_selector = SelectSelector(
             SelectSelectorConfig(
-                options=[UnitOfTemperature.CELSIUS, UnitOfTemperature.FAHRENHEIT],
+                options=[
+                    str(UnitOfTemperature.CELSIUS),
+                    str(UnitOfTemperature.FAHRENHEIT),
+                ],
                 mode=SelectSelectorMode.DROPDOWN,
             )
         )

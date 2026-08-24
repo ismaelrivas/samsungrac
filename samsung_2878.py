@@ -108,16 +108,18 @@ class ConnectionSamsung2878(Connection):
 
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
-        self._read_task: asyncio.Task | None = None  # Task for reading from the socket
+        self._read_task: asyncio.Task[bytes] | None = None  # Task for reading from the socket
         self._close_lock = asyncio.Lock()  # To serialize _close_connection calls
-        self._cmd_queue: asyncio.Queue = asyncio.Queue()
-        self._manager_task: asyncio.Task | None = (
+        self._cmd_queue: asyncio.Queue[tuple[str, asyncio.Future[bool]]] = (
+            asyncio.Queue()
+        )
+        self._manager_task: asyncio.Task[None] | None = (
             None  # Main task that manages the persistent connection
         )
         self._update_callback: (
             Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None
         ) = None
-        self._pending_future: asyncio.Future | None = (
+        self._pending_future: asyncio.Future[bool] | None = (
             None  # Future for the command currently being processed
         )
 
@@ -131,7 +133,7 @@ class ConnectionSamsung2878(Connection):
         self._last_successful_config: dict[str, Any] | None = None
         self._ssl_context_cache: dict[tuple[str | None, str, Any], ssl.SSLContext] = {}
         self._initial_connection_done = False  # To prevent double poll at startup
-        self._background_tasks: set[asyncio.Task] = (
+        self._background_tasks: set[asyncio.Task[Any]] = (
             set()
         )  # Track fire-and-forget tasks for clean shutdown
         self._persistent_offline_err_logged = False
@@ -195,7 +197,7 @@ class ConnectionSamsung2878(Connection):
             self._reconnect_retries = 0
             self._manager_task = asyncio.create_task(self._connection_manager())
 
-    def _track_task(self, coro: Coroutine) -> asyncio.Task:
+    def _track_task(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
         """Create a tracked background task that auto-removes itself on completion."""
         task = asyncio.create_task(coro)
         self._background_tasks.add(task)
@@ -970,7 +972,7 @@ class ConnectionSamsung2878(Connection):
                 )  # pragma: no mutate
         return is_response, is_update, parsed_data
 
-    async def _process_command_queue(self, queue_task: asyncio.Task) -> None:
+    async def _process_command_queue(self, queue_task: asyncio.Task[Any]) -> None:
         """Process a command from the queue."""
         command, future = queue_task.result()
         self._pending_future = future
@@ -1298,7 +1300,7 @@ class ConnectionSamsung2878(Connection):
                     if not self._read_task or self._read_task.done():
                         self._read_task = asyncio.create_task(self._reader.read(8192))
 
-                    tasks = [self._read_task]
+                    tasks: list[asyncio.Task[Any]] = [self._read_task]
 
                     # Ensure queue listener is running if we are ready for commands
                     if not queue_task and not self._pending_future:
