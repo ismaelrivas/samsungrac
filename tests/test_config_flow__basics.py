@@ -512,9 +512,9 @@ async def test_async_force_arp_update_times_out(hass: HomeAssistant) -> None:
 
         assert mock_wait_for.call_count == 2
         for call in mock_wait_for.call_args_list:
-            assert (
-                len(call.args) == 1
-            ), "asyncio.wait_for debe recibir la corrutina como primer argumento posicional"
+            assert len(call.args) == 1, (
+                "asyncio.wait_for debe recibir la corrutina como primer argumento posicional"
+            )
             assert "timeout" in call.kwargs
             assert call.kwargs["timeout"] == 0.5
 
@@ -544,9 +544,9 @@ async def test_async_force_arp_update_success(hass: HomeAssistant) -> None:
 
         assert mock_wait_for.called
         for call in mock_wait_for.call_args_list:
-            assert (
-                len(call.args) == 1
-            ), "asyncio.wait_for debe recibir la corrutina como primer argumento posicional"
+            assert len(call.args) == 1, (
+                "asyncio.wait_for debe recibir la corrutina como primer argumento posicional"
+            )
             assert "timeout" in call.kwargs
             assert call.kwargs["timeout"] == 0.5
 
@@ -1261,10 +1261,13 @@ async def test_process_samsung_step_acquirer_initialization_8888(
         # Lethal assertion: Constructor called with mathematically exact parameters
         mock_acq_8888.assert_called_once()
         assert mock_acq_8888.call_args[0][0] == hass
-        assert mock_acq_8888.call_args[1].get("ip_address") == "192.168.1.50" or mock_acq_8888.call_args[0][1] == "192.168.1.50"
         assert (
-            flow.acquirer == mock_acq_8888.return_value
-        ), "La asignación a self.acquirer falló"
+            mock_acq_8888.call_args[1].get("ip_address") == "192.168.1.50"
+            or mock_acq_8888.call_args[0][1] == "192.168.1.50"
+        )
+        assert flow.acquirer == mock_acq_8888.return_value, (
+            "La asignación a self.acquirer falló"
+        )
 
         # Reset mock for phase 2
         mock_acq_8888.reset_mock()
@@ -1278,7 +1281,10 @@ async def test_process_samsung_step_acquirer_initialization_8888(
 
         # Lethal assertion: Fallback is ignored if user input exists
         mock_acq_8888.assert_called_once()
-        assert mock_acq_8888.call_args[1].get("cert_path") == "custom_user_cert.pem" or mock_acq_8888.call_args[0][3] == "custom_user_cert.pem"
+        assert (
+            mock_acq_8888.call_args[1].get("cert_path") == "custom_user_cert.pem"
+            or mock_acq_8888.call_args[0][3] == "custom_user_cert.pem"
+        )
 
 
 async def test_process_samsung_step_acquirer_initialization_2878(
@@ -1312,11 +1318,17 @@ async def test_process_samsung_step_acquirer_initialization_2878(
         # Lethal assertion: Frontera de inyección de dependencias
         mock_acq_2878.assert_called_once()
         assert mock_acq_2878.call_args[0][0] == hass
-        assert mock_acq_2878.call_args[1].get("ip_address") == "192.168.1.100" or mock_acq_2878.call_args[0][1] == "192.168.1.100"
-        assert mock_acq_2878.call_args[1].get("cert_path") == "/custom/cert.pem" or mock_acq_2878.call_args[0][3] == "/custom/cert.pem"
         assert (
-            flow.acquirer == mock_acq_2878.return_value
-        ), "La asignación a self.acquirer falló"
+            mock_acq_2878.call_args[1].get("ip_address") == "192.168.1.100"
+            or mock_acq_2878.call_args[0][1] == "192.168.1.100"
+        )
+        assert (
+            mock_acq_2878.call_args[1].get("cert_path") == "/custom/cert.pem"
+            or mock_acq_2878.call_args[0][3] == "/custom/cert.pem"
+        )
+        assert flow.acquirer == mock_acq_2878.return_value, (
+            "La asignación a self.acquirer falló"
+        )
 
 
 async def test_resolve_mac_and_set_unique_id(hass: HomeAssistant) -> None:
@@ -1931,9 +1943,9 @@ async def test_get_rest_api_schema_mutants_coverage(hass: HomeAssistant) -> None
     ip_marker_st = next(
         k for k in schema_st.schema if getattr(k, "schema", None) == CONF_IP_ADDRESS
     )
-    assert isinstance(
-        ip_marker_st, vol.Required
-    ), "Mutación detectada: CONF_IP_ADDRESS debe ser Required, no Optional"
+    assert isinstance(ip_marker_st, vol.Required), (
+        "Mutación detectada: CONF_IP_ADDRESS debe ser Required, no Optional"
+    )
 
     # 2. Kill mutmut_21, 22: default_token logic
     # Test mutmut_21: When CONF_TOKEN is present in flow_data, it uses it.
@@ -3083,8 +3095,10 @@ async def test_async_step_reauth_mutants(hass: HomeAssistant) -> None:
 
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+
     async def mock_async_add_executor_job(func, *args, **kwargs):
         return func(*args, **kwargs)
+
     flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.context = {"entry_id": "test_entry_id"}
 
@@ -5088,7 +5102,10 @@ async def test_reconfigure_empty_token_triggers_pairing_mim_h03(hass, mock_setup
     # Assert cert parameter is correctly passed to GenericYamlTokenAcquirer
     mock_acquirer_cls.assert_called_once()
     assert mock_acquirer_cls.call_args[0][0] == hass
-    assert mock_acquirer_cls.call_args[1].get("ip_address") == "192.168.1.10" or mock_acquirer_cls.call_args[0][1] == "192.168.1.10"
+    assert (
+        mock_acquirer_cls.call_args[1].get("ip_address") == "192.168.1.10"
+        or mock_acquirer_cls.call_args[0][1] == "192.168.1.10"
+    )
 
 
 async def test_form_schemas_types_and_defaults(hass):
@@ -6158,9 +6175,9 @@ async def test_yaml_controller_instantiation_strict(hass: HomeAssistant) -> None
     assert mock_ctrl.hass is hass, "hass must be the real HA object (M85)"
 
     # M86: controller._session = None → HTTP requests fail silently
-    assert (
-        mock_ctrl._session is mock_sess_instance
-    ), "_session must be the real session (M86)"
+    assert mock_ctrl._session is mock_sess_instance, (
+        "_session must be the real session (M86)"
+    )
 
     # Verify that async_get_clientsession was called with hass (not with None)
     mock_sess.assert_called_once_with(hass)

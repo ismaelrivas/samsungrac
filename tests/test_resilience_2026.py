@@ -49,17 +49,17 @@ async def test_connection_timeout_recovery(hass, coordinator):
 
     # 1. Transient Error — Platinum integrations must preserve state, not mark unavailable
     await coordinator.async_refresh()
-    assert (
-        coordinator.last_update_success
-    ), "Strike 1: state must be preserved on first timeout"
+    assert coordinator.last_update_success, (
+        "Strike 1: state must be preserved on first timeout"
+    )
 
     # 2. Network Recovery — coordinator.data must be a ClimateIPDeviceState, not a raw dict
     coordinator.controller.climate_state = MagicMock(spec=ClimateIPDeviceState)
     await coordinator.async_refresh()
     assert coordinator.last_update_success
-    assert isinstance(
-        coordinator.data, ClimateIPDeviceState
-    ), "coordinator.data must be ClimateIPDeviceState after recovery, not a raw dict"
+    assert isinstance(coordinator.data, ClimateIPDeviceState), (
+        "coordinator.data must be ClimateIPDeviceState after recovery, not a raw dict"
+    )
     assert coordinator.controller.async_get_status.call_count == 2
 
 

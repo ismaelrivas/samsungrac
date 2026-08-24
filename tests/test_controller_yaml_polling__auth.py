@@ -84,9 +84,7 @@ async def test_async_update_state_auth_refresh_flow():
         with patch.object(
             poller, "_update_all_connections_token"
         ) as mock_update_dispatch:
-            with patch.object(
-                poller, "_try_delete_repair_issue"
-            ) as mock_delete_issue:
+            with patch.object(poller, "_try_delete_repair_issue") as mock_delete_issue:
                 # Simulate coming from a connection error to assert reset
                 poller._consecutive_connection_errors = 2
 
@@ -99,7 +97,9 @@ async def test_async_update_state_auth_refresh_flow():
                 mock_update_dispatch.assert_called_once_with("NEW_TOKEN_999")
 
                 # 3. We assert user callback was called (Kills mutant and -> or)
-                mock_controller.on_token_refreshed.assert_called_once_with("NEW_TOKEN_999")
+                mock_controller.on_token_refreshed.assert_called_once_with(
+                    "NEW_TOKEN_999"
+                )
 
                 # 4. We assert repair issue was cleared and error counter reset strictly to 0
                 mock_delete_issue.assert_called_once()
@@ -188,7 +188,6 @@ async def test_refresh_smartthings_token_sniper_failures(
 
     mock_controller = DummyController()
     poller = YamlStatePoller(mock_controller)
-
 
     # 1. Failure: No hass configured (Attribute does not exist)
     # Originally returns None silently.

@@ -46,7 +46,9 @@ def mock_response():
 def test_initialization(connection_config, mock_logger):
     """Test connection initialization — also asserts the deprecation notice is emitted."""
     with patch("os.path.exists", return_value=True):
-        with pytest.warns(DeprecationWarning, match="'request' connection method is deprecated"):
+        with pytest.warns(
+            DeprecationWarning, match="'request' connection method is deprecated"
+        ):
             conn = ConnectionRequest(connection_config, mock_logger)
         assert conn.is_async_native is False
         assert conn.is_push_supported is False
@@ -62,7 +64,9 @@ def test_execute_success(connection_config, mock_logger, mock_response):
             mock_session.__enter__.return_value = mock_session
             mock_session.request.return_value = mock_response
 
-            with pytest.warns(DeprecationWarning, match="'request' connection method is deprecated"):
+            with pytest.warns(
+                DeprecationWarning, match="'request' connection method is deprecated"
+            ):
                 conn = ConnectionRequest(connection_config, mock_logger)
 
             mock_template = MagicMock()
@@ -80,7 +84,9 @@ def test_execute_auth_error(connection_config, mock_logger):
             mock_session = mock_session_cls.return_value
             mock_session.__enter__.return_value = mock_session
 
-            with pytest.warns(DeprecationWarning, match="'request' connection method is deprecated"):
+            with pytest.warns(
+                DeprecationWarning, match="'request' connection method is deprecated"
+            ):
                 conn = ConnectionRequest(connection_config, mock_logger)
 
             mock_response = MagicMock()
@@ -105,7 +111,9 @@ def test_execute_connection_error(connection_config, mock_logger):
             mock_session = mock_session_cls.return_value
             mock_session.__enter__.return_value = mock_session
 
-            with pytest.warns(DeprecationWarning, match="'request' connection method is deprecated"):
+            with pytest.warns(
+                DeprecationWarning, match="'request' connection method is deprecated"
+            ):
                 conn = ConnectionRequest(connection_config, mock_logger)
 
             mock_session.request.side_effect = requests.exceptions.ConnectionError(

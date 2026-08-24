@@ -39,7 +39,6 @@ class NakedObj:
         self.__dict__.update(kwargs)
 
 
-
 class DummyController(NakedObj):
     """Simulated controller resistant to AttributeErrors."""
 
@@ -1221,9 +1220,9 @@ async def test_build_device_state_from_hass_deepcopy_and_logic():
 
     # Mutant test deepcopy vs copy
     res["Devices"][0]["nested"] = False
-    assert (
-        last_real["Devices"][0]["nested"] is True
-    ), "Structural failure: deepcopy replaced by copy"
+    assert last_real["Devices"][0]["nested"] is True, (
+        "Structural failure: deepcopy replaced by copy"
+    )
 
 
 async def test_build_device_state_from_props_naked_dicts():
@@ -1479,9 +1478,9 @@ async def test_async_predict_and_correct_state_feature_flag_exact():
     feat1, _ = await poller.async_predict_and_correct_state(
         MagicMock(), "test_op", "val"
     )
-    assert (
-        feat1.value == 0
-    ), "Mutation: ClimateEntityFeature(1) was returned in empty path"
+    assert feat1.value == 0, (
+        "Mutation: ClimateEntityFeature(1) was returned in empty path"
+    )
 
     # Test path 2: future_state has content
     poller._build_device_state_from_props = AsyncMock(return_value={"future": "data"})
@@ -1489,9 +1488,9 @@ async def test_async_predict_and_correct_state_feature_flag_exact():
     feat2, _ = await poller.async_predict_and_correct_state(
         MagicMock(), "test_op", "val"
     )
-    assert (
-        feat2.value == 0
-    ), "Mutation: ClimateEntityFeature(1) was returned in processed path"
+    assert feat2.value == 0, (
+        "Mutation: ClimateEntityFeature(1) was returned in processed path"
+    )
 
 
 async def test_build_device_state_fallback_to_private_value():
@@ -1513,9 +1512,9 @@ async def test_build_device_state_fallback_to_private_value():
 
     # If mutmut removed the fallback getattr(..., "_value", None), op_value will be None
     # It will skip the cycle due to a 'continue', and 'target_key' will never be assigned.
-    assert (
-        "target_key" in res
-    ), "Logical Failure: Mutant ignored private attribute '_value'"
+    assert "target_key" in res, (
+        "Logical Failure: Mutant ignored private attribute '_value'"
+    )
     assert res["target_key"] == "dev_val"
 
 
@@ -1780,9 +1779,9 @@ async def test_predict_and_correct_state_mutants():
 
     # B) KILL THE MUTANT: Verify general operation loop
     # If mutant alters 'op.value = val' to 'op.value = None', the value here will be None and the test will fail, killing the mutant.
-    assert (
-        op_bystander.value == "old"
-    ), "Mutant detected! Bystander received None instead of its original state value."
+    assert op_bystander.value == "old", (
+        "Mutant detected! Bystander received None instead of its original state value."
+    )
 
 
 @pytest.mark.asyncio
@@ -1822,9 +1821,9 @@ async def test_build_device_state_power_op_fallback() -> None:
     poller._get_state_node_from_prop = MagicMock(side_effect=_strict_power_mapping)
 
     res1 = await poller._build_device_state_from_props()
-    assert (
-        res1.get("AC_FUN_POWER") == "On"
-    ), "Mutant survived! operations.get('power') OR properties.get('power') fallback failed."
+    assert res1.get("AC_FUN_POWER") == "On", (
+        "Mutant survived! operations.get('power') OR properties.get('power') fallback failed."
+    )
 
     # Test Case 2: BOTH return None -> No power_key injected
     mock_controller.loader.properties = {}
@@ -1839,9 +1838,9 @@ async def test_build_device_state_power_op_fallback() -> None:
     assert (
         len(res2.get("Devices", [{"Mode": {"options": []}}])[0]["Mode"]["options"]) >= 0
     )
-    assert (
-        "AC_FUN_POWER" not in res2
-    ), "Mutant survived! Power key was injected even when power_op was None."
+    assert "AC_FUN_POWER" not in res2, (
+        "Mutant survived! Power key was injected even when power_op was None."
+    )
 
 
 async def test_async_update_properties_dict_depth_fallback():
@@ -1925,6 +1924,6 @@ async def test_build_device_state_power_ternary_mutual_exclusivity() -> None:
 
     res_cool = await poller_cool._build_device_state_from_props()
     assert res_cool.get("AC_FUN_POWER") in ("On", "Cool", None)
-    assert (
-        res_cool["AC_FUN_POWER"] == "On"
-    ), "Mutant survived! Power should be strictly 'On' when device_value is 'Cool'."
+    assert res_cool["AC_FUN_POWER"] == "On", (
+        "Mutant survived! Power should be strictly 'On' when device_value is 'Cool'."
+    )

@@ -260,16 +260,16 @@ class YamlStatePoller:
                 e,
                 exc_info=True,
             )
-    
+
     def _try_delete_repair_issue(self) -> None:
         """Delete the HA repair issue when the device is back online."""
         if not self.controller.hass:
             return
-            
+
         try:
             safe_device_id = self._device_identifier.replace(".", "_").replace(" ", "_")
             issue_id = f"device_offline_{safe_device_id}"
-            
+
             async_delete_issue(
                 self.controller.hass,
                 "climate_ip",
@@ -574,7 +574,8 @@ class YamlStatePoller:
                             (
                                 j
                                 for j, item in enumerate(current)
-                                if isinstance(item, str) and item.startswith(f"{opt_prefix}_")
+                                if isinstance(item, str)
+                                and item.startswith(f"{opt_prefix}_")
                             ),
                             None,
                         )
@@ -594,7 +595,8 @@ class YamlStatePoller:
                         prefix = existing.split("_", 1)[0]
                         clean_num = (
                             int(target_val)
-                            if isinstance(target_val, (int, float)) and target_val == int(target_val)
+                            if isinstance(target_val, (int, float))
+                            and target_val == int(target_val)
                             else target_val
                         )
                         target_val = f"{prefix}_{clean_num}"
@@ -653,9 +655,19 @@ class YamlStatePoller:
                 rendered = render_template(conn_tmpl, value=value)
                 if rendered and isinstance(rendered, str):
                     parsed = json_loads(rendered)
-                    payload = parsed.get("json", parsed) if isinstance(parsed, dict) else parsed
-                    if isinstance(payload, dict) and "options" in payload and isinstance(payload["options"], list):
-                        if payload["options"] and isinstance(payload["options"][0], str):
+                    payload = (
+                        parsed.get("json", parsed)
+                        if isinstance(parsed, dict)
+                        else parsed
+                    )
+                    if (
+                        isinstance(payload, dict)
+                        and "options" in payload
+                        and isinstance(payload["options"], list)
+                    ):
+                        if payload["options"] and isinstance(
+                            payload["options"][0], str
+                        ):
                             dev_val = payload["options"][0]
             except Exception:  # pylint: disable=broad-exception-caught
                 pass

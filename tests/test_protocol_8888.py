@@ -128,9 +128,9 @@ async def test_request_success_and_payload_structure(client, mock_reader, mock_w
                 b"Content-Length: 13\r\n\r\n"
                 b'{"turn":"on"}'
             )
-            assert (
-                written_bytes == expected_payload
-            ), "Payload string mutation detected!"
+            assert written_bytes == expected_payload, (
+                "Payload string mutation detected!"
+            )
 
 
 async def test_request_chunked_fallback(client, mock_reader, mock_writer):
@@ -153,6 +153,7 @@ async def test_request_chunked_fallback(client, mock_reader, mock_writer):
             assert response == '{"result": "ok"}'
             assert error is None
             from unittest.mock import call
+
             mock_reader.read.assert_has_calls([call(8192), call(8192), call(8192)])
 
 
@@ -352,16 +353,20 @@ async def test_create_ssl_context_options(mock_create_ssl, client):
     class RejectingSSLContext:
         def __init__(self):
             self._options = 0
+
         @property
         def options(self):
             return self._options
+
         @options.setter
         def options(self, val):
             # Ignore the OP_NO_COMPRESSION bit
             self._options = val & ~getattr(ssl, "OP_NO_COMPRESSION", 0)
 
     mock_create_ssl.return_value = RejectingSSLContext()
-    with patch("custom_components.climate_ip.protocol_8888._LOGGER.debug") as mock_debug:
+    with patch(
+        "custom_components.climate_ip.protocol_8888._LOGGER.debug"
+    ) as mock_debug:
         await client._create_ssl_context()
         found_opt = False
         for call_args, _ in mock_debug.call_args_list:
@@ -873,9 +878,9 @@ async def test_request_fallback_raw_json_incremental_chunks(
                 # Mutant Killer: Assert the exact fallback timeout threshold was used
                 from unittest.mock import call
 
-                assert (
-                    call(5.0) in mock_timeout.call_args_list
-                ), "Fallback timeout mutation detected!"
+                assert call(5.0) in mock_timeout.call_args_list, (
+                    "Fallback timeout mutation detected!"
+                )
 
 
 async def test_read_response_headers_and_body_helpers(client, mock_reader):

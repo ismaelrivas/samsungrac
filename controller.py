@@ -16,6 +16,7 @@ from .const import ATTR_POWER
 
 CLIMATE_CONTROLLERS: list[type[ClimateController]] = []
 
+
 class ControllerError(Exception):
     """Base exception for controller errors."""
 
@@ -42,7 +43,10 @@ class ControllerInterface(Protocol):
         self, property_name: str, new_value: Any, device_id: str | None = None
     ) -> bool: ...
     async def async_predict_and_correct_state(
-        self, current_hass_state: ClimateIPDeviceState, property_name: str, new_value: Any
+        self,
+        current_hass_state: ClimateIPDeviceState,
+        property_name: str,
+        new_value: Any,
     ) -> tuple[Any, dict[str, Any]]: ...
     async def async_shutdown(self) -> None: ...
     async def async_merge_device_state(self, data: dict[str, Any]) -> bool: ...
@@ -138,7 +142,7 @@ class ClimateController(ABC):
         """Standardized log prefix."""
         uid = self.unique_id
         nm = self.name
-        
+
         if uid is not None:
             ident = str(uid)
         elif nm is not None:

@@ -62,7 +62,9 @@ async def test_auto_healing_repairs_flow_lifecycle():
         result_init = await flow.async_step_init()
         assert result_init["type"] == FlowResultType.FORM
         assert result_init["step_id"] == "confirm"
-        assert result_init["description_placeholders"] == {"device_name": "Living Room AC"}
+        assert result_init["description_placeholders"] == {
+            "device_name": "Living Room AC"
+        }
 
         # User clicks Submit (Aceptar)
         result_confirm = await flow.async_step_confirm(user_input={})

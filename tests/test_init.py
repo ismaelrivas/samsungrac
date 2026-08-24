@@ -303,19 +303,21 @@ async def test_setup_entry_instantiates_controller_strictly(
         # Extract the kwargs used to call the constructor
         kwargs = mock_yaml_class.call_args.kwargs
 
-        assert (
-            "config_entry" in kwargs and kwargs["config_entry"] is mock_entry
-        ), "The config_entry argument was omitted or is incorrect"
-        assert (
-            "logger" in kwargs and kwargs["logger"] is not None
-        ), "The logger argument was omitted or is None"
-        assert (
-            "hass" in kwargs and kwargs["hass"] is hass
-        ), "The hass argument was not passed correctly"
-        assert kwargs.get("device_id") == "main", "The device_id argument was omitted or incorrect"
-        assert (
-            kwargs.get("session") is mock_get_session.return_value
-        ), "The session argument was omitted or incorrect"
+        assert "config_entry" in kwargs and kwargs["config_entry"] is mock_entry, (
+            "The config_entry argument was omitted or is incorrect"
+        )
+        assert "logger" in kwargs and kwargs["logger"] is not None, (
+            "The logger argument was omitted or is None"
+        )
+        assert "hass" in kwargs and kwargs["hass"] is hass, (
+            "The hass argument was not passed correctly"
+        )
+        assert kwargs.get("device_id") == "main", (
+            "The device_id argument was omitted or incorrect"
+        )
+        assert kwargs.get("session") is mock_get_session.return_value, (
+            "The session argument was omitted or incorrect"
+        )
 
         # Mutant 84: Verify standalone injection
         mock_coord_class.assert_called_once_with(
@@ -375,9 +377,9 @@ async def test_setup_entry_multi_device_branch_and_unique_id_logic(
         assert result is True
 
         # LETHAL ASSERTION (Mutant 35 - break): Exactly 3 devices must be processed (1, 2 and 3).
-        assert (
-            mock_yaml_class.call_count == 3
-        ), "The loop was prematurely broken or failed to filter ID 0."
+        assert mock_yaml_class.call_count == 3, (
+            "The loop was prematurely broken or failed to filter ID 0."
+        )
 
         call_args_list = mock_yaml_class.call_args_list
 
@@ -396,9 +398,9 @@ async def test_setup_entry_multi_device_branch_and_unique_id_logic(
         assert kwargs_c.get("config_entry") is mock_entry, "config_entry was omitted"
 
         # Mutant 71: Verify coordinators were saved in runtime_data
-        assert isinstance(
-            mock_entry.runtime_data, dict
-        ), "The coordinators dictionary was not saved in runtime_data"
+        assert isinstance(mock_entry.runtime_data, dict), (
+            "The coordinators dictionary was not saved in runtime_data"
+        )
         assert len(mock_entry.runtime_data) == 3, "Missing coordinators in runtime_data"
 
         # Mutants 98 and 99: Verify platforms are registered
@@ -407,9 +409,9 @@ async def test_setup_entry_multi_device_branch_and_unique_id_logic(
         mock_forward.assert_awaited_once_with(mock_entry, PLATFORMS)
 
         # LETHAL ASSERTION (Mutant 68)
-        assert all(
-            c is not None for c in mock_entry.runtime_data.values()
-        ), "None was assigned to the coordinators dictionary instead of the instance"
+        assert all(c is not None for c in mock_entry.runtime_data.values()), (
+            "None was assigned to the coordinators dictionary instead of the instance"
+        )
 
 
 async def test_setup_entry_total_initialization_failure(hass: HomeAssistant) -> None:
@@ -483,9 +485,9 @@ async def test_setup_entry_multi_device_partial_failure(hass: HomeAssistant) -> 
         await async_setup_entry(hass, mock_entry)
 
         # In concurrent setup, Zone B coordinator succeeds and is saved in runtime_data
-        assert (
-            len(mock_entry.runtime_data) == 1
-        ), "Partial device setup failed to record Zone B."
+        assert len(mock_entry.runtime_data) == 1, (
+            "Partial device setup failed to record Zone B."
+        )
         assert "2" in mock_entry.runtime_data
 
 
@@ -522,15 +524,15 @@ async def test_setup_entry_coordinator_instantiation_strict(
         args, kwargs = mock_coord_class.call_args
 
         assert args[0] is hass, "The 'hass' argument is None or incorrect"
-        assert (
-            args[1] is mock_instance
-        ), "The 'controller' argument is None or incorrect"
+        assert args[1] is mock_instance, (
+            "The 'controller' argument is None or incorrect"
+        )
         assert args[2] is mock_entry, "The 'entry' argument is incorrect"
 
         # LETHAL ASSERTIONS (Mutants 61, 62, 66, 67)
-        assert (
-            "device_info" in kwargs and kwargs["device_info"] is not None
-        ), "The 'device_info' argument was omitted"
+        assert "device_info" in kwargs and kwargs["device_info"] is not None, (
+            "The 'device_info' argument was omitted"
+        )
         assert (
             "parent_unique_id" in kwargs and kwargs["parent_unique_id"] == "parent_mac"
         ), "The 'parent_unique_id' argument is incorrect"
@@ -538,9 +540,9 @@ async def test_setup_entry_coordinator_instantiation_strict(
         # LETHAL ASSERTION (Mutants 21 to 24): Verify payload contents
         device_info_payload = kwargs.get("device_info")
         assert device_info_payload is not None, "Missing device_info payload"
-        assert (
-            device_info_payload.get("name") == "Zone A"
-        ), "The sub-device name was lost or incorrectly extracted"
+        assert device_info_payload.get("name") == "Zone A", (
+            "The sub-device name was lost or incorrectly extracted"
+        )
 
 
 async def test_async_update_listener(hass: HomeAssistant) -> None:
@@ -830,7 +832,9 @@ async def test_async_safe_shutdown_handles_custom_awaitable_and_sync() -> None:
     target_sync.async_shutdown.assert_called_once()
 
 
-def test_build_device_setup_tasks_device_name_and_id_strict(hass: HomeAssistant) -> None:
+def test_build_device_setup_tasks_device_name_and_id_strict(
+    hass: HomeAssistant,
+) -> None:
     """Test _build_device_setup_tasks extracts exact device_name and handles fallbacks (kills M4, M5, M28)."""
     from custom_components.climate_ip import DEFAULT_UNKNOWN, _build_device_setup_tasks
 
@@ -842,7 +846,9 @@ def test_build_device_setup_tasks_device_name_and_id_strict(hass: HomeAssistant)
     ]
     session = MagicMock()
 
-    with patch("custom_components.climate_ip._async_setup_single_device") as mock_setup_single:
+    with patch(
+        "custom_components.climate_ip._async_setup_single_device"
+    ) as mock_setup_single:
         tasks = _build_device_setup_tasks(hass, entry, devices_config, session)
         assert len(tasks) == 2
 
@@ -948,16 +954,26 @@ async def test_async_setup_entry_multi_device_exception_continues_gathering_for_
 
     with (
         patch("custom_components.climate_ip.YamlController") as mock_yaml_class,
-        patch("custom_components.climate_ip.SamsungClimateCoordinator") as mock_coord_class,
+        patch(
+            "custom_components.climate_ip.SamsungClimateCoordinator"
+        ) as mock_coord_class,
         patch("custom_components.climate_ip.async_get_clientsession"),
     ):
-        c1 = MagicMock(initialize=AsyncMock(return_value=True), async_shutdown=AsyncMock())
-        c2 = MagicMock(initialize=AsyncMock(return_value=True), async_shutdown=AsyncMock())
-        c3 = MagicMock(initialize=AsyncMock(return_value=True), async_shutdown=AsyncMock())
+        c1 = MagicMock(
+            initialize=AsyncMock(return_value=True), async_shutdown=AsyncMock()
+        )
+        c2 = MagicMock(
+            initialize=AsyncMock(return_value=True), async_shutdown=AsyncMock()
+        )
+        c3 = MagicMock(
+            initialize=AsyncMock(return_value=True), async_shutdown=AsyncMock()
+        )
         mock_yaml_class.side_effect = [c1, c2, c3]
 
         coord1 = MagicMock(
-            async_config_entry_first_refresh=AsyncMock(side_effect=ConfigEntryAuthFailed("Auth Fail")),
+            async_config_entry_first_refresh=AsyncMock(
+                side_effect=ConfigEntryAuthFailed("Auth Fail")
+            ),
             async_shutdown=AsyncMock(),
         )
         coord2 = MagicMock(

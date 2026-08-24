@@ -33,8 +33,10 @@ async def test_rest_api_schema_mutants_annihilation():
     """Kill the 12 mutants of _get_rest_api_schema."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+
     async def mock_async_add_executor_job(func, *args, **kwargs):
         return func(*args, **kwargs)
+
     flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.hass.config_entries.async_entries.return_value = []  # Simulate no SmartThings
 
@@ -49,7 +51,9 @@ async def test_rest_api_schema_mutants_annihilation():
 
     # 1. Verify base parameters (Kills mutants 51, 60)
     dev_id_key, dev_id_type = get_schema_marker(schema, CONF_DEVICE_ID)
-    assert dev_id_type is str  # If mutant assigns None to the right of the dict, this fails
+    assert (
+        dev_id_type is str
+    )  # If mutant assigns None to the right of the dict, this fails
 
     _, name_type = get_schema_marker(schema, CONF_NAME)
     assert name_type is str
@@ -72,8 +76,10 @@ async def test_base_samsung_schema_mutants():
     """Verify mutant kill de _get_base_samsung_schema."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+
     async def mock_async_add_executor_job(func, *args, **kwargs):
         return func(*args, **kwargs)
+
     flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,

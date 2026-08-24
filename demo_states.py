@@ -1,6 +1,7 @@
 """
 Test file designed to trigger different mutant states in Mutmut.
 """
+
 import os
 
 # 1. INVALID MUTANT / ERROR
@@ -10,10 +11,12 @@ VALIDATION_FLAG = True
 if not VALIDATION_FLAG:
     raise RuntimeError("Import failed due to mutation!")
 
+
 # 2. LEGITIMATE KILLED
 def legit_func(a, b):
     """Mutmut will mutate '+' to '-', causing the unit test assertion to fail."""
     return a + b
+
 
 # 3. KILLED BY TIMEOUT (INFINITE LOOP)
 def timeout_func():
@@ -27,6 +30,7 @@ def timeout_func():
         x -= 1
     return x
 
+
 # 4. UNTESTED
 def untested_func():
     """
@@ -37,17 +41,73 @@ def untested_func():
     flag = True
     return flag
 
+
 # 5. 60 EXTRA LEGITIMATE KILLED
 def massive_kill():
     """Generates 60 mutations (one for each True) that will be KILLED."""
     return [
-        True, True, True, True, True, True, True, True, True, True,
-        True, True, True, True, True, True, True, True, True, True,
-        True, True, True, True, True, True, True, True, True, True,
-        True, True, True, True, True, True, True, True, True, True,
-        True, True, True, True, True, True, True, True, True, True,
-        True, True, True, True, True, True, True, True, True, True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
     ]
+
 
 # 6. INVALID MUTANT (WORKER CRASH)
 def segfault_func():
@@ -91,4 +151,3 @@ def slow_boundary_func(n):
         total += i
         i += 1
     return total
-

@@ -42,18 +42,18 @@ async def test_mutant_deepcopy_async_get_status():
     res = await poller.async_get_status()
     # Mutate the result. If deepcopy was mutated to copy.copy, the inner dict gets infected.
     res["nested"]["k"] = "hacked"
-    assert (
-        poller.controller.loader.state_getter.value["nested"]["k"] == "safe"
-    ), "Deepcopy mutated to copy!"
+    assert poller.controller.loader.state_getter.value["nested"]["k"] == "safe", (
+        "Deepcopy mutated to copy!"
+    )
 
     # 2. Test async_merge_device_state deepcopy
     poller._pure_network_state = {"nested_pure": {"k": "safe"}}
     poller.async_update_properties_from_state = AsyncMock()
     await poller.async_merge_device_state({"new": "data"})
     poller.controller.loader.state_getter.value["nested_pure"]["k"] = "hacked"
-    assert (
-        poller._pure_network_state["nested_pure"]["k"] == "safe"
-    ), "Merge deepcopy mutated!"
+    assert poller._pure_network_state["nested_pure"]["k"] == "safe", (
+        "Merge deepcopy mutated!"
+    )
 
 
 @pytest.mark.asyncio
@@ -83,9 +83,9 @@ async def test_mutant_async_update_state_available_consecutive():
         await poller.async_update_state()
 
     # KILLS: `split(":")[-1]` mutated to `[+1]` or `[1]`
-    assert "Device unreachable: ExpectedReason" in str(
-        exc.value
-    ), "Split index mutated!"
+    assert "Device unreachable: ExpectedReason" in str(exc.value), (
+        "Split index mutated!"
+    )
 
 
 def test_mutant_list_inflation_exact_boundaries():
@@ -258,9 +258,9 @@ async def test_mutant_predict_action_removals():
     assert fake_prop.value == "On", "Mutant survived: _set_prop_value was removed!"
 
     # 5. If `_inject_value_into_state` was removed by mutmut, this assert fails (dict remains 'Off')
-    assert (
-        fake_memory_state["power_node"] == "On"
-    ), "Mutant survived: _inject_value_into_state was removed!"
+    assert fake_memory_state["power_node"] == "On", (
+        "Mutant survived: _inject_value_into_state was removed!"
+    )
 
 
 def test_mutant_inject_value_connection_template_json_key():
@@ -311,11 +311,13 @@ async def test_mutant_predict_and_correct_enum_unwrapping():
     # KILLS:
     # 1. new_value is not None -> new_value is None
     # 2. not isinstance(new_value, dict) -> isinstance(new_value, dict)
-    assert fake_prop.value == "heat", "Mutant survived: Enum was not unwrapped to .value!"
+    assert fake_prop.value == "heat", (
+        "Mutant survived: Enum was not unwrapped to .value!"
+    )
     assert fake_memory_state["mode_node"] == "heat"
-    assert not hasattr(
-        fake_prop.value, "value"
-    ), "Property value should be primitive unwrapped string!"
+    assert not hasattr(fake_prop.value, "value"), (
+        "Property value should be primitive unwrapped string!"
+    )
 
 
 @pytest.mark.asyncio
@@ -345,9 +347,9 @@ async def test_mutant_predict_and_correct_dict_with_value_attribute():
 
     # If `not isinstance(new_value, dict)` is mutated to `isinstance(new_value, dict)`:
     # it WILL extract .value ("should_not_extract_this") instead of keeping the dict instance!
-    assert (
-        fake_prop.value is dict_instance
-    ), "Mutant survived: dict subclass was incorrectly unwrapped!"
+    assert fake_prop.value is dict_instance, (
+        "Mutant survived: dict subclass was incorrectly unwrapped!"
+    )
     assert fake_memory_state["custom_node"] == {"real_key": "real_val"}
 
 
@@ -359,13 +361,16 @@ def test_mutant_inject_value_rendered_not_string():
     del prop.convert_hass_to_dev
     prop.connection_template = Template("doesnt_matter", hass=MagicMock())
     poller._get_state_node_from_prop = MagicMock(return_value="Node")
-    
+
     # If render_template returns bytes, isinstance(rendered, str) is False.
     # Unmutated: False. Mutated (or): True, proceeds to json_loads(bytes) which succeeds!
     # Result: mutated code modifies target_state, unmutated does not.
-    with patch("custom_components.climate_ip.controller_yaml_polling.render_template", return_value=b'{"json": {"options": ["Mutated!"]}}'):
+    with patch(
+        "custom_components.climate_ip.controller_yaml_polling.render_template",
+        return_value=b'{"json": {"options": ["Mutated!"]}}',
+    ):
         poller._inject_value_into_state(prop, target_state, 5)
-        
+
     # Unmutated should use the default dev_val (5).
     # Mutated will parse the bytes and use "Mutated!".
     assert target_state.get("Node") == 5, "Mutant survived: parsed bytes payload!"
@@ -378,14 +383,18 @@ def test_mutant_inject_value_no_json_key():
     prop = MagicMock(id="test")
     del prop.convert_hass_to_dev
     # The JSON string directly has "options", no "json" key.
-    prop.connection_template = Template('{"options": ["DirectVal"]}', hass=MagicMock(data={}))
+    prop.connection_template = Template(
+        '{"options": ["DirectVal"]}', hass=MagicMock(data={})
+    )
     poller._get_state_node_from_prop = MagicMock(return_value="Node")
-    
+
     poller._inject_value_into_state(prop, target_state, 5)
-    
+
     # Unmutated: payload becomes {"options": ["DirectVal"]}, extracts "DirectVal".
     # Mutated: payload becomes None, fails isinstance(payload, dict), dev_val unchanged (5).
-    assert target_state.get("Node") == "DirectVal", "Mutant survived: parsed.get fell back to None!"
+    assert target_state.get("Node") == "DirectVal", (
+        "Mutant survived: parsed.get fell back to None!"
+    )
 
 
 def test_mutant_inject_value_options_not_list():
@@ -395,11 +404,15 @@ def test_mutant_inject_value_options_not_list():
     prop = MagicMock(id="test")
     del prop.convert_hass_to_dev
     # "options" is a string, not a list!
-    prop.connection_template = Template('{"options": "StringVal"}', hass=MagicMock(data={}))
+    prop.connection_template = Template(
+        '{"options": "StringVal"}', hass=MagicMock(data={})
+    )
     poller._get_state_node_from_prop = MagicMock(return_value="Node")
-    
+
     poller._inject_value_into_state(prop, target_state, 5)
-    
+
     # Unmutated: isinstance(list) is False, block skipped.
     # Mutated: `or` makes it True, enters block, payload["options"][0] extracts "S"!
-    assert target_state.get("Node") != "S", "Mutant survived: options list check was bypassed!"
+    assert target_state.get("Node") != "S", (
+        "Mutant survived: options list check was bypassed!"
+    )

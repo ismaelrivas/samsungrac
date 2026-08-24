@@ -18,19 +18,32 @@ from custom_components.climate_ip.exceptions import CannotConnect, InvalidHeader
 class StubHass:
     def __init__(self):
         from unittest.mock import AsyncMock
-        self.async_add_executor_job = AsyncMock(spec=["__call__", "return_value"], side_effect=lambda func, *args: func(*args))
-    def __repr__(self): return "<SafeHass>"
-    def __dir__(self): return ["async_add_executor_job"]
+
+        self.async_add_executor_job = AsyncMock(
+            spec=["__call__", "return_value"],
+            side_effect=lambda func, *args: func(*args),
+        )
+
+    def __repr__(self):
+        return "<SafeHass>"
+
+    def __dir__(self):
+        return ["async_add_executor_job"]
 
 
 class StubSession:
     def __init__(self):
         from unittest.mock import AsyncMock, MagicMock
+
         self.closed = False
         self.request = MagicMock(spec=["__call__", "return_value"])
         self.close = AsyncMock(spec=["__call__", "return_value"])
-    def __repr__(self): return "<SafeSession>"
-    def __dir__(self): return ["closed", "request", "close"]
+
+    def __repr__(self):
+        return "<SafeSession>"
+
+    def __dir__(self):
+        return ["closed", "request", "close"]
 
 
 @pytest.fixture
@@ -81,12 +94,12 @@ async def test_try_connection_success(
         _, kwargs = mock_session.request.call_args
         actual_timeout = kwargs.get("timeout")
         assert actual_timeout is not None, "The mutant deleted timeout"
-        assert (
-            actual_timeout.total == 10
-        ), f"The mutant changed total timeout: {actual_timeout.total}"
-        assert (
-            getattr(actual_timeout, "sock_read", None) == 5
-        ), "The mutant deleted or altered probe sock_read"
+        assert actual_timeout.total == 10, (
+            f"The mutant changed total timeout: {actual_timeout.total}"
+        )
+        assert getattr(actual_timeout, "sock_read", None) == 5, (
+            "The mutant deleted or altered probe sock_read"
+        )
 
 
 async def test_try_connection_success_no_body(
@@ -194,7 +207,9 @@ async def test_async_execute_request_invalid_header(
         )
 
         with pytest.raises(InvalidHeaderError):
-            await conn._async_execute_request("GET", "https://192.168.1.100:8888/devices", None, None)
+            await conn._async_execute_request(
+                "GET", "https://192.168.1.100:8888/devices", None, None
+            )
 
 
 async def test_try_connection_generic_error(
@@ -227,13 +242,48 @@ async def test_try_connection_already_initialized(
 
 def test_is_http_protocol_violation_line_too_long():
     """Verify structural exception matching for HTTP parser and protocol violations."""
-    assert ConnectionAiohttp8888._is_http_protocol_violation(aiohttp.http_exceptions.LineTooLong("Line too long", 8190, 4096)) is True
-    assert ConnectionAiohttp8888._is_http_protocol_violation(aiohttp.http_exceptions.InvalidHeader("invalid header")) is True
-    assert ConnectionAiohttp8888._is_http_protocol_violation(aiohttp.http_exceptions.BadHttpMessage("bad http message")) is True
-    assert ConnectionAiohttp8888._is_http_protocol_violation(aiohttp.ClientPayloadError("malformed payload")) is True
-    assert ConnectionAiohttp8888._is_http_protocol_violation(ValueError("invalid header character")) is True
-    assert ConnectionAiohttp8888._is_http_protocol_violation(ConnectionError("socket aborted")) is True
-    assert ConnectionAiohttp8888._is_http_protocol_violation(Exception("some standard network timeout")) is False
+    assert (
+        ConnectionAiohttp8888._is_http_protocol_violation(
+            aiohttp.http_exceptions.LineTooLong("Line too long", 8190, 4096)
+        )
+        is True
+    )
+    assert (
+        ConnectionAiohttp8888._is_http_protocol_violation(
+            aiohttp.http_exceptions.InvalidHeader("invalid header")
+        )
+        is True
+    )
+    assert (
+        ConnectionAiohttp8888._is_http_protocol_violation(
+            aiohttp.http_exceptions.BadHttpMessage("bad http message")
+        )
+        is True
+    )
+    assert (
+        ConnectionAiohttp8888._is_http_protocol_violation(
+            aiohttp.ClientPayloadError("malformed payload")
+        )
+        is True
+    )
+    assert (
+        ConnectionAiohttp8888._is_http_protocol_violation(
+            ValueError("invalid header character")
+        )
+        is True
+    )
+    assert (
+        ConnectionAiohttp8888._is_http_protocol_violation(
+            ConnectionError("socket aborted")
+        )
+        is True
+    )
+    assert (
+        ConnectionAiohttp8888._is_http_protocol_violation(
+            Exception("some standard network timeout")
+        )
+        is False
+    )
 
 
 async def test_try_connection_https_failure_clears_ssl_and_raises(
@@ -242,7 +292,9 @@ async def test_try_connection_https_failure_clears_ssl_and_raises(
     """Kill mutants at L496 (ssl_context cleared to None) and L503 (error_msg passed)."""
     with (
         patch("os.path.exists", return_value=True),
-        patch("custom_components.climate_ip.connection_aiohttp._LOGGER") as mock_module_logger,
+        patch(
+            "custom_components.climate_ip.connection_aiohttp._LOGGER"
+        ) as mock_module_logger,
     ):
         conn = ConnectionAiohttp8888(
             connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
@@ -266,7 +318,9 @@ async def test_try_connection_https_failure_clears_ssl_and_raises(
         )
 
 
-def test_resolve_and_verify_cert_none(connection_config, mock_logger, mock_hass, mock_session):
+def test_resolve_and_verify_cert_none(
+    connection_config, mock_logger, mock_hass, mock_session
+):
     """Test _resolve_and_verify_cert returns None when raw_path is None or empty or file missing."""
     conn = ConnectionAiohttp8888(
         connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
@@ -290,7 +344,9 @@ def test_resolve_and_verify_cert_none(connection_config, mock_logger, mock_hass,
 def test_is_http_protocol_violation_client_connector_error():
     """Ensure ClientConnectorError is explicitly NOT considered an HTTP protocol violation."""
     conn_err = aiohttp.ClientConnectorError(
-        aiohttp.client_reqrep.ConnectionKey("127.0.0.1", 8888, False, False, None, None, None),
+        aiohttp.client_reqrep.ConnectionKey(
+            "127.0.0.1", 8888, False, False, None, None, None
+        ),
         OSError("Connection refused"),
     )
     assert ConnectionAiohttp8888._is_http_protocol_violation(conn_err) is False
@@ -298,11 +354,14 @@ def test_is_http_protocol_violation_client_connector_error():
 
 def test_is_http_protocol_violation_str_exception():
     """Test _is_http_protocol_violation handles exceptions whose __str__ raises an error."""
+
     class BrokenStrException(Exception):
         def __str__(self):
             raise RuntimeError("Broken __str__")
 
-    assert ConnectionAiohttp8888._is_http_protocol_violation(BrokenStrException()) is False
+    assert (
+        ConnectionAiohttp8888._is_http_protocol_violation(BrokenStrException()) is False
+    )
 
 
 async def test_try_connection_logs_negotiated_tls_version(
@@ -311,7 +370,9 @@ async def test_try_connection_logs_negotiated_tls_version(
     """Test that negotiated TLS version is logged when available on response transport."""
     with (
         patch("os.path.exists", return_value=True),
-        patch("custom_components.climate_ip.connection_aiohttp._LOGGER") as mock_module_logger,
+        patch(
+            "custom_components.climate_ip.connection_aiohttp._LOGGER"
+        ) as mock_module_logger,
     ):
         conn = ConnectionAiohttp8888(
             connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
@@ -358,6 +419,7 @@ async def test_try_connection_double_check_lock_already_initialized(
             async def __aenter__(self):
                 conn._shared_state.initialized = True
                 return self
+
             async def __aexit__(self, exc_type, exc_val, exc_tb):
                 pass
 
@@ -366,7 +428,9 @@ async def test_try_connection_double_check_lock_already_initialized(
         assert res is None
 
 
-def test_resolve_cert_path_delegates(connection_config, mock_logger, mock_hass, mock_session):
+def test_resolve_cert_path_delegates(
+    connection_config, mock_logger, mock_hass, mock_session
+):
     """Test _resolve_cert_path passes cert_file to resolve_cert_path helper correctly."""
     from unittest.mock import ANY
 

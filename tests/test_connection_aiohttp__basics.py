@@ -14,18 +14,33 @@ import pytest
 class StubHass:
     def __init__(self):
         from unittest.mock import AsyncMock
-        self.async_add_executor_job = AsyncMock(spec=["__call__", "return_value"], side_effect=lambda func, *args: func(*args))
-    def __repr__(self): return "<SafeHass>"
-    def __dir__(self): return ["async_add_executor_job"]
+
+        self.async_add_executor_job = AsyncMock(
+            spec=["__call__", "return_value"],
+            side_effect=lambda func, *args: func(*args),
+        )
+
+    def __repr__(self):
+        return "<SafeHass>"
+
+    def __dir__(self):
+        return ["async_add_executor_job"]
+
 
 class StubSession:
     def __init__(self):
         from unittest.mock import AsyncMock, MagicMock
+
         self.closed = False
         self.request = MagicMock(spec=["__call__", "return_value"])
         self.close = AsyncMock(spec=["__call__", "return_value"])
-    def __repr__(self): return "<SafeSession>"
-    def __dir__(self): return ["closed", "request", "close"]
+
+    def __repr__(self):
+        return "<SafeSession>"
+
+    def __dir__(self):
+        return ["closed", "request", "close"]
+
 
 from homeassistant.const import CONF_TOKEN
 
@@ -115,9 +130,9 @@ async def test_execute_request_success(
 
         # 1. Assert URL and Method
         assert args[0] == "GET", "HTTP method was mutated"
-        assert (
-            kwargs["url"] == "https://192.168.1.100:8888/test"
-        ), "La URL fue mutada o generada incorrectamente"
+        assert kwargs["url"] == "https://192.168.1.100:8888/test", (
+            "La URL fue mutada o generada incorrectamente"
+        )
 
         # 2. Assert Payload
         assert "data" in kwargs, "The mutant removed kwarg data"
@@ -125,27 +140,27 @@ async def test_execute_request_success(
 
         # 3. Assert SSL Context
         assert "ssl" in kwargs, "The mutant removed kwarg ssl"
-        assert (
-            kwargs["ssl"] is conn._shared_state.ssl_context
-        ), "Injected SSL context is incorrect or None"
+        assert kwargs["ssl"] is conn._shared_state.ssl_context, (
+            "Injected SSL context is incorrect or None"
+        )
 
         # 4. Assert Strict Timeout
         assert "timeout" in kwargs, "The mutant removed kwarg timeout"
         timeout = kwargs["timeout"]
-        assert (
-            timeout.total == 10
-        ), f"The mutant altered timeout.total to {timeout.total}"
+        assert timeout.total == 10, (
+            f"The mutant altered timeout.total to {timeout.total}"
+        )
 
         # Shielding mutants 45-56 (Headers)
         req_headers = kwargs.get("headers", {})
         assert "Authorization" in req_headers, "Missing Authorization header"
-        assert (
-            req_headers["Authorization"] == f"Bearer {conn._token}"
-        ), "Token incorrecto"
+        assert req_headers["Authorization"] == f"Bearer {conn._token}", (
+            "Token incorrecto"
+        )
         assert "Content-Type" in req_headers, "Missing Content-Type header"
-        assert (
-            req_headers["Content-Type"] == "application/json"
-        ), "Content-Type incorrecto"
+        assert req_headers["Content-Type"] == "application/json", (
+            "Content-Type incorrecto"
+        )
 
 
 async def test_execute_request_auth_error(
@@ -270,7 +285,9 @@ async def test_create_updated(connection_config, mock_logger, mock_hass, mock_se
         assert new_conn_nested_no_cond._embedded_command.condition_template is None
 
 
-def test_prepare_request_headers_unit(connection_config, mock_logger, mock_hass, mock_session):
+def test_prepare_request_headers_unit(
+    connection_config, mock_logger, mock_hass, mock_session
+):
     """Direct unit test for _prepare_request_headers to instantly kill all header mutants."""
     conn = ConnectionAiohttp8888(
         connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
@@ -313,7 +330,9 @@ def test_prepare_request_headers_unit(connection_config, mock_logger, mock_hass,
         )
 
 
-def test_handle_http_version_fallback_unit(connection_config, mock_logger, mock_hass, mock_session):
+def test_handle_http_version_fallback_unit(
+    connection_config, mock_logger, mock_hass, mock_session
+):
     """Direct unit test for _handle_http_version_fallback."""
     conn = ConnectionAiohttp8888(
         connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
@@ -483,7 +502,7 @@ def test_create_updated_strict():
         CONFIG_DEVICE_CONNECTION: {
             "params": {"child": 2},
             "condition_template": "{{ True }}",
-        }
+        },
     }
 
     new_conn = conn.create_updated(yaml_node)
@@ -545,9 +564,9 @@ async def test_adaptive_keep_alive_fallback(
     actual_headers = kwargs.get("headers", {})
 
     assert "Connection" in actual_headers, "The mutant deleted Connection header"
-    assert (
-        actual_headers["Connection"] == "close"
-    ), "The mutant altered Connection: close value"
+    assert actual_headers["Connection"] == "close", (
+        "The mutant altered Connection: close value"
+    )
 
 
 def test_format_url_strict_evaluations():
@@ -580,18 +599,18 @@ def test_format_url_strict_evaluations():
     formatted = conn._build_full_url(url_base)
 
     # Validate replacement and change to HTTP
-    assert (
-        "http://192.168.1.50/devices/AA:BB:CC:DD" in formatted
-    ), "Mutant survived altering host/mac injection or HTTP fallback"
+    assert "http://192.168.1.50/devices/AA:BB:CC:DD" in formatted, (
+        "Mutant survived altering host/mac injection or HTTP fallback"
+    )
 
     # 2. Custom port test (:8888/ -> :9999/) and strict HTTP fallback
     url_port = "https://192.168.1.50:8888/devices/__CLIMATE_IP_MAC__"
     formatted_port = conn._build_full_url(url_port)
 
     # STRICT ASSERTIONS (Kill mutants 33, 42, 53, 56)
-    assert (
-        formatted_port == "http://192.168.1.50:9999/devices/AA:BB:CC:DD"
-    ), "Port or protocol replacement failure"
+    assert formatted_port == "http://192.168.1.50:9999/devices/AA:BB:CC:DD", (
+        "Port or protocol replacement failure"
+    )
 
 
 async def test_adaptive_keep_alive_on_timeout_recovery(
@@ -645,7 +664,6 @@ async def test_adaptive_keep_alive_on_timeout_recovery(
     assert conn._force_close_connection is True
 
 
-
 async def test_execution_uses_controller_token_priority(
     connection_config, mock_logger, mock_hass, mock_session
 ):
@@ -686,9 +704,9 @@ async def test_execution_uses_controller_token_priority(
         _, kwargs = mock_session.request.call_args
         actual_headers = kwargs.get("headers", {})
 
-        assert (
-            actual_headers["Authorization"] == "Bearer TOKEN_DOMINANTE"
-        ), "Did not use controller token"
+        assert actual_headers["Authorization"] == "Bearer TOKEN_DOMINANTE", (
+            "Did not use controller token"
+        )
 
 
 async def test_http_1_0_forces_connection_close(
@@ -697,7 +715,10 @@ async def test_http_1_0_forces_connection_close(
     """Tests that an old server forces connection closure."""
     with (
         patch("os.path.exists", return_value=True),
-        patch("custom_components.climate_ip.helpers.create_samsung_ssl_context", return_value=MagicMock()),
+        patch(
+            "custom_components.climate_ip.helpers.create_samsung_ssl_context",
+            return_value=MagicMock(),
+        ),
     ):
         conn = ConnectionAiohttp8888(
             connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
@@ -719,9 +740,9 @@ async def test_http_1_0_forces_connection_close(
             "GET", "https://192.168.1.100:8888/test", None, {}
         )
 
-        assert (
-            conn._force_close_connection is True
-        ), "The mutant altered HTTP minor >= 1 validation"
+        assert conn._force_close_connection is True, (
+            "The mutant altered HTTP minor >= 1 validation"
+        )
 
 
 async def test_absolute_url_skips_base_url_formatting(
@@ -748,9 +769,9 @@ async def test_absolute_url_skips_base_url_formatting(
         )
 
         _, kwargs = mock_session.request.call_args
-        assert (
-            kwargs["url"] == "http://external-api.com/path"
-        ), "The mutant broke startswith('http') detection"
+        assert kwargs["url"] == "http://external-api.com/path", (
+            "The mutant broke startswith('http') detection"
+        )
         assert kwargs["ssl"] is False, "The mutant used SSL in a plain HTTP connection"
 
 
@@ -785,12 +806,12 @@ async def test_async_execute_request_respects_custom_headers(
     )
 
     _, kwargs = mock_session.request.call_args
-    assert (
-        kwargs["headers"]["Authorization"] == "Bearer TOKEN_CUSTOM"
-    ), "The mutant overwrote Auth header"
-    assert (
-        kwargs["headers"]["Content-Type"] == "text/xml"
-    ), "The mutant overwrote the Content-Type"
+    assert kwargs["headers"]["Authorization"] == "Bearer TOKEN_CUSTOM", (
+        "The mutant overwrote Auth header"
+    )
+    assert kwargs["headers"]["Content-Type"] == "text/xml", (
+        "The mutant overwrote the Content-Type"
+    )
 
 
 async def test_retry_request_kwargs_strict(mock_session, mock_logger, mock_hass):
@@ -1149,9 +1170,7 @@ def test_format_url_strict_defaults_and_http_downgrade():
     formatted = conn._format_url(base_url)
 
     # DEFAULTS ASSERTION: Verify mutant kill changing "8888" or "False"
-    assert formatted.startswith(
-        "https://"
-    ), "Mutant altered use_http default (False)"
+    assert formatted.startswith("https://"), "Mutant altered use_http default (False)"
     assert ":8888/" in formatted, "Mutant altered default port (8888)"
 
     # 2. HTTP CONFIG: Validate explicit downgrade
@@ -1159,9 +1178,7 @@ def test_format_url_strict_defaults_and_http_downgrade():
     formatted_http = conn._build_full_url(base_url)
 
     # Kills mutant breaking replacement logic "https://" -> "http://"
-    assert formatted_http.startswith(
-        "http://"
-    ), "Mutant broke downgrade to plain HTTP"
+    assert formatted_http.startswith("http://"), "Mutant broke downgrade to plain HTTP"
 
 
 # ====================================================================================
@@ -1317,9 +1334,9 @@ async def test_get_session_recreates_on_closed_session():
 
         # MUST have created new session because previous was closed
         mock_session_cls.assert_called_once()
-        assert (
-            conn._shared_state.local_session is fresh_session
-        ), "Did not replace closed session"
+        assert conn._shared_state.local_session is fresh_session, (
+            "Did not replace closed session"
+        )
 
 
 @pytest.mark.asyncio
@@ -1385,9 +1402,9 @@ async def test_get_session_fallback_when_shared_session_is_none():
 
         # EXTREME ASSERTION: Despite keep_alive=True, had to create local session
         mock_session_cls.assert_called_once()
-        assert (
-            result == "fallback_local_session_obj"
-        ), "Fallback to local session failed"
+        assert result == "fallback_local_session_obj", (
+            "Fallback to local session failed"
+        )
 
 
 # ====================================================================================
@@ -1448,21 +1465,21 @@ async def test_embedded_command_without_template_uses_params_directly(
     kwargs = embed_mock.async_execute.call_args[1]
 
     # MILLIMETRIC ASSERTIONS — kills mutants altering .get() keys
-    assert (
-        kwargs["method"] == "DELETE"
-    ), f"The mutant altered key 'method' in .get(): received {kwargs['method']}"
-    assert (
-        kwargs["url"] == "/override_url"
-    ), f"The mutant altered key 'url' in .get(): received {kwargs['url']}"
-    assert kwargs["data"] == json_dumps(
-        {"override": "yes"}
-    ), f"The mutant altered key 'json' or json_dumps: received {kwargs['data']}"
-    assert kwargs["headers"] == {
-        "Custom": "Header"
-    }, f"The mutant altered key 'headers' in .get(): received {kwargs['headers']}"
-    assert kwargs["device_state"] == {
-        "state": "on"
-    }, "The mutant altered device_state propagation to embedded"
+    assert kwargs["method"] == "DELETE", (
+        f"The mutant altered key 'method' in .get(): received {kwargs['method']}"
+    )
+    assert kwargs["url"] == "/override_url", (
+        f"The mutant altered key 'url' in .get(): received {kwargs['url']}"
+    )
+    assert kwargs["data"] == json_dumps({"override": "yes"}), (
+        f"The mutant altered key 'json' or json_dumps: received {kwargs['data']}"
+    )
+    assert kwargs["headers"] == {"Custom": "Header"}, (
+        f"The mutant altered key 'headers' in .get(): received {kwargs['headers']}"
+    )
+    assert kwargs["device_state"] == {"state": "on"}, (
+        "The mutant altered device_state propagation to embedded"
+    )
 
 
 @pytest.mark.asyncio
@@ -1544,15 +1561,15 @@ async def test_embedded_command_method_and_url_fallback_to_main(
     kwargs = embed_mock.async_execute.call_args[1]
 
     # FALLBACK: If embedded defines neither method nor url, uses main command's
-    assert (
-        kwargs["method"] == "PUT"
-    ), f"Fallback for 'method' is broken: received {kwargs['method']}"
-    assert (
-        kwargs["url"] == "/main_url"
-    ), f"Fallback for 'url' is broken: received {kwargs['url']}"
-    assert kwargs["data"] == json_dumps(
-        {"action": "toggle"}
-    ), f"json_dumps of embedded payload failed: {kwargs['data']}"
+    assert kwargs["method"] == "PUT", (
+        f"Fallback for 'method' is broken: received {kwargs['method']}"
+    )
+    assert kwargs["url"] == "/main_url", (
+        f"Fallback for 'url' is broken: received {kwargs['url']}"
+    )
+    assert kwargs["data"] == json_dumps({"action": "toggle"}), (
+        f"json_dumps of embedded payload failed: {kwargs['data']}"
+    )
 
 
 # ====================================================================================
@@ -1610,19 +1627,17 @@ async def test_embedded_command_strict_fallbacks_to_main(
     kwargs = embed_mock.async_execute.call_args[1]
 
     # EXTREME FALLBACK ASSERTIONS
-    assert (
-        kwargs["method"] == "PUT"
-    ), f"Mutant broke method fallback: {kwargs['method']}"
-    assert (
-        kwargs["url"] == "/main_url"
-    ), f"Mutant broke url fallback: {kwargs['url']}"
-    assert kwargs["headers"] == {
-        "Main-Header": "Present"
-    }, f"Mutant broke headers fallback: {kwargs['headers']}"
+    assert kwargs["method"] == "PUT", (
+        f"Mutant broke method fallback: {kwargs['method']}"
+    )
+    assert kwargs["url"] == "/main_url", f"Mutant broke url fallback: {kwargs['url']}"
+    assert kwargs["headers"] == {"Main-Header": "Present"}, (
+        f"Mutant broke headers fallback: {kwargs['headers']}"
+    )
     # "json" is not in _params → `else None` must produce data=None
-    assert (
-        kwargs["data"] is None
-    ), f"Mutant altered 'else None' when 'json' is missing in _params: {kwargs['data']}"
+    assert kwargs["data"] is None, (
+        f"Mutant altered 'else None' when 'json' is missing in _params: {kwargs['data']}"
+    )
 
 
 # ====================================================================================
@@ -1682,15 +1697,15 @@ async def test_async_execute_periodic_reset_truth_table(
         if should_close:
             # CASE 1: must have called close() and reset local_session to None
             mock_local.close.assert_called_once()
-            assert (
-                conn._shared_state.local_session is None
-            ), f"Estado no reseteado a None (is_poll={is_poll}, keep_alive={keep_alive})"
+            assert conn._shared_state.local_session is None, (
+                f"Estado no reseteado a None (is_poll={is_poll}, keep_alive={keep_alive})"
+            )
         else:
             # CASES 2, 3, 4: must NOT have closed anything
             mock_local.close.assert_not_called()
-            assert (
-                conn._shared_state.local_session is mock_local
-            ), f"Local session improperly deleted (is_poll={is_poll}, keep_alive={keep_alive})"
+            assert conn._shared_state.local_session is mock_local, (
+                f"Local session improperly deleted (is_poll={is_poll}, keep_alive={keep_alive})"
+            )
 
 
 # ====================================================================================
@@ -1745,25 +1760,23 @@ async def test_try_connection_strict_http_mode(mock_logger, mock_hass):
     args, kwargs = mock_local_session.request.call_args
 
     # MILLIMETRIC ASSERTIONS
-    assert (
-        args[1] == "http://192.168.1.50:1234"
-    ), f"Mutant altered protocol or port: {args[1]}"
-    assert (
-        kwargs["ssl"] is False
-    ), f"Mutant altered ssl=False for HTTP: {kwargs['ssl']}"
-    assert (
-        conn._shared_state.ssl_context is None
-    ), "The mutant ignored `if not use_http` and created SSL context"
+    assert args[1] == "http://192.168.1.50:1234", (
+        f"Mutant altered protocol or port: {args[1]}"
+    )
+    assert kwargs["ssl"] is False, f"Mutant altered ssl=False for HTTP: {kwargs['ssl']}"
+    assert conn._shared_state.ssl_context is None, (
+        "The mutant ignored `if not use_http` and created SSL context"
+    )
 
     # Assertion of probe timeout (total=10, sock_read=5)
     timeout_obj = kwargs.get("timeout")
     assert timeout_obj is not None, "Mutant removed probe timeout argument"
-    assert (
-        timeout_obj.total == 10
-    ), f"Mutant altered timeout.total in _try_connection: {timeout_obj.total}"
-    assert (
-        timeout_obj.sock_read == 5
-    ), f"Mutant altered timeout.sock_read in _try_connection: {timeout_obj.sock_read}"
+    assert timeout_obj.total == 10, (
+        f"Mutant altered timeout.total in _try_connection: {timeout_obj.total}"
+    )
+    assert timeout_obj.sock_read == 5, (
+        f"Mutant altered timeout.sock_read in _try_connection: {timeout_obj.sock_read}"
+    )
 
 
 @pytest.mark.asyncio
@@ -1850,31 +1863,31 @@ async def test_async_execute_request_strict_kwargs(
     # Positional method
     assert args[0] == "PATCH", f"Mutant altered method: {args[0]}"
     # Correctly built URL
-    assert (
-        kwargs["url"] == "https://1.1.1.1:8888/strict_url"
-    ), f"Mutant altered URL: {kwargs['url']}"
+    assert kwargs["url"] == "https://1.1.1.1:8888/strict_url", (
+        f"Mutant altered URL: {kwargs['url']}"
+    )
     # Payload
-    assert (
-        kwargs["data"] == "strict_payload"
-    ), f"Mutant altered payload: {kwargs['data']}"
+    assert kwargs["data"] == "strict_payload", (
+        f"Mutant altered payload: {kwargs['data']}"
+    )
     # Custom header preserved
-    assert (
-        kwargs["headers"]["Header"] == "Strict"
-    ), f"Mutant altered header: {kwargs['headers']}"
+    assert kwargs["headers"]["Header"] == "Strict", (
+        f"Mutant altered header: {kwargs['headers']}"
+    )
     # SSL correctly injected
-    assert (
-        kwargs["ssl"] is conn._shared_state.ssl_context
-    ), f"Mutant altered ssl context: {kwargs['ssl']}"
+    assert kwargs["ssl"] is conn._shared_state.ssl_context, (
+        f"Mutant altered ssl context: {kwargs['ssl']}"
+    )
 
     # MILLIMETRIC TIMEOUT ASSERTION (total=10, without sock_read)
     timeout_obj = kwargs.get("timeout")
     assert timeout_obj is not None, "Mutant removed timeout argument"
-    assert isinstance(
-        timeout_obj, aiohttp.ClientTimeout
-    ), f"Mutant changed timeout type: {type(timeout_obj)}"
-    assert (
-        timeout_obj.total == 10
-    ), f"Mutant altered timeout.total: expected 10, received {timeout_obj.total}"
+    assert isinstance(timeout_obj, aiohttp.ClientTimeout), (
+        f"Mutant changed timeout type: {type(timeout_obj)}"
+    )
+    assert timeout_obj.total == 10, (
+        f"Mutant altered timeout.total: expected 10, received {timeout_obj.total}"
+    )
 
 
 @pytest.mark.asyncio
@@ -1904,11 +1917,11 @@ async def test_async_execute_request_none_http_version(
     await conn._async_execute_request("GET", "https://1.1.1.1:8888/test", None, {})
 
     # MILLIMETRIC ASSERTION
-    assert (
-        conn._force_close_connection is True
-    ), "Should force close if no version"
+    assert conn._force_close_connection is True, "Should force close if no version"
     # Verify logger.debug was NOT called with version message
-    assert not any("Server speaks HTTP" in record.message for record in caplog.records), "The mutant evaluated True on `and response.version` when it was None"
+    assert not any(
+        "Server speaks HTTP" in record.message for record in caplog.records
+    ), "The mutant evaluated True on `and response.version` when it was None"
 
 
 @pytest.mark.asyncio
@@ -1940,9 +1953,9 @@ async def test_async_execute_request_absolute_url(mock_session, mock_logger, moc
     _, kwargs = mock_session.request.call_args
 
     # STRICT ASSERTION: URL must be strictly absolute, without concatenating base IP
-    assert (
-        kwargs["url"] == absolute_url
-    ), f"The mutant broke startswith('http'): {kwargs['url']}"
+    assert kwargs["url"] == absolute_url, (
+        f"The mutant broke startswith('http'): {kwargs['url']}"
+    )
     # As it is http://, ssl must automatically disable at end
     assert kwargs["ssl"] is False, "The mutant did not disable SSL for plain http URL"
 
@@ -2017,12 +2030,10 @@ async def test_try_connection_strict_token_and_port(
     args, kwargs = mock_session.request.call_args
 
     # MILLIMETRIC ASSERTIONS
-    assert (
-        kwargs["headers"]["Authorization"] == "Bearer CTRL_TOK"
-    ), "Mutant broke controller token fallback"
-    assert (
-        args[1] == "https://1.1.1.1:7777"
-    ), "Mutant broke port in _try_connection"
+    assert kwargs["headers"]["Authorization"] == "Bearer CTRL_TOK", (
+        "Mutant broke controller token fallback"
+    )
+    assert args[1] == "https://1.1.1.1:7777", "Mutant broke port in _try_connection"
 
 
 @pytest.mark.asyncio
@@ -2063,9 +2074,9 @@ async def test_async_execute_request_header_placeholders(
 
     _, kwargs = mock_session.request.call_args
     assert kwargs["headers"]["X-Mac"] == "AA:BB", "Mutant broke placeholder {mac}"
-    assert (
-        kwargs["headers"]["X-Dev"] == "DEV_123"
-    ), "Mutant broke placeholder {device_id}"
+    assert kwargs["headers"]["X-Dev"] == "DEV_123", (
+        "Mutant broke placeholder {device_id}"
+    )
     assert kwargs["headers"]["X-Tok"] == "tok", "Mutant broke placeholder {token}"
 
 
@@ -2093,18 +2104,16 @@ async def test_async_execute_skips_optimization_on_mismatch(
 
         # Case 1: Incorrect Method (POST instead of GET)
         res1, _ = await conn.async_execute("POST", "", None, {})
-        assert (
-            res1 == "REQ_OK"
-        ), "The mutant wrongly activated optimization for POST"
+        assert res1 == "REQ_OK", "The mutant wrongly activated optimization for POST"
         mock_req.assert_called_with("POST", "https://1.1.1.1:8888", None, {})
 
         mock_req.reset_mock()
 
         # Case 2: Incorrect URL (/other instead of /devices)
         res2, _ = await conn.async_execute("GET", "/other", None, {})
-        assert (
-            res2 == "REQ_OK"
-        ), "The mutant wrongly activated optimization for different URL"
+        assert res2 == "REQ_OK", (
+            "The mutant wrongly activated optimization for different URL"
+        )
         mock_req.assert_called_with("GET", "https://1.1.1.1:8888/other", None, {})
 
 
@@ -2134,7 +2143,6 @@ async def test_async_execute_optimization_with_params_url(
         assert res == "PROBE_OK"
         assert headers is None
         mock_req.assert_not_called()
-
 
 
 # ====================================================================================
@@ -2268,8 +2276,9 @@ async def test_async_execute_embedded_template_sync_render(
     assert call_kwargs["data"] == '{"a":1}'
 
 
-
-def test_prepare_request_headers_no_token_raises_auth_error(mock_logger, mock_hass, mock_session):
+def test_prepare_request_headers_no_token_raises_auth_error(
+    mock_logger, mock_hass, mock_session
+):
     """Test _prepare_request_headers raises AuthError when current_token is None or empty."""
     conn = ConnectionAiohttp8888(
         config={CONF_TOKEN: "valid_token"},
@@ -2284,10 +2293,14 @@ def test_prepare_request_headers_no_token_raises_auth_error(mock_logger, mock_ha
 
 
 @pytest.mark.parametrize("invalid_token", [None, "", "   "])
-def test_aiohttp_init_without_token_raises_auth_error(invalid_token, mock_logger, mock_hass, mock_session):
+def test_aiohttp_init_without_token_raises_auth_error(
+    invalid_token, mock_logger, mock_hass, mock_session
+):
     """Test __init__ immediately raises AuthError when token is missing or empty."""
     config = {} if invalid_token is None else {CONF_TOKEN: invalid_token}
-    with pytest.raises(AuthError, match=r"\[aiohttp_init\] aiohttp engine started without a token\."):
+    with pytest.raises(
+        AuthError, match=r"\[aiohttp_init\] aiohttp engine started without a token\."
+    ):
         ConnectionAiohttp8888(
             config=config,
             logger=mock_logger,
@@ -2298,7 +2311,9 @@ def test_aiohttp_init_without_token_raises_auth_error(invalid_token, mock_logger
 
 
 @pytest.mark.asyncio
-async def test_async_execute_request_server_error_500(mock_logger, mock_hass, mock_session):
+async def test_async_execute_request_server_error_500(
+    mock_logger, mock_hass, mock_session
+):
     """Test _async_execute_request raises CannotConnect when device returns 500 on both initial and retry attempts."""
     conn = ConnectionAiohttp8888(
         config={CONF_TOKEN: "valid_token"},
@@ -2324,7 +2339,10 @@ async def test_async_execute_request_server_error_500(mock_logger, mock_hass, mo
     # Retry also fails with 500
     retry_context = AsyncMock()
     retry_context.__aenter__.side_effect = aiohttp.ClientResponseError(
-        request_info=MagicMock(), history=(), status=500, message="Internal Error on retry"
+        request_info=MagicMock(),
+        history=(),
+        status=500,
+        message="Internal Error on retry",
     )
 
     mock_session.request.side_effect = [first_context, retry_context]
@@ -2335,7 +2353,9 @@ async def test_async_execute_request_server_error_500(mock_logger, mock_hass, mo
 
 
 @pytest.mark.asyncio
-async def test_async_execute_request_retry_protocol_violation(mock_logger, mock_hass, mock_session):
+async def test_async_execute_request_retry_protocol_violation(
+    mock_logger, mock_hass, mock_session
+):
     """Test _async_execute_request raises InvalidHeaderError if protocol violation happens on retry."""
     conn = ConnectionAiohttp8888(
         config={CONF_TOKEN: "valid_token"},
@@ -2352,7 +2372,9 @@ async def test_async_execute_request_retry_protocol_violation(mock_logger, mock_
 
     # Retry request: ClientPayloadError (protocol violation)
     retry_context = AsyncMock()
-    retry_context.__aenter__.side_effect = aiohttp.ClientPayloadError("Corrupt payload response")
+    retry_context.__aenter__.side_effect = aiohttp.ClientPayloadError(
+        "Corrupt payload response"
+    )
 
     mock_session.request.side_effect = [first_context, retry_context]
 
@@ -2362,7 +2384,9 @@ async def test_async_execute_request_retry_protocol_violation(mock_logger, mock_
 
 
 @pytest.mark.asyncio
-async def test_async_execute_request_already_forced_close_fails(mock_logger, mock_hass, mock_session):
+async def test_async_execute_request_already_forced_close_fails(
+    mock_logger, mock_hass, mock_session
+):
     """Test _async_execute_request raises CannotConnect immediately if already force_close_connection."""
     conn = ConnectionAiohttp8888(
         config={CONF_TOKEN: "valid_token"},
@@ -2383,7 +2407,9 @@ async def test_async_execute_request_already_forced_close_fails(mock_logger, moc
 
 
 @pytest.mark.asyncio
-async def test_async_execute_request_parsing_error(mock_logger, mock_hass, mock_session):
+async def test_async_execute_request_parsing_error(
+    mock_logger, mock_hass, mock_session
+):
     """Test _async_execute_request raises CannotConnect on UnicodeDecodeError/ValueError."""
     conn = ConnectionAiohttp8888(
         config={CONF_TOKEN: "valid_token"},
@@ -2393,7 +2419,9 @@ async def test_async_execute_request_parsing_error(mock_logger, mock_hass, mock_
         ip_address="1.1.1.1",
     )
     mock_response = AsyncMock()
-    mock_response.text.side_effect = UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+    mock_response.text.side_effect = UnicodeDecodeError(
+        "utf-8", b"\xff", 0, 1, "invalid start byte"
+    )
     mock_context = AsyncMock()
     mock_context.__aenter__.return_value = mock_response
     mock_session.request.return_value = mock_context
@@ -2404,7 +2432,9 @@ async def test_async_execute_request_parsing_error(mock_logger, mock_hass, mock_
 
 
 @pytest.mark.asyncio
-async def test_async_execute_periodic_reset_close_error(mock_logger, mock_hass, mock_session):
+async def test_async_execute_periodic_reset_close_error(
+    mock_logger, mock_hass, mock_session
+):
     """Test periodic reset handles session close error gracefully without raising."""
     conn = ConnectionAiohttp8888(
         config={CONF_TOKEN: "valid_token", "keep_alive": False},
@@ -2421,7 +2451,9 @@ async def test_async_execute_periodic_reset_close_error(mock_logger, mock_hass, 
     local_session.close = AsyncMock(side_effect=aiohttp.ClientError("Close failure"))
     conn._shared_state.local_session = local_session
 
-    with patch.object(conn, "_async_execute_request", new_callable=AsyncMock) as mock_req:
+    with patch.object(
+        conn, "_async_execute_request", new_callable=AsyncMock
+    ) as mock_req:
         mock_req.return_value = ("{}", {})
         res, _ = await conn.async_execute("GET", "/test", None, {}, _is_poll=True)
         assert res == "{}"

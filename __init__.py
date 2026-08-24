@@ -191,7 +191,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
 
     device_type = _get_config_value(entry, CONF_DEVICE_TYPE)  # pragma: no mutate
     mac = _get_config_value(entry, CONF_MAC, None)  # pragma: no mutate
-    ip_address = _get_config_value(entry, CONF_IP_ADDRESS, DEFAULT_UNKNOWN)  # pragma: no mutate
+    ip_address = _get_config_value(
+        entry, CONF_IP_ADDRESS, DEFAULT_UNKNOWN
+    )  # pragma: no mutate
 
     # Use the official session manager.
     session = async_get_clientsession(hass)

@@ -126,8 +126,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
             None  # An optional nested command.
         )
         self._controller: Any = None  # Will be set by the property that creates this.
-        self._parent: ConnectionRequestBase | None = (
-        )
+        self._parent: ConnectionRequestBase | None = ()
         self.update_configuration_from_hass(hass_config)
         self._condition_template: Template | None = None
         self._is_closing = False
@@ -417,11 +416,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
 
         token = self._controller.token if self._controller else None
         ip_address = self._controller.ip_address if self._controller else None
-        mac = (
-            self._controller.config.get("mac")
-            if self._controller
-            else None
-        )
+        mac = self._controller.config.get("mac") if self._controller else None
 
         params = self._params.copy()
         if template is not None:
@@ -497,7 +492,9 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                         if "verify" in request_params:
                             del request_params["verify"]
 
-                        current_timeout = request_params.get("timeout", DEFAULT_REQUEST_TIMEOUT)
+                        current_timeout = request_params.get(
+                            "timeout", DEFAULT_REQUEST_TIMEOUT
+                        )
                         if attempt == 0 and not self._force_close_connection:
                             if (
                                 isinstance(current_timeout, int | float)
@@ -508,7 +505,9 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                                     "attempt to allow retry within window.",
                                     self.log_prefix,
                                 )
-                                request_params["timeout"] = FAST_FAIL_FIRST_ATTEMPT_TIMEOUT
+                                request_params["timeout"] = (
+                                    FAST_FAIL_FIRST_ATTEMPT_TIMEOUT
+                                )
 
                         resp = session.request(**request_params)
 
@@ -562,7 +561,12 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                             try:
                                 json_body = json_loads(resp.content)
                                 log_body = json_dumps(mask_sensitive_data(json_body))
-                            except (AttributeError, TypeError, ValueError, *JSON_DECODE_EXCEPTIONS):
+                            except (
+                                AttributeError,
+                                TypeError,
+                                ValueError,
+                                *JSON_DECODE_EXCEPTIONS,
+                            ):
                                 log_body = resp.text
 
                             _LOGGER.debug(
@@ -600,7 +604,9 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                             # calling .json() or .text, but if we got here, we want to
                             # proactively flag this broken server for future requests so
                             # we don't hang for 10 seconds again.
-                            transfer_encoding = resp.headers.get("Transfer-Encoding", "").casefold()
+                            transfer_encoding = resp.headers.get(
+                                "Transfer-Encoding", ""
+                            ).casefold()
                             if (
                                 "Content-Length" not in resp.headers
                                 and transfer_encoding != "chunked"

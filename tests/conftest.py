@@ -31,7 +31,6 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 # ---------------------------------------------------------------
 
 
-
 @pytest.fixture(autouse=True)
 def auto_clear_yaml_cache():
     """Clear YAML file cache before and after each test."""
@@ -252,7 +251,9 @@ def mock_setup_entry():
 @pytest.fixture
 def mock_acquirer():
     """Mock the GenericYamlTokenAcquirer."""
-    with patch("custom_components.climate_ip.config_flow.GenericYamlTokenAcquirer") as mock:
+    with patch(
+        "custom_components.climate_ip.config_flow.GenericYamlTokenAcquirer"
+    ) as mock:
         instance = mock.return_value
         instance.async_initiate_pairing.return_value = {
             "cert": "fake_cert.pem",
@@ -441,7 +442,7 @@ async def ruthless_aiohttp_teardown():
 
     # Teardown: Force close the underlying session if it exists and is open
     import asyncio
-    
+
     for conn in list(tracked_conns):
         # 1. Graceful close (protected by timeout against mutmut infinite loops)
         try:
@@ -454,9 +455,12 @@ async def ruthless_aiohttp_teardown():
         try:
             if hasattr(conn, "_shared_state") and conn._shared_state is not None:
                 local_session = getattr(conn._shared_state, "local_session", None)
-                if local_session is not None and not getattr(local_session, "closed", True):
+                if local_session is not None and not getattr(
+                    local_session, "closed", True
+                ):
                     try:
                         import aiohttp
+
                         await aiohttp.ClientSession.close(local_session)
                     except Exception:
                         pass
@@ -473,6 +477,7 @@ async def ruthless_aiohttp_teardown():
                 if not getattr(conn._session, "closed", True):
                     try:
                         import aiohttp
+
                         await aiohttp.ClientSession.close(conn._session)
                     except Exception:
                         pass

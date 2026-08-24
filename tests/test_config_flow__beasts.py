@@ -29,8 +29,10 @@ async def test_rest_api_token_sanitization_mutants():
     """Kills mutants de token (M8, M15, M16, M17, M18, M19, M20, M22, M23)"""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+
     async def mock_async_add_executor_job(func, *args, **kwargs):
         return func(*args, **kwargs)
+
     flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
 
@@ -277,8 +279,10 @@ async def test_rest_api_schema_invalid_poll_interval_except_branch():
     """
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+
     async def mock_async_add_executor_job(func, *args, **kwargs):
         return func(*args, **kwargs)
+
     flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.hass.config_entries.async_entries.return_value = []
     flow.flow_data = {
@@ -304,8 +308,10 @@ def test_rest_api_schema_non_st_with_existing_ip():
     """Kills mutants 53-57: rama else:if ip_default en _get_rest_api_schema (non-SmartThings)."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+
     async def mock_async_add_executor_job(func, *args, **kwargs):
         return func(*args, **kwargs)
+
     flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.hass.config_entries.async_entries.return_value = []
     flow.flow_data = {
@@ -388,8 +394,10 @@ async def test_reconfigure_token_acquirer_ip_empty_fallback():
     """Kills mutant 209: ip_val debe ser '' (no 'XXXX') cuando no hay IP en flow_data."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+
     async def mock_async_add_executor_job(func, *args, **kwargs):
         return func(*args, **kwargs)
+
     flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
@@ -416,7 +424,10 @@ async def test_reconfigure_token_acquirer_ip_empty_fallback():
         # If mutant sets "XXXX", acquirer receives "XXXX" instead of ""
         mock_acquirer.assert_called_once()
         assert mock_acquirer.call_args[0][1] == ""
-        assert mock_acquirer.call_args[1].get("cert_path") == "test.pem" or mock_acquirer.call_args[0][3] == "test.pem"
+        assert (
+            mock_acquirer.call_args[1].get("cert_path") == "test.pem"
+            or mock_acquirer.call_args[0][3] == "test.pem"
+        )
 
 
 def test_get_base_samsung_schema_rejects_none_mac_required():
@@ -444,8 +455,10 @@ async def test_reconfigure_token_acquirer_routing():
     """Verify mutant M205 kill y M214-M219: Argumentos exactos pasados al Token Acquirer."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+
     async def mock_async_add_executor_job(func, *args, **kwargs):
         return func(*args, **kwargs)
+
     flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,  # To use base acquirer
@@ -471,7 +484,10 @@ async def test_reconfigure_token_acquirer_routing():
         # M214-M219: Verifies that None is not sent or args missing
         mock_acquirer.assert_called_once()
         assert mock_acquirer.call_args[0][1] == "192.168.1.50"
-        assert mock_acquirer.call_args[1].get("cert_path") == "test.pem" or mock_acquirer.call_args[0][3] == "test.pem"
+        assert (
+            mock_acquirer.call_args[1].get("cert_path") == "test.pem"
+            or mock_acquirer.call_args[0][3] == "test.pem"
+        )
 
 
 @pytest.mark.asyncio
@@ -479,8 +495,10 @@ async def test_reconfigure_success_fallbacks():
     """Verify mutant M234 kill, M242, M246: UI Fallbacks on success."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+
     async def mock_async_add_executor_job(func, *args, **kwargs):
         return func(*args, **kwargs)
+
     flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.hass.config_entries.async_reload = AsyncMock()
     flow.flow_data = {
@@ -550,8 +568,10 @@ async def test_rest_api_empty_token_and_reauth_abort():
     """Kills mutants 8 y 91 en REST API."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+
     async def mock_async_add_executor_job(func, *args, **kwargs):
         return func(*args, **kwargs)
+
     flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
 
@@ -589,8 +609,10 @@ def test_rest_api_schema_poll_interval_empty():
     """Kills mutants 18-21 y 53-57 de schemas REST vacíos."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+
     async def mock_async_add_executor_job(func, *args, **kwargs):
         return func(*args, **kwargs)
+
     flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.hass.config_entries.async_entries.return_value = []
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
@@ -706,9 +728,9 @@ async def test_test_connection_safe_strict_timeout(hass: HomeAssistant) -> None:
         # 🔥 KILL SHOT: Strict assertion of network kwargs and URL positional argument
         assert mock_sess.return_value.get.called
         call = mock_sess.return_value.get.call_args
-        assert (
-            len(call.args) == 1
-        ), "session.get debe recibir la URL como primer argumento posicional"
+        assert len(call.args) == 1, (
+            "session.get debe recibir la URL como primer argumento posicional"
+        )
         assert (
             call.args[0] == "https://1.1.1.1:8888/api/test" or "1.1.1.1" in call.args[0]
         )

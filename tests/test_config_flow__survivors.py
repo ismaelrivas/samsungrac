@@ -242,7 +242,7 @@ async def test_kill_process_samsung_device_type_fallback(hass):
             "samsung_2878", is_8888=False, user_input={"dummy": "2"}
         )
         mock_load.assert_called_with(DEVICE_TYPE_SAMSUNG_2878)
-        
+
         # 3. Test when CONF_DEVICE_TYPE is present in flow_data (kills 'None' fallback mutant)
         mock_load.reset_mock()
         flow.flow_data[CONF_DEVICE_TYPE] = DEVICE_TYPE_MIM_H03

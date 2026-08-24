@@ -1328,12 +1328,12 @@ async def test_connection_manager_queues_and_cleanup(connection):
                     )
 
             # KILLS FINALLY MUTANTS: Validates task.cancel() was called on both tasks
-            assert (
-                fake_read_task.cancelled() is True
-            ), "Mutant survived: _read_task was not cancelled in finally"
-            assert (
-                fake_queue_task.cancelled() is True
-            ), "Mutant survived: queue_task was not cancelled in finally"
+            assert fake_read_task.cancelled() is True, (
+                "Mutant survived: _read_task was not cancelled in finally"
+            )
+            assert fake_queue_task.cancelled() is True, (
+                "Mutant survived: queue_task was not cancelled in finally"
+            )
 
 
 class MutantTimeoutError(Exception):
@@ -1555,6 +1555,7 @@ def test_execute_sync_not_implemented(connection):
         match="^ConnectionSamsung2878 is async-native\\. Use async_execute\\.$",
     ):
         connection.execute(None, None, None)
+
 
 def test_samsung_2878_force_unavailability(connection):
     """Verify mutant kill of _force_unavailability_if_needed using a strict class."""

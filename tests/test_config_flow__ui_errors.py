@@ -127,8 +127,10 @@ async def test_select_devices_parsing_and_fallbacks():
     # 3. Reconfiguration Mutant (M70: or instead of and)
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+
     async def mock_async_add_executor_job(func, *args, **kwargs):
         return func(*args, **kwargs)
+
     flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.context = {"source": SOURCE_RECONFIGURE}
     flow.flow_data = {CONF_MAC: "AA:BB:CC", CONF_DISCOVERED_DEVICES: [{"id": "1"}]}
@@ -163,8 +165,10 @@ async def test_initiate_pairing_and_discover_uuid_mutants():
     # 1. Fallback de pairing (M95-M101 y M62)
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+
     async def mock_async_add_executor_job(func, *args, **kwargs):
         return func(*args, **kwargs)
+
     flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
@@ -203,8 +207,10 @@ async def test_initiate_pairing_and_discover_uuid_mutants():
     # 3. Discover UUID (M39, M40, M62 de exception)
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+
     async def mock_async_add_executor_job(func, *args, **kwargs):
         return func(*args, **kwargs)
+
     flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888}
     flow.context = {"unique_id": "test"}
@@ -384,8 +390,10 @@ async def test_mim_h03_device_id_str_fallback():
     """Kills mutant 11: device_id = str(device.get('id') or '') — no str(None) ni 'XXXX'."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+
     async def mock_async_add_executor_job(func, *args, **kwargs):
         return func(*args, **kwargs)
+
     flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {}
     devices = [{"id": "0", "uuid": "coord_uuid"}, {"id": None, "Mode": "cool"}]

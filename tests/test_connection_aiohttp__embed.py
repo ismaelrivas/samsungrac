@@ -10,18 +10,33 @@ import pytest
 class StubHass:
     def __init__(self):
         from unittest.mock import AsyncMock
-        self.async_add_executor_job = AsyncMock(spec=["__call__", "return_value"], side_effect=lambda func, *args: func(*args))
-    def __repr__(self): return "<SafeHass>"
-    def __dir__(self): return ["async_add_executor_job"]
+
+        self.async_add_executor_job = AsyncMock(
+            spec=["__call__", "return_value"],
+            side_effect=lambda func, *args: func(*args),
+        )
+
+    def __repr__(self):
+        return "<SafeHass>"
+
+    def __dir__(self):
+        return ["async_add_executor_job"]
+
 
 class StubSession:
     def __init__(self):
         from unittest.mock import AsyncMock, MagicMock
+
         self.closed = False
         self.request = MagicMock(spec=["__call__", "return_value"])
         self.close = AsyncMock(spec=["__call__", "return_value"])
-    def __repr__(self): return "<SafeSession>"
-    def __dir__(self): return ["closed", "request", "close"]
+
+    def __repr__(self):
+        return "<SafeSession>"
+
+    def __dir__(self):
+        return ["closed", "request", "close"]
+
 
 from homeassistant.const import CONF_TOKEN
 
@@ -240,7 +255,9 @@ async def test_execute_embedded_command_connection_error_logs_warning_and_raises
     """Kill mutant at L881 (warn_msg = None on embedded command CannotConnect/AuthError)."""
     with (
         patch("os.path.exists", return_value=True),
-        patch("custom_components.climate_ip.connection_aiohttp._LOGGER") as mock_module_logger,
+        patch(
+            "custom_components.climate_ip.connection_aiohttp._LOGGER"
+        ) as mock_module_logger,
     ):
         conn = ConnectionAiohttp8888(
             connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
@@ -295,7 +312,9 @@ async def test_execute_embedded_command_device_state_none(
     """Test embedded command is skipped when device_state is None."""
     with (
         patch("os.path.exists", return_value=True),
-        patch("custom_components.climate_ip.connection_aiohttp._LOGGER") as mock_module_logger,
+        patch(
+            "custom_components.climate_ip.connection_aiohttp._LOGGER"
+        ) as mock_module_logger,
     ):
         conn = ConnectionAiohttp8888(
             connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
@@ -307,14 +326,18 @@ async def test_execute_embedded_command_device_state_none(
         embedded_mock.async_execute = AsyncMock()
         conn._embedded_command = embedded_mock
 
-        mock_response = AsyncMock(status=200, headers={"Content-Type": "application/json"})
+        mock_response = AsyncMock(
+            status=200, headers={"Content-Type": "application/json"}
+        )
         mock_response.text.return_value = "{}"
         mock_response.version = MagicMock(major=1, minor=1)
         mock_context = AsyncMock()
         mock_context.__aenter__.return_value = mock_response
         mock_session.request.return_value = mock_context
 
-        await conn.async_execute("GET", "/main", data=None, headers={}, device_state=None)
+        await conn.async_execute(
+            "GET", "/main", data=None, headers={}, device_state=None
+        )
 
         embedded_mock.async_execute.assert_not_called()
         mock_module_logger.warning.assert_called_with(
@@ -340,7 +363,9 @@ async def test_execute_embedded_command_network_error(
         embedded_mock.check_execute_condition = MagicMock(return_value=True)
         embedded_mock.params = {"url": "/embedded"}
         embedded_mock.connection_template = None
-        embedded_mock.async_execute = AsyncMock(side_effect=aiohttp.ClientError("Socket dropped"))
+        embedded_mock.async_execute = AsyncMock(
+            side_effect=aiohttp.ClientError("Socket dropped")
+        )
         conn._embedded_command = embedded_mock
 
         with pytest.raises(CannotConnect) as exc_info:

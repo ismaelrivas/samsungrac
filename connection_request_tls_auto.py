@@ -275,9 +275,7 @@ class ConnectionRequestBase(Connection):
 
         return True
 
-    def create_updated(
-        self, yaml_node: dict[str, Any] | None
-    ) -> ConnectionRequestBase:
+    def create_updated(self, yaml_node: dict[str, Any] | None) -> ConnectionRequestBase:
         """
         FIX for Pylint E1128: Implement create_updated in base class.
         Creates a copy of this connection object updated from a YAML node.
@@ -327,11 +325,7 @@ class ConnectionRequestBase(Connection):
 
         token = self._controller.token if self._controller else None
         ip_address = self._controller.ip_address if self._controller else None
-        mac = (
-            self._controller.config.get("mac")
-            if self._controller
-            else None
-        )
+        mac = self._controller.config.get("mac") if self._controller else None
 
         params = self._params.copy()
         if template is not None:
@@ -341,7 +335,8 @@ class ConnectionRequestBase(Connection):
                 async_render = getattr(template, "async_render", None)
                 rendered_template = (
                     async_render(value=value, device_id=device_id)
-                    if callable(async_render) and not isinstance(template, NonCallableMock)
+                    if callable(async_render)
+                    and not isinstance(template, NonCallableMock)
                     else template.render(value=value, device_id=device_id)
                 )
                 params.update(json_loads(rendered_template))

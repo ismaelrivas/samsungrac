@@ -41,13 +41,13 @@ class TestTolerantHeaderParsing:
 
         with tolerant_header_parsing():
             patched = response_util.assert_header_parsing
-            assert (
-                patched is not original
-            ), "assert_header_parsing should be patched inside context"
+            assert patched is not original, (
+                "assert_header_parsing should be patched inside context"
+            )
 
-        assert (
-            response_util.assert_header_parsing is original
-        ), "assert_header_parsing should be restored after context"
+        assert response_util.assert_header_parsing is original, (
+            "assert_header_parsing should be restored after context"
+        )
 
     def test_patch_restored_after_context(self):
         """Verify that the original function is restored after the context exits."""
@@ -72,9 +72,9 @@ class TestTolerantHeaderParsing:
         with pytest.raises(ValueError), tolerant_header_parsing():
             raise ValueError("Simulated error")
 
-        assert (
-            response_util.assert_header_parsing is original
-        ), "assert_header_parsing should be restored even after an exception"
+        assert response_util.assert_header_parsing is original, (
+            "assert_header_parsing should be restored even after an exception"
+        )
 
     def test_header_parsing_error_suppressed(self):
         """Verify that HeaderParsingError is caught and logged, not raised."""
@@ -123,9 +123,9 @@ class TestTolerantHeaderParsing:
             t.join()
 
         assert len(errors) == 0, f"Errors in threads: {errors}"
-        assert (
-            response_util.assert_header_parsing is original
-        ), "Original function should be restored after all threads complete"
+        assert response_util.assert_header_parsing is original, (
+            "Original function should be restored after all threads complete"
+        )
 
     def test_tolerant_header_parsing_refcount_lifecycle(self):
         """Muerte súbita for refcount mutants (Targets 6 and 9)."""
@@ -683,9 +683,9 @@ def test_safe_xml_to_dict_layer2_fallback_defense():
 
         # If parser=parser was removed by a mutant, standard parser accepts DOCTYPE.
         # With SecureTreeBuilder intact, doctype() raises ValueError and returns {}.
-        assert (
-            result == {}
-        ), "Critical Failure! Native interceptor (Layer 2) was removed or bypassed."
+        assert result == {}, (
+            "Critical Failure! Native interceptor (Layer 2) was removed or bypassed."
+        )
 
 
 def test_tolerant_header_parsing_strict_mutants():

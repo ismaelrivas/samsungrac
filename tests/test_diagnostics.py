@@ -86,9 +86,9 @@ async def test_diagnostics_all_sensitive_keys_redacted(mock_hass, mock_entry):
     entry_data = result["entry"]["data"]
 
     for key in TO_REDACT:
-        assert (
-            entry_data[key] == "**REDACTED**"
-        ), f"Key '{key}' in TO_REDACT was not redacted!"
+        assert entry_data[key] == "**REDACTED**", (
+            f"Key '{key}' in TO_REDACT was not redacted!"
+        )
 
 
 async def test_diagnostics_single_coordinator(mock_hass, mock_entry):
@@ -641,6 +641,7 @@ async def test_diagnostics_multi_coordinator_default_fallback_metrics(
     boot = result.get("bootstrapping", {})
     assert boot.get("total_devices_discovered") == 1
     assert boot.get("skipped_devices_missing_info") == 0
+
 
 # ---------------------------------------------------------
 # ESCUADRÓN FRANCOTIRADOR: EJECUCIÓN DIRECTA (0.001s Kill)

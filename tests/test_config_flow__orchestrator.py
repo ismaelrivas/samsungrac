@@ -35,9 +35,7 @@ async def test_form_user_step(hass: HomeAssistant) -> None:
             "type": FlowResultType.FORM,
             "step_id": "samsung_2878",
         }
-        _ = await flow.async_step_user(
-            {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
-        )
+        _ = await flow.async_step_user({CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878})
         assert flow.flow_data[CONF_DEVICE_TYPE] == DEVICE_TYPE_SAMSUNG_2878
         mock_step.assert_called_once()
 

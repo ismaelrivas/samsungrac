@@ -279,9 +279,7 @@ class ConnectionAiohttp8888(Connection):
                 self._keep_alive = keep_alive
         return True
 
-    def create_updated(
-        self, yaml_node: dict[str, Any] | None
-    ) -> ConnectionAiohttp8888:
+    def create_updated(self, yaml_node: dict[str, Any] | None) -> ConnectionAiohttp8888:
         """
         Creates a new connection instance with updated parameters from YAML.
         """
@@ -366,7 +364,9 @@ class ConnectionAiohttp8888(Connection):
             port = e.port
         except AttributeError:
             host, port = "?", "?"
-        reason = str(e.os_error) if e.os_error is not None else type(e).__name__  # pragma: no mutate
+        reason = (
+            str(e.os_error) if e.os_error is not None else type(e).__name__
+        )  # pragma: no mutate
         return f"Cannot connect to {host}:{port} ({reason})"
 
     async def _try_connection(self) -> str | None:
@@ -538,12 +538,14 @@ class ConnectionAiohttp8888(Connection):
                 )
             else:
                 connector = aiohttp.TCPConnector(
-                    keepalive_timeout=KEEPALIVE_TIMEOUT, ssl=ssl_context, limit=1  # pragma: no mutate
+                    keepalive_timeout=KEEPALIVE_TIMEOUT,
+                    ssl=ssl_context,
+                    limit=1,  # pragma: no mutate
                 )  # type: ignore[arg-type]
 
             timeout = aiohttp.ClientTimeout(
                 total=NETWORK_POLL_TIMEOUT, connect=GLOBAL_HTTP_TIMEOUT
-            )   # pragma: no mutate
+            )  # pragma: no mutate
             local_session = aiohttp.ClientSession(connector=connector, timeout=timeout)
             self._shared_state.local_session = local_session
 
@@ -559,7 +561,9 @@ class ConnectionAiohttp8888(Connection):
             if self._config.get(CONF_USE_HTTP, False) and full_url.startswith(
                 "https://"
             ):
-                full_url = full_url.replace("https://", "http://", 1)  # pragma: no mutate
+                full_url = full_url.replace(
+                    "https://", "http://", 1
+                )  # pragma: no mutate
         else:
             host, _ = self._resolved_target
             port = self._config.get(CONF_PORT, DEFAULT_PORT)
@@ -793,7 +797,9 @@ class ConnectionAiohttp8888(Connection):
                             "%s [aiohttp] Device HTTP protocol/header violation during retry: %s. "
                             "Switching to 'Robust (raw socket)' engine."
                         )
-                        _LOGGER.warning(err_msg, self.log_prefix, retry_exc)  # pragma: no mutate
+                        _LOGGER.warning(
+                            err_msg, self.log_prefix, retry_exc
+                        )  # pragma: no mutate
                         raise InvalidHeaderError(
                             f"HTTP header/protocol error during retry on aiohttp: {retry_exc}"
                         ) from retry_exc
@@ -871,9 +877,7 @@ class ConnectionAiohttp8888(Connection):
 
                     json_payload = embedded_params.get(_KEY_JSON)
                     embedded_data = (
-                        json_dumps(json_payload)
-                        if json_payload is not None
-                        else None
+                        json_dumps(json_payload) if json_payload is not None else None
                     )
                     embedded_url = embedded_params.get(_KEY_URL, url)
                     embedded_method = embedded_params.get(_KEY_METHOD, method)
@@ -890,7 +894,9 @@ class ConnectionAiohttp8888(Connection):
                         method=embedded_method,
                         url=embedded_url,
                         data=embedded_data,
-                        headers=embedded_params.get(_KEY_HEADERS, headers),  # pragma: no mutate
+                        headers=embedded_params.get(
+                            _KEY_HEADERS, headers
+                        ),  # pragma: no mutate
                         device_state=device_state,
                     )
 
@@ -957,15 +963,15 @@ class ConnectionAiohttp8888(Connection):
             if local_session is not None:
                 self._shared_state.local_session = None
                 if not local_session.closed:
-                    debug_msg = (
-                        "%s [Periodic Reset] Closing local session (ID: %s) before poll."
-                    )
+                    debug_msg = "%s [Periodic Reset] Closing local session (ID: %s) before poll."
                     _LOGGER.debug(debug_msg, self.log_prefix, id(local_session))
                     # Ensure the session close process is awaited
                     try:
                         await local_session.close()
                     except (aiohttp.ClientError, TimeoutError, OSError) as e:
-                        debug_msg = "%s [Periodic Reset] Error closing local session: %s"
+                        debug_msg = (
+                            "%s [Periodic Reset] Error closing local session: %s"
+                        )
                         _LOGGER.debug(debug_msg, self.log_prefix, e)
 
         # Optimization: Reuse the probe response directly for the initial poll to eliminate duplicate requests

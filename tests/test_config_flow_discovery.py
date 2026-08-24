@@ -511,7 +511,9 @@ async def test_mim_h03_discovery_single_non_mode_coordinator_selected():
     flow.reauth_entry = None
     flow.context = {"source": SOURCE_USER}
 
-    discovered = [{"id": "9", "name": "Solo NonMode Coord", "uuid": "SOLO_NON_MODE_UUID"}]
+    discovered = [
+        {"id": "9", "name": "Solo NonMode Coord", "uuid": "SOLO_NON_MODE_UUID"}
+    ]
 
     with (
         patch.object(
@@ -525,7 +527,9 @@ async def test_mim_h03_discovery_single_non_mode_coordinator_selected():
         res = await flow._async_process_mim_h03(discovered)
 
         assert res["type"] == FlowResultType.CREATE_ENTRY
-        mock_set_uid.assert_called_once_with("SOLO_NON_MODE_UUID", raise_on_progress=False)
+        mock_set_uid.assert_called_once_with(
+            "SOLO_NON_MODE_UUID", raise_on_progress=False
+        )
         assert flow.flow_data[CONF_DEVICE_ID] == "9"
         assert flow.flow_data["unique_id"] == "SOLO_NON_MODE_UUID"
         assert flow.flow_data[CONF_NAME] == "Solo NonMode Coord SOLO_NON_MODE_UUID"
@@ -741,7 +745,10 @@ async def test_async_step_discover_uuid_init_returns_none_aborts():
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03}
 
     with patch.object(
-        flow, "_async_init_discovery_controller", new_callable=AsyncMock, return_value=None
+        flow,
+        "_async_init_discovery_controller",
+        new_callable=AsyncMock,
+        return_value=None,
     ):
         res = await flow.async_step_discover_uuid()
 
@@ -995,7 +1002,10 @@ async def test_async_step_discover_uuid_invalid_header_shutdown_and_fallback():
     mock_ctrl.async_shutdown = AsyncMock()
 
     with patch.object(
-        flow, "_async_init_discovery_controller", new_callable=AsyncMock, return_value=mock_ctrl
+        flow,
+        "_async_init_discovery_controller",
+        new_callable=AsyncMock,
+        return_value=mock_ctrl,
     ):
         with patch.object(
             flow,
@@ -1005,6 +1015,7 @@ async def test_async_step_discover_uuid_invalid_header_shutdown_and_fallback():
             with patch.object(
                 flow, "_async_fallback_raw_discovery", new_callable=AsyncMock
             ) as mock_fallback:
+
                 async def verify_shutdown_before_fallback(_cfg):
                     mock_ctrl.async_shutdown.assert_called_once()
                     return {"type": FlowResultType.CREATE_ENTRY}
@@ -1032,7 +1043,10 @@ async def test_async_step_discover_uuid_generic_exception():
     mock_ctrl.async_shutdown = AsyncMock()
 
     with patch.object(
-        flow, "_async_init_discovery_controller", new_callable=AsyncMock, return_value=mock_ctrl
+        flow,
+        "_async_init_discovery_controller",
+        new_callable=AsyncMock,
+        return_value=mock_ctrl,
     ):
         with patch.object(
             flow,
@@ -1130,9 +1144,7 @@ async def test_async_step_select_devices_submit_filters_devices():
     ):
         mock_create.return_value = {"type": FlowResultType.CREATE_ENTRY}
 
-        res = await flow.async_step_select_devices(
-            {CONF_SELECTED_DEVICES: ["2", "3"]}
-        )
+        res = await flow.async_step_select_devices({CONF_SELECTED_DEVICES: ["2", "3"]})
 
         assert res["type"] == FlowResultType.CREATE_ENTRY
         assert flow.flow_data[CONF_DEVICES] == [

@@ -381,9 +381,7 @@ class ConnectionSamsung2878(Connection):
 
         return diag
 
-    def create_updated(
-        self, yaml_node: dict[str, Any] | None
-    ) -> ConnectionSamsung2878:
+    def create_updated(self, yaml_node: dict[str, Any] | None) -> ConnectionSamsung2878:
         self.load_from_yaml(yaml_node, self)
         return self
 

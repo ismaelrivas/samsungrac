@@ -669,9 +669,9 @@ async def test_evict_invalidated_pending_updates_power_on_guard():
 
     # Incoming push is Power ON (not Off) -> MUST NOT evict hvac_mode pending update!
     poller._evict_invalidated_pending_updates({"AC_FUN_POWER": "On"})
-    assert (
-        len(poller._pending_updates) == 1
-    ), "Mutant survived! Pending update was evicted even when power was 'On' instead of 'Off'."
+    assert len(poller._pending_updates) == 1, (
+        "Mutant survived! Pending update was evicted even when power was 'On' instead of 'Off'."
+    )
 
 
 @pytest.mark.asyncio
@@ -701,9 +701,9 @@ async def test_evict_invalidated_pending_updates_power_properties_fallback():
     await poller.async_update_properties_from_state(
         {"AC_FUN_POWER": "Off"}, force_update=True, changed_keys={"AC_FUN_POWER"}
     )
-    assert (
-        len(poller._pending_updates) == 0
-    ), "Mutant survived! Eviction failed when power operation was in properties instead of operations."
+    assert len(poller._pending_updates) == 0, (
+        "Mutant survived! Eviction failed when power operation was in properties instead of operations."
+    )
 
 
 async def test_async_merge_device_state():

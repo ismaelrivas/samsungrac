@@ -14,19 +14,32 @@ from custom_components.climate_ip.const import CONF_CERT
 class StubHass:
     def __init__(self):
         from unittest.mock import AsyncMock
-        self.async_add_executor_job = AsyncMock(spec=["__call__", "return_value"], side_effect=lambda func, *args: func(*args))
-    def __repr__(self): return "<SafeHass>"
-    def __dir__(self): return ["async_add_executor_job"]
+
+        self.async_add_executor_job = AsyncMock(
+            spec=["__call__", "return_value"],
+            side_effect=lambda func, *args: func(*args),
+        )
+
+    def __repr__(self):
+        return "<SafeHass>"
+
+    def __dir__(self):
+        return ["async_add_executor_job"]
 
 
 class StubSession:
     def __init__(self):
         from unittest.mock import AsyncMock, MagicMock
+
         self.closed = False
         self.request = MagicMock(spec=["__call__", "return_value"])
         self.close = AsyncMock(spec=["__call__", "return_value"])
-    def __repr__(self): return "<SafeSession>"
-    def __dir__(self): return ["closed", "request", "close"]
+
+    def __repr__(self):
+        return "<SafeSession>"
+
+    def __dir__(self):
+        return ["closed", "request", "close"]
 
 
 @pytest.fixture

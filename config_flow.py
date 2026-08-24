@@ -96,7 +96,9 @@ class ClimateIpConfigFlow(
         """Dynamically load the authentication YAML file according to device type."""
         main_yaml_name = DEVICE_TYPE_TO_CONFIG_FILE.get(device_type)
         if not main_yaml_name:
-            raise ValueError(f"No configuration file mapping found for device_type: {device_type}")
+            raise ValueError(
+                f"No configuration file mapping found for device_type: {device_type}"
+            )
         main_yaml_path = str(Path(__file__).parent / main_yaml_name)
         main_config = await self.hass.async_add_executor_job(load_yaml, main_yaml_path)
 

@@ -559,18 +559,18 @@ async def test_sniper_update_properties_pending_and_is_valid_mutations():
 
         # 1. Verification of L534
         mock_get_key.assert_any_call(prop)
-        assert (
-            base_state.get("prop1_key") == "dev_pending_val"
-        ), "Mutant L534: Injection failed due to passing None to key finder"
+        assert base_state.get("prop1_key") == "dev_pending_val", (
+            "Mutant L534: Injection failed due to passing None to key finder"
+        )
 
         # 2. Verification of L567
         op.is_valid.assert_called_once()
         args, _ = op.is_valid.call_args
         # Ensure is_valid received the real dictionary and not a None introduced by mutmut
         assert args[0] is not None
-        assert (
-            args[0] == base_state
-        ), "Mutant L567: is_valid evaluated blindly with None"
+        assert args[0] == base_state, (
+            "Mutant L567: is_valid evaluated blindly with None"
+        )
 
 
 @pytest.mark.asyncio
@@ -608,9 +608,9 @@ async def test_sniper_async_update_state_network_and_discovery_strictness():
         )
 
         res = await poller.async_update_state()
-        assert res == {
-            "cached": True
-        }, "Mutant L328 survived: did not respect the <= 2 error barrier"
+        assert res == {"cached": True}, (
+            "Mutant L328 survived: did not respect the <= 2 error barrier"
+        )
         assert poller._consecutive_connection_errors == 2
 
         # --- TEST 2: Kill Mutants L344 and L345 (Error string manipulation) ---
@@ -624,9 +624,9 @@ async def test_sniper_async_update_state_network_and_discovery_strictness():
             await poller.async_update_state()
 
         assert poller._consecutive_connection_errors == 3
-        assert "Device unreachable: Timeout on backend" in str(
-            exc_info.value
-        ), "Mutant L344/L345 survived: error reason was corrupted"
+        assert "Device unreachable: Timeout on backend" in str(exc_info.value), (
+            "Mutant L344/L345 survived: error reason was corrupted"
+        )
 
     # --- TEST 3: Strict Configuration (Unchanged) ---
     class StrictConfig(dict):
@@ -848,6 +848,6 @@ async def test_mutant_74_75_split_logic():
         await poller.async_update_state()
 
     # Original production strictly extracts last element after colon.
-    assert (
-        str(exc_info.value) == "Device unreachable: Segment3"
-    ), "Mutantes M74/M75 detectados en el formateo del log."
+    assert str(exc_info.value) == "Device unreachable: Segment3", (
+        "Mutantes M74/M75 detectados en el formateo del log."
+    )

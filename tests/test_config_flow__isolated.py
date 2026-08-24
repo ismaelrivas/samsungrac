@@ -210,8 +210,10 @@ async def test_connection_safe_unique_id_empty_fallback():
     """Kills mutants 73-77: unique_id fallback a ''."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+
     async def mock_async_add_executor_job(func, *args, **kwargs):
         return func(*args, **kwargs)
+
     flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
@@ -307,9 +309,7 @@ async def test_select_devices_error_schema_default_keys():
 
     selector = schema.schema[sel_key]
     assert hasattr(selector, "options"), "El selector debe tener opciones"
-    assert (
-        selector.options is not None
-    ), "The mutant assigned None to selector options"
+    assert selector.options is not None, "The mutant assigned None to selector options"
 
 
 @pytest.mark.asyncio
@@ -350,8 +350,10 @@ async def test_discover_uuid_controller_init_none_is_correct_start():
         CONF_IP_ADDRESS: "1.1.1.1",
     }
     flow.hass = MagicMock()
+
     async def mock_async_add_executor_job(func, *args, **kwargs):
         return func(*args, **kwargs)
+
     flow.hass.async_add_executor_job = mock_async_add_executor_job
 
     with patch(
@@ -376,8 +378,10 @@ async def test_discover_uuid_hasattr_exact_attribute_name():
         CONF_IP_ADDRESS: "1.1.1.1",
     }
     flow.hass = MagicMock()
+
     async def mock_async_add_executor_job(func, *args, **kwargs):
         return func(*args, **kwargs)
+
     flow.hass.async_add_executor_job = mock_async_add_executor_job
 
     with patch(
@@ -430,8 +434,10 @@ async def test_discover_uuid_invalid_header_controller_shutdown():
         CONF_IP_ADDRESS: "1.1.1.1",
     }
     flow.hass = MagicMock()
+
     async def mock_async_add_executor_job(func, *args, **kwargs):
         return func(*args, **kwargs)
+
     flow.hass.async_add_executor_job = mock_async_add_executor_job
 
     with patch(
@@ -460,7 +466,7 @@ async def test_discover_uuid_invalid_header_controller_shutdown():
                 )
 
             expected_calls = [manager.mock_calls[0], manager.mock_calls[1]]
-            assert (
-                expected_calls[0][0] == "shutdown"
-            ), "Shutdown debe llamarse antes del fallback"
+            assert expected_calls[0][0] == "shutdown", (
+                "Shutdown debe llamarse antes del fallback"
+            )
             assert expected_calls[1][0] == "fallback"

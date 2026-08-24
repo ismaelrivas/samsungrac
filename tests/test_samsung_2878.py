@@ -250,6 +250,7 @@ async def test_reconnection_state_changes_availability():
             conn._is_available is False
         )  # It doesn't flip it here, it flips inside establish
 
+
 @pytest.mark.parametrize("invalid_mac", [None, "", "   "])
 def test_malformed_or_missing_mac_fails_yaml_load(invalid_mac: str | None):
     """Test que asegura que si la MAC está ausente o vacía, la carga de YAML falla (devuelve False)."""

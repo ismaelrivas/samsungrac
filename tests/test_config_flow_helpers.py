@@ -63,7 +63,10 @@ async def test_async_force_arp_update_success(hass_mock):
         assert mock_open.call_count == 2
         # Assert exact destination tuple (ip_address, port) for both ports
         called_args = {c.args for c in mock_open.call_args_list}
-        assert called_args == {("1.2.3.4", PORT_SAMSUNG_2878), ("1.2.3.4", PORT_SAMSUNG_8888)}
+        assert called_args == {
+            ("1.2.3.4", PORT_SAMSUNG_2878),
+            ("1.2.3.4", PORT_SAMSUNG_8888),
+        }
 
         assert mock_writer.close.call_count == 2
         assert mock_writer.wait_closed.call_count == 2
@@ -75,7 +78,9 @@ async def test_async_force_arp_update_handles_oserror_and_timeout(hass_mock):
     flow = ClimateIpConfigFlow()
     flow.hass = hass_mock
 
-    with patch("asyncio.open_connection", side_effect=[TimeoutError(), OSError("Port closed")]) as mock_open:
+    with patch(
+        "asyncio.open_connection", side_effect=[TimeoutError(), OSError("Port closed")]
+    ) as mock_open:
         await flow._async_force_arp_update("10.0.0.1")
         assert mock_open.call_count == 2
 
@@ -105,7 +110,9 @@ async def test_resolve_mac_skips_arp_if_in_cache(hass_mock):
         patch.object(
             flow, "async_set_unique_id", new_callable=AsyncMock
         ) as mock_set_id,
-        patch.object(flow, "_abort_if_unique_id_configured") as mock_abort_if_configured,
+        patch.object(
+            flow, "_abort_if_unique_id_configured"
+        ) as mock_abort_if_configured,
     ):
         mock_get_mac.return_value = "00:11:22:33:44:55"
 
@@ -139,7 +146,9 @@ async def test_resolve_mac_forces_arp_if_not_in_cache(hass_mock):
         patch.object(
             flow, "async_set_unique_id", new_callable=AsyncMock
         ) as mock_set_id,
-        patch.object(flow, "_abort_if_unique_id_configured") as mock_abort_if_configured,
+        patch.object(
+            flow, "_abort_if_unique_id_configured"
+        ) as mock_abort_if_configured,
     ):
         mock_get_mac.side_effect = [None, "aa:bb:cc:11:22:33"]
 
@@ -167,7 +176,9 @@ async def test_resolve_mac_provided_by_user(hass_mock):
         patch.object(
             flow, "async_set_unique_id", new_callable=AsyncMock
         ) as mock_set_id,
-        patch.object(flow, "_abort_if_unique_id_configured") as mock_abort_if_configured,
+        patch.object(
+            flow, "_abort_if_unique_id_configured"
+        ) as mock_abort_if_configured,
     ):
         result = await flow._async_resolve_mac_and_set_unique_id(
             "1.1.1.1", "aa:bb:cc:dd:ee:ff"
@@ -334,7 +345,9 @@ async def test_initiate_pairing_safe_exceptions(hass_mock):
     flow.acquirer = mock_acquirer
 
     # CannotConnect
-    mock_acquirer.async_initiate_pairing = AsyncMock(side_effect=CannotConnect("refused"))
+    mock_acquirer.async_initiate_pairing = AsyncMock(
+        side_effect=CannotConnect("refused")
+    )
     res = await flow._initiate_pairing_safe()
     assert res["ok"] is False
     assert res["error"] == "pairing_connection_failed"
@@ -347,7 +360,9 @@ async def test_initiate_pairing_safe_exceptions(hass_mock):
     assert res["error"] == "pairing_connection_failed"
 
     # TokenAcquisitionError
-    mock_acquirer.async_initiate_pairing = AsyncMock(side_effect=TokenAcquisitionError("bad token"))
+    mock_acquirer.async_initiate_pairing = AsyncMock(
+        side_effect=TokenAcquisitionError("bad token")
+    )
     res = await flow._initiate_pairing_safe()
     assert res["ok"] is False
     assert res["error"] == "pairing_connection_failed"
@@ -359,12 +374,16 @@ async def test_initiate_pairing_safe_exceptions(hass_mock):
     assert res["error"] == "timeout_connect"
 
     # AbortFlow
-    mock_acquirer.async_initiate_pairing = AsyncMock(side_effect=AbortFlow("already_configured"))
+    mock_acquirer.async_initiate_pairing = AsyncMock(
+        side_effect=AbortFlow("already_configured")
+    )
     with pytest.raises(AbortFlow):
         await flow._initiate_pairing_safe()
 
     # Generic Exception
-    mock_acquirer.async_initiate_pairing = AsyncMock(side_effect=RuntimeError("unexpected"))
+    mock_acquirer.async_initiate_pairing = AsyncMock(
+        side_effect=RuntimeError("unexpected")
+    )
     res = await flow._initiate_pairing_safe()
     assert res == {"ok": False, "error": "unknown_error"}
 
@@ -385,12 +404,16 @@ async def test_wait_token_safe_exceptions(hass_mock):
     assert res["error"] == "timeout_connect"
 
     # TokenAcquisitionError
-    mock_acquirer.async_wait_for_token = AsyncMock(side_effect=TokenAcquisitionError("error"))
+    mock_acquirer.async_wait_for_token = AsyncMock(
+        side_effect=TokenAcquisitionError("error")
+    )
     res = await flow._wait_token_safe()
     assert res == {"ok": False, "error": "token_acquisition_failed"}
 
     # AuthTurnedOffError
-    mock_acquirer.async_wait_for_token = AsyncMock(side_effect=AuthTurnedOffError("auth off"))
+    mock_acquirer.async_wait_for_token = AsyncMock(
+        side_effect=AuthTurnedOffError("auth off")
+    )
     res = await flow._wait_token_safe()
     assert res == {"ok": False, "error": "token_acquisition_failed"}
 
@@ -523,8 +546,13 @@ async def test_test_connection_safe_2878_full_injection(hass_mock):
     }
 
     with (
-        patch("homeassistant.helpers.aiohttp_client.async_get_clientsession", return_value="mock_session"),
-        patch("custom_components.climate_ip.controller_yaml.YamlController") as mock_ctrl_cls,
+        patch(
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+            return_value="mock_session",
+        ),
+        patch(
+            "custom_components.climate_ip.controller_yaml.YamlController"
+        ) as mock_ctrl_cls,
     ):
         mock_ctrl = MagicMock()
         mock_ctrl.initialize = AsyncMock(return_value=True)
@@ -551,7 +579,9 @@ async def test_test_connection_safe_2878_full_injection(hass_mock):
         assert mock_ctrl._session == "mock_session"
         assert mock_ctrl.hass is hass_mock
         mock_ctrl.initialize.assert_called_once()
-        mock_ctrl.loader.state_getter.async_update_state.assert_called_once_with(None, False)
+        mock_ctrl.loader.state_getter.async_update_state.assert_called_once_with(
+            None, False
+        )
         mock_ctrl.async_shutdown.assert_called_once()
 
 
@@ -567,14 +597,21 @@ async def test_test_connection_safe_2878_fallback_empty_mac_and_logger(hass_mock
     }
 
     with (
-        patch("homeassistant.helpers.aiohttp_client.async_get_clientsession", return_value="mock_session"),
-        patch("custom_components.climate_ip.controller_yaml.YamlController") as mock_ctrl_cls,
+        patch(
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+            return_value="mock_session",
+        ),
+        patch(
+            "custom_components.climate_ip.controller_yaml.YamlController"
+        ) as mock_ctrl_cls,
     ):
         mock_ctrl = MagicMock()
         mock_ctrl.initialize = AsyncMock(return_value=True)
         mock_ctrl.loader = MagicMock()
         mock_ctrl.loader.state_getter = MagicMock()
-        mock_ctrl.loader.state_getter.async_update_state = AsyncMock(return_value={"state": "on"})
+        mock_ctrl.loader.state_getter.async_update_state = AsyncMock(
+            return_value={"state": "on"}
+        )
         mock_ctrl.async_shutdown = AsyncMock()
         mock_ctrl_cls.return_value = mock_ctrl
 
@@ -605,7 +642,9 @@ async def test_test_connection_safe_2878_custom_unique_id_and_config_file(hass_m
         CONF_CONFIG_FILE: "custom_ac.yaml",
     }
 
-    with patch("custom_components.climate_ip.controller_yaml.YamlController") as mock_ctrl_cls:
+    with patch(
+        "custom_components.climate_ip.controller_yaml.YamlController"
+    ) as mock_ctrl_cls:
         mock_ctrl = MagicMock()
         mock_ctrl.initialize = AsyncMock(return_value=True)
         mock_ctrl.loader = MagicMock()
@@ -636,7 +675,9 @@ async def test_test_connection_safe_2878_state_none_and_init_false(hass_mock):
     }
 
     # 1. State getter returns None -> ok is False
-    with patch("custom_components.climate_ip.controller_yaml.YamlController") as mock_ctrl_cls:
+    with patch(
+        "custom_components.climate_ip.controller_yaml.YamlController"
+    ) as mock_ctrl_cls:
         mock_ctrl = MagicMock()
         mock_ctrl.initialize = AsyncMock(return_value=True)
         mock_ctrl.loader = MagicMock()
@@ -649,7 +690,9 @@ async def test_test_connection_safe_2878_state_none_and_init_false(hass_mock):
         assert res == {"ok": False}
 
     # 2. Initialize returns False -> ok is False, error cannot_connect
-    with patch("custom_components.climate_ip.controller_yaml.YamlController") as mock_ctrl_cls:
+    with patch(
+        "custom_components.climate_ip.controller_yaml.YamlController"
+    ) as mock_ctrl_cls:
         mock_ctrl = MagicMock()
         mock_ctrl.initialize = AsyncMock(return_value=False)
         mock_ctrl.async_shutdown = AsyncMock()

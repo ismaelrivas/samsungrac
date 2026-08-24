@@ -57,9 +57,9 @@ def test_sensor_initialization(base_sensor_entity: ClimateIpSensor) -> None:
     el valor literal exacto asignado en el constructor.
     """
     assert base_sensor_entity._attr_has_entity_name is True
-    assert (
-        base_sensor_entity._attr_native_value is None
-    ), "Mutant 6: _attr_native_value must be exactly None, not ''"
+    assert base_sensor_entity._attr_native_value is None, (
+        "Mutant 6: _attr_native_value must be exactly None, not ''"
+    )
     assert base_sensor_entity._attr_unique_id == "test_mac_123_target_temp"
     assert base_sensor_entity.device_info == {
         "identifiers": {("climate_ip", "test_mac_123")}
@@ -130,9 +130,9 @@ def test_update_state_valid_float(base_sensor_entity: ClimateIpSensor) -> None:
 
     # Lethal assertion: If mutant assigns None or raises TypeError (float(None)),
     # resulting value will be None and this assertion fails horribly.
-    assert (
-        base_sensor_entity._attr_native_value == 23.7
-    ), "Mathematical float conversion failed (Mutant 10/11)."
+    assert base_sensor_entity._attr_native_value == 23.7, (
+        "Mathematical float conversion failed (Mutant 10/11)."
+    )
 
 
 def test_update_state_float_parsing_failure(
@@ -152,9 +152,9 @@ def test_update_state_float_parsing_failure(
 
     # except block must capture and set to None explicitly.
     # 'is None' usage ensures if mutmut changes it to '""', test fails.
-    assert (
-        base_sensor_entity._attr_native_value is None
-    ), "Float casting failure must assign exactly None (annihilates Mutant 12)."
+    assert base_sensor_entity._attr_native_value is None, (
+        "Float casting failure must assign exactly None (annihilates Mutant 12)."
+    )
 
 
 # ============================================================
@@ -243,9 +243,9 @@ async def test_async_setup_entry_strict_mapping(
     # Annihilates Mutant 68: Asserts object identity in list, not just length
     async_add_entities.assert_called_once()
     entities_passed = async_add_entities.call_args[0][0]
-    assert entities_passed == [
-        mock_sensor_class.return_value
-    ], "The mutant appended None instead of instantiated sensor."
+    assert entities_passed == [mock_sensor_class.return_value], (
+        "The mutant appended None instead of instantiated sensor."
+    )
 
 
 @pytest.mark.asyncio
@@ -318,9 +318,9 @@ async def test_async_setup_entry_icon_logical_operator_inverse(
     kwargs = mock_desc_class.call_args.kwargs
 
     # Lethal assertion: El icono debe seguir siendo None, no "mdi:eye"
-    assert (
-        kwargs["icon"] is None
-    ), "The 'or' mutant rewrote icon to mdi:eye ignoring device_class."
+    assert kwargs["icon"] is None, (
+        "The 'or' mutant rewrote icon to mdi:eye ignoring device_class."
+    )
 
 
 @pytest.mark.asyncio
@@ -362,9 +362,9 @@ def test_sensor_handle_coordinator_update_invalid_state():
     sensor._handle_coordinator_update()
 
     # Assertions to kill the mutants
-    assert (
-        sensor._attr_native_value is None
-    ), "Mutant survived! _attr_native_value should be explicitly None when state is invalid."
+    assert sensor._attr_native_value is None, (
+        "Mutant survived! _attr_native_value should be explicitly None when state is invalid."
+    )
     # Ensure properties were checked
     mock_prop.is_valid.assert_called_with({"power": "off"})
 
@@ -406,6 +406,6 @@ async def test_sensor_setup_entry_name_mapping(hass):
 
     # Assert the description name explicitly matches the YAML property name.
     # If mutmut changes it to None or removes the getattr fallback, this fails.
-    assert (
-        sensor.entity_description.name == "My Custom Sensor Name"
-    ), "Mutant survived! The sensor name did not match the YAML property name."
+    assert sensor.entity_description.name == "My Custom Sensor Name", (
+        "Mutant survived! The sensor name did not match the YAML property name."
+    )

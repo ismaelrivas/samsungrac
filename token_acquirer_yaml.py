@@ -212,7 +212,9 @@ class GenericYamlTokenAcquirer:
             ]
             for k, v in headers.items():
                 req_lines.append(f"{k}: {v}")
-            req_lines.extend(["", body if isinstance(body, str) else body.decode("utf-8")])
+            req_lines.extend(
+                ["", body if isinstance(body, str) else body.decode("utf-8")]
+            )
 
             writer.write("\r\n".join(req_lines).encode("utf-8"))
             await writer.drain()
@@ -231,7 +233,11 @@ class GenericYamlTokenAcquirer:
             successful_config = await self._connect_stream()
             raw_payload = req_cfg.get("payload", "")
             if isinstance(raw_payload, str):
-                payload_bytes = raw_payload.replace("\\r", "\r").replace("\\n", "\n").encode("utf-8")
+                payload_bytes = (
+                    raw_payload.replace("\\r", "\r")
+                    .replace("\\n", "\n")
+                    .encode("utf-8")
+                )
             else:
                 payload_bytes = raw_payload
 
@@ -240,9 +246,13 @@ class GenericYamlTokenAcquirer:
 
             try:
                 async with asyncio.timeout(15.0):
-                    data = await self._reader.read(self.auth_config.get("buffer_size", 4096))
+                    data = await self._reader.read(
+                        self.auth_config.get("buffer_size", 4096)
+                    )
             except TimeoutError as exc:
-                raise TokenAcquisitionError("Timeout waiting for 'Ready' response") from exc
+                raise TokenAcquisitionError(
+                    "Timeout waiting for 'Ready' response"
+                ) from exc
 
             decoded = data.decode("utf-8", errors="ignore")
 
@@ -280,7 +290,9 @@ class GenericYamlTokenAcquirer:
                             self.auth_config.get("buffer_size", 4096)
                         )
                 except TimeoutError as exc:
-                    raise TokenAcquisitionError("Token not received within timeout window.") from exc
+                    raise TokenAcquisitionError(
+                        "Token not received within timeout window."
+                    ) from exc
 
                 if not data:
                     raise TokenAcquisitionError("Connection closed by device.")

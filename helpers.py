@@ -592,9 +592,7 @@ async def async_get_mac_address(ip_address: str) -> str | None:
             )  # pragma: no mutate
             return None
 
-        output = stdout.decode(
-            "utf-8", errors="ignore"
-        )  # pragma: no mutate
+        output = stdout.decode("utf-8", errors="ignore")  # pragma: no mutate
 
         for token in output.split():
             # Phase 1: Fail-fast on length

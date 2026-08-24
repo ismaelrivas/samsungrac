@@ -68,8 +68,6 @@ def create_valid_loader():
     return loader
 
 
-
-
 async def _helper_build_device_state_from_props(self):
     loader = getattr(self.controller, "loader", None)
     if not loader:
@@ -226,6 +224,7 @@ async def test_async_update_state_device_discovery():
     assert mock_controller.device_id == "12345"
     mock_controller.loader.async_finish_initialization.assert_called_once()
 
+
 def test_clear_pending_updates():
     poller = YamlStatePoller(MagicMock())
     poller.register_pending_update("target_temp", 22)
@@ -233,7 +232,7 @@ def test_clear_pending_updates():
 
     poller.clear_pending_updates(["target_temp"])
     assert "target_temp" not in poller._pending_updates
-    
+
     # Kill the mutant that replaces .pop(key, None) with .pop(key)
     poller.clear_pending_updates(["non_existent_key"])
 

@@ -65,9 +65,9 @@ def test_00_climate_defensive_init_properties(base_climate_entity: ClimateIP) ->
     assert base_climate_entity._attr_unique_id is not None, "unique_id MUST NOT be None"
     assert base_climate_entity.min_temp is not None, "min_temp MUST NOT be None"
     assert base_climate_entity.max_temp is not None, "max_temp MUST NOT be None"
-    assert (
-        base_climate_entity._attr_target_temperature_step is not None
-    ), "step MUST NOT be None"
+    assert base_climate_entity._attr_target_temperature_step is not None, (
+        "step MUST NOT be None"
+    )
     assert isinstance(base_climate_entity.hvac_modes, list), "hvac_modes MUST be a list"
     assert base_climate_entity.fan_modes is not None, "fan_modes MUST NOT be None"
     assert base_climate_entity.swing_modes is not None, "swing_modes MUST NOT be None"
@@ -124,9 +124,9 @@ async def test_turn_on_dry_helper(base_climate_entity: ClimateIP) -> None:
 
 def test_no_flicker_feature_method() -> None:
     """async_flicker_feature antipattern must be fully removed from ClimateIP."""
-    assert not hasattr(
-        ClimateIP, "async_flicker_feature"
-    ), "async_flicker_feature was not removed from ClimateIP — remove the no-op method"
+    assert not hasattr(ClimateIP, "async_flicker_feature"), (
+        "async_flicker_feature was not removed from ClimateIP — remove the no-op method"
+    )
 
 
 def test_no_stale_supported_features_annotation() -> None:
@@ -140,9 +140,9 @@ def test_no_stale_supported_features_annotation() -> None:
         if klass is object:
             break
         annotations.update(vars(klass).get("__annotations__", {}))
-    assert (
-        "_supported_features" not in annotations
-    ), "_supported_features stale annotation is still present in ClimateIP or a parent class"
+    assert "_supported_features" not in annotations, (
+        "_supported_features stale annotation is still present in ClimateIP or a parent class"
+    )
 
 
 def test_climate_translation_key_and_device_info(hass: HomeAssistant) -> None:
@@ -183,12 +183,12 @@ async def test_climate_init_options_priority_and_halves(hass: HomeAssistant) -> 
     entity = ClimateIP(coordinator=mock_coordinator, description=description)
 
     # Lethal Assertions
-    assert (
-        entity.target_temperature_step == 0.5
-    ), "Entry options priority was not respected"
-    assert (
-        entity.precision == PRECISION_HALVES
-    ), "Precision was not adjusted to half degrees"
+    assert entity.target_temperature_step == 0.5, (
+        "Entry options priority was not respected"
+    )
+    assert entity.precision == PRECISION_HALVES, (
+        "Precision was not adjusted to half degrees"
+    )
 
 
 async def test_climate_unique_id(hass: HomeAssistant) -> None:
@@ -201,9 +201,9 @@ async def test_climate_unique_id(hass: HomeAssistant) -> None:
         coordinator=mock_coordinator,
         description=description,
     )
-    assert (
-        entity.unique_id == "coord_id_123"
-    ), "The unique_id property does not match the coordinator"
+    assert entity.unique_id == "coord_id_123", (
+        "The unique_id property does not match the coordinator"
+    )
 
 
 async def test_climate_sync_data_full(base_climate_entity: ClimateIP) -> None:
@@ -225,22 +225,22 @@ async def test_climate_sync_data_full(base_climate_entity: ClimateIP) -> None:
     base_climate_entity.coordinator.data = mock_state
 
     # Lethal Assertions for Mutants 2, 11, 12
-    assert (
-        base_climate_entity.hvac_mode == HVACMode.HEAT
-    ), "hvac_mode was not synchronized"
-    assert (
-        base_climate_entity.target_temperature == 25.0
-    ), "target_temperature was not synchronized"
-    assert (
-        base_climate_entity.current_temperature == 22.0
-    ), "current_temperature was not synchronized"
+    assert base_climate_entity.hvac_mode == HVACMode.HEAT, (
+        "hvac_mode was not synchronized"
+    )
+    assert base_climate_entity.target_temperature == 25.0, (
+        "target_temperature was not synchronized"
+    )
+    assert base_climate_entity.current_temperature == 22.0, (
+        "current_temperature was not synchronized"
+    )
     assert base_climate_entity.fan_mode == "high", "fan_mode was not synchronized"
-    assert (
-        base_climate_entity.swing_mode == "vertical"
-    ), "swing_mode was not synchronized"
-    assert (
-        base_climate_entity.preset_mode == "boost"
-    ), "preset_mode was not synchronized"
+    assert base_climate_entity.swing_mode == "vertical", (
+        "swing_mode was not synchronized"
+    )
+    assert base_climate_entity.preset_mode == "boost", (
+        "preset_mode was not synchronized"
+    )
     assert base_climate_entity.hvac_modes == [
         HVACMode.HEAT,
         HVACMode.OFF,
@@ -266,27 +266,27 @@ async def test_climate_sync_data_none(base_climate_entity: ClimateIP) -> None:
 
     # Lethal Assertions: Must be strictly None or []
     assert base_climate_entity.hvac_mode is None, "hvac_mode did not reset to None"
-    assert (
-        base_climate_entity.target_temperature is None
-    ), "target_temperature did not reset to None"
-    assert (
-        base_climate_entity.current_temperature is None
-    ), "current_temperature did not reset to None"
+    assert base_climate_entity.target_temperature is None, (
+        "target_temperature did not reset to None"
+    )
+    assert base_climate_entity.current_temperature is None, (
+        "current_temperature did not reset to None"
+    )
     assert base_climate_entity.fan_mode is None, "fan_mode did not reset to None"
     assert base_climate_entity.swing_mode is None, "swing_mode did not reset to None"
     assert base_climate_entity.preset_mode is None, "preset_mode did not reset to None"
-    assert (
-        base_climate_entity.hvac_modes == []
-    ), "hvac_modes should be empty when data is None"
-    assert (
-        base_climate_entity.fan_modes == []
-    ), "fan_modes should be empty when data is None"
-    assert (
-        base_climate_entity.swing_modes == []
-    ), "swing_modes should be empty when data is None"
-    assert (
-        base_climate_entity.preset_modes == []
-    ), "preset_modes should be empty when data is None"
+    assert base_climate_entity.hvac_modes == [], (
+        "hvac_modes should be empty when data is None"
+    )
+    assert base_climate_entity.fan_modes == [], (
+        "fan_modes should be empty when data is None"
+    )
+    assert base_climate_entity.swing_modes == [], (
+        "swing_modes should be empty when data is None"
+    )
+    assert base_climate_entity.preset_modes == [], (
+        "preset_modes should be empty when data is None"
+    )
 
 
 async def test_hvac_action_dynamic_auto_heuristic(

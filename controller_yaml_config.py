@@ -50,9 +50,7 @@ _YAML_FILE_CACHE: dict[str, dict] = {}
 def clear_yaml_cache() -> None:
     """Clear the YAML file content cache to allow reloading from disk."""
     if _YAML_FILE_CACHE:
-        _LOGGER.info(
-            "Clearing YAML file cache to force re-read on reload."
-        )
+        _LOGGER.info("Clearing YAML file cache to force re-read on reload.")
         _YAML_FILE_CACHE.clear()
 
 
@@ -91,7 +89,9 @@ class YamlConfigLoader:
     async def async_initialize(self) -> bool:
         """Perform initial YAML configuration loading and set up the base connection."""
         file = self.controller.yaml_file
-        if file is not None and file.find("\\") == -1 and file.find("/") == -1:  # pragma: no mutate
+        if (
+            file is not None and file.find("\\") == -1 and file.find("/") == -1
+        ):  # pragma: no mutate
             file = str(Path(__file__).parent / file)  # pragma: no mutate
         _LOGGER.debug(
             "%s Loading configuration file: %s", self.controller.log_prefix, file

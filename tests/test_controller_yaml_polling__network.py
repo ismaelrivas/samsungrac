@@ -706,9 +706,6 @@ def test_try_create_repair_issue_missing_hass(mock_create_issue):
     mock_create_issue.assert_not_called()
 
 
-
-
-
 async def test_async_update_state_force_connection_errors():
     """Kills mutants de rsplit/split y validación de UpdateFailed."""
     poller = YamlStatePoller(MagicMock())
@@ -729,6 +726,3 @@ async def test_async_update_state_force_connection_errors():
         await poller.async_update_state()
 
     assert str(exc.value) == "Device unreachable: TargetReason"
-
-
-

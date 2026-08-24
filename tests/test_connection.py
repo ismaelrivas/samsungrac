@@ -326,13 +326,17 @@ def test_check_execute_condition_pure_device_state_and_controller():
     mock_ctrl = MagicMock()
     mock_ctrl.pure_device_state = {"pure_key": "active"}
     conn._controller = mock_ctrl
-    conn.condition_template = Template("{{ 1 if device_state.pure_key == 'active' else 0 }}")
+    conn.condition_template = Template(
+        "{{ 1 if device_state.pure_key == 'active' else 0 }}"
+    )
     assert conn.check_execute_condition({"pure_key": "ignored"}) is True
 
     # Case 3: Controller pure_device_state is non-dict or empty dict -> does not override and falls back to controller.device_state
     mock_ctrl.pure_device_state = {}
     mock_ctrl.device_state = {"ctrl_state_fallback": 88}
-    conn.condition_template = Template("{{ 1 if device_state.ctrl_state_fallback == 88 else 0 }}")
+    conn.condition_template = Template(
+        "{{ 1 if device_state.ctrl_state_fallback == 88 else 0 }}"
+    )
     assert conn.check_execute_condition(None) is True
 
     mock_ctrl.pure_device_state = "invalid_string"
@@ -353,7 +357,9 @@ def test_check_execute_condition_controller_device_state_fallback():
     del mock_ctrl.pure_device_state
     mock_ctrl.device_state = {"ctrl_state": 123}
     conn._controller = mock_ctrl
-    conn.condition_template = Template("{{ 1 if device_state.ctrl_state == 123 else 0 }}")
+    conn.condition_template = Template(
+        "{{ 1 if device_state.ctrl_state == 123 else 0 }}"
+    )
     assert conn.check_execute_condition(None) is True
 
     # Case 3: controller.device_state is empty dict or non-dict -> falls through to status_prop
@@ -361,7 +367,9 @@ def test_check_execute_condition_controller_device_state_fallback():
     status_prop = MagicMock()
     status_prop.value = {"status_from_prop": 999}
     mock_ctrl.get_property.return_value = status_prop
-    conn.condition_template = Template("{{ 1 if device_state.status_from_prop == 999 else 0 }}")
+    conn.condition_template = Template(
+        "{{ 1 if device_state.status_from_prop == 999 else 0 }}"
+    )
     assert conn.check_execute_condition(None) is True
 
     mock_ctrl.device_state = "invalid_non_dict"
@@ -393,19 +401,24 @@ def test_check_execute_condition_controller_get_property_status():
 
     # Case 4: Controller with get_property returning dict value
     status_prop.value = {"status_flag": "running"}
-    conn.condition_template = Template("{{ 1 if device_state.status_flag == 'running' else 0 }}")
+    conn.condition_template = Template(
+        "{{ 1 if device_state.status_flag == 'running' else 0 }}"
+    )
     assert conn.check_execute_condition(None) is True
 
     # Case 5: When raw_state is already a valid dict, get_property is NOT called (kills slow-killed mutant 17 & 19)
     mock_ctrl.get_property.reset_mock()
     status_prop.value = {"overwritten": True}
-    conn.condition_template = Template("{{ 1 if device_state.original == 'keep_me' else 0 }}")
+    conn.condition_template = Template(
+        "{{ 1 if device_state.original == 'keep_me' else 0 }}"
+    )
     assert conn.check_execute_condition({"original": "keep_me"}) is True
     mock_ctrl.get_property.assert_not_called()
 
 
 def test_check_execute_condition_dataclass_and_object_conversion():
     """Test check_execute_condition fallback to dataclass and object __dict__."""
+
     @dataclasses.dataclass
     class StateData:
         mode: str = "cool"
@@ -419,7 +432,9 @@ def test_check_execute_condition_dataclass_and_object_conversion():
     conn = DummyConnection({}, mock_logger)
 
     # Case 1: Dataclass instance (Kills M16, M17)
-    conn.condition_template = Template("{{ 1 if device_state.mode == 'cool' and device_state.speed == 3 else 0 }}")
+    conn.condition_template = Template(
+        "{{ 1 if device_state.mode == 'cool' and device_state.speed == 3 else 0 }}"
+    )
     assert conn.check_execute_condition(StateData()) is True
     mock_logger.debug.assert_any_call(
         "%s Translating mapped Dataclass to RAW API dictionary for Jinja evaluation.",
@@ -435,7 +450,9 @@ def test_check_execute_condition_dataclass_and_object_conversion():
     assert conn.check_execute_condition("primitive_string") is True
 
     # Case 4: Dict state is preserved and not overwritten
-    conn.condition_template = Template("{{ 1 if device_state.dict_mode == 'dry' else 0 }}")
+    conn.condition_template = Template(
+        "{{ 1 if device_state.dict_mode == 'dry' else 0 }}"
+    )
     assert conn.check_execute_condition({"dict_mode": "dry"}) is True
 
 
@@ -444,15 +461,21 @@ def test_check_execute_condition_devices_list_unwrapping():
     conn = DummyConnection({}, logging.getLogger("test"))
 
     # Case 1: Valid Devices list with dict
-    conn.condition_template = Template("{{ 1 if device_state.target_temp == 24 else 0 }}")
+    conn.condition_template = Template(
+        "{{ 1 if device_state.target_temp == 24 else 0 }}"
+    )
     assert conn.check_execute_condition({"Devices": [{"target_temp": 24}]}) is True
 
     # Case 2: Empty Devices list does not throw IndexError (kills slow-killed mutant 36, 38)
-    conn.condition_template = Template("{{ 1 if 'Devices' in device_state and device_state.Devices == [] else 0 }}")
+    conn.condition_template = Template(
+        "{{ 1 if 'Devices' in device_state and device_state.Devices == [] else 0 }}"
+    )
     assert conn.check_execute_condition({"Devices": []}) is True
 
     # Case 3: Devices is not a list (e.g. string or None) does not throw exception
-    conn.condition_template = Template("{{ 1 if device_state.Devices == 'not_a_list' else 0 }}")
+    conn.condition_template = Template(
+        "{{ 1 if device_state.Devices == 'not_a_list' else 0 }}"
+    )
     assert conn.check_execute_condition({"Devices": "not_a_list"}) is True
 
 

@@ -218,7 +218,9 @@ async def test_get_smartthings_token_discovery_branches():
     flow.hass = MagicMock()
 
     # 1. Official SmartThings entry exists with valid access_token
-    entry_with_tok = MockConfigEntry(domain="smartthings", data={"access_token": "st_token_xyz"})
+    entry_with_tok = MockConfigEntry(
+        domain="smartthings", data={"access_token": "st_token_xyz"}
+    )
     flow.hass.config_entries.async_entries.return_value = [entry_with_tok]
     assert flow._get_smartthings_token() == "st_token_xyz"
 
@@ -243,7 +245,9 @@ async def test_rest_api_schema_smartthings_hvac_defaults():
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
 
-    entry_with_tok = MockConfigEntry(domain="smartthings", data={"access_token": "auto_st_token"})
+    entry_with_tok = MockConfigEntry(
+        domain="smartthings", data={"access_token": "auto_st_token"}
+    )
     flow.hass.config_entries.async_entries.return_value = [entry_with_tok]
 
     flow.flow_data = {
@@ -316,7 +320,9 @@ async def test_rest_api_schema_non_smartthings_device():
     schema1 = flow._get_rest_api_schema()
     ip_key1, _ = get_schema_marker(schema1, CONF_IP_ADDRESS)
     assert isinstance(ip_key1, vol.Required)
-    assert ip_key1.default is vol.UNDEFINED or not callable(getattr(ip_key1, "default", None))
+    assert ip_key1.default is vol.UNDEFINED or not callable(
+        getattr(ip_key1, "default", None)
+    )
     dev_id_key1, _ = get_schema_marker(schema1, CONF_DEVICE_ID)
     assert dev_id_key1 is None  # Not present for non-ST
 

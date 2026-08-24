@@ -121,12 +121,15 @@ async def test_async_initialize_early_exits_bombardment(mock_controller_errors):
     mock_controller_errors.yaml_file = "/test_no_match.yaml"
     clear_yaml_cache()
     loader = YamlConfigLoader(mock_controller_errors)
-    with patch(
-        "custom_components.climate_ip.controller_yaml_config.load_yaml",
-        return_value={"device": {"connection": {"type": "unsupported_type"}}},
-    ), patch(
-        "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
-        [],
+    with (
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.load_yaml",
+            return_value={"device": {"connection": {"type": "unsupported_type"}}},
+        ),
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
+            [],
+        ),
     ):
         assert await loader.async_initialize() is False
 
@@ -327,6 +330,6 @@ async def test_apply_temperature_units_simple_sensor_fallback(mock_controller_er
     await loader.async_finish_initialization()
 
     # Lethal assertion: Engine MUST have dropped to 'elif' and applied unit
-    assert (
-        strict_sensor.unit_applied == "°F"
-    ), "The temperature fallback 'elif hasattr' block did not execute."
+    assert strict_sensor.unit_applied == "°F", (
+        "The temperature fallback 'elif hasattr' block did not execute."
+    )

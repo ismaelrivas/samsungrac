@@ -114,7 +114,9 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
             features |= ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
         self._attr_supported_features = features
 
-        entry = getattr(self.coordinator, "entry", None) or getattr(self.coordinator, "config_entry", None)
+        entry = getattr(self.coordinator, "entry", None) or getattr(
+            self.coordinator, "config_entry", None
+        )
         options_dict = entry.options if entry is not None else {}
         data_dict = entry.data if entry is not None else {}
         configured_step = options_dict.get(

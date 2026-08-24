@@ -115,11 +115,13 @@ class PropertyDebouncer:
 
     def cancel_all(self) -> None:
         """Cancel all active timers, clear pending payloads, and poison active zombies."""
-        self._generation += 1  # 💥 Global poisoning: any queued task will be invalidated
-        
+        self._generation += (
+            1  # 💥 Global poisoning: any queued task will be invalidated
+        )
+
         _LOGGER.debug(
             "[Debouncer] Purge requested. Generation incremented to %s",
-            self._generation
+            self._generation,
         )
 
         for unsub in self._timers.values():
@@ -152,20 +154,17 @@ class PropertyDebouncer:
             )
         effective_val = val
         is_turn_off = (
-            (
-                property_name == ATTR_HVAC_MODE
-                and effective_val in (HVACMode.OFF, HVACMode.OFF.value)
-            )
-            or (
-                property_name == ATTR_POWER
-                and (
-                    effective_val is False
-                    or (
-                        isinstance(effective_val, str)
-                        and effective_val.lower() in FALSY_STRINGS
-                    )
-                    or effective_val == 0
+            property_name == ATTR_HVAC_MODE
+            and effective_val in (HVACMode.OFF, HVACMode.OFF.value)
+        ) or (
+            property_name == ATTR_POWER
+            and (
+                effective_val is False
+                or (
+                    isinstance(effective_val, str)
+                    and effective_val.lower() in FALSY_STRINGS
                 )
+                or effective_val == 0
             )
         )
 
@@ -179,7 +178,9 @@ class PropertyDebouncer:
             return await coroutine_func(*args, **kwargs)
 
         # Immediate execution if this specific property has not been modified within trailing window
-        if property_name not in self._last_activities or (now - last_activity >= self.delay):
+        if property_name not in self._last_activities or (
+            now - last_activity >= self.delay
+        ):
             self._cancel_timer(property_name)
             self._pending_payloads.pop(property_name, None)
             self._last_activities[property_name] = now
@@ -201,7 +202,12 @@ class PropertyDebouncer:
         )  # pragma: no mutate
 
         # 🛡️ Package the payload with the CURRENT Generation ID
-        self._pending_payloads[property_name] = (coroutine_func, args, kwargs, self._generation)
+        self._pending_payloads[property_name] = (
+            coroutine_func,
+            args,
+            kwargs,
+            self._generation,
+        )
 
         @callback
         def _fire_delayed(_now: Any = None) -> None:
@@ -220,7 +226,7 @@ class PropertyDebouncer:
                 )  # pragma: no mutate
 
                 async def _task_runner() -> None:
-                    # 🛡️ THE ANTI-ZOMBIE SHIELD: 
+                    # 🛡️ THE ANTI-ZOMBIE SHIELD:
                     # The timer expired, but the background task just entered the Event Loop.
                     # We check if the user smashed another button invoking cancel_all() in the meantime.
                     if self._generation != captured_generation:
@@ -282,6 +288,7 @@ class PropertyDebouncer:
             self.delay,
         )  # pragma: no mutate
         return DEBOUNCE_QUEUED
+
 
 class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     """Manages data fetching for Samsung Climate devices."""
@@ -449,9 +456,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             return
         new_data = dict(self.config_entry.data)  # pragma: no mutate
         new_data[CONF_SSL_CONFIG_KEY] = ssl_config
-        self.hass.config_entries.async_update_entry(
-            self.config_entry, data=new_data
-        )
+        self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
         _LOGGER.info(
             "%s Persisted SSL config to ConfigEntry data.", self.log_prefix
         )  # pragma: no mutate
@@ -472,13 +477,17 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         )  # pragma: no mutate
         self.debouncer.cancel_all()
         self.controller.clear_state_cache()
-        self.async_set_update_error(UpdateFailed(f"{ERR_DEVICE_OFFLINE_PREFIX}: {reason}"))
+        self.async_set_update_error(
+            UpdateFailed(f"{ERR_DEVICE_OFFLINE_PREFIX}: {reason}")
+        )
 
     @callback
     def _async_switch_to_raw_engine(self) -> None:
         """Switch connection method option to RAW permanently and notify the user."""
         new_options = {**self.config_entry.options, CONF_CONN_METHOD: CONN_METHOD_RAW}
-        self.hass.config_entries.async_update_entry(self.config_entry, options=new_options)
+        self.hass.config_entries.async_update_entry(
+            self.config_entry, options=new_options
+        )
 
         device_name = self.device_info.get("name") or self.safe_unique_id
 
@@ -635,9 +644,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 err,
                 exc_info=True,
             )  # pragma: no mutate
-            self.async_set_update_error(
-                UpdateFailed(f"Push update failed: {err}")
-            )
+            self.async_set_update_error(UpdateFailed(f"Push update failed: {err}"))
 
     def _create_device_state(self) -> ClimateIPDeviceState:
         """Fetch the strictly typed state representation directly from the controller."""
@@ -674,7 +681,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             # Hardware spacing: MUST remain inside lock.
             await asyncio.sleep(HARDWARE_BREATHING_ROOM_SEC)
         if not isinstance(res, bool):
-            raise TypeError(f"Controller.async_set_property returned {type(res)}, expected bool")
+            raise TypeError(
+                f"Controller.async_set_property returned {type(res)}, expected bool"
+            )
         return res
 
     async def async_set_property(

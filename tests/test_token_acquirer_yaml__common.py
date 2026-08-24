@@ -97,7 +97,9 @@ def test_initialization(mock_hass, stream_config):
 def test_resolve_cert_path(mock_hass, stream_config):
     """Test the certificate path resolution logic thoroughly."""
     # None and empty sentinel
-    acq_empty = GenericYamlTokenAcquirer(mock_hass, "192.168.1.100", stream_config, cert_path=None)
+    acq_empty = GenericYamlTokenAcquirer(
+        mock_hass, "192.168.1.100", stream_config, cert_path=None
+    )
     assert acq_empty._resolve_cert_path(None) is None
     assert acq_empty._resolve_cert_path("") == ""
 
@@ -120,7 +122,9 @@ def test_resolve_cert_path(mock_hass, stream_config):
     assert "/" in res  # Should be joined with __file__
 
     # Default cert sentinel when auth_config has empty/no tls_config (kills get(None, {}) / get("tls_config", None))
-    acq_no_tls = GenericYamlTokenAcquirer(mock_hass, "192.168.1.100", {}, cert_path=None)
+    acq_no_tls = GenericYamlTokenAcquirer(
+        mock_hass, "192.168.1.100", {}, cert_path=None
+    )
     assert acq_no_tls._resolve_cert_path("__default_cert__") is None
 
     # Absolute Unix path directly (has /)

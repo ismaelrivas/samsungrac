@@ -49,7 +49,6 @@ class DummyController(ClimateController):
     async def async_clear_pending_updates(self) -> None:
         pass
 
-
     @property
     def poll(self) -> bool | None:
         return False

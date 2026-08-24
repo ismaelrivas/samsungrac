@@ -11,18 +11,33 @@ import pytest
 class StubHass:
     def __init__(self):
         from unittest.mock import AsyncMock
-        self.async_add_executor_job = AsyncMock(spec=["__call__", "return_value"], side_effect=lambda func, *args: func(*args))
-    def __repr__(self): return "<SafeHass>"
-    def __dir__(self): return ["async_add_executor_job"]
+
+        self.async_add_executor_job = AsyncMock(
+            spec=["__call__", "return_value"],
+            side_effect=lambda func, *args: func(*args),
+        )
+
+    def __repr__(self):
+        return "<SafeHass>"
+
+    def __dir__(self):
+        return ["async_add_executor_job"]
+
 
 class StubSession:
     def __init__(self):
         from unittest.mock import AsyncMock, MagicMock
+
         self.closed = False
         self.request = MagicMock(spec=["__call__", "return_value"])
         self.close = AsyncMock(spec=["__call__", "return_value"])
-    def __repr__(self): return "<SafeSession>"
-    def __dir__(self): return ["closed", "request", "close"]
+
+    def __repr__(self):
+        return "<SafeSession>"
+
+    def __dir__(self):
+        return ["closed", "request", "close"]
+
 
 from homeassistant.const import CONF_TOKEN
 
@@ -104,7 +119,9 @@ async def test_close_local_session_exception(connection_config, mock_logger, moc
         await aiohttp.ClientSession.close(local_session)
 
 
-async def test_close_shared_state_lock_runtime_error(connection_config, mock_logger, mock_hass):
+async def test_close_shared_state_lock_runtime_error(
+    connection_config, mock_logger, mock_hass
+):
     """Test that RuntimeError during shared state lock is logged correctly to kill mutant at L1028."""
     with patch(
         "custom_components.climate_ip.connection_aiohttp._LOGGER"

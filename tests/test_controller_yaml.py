@@ -94,7 +94,8 @@ def test_yaml_controller_coverage_boost() -> None:
 
     # 2. Test clear_state_cache with and without poller
     controller = YamlController(
-        config={"device_type": "test_device", "ip_address": "127.0.0.1"}, logger=MagicMock()
+        config={"device_type": "test_device", "ip_address": "127.0.0.1"},
+        logger=MagicMock(),
     )
     controller.clear_state_cache()  # Without poller (should pass safely)
 
@@ -123,9 +124,7 @@ async def test_async_set_property_registers_pending_update(
     mock_hass: MagicMock,
 ) -> None:
     """Test that async_set_property strictly delegates to poller.register_pending_update."""
-    controller = YamlController(
-        yaml_config, mock_logger, hass=mock_hass
-    )
+    controller = YamlController(yaml_config, mock_logger, hass=mock_hass)
 
     # Mock loader dependencies
     controller.loader.is_fully_initialized = True
@@ -177,9 +176,7 @@ def test_yaml_controller_strict_initialization() -> None:
             "custom_components.climate_ip.controller_yaml.YamlStatePoller"
         ) as mock_poller_class,
     ):
-        controller = YamlController(
-            config_input, mock_logger, mock_hass, mock_session
-        )
+        controller = YamlController(config_input, mock_logger, mock_hass, mock_session)
 
     # 1. Verify delegate injections
     assert controller.hass is mock_hass
@@ -195,25 +192,25 @@ def test_yaml_controller_strict_initialization() -> None:
 
     # 4. Callback initialization strictly as callable no-ops
     assert controller.discovered_devices is None
-    assert callable(
-        controller.on_token_refreshed
-    ), "Must implement the no-op from the class"
+    assert callable(controller.on_token_refreshed), (
+        "Must implement the no-op from the class"
+    )
 
-    assert callable(
-        controller.on_push_update_callback
-    ), "Must inherit the no-op from the base class"
-    assert callable(
-        controller.on_offline_callback
-    ), "Must inherit the no-op from the base class"
-    assert callable(
-        controller.request_refresh_callback
-    ), "Must inherit the no-op from the base class"
-    assert callable(
-        controller.on_ssl_config_updated
-    ), "Must inherit the no-op from the base class"
-    assert callable(
-        controller.on_connection_failed_callback
-    ), "Must inherit the no-op from the base class"
+    assert callable(controller.on_push_update_callback), (
+        "Must inherit the no-op from the base class"
+    )
+    assert callable(controller.on_offline_callback), (
+        "Must inherit the no-op from the base class"
+    )
+    assert callable(controller.request_refresh_callback), (
+        "Must inherit the no-op from the base class"
+    )
+    assert callable(controller.on_ssl_config_updated), (
+        "Must inherit the no-op from the base class"
+    )
+    assert callable(controller.on_connection_failed_callback), (
+        "Must inherit the no-op from the base class"
+    )
 
     # 5. Debug flag assignment
     assert controller._debug is True, "The mutant altered debug flag extraction"
@@ -246,9 +243,9 @@ def test_yaml_controller_fallback_initialization() -> None:
 
     assert controller._ip_address == "10.0.0.1", "Fallback 'host' failed"
     assert controller._unique_id == "00:11:22", "Fallback CONF_MAC failed"
-    assert (
-        controller._device_id == "00:11:22"
-    ), "Generic device_id fallback to unique_id failed"
+    assert controller._device_id == "00:11:22", (
+        "Generic device_id fallback to unique_id failed"
+    )
     assert controller._debug is False
 
 
@@ -264,9 +261,9 @@ def test_yaml_controller_fallback_else_and_debug_default() -> None:
     ):
         controller = YamlController(config_input, mock_logger)
 
-    assert (
-        controller._device_id == "fallback_mac_only"
-    ), "The fallback branch did not assign unique_id to device_id"
+    assert controller._device_id == "fallback_mac_only", (
+        "The fallback branch did not assign unique_id to device_id"
+    )
 
     assert controller._debug is False, "The debug fallback is not False"
 
@@ -275,7 +272,11 @@ def test_yaml_controller_fallback_else_and_debug_default() -> None:
 def mock_yaml_controller():
     """Fixture to provide an initialized YamlController with mocked delegates."""
     mock_logger = logging.getLogger("test_logger")
-    config_input = {CONF_CONFIG_FILE: "test.yaml", CONF_MAC: "mac123", "ip_address": "127.0.0.1"}
+    config_input = {
+        CONF_CONFIG_FILE: "test.yaml",
+        CONF_MAC: "mac123",
+        "ip_address": "127.0.0.1",
+    }
 
     with (
         patch("custom_components.climate_ip.controller_yaml.YamlConfigLoader"),
@@ -471,6 +472,7 @@ def test_yaml_controller_sensors_property(mock_yaml_controller) -> None:
     mock_yaml_controller.loader.sensors_list = ["valid_sensor", "ghost_sensor"]
 
     import pytest
+
     with pytest.raises(KeyError, match="ghost_sensor"):
         _ = mock_yaml_controller.sensors
 
@@ -501,6 +503,7 @@ def test_yaml_controller_climate_state_mapping(
     mock_state_class: MagicMock, mock_yaml_controller: MagicMock
 ) -> None:
     """Kills instantiation mutants of state using White Box Mathematics."""
+
     def mock_get_prop(prop: str) -> Any:
         if prop == ATTR_HVAC_MODE:
             return "cool"
@@ -550,6 +553,7 @@ def test_yaml_controller_climate_state_mapping(
         swing_modes=("on", "off"),
         preset_modes=("eco",),
     )
+
 
 def test_yaml_controller_unique_id_property(mock_yaml_controller) -> None:
     """Verifies that unique_id property returns the pre-computed _unique_id."""
@@ -692,7 +696,8 @@ def test_yaml_controller_untested_properties_and_cache() -> None:
     """Cover getters, setters, and clear_state_cache to kill untested mutants."""
     mock_logger = logging.getLogger(__name__)
     controller = YamlController(
-        config={"device_type": "test_device", "ip_address": "127.0.0.1"}, logger=mock_logger
+        config={"device_type": "test_device", "ip_address": "127.0.0.1"},
+        logger=mock_logger,
     )
 
     # clear_state_cache
@@ -705,7 +710,8 @@ def test_yaml_controller_is_property_superseded() -> None:
     """Test is_property_superseded logic under all pending updates states."""
     mock_logger = logging.getLogger(__name__)
     controller = YamlController(
-        config={"device_type": "test_device", "ip_address": "127.0.0.1"}, logger=mock_logger
+        config={"device_type": "test_device", "ip_address": "127.0.0.1"},
+        logger=mock_logger,
     )
     controller.poller._pending_updates = {
         "target_temperature": (22.0, 100.0),
@@ -767,7 +773,9 @@ def test_from_config_entry_and_extract_config(mock_hass: MagicMock) -> None:
         assert controller_default._device_id == "uniq_456"
 
         # 3. Test _extract_config_from_entry with empty/whitespace device_id
-        extracted = YamlController._extract_config_from_entry(mock_entry, device_id="   ")
+        extracted = YamlController._extract_config_from_entry(
+            mock_entry, device_id="   "
+        )
         assert CONF_DEVICE_ID not in extracted
         assert extracted["entry_id"] == "entry_123"
         assert extracted["unique_id"] == "uniq_456"
@@ -839,7 +847,9 @@ def test_yaml_controller_init_type_errors_and_whitespace_name() -> None:
         assert controller2._config["name"] == "Living Room AC"
 
 
-def test_yaml_controller_objects_by_id_caching_and_filtering(mock_yaml_controller) -> None:
+def test_yaml_controller_objects_by_id_caching_and_filtering(
+    mock_yaml_controller,
+) -> None:
     """Kills mutants in _objects_by_id regarding hass_attr filtering, collision, and empty handling."""
     mock_yaml_controller._obj_id_cache = None
     mock_yaml_controller.loader.is_fully_initialized = True
@@ -873,7 +883,9 @@ def test_yaml_controller_objects_by_id_caching_and_filtering(mock_yaml_controlle
             return "power_id"  # Collides with existing op_id in cache: should NOT overwrite op1
         return 123  # Non-string: should NOT be added
 
-    mock_yaml_controller.poller.get_hass_attr_for_op_id = MagicMock(side_effect=mock_get_hass_attr)
+    mock_yaml_controller.poller.get_hass_attr_for_op_id = MagicMock(
+        side_effect=mock_get_hass_attr
+    )
 
     cache = mock_yaml_controller._objects_by_id
     assert cache["power_id"] is op1

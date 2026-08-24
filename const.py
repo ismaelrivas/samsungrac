@@ -36,7 +36,9 @@ ERR_MISSING_DIAGNOSTICS = "missing_diagnostics"
 ERR_COERCING_STATE = "error_coercing_state"
 ERR_PERSISTENT_CONNECTION_FAILURE: final = "Persistent connection failure"
 ERR_DEVICE_OFFLINE_PREFIX: final = "Device offline"
-ERR_AUTO_HEALING_RAW_IN_PROGRESS: final = "Auto-healing in progress: Switching to RAW engine"
+ERR_AUTO_HEALING_RAW_IN_PROGRESS: final = (
+    "Auto-healing in progress: Switching to RAW engine"
+)
 
 NON_SERIALIZABLE_KEYS: final = ("hass", "session", "logger")
 TRUTHY_STRINGS: final = ("true", "1", "yes", "on")
@@ -55,7 +57,6 @@ TMPL_VAR_DEVICE_ID: final = "device_id"
 TMPL_VAR_VALUE: final = "value"
 TMPL_VAR_DEVICE_STATE: final = "device_state"
 ID_DELIMITER: final = "_"
-
 
 
 # --- Configurable Options ---
@@ -88,16 +89,18 @@ CONF_DEVICES = "devices"
 CONF_DEVICE_ID = "device_id"
 CONF_SUBDEVICE_ID = "id"
 
-IMMUTABLE_CONFIG_KEYS: final[frozenset[str]] = frozenset({
-    CONF_HOST,
-    CONF_IP_ADDRESS,
-    CONF_MAC,
-    CONF_TOKEN,
-    CONF_ENTRY_ID,
-    CONF_DEVICE_ID,
-    CONF_UNIQUE_ID,
-    CONF_DEVICE_TYPE,
-})
+IMMUTABLE_CONFIG_KEYS: final[frozenset[str]] = frozenset(
+    {
+        CONF_HOST,
+        CONF_IP_ADDRESS,
+        CONF_MAC,
+        CONF_TOKEN,
+        CONF_ENTRY_ID,
+        CONF_DEVICE_ID,
+        CONF_UNIQUE_ID,
+        CONF_DEVICE_TYPE,
+    }
+)
 CONF_TEMP_NATIVE_CURRENT = "temp_native_current"
 CONF_TEMP_NATIVE_TARGET = "temp_native_target"
 CONF_TARGET_TEMP_STEP = "target_temperature_step"

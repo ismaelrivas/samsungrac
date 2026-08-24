@@ -61,6 +61,7 @@ def make_mock_timeout_cm():
     ctx.__aexit__ = AsyncMock(return_value=False)
     return ctx
 
+
 async def mock_wait_for(coro, timeout=None):
     return await coro
 
@@ -68,7 +69,9 @@ async def mock_wait_for(coro, timeout=None):
 @pytest.fixture
 def acquirer(mock_hass, listener_config):
     """Create a listener mode acquirer instance."""
-    return GenericYamlTokenAcquirer(mock_hass, "192.168.1.50", listener_config, cert_path="ac14k_m.pem")
+    return GenericYamlTokenAcquirer(
+        mock_hass, "192.168.1.50", listener_config, cert_path="ac14k_m.pem"
+    )
 
 
 async def test_start_listener_server_success(acquirer):
@@ -77,7 +80,10 @@ async def test_start_listener_server_success(acquirer):
     mock_server = AsyncMock()
 
     with (
-        patch("custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context", return_value=mock_ssl_ctx) as mock_create_ssl,
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context",
+            return_value=mock_ssl_ctx,
+        ) as mock_create_ssl,
         patch("asyncio.start_server", return_value=mock_server) as mock_start_server,
     ):
         await acquirer._start_listener_server()
@@ -93,17 +99,24 @@ async def test_start_listener_server_success(acquirer):
         )
 
 
-async def test_start_listener_server_custom_port_and_ciphers(mock_hass, listener_config):
+async def test_start_listener_server_custom_port_and_ciphers(
+    mock_hass, listener_config
+):
     """Test listener server startup with custom port and ciphers in config."""
     listener_config["listener"]["port"] = 9999
     listener_config["tls_config"]["ciphers"] = ["CUSTOM-CIPHER-SUITE"]
-    acq = GenericYamlTokenAcquirer(mock_hass, "192.168.1.50", listener_config, cert_path="ac14k_m.pem")
+    acq = GenericYamlTokenAcquirer(
+        mock_hass, "192.168.1.50", listener_config, cert_path="ac14k_m.pem"
+    )
 
     mock_ssl_ctx = MagicMock()
     mock_server = AsyncMock()
 
     with (
-        patch("custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context", return_value=mock_ssl_ctx) as mock_create_ssl,
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context",
+            return_value=mock_ssl_ctx,
+        ) as mock_create_ssl,
         patch("asyncio.start_server", return_value=mock_server) as mock_start_server,
     ):
         await acq._start_listener_server()
@@ -118,13 +131,18 @@ async def test_start_listener_server_custom_port_and_ciphers(mock_hass, listener
 async def test_start_listener_server_fallback_bind_ip(mock_hass, listener_config):
     """Test bind_ip falling back to 0.0.0.0 when local_ip is empty."""
     mock_hass.config.api.local_ip = None
-    acq = GenericYamlTokenAcquirer(mock_hass, "192.168.1.50", listener_config, "ac14k_m.pem")
+    acq = GenericYamlTokenAcquirer(
+        mock_hass, "192.168.1.50", listener_config, "ac14k_m.pem"
+    )
 
     mock_ssl_ctx = MagicMock()
     mock_server = AsyncMock()
 
     with (
-        patch("custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context", return_value=mock_ssl_ctx),
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context",
+            return_value=mock_ssl_ctx,
+        ),
         patch("asyncio.start_server", return_value=mock_server) as mock_start_server,
     ):
         await acq._start_listener_server()
@@ -141,10 +159,18 @@ async def test_initiate_pairing_success(acquirer):
         return await coro
 
     with (
-        patch.object(acquirer, "_start_listener_server", new_callable=AsyncMock) as mock_start,
+        patch.object(
+            acquirer, "_start_listener_server", new_callable=AsyncMock
+        ) as mock_start,
         patch("asyncio.open_connection") as mock_open_connection,
-        patch("custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context", return_value=mock_ssl_ctx) as mock_ssl,
-        patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for", side_effect=spy_wait_for),
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context",
+            return_value=mock_ssl_ctx,
+        ) as mock_ssl,
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
+            side_effect=spy_wait_for,
+        ),
     ):
         mock_reader = MockStreamReader([b"HTTP/1.1 200 OK\r\n\r\n"])
         mock_writer = MockStreamWriter()
@@ -187,9 +213,14 @@ async def test_initiate_pairing_listener_defaults_when_config_empty(mock_hass):
     mock_ssl_ctx = MagicMock()
 
     with (
-        patch.object(acq, "_start_listener_server", new_callable=AsyncMock) as mock_start,
+        patch.object(
+            acq, "_start_listener_server", new_callable=AsyncMock
+        ) as mock_start,
         patch("asyncio.open_connection") as mock_open_connection,
-        patch("custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context", return_value=mock_ssl_ctx) as mock_ssl,
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context",
+            return_value=mock_ssl_ctx,
+        ) as mock_ssl,
     ):
         mock_reader = MockStreamReader([b"HTTP/1.1 200 OK\r\n\r\n"])
         mock_writer = MockStreamWriter()
@@ -227,11 +258,16 @@ async def test_initiate_pairing_listener_read_response_timeout_swallowed(acquire
     with (
         patch.object(acquirer, "_start_listener_server", new_callable=AsyncMock),
         patch("asyncio.open_connection") as mock_open_connection,
-        patch("custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context", return_value=mock_ssl_ctx),
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context",
+            return_value=mock_ssl_ctx,
+        ),
     ):
         mock_reader = MockStreamReader([])
+
         async def mock_read_timeout(*args, **kwargs):
             raise TimeoutError("Initial response read timed out")
+
         mock_reader.read = mock_read_timeout
 
         mock_writer = MockStreamWriter()
@@ -243,7 +279,9 @@ async def test_initiate_pairing_listener_read_response_timeout_swallowed(acquire
         assert mock_writer.wait_closed_called is True
 
 
-async def test_initiate_pairing_listener_body_bytes_and_custom_headers(mock_hass, listener_config):
+async def test_initiate_pairing_listener_body_bytes_and_custom_headers(
+    mock_hass, listener_config
+):
     """Test initiate pairing with byte payload, custom path and existing Content-Length."""
     listener_config["request_pairing"]["path"] = "/custom/devicetoken"
     listener_config["request_pairing"]["port"] = 7777
@@ -252,19 +290,26 @@ async def test_initiate_pairing_listener_body_bytes_and_custom_headers(mock_hass
         "Content-Type": "application/json",
         "Content-Length": "28",
     }
-    acq = GenericYamlTokenAcquirer(mock_hass, "192.168.1.50", listener_config, cert_path="ac14k_m.pem")
+    acq = GenericYamlTokenAcquirer(
+        mock_hass, "192.168.1.50", listener_config, cert_path="ac14k_m.pem"
+    )
 
     with (
         patch.object(acq, "_start_listener_server", new_callable=AsyncMock),
         patch("asyncio.open_connection") as mock_open,
-        patch("custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context", return_value=MagicMock()),
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context",
+            return_value=MagicMock(),
+        ),
     ):
         mock_reader = MockStreamReader([b"HTTP/1.1 200 OK\r\n\r\n"])
         mock_writer = MockStreamWriter()
         mock_open.return_value = (mock_reader, mock_writer)
 
         res = await acq.async_initiate_pairing()
-        mock_open.assert_called_once_with("192.168.1.50", 7777, ssl=mock_open.call_args.kwargs["ssl"])
+        mock_open.assert_called_once_with(
+            "192.168.1.50", 7777, ssl=mock_open.call_args.kwargs["ssl"]
+        )
 
         written_text = mock_writer.written_data.decode("utf-8")
         assert "POST /custom/devicetoken HTTP/1.1\r\n" in written_text
@@ -284,7 +329,10 @@ async def test_wait_for_token_success(acquirer):
     acquirer._token_received_event.wait = mock_wait
 
     with (
-        patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout", return_value=mock_timeout_ctx) as mock_timeout,
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout",
+            return_value=mock_timeout_ctx,
+        ) as mock_timeout,
         patch.object(acquirer, "async_close", new_callable=AsyncMock) as mock_close,
     ):
         token = await acquirer.async_wait_for_token()
@@ -296,7 +344,9 @@ async def test_wait_for_token_success(acquirer):
 async def test_wait_for_token_custom_timeout(mock_hass, listener_config):
     """Test wait_for_token with custom timeout_seconds in listener config."""
     listener_config["listener"]["timeout_seconds"] = 120
-    acq = GenericYamlTokenAcquirer(mock_hass, "192.168.1.50", listener_config, "ac14k_m.pem")
+    acq = GenericYamlTokenAcquirer(
+        mock_hass, "192.168.1.50", listener_config, "ac14k_m.pem"
+    )
     acq._received_token = "custom_timeout_token"
 
     async def mock_wait():
@@ -306,7 +356,10 @@ async def test_wait_for_token_custom_timeout(mock_hass, listener_config):
     mock_timeout_ctx = make_mock_timeout_cm()
 
     with (
-        patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout", return_value=mock_timeout_ctx) as mock_timeout,
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout",
+            return_value=mock_timeout_ctx,
+        ) as mock_timeout,
         patch.object(acq, "async_close", new_callable=AsyncMock) as mock_close,
     ):
         token = await acq.async_wait_for_token()
@@ -325,7 +378,10 @@ async def test_wait_for_token_timeout(acquirer):
     acquirer._token_received_event.wait = mock_wait
 
     with (
-        patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout", return_value=mock_timeout_ctx),
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout",
+            return_value=mock_timeout_ctx,
+        ),
         patch.object(acquirer, "async_close", new_callable=AsyncMock) as mock_close,
     ):
         with pytest.raises(TimeoutError):
@@ -345,7 +401,10 @@ async def test_handle_client_chunk_accumulation_and_regex(acquirer):
         captured_timeouts.append(timeout)
         return await coro
 
-    with patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for", side_effect=spy_wait_for):
+    with patch(
+        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
+        side_effect=spy_wait_for,
+    ):
         await acquirer._handle_client(mock_reader, mock_writer)
 
         assert captured_timeouts == [10.0]
@@ -360,11 +419,16 @@ async def test_handle_client_chunk_accumulation_and_regex(acquirer):
 async def test_handle_client_custom_buffer_size(mock_hass, listener_config):
     """Test TCP client handler using configured buffer_size from auth_config."""
     listener_config["buffer_size"] = 1024
-    acq = GenericYamlTokenAcquirer(mock_hass, "192.168.1.50", listener_config, "ac14k_m.pem")
+    acq = GenericYamlTokenAcquirer(
+        mock_hass, "192.168.1.50", listener_config, "ac14k_m.pem"
+    )
     mock_reader = MockStreamReader([b'HTTP/1.1 200 OK\r\nDeviceToken: "buf_token"\r\n'])
     mock_writer = MockStreamWriter()
 
-    with patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for", side_effect=mock_wait_for):
+    with patch(
+        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
+        side_effect=mock_wait_for,
+    ):
         await acq._handle_client(mock_reader, mock_writer)
         assert mock_reader.last_read_size == 1024
         assert acq._received_token == "buf_token"
@@ -372,7 +436,9 @@ async def test_handle_client_custom_buffer_size(mock_hass, listener_config):
 
 async def test_handle_client_explicit_utf8_decoding(mock_hass, listener_config):
     """Test that client handler decodes payload with explicit utf-8 and ignore errors."""
-    acq = GenericYamlTokenAcquirer(mock_hass, "192.168.1.50", listener_config, "ac14k_m.pem")
+    acq = GenericYamlTokenAcquirer(
+        mock_hass, "192.168.1.50", listener_config, "ac14k_m.pem"
+    )
     mock_data = MagicMock(spec=bytes)
     mock_data.decode.return_value = 'DeviceToken: "explicit_utf8_tok"'
 
@@ -380,7 +446,10 @@ async def test_handle_client_explicit_utf8_decoding(mock_hass, listener_config):
     mock_reader.read.return_value = mock_data
     mock_writer = MockStreamWriter()
 
-    with patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for", side_effect=mock_wait_for):
+    with patch(
+        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
+        side_effect=mock_wait_for,
+    ):
         await acq._handle_client(mock_reader, mock_writer)
         mock_data.decode.assert_called_once_with("utf-8", errors="ignore")
         assert acq._received_token == "explicit_utf8_tok"
@@ -400,7 +469,10 @@ async def test_handle_client_default_success_response(mock_hass):
     mock_reader = MockStreamReader([b'DeviceToken: "default_succ_token"'])
     mock_writer = MockStreamWriter()
 
-    with patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for", side_effect=mock_wait_for):
+    with patch(
+        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
+        side_effect=mock_wait_for,
+    ):
         await acq._handle_client(mock_reader, mock_writer)
         assert mock_reader.last_read_size == 4096
         assert acq._received_token == "default_succ_token"
@@ -408,16 +480,23 @@ async def test_handle_client_default_success_response(mock_hass):
         assert mock_writer.written_data == b"HTTP/1.1 200 OK\r\n\r\n"
 
 
-async def test_handle_client_custom_success_and_error_responses(mock_hass, listener_config):
+async def test_handle_client_custom_success_and_error_responses(
+    mock_hass, listener_config
+):
     """Test custom success and error response strings with line-ending normalization."""
     listener_config["listener"]["success_response"] = "HTTP/1.1 200 CUSTOM_OK\n\n"
     listener_config["listener"]["error_response"] = "HTTP/1.1 400 CUSTOM_BAD\n\n"
-    acq = GenericYamlTokenAcquirer(mock_hass, "192.168.1.50", listener_config, "ac14k_m.pem")
+    acq = GenericYamlTokenAcquirer(
+        mock_hass, "192.168.1.50", listener_config, "ac14k_m.pem"
+    )
 
     # Success branch (token present)
     mock_reader_succ = MockStreamReader([b'DeviceToken: "valid_token_abc"'])
     mock_writer_succ = MockStreamWriter()
-    with patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for", side_effect=mock_wait_for):
+    with patch(
+        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
+        side_effect=mock_wait_for,
+    ):
         await acq._handle_client(mock_reader_succ, mock_writer_succ)
         assert acq._received_token == "valid_token_abc"
         assert mock_writer_succ.written_data == b"HTTP/1.1 200 CUSTOM_OK\r\n\r\n"
@@ -429,7 +508,10 @@ async def test_handle_client_custom_success_and_error_responses(mock_hass, liste
     # Error branch (no token present)
     mock_reader_err = MockStreamReader([b'{"NoToken": "here"}'])
     mock_writer_err = MockStreamWriter()
-    with patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for", side_effect=mock_wait_for):
+    with patch(
+        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
+        side_effect=mock_wait_for,
+    ):
         await acq._handle_client(mock_reader_err, mock_writer_err)
         assert acq._received_token is None
         assert not acq._token_received_event.is_set()
@@ -439,12 +521,17 @@ async def test_handle_client_custom_success_and_error_responses(mock_hass, liste
 async def test_handle_client_no_regex_configured(mock_hass, listener_config):
     """Test client handler when extract_template is missing regex."""
     listener_config["extract_template"] = {}
-    acq = GenericYamlTokenAcquirer(mock_hass, "192.168.1.50", listener_config, "ac14k_m.pem")
+    acq = GenericYamlTokenAcquirer(
+        mock_hass, "192.168.1.50", listener_config, "ac14k_m.pem"
+    )
 
     mock_reader = MockStreamReader([b'DeviceToken: "token_123"'])
     mock_writer = MockStreamWriter()
 
-    with patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for", side_effect=mock_wait_for):
+    with patch(
+        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
+        side_effect=mock_wait_for,
+    ):
         await acq._handle_client(mock_reader, mock_writer)
         assert acq._received_token is None
         assert not acq._token_received_event.is_set()
@@ -459,7 +546,10 @@ async def test_handle_client_wait_for_timeout(acquirer):
     async def mock_wait_for_timeout(coro, timeout=None):
         raise TimeoutError("Read timeout in listener")
 
-    with patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for", side_effect=mock_wait_for_timeout):
+    with patch(
+        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
+        side_effect=mock_wait_for_timeout,
+    ):
         await acquirer._handle_client(mock_reader, mock_writer)
         assert acquirer._received_token is None
         assert mock_writer.closed is True
@@ -473,7 +563,10 @@ async def test_handle_client_exception_during_write(acquirer):
     mock_writer = MockStreamWriter()
     mock_writer.write = MagicMock(side_effect=RuntimeError("Socket write error"))
 
-    with patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for", side_effect=mock_wait_for):
+    with patch(
+        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
+        side_effect=mock_wait_for,
+    ):
         await acquirer._handle_client(mock_reader, mock_writer)
 
         assert mock_writer.closed is True
@@ -487,7 +580,10 @@ async def test_handle_client_wait_closed_exception_swallowed(acquirer):
     mock_writer = MockStreamWriter()
     mock_writer.wait_closed = AsyncMock(side_effect=ssl.SSLError("SSL close failure"))
 
-    with patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for", side_effect=mock_wait_for):
+    with patch(
+        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
+        side_effect=mock_wait_for,
+    ):
         # Should not raise exception
         await acquirer._handle_client(mock_reader, mock_writer)
         assert mock_writer.closed is True
@@ -495,13 +591,18 @@ async def test_handle_client_wait_closed_exception_swallowed(acquirer):
 
 async def test_listener_mode_defaults_when_config_empty(mock_hass):
     """Test listener mode behavior when auth_config is minimal (testing all default fallbacks)."""
-    acq = GenericYamlTokenAcquirer(mock_hass, "192.168.1.50", {"mode": "listener"}, cert_path=None)
+    acq = GenericYamlTokenAcquirer(
+        mock_hass, "192.168.1.50", {"mode": "listener"}, cert_path=None
+    )
 
     # 1. Test _start_listener_server default port and ciphers
     mock_ssl_ctx = MagicMock()
     mock_server = AsyncMock()
     with (
-        patch("custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context", return_value=mock_ssl_ctx) as mock_create_ssl,
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context",
+            return_value=mock_ssl_ctx,
+        ) as mock_create_ssl,
         patch("asyncio.start_server", return_value=mock_server) as mock_start_server,
     ):
         await acq._start_listener_server()
@@ -517,7 +618,10 @@ async def test_listener_mode_defaults_when_config_empty(mock_hass):
     acq._token_received_event.set()
     mock_timeout_ctx = make_mock_timeout_cm()
     with (
-        patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout", return_value=mock_timeout_ctx) as mock_timeout,
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout",
+            return_value=mock_timeout_ctx,
+        ) as mock_timeout,
         patch.object(acq, "async_close", new_callable=AsyncMock),
     ):
         token = await acq.async_wait_for_token()
@@ -528,7 +632,10 @@ async def test_listener_mode_defaults_when_config_empty(mock_hass):
     acq._received_token = None
     mock_reader = MockStreamReader([b'DeviceToken: "extracted_123"'])
     mock_writer = MockStreamWriter()
-    with patch("custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for", side_effect=mock_wait_for):
+    with patch(
+        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
+        side_effect=mock_wait_for,
+    ):
         await acq._handle_client(mock_reader, mock_writer)
         assert mock_writer.written_data == b"HTTP/1.1 400 Bad Request\r\n\r\n"
         assert acq._received_token is None

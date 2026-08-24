@@ -103,9 +103,9 @@ def test_switch_initialization(base_switch_entity: SamsungClimateSwitch) -> None
     assert base_switch_entity._controller is base_switch_entity.coordinator.controller
 
     # Mutant 5: self._attr_is_on = ""
-    assert (
-        base_switch_entity._attr_is_on is None
-    ), "Debe ser estrictamente None, no un string vacío."
+    assert base_switch_entity._attr_is_on is None, (
+        "Debe ser estrictamente None, no un string vacío."
+    )
 
     # Mutants 6 and 7: self._attr_has_entity_name = None / False
     assert base_switch_entity._attr_has_entity_name is True
@@ -147,9 +147,9 @@ def test_update_state_on_matrix(
     """
     base_switch_entity._operation.value = input_value
     base_switch_entity._update_state()
-    assert (
-        base_switch_entity._attr_is_on is True
-    ), f"Falló la asignación a True para la entrada '{input_value}'"
+    assert base_switch_entity._attr_is_on is True, (
+        f"Falló la asignación a True para la entrada '{input_value}'"
+    )
 
 
 @pytest.mark.parametrize("input_value", ["off", "Off", False])
@@ -163,9 +163,9 @@ def test_update_state_off_matrix(
     """
     base_switch_entity._operation.value = input_value
     base_switch_entity._update_state()
-    assert (
-        base_switch_entity._attr_is_on is False
-    ), f"Assignment to False failed for input '{input_value}'"
+    assert base_switch_entity._attr_is_on is False, (
+        f"Assignment to False failed for input '{input_value}'"
+    )
 
 
 def test_update_state_unknown_fallback(
@@ -177,9 +177,9 @@ def test_update_state_unknown_fallback(
     """
     base_switch_entity._operation.value = "garbage_unrecognized_data"
     base_switch_entity._update_state()
-    assert (
-        base_switch_entity._attr_is_on is None
-    ), "El fallback de estado desconocido debe ser None."
+    assert base_switch_entity._attr_is_on is None, (
+        "El fallback de estado desconocido debe ser None."
+    )
 
 
 def test_update_state_missing_value_attribute(
@@ -365,9 +365,9 @@ async def test_async_setup_entry_get_property_object_failure(mock_switch_class) 
     # the loop must 'continue' and process 'valid_op_after_string'.
     # If mutmut inverts logic ('if prop_obj is None: op = prop_obj'), iteration will explode
     # or stop. Therefore, we require the class to be instantiated EXACTLY 1 time.
-    assert (
-        mock_switch_class.call_count == 1
-    ), "El bucle no manejó el string_op correctamente o abortó la iteración."
+    assert mock_switch_class.call_count == 1, (
+        "El bucle no manejó el string_op correctamente o abortó la iteración."
+    )
     async_add_entities.assert_called_once()
 
 
@@ -423,9 +423,9 @@ async def test_async_setup_entry_continue_vs_break(
     await async_setup_entry(hass, entry, async_add_entities)
 
     # Lethal assertion
-    assert (
-        mock_switch_class.call_count == 1
-    ), "La iteración se detuvo prematuramente. Un filtro usó 'break' en lugar de 'continue'."
+    assert mock_switch_class.call_count == 1, (
+        "La iteración se detuvo prematuramente. Un filtro usó 'break' en lugar de 'continue'."
+    )
     async_add_entities.assert_called_once()
 
 

@@ -89,19 +89,22 @@ async def test_initialization(connection_config, mock_logger, mock_hass):
         config2[CONF_CERT] = "/absolute/path/cert.pem"
         conn2 = ConnectionRaw8888(config2, mock_logger, mock_hass, None, None)
         assert conn2._cert == "/absolute/path/cert.pem"
-        
+
         # Kill mutant __init__ on self._host = None
         config_no_host = connection_config.copy()
         config_no_host.pop(CONF_IP_ADDRESS, None)
-        conn_no_host = ConnectionRaw8888(config_no_host, mock_logger, mock_hass, None, None)
+        conn_no_host = ConnectionRaw8888(
+            config_no_host, mock_logger, mock_hass, None, None
+        )
         assert conn_no_host._host == ""
-        
+
         # Kill mutant on _resolve_cert_path if cert_file: -> if not cert_file:
         config_empty_cert = connection_config.copy()
         config_empty_cert[CONF_CERT] = ""
-        conn_empty_cert = ConnectionRaw8888(config_empty_cert, mock_logger, mock_hass, None, None)
+        conn_empty_cert = ConnectionRaw8888(
+            config_empty_cert, mock_logger, mock_hass, None, None
+        )
         assert conn_empty_cert._cert is None
-
 
 
 async def test_create_updated(connection_config, mock_logger, mock_hass):
@@ -190,7 +193,7 @@ async def test_load_from_yaml_keep_alive(connection_config, mock_logger, mock_ha
         result3 = conn.load_from_yaml({"params": {"newer": "val"}}, None)
         assert result3 is True
         assert conn._params == {"existing": "val", "new": "val", "newer": "val"}
-        
+
         # Test None in params
         with pytest.raises(TypeError):
             conn.load_from_yaml({"params": None}, None)
@@ -238,12 +241,12 @@ async def test_get_diagnostics(connection_config, mock_logger, mock_hass):
         _HOST_CLIENTS[("192.168.1.100", 9999)] = MagicMock()
         diag_url = conn.get_diagnostics()
         assert diag_url["has_shared_client"] is True
-        
+
         # Test no host branch (kills mutant on else (self._client is not None))
         conn._host = None
         conn._client = None
         assert conn.get_diagnostics()["has_shared_client"] is False
-        
+
         conn._client = MagicMock()
         assert conn.get_diagnostics()["has_shared_client"] is True
 
@@ -328,12 +331,17 @@ async def test_async_get_client(connection_config, mock_logger, mock_hass):
             mock_client_cls.assert_called_once_with(
                 "192.168.1.100", 8888, conn_def._cert, log_prefix=conn_def.log_prefix
             )
-            
+
             # Kill mutant on `self._extract_port(self._params.get("url"))` where "url" gets flipped
             mock_client_cls.reset_mock()
-            conn_def._client = None # Reset client
-            conn_def._host = "192.168.1.101" # use different host to not hit cached _HOST_CLIENTS
-            conn_def._params = {"url": "http://test.com:7777/path", "XXurlXX": "http://test.com:9999/path"}
+            conn_def._client = None  # Reset client
+            conn_def._host = (
+                "192.168.1.101"  # use different host to not hit cached _HOST_CLIENTS
+            )
+            conn_def._params = {
+                "url": "http://test.com:7777/path",
+                "XXurlXX": "http://test.com:9999/path",
+            }
             await conn_def.async_get_client()
             mock_client_cls.assert_called_once_with(
                 "192.168.1.101", 7777, conn_def._cert, log_prefix=conn_def.log_prefix
@@ -555,7 +563,7 @@ async def test_async_execute_embedded_command(
                 "GET", "/main", None, None, device_state={"state": "off"}
             )
             mock_emb.async_execute.assert_not_called()
-            
+
             # Kill device_state is not None mutant
             await conn.async_execute("GET", "/main", None, None, device_state=None)
             mock_emb.async_execute.assert_called_once()
@@ -594,7 +602,7 @@ async def test_async_execute_poll_and_keep_alive(
             await conn.async_execute("GET", "/poll2", None, None, _is_poll=True)
             mock_shared.close.assert_called_once()
             assert ("192.168.1.100", 8888) not in _HOST_CLIENTS
-            
+
             # Kill mutant on `self._extract_port` by setting a custom port
             conn._params = {"url": "http://192.168.1.100:9999"}
             mock_shared_custom = AsyncMock()
@@ -602,7 +610,7 @@ async def test_async_execute_poll_and_keep_alive(
             await conn.async_execute("GET", "/poll2", None, None, _is_poll=True)
             mock_shared_custom.close.assert_called_once()
             assert ("192.168.1.100", 9999) not in _HOST_CLIENTS
-            conn._params = {} # Reset
+            conn._params = {}  # Reset
 
             # _is_poll=False -> Does NOT close
             conn._client = AsyncMock()
@@ -614,16 +622,22 @@ async def test_async_execute_poll_and_keep_alive(
             conn._keep_alive = True
             await conn.async_execute("GET", "/poll3", None, None, _is_poll=True)
             client_not_to_close.close.assert_not_called()
-    
+
             # self._host is None does not crash and gets active clients
-            conn_no_host = ConnectionRaw8888({CONF_TOKEN: "mock_token"}, mock_logger, mock_hass, None, None)
+            conn_no_host = ConnectionRaw8888(
+                {CONF_TOKEN: "mock_token"}, mock_logger, mock_hass, None, None
+            )
             conn_no_host._keep_alive = False
             conn_no_host._client = AsyncMock()
             client_to_close2 = conn_no_host._client
             client_to_close2.request.return_value = ("ok", None)
-    
-            with patch.object(conn_no_host, "async_get_client", return_value=conn_no_host._client):
-                await conn_no_host.async_execute("GET", "/poll4", None, None, _is_poll=True)
+
+            with patch.object(
+                conn_no_host, "async_get_client", return_value=conn_no_host._client
+            ):
+                await conn_no_host.async_execute(
+                    "GET", "/poll4", None, None, _is_poll=True
+                )
                 client_to_close2.close.assert_called_once()
 
 
@@ -669,7 +683,7 @@ async def test_async_execute_placeholders_and_request(
 
             assert resp == '{"ok": 1}'
             assert err is None
-            
+
             # Check what was passed to request
             mock_client.request.assert_called_once()
             c_method, c_path, c_body, c_headers = mock_client.request.call_args[0]
@@ -683,20 +697,24 @@ async def test_async_execute_placeholders_and_request(
                 "host": "192.168.1.100",
             }
             assert c_headers["Custom"] == "AA:BB"
-            
+
             # Kill mutant on host extraction from config
             mock_client.request.reset_mock()
             conn_no_host = ConnectionRaw8888({}, mock_logger, mock_hass, None, None)
             conn_no_host.set_controller_ref(mock_controller)
-            with patch.object(conn_no_host, "async_get_client", return_value=mock_client):
-                await conn_no_host.async_execute("PUT", "/path/__CLIMATE_IP_HOST__", None, None)
+            with patch.object(
+                conn_no_host, "async_get_client", return_value=mock_client
+            ):
+                await conn_no_host.async_execute(
+                    "PUT", "/path/__CLIMATE_IP_HOST__", None, None
+                )
                 assert mock_client.request.call_args[0][1] == "/path/"
-                
+
                 # Kill mutant that changes method to None
                 mock_client.request.reset_mock()
                 await conn_no_host.async_execute("GET", "/path", None, None)
                 assert mock_client.request.call_args[0][0] == "GET"
-                
+
             assert c_headers["Token"] == "CTRL_TOKEN"
 
             assert c_headers["Host"] == "192.168.1.100"
@@ -715,10 +733,12 @@ async def test_async_execute_placeholders_and_request(
             await conn.async_execute("PUT", "/x", None, None)
             c_method, c_path, c_body, c_headers = mock_client.request.call_args[0]
             assert c_body is None
-            
+
             # Kill formatting data placeholder without dev_id
             mock_client.request.reset_mock()
-            await conn.async_execute("PUT", "/x", '{"string_json": 1, "test": "__DEVICE_ID__"}', None)
+            await conn.async_execute(
+                "PUT", "/x", '{"string_json": 1, "test": "__DEVICE_ID__"}', None
+            )
             c_method, c_path, c_body, c_headers = mock_client.request.call_args[0]
             assert c_body == {"string_json": 1, "test": "DEV456"}
 
@@ -792,7 +812,7 @@ async def test_async_execute_exceptions(connection_config, mock_logger, mock_has
             mock_client.request.side_effect = TypeError("General error")
             with pytest.raises(TypeError, match="General error"):
                 await conn.async_execute("GET", "/x", None, None)
-                
+
             # Kill mutant on `resp, err = await client.request(method, path, body, req_headers)`
             mock_client.request.reset_mock()
             mock_client.request.side_effect = None

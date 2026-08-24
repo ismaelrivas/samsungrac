@@ -148,9 +148,9 @@ async def test_flicker_removed(
     hass: HomeAssistant,
 ) -> None:  # pylint: disable=unused-argument
     """Test that the UI flicker antipattern has been removed."""
-    assert not hasattr(
-        SamsungClimateCoordinator, "_async_flicker_ui"
-    ), "_async_flicker_ui antipattern should be removed from SamsungClimateCoordinator"
+    assert not hasattr(SamsungClimateCoordinator, "_async_flicker_ui"), (
+        "_async_flicker_ui antipattern should be removed from SamsungClimateCoordinator"
+    )
 
 
 async def test_coordinator_strike_1_and_2_return_stale_data(
@@ -364,9 +364,9 @@ async def test_flicker_antipattern_absent(
     hass: HomeAssistant,
 ) -> None:  # pylint: disable=unused-argument
     """Verify that the _async_flicker_ui antipattern is absent from the coordinator."""
-    assert not hasattr(
-        SamsungClimateCoordinator, "_async_flicker_ui"
-    ), "_async_flicker_ui antipattern must not exist in SamsungClimateCoordinator"
+    assert not hasattr(SamsungClimateCoordinator, "_async_flicker_ui"), (
+        "_async_flicker_ui antipattern must not exist in SamsungClimateCoordinator"
+    )
 
 
 async def test_optimistic_refresh_on_network_error(hass: HomeAssistant) -> None:
@@ -533,8 +533,8 @@ async def test_save_new_token_updates_config_entry(hass: HomeAssistant) -> None:
     mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
     mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[TokenTest]"
-    mock_controller.register_token_callback.side_effect = (
-        lambda cb: setattr(mock_controller, "on_token_refreshed", cb)
+    mock_controller.register_token_callback.side_effect = lambda cb: setattr(
+        mock_controller, "on_token_refreshed", cb
     )
     mock_entry = MagicMock()
     mock_entry.data = {"host": "192.168.1.10", "token": "old_token"}
@@ -565,8 +565,8 @@ async def test_save_new_token_async_flow(hass: HomeAssistant) -> None:
     mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
     mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.log_prefix = "[TokenAsyncTest]"
-    mock_controller.register_token_callback.side_effect = (
-        lambda cb: setattr(mock_controller, "on_token_refreshed", cb)
+    mock_controller.register_token_callback.side_effect = lambda cb: setattr(
+        mock_controller, "on_token_refreshed", cb
     )
     mock_entry = MagicMock()
     mock_entry.data = {"host": "192.168.1.10", "token": "old_token"}
@@ -1141,9 +1141,9 @@ async def test_coordinator_update_interval_enable_polling_data_false(
 
     # Original code will read False and turn off polling (update_interval = None).
     # Mutant will read the 'None' key, fall back to default (True) and assign a timedelta of 42s.
-    assert (
-        coordinator.update_interval is None
-    ), "The coordinator ignored CONF_ENABLE_POLLING from entry.data or fell back to the default value"
+    assert coordinator.update_interval is None, (
+        "The coordinator ignored CONF_ENABLE_POLLING from entry.data or fell back to the default value"
+    )
 
 
 async def test_async_set_property_passes_device_id(hass: HomeAssistant) -> None:
@@ -1464,6 +1464,7 @@ def test_debouncer_cancel_all_strict_none():
     assert len(debouncer._timers) == 0
     assert len(debouncer._pending_payloads) == 0
 
+
 @pytest.mark.asyncio
 async def test_debouncer_exact_time_boundary():
     """Annihilates line 73 mutant (>= changed to >)."""
@@ -1638,15 +1639,23 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
         debouncer._last_activities["prop_net"] = 100.0
         debouncer._last_activities["prop_gen"] = 100.0
 
-        await debouncer.async_execute("prop_net", dummy_fail_network, "arg1", kw=1, val="val_net")
+        await debouncer.async_execute(
+            "prop_net", dummy_fail_network, "arg1", kw=1, val="val_net"
+        )
         callback_net = mock_async_call_later.call_args[0][2]
 
-        await debouncer.async_execute("prop_gen", dummy_fail_generic, "arg2", kw=2, val="val_gen")
+        await debouncer.async_execute(
+            "prop_gen", dummy_fail_generic, "arg2", kw=2, val="val_gen"
+        )
         callback_gen = mock_async_call_later.call_args[0][2]
 
         with (
-            patch("custom_components.climate_ip.coordinator._LOGGER.debug") as mock_debug,
-            patch("custom_components.climate_ip.coordinator._LOGGER.error") as mock_error,
+            patch(
+                "custom_components.climate_ip.coordinator._LOGGER.debug"
+            ) as mock_debug,
+            patch(
+                "custom_components.climate_ip.coordinator._LOGGER.error"
+            ) as mock_error,
         ):
             callback_net()
             callback_gen()
@@ -1670,7 +1679,9 @@ async def test_sniper_debouncer_exception_handling_and_window(hass: HomeAssistan
             c for c in debug_calls if "Network error executing" in c.args[0]
         )
         gen_call = next(
-            c for c in error_calls if "Unexpected error executing delayed command" in c.args[0]
+            c
+            for c in error_calls
+            if "Unexpected error executing delayed command" in c.args[0]
         )
 
         # Annihilate mutants changing exc_info to False or removing it
@@ -1726,7 +1737,9 @@ async def test_sniper_debouncer_kwargs_and_pop_strict(hass: HomeAssistant):
     async def dummy(*args, **kwargs):
         return args, kwargs
 
-    res = await debouncer.async_execute("test_prop", dummy, "arg1", kw_key="kw_val", val="test_val")
+    res = await debouncer.async_execute(
+        "test_prop", dummy, "arg1", kw_key="kw_val", val="test_val"
+    )
 
     # Ultra-strict tuple assertion to prevent mutant from returning tuple without kwargs
     assert res == (("arg1",), {"kw_key": "kw_val"})
@@ -1756,9 +1769,9 @@ async def test_sniper_locked_set_property_strict_args(hass: HomeAssistant):
 
         # Verify exact length of argument tuple received by mock
         args, _ = mock_controller.async_set_property.call_args
-        assert (
-            len(args) == 3
-        ), f"Mutant caught: Arguments lost. Expected 3, got {len(args)}"
+        assert len(args) == 3, (
+            f"Mutant caught: Arguments lost. Expected 3, got {len(args)}"
+        )
         assert args == ("my_prop", "my_val", "my_dev")
 
 
@@ -1803,11 +1816,15 @@ async def test_debouncer_immediate_turn_off() -> None:
     mock_func = AsyncMock(return_value=True)
 
     # 1. Execute a command to trigger trailing window for temperature
-    await debouncer.async_execute("temperature", mock_func, "temperature", "22.0", val="22.0")
+    await debouncer.async_execute(
+        "temperature", mock_func, "temperature", "22.0", val="22.0"
+    )
     assert debouncer._last_activities.get("temperature", 0) > 0
 
     # 2. Queue a rapid command for temperature within trailing window
-    await debouncer.async_execute("temperature", mock_func, "temperature", "20.0", val="20.0")
+    await debouncer.async_execute(
+        "temperature", mock_func, "temperature", "20.0", val="20.0"
+    )
     assert "temperature" in debouncer._pending_payloads
 
     # 3. Issue turn-off command
@@ -1831,22 +1848,30 @@ async def test_debouncer_per_property_independence() -> None:
     func_temp = AsyncMock(return_value=True)
 
     # First hvac_mode command -> immediate
-    await debouncer.async_execute("hvac_mode", func_hvac, "hvac_mode", "heat", val="heat")
+    await debouncer.async_execute(
+        "hvac_mode", func_hvac, "hvac_mode", "heat", val="heat"
+    )
     func_hvac.assert_called_once_with("hvac_mode", "heat")
 
     # First temperature command (even if 0.1s later) -> immediate because temperature itself was not modified in 3s
-    await debouncer.async_execute("temperature", func_temp, "temperature", "22.0", val="22.0")
+    await debouncer.async_execute(
+        "temperature", func_temp, "temperature", "22.0", val="22.0"
+    )
     func_temp.assert_called_once_with("temperature", "22.0")
 
     # Second temperature command (0.1s later) -> rapid, queued with 3s timer for temperature
     func_temp_2 = AsyncMock(return_value=True)
-    await debouncer.async_execute("temperature", func_temp_2, "temperature", "20.0", val="20.0")
+    await debouncer.async_execute(
+        "temperature", func_temp_2, "temperature", "20.0", val="20.0"
+    )
     assert "temperature" in debouncer._pending_payloads
     assert debouncer._pending_payloads["temperature"][1] == ("temperature", "20.0")
 
 
 @pytest.mark.asyncio
-async def test_locked_set_property_drops_superseded_commands(hass: HomeAssistant) -> None:
+async def test_locked_set_property_drops_superseded_commands(
+    hass: HomeAssistant,
+) -> None:
     """Test that _locked_set_property drops stale commands if superseded while waiting for lock."""
     with patch(
         "custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__",
@@ -1864,7 +1889,12 @@ async def test_locked_set_property_drops_superseded_commands(hass: HomeAssistant
         coordinator.debouncer = PropertyDebouncer(coordinator, delay=3.0)
 
         # 1. Superseded via pending_payloads
-        coordinator.debouncer._pending_payloads["temperature"] = (MagicMock(), (), {}, 1)
+        coordinator.debouncer._pending_payloads["temperature"] = (
+            MagicMock(),
+            (),
+            {},
+            1,
+        )
         res = await coordinator._locked_set_property("temperature", "18.0")
         assert res is True
         mock_controller.async_set_property.assert_not_called()
@@ -1882,11 +1912,15 @@ async def test_locked_set_property_drops_superseded_commands(hass: HomeAssistant
         # 3. Matching target value executes normally
         res3 = await coordinator._locked_set_property("temperature", "20.0")
         assert res3 is True
-        mock_controller.async_set_property.assert_called_once_with("temperature", "20.0", None)
+        mock_controller.async_set_property.assert_called_once_with(
+            "temperature", "20.0", None
+        )
 
 
 @pytest.mark.asyncio
-async def test_push_update_suppressed_during_active_debouncing(hass: HomeAssistant) -> None:
+async def test_push_update_suppressed_during_active_debouncing(
+    hass: HomeAssistant,
+) -> None:
     """Test that push updates do not broadcast to HA while debouncer is actively holding pending commands."""
     with patch(
         "custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__",
@@ -1906,7 +1940,12 @@ async def test_push_update_suppressed_during_active_debouncing(hass: HomeAssista
         coordinator.async_set_updated_data = MagicMock()
 
         # 1. Debouncer is active (timer or payload present)
-        coordinator.debouncer._pending_payloads["temperature"] = (MagicMock(), (), {}, 1)
+        coordinator.debouncer._pending_payloads["temperature"] = (
+            MagicMock(),
+            (),
+            {},
+            1,
+        )
         assert coordinator.debouncer.is_active is True
 
         await coordinator.async_handle_push_update({"AC_FUN_OPMODE": "Dry"})
@@ -1939,10 +1978,19 @@ async def test_cleanup_auto_healing_issue_if_ignored(hass: HomeAssistant) -> Non
     mock_issue.dismissed_version = "2026.4.3"
     mock_registry.async_get_issue.return_value = mock_issue
 
-    with patch("custom_components.climate_ip.coordinator.async_get_issue_registry", return_value=mock_registry), \
-         patch("custom_components.climate_ip.coordinator.async_delete_issue") as mock_delete:
+    with (
+        patch(
+            "custom_components.climate_ip.coordinator.async_get_issue_registry",
+            return_value=mock_registry,
+        ),
+        patch(
+            "custom_components.climate_ip.coordinator.async_delete_issue"
+        ) as mock_delete,
+    ):
         _ = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
-        mock_delete.assert_called_once_with(hass, "climate_ip", "auto_healing_raw_test_ac_unique")
+        mock_delete.assert_called_once_with(
+            hass, "climate_ip", "auto_healing_raw_test_ac_unique"
+        )
 
 
 @pytest.mark.asyncio
@@ -1968,7 +2016,9 @@ async def test_sniper_debouncer_turn_off_type_dispatch() -> None:
         mock_func = AsyncMock(return_value=True)
 
         # Trigger async_execute with ATTR_POWER and falsy value
-        res = await debouncer.async_execute(ATTR_POWER, mock_func, ATTR_POWER, val, val=val)
+        res = await debouncer.async_execute(
+            ATTR_POWER, mock_func, ATTR_POWER, val, val=val
+        )
 
         # Verify immediate execution occurred despite active trailing window
         assert res is True
@@ -1981,7 +2031,9 @@ async def test_sniper_debouncer_turn_off_type_dispatch() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sniper_push_update_auth_failed_no_config_entry(hass: HomeAssistant) -> None:
+async def test_sniper_push_update_auth_failed_no_config_entry(
+    hass: HomeAssistant,
+) -> None:
     """Test push update handles ConfigEntryAuthFailed safely when self.config_entry is None."""
     from homeassistant.exceptions import ConfigEntryAuthFailed
 
@@ -2028,9 +2080,7 @@ async def test_sniper_debouncer_handle_delayed_failure_strict_prop() -> None:
     debouncer = PropertyDebouncer(mock_coordinator, delay=3.0)
     await debouncer._async_handle_delayed_failure("target_temperature")
 
-    mock_coordinator.controller.async_clear_pending_updates.assert_awaited_once_with(["target_temperature"])
+    mock_coordinator.controller.async_clear_pending_updates.assert_awaited_once_with(
+        ["target_temperature"]
+    )
     mock_coordinator.async_request_refresh.assert_awaited_once()
-
-
-
-

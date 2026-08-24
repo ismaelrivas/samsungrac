@@ -1,6 +1,7 @@
 """
 Tests for demo_states.py
 """
+
 import pytest
 
 from custom_components.climate_ip.demo_states import legit_func, timeout_func
@@ -11,11 +12,13 @@ def test_legit_func():
     # If Mutmut changes a + b to a - b (5 - 3 = 2), the assertion will fail.
     assert legit_func(5, 3) == 8
 
+
 def test_timeout_func():
     # Test for timeout_func.
     # Expects 0 under normal execution.
     # If Mutmut mutates x -= 1 to x += 1, this test will never finish, triggering a timeout.
     assert timeout_func() == 0
+
 
 # Note: untested_func() is intentionally left without test coverage.
 
@@ -27,8 +30,10 @@ def test_massive_kill():
     # Since we evaluate all(), any mutation to False will fail this assertion.
     assert all(massive_kill())
 
+
 def test_segfault_func():
     assert segfault_func() == 0
+
 
 from custom_components.climate_ip.demo_states import exception_func, slow_boundary_func
 
@@ -40,6 +45,7 @@ def test_exception_func():
     # Both cases crash the worker -> KILLED_RUNTIME_EXCEPTION.
     data = {"items": [{"value": 42}]}
     assert exception_func(data) == 52
+
 
 def test_slow_boundary_func():
     # Normal execution: n=5, limit=10, sums 0..9 = 45.
