@@ -286,9 +286,7 @@ class ConnectionRaw8888(Connection):
         if embedded_template:
             embedded_params_str = embedded_template.async_render(parse_result=False)
             rendered_json = json_loads(str(embedded_params_str))
-            embedded_params = (
-                rendered_json if isinstance(rendered_json, dict) else {}
-            )
+            embedded_params = rendered_json if isinstance(rendered_json, dict) else {}
         elif not embedded_params:
             return
 

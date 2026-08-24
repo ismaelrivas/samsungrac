@@ -148,8 +148,8 @@ _HEADER_PATCH_ORIGINAL_PARSE_HEADERS: Any = None
 def tolerant_header_parsing() -> Generator[None]:
     """Context manager that temporarily suppresses urllib3 HeaderParsingError."""
     # pylint: disable=global-statement
-    global _HEADER_PATCH_REFCOUNT, _HEADER_PATCH_ORIGINAL_RESPONSE
-    global _HEADER_PATCH_ORIGINAL_CONNECTION, _HEADER_PATCH_ORIGINAL_PARSE_HEADERS
+    global _HEADER_PATCH_REFCOUNT, _HEADER_PATCH_ORIGINAL_RESPONSE  # noqa: PLW0603
+    global _HEADER_PATCH_ORIGINAL_CONNECTION, _HEADER_PATCH_ORIGINAL_PARSE_HEADERS  # noqa: PLW0603
 
     import urllib3.connection as connection_mod  # pylint: disable=import-outside-toplevel
     from urllib3.exceptions import (

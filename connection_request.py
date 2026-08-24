@@ -674,10 +674,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                             raise AuthError(
                                 f"Authentication failed with status {status}"
                             ) from e
-                        if (
-                            500 <= status < 600
-                            and attempt < REQUEST_MAX_RETRIES - 1
-                        ):
+                        if 500 <= status < 600 and attempt < REQUEST_MAX_RETRIES - 1:
                             if self._is_closing:
                                 raise ConnectionError("Connection is closing") from e
                             _LOGGER.debug(
@@ -685,20 +682,18 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                                 self.log_prefix,
                                 status,
                             )
-                            raise RetryNextAttempt(
-                                f"Server error {status}"
-                            ) from e
+                            raise RetryNextAttempt(f"Server error {status}") from e
 
                         # Enhanced error logging
                         _LOGGER.error(
                             "%s HTTP error: %s. Body: %s. Not retrying",
                             self.log_prefix,
                             e,
-                            getattr(resp_err, "text", "No Body") if resp_err is not None else "No Body",
+                            getattr(resp_err, "text", "No Body")
+                            if resp_err is not None
+                            else "No Body",
                         )
-                        raise CannotConnect(
-                            f"HTTP error {status}"
-                        ) from e
+                        raise CannotConnect(f"HTTP error {status}") from e
 
                     except requests.exceptions.ReadTimeout as e:
                         # --- ADAPTIVE RECOVERY ---

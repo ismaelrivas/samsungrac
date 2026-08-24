@@ -117,10 +117,8 @@ class YamlConfigLoader:
                     hasattr(self.controller, "hass")
                     and self.controller.hass is not None
                 ):  # pragma: no mutate
-                    loaded_yaml = (
-                        await self.controller.hass.async_add_executor_job(
-                            load_yaml, file
-                        )
+                    loaded_yaml = await self.controller.hass.async_add_executor_job(
+                        load_yaml, file
                     )
                 else:
                     loaded_yaml = load_yaml(file)  # pragma: no mutate

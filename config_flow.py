@@ -66,10 +66,10 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class ClimateIpConfigFlow(
-    ConfigFlow,
     ConfigFlowSchemasMixin,
     ConfigFlowHelpersMixin,
     ConfigFlowDiscoveryMixin,
+    ConfigFlow,
     domain=DOMAIN,
 ):
     """Config flow implementing a robust, multi-step pairing process.

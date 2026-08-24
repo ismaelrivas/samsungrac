@@ -108,7 +108,9 @@ class ConnectionSamsung2878(Connection):
 
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
-        self._read_task: asyncio.Task[bytes] | None = None  # Task for reading from the socket
+        self._read_task: asyncio.Task[bytes] | None = (
+            None  # Task for reading from the socket
+        )
         self._close_lock = asyncio.Lock()  # To serialize _close_connection calls
         self._cmd_queue: asyncio.Queue[tuple[str, asyncio.Future[bool]]] = (
             asyncio.Queue()

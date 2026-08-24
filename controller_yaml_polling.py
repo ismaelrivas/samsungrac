@@ -311,7 +311,9 @@ class YamlStatePoller:
             st_getter = self.controller.loader.state_getter
             if st_getter and st_getter.value:  # pragma: no mutate
                 # Return RAM state injected with locks to lock the UI without flickering
-                return cast(dict[str, Any] | None, copy.deepcopy(st_getter.value))  # pragma: no mutate
+                return cast(
+                    dict[str, Any] | None, copy.deepcopy(st_getter.value)
+                )  # pragma: no mutate
             return self._cached_device_state.copy()
 
         device_state = await self.async_update_state()
@@ -664,18 +666,14 @@ class YamlStatePoller:
                     )
                 )
                 payload = (
-                    parsed.get("json", parsed)
-                    if isinstance(parsed, dict)
-                    else parsed
+                    parsed.get("json", parsed) if isinstance(parsed, dict) else parsed
                 )
                 if (
                     isinstance(payload, dict)
                     and "options" in payload
                     and isinstance(payload["options"], list)
                 ):
-                    if payload["options"] and isinstance(
-                        payload["options"][0], str
-                    ):
+                    if payload["options"] and isinstance(payload["options"][0], str):
                         dev_val = payload["options"][0]
             except Exception:  # pylint: disable=broad-exception-caught
                 pass
@@ -1216,7 +1214,11 @@ class YamlStatePoller:
         if not isinstance(st, dict) or not st:
             return {}
         devices = st.get("Devices")
-        if isinstance(devices, list) and len(devices) > 0 and isinstance(devices[0], dict):
+        if (
+            isinstance(devices, list)
+            and len(devices) > 0
+            and isinstance(devices[0], dict)
+        ):
             return devices[0]
         return dict(st)
 

@@ -442,10 +442,9 @@ class YamlController(ClimateController):
                     self.poller._pure_network_state = copy.deepcopy(
                         self.loader.state_getter.value
                     )
-                if (
-                    getattr(self.poller, "_pure_network_state", None) is not None
-                    and isinstance(self.poller._pure_network_state, dict)
-                ):
+                if getattr(
+                    self.poller, "_pure_network_state", None
+                ) is not None and isinstance(self.poller._pure_network_state, dict):
                     self.poller._inject_value_into_state(
                         op, self.poller._pure_network_state, new_value
                     )

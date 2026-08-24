@@ -405,18 +405,13 @@ class ConnectionRequestBase(Connection):
                     if status in (401, 403):
                         _LOGGER.debug("%s Auth error: %s", self.log_prefix, e)
                         raise AuthError(f"Auth failed: {status}") from e
-                    if (
-                        500 <= status < 600
-                        and attempt < self._max_retries - 1
-                    ):
+                    if 500 <= status < 600 and attempt < self._max_retries - 1:
                         _LOGGER.debug(
                             "%s Server error (%s). Delegating retry to async loop.",
                             self.log_prefix,
                             status,
                         )
-                        raise RetryNextAttempt(
-                            f"Server error {status}"
-                        ) from e
+                        raise RetryNextAttempt(f"Server error {status}") from e
                     raise CannotConnect(f"HTTP error {status}") from e
 
                 except requests.exceptions.Timeout as e:

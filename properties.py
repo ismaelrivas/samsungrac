@@ -699,10 +699,9 @@ class GetJsonStatus(DeviceProperty):
             and self._connection.is_async_native
             and self._connection_template is None
         ):
-            conn_tmpl = (
-                getattr(self._connection, "connection_template", None)
-                or getattr(self._connection, "_connection_template", None)
-            )
+            conn_tmpl = getattr(
+                self._connection, "connection_template", None
+            ) or getattr(self._connection, "_connection_template", None)
             if conn_tmpl is not None:
                 self._connection_template = conn_tmpl
             else:
@@ -824,7 +823,9 @@ class GetJsonStatus(DeviceProperty):
 
             try:
                 loaded_state = json_loads(response_text)
-                device_state_result = loaded_state if isinstance(loaded_state, dict) else None
+                device_state_result = (
+                    loaded_state if isinstance(loaded_state, dict) else None
+                )
             except JSON_DECODE_EXCEPTIONS as e:
                 _LOGGER.error(
                     "%s [GetJsonStatus] JSON parsing error. Response: '%s'. Error: %s",
@@ -885,7 +886,9 @@ class DeviceOperation(DeviceProperty):
             else:
                 try:
                     loaded_op = json_loads(rendered)
-                    operation_params = loaded_op if isinstance(loaded_op, dict) else None
+                    operation_params = (
+                        loaded_op if isinstance(loaded_op, dict) else None
+                    )
                 except (ValueError, TypeError):
                     operation_params = None
 
