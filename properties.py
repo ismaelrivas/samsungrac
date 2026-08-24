@@ -283,21 +283,26 @@ class DeviceProperty:
         return self._id
 
     def _resolve_raw_state_source(self) -> dict[str, Any] | None:
-        """Resolve the raw state dictionary from the controller or status getter."""
+        """Resolve the raw state dictionary from the controller or status getter.
+
+        Priority order:
+        1. controller.pure_device_state — Unmutated network state representing
+           the true state before this command.
+        2. controller.device_state — Last parsed device state from poller.
+        3. _status_getter.value — Live status getter dict.
+        4. Other fallbacks (status property, dataclass conversion).
+        """
         if self._controller is not None:
-            # Prefer optimistic device_state (includes pending predictions) over
-            # pure_device_state.  Using the pure network state causes embedded
-            # command condition_templates to evaluate against stale data.
-            if (
-                isinstance(self._controller.device_state, dict)
-                and self._controller.device_state
-            ):
-                return self._controller.device_state
             if (
                 isinstance(self._controller.pure_device_state, dict)
                 and self._controller.pure_device_state
             ):
                 return self._controller.pure_device_state
+            if (
+                isinstance(self._controller.device_state, dict)
+                and self._controller.device_state
+            ):
+                return self._controller.device_state
 
         if self._status_getter is not None and isinstance(
             self._status_getter.value, dict
@@ -309,6 +314,7 @@ class DeviceProperty:
             if status_prop is not None and isinstance(status_prop.value, dict):
                 return status_prop.value
 
+        # 4. Raw device_state fallback (dataclass / dict)
         if isinstance(self._device_state, dict):
             return self._device_state
         if dataclasses.is_dataclass(self._device_state):
@@ -583,10 +589,18 @@ class DeviceProperty:
             if not isinstance(cascade_rule, dict):
                 continue
             target_path = cascade_rule.get(CONFIG_TARGET_NODE)
-            value_map = cascade_rule.get(CONFIG_VALUE_MAP)
+            raw_value_map = cascade_rule.get(CONFIG_VALUE_MAP)
 
-            if target_path is None or not isinstance(value_map, dict):
+            if target_path is None or not isinstance(raw_value_map, dict):
                 continue
+
+            value_map: dict[str, Any] = {}
+            for k, v in raw_value_map.items():
+                if isinstance(k, bool):
+                    value_map["off" if not k else "on"] = v
+                    value_map[str(k).lower()] = v
+                else:
+                    value_map[str(k).lower()] = v
 
             new_val = value_map.get(val_str)
             if new_val is None:

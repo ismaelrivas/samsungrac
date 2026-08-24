@@ -56,7 +56,7 @@ device:
       optimistic_cascades:
         - target_node: "Operation.power"
           value_map:
-            off: "Off"
+            'off': "Off"
             default: "On"
       connection:
         params: { method: 'PUT', url: 'https://__CLIMATE_IP_HOST__:8888/devices/0/mode' }

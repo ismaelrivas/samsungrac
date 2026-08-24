@@ -322,41 +322,24 @@ def test_check_execute_condition_pure_device_state_and_controller():
     conn.condition_template = Template("{{ 1 if device_state.key == 'val' else 0 }}")
     assert conn.check_execute_condition({"key": "val"}) is True
 
-    # Case 2: When a valid dict device_state is passed, it takes priority over
-    # controller.pure_device_state (optimistic state prevents stale condition evaluation)
+    # Case 2: Controller with valid pure_device_state dictionary overrides raw device_state
     mock_ctrl = MagicMock()
     mock_ctrl.pure_device_state = {"pure_key": "active"}
-    mock_ctrl.device_state = {"some_key": "value"}
     conn._controller = mock_ctrl
     conn.condition_template = Template(
-        "{{ 1 if device_state.passed_key == 'yes' else 0 }}"
+        "{{ 1 if device_state.pure_key == 'active' else 0 }}"
     )
-    # The passed device_state is used, NOT pure_device_state
-    assert conn.check_execute_condition({"passed_key": "yes"}) is True
-    assert conn.check_execute_condition({"passed_key": "no"}) is False
+    assert conn.check_execute_condition({"pure_key": "ignored"}) is True
 
-    # Case 3: When device_state is None/empty, falls back to controller.device_state first,
-    # then pure_device_state
+    # Case 3: Controller pure_device_state is non-dict or empty dict -> does not override and falls back to controller.device_state
+    mock_ctrl.pure_device_state = {}
     mock_ctrl.device_state = {"ctrl_state_fallback": 88}
-    mock_ctrl.pure_device_state = {"pure_key": "active"}
     conn.condition_template = Template(
         "{{ 1 if device_state.ctrl_state_fallback == 88 else 0 }}"
     )
     assert conn.check_execute_condition(None) is True
 
-    # Case 4: controller.device_state empty -> falls back to pure_device_state
-    mock_ctrl.device_state = {}
-    mock_ctrl.pure_device_state = {"pure_fallback": "ok"}
-    conn.condition_template = Template(
-        "{{ 1 if device_state.pure_fallback == 'ok' else 0 }}"
-    )
-    assert conn.check_execute_condition(None) is True
-
     mock_ctrl.pure_device_state = "invalid_string"
-    mock_ctrl.device_state = {}
-    conn.condition_template = Template(
-        "{{ 1 if device_state == {} else 0 }}"
-    )
     assert conn.check_execute_condition(None) is True
 
 

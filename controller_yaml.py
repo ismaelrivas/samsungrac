@@ -427,6 +427,33 @@ class YamlController(ClimateController):
         try:
             result = await op.async_set_value(new_value, target_device_id)
             success = bool(result)
+            if success and hasattr(self, "poller") and self.poller is not None:
+                if (
+                    getattr(self.poller, "_pure_network_state", None) is None
+                    and hasattr(self.loader, "state_getter")
+                    and self.loader.state_getter is not None
+                    and isinstance(self.loader.state_getter.value, dict)
+                ):
+                    import copy
+
+                    self.poller._pure_network_state = copy.deepcopy(
+                        self.loader.state_getter.value
+                    )
+                if (
+                    getattr(self.poller, "_pure_network_state", None) is not None
+                    and isinstance(self.poller._pure_network_state, dict)
+                ):
+                    self.poller._inject_value_into_state(
+                        op, self.poller._pure_network_state, new_value
+                    )
+                if (
+                    hasattr(self.loader, "state_getter")
+                    and self.loader.state_getter is not None
+                    and isinstance(self.loader.state_getter.value, dict)
+                ):
+                    self.poller._inject_value_into_state(
+                        op, self.loader.state_getter.value, new_value
+                    )
             return result
         except asyncio.CancelledError:
             await self.async_clear_pending_updates([property_name])

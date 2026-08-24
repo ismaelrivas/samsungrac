@@ -124,6 +124,7 @@ class YamlStatePoller:
 
         # 💥 ISOLATED PURE STATE: Stores network truth without UI pollution
         self._pure_device_state: dict[str, Any] | None = None
+        self._pure_network_state: dict[str, Any] | None = None
 
         # Caches resolved state_nodes for properties
         self._prop_template_key_cache: dict[str, str | None] = {}
@@ -681,7 +682,17 @@ class YamlStatePoller:
 
         state_node = self._get_state_node_from_prop(prop)
         if state_node and isinstance(state_node, str):
-            self._set_dict_value_by_path(device_state, state_node, dev_val)
+            target_nodes = [device_state]
+            if (
+                not state_node.startswith("Devices")
+                and "Devices" in device_state
+                and isinstance(device_state["Devices"], list)
+                and len(device_state["Devices"]) > 0
+                and isinstance(device_state["Devices"][0], dict)
+            ):
+                target_nodes.append(device_state["Devices"][0])
+            for node in target_nodes:
+                self._set_dict_value_by_path(node, state_node, dev_val)
 
         # Delegate purely to the property object's interface for any cascading relationships defined by YAML metadata
         if hasattr(prop, "apply_optimistic_cascades"):
@@ -1201,12 +1212,13 @@ class YamlStatePoller:
         The Samsung 'Devices' unwrap is intentionally moved here from the controller
         facade — payload normalisation belongs to the network/poller layer (OCP).
         """
-        st = getattr(self, "_pure_network_state", None)
+        st: Any = getattr(self, "_pure_network_state", None)
         if not isinstance(st, dict) or not st:
             return {}
-        if "Devices" in st and isinstance(st["Devices"], list) and st["Devices"]:
-            return st["Devices"][0]
-        return st
+        devices = st.get("Devices")
+        if isinstance(devices, list) and len(devices) > 0 and isinstance(devices[0], dict):
+            return devices[0]
+        return dict(st)
 
     def get_hass_attr_for_op_id(self, op_id: str) -> str:
         """Public interface: map a YAML operation ID to its HA attribute name."""

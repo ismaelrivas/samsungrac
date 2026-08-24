@@ -204,21 +204,10 @@ class Connection:
             return True
 
         raw_state = device_state
-        # Prefer the optimistic device_state (which includes pending predictions
-        # from async_predict_and_correct_state) over pure_device_state.  Using the
-        # pure network state here causes condition_templates (e.g. "power == Off")
-        # to evaluate against stale data, leading to redundant commands like
-        # sending power=On on every mode change until the next poll confirms it.
-        if not isinstance(raw_state, dict) or not raw_state:
-            if self._controller and hasattr(self._controller, "device_state"):
-                ctrl_state = self._controller.device_state
-                if isinstance(ctrl_state, dict) and ctrl_state:
-                    raw_state = ctrl_state
-        if not isinstance(raw_state, dict) or not raw_state:
-            if self._controller and hasattr(self._controller, "pure_device_state"):
-                ctrl_pure = self._controller.pure_device_state
-                if isinstance(ctrl_pure, dict) and ctrl_pure:
-                    raw_state = ctrl_pure
+        if self._controller and hasattr(self._controller, "pure_device_state"):
+            ctrl_pure = self._controller.pure_device_state
+            if isinstance(ctrl_pure, dict) and ctrl_pure:
+                raw_state = ctrl_pure
 
         if not isinstance(raw_state, dict):
             _log.debug(

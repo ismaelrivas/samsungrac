@@ -849,9 +849,10 @@ class ConnectionAiohttp8888(Connection):
                 if not embedded_cond_result:
                     debug_msg = "%s [async_execute] Embedded command condition not met. Skipping execution."
                     _LOGGER.debug(debug_msg, self.log_prefix)
-                else:
-                    debug_msg = "%s [async_execute] Embedded command condition met. Executing it before the main command."
-                    _LOGGER.debug(debug_msg, self.log_prefix)
+                    return
+
+                debug_msg = "%s [async_execute] Embedded command condition met. Executing it before the main command."
+                _LOGGER.debug(debug_msg, self.log_prefix)
 
                 embedded_template = self._embedded_command.connection_template
 
