@@ -44,7 +44,7 @@ _LOGGER = logging.getLogger(__name__)
 CONST_CONTROLLER_TYPE = "yaml"
 
 # Module-level cache for raw YAML file content.
-_YAML_FILE_CACHE: dict[str, dict] = {}
+_YAML_FILE_CACHE: dict[str, dict[str, Any]] = {}
 
 
 def clear_yaml_cache() -> None:
@@ -78,11 +78,11 @@ class YamlConfigLoader:
         self.poll: bool | None = None
         self.is_fully_initialized = False
 
-        self._parsed_yaml_config: dict | None = None
-        self._parsed_yaml_cache: dict[str | None, dict] = {}
+        self._parsed_yaml_config: dict[str, Any] | None = None
+        self._parsed_yaml_cache: dict[str | None, dict[str, Any]] = {}
 
     @property
-    def parsed_yaml_cache(self) -> dict[str | None, dict]:
+    def parsed_yaml_cache(self) -> dict[str | None, dict[str, Any]]:
         """Return the parsed YAML cache for the current device."""
         return self._parsed_yaml_cache
 
