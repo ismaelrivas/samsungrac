@@ -285,16 +285,19 @@ class DeviceProperty:
     def _resolve_raw_state_source(self) -> dict[str, Any] | None:
         """Resolve the raw state dictionary from the controller or status getter."""
         if self._controller is not None:
-            if (
-                isinstance(self._controller.pure_device_state, dict)
-                and self._controller.pure_device_state
-            ):
-                return self._controller.pure_device_state
+            # Prefer optimistic device_state (includes pending predictions) over
+            # pure_device_state.  Using the pure network state causes embedded
+            # command condition_templates to evaluate against stale data.
             if (
                 isinstance(self._controller.device_state, dict)
                 and self._controller.device_state
             ):
                 return self._controller.device_state
+            if (
+                isinstance(self._controller.pure_device_state, dict)
+                and self._controller.pure_device_state
+            ):
+                return self._controller.pure_device_state
 
         if self._status_getter is not None and isinstance(
             self._status_getter.value, dict
