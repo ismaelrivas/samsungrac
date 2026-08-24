@@ -20,7 +20,7 @@ import logging
 from pathlib import Path
 import ssl
 import time
-from typing import Any, final
+from typing import Any, Final
 import warnings
 import weakref
 
@@ -55,12 +55,12 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 CONNECTION_TYPE_REQUEST = "request"
 CONNECTION_TYPE_REQUEST_PRINT = "request_print"
 
-REQUEST_MAX_RETRIES: final = 3
-REQUEST_RETRY_DELAY: final = 1.0  # seconds
-DEFAULT_REQUEST_TIMEOUT: final = 30.0
-FAST_FAIL_TIMEOUT_THRESHOLD: final = 12.0
-FAST_FAIL_FIRST_ATTEMPT_TIMEOUT: final = 10.0
-DEFAULT_CIPHERS: final = "ALL:@SECLEVEL=0"
+REQUEST_MAX_RETRIES: Final = 3
+REQUEST_RETRY_DELAY: Final = 1.0  # seconds
+DEFAULT_REQUEST_TIMEOUT: Final = 30.0
+FAST_FAIL_TIMEOUT_THRESHOLD: Final = 12.0
+FAST_FAIL_FIRST_ATTEMPT_TIMEOUT: Final = 10.0
+DEFAULT_CIPHERS: Final = "ALL:@SECLEVEL=0"
 
 
 class SamsungHTTPAdapter(HTTPAdapter):

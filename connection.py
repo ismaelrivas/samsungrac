@@ -41,6 +41,7 @@ class Connection:
         # FAIL-FAST DOCTRINE: Formalize ghost attributes
         self._controller: Any | None = None
         self._condition_template: Template | None = None
+        self._connection_template: Template | None = None
 
     @property
     def condition_template(self) -> Template | None:
@@ -51,6 +52,16 @@ class Connection:
     def condition_template(self, value: Template | None) -> None:
         """Set the execution condition template."""
         self._condition_template = value
+
+    @property
+    def connection_template(self) -> Template | None:
+        """Return the connection template."""
+        return self._connection_template
+
+    @connection_template.setter
+    def connection_template(self, value: Template | None) -> None:
+        """Set the connection template."""
+        self._connection_template = value
 
     @property
     def log_prefix(self) -> str:

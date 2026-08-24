@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import final
+from typing import Final
 
 from homeassistant.components.climate import ClimateEntityFeature
 from homeassistant.components.climate.const import (
@@ -34,35 +34,35 @@ ERR_INVALID_STATE_TYPE = "invalid_state_type"
 ERR_MISSING_IP = "missing_ip"
 ERR_MISSING_DIAGNOSTICS = "missing_diagnostics"
 ERR_COERCING_STATE = "error_coercing_state"
-ERR_PERSISTENT_CONNECTION_FAILURE: final = "Persistent connection failure"
-ERR_DEVICE_OFFLINE_PREFIX: final = "Device offline"
-ERR_AUTO_HEALING_RAW_IN_PROGRESS: final = (
+ERR_PERSISTENT_CONNECTION_FAILURE: Final = "Persistent connection failure"
+ERR_DEVICE_OFFLINE_PREFIX: Final = "Device offline"
+ERR_AUTO_HEALING_RAW_IN_PROGRESS: Final = (
     "Auto-healing in progress: Switching to RAW engine"
 )
 
-NON_SERIALIZABLE_KEYS: final = ("hass", "session", "logger")
-TRUTHY_STRINGS: final = ("true", "1", "yes", "on")
-FALSY_STRINGS: final = ("false", "0", "no", "off")
-DEFAULT_CONTROLLER_NAME: final = "Unknown"
-DEFAULT_SUBDEVICE_NAME: final = "Unknown Unit"
-DEFAULT_DEVICE_NAME_PREFIX: final = "Samsung AC"
-PREFIX_SUBDEVICE_ID: final = "ID "
-KEY_DUID: final = "duid"
-KEY_METHOD: final = "method"
-KEY_URL: final = "url"
-KEY_HEADERS: final = "headers"
-KEY_RAW_PAYLOAD: final = "_raw"
-KEY_JSON_PAYLOAD: final = "json"
-TMPL_VAR_DEVICE_ID: final = "device_id"
-TMPL_VAR_VALUE: final = "value"
-TMPL_VAR_DEVICE_STATE: final = "device_state"
-ID_DELIMITER: final = "_"
+NON_SERIALIZABLE_KEYS: Final = ("hass", "session", "logger")
+TRUTHY_STRINGS: Final = ("true", "1", "yes", "on")
+FALSY_STRINGS: Final = ("false", "0", "no", "off")
+DEFAULT_CONTROLLER_NAME: Final = "Unknown"
+DEFAULT_SUBDEVICE_NAME: Final = "Unknown Unit"
+DEFAULT_DEVICE_NAME_PREFIX: Final = "Samsung AC"
+PREFIX_SUBDEVICE_ID: Final = "ID "
+KEY_DUID: Final = "duid"
+KEY_METHOD: Final = "method"
+KEY_URL: Final = "url"
+KEY_HEADERS: Final = "headers"
+KEY_RAW_PAYLOAD: Final = "_raw"
+KEY_JSON_PAYLOAD: Final = "json"
+TMPL_VAR_DEVICE_ID: Final = "device_id"
+TMPL_VAR_VALUE: Final = "value"
+TMPL_VAR_DEVICE_STATE: Final = "device_state"
+ID_DELIMITER: Final = "_"
 
 
 # --- Configurable Options ---
 ATTR_IS_AVAILABLE = "is_available"
-ATTR_POWER: final = "power"
-DEFAULT_DEBOUNCE_DELAY: final = 3.0
+ATTR_POWER: Final = "power"
+DEFAULT_DEBOUNCE_DELAY: Final = 3.0
 CONF_ENTRY_ID = "entry_id"
 CONF_POLL_INTERVAL = "poll_interval"
 DEFAULT_POLL_INTERVAL = 60
@@ -78,7 +78,7 @@ CONF_USE_HTTP = "use_http"
 CONFIG_ENTRY_VERSION = 2
 MAIN_DEVICE_ID = "main"
 WIFI_KIT_MGMT_ID = "0"
-EXCLUDED_SUBDEVICE_IDS: final = (MAIN_DEVICE_ID, WIFI_KIT_MGMT_ID)
+EXCLUDED_SUBDEVICE_IDS: Final = (MAIN_DEVICE_ID, WIFI_KIT_MGMT_ID)
 
 CONF_DEVICE_TYPE = "device_type"
 CONF_CONFIG_FILE = "config_file"
@@ -89,7 +89,7 @@ CONF_DEVICES = "devices"
 CONF_DEVICE_ID = "device_id"
 CONF_SUBDEVICE_ID = "id"
 
-IMMUTABLE_CONFIG_KEYS: final[frozenset[str]] = frozenset(
+IMMUTABLE_CONFIG_KEYS: Final[frozenset[str]] = frozenset(
     {
         CONF_HOST,
         CONF_IP_ADDRESS,
@@ -244,9 +244,9 @@ PROPERTY_TYPE_ENUM = "enum"
 PROPERTY_TYPE_UNIQUE_ID = "unique_id"
 STATUS_GETTER_JSON = "json_status"
 
-TEMP_UNIT_CELSIUS_ALIASES: final = ("C", "CELSIUS")
-TEMP_UNIT_FAHRENHEIT_ALIASES: final = ("F", "FAHRENHEIT")
-DEGREE_SYMBOL: final = "°"
+TEMP_UNIT_CELSIUS_ALIASES: Final = ("C", "CELSIUS")
+TEMP_UNIT_FAHRENHEIT_ALIASES: Final = ("F", "FAHRENHEIT")
+DEGREE_SYMBOL: Final = "°"
 
 # --- Default Climate Values ---
 DEFAULT_CLIMATE_IP_TEMP_MIN: float = 8.0
@@ -265,20 +265,20 @@ MODE_PROPERTY_SUFFIX = "_mode"
 KEY_HVAC = "hvac"
 KEY_STATUS = "status"
 VALIDATION_SUCCESS_TOKEN = "valid"
-LABEL_TARGET_TEMP: final = "target_temperature"
-LABEL_CURRENT_TEMP: final = "current_temperature"
-FALLBACK_DEVICE_ID: final = "XXXX"
-KEY_DEVICE_CONFIG: final = "device"
-KEY_IDENTIFIERS: final = "identifiers"
-KEY_PATH_TO_DEVICES: final = "path_to_devices"
-KEY_DEVICE_MODE: final = "Mode"
-KEY_DEVICE_STATE: final = "device_state"
-KEY_DEVICES: final = "Devices"
-KEY_DEFAULT: final = "default"
-CONFIG_OPTIMISTIC_CASCADES: final = "optimistic_cascades"
-CONFIG_TARGET_NODE: final = "target_node"
-CONFIG_VALUE_MAP: final = "value_map"
-DEFAULT_CACHE_KEY_ID: final = "none"
+LABEL_TARGET_TEMP: Final = "target_temperature"
+LABEL_CURRENT_TEMP: Final = "current_temperature"
+FALLBACK_DEVICE_ID: Final = "XXXX"
+KEY_DEVICE_CONFIG: Final = "device"
+KEY_IDENTIFIERS: Final = "identifiers"
+KEY_PATH_TO_DEVICES: Final = "path_to_devices"
+KEY_DEVICE_MODE: Final = "Mode"
+KEY_DEVICE_STATE: Final = "device_state"
+KEY_DEVICES: Final = "Devices"
+KEY_DEFAULT: Final = "default"
+CONFIG_OPTIMISTIC_CASCADES: Final = "optimistic_cascades"
+CONFIG_TARGET_NODE: Final = "target_node"
+CONFIG_VALUE_MAP: Final = "value_map"
+DEFAULT_CACHE_KEY_ID: Final = "none"
 
 # Map YAML operation names to Home Assistant features.
 YAML_NAME_TO_HA_FEATURE: dict[str, ClimateEntityFeature] = {

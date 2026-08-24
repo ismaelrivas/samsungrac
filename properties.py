@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-from typing import Any, Protocol, final, runtime_checkable
+from typing import Any, Final, Protocol, runtime_checkable
 
 from homeassistant.components.climate import (
     ATTR_FAN_MODE,
@@ -174,7 +174,7 @@ def _normalize_unit(unit: str | UnitOfTemperature | Any) -> Any:
         return unit
 
 
-HA_MODE_ATTRIBUTES: final[frozenset[str]] = frozenset(
+HA_MODE_ATTRIBUTES: Final[frozenset[str]] = frozenset(
     {
         ATTR_HVAC_MODE,
         ATTR_FAN_MODE,
@@ -677,8 +677,8 @@ class GetJsonStatus(DeviceProperty):
             and self._connection_template is None
         ):
             conn_tmpl = (
-                self._connection.connection_template
-                or self._connection._connection_template
+                getattr(self._connection, "connection_template", None)
+                or getattr(self._connection, "_connection_template", None)
             )
             if conn_tmpl is not None:
                 self._connection_template = conn_tmpl

@@ -96,6 +96,7 @@ class ConnectionSamsung2878(Connection):
     ) -> None:
         super().__init__(hass_config, logger, hass=hass)
         self._params: dict[str, Any] = {}
+        self._connection_template: Template | None = None
         self._connection_init_template: Template | None = None
         self._cfg = ConnectionConfig(None, None, None, None, None)
         self._device_status: dict[str, Any] = {}
