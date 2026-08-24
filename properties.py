@@ -274,7 +274,7 @@ class DeviceProperty:
     @property
     def log_prefix(self) -> str:
         """Get the log prefix from the controller for consistent logging."""
-        return self._controller.log_prefix
+        return str(self._controller.log_prefix)
 
     @property
     def id(self) -> str:

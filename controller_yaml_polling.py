@@ -7,7 +7,7 @@ import asyncio
 import copy
 import logging
 import time
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 
 from homeassistant.components.climate.const import (
     ATTR_FAN_MODE,
@@ -311,7 +311,7 @@ class YamlStatePoller:
             st_getter = self.controller.loader.state_getter
             if st_getter and st_getter.value:  # pragma: no mutate
                 # Return RAM state injected with locks to lock the UI without flickering
-                return copy.deepcopy(st_getter.value)  # pragma: no mutate
+                return cast(dict[str, Any], copy.deepcopy(st_getter.value))  # pragma: no mutate
             return self._cached_device_state.copy()
 
         device_state = await self.async_update_state()
@@ -485,7 +485,7 @@ class YamlStatePoller:
                 )
 
         await self.async_update_properties_from_state(full_device_state)
-        return self.controller.loader.state_getter.value
+        return cast(dict[str, Any] | None, self.controller.loader.state_getter.value)
 
     def _discover_target_node(
         self, device_type: str, devices_list: list[Any]
@@ -502,7 +502,7 @@ class YamlStatePoller:
     def _values_match(val1: Any, val2: Any) -> bool:
         """Check if two values match numerically (float cast) or string-wise (case-insensitive)."""
         if val1 is None or val2 is None:  # pragma: no mutate
-            return val1 == val2  # pragma: no mutate
+            return bool(val1 == val2)  # pragma: no mutate
         if hasattr(val1, "value") and not isinstance(val1, dict):
             val1 = val1.value  # pragma: no mutate
         if hasattr(val2, "value") and not isinstance(val2, dict):
@@ -734,7 +734,7 @@ class YamlStatePoller:
             ),
             None,
         )
-        return found if found else devices_list[0]
+        return cast(dict[str, Any] | None, found if found else devices_list[0])
 
     def _extract_device_nodes(
         self, full_device_state: dict[str, Any], pure_network_state: dict[str, Any]

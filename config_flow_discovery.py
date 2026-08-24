@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from homeassistant.config_entries import SOURCE_RECONFIGURE, ConfigFlowResult
 from homeassistant.const import CONF_MAC
@@ -38,6 +38,26 @@ class ConfigFlowDiscoveryMixin:
     flow_data: dict[str, Any]
     hass: Any
     reauth_entry: Any | None
+
+    async def _create_entry(self) -> ConfigFlowResult:
+        """Stub for type checker, implemented in main config flow."""
+        raise NotImplementedError  # pragma: no cover
+
+    def async_abort(self, *args: Any, **kwargs: Any) -> Any:
+        """Stub for type checker, implemented in FlowHandler."""
+        raise NotImplementedError  # pragma: no cover
+
+    def async_show_form(self, *args: Any, **kwargs: Any) -> Any:
+        """Stub for type checker, implemented in FlowHandler."""
+        raise NotImplementedError  # pragma: no cover
+
+    async def async_set_unique_id(self, *args: Any, **kwargs: Any) -> Any:
+        """Stub for type checker, implemented in FlowHandler."""
+        raise NotImplementedError  # pragma: no cover
+
+    def _abort_if_unique_id_configured(self, *args: Any, **kwargs: Any) -> Any:
+        """Stub for type checker, implemented in FlowHandler."""
+        raise NotImplementedError  # pragma: no cover
 
     async def _async_init_discovery_controller(
         self, config_data: dict[str, Any]
@@ -114,7 +134,7 @@ class ConfigFlowDiscoveryMixin:
         if internal_coordinator is not None:
             coordinator_uuid = str(internal_coordinator.get("uuid", ""))
             if coordinator_uuid:
-                await self.async_set_unique_id(  # type: ignore[attr-defined]
+                await self.async_set_unique_id(
                     coordinator_uuid, raise_on_progress=False
                 )
                 coord_name = str(
@@ -132,14 +152,18 @@ class ConfigFlowDiscoveryMixin:
                     self.reauth_entry is None
                     and getattr(self, "source", None) != SOURCE_RECONFIGURE
                 ):  # pragma: no mutate
-                    self._abort_if_unique_id_configured(updates=self.flow_data)  # type: ignore[attr-defined]
+                    self._abort_if_unique_id_configured(updates=self.flow_data)
 
                 if ac_units_info:
                     self.flow_data[CONF_DISCOVERED_DEVICES] = ac_units_info
                     return await self.async_step_select_devices()
-                return await self._create_entry()  # type: ignore[attr-defined]
-            return self.async_abort(reason="no_coordinator_uuid")  # type: ignore[attr-defined]
-        return self.async_abort(reason="no_coordinator_found")  # type: ignore[attr-defined]
+                return await self._create_entry()
+            return cast(
+                ConfigFlowResult, self.async_abort(reason="no_coordinator_uuid")
+            )
+        return cast(
+            ConfigFlowResult, self.async_abort(reason="no_coordinator_found")
+        )
 
     async def _async_process_samsung_8888_discovery(
         self, discovered_devices: list[Any]
@@ -157,8 +181,8 @@ class ConfigFlowDiscoveryMixin:
                     CONF_NAME: f"Samsung AC {mac_str}",
                 }
             )
-            return await self._create_entry()  # type: ignore[attr-defined]
-        return self.async_abort(reason="discovery_failed")  # type: ignore[attr-defined]
+            return await self._create_entry()
+        return cast(ConfigFlowResult, self.async_abort(reason="discovery_failed"))
 
     async def _async_process_generic_discovery(
         self, discovered_devices: list[Any]
@@ -179,7 +203,7 @@ class ConfigFlowDiscoveryMixin:
                 )
 
         if not devices_info:  # pragma: no mutate
-            return await self._create_entry()  # type: ignore[attr-defined]
+            return await self._create_entry()
 
         self.flow_data[CONF_DISCOVERED_DEVICES] = devices_info
         return await self.async_step_select_devices()
@@ -213,14 +237,14 @@ class ConfigFlowDiscoveryMixin:
                 _LOGGER.error(
                     "Failed to initialize with raw engine during discovery fallback."
                 )  # pragma: no mutate
-                return self.async_abort(reason="cannot_connect")  # type: ignore[attr-defined]
+                return cast(ConfigFlowResult, self.async_abort(reason="cannot_connect"))
 
-            return await self._create_entry()  # type: ignore[attr-defined]
+            return await self._create_entry()
         except Exception as raw_exc:  # pylint: disable=broad-exception-caught
             _LOGGER.exception(
                 "Raw-engine fallback also failed: %s", raw_exc
             )  # pragma: no mutate
-            return self.async_abort(reason="cannot_connect")  # type: ignore[attr-defined]
+            return cast(ConfigFlowResult, self.async_abort(reason="cannot_connect"))
         finally:
             if controller is not None:
                 await controller.async_shutdown()
@@ -245,7 +269,7 @@ class ConfigFlowDiscoveryMixin:
         try:
             controller = await self._async_init_discovery_controller(config_data)
             if controller is None:
-                return self.async_abort(reason="cannot_connect")  # type: ignore[attr-defined]
+                return cast(ConfigFlowResult, self.async_abort(reason="cannot_connect"))
 
             discovered_devices = list(getattr(controller, "discovered_devices", []))
 
@@ -255,7 +279,7 @@ class ConfigFlowDiscoveryMixin:
                     "Could not discover indoor units. Creating a single entry."
                 )  # pragma: no mutate
                 if controller.unique_id:
-                    await self.async_set_unique_id(  # type: ignore[attr-defined]
+                    await self.async_set_unique_id(
                         str(controller.unique_id), raise_on_progress=False
                     )
                     if controller.device_id:
@@ -266,8 +290,8 @@ class ConfigFlowDiscoveryMixin:
                         self.reauth_entry is None
                         and getattr(self, "source", None) != SOURCE_RECONFIGURE
                     ):  # pragma: no mutate
-                        self._abort_if_unique_id_configured(updates=self.flow_data)  # type: ignore[attr-defined]
-                return await self._create_entry()  # type: ignore[attr-defined]
+                        self._abort_if_unique_id_configured(updates=self.flow_data)
+                return await self._create_entry()
 
             _LOGGER.debug(
                 "Discovered devices for %s: %s", device_type, discovered_devices
@@ -295,7 +319,7 @@ class ConfigFlowDiscoveryMixin:
             raise  # Let Home Assistant handle its own flow control
         except Exception as e:  # pylint: disable=broad-exception-caught
             _LOGGER.exception("Discovery failed: %s", e)  # pragma: no mutate
-            return self.async_abort(reason="unknown_error")  # type: ignore[attr-defined]
+            return cast(ConfigFlowResult, self.async_abort(reason="unknown_error"))
         finally:
             if controller is not None:
                 await controller.async_shutdown()
@@ -324,11 +348,16 @@ class ConfigFlowDiscoveryMixin:
                 user_input.get(CONF_SELECTED_DEVICES) or []
             )  # pragma: no mutate
             if not selected_devices_ids:
-                return self.async_show_form(  # type: ignore[attr-defined]
-                    step_id="select_devices",
-                    data_schema=_build_select_schema(),
-                    errors={"base": "no_devices_selected"},  # pragma: no mutate
-                    description_placeholders={"device_count": len(discovered_devices)},
+                return cast(
+                    ConfigFlowResult,
+                    self.async_show_form(
+                        step_id="select_devices",
+                        data_schema=_build_select_schema(),
+                        errors={"base": "no_devices_selected"},  # pragma: no mutate
+                        description_placeholders={
+                            "device_count": len(discovered_devices)
+                        },
+                    ),
                 )
 
             self.flow_data[CONF_DEVICES] = [
@@ -342,19 +371,24 @@ class ConfigFlowDiscoveryMixin:
                 main_unique_id = self.flow_data.get(CONF_DEVICE_ID)
 
             if main_unique_id:
-                await self.async_set_unique_id(  # type: ignore[attr-defined]
+                await self.async_set_unique_id(
                     str(main_unique_id), raise_on_progress=False
                 )
                 if (
                     self.reauth_entry is None
                     and getattr(self, "source", None) != SOURCE_RECONFIGURE
                 ):  # pragma: no mutate
-                    self._abort_if_unique_id_configured(updates=self.flow_data)  # type: ignore[attr-defined]
-                return await self._create_entry()  # type: ignore[attr-defined]
-            return self.async_abort(reason="no_unique_id")  # type: ignore[attr-defined]
+                    self._abort_if_unique_id_configured(updates=self.flow_data)
+                return await self._create_entry()
+            return cast(
+                ConfigFlowResult, self.async_abort(reason="no_unique_id")
+            )
 
-        return self.async_show_form(  # type: ignore[attr-defined]
-            step_id="select_devices",
-            data_schema=_build_select_schema(),
-            description_placeholders={"device_count": len(discovered_devices)},
+        return cast(
+            ConfigFlowResult,
+            self.async_show_form(
+                step_id="select_devices",
+                data_schema=_build_select_schema(),
+                description_placeholders={"device_count": len(discovered_devices)},
+            ),
         )

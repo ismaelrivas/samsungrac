@@ -819,9 +819,10 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     @property
     def connection_method(self) -> str | None:
         """Return the configured connection method (options taking precedence over data)."""
-        return self.config_entry.options.get(
+        res = self.config_entry.options.get(
             CONF_CONN_METHOD, self.config_entry.data.get(CONF_CONN_METHOD)
         )
+        return str(res) if res is not None else None
 
     async def async_shutdown(self) -> None:
         """Shut down the coordinator and its controller.

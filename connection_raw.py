@@ -348,7 +348,7 @@ class ConnectionRaw8888(Connection):
     ) -> str:
         """Format request URL with placeholders."""
         current_token, host, dev_id, mac = auth_ctx
-        return format_placeholders(url, current_token, host, dev_id, mac)
+        return cast(str, format_placeholders(url, current_token, host, dev_id, mac))
 
     def _format_request_body(
         self,
@@ -382,7 +382,7 @@ class ConnectionRaw8888(Connection):
             HEADER_CONTENT_TYPE, HEADER_VALUE_JSON
         )  # pragma: no mutate
 
-        return req_headers
+        return cast(dict[str, str], req_headers)
 
     def _prepare_request_payload(
         self,

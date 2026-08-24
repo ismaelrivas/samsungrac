@@ -145,10 +145,10 @@ class ConnectionRequestBase(Connection):
     def log_prefix(self) -> str:
         """Get the log prefix from the controller for consistent logging."""
         if self._controller:
-            return self._controller.log_prefix
+            return str(self._controller.log_prefix)
 
         if self._parent:
-            return self._parent.log_prefix
+            return str(self._parent.log_prefix)
 
         fallback_id = None
         if self._controller:

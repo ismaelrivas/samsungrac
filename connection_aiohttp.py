@@ -179,10 +179,10 @@ class ConnectionAiohttp8888(Connection):
         if len(self._params) > 0:
             probe_url = self._params.get(_KEY_PROBE_URL)
             if probe_url is not None:
-                return probe_url
+                return str(probe_url)
             url = self._params.get(_KEY_URL)
             if url is not None:
-                return url
+                return str(url)
         return ""
 
     def set_controller_ref(self, controller: YamlController) -> None:
@@ -524,7 +524,7 @@ class ConnectionAiohttp8888(Connection):
         # 1. Shared session logic (Keep-Alive)
         if self._keep_alive:
             if self._session is not None:
-                return self._session
+                return cast(aiohttp.ClientSession, self._session)
             # If we reach here, keep_alive is True but there is no session.
             warn_msg = "%s [aiohttp] keep_alive=True but shared session is None. Falling back to a temporary local session. Ensure hass and session are passed to YamlController explicitly."
             _LOGGER.warning(warn_msg, self.log_prefix)
@@ -625,7 +625,7 @@ class ConnectionAiohttp8888(Connection):
         if self._force_close_connection:
             req_headers[CONNECTION] = HEADER_VALUE_CLOSE
 
-        return req_headers
+        return cast(dict[str, str], req_headers)
 
     def _handle_http_version_fallback(self, response: aiohttp.ClientResponse) -> None:
         """Adjust Keep-Alive strategy based on the server's HTTP version."""

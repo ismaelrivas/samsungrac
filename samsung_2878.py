@@ -151,7 +151,7 @@ class ConnectionSamsung2878(Connection):
     def log_prefix(self) -> str:
         """Return the logging prefix for this connection."""
         if self._controller and self._controller.unique_id:
-            return self._controller.log_prefix
+            return str(self._controller.log_prefix)
         if self._cfg and self._cfg.duid:
             return f"[{self._cfg.duid[-6:]}]"
         return "[NO_ID]"
