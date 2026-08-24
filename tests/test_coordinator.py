@@ -7,10 +7,10 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import UpdateFailed
+import pytest
 
 from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 from custom_components.climate_ip.coordinator import (
@@ -866,8 +866,8 @@ async def test_coordinator_standalone_device_info(hass: HomeAssistant) -> None:
     mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.unique_id = "standalone_ac_123"
 
-    import homeassistant.helpers.device_registry as dr
     from homeassistant.const import CONF_MAC
+    import homeassistant.helpers.device_registry as dr
 
     from custom_components.climate_ip.const import CONF_NAME, DOMAIN
 

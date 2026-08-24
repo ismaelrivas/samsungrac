@@ -7,13 +7,13 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
-import pytest
-import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+import voluptuous as vol
 
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 from custom_components.climate_ip.const import (

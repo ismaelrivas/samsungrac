@@ -6,12 +6,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import voluptuous as vol
 from homeassistant.config_entries import SOURCE_RECONFIGURE, ConfigFlowResult
 from homeassistant.const import CONF_MAC
 from homeassistant.data_entry_flow import AbortFlow
-from homeassistant.helpers import aiohttp_client
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import aiohttp_client, config_validation as cv
+import voluptuous as vol
 
 from . import controller_yaml
 from .const import (

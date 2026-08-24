@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from homeassistant.helpers.issue_registry import IssueSeverity
 from homeassistant.helpers.update_coordinator import UpdateFailed
+import pytest
 
 from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 from custom_components.climate_ip.exceptions import CannotConnect
@@ -360,8 +360,8 @@ async def test_async_update_state_persistently_offline():
     """Verifica que el error 'persistently offline' asigna exactamente 2 al contador."""
     from unittest.mock import MagicMock
 
-    import pytest
     from homeassistant.helpers.update_coordinator import UpdateFailed
+    import pytest
 
     from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
     from custom_components.climate_ip.exceptions import CannotConnect

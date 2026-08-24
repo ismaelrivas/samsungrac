@@ -17,16 +17,16 @@ import asyncio
 import contextlib
 import functools
 import http.client
+from io import BytesIO
 import logging
+from pathlib import Path
 import platform
 import re
 import ssl
 import threading
+from typing import TYPE_CHECKING, Any
 import warnings
 import xml.etree.ElementTree as ET
-from io import BytesIO
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -153,10 +153,10 @@ def tolerant_header_parsing():
     global _HEADER_PATCH_ORIGINAL_CONNECTION, _HEADER_PATCH_ORIGINAL_PARSE_HEADERS
 
     import urllib3.connection as connection_mod  # pylint: disable=import-outside-toplevel
-    import urllib3.util.response as response_util  # pylint: disable=import-outside-toplevel
     from urllib3.exceptions import (
         HeaderParsingError,
     )
+    import urllib3.util.response as response_util  # pylint: disable=import-outside-toplevel
 
     def _tolerant_assert(headers: Any) -> None:
         try:
@@ -504,9 +504,10 @@ def mask_sensitive_data(data: Any) -> Any:
 # --- Native ICMP Ping via icmplib ---
 try:
     # pylint: disable=import-outside-toplevel
-    from icmplib import ICMPSocketError, async_ping
     from icmplib import (
+        ICMPSocketError,
         NameLookupError as IcmpNameLookupError,
+        async_ping,
     )
 
     _ICMPLIB_AVAILABLE = True

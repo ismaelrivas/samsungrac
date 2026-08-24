@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 from homeassistant.components.sensor import SensorEntityDescription
 from homeassistant.const import STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
+import pytest
 
 from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 from custom_components.climate_ip.properties import DeviceProperty, UniqueIdProperty

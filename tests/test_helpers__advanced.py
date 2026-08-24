@@ -9,8 +9,8 @@ import ssl
 import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from homeassistant.helpers.entity import EntityCategory
+import pytest
 
 from custom_components.climate_ip.helpers import (
     ICMPSocketError,
@@ -78,8 +78,8 @@ class TestTolerantHeaderParsing:
 
     def test_header_parsing_error_suppressed(self):
         """Verify that HeaderParsingError is caught and logged, not raised."""
-        import urllib3.util.response as response_util
         from urllib3.exceptions import HeaderParsingError
+        import urllib3.util.response as response_util
 
         # Save the real function
         real_assert = response_util.assert_header_parsing

@@ -7,7 +7,6 @@ import asyncio
 import logging
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
-import pytest
 from homeassistant.components.climate.const import (
     ATTR_FAN_MODE,
     ATTR_FAN_MODES,
@@ -24,6 +23,7 @@ from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNKNOWN, UnitOfTemper
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.json import json_dumps
 from homeassistant.helpers.template import Template
+import pytest
 
 from custom_components.climate_ip.const import (
     CONF_SUBDEVICE_ID,

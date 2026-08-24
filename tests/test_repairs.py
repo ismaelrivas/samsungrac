@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 from homeassistant.components.repairs import ConfirmRepairFlow, RepairsFlow
 from homeassistant.data_entry_flow import FlowResultType
+import pytest
 
 from custom_components.climate_ip.repairs import async_create_fix_flow
 

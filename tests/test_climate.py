@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from homeassistant.components.climate import (
     ATTR_FAN_MODE,
     ATTR_HVAC_MODE,
@@ -14,13 +13,12 @@ from homeassistant.components.climate import (
 )
 from homeassistant.const import (
     ATTR_TEMPERATURE as HA_ATTR_TEMPERATURE,
-)
-from homeassistant.const import (
     PRECISION_HALVES,
     STATE_OFF,
     STATE_ON,
 )
 from homeassistant.core import HomeAssistant
+import pytest
 
 from custom_components.climate_ip.climate import (
     ATTR_PRESET_MODE,

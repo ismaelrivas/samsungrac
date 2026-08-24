@@ -7,10 +7,10 @@ import os
 import ssl
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
-import pytest
 from homeassistant.config_entries import SOURCE_RECONFIGURE
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 from homeassistant.data_entry_flow import AbortFlow
+import pytest
 
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 from custom_components.climate_ip.const import (

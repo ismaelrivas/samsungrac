@@ -6,8 +6,8 @@ from __future__ import annotations
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
+import pytest
 
 from custom_components.climate_ip.connection_raw import _HOST_CLIENTS, ConnectionRaw8888
 from custom_components.climate_ip.const import CONF_CERT

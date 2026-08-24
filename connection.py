@@ -3,10 +3,10 @@
 
 from __future__ import annotations
 
+from abc import abstractmethod
 import asyncio
 import dataclasses
 import logging
-from abc import abstractmethod
 from typing import Any
 
 from homeassistant.helpers.template import Template

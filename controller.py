@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-import logging
 from abc import ABC, abstractmethod
+import logging
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, Protocol, runtime_checkable
 
 from homeassistant.const import UnitOfTemperature

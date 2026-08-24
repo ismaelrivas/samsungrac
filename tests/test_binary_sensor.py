@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.const import EntityCategory
+import pytest
 
 from custom_components.climate_ip.binary_sensor import (
     ClimateIPConnectivitySensor,

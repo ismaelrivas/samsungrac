@@ -3,8 +3,8 @@
 """Tests for GenericYamlTokenAcquirer in stream mode (2878 pairing)."""
 
 import asyncio
-import ssl
 from pathlib import Path
+import ssl
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest

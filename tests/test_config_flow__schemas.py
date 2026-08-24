@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 import pytest
 import voluptuous as vol
-from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 from custom_components.climate_ip.const import (

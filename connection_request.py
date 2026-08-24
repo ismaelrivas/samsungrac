@@ -14,20 +14,20 @@ recovery for protocol violations and adaptive timeout management.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Generator
 import contextlib
 import logging
+from pathlib import Path
 import ssl
 import time
+from typing import Any, final
 import warnings
 import weakref
-from collections.abc import Generator
-from pathlib import Path
-from typing import Any, final
 
-import requests  # type: ignore[import-untyped]
 from homeassistant.helpers.json import json_dumps
 from homeassistant.util.json import JSON_DECODE_EXCEPTIONS, json_loads
 from jinja2 import Template
+import requests  # type: ignore[import-untyped]
 from requests.adapters import HTTPAdapter  # type: ignore[import-untyped]
 from requests.packages.urllib3.exceptions import (  # type: ignore[import-untyped]  # pylint: disable=import-error
     InsecureRequestWarning,

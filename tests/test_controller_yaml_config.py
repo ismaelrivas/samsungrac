@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from homeassistant.const import ATTR_ENTITY_ID, ATTR_NAME, ATTR_TEMPERATURE
 from homeassistant.util.yaml import load_yaml
+import pytest
 from voluptuous import Optional
 
 from custom_components.climate_ip.const import (

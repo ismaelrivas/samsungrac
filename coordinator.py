@@ -4,10 +4,10 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import Callable, Coroutine
 from datetime import timedelta
 from enum import Enum
+import logging
 from typing import Any, Final
 
 from homeassistant.components.climate import ATTR_HVAC_MODE, HVACMode
@@ -22,8 +22,6 @@ from homeassistant.helpers.issue_registry import (
     IssueSeverity,
     async_create_issue,
     async_delete_issue,
-)
-from homeassistant.helpers.issue_registry import (
     async_get as async_get_issue_registry,
 )
 from homeassistant.helpers.update_coordinator import (

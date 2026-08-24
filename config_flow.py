@@ -9,7 +9,6 @@ import logging
 from pathlib import Path
 from typing import Any, Self
 
-import voluptuous as vol
 from homeassistant.config_entries import (
     SOURCE_RECONFIGURE,
     ConfigEntry,
@@ -20,14 +19,14 @@ from homeassistant.config_entries import (
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import AbortFlow
-from homeassistant.helpers import aiohttp_client
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import aiohttp_client, device_registry as dr
 from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
 )
 from homeassistant.util.yaml import load_yaml
+import voluptuous as vol
 
 from . import helpers
 from .config_flow_discovery import ConfigFlowDiscoveryMixin

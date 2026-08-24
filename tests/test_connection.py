@@ -9,8 +9,8 @@ import inspect
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from jinja2 import Template
+import pytest
 
 from custom_components.climate_ip.connection import (
     _HOST_LOCKS,

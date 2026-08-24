@@ -7,7 +7,6 @@ import logging
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from homeassistant.components.climate import (
     ATTR_FAN_MODE,
     ATTR_FAN_MODES,
@@ -27,6 +26,7 @@ from homeassistant.const import (
     STATE_UNKNOWN,
 )
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+import pytest
 
 from custom_components.climate_ip.const import (
     CONF_CONFIG_FILE,

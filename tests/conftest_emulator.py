@@ -4,12 +4,12 @@
 # pylint: disable=import-outside-toplevel
 from __future__ import annotations
 
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import logging
 import queue
 import socket
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 

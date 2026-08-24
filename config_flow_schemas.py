@@ -8,7 +8,6 @@ import datetime
 import logging
 from typing import Any
 
-import voluptuous as vol
 from homeassistant.const import (
     CONF_IP_ADDRESS,
     CONF_MAC,
@@ -24,6 +23,7 @@ from homeassistant.helpers.selector import (
     TextSelectorConfig,
     TextSelectorType,
 )
+import voluptuous as vol
 
 from .const import (
     CONF_CERT,

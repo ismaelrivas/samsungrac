@@ -6,7 +6,6 @@ from __future__ import annotations
 import datetime
 from typing import Any
 
-import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsFlow
 from homeassistant.const import UnitOfTemperature
 from homeassistant.helpers.selector import (
@@ -17,6 +16,7 @@ from homeassistant.helpers.selector import (
     TextSelectorConfig,
     TextSelectorType,
 )
+import voluptuous as vol
 
 from .const import (
     CONF_CONN_METHOD,

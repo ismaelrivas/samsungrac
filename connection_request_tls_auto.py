@@ -18,15 +18,15 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
+from pathlib import Path
 import re
 import ssl
-import warnings
-from pathlib import Path
 from typing import Any
+import warnings
 
-import requests  # type: ignore[import-untyped]
 from homeassistant.util.json import JSON_DECODE_EXCEPTIONS, json_loads
 from jinja2 import Template
+import requests  # type: ignore[import-untyped]
 from requests.adapters import HTTPAdapter  # type: ignore[import-untyped]
 from urllib3.exceptions import InsecureRequestWarning
 

@@ -4,14 +4,14 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable, Coroutine
 import logging
 import os
+from pathlib import Path
 import random
 import re
 import socket
 import ssl
-from collections.abc import Callable, Coroutine
-from pathlib import Path
 from typing import Any
 
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_PORT, CONF_TOKEN

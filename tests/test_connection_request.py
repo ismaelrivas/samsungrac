@@ -7,9 +7,9 @@ from __future__ import annotations
 import logging
 from unittest.mock import MagicMock, patch
 
+from homeassistant.const import CONF_TOKEN
 import pytest
 import requests  # type: ignore[import-untyped]
-from homeassistant.const import CONF_TOKEN
 
 from custom_components.climate_ip.connection_request import ConnectionRequest
 from custom_components.climate_ip.connection_request_tls_auto import (

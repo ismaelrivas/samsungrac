@@ -14,7 +14,6 @@ from unittest.mock import ANY, AsyncMock, MagicMock, call, patch
 
 import pytest
 
-import custom_components.climate_ip.samsung_2878 as samsung_module
 from custom_components.climate_ip.const import (
     PROTOCOL_2878_DPLUG,
     PROTOCOL_2878_POWER_ID,
@@ -22,6 +21,7 @@ from custom_components.climate_ip.const import (
 )
 from custom_components.climate_ip.exceptions import AuthError, CannotConnect
 from custom_components.climate_ip.helpers import async_create_samsung_ssl_context
+import custom_components.climate_ip.samsung_2878 as samsung_module
 from custom_components.climate_ip.samsung_2878 import (
     CONF_DUID,
     CONF_PORT,

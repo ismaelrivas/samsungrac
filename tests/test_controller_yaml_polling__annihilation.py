@@ -3,9 +3,9 @@ from __future__ import annotations
 import time
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
-import pytest
 from homeassistant.helpers.template import Template
 from homeassistant.helpers.update_coordinator import UpdateFailed
+import pytest
 
 from custom_components.climate_ip.const import DEVICE_TYPE_MIM_H03
 from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller

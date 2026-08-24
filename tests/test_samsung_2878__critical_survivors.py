@@ -4,8 +4,8 @@ import asyncio
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from homeassistant.const import CONF_MAC
+import pytest
 
 from custom_components.climate_ip.const import CONF_CERT
 from custom_components.climate_ip.exceptions import CannotConnect

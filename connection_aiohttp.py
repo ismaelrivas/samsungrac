@@ -7,22 +7,22 @@ This engine implements HTTP Keep-Alive for low latency and correct mTLS.
 from __future__ import annotations
 
 import asyncio
-import logging
-import os
-import ssl
 from dataclasses import dataclass
 from http import HTTPStatus
+import logging
+import os
 from pathlib import Path
+import ssl
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
-import yarl
 from aiohttp.hdrs import AUTHORIZATION, CONNECTION, CONTENT_TYPE
 from homeassistant.const import CONF_MAC, CONF_PORT, CONF_TOKEN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.json import json_dumps
 from homeassistant.helpers.template import Template
 from homeassistant.util.json import json_loads
+import yarl
 
 from .connection import Connection, register_connection
 from .const import (

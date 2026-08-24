@@ -4,8 +4,8 @@ import copy
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from homeassistant.helpers.update_coordinator import UpdateFailed
+import pytest
 
 from custom_components.climate_ip.const import (
     CONF_DEVICE_TYPE,

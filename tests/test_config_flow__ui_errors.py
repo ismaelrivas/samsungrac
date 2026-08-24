@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-import voluptuous as vol
 from homeassistant.config_entries import SOURCE_RECONFIGURE
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import AbortFlow, FlowResultType
+import pytest
+import voluptuous as vol
 
 from custom_components.climate_ip.config_flow import (
     ClimateIpConfigFlow,

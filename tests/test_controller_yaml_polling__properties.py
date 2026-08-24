@@ -3,9 +3,9 @@ from __future__ import annotations
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from homeassistant.components.climate import ClimateEntityFeature
 from homeassistant.const import STATE_UNKNOWN
+import pytest
 
 from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 

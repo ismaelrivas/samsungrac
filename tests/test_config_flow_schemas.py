@@ -6,8 +6,6 @@ from __future__ import annotations
 import datetime
 from unittest.mock import MagicMock
 
-import pytest
-import voluptuous as vol
 from homeassistant.const import (
     CONF_IP_ADDRESS,
     CONF_MAC,
@@ -15,7 +13,9 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.helpers.selector import SelectSelectorMode, TextSelectorType
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+import voluptuous as vol
 
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 from custom_components.climate_ip.const import (

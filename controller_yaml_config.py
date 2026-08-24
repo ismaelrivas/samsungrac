@@ -7,14 +7,14 @@ import logging
 from pathlib import Path
 from typing import Any
 
-import homeassistant.helpers.config_validation as cv
-import voluptuous as vol
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     ATTR_NAME,
     ATTR_TEMPERATURE,
 )
+import homeassistant.helpers.config_validation as cv
 from homeassistant.util.yaml import load_yaml
+import voluptuous as vol
 
 from .connection import CLIMATE_IP_CONNECTIONS, Connection
 from .const import (

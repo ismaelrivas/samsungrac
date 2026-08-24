@@ -6,8 +6,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from unittest.mock import MagicMock
 
-import pytest
 from homeassistant.const import CONF_MAC
+import pytest
 
 from custom_components.climate_ip.const import DOMAIN
 from custom_components.climate_ip.coordinator import SamsungClimateCoordinator

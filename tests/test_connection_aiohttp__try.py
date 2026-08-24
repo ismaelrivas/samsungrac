@@ -5,8 +5,8 @@ import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
-import pytest
 from homeassistant.const import CONF_TOKEN
+import pytest
 
 from custom_components.climate_ip.connection_aiohttp import (
     ConnectionAiohttp8888,

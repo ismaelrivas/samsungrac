@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-import pytest
 from homeassistant.components.climate import HVACMode
+import pytest
 
 from custom_components.climate_ip.state import ClimateIPDeviceState
 
