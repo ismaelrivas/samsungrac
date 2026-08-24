@@ -2,7 +2,7 @@
 
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Core%202026.x%20Ready-blue?style=for-the-badge&logo=home-assistant)
 ![Mutation Score](https://img.shields.io/badge/Mutation%20Score-100%25-brightgreen.svg)
-![Unit Tests](https://img.shields.io/badge/Unit%20Tests-1045%20Passed-brightgreen?style=for-the-badge)
+![Unit Tests](https://img.shields.io/badge/Unit%20Tests-1381%20Passed-brightgreen?style=for-the-badge)
 ![Quality Scale](https://img.shields.io/badge/Quality%20Scale-Gold%20Master-gold?style=for-the-badge)
 ![HACS](https://img.shields.io/badge/HACS-Custom%20Repository-orange?style=for-the-badge)
 
@@ -153,6 +153,100 @@ Depending on device capability:
 ### 🔘 Switch Entities
 * **Quiet Mode Switch:** `switch.samsung_ac_quiet_mode`
 * **Light / Display Control:** `switch.samsung_ac_display_light`
+
+---
+
+## ⚡ Services, Actions & Automation Examples
+
+The integration registers custom services and exposes rich state attributes and events for Home Assistant automations.
+
+### 🛠️ Exposed Services
+
+| Service | Description | Example Parameters |
+| :--- | :--- | :--- |
+| `climate_ip.reload` | Reloads YAML register profiles without restarting Home Assistant. | *None* |
+| `climate_ip.set_property` | Directly sets a low-level property on the Samsung AC controller. | `key: "auto_clean"`, `value: "on"` |
+
+### 🤖 Automation Examples
+
+#### 1. Activate WindFree Mode when Ambient Temperature is High
+```yaml
+alias: "Climate - Auto WindFree on High Temp"
+description: "Turn on Samsung AC in WindFree cooling mode when indoor temperature exceeds 26°C"
+trigger:
+  - platform: numeric_state
+    entity_id: sensor.samsung_ac_indoor_temperature
+    above: 26
+condition:
+  - condition: state
+    entity_id: climate.samsung_ac
+    state: "off"
+action:
+  - service: climate.set_hvac_mode
+    target:
+      entity_id: climate.samsung_ac
+    data:
+      hvac_mode: cool
+  - service: climate.set_preset_mode
+    target:
+      entity_id: climate.samsung_ac
+    data:
+      preset_mode: WindFree
+  - service: climate.set_temperature
+    target:
+      entity_id: climate.samsung_ac
+    data:
+      temperature: 24
+```
+
+#### 2. Direct Property Control via `climate_ip.set_property`
+```yaml
+alias: "Climate - Enable Auto Clean on Shutdown"
+trigger:
+  - platform: state
+    entity_id: climate.samsung_ac
+    to: "off"
+action:
+  - service: climate_ip.set_property
+    target:
+      entity_id: climate.samsung_ac
+    data:
+      key: "auto_clean"
+      value: "on"
+```
+
+#### 3. Filter Cleaning Alert Notification
+```yaml
+alias: "Climate - Filter Cleaning Reminder"
+trigger:
+  - platform: state
+    entity_id: sensor.samsung_ac_filter_alarm
+    to: "on"
+action:
+  - service: notify.persistent_notification
+    data:
+      title: "Samsung AC Maintenance"
+      message: "The air conditioner filter needs cleaning. Filter usage time has exceeded recommended threshold."
+```
+
+---
+
+## 🗑️ Removal & Uninstallation
+
+To cleanly and deterministically remove the `climate_ip` integration from your Home Assistant instance:
+
+1. **Delete Config Entry via UI:**
+   * Go to **Settings** -> **Devices & Services** -> **Integrations**.
+   * Locate the **Samsung AC / Climate IP** card.
+   * Click on the three dots menu (`⋮`) for the entry and select **Delete**.
+   * Confirm deletion. Home Assistant will execute [`async_unload_entry`](file:///home/cogollo/ha_data/config/custom_components/climate_ip/__init__.py) to cleanly terminate all background tasks, close sockets, and purge memory.
+
+2. **Remove Integration Files:**
+   * **If installed via HACS:** Open **HACS** -> **Integrations** -> **Samsung AC / Climate IP** -> Menu (`⋮`) -> **Remove**.
+   * **If installed manually:** Delete the directory `/config/custom_components/climate_ip/`.
+
+3. **Restart Home Assistant:**
+   * Go to **Developer Tools** -> **YAML** -> **Restart Home Assistant** to clear cached component references.
 
 ---
 
