@@ -8,12 +8,13 @@ import logging
 import os
 from pathlib import Path
 import ssl
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import SOURCE_RECONFIGURE
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 from homeassistant.data_entry_flow import AbortFlow
 from homeassistant.helpers import aiohttp_client, device_registry as dr
+from aiohttp import ClientTimeout
 
 from . import controller_yaml, helpers
 from .const import (
@@ -44,7 +45,6 @@ class ConfigFlowHelpersMixin:
     hass: Any
     acquirer: Any | None
     reauth_entry: Any | None
-    source: str
 
     async def _async_force_arp_update(self, ip_address: str) -> None:
         """Force the OS to resolve the MAC and populate the ARP table concurrently."""
@@ -98,7 +98,7 @@ class ConfigFlowHelpersMixin:
 
         await self.async_set_unique_id(str(self.flow_data[CONF_MAC]))  # type: ignore[attr-defined]
         if self.reauth_entry is None:
-            if self.source != SOURCE_RECONFIGURE:
+            if getattr(self, "source", None) != SOURCE_RECONFIGURE:
                 self._abort_if_unique_id_configured()  # type: ignore[attr-defined]
 
         return None
@@ -259,7 +259,7 @@ class ConfigFlowHelpersMixin:
                     url,
                     headers=headers,
                     ssl=ssl_context,
-                    timeout=GLOBAL_HTTP_TIMEOUT,  # pragma: no mutate
+                    timeout=GLOBAL_HTTP_TIMEOUT,  # type: ignore[arg-type] # pragma: no mutate
                 ) as response:
                     if response.status == 200:
                         _LOGGER.debug(

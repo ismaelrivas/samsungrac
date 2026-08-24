@@ -291,6 +291,8 @@ class PropertyDebouncer:
 class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     """Manages data fetching for Samsung Climate devices."""
 
+    config_entry: ConfigEntry
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -303,6 +305,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         self.controller = controller
         self.debouncer = PropertyDebouncer(self, delay=DEFAULT_DEBOUNCE_DELAY)
         self._global_network_lock = asyncio.Lock()
+        self.config_entry = entry
 
         # Inject callbacks into the controller to avoid circular dependencies.
         self.controller.register_token_callback(self._async_save_new_token)
@@ -369,19 +372,21 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             else:
                 final_name = name
 
-            # Parent linkage for hierarchical display in HA UI
-            via_device = (
-                (DOMAIN, parent_unique_id) if parent_unique_id is not None else None
-            )  # pragma: no mutate
-
             # NOTE: For sub-devices, we DO NOT include 'connections' (MAC) to prevent
             # Home Assistant from merging multiple units behind the same gateway into one.
-            self.device_info = DeviceInfo(
-                identifiers={(DOMAIN, safe_uid)},
-                name=final_name,
-                manufacturer=MANUFACTURER_SAMSUNG,
-                via_device=via_device,
-            )  # pragma: no mutate
+            if parent_unique_id:
+                self.device_info = DeviceInfo(
+                    identifiers={(DOMAIN, safe_uid)},
+                    name=final_name,
+                    manufacturer=MANUFACTURER_SAMSUNG,
+                    via_device=(DOMAIN, parent_unique_id),
+                )  # pragma: no mutate
+            else:
+                self.device_info = DeviceInfo(
+                    identifiers={(DOMAIN, safe_uid)},
+                    name=final_name,
+                    manufacturer=MANUFACTURER_SAMSUNG,
+                )  # pragma: no mutate
         else:
             mac = self.config_entry.data.get(CONF_MAC)  # pragma: no mutate
             conns: set[tuple[str, str]] = set()

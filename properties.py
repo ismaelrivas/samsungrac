@@ -18,8 +18,7 @@ from homeassistant.components.climate import (
     ATTR_SWING_MODES,
     ClimateEntityFeature,
 )
-from homeassistant.components.sensor import SensorStateClass
-from homeassistant.components.sensor.const import SensorDeviceClass
+from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import STATE_OFF, STATE_ON, UnitOfTemperature
 from homeassistant.exceptions import HomeAssistantError, TemplateError
 from homeassistant.helpers.json import json_dumps
@@ -75,7 +74,7 @@ from .const import (
     PROPERTY_TYPE_MODE,
     PROPERTY_TYPE_NUMBER,
     PROPERTY_TYPE_STRING,
-    PROPERTY_TYPE_SWITCH,
+    PROPERTY_TYPE_SWITCH as PROPERTY_TYPE_SWITCH,  # noqa: PLC0414
     PROPERTY_TYPE_TEMP,
     PROPERTY_TYPE_UNIQUE_ID,
     STATUS_GETTER_JSON,
@@ -646,16 +645,23 @@ class DeviceProperty:
         self, device_state_override: dict[str, Any] | None = None, *_args: Any
     ) -> Any:
         """Update property from device state and return current value."""
+        device_state: dict[str, Any] | None
         if device_state_override is not None:
             device_state = device_state_override
+        elif self._status_getter and isinstance(self._status_getter.value, dict):
+            device_state = self._status_getter.value
         else:
-            device_state = self._status_getter.value if self._status_getter else None
+            device_state = None
 
         self._device_state = device_state
         v = self.calculate_value_from_state(device_state)
         if v is not None:
             self.value = v
         return self.value
+
+    async def async_set_value(self, v: Any, device_id: str | None = None) -> bool:
+        """Set property value on device."""
+        return False
 
     @property
     def state_attributes(self) -> dict[str, Any]:
@@ -783,10 +789,11 @@ class GetJsonStatus(DeviceProperty):
             response_text: str | None = None  # pragma: no mutate
             params_str = render_template(self.connection_template, **render_context)
             if isinstance(params_str, dict):
-                params = params_str
+                params: dict[str, Any] | None = params_str
             else:
                 try:
-                    params = json_loads(params_str)
+                    loaded = json_loads(params_str)
+                    params = loaded if isinstance(loaded, dict) else None
                 except (ValueError, TypeError):
                     params = None
 
@@ -816,7 +823,8 @@ class GetJsonStatus(DeviceProperty):
                 return None
 
             try:
-                device_state_result = json_loads(response_text)
+                loaded_state = json_loads(response_text)
+                device_state_result = loaded_state if isinstance(loaded_state, dict) else None
             except JSON_DECODE_EXCEPTIONS as e:
                 _LOGGER.error(
                     "%s [GetJsonStatus] JSON parsing error. Response: '%s'. Error: %s",
@@ -873,10 +881,11 @@ class DeviceOperation(DeviceProperty):
         if template_to_use is not None:
             rendered = render_template(template_to_use, **render_ctx)
             if isinstance(rendered, dict):
-                operation_params = rendered
+                operation_params: dict[str, Any] | None = rendered
             else:
                 try:
-                    operation_params = json_loads(rendered)
+                    loaded_op = json_loads(rendered)
+                    operation_params = loaded_op if isinstance(loaded_op, dict) else None
                 except (ValueError, TypeError):
                     operation_params = None
 
@@ -903,7 +912,8 @@ class DeviceOperation(DeviceProperty):
                 base_params = rendered_base
             else:
                 try:
-                    base_params = json_loads(rendered_base)
+                    loaded_base = json_loads(rendered_base)
+                    base_params = loaded_base if isinstance(loaded_base, dict) else {}
                 except (ValueError, TypeError) as err:
                     _LOGGER.warning(
                         "%s Base parameter template rendered invalid JSON for %s: %s",
@@ -1120,6 +1130,7 @@ class BasicDeviceOperation(DeviceOperation):
             hvac_prop is None
             or not isinstance(hvac_prop.state_node, str)
             or not hvac_prop.state_node
+            or self._device_state is None
         ):
             return None
 
@@ -1357,7 +1368,7 @@ class BasicNumericOperation(DeviceOperation):
 
     def load_from_yaml(self, node: dict[str, Any] | None) -> bool:
         """Load configuration from a YAML node dictionary."""
-        if super().load_from_yaml(node) is False:
+        if not node or super().load_from_yaml(node) is False:
             return False
 
         # node is guaranteed not to be None here
@@ -1475,10 +1486,13 @@ class TemperatureOperation(BasicNumericOperation):
         self, device_state_override: dict[str, Any] | None = None, *_args: Any
     ) -> Any:
         """Update temperature state, resolving unit from device if templated."""
+        device_state: dict[str, Any] | None
         if device_state_override is not None:
             device_state = device_state_override
+        elif self._status_getter and isinstance(self._status_getter.value, dict):
+            device_state = self._status_getter.value
         else:
-            device_state = self._status_getter.value if self._status_getter else None
+            device_state = None
 
         if self._unit_template is not None and device_state is not None:
             try:

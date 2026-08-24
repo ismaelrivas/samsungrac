@@ -241,6 +241,9 @@ class GenericYamlTokenAcquirer:
             else:
                 payload_bytes = raw_payload
 
+            if self._writer is None or self._reader is None:
+                raise TokenAcquisitionError("Connection stream not established.")
+
             self._writer.write(payload_bytes)
             await self._writer.drain()
 
@@ -265,6 +268,8 @@ class GenericYamlTokenAcquirer:
 
             return successful_config
 
+        raise TokenAcquisitionError(f"Unsupported authentication mode: {mode}")
+
     async def async_wait_for_token(self) -> str:
         """Phase 2: Wait for user confirmation / incoming token notification."""
         mode = self.auth_config.get("mode")
@@ -276,6 +281,8 @@ class GenericYamlTokenAcquirer:
                 )
                 async with asyncio.timeout(timeout):
                     await self._token_received_event.wait()
+                if self._received_token is None:
+                    raise TokenAcquisitionError("Token was not received.")
                 return self._received_token
 
             elif mode == "stream":
@@ -315,6 +322,8 @@ class GenericYamlTokenAcquirer:
                 raise TokenAcquisitionError(
                     "Regex failed to extract token from stream."
                 )
+
+            raise TokenAcquisitionError(f"Unsupported authentication mode: {mode}")
 
         finally:
             await self.async_close()

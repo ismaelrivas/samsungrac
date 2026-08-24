@@ -180,7 +180,8 @@ async def async_get_config_entry_diagnostics(
             ),
             "active_entities": (
                 len(entry_data.entities)
-                if hasattr(entry_data, "entities")
+                if entry_data is not None
+                and hasattr(entry_data, "entities")
                 and isinstance(entry_data.entities, list | set | dict)
                 else 0
             ),

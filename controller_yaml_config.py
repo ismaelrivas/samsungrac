@@ -117,15 +117,19 @@ class YamlConfigLoader:
                     hasattr(self.controller, "hass")
                     and self.controller.hass is not None
                 ):  # pragma: no mutate
-                    self._parsed_yaml_config = (
+                    loaded_yaml = (
                         await self.controller.hass.async_add_executor_job(
                             load_yaml, file
                         )
                     )
                 else:
-                    self._parsed_yaml_config = load_yaml(file)  # pragma: no mutate
+                    loaded_yaml = load_yaml(file)  # pragma: no mutate
 
-                _YAML_FILE_CACHE[file] = self._parsed_yaml_config
+                self._parsed_yaml_config = (
+                    loaded_yaml if isinstance(loaded_yaml, dict) else None
+                )
+                if self._parsed_yaml_config is not None:
+                    _YAML_FILE_CACHE[file] = self._parsed_yaml_config
                 _LOGGER.debug(
                     "%s [Cache] YAML file loaded and cached: %s",
                     self.controller.log_prefix,

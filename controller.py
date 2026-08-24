@@ -35,12 +35,30 @@ class ControllerInterface(Protocol):
     @property
     def unique_id(self) -> str | None: ...
     @property
+    def device_id(self) -> str | None: ...
+    @property
     def port(self) -> int | str | None: ...
     @property
     def poll(self) -> bool | None: ...
     @property
     def climate_state(self) -> ClimateIPDeviceState: ...
+    @property
+    def operations(self) -> Any: ...
+    @property
+    def sensors(self) -> Any: ...
+    @property
+    def attributes(self) -> list[str]: ...
+    @property
+    def state_attributes(self) -> dict[str, Any]: ...
+    @property
+    def device_state(self) -> dict[str, Any] | None: ...
+    @property
+    def pure_device_state(self) -> dict[str, Any] | None: ...
+    @property
+    def token(self) -> str | None: ...
 
+    def get_property(self, property_name: str) -> Any: ...
+    def get_property_object(self, property_name: str) -> Any: ...
     async def async_get_status(self) -> dict[str, Any] | None: ...
     async def async_set_property(
         self, property_name: str, new_value: Any, device_id: str | None = None
@@ -65,11 +83,12 @@ class ControllerInterface(Protocol):
         ),
     ) -> None: ...
     def on_token_refreshed(self, new_token: str) -> None: ...
-    def on_ssl_config_updated(self, ssl_config: dict[str, Any]) -> None: ...
-    async def on_push_update_callback(self, data: dict[str, Any]) -> None: ...
-    async def request_refresh_callback(self) -> None: ...
-    def on_offline_callback(self, reason: str) -> None: ...
-    def on_connection_failed_callback(self) -> None: ...
+
+    on_ssl_config_updated: Callable[[dict[str, Any]], Any]
+    on_push_update_callback: Callable[..., Coroutine[Any, Any, None]]
+    request_refresh_callback: Callable[[], Coroutine[Any, Any, None]]
+    on_offline_callback: Callable[[str], Any]
+    on_connection_failed_callback: Callable[[], Any]
 
 
 class ClimateController(ABC):
@@ -86,6 +105,41 @@ class ClimateController(ABC):
         self._token_refreshed_callback: (
             Callable[[str], Coroutine[Any, Any, None]] | Callable[[str], None] | None
         ) = None
+        self.on_ssl_config_updated: Callable[[dict[str, Any]], Any] = (
+            self._default_on_ssl_config_updated
+        )
+        self.on_push_update_callback: Callable[..., Coroutine[Any, Any, None]] = (
+            self._default_on_push_update_callback
+        )
+        self.request_refresh_callback: Callable[[], Coroutine[Any, Any, None]] = (
+            self._default_request_refresh_callback
+        )
+        self.on_offline_callback: Callable[[str], Any] = (
+            self._default_on_offline_callback
+        )
+        self.on_connection_failed_callback: Callable[[], Any] = (
+            self._default_on_connection_failed_callback
+        )
+
+    @staticmethod
+    def _default_on_ssl_config_updated(ssl_config: dict[str, Any]) -> None:
+        pass
+
+    @staticmethod
+    async def _default_on_push_update_callback(data: dict[str, Any]) -> None:
+        pass
+
+    @staticmethod
+    async def _default_request_refresh_callback() -> None:
+        pass
+
+    @staticmethod
+    def _default_on_offline_callback(reason: str) -> None:
+        pass
+
+    @staticmethod
+    def _default_on_connection_failed_callback() -> None:
+        pass
 
     @staticmethod
     @abstractmethod
@@ -247,25 +301,10 @@ class ClimateController(ABC):
         if self._token_refreshed_callback is not None:
             self._token_refreshed_callback(new_token)
 
-    def on_ssl_config_updated(self, ssl_config: dict[str, Any]) -> None:  # noqa: B027
-        """Callback invoked when the network negotiates a new SSL configuration."""
-        pass
-
-    async def on_push_update_callback(self, data: dict[str, Any]) -> None:  # noqa: B027
-        """Callback invoked when the device sends a push update."""
-        pass
-
-    async def request_refresh_callback(self) -> None:  # noqa: B027
-        """Callback to trigger a state update in Home Assistant."""
-        pass
-
-    def on_offline_callback(self, reason: str) -> None:  # noqa: B027
-        """Callback invoked when the device is declared offline."""
-        pass
-
-    def on_connection_failed_callback(self) -> None:  # noqa: B027
-        """Callback invoked on critical connection failures."""
-        pass
+    @property
+    def token(self) -> str | None:
+        """Return the device access token."""
+        return getattr(self, "_token", None)
 
     @abstractmethod
     def is_property_superseded(self, prop: str, val: Any) -> bool:

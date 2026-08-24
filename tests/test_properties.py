@@ -7,7 +7,7 @@ import asyncio
 import logging
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
-from homeassistant.components.climate.const import (
+from homeassistant.components.climate import (
     ATTR_FAN_MODE,
     ATTR_FAN_MODES,
     ATTR_HVAC_MODE,
@@ -17,8 +17,7 @@ from homeassistant.components.climate.const import (
     ATTR_SWING_MODE,
     ATTR_SWING_MODES,
 )
-from homeassistant.components.sensor import SensorStateClass
-from homeassistant.components.sensor.const import SensorDeviceClass
+from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNKNOWN, UnitOfTemperature
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.json import json_dumps

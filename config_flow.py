@@ -9,6 +9,8 @@ import logging
 from pathlib import Path
 from typing import Any, Self
 
+from aiohttp import ClientTimeout
+
 from homeassistant.config_entries import (
     SOURCE_RECONFIGURE,
     ConfigEntry,
@@ -100,14 +102,23 @@ class ClimateIpConfigFlow(
             )
         main_yaml_path = str(Path(__file__).parent / main_yaml_name)
         main_config = await self.hass.async_add_executor_job(load_yaml, main_yaml_path)
+        if not isinstance(main_config, dict):
+            raise ValueError(f"Invalid YAML configuration loaded from {main_yaml_name}")
 
-        auth_file = main_config.get("device", {}).get("auth_flow_file")
+        auth_file = (
+            main_config.get("device", {}).get("auth_flow_file")
+            if isinstance(main_config.get("device"), dict)
+            else None
+        )
         if not auth_file:
             raise ValueError(f"No 'auth_flow_file' found in {main_yaml_name}")
 
         auth_yaml_path = str(Path(__file__).parent / auth_file)
         auth_config = await self.hass.async_add_executor_job(load_yaml, auth_yaml_path)
-        return auth_config.get("auth_flow", {})
+        if not isinstance(auth_config, dict):
+            raise ValueError(f"Invalid YAML configuration loaded from {auth_file}")
+        auth_flow = auth_config.get("auth_flow", {})
+        return auth_flow if isinstance(auth_flow, dict) else {}
 
     def is_matching(self, other_flow: Self) -> bool:
         """Return True if other_flow matches this flow (same physical device)."""
@@ -126,7 +137,7 @@ class ClimateIpConfigFlow(
             CONF_MAC
         )
 
-        if self_mac and other_mac and self_mac.upper() == other_mac.upper():
+        if self_mac and other_mac and str(self_mac).upper() == str(other_mac).upper():
             return True
 
         return False
@@ -388,7 +399,9 @@ class ClimateIpConfigFlow(
                 }  # pragma: no mutate
 
                 async with session.get(
-                    url, headers=headers, timeout=GLOBAL_HTTP_TIMEOUT
+                    url,
+                    headers=headers,
+                    timeout=GLOBAL_HTTP_TIMEOUT,  # type: ignore[arg-type] # pragma: no mutate
                 ) as response:  # pragma: no mutate
                     if response.status != 200:
                         _LOGGER.warning(

@@ -22,11 +22,12 @@ import logging
 from pathlib import Path
 import re
 import ssl
-from typing import Any
+from typing import Any, cast
 import warnings
 
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.template import Template
 from homeassistant.util.json import JSON_DECODE_EXCEPTIONS, json_loads
-from jinja2 import Template
 import requests  # type: ignore[import-untyped]
 from requests.adapters import HTTPAdapter  # type: ignore[import-untyped]
 from urllib3.exceptions import InsecureRequestWarning
@@ -237,6 +238,11 @@ class ConnectionRequestBase(Connection):
         """Return the condition template for execution."""
         return self._condition_template
 
+    @condition_template.setter
+    def condition_template(self, value: Template | None) -> None:
+        """Set the condition template for execution."""
+        self._condition_template = value
+
     def update_configuration_from_hass(
         self, hass_config: dict[str, Any] | None
     ) -> None:
@@ -271,7 +277,8 @@ class ConnectionRequestBase(Connection):
                 )
             if CONFIG_DEVICE_CONDITION_TEMPLATE in node:
                 self._condition_template = Template(
-                    node[CONFIG_DEVICE_CONDITION_TEMPLATE]
+                    node[CONFIG_DEVICE_CONDITION_TEMPLATE],
+                    cast(HomeAssistant, self._hass),
                 )
 
         return True
@@ -343,7 +350,9 @@ class ConnectionRequestBase(Connection):
                 if isinstance(rendered_template, (dict, Mapping)):
                     params.update(rendered_template)
                 else:
-                    params.update(json_loads(rendered_template))
+                    loaded_json = json_loads(rendered_template)
+                    if isinstance(loaded_json, dict):
+                        params.update(loaded_json)
             except (ValueError, TypeError) as exc:
                 _LOGGER.error(
                     "%s Error rendering template or parsing JSON: %s",
@@ -391,22 +400,24 @@ class ConnectionRequestBase(Connection):
                     raise ValueError("Failed to parse JSON response") from e
 
                 except requests.exceptions.HTTPError as e:
-                    if e.response.status_code in (401, 403):
+                    resp_obj = getattr(e, "response", None)
+                    status = resp_obj.status_code if resp_obj is not None else 0
+                    if status in (401, 403):
                         _LOGGER.debug("%s Auth error: %s", self.log_prefix, e)
-                        raise AuthError(f"Auth failed: {e.response.status_code}") from e
+                        raise AuthError(f"Auth failed: {status}") from e
                     if (
-                        500 <= e.response.status_code < 600
+                        500 <= status < 600
                         and attempt < self._max_retries - 1
                     ):
                         _LOGGER.debug(
                             "%s Server error (%s). Delegating retry to async loop.",
                             self.log_prefix,
-                            e.response.status_code,
+                            status,
                         )
                         raise RetryNextAttempt(
-                            f"Server error {e.response.status_code}"
+                            f"Server error {status}"
                         ) from e
-                    raise CannotConnect(f"HTTP error {e.response.status_code}") from e
+                    raise CannotConnect(f"HTTP error {status}") from e
 
                 except requests.exceptions.Timeout as e:
                     if attempt < self._max_retries - 1:

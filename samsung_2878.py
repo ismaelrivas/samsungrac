@@ -12,9 +12,10 @@ import random
 import re
 import socket
 import ssl
-from typing import Any
+from typing import Any, cast
 
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_PORT, CONF_TOKEN
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.json import json_dumps
 from homeassistant.helpers.template import Template
 
@@ -306,7 +307,8 @@ class ConnectionSamsung2878(Connection):
         params_node = node.get(CONFIG_DEVICE_CONNECTION_PARAMS, {})
         if CONFIG_DEVICE_CONNECTION_TEMPLATE in params_node:
             self._connection_init_template = Template(
-                params_node[CONFIG_DEVICE_CONNECTION_TEMPLATE], self._hass
+                params_node[CONFIG_DEVICE_CONNECTION_TEMPLATE],
+                cast(HomeAssistant, self._hass),
             )
         elif not connection_base:
             _LOGGER.error(
@@ -317,7 +319,8 @@ class ConnectionSamsung2878(Connection):
 
         if CONFIG_DEVICE_POWER_TEMPLATE in params_node:
             self._power_template = Template(
-                params_node[CONFIG_DEVICE_POWER_TEMPLATE], self._hass
+                params_node[CONFIG_DEVICE_POWER_TEMPLATE],
+                cast(HomeAssistant, self._hass),
             )
 
         if not connection_base:
@@ -506,7 +509,7 @@ class ConnectionSamsung2878(Connection):
         no_cert_ciphers = [suite_d, suite_a, suite_b, suite_c]  # pragma: no mutate
 
         default_cert_path = str(Path(__file__).parent / DEFAULT_CONF_CERT_FILE)
-        strategies = (
+        strategies: list[dict[str, Any]] = (
             [
                 {
                     "cert": user_cert,
@@ -972,7 +975,7 @@ class ConnectionSamsung2878(Connection):
         command, future = queue_task.result()
         self._pending_future = future
         # Store the command string on the future for debugging purposes using setattr.
-        self._pending_future._command_debug = command
+        setattr(self._pending_future, "_command_debug", command)  # noqa: B010
 
         try:
             await self._write_data(command)

@@ -201,6 +201,9 @@ class YamlController(ClimateController):
         self.loader: YamlConfigLoader = YamlConfigLoader(self)
         self.poller: YamlStatePoller = YamlStatePoller(self)
 
+        self._device_id: str | None = None
+        self._token: str | None = None
+
         raw_device_id = config.get(CONF_DEVICE_ID)
         if raw_device_id is not None:
             if not isinstance(raw_device_id, str):

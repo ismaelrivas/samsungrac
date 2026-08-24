@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import SOURCE_RECONFIGURE, ConfigFlowResult
 from homeassistant.const import CONF_MAC
@@ -37,9 +37,7 @@ class ConfigFlowDiscoveryMixin:
 
     flow_data: dict[str, Any]
     hass: Any
-    unique_id: str | None
     reauth_entry: Any | None
-    source: str
 
     async def _async_init_discovery_controller(
         self, config_data: dict[str, Any]
@@ -61,7 +59,8 @@ class ConfigFlowDiscoveryMixin:
 
         try:
             initialized: bool = await controller.initialize()
-            status_ok: bool = await controller.async_get_status()
+            status = await controller.async_get_status()
+            status_ok: bool = bool(status)
 
             if not initialized or not status_ok:  # pragma: no mutate
                 _LOGGER.error(
@@ -130,7 +129,8 @@ class ConfigFlowDiscoveryMixin:
                 )
                 # PHASE 1 FIX APPLIED: Do not abort prematurely on reconfigurations
                 if (
-                    self.reauth_entry is None and self.source != SOURCE_RECONFIGURE
+                    self.reauth_entry is None
+                    and getattr(self, "source", None) != SOURCE_RECONFIGURE
                 ):  # pragma: no mutate
                     self._abort_if_unique_id_configured(updates=self.flow_data)  # type: ignore[attr-defined]
 
@@ -190,7 +190,7 @@ class ConfigFlowDiscoveryMixin:
         """Helper to handle the fallback to raw socket connection if HTTP fails."""
         _LOGGER.warning(
             "[%s] Malformed HTTP headers detected during discovery. Automatically retrying with 'Robust (raw socket)' engine.",  # pragma: no mutate
-            self.unique_id or "?",
+            getattr(self, "unique_id", None) or "?",
         )  # pragma: no mutate
         self.flow_data[CONF_CONN_METHOD] = CONN_METHOD_RAW
         config_data[CONF_CONN_METHOD] = CONN_METHOD_RAW
@@ -231,8 +231,9 @@ class ConfigFlowDiscoveryMixin:
     ) -> ConfigFlowResult:
         """Step to discover indoor units from the device (Director)."""
         config_data = self.flow_data.copy()
-        if self.unique_id is not None:
-            config_data["unique_id"] = self.unique_id
+        current_uid = getattr(self, "unique_id", None)
+        if current_uid is not None:
+            config_data["unique_id"] = current_uid
 
         device_type = config_data.get(CONF_DEVICE_TYPE)
         if CONF_CONFIG_FILE not in config_data and device_type is not None:
@@ -262,7 +263,8 @@ class ConfigFlowDiscoveryMixin:
 
                     # PHASE 1 FIX APPLIED: Do not abort prematurely on reconfigurations
                     if (
-                        self.reauth_entry is None and self.source != SOURCE_RECONFIGURE
+                        self.reauth_entry is None
+                        and getattr(self, "source", None) != SOURCE_RECONFIGURE
                     ):  # pragma: no mutate
                         self._abort_if_unique_id_configured(updates=self.flow_data)  # type: ignore[attr-defined]
                 return await self._create_entry()  # type: ignore[attr-defined]
@@ -344,7 +346,8 @@ class ConfigFlowDiscoveryMixin:
                     str(main_unique_id), raise_on_progress=False
                 )
                 if (
-                    self.reauth_entry is None and self.source != SOURCE_RECONFIGURE
+                    self.reauth_entry is None
+                    and getattr(self, "source", None) != SOURCE_RECONFIGURE
                 ):  # pragma: no mutate
                     self._abort_if_unique_id_configured(updates=self.flow_data)  # type: ignore[attr-defined]
                 return await self._create_entry()  # type: ignore[attr-defined]

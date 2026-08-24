@@ -636,8 +636,7 @@ def test_climate_supported_features_bitwise_strict_accumulation(
     base_climate_entity: ClimateIP,
 ) -> None:
     """Kill mutants in __init__ (features |= feature)."""
-    from homeassistant.components.climate import ClimateEntityFeature
-    from homeassistant.components.climate.const import ATTR_PRESET_MODE
+    from homeassistant.components.climate import ATTR_PRESET_MODE, ClimateEntityFeature
 
     from custom_components.climate_ip.climate import ClimateIP
 
@@ -693,7 +692,7 @@ def test_climate_extra_state_attributes_filtering(
 
 def test_climate_min_temp_from_coordinator_property(hass: HomeAssistant) -> None:
     """Kill mutants 1, 3, 5 in min_temp when coordinator property object is valid."""
-    from homeassistant.components.climate.const import ATTR_MIN_TEMP
+    from homeassistant.components.climate import ATTR_MIN_TEMP
 
     mock_coord = MagicMock(spec=SamsungClimateCoordinator)
     mock_coord.unique_id = "test_min_temp_id"
@@ -742,7 +741,7 @@ def test_climate_min_temp_fallback_on_invalid_value(
 
 def test_climate_max_temp_from_coordinator_property(hass: HomeAssistant) -> None:
     """Kill mutants 1, 3, 5 in max_temp when coordinator property object is valid."""
-    from homeassistant.components.climate.const import ATTR_MAX_TEMP
+    from homeassistant.components.climate import ATTR_MAX_TEMP
 
     mock_coord = MagicMock(spec=SamsungClimateCoordinator)
     mock_coord.unique_id = "test_max_temp_id"

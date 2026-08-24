@@ -14,6 +14,7 @@ Provides:
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Generator, Sequence
 import contextlib
 import functools
 import http.client
@@ -31,10 +32,8 @@ import xml.etree.ElementTree as ET
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
+from homeassistant.const import EntityCategory
 from homeassistant.helpers import config_validation as cv
-
-# HA Core standard imports moved to module level
-from homeassistant.helpers.entity import EntityCategory
 from voluptuous.error import Invalid
 
 _LOGGER = logging.getLogger(__name__)
@@ -146,7 +145,7 @@ _HEADER_PATCH_ORIGINAL_PARSE_HEADERS: Any = None
 
 
 @contextlib.contextmanager
-def tolerant_header_parsing():
+def tolerant_header_parsing() -> Generator[None, None, None]:
     """Context manager that temporarily suppresses urllib3 HeaderParsingError."""
     # pylint: disable=global-statement
     global _HEADER_PATCH_REFCOUNT, _HEADER_PATCH_ORIGINAL_RESPONSE
@@ -245,14 +244,21 @@ def find_key_in_data(data: Any, key: str) -> Any | None:
 
 
 def get_value_by_path(
-    data: dict[str, Any] | list[Any], path: list[str | int]
+    data: dict[str, Any] | list[Any] | None,
+    path: Sequence[str | int] | str | None,
 ) -> Any | None:
     """Navigate through a nested dictionary or list using a path of keys/indices."""
-    if not data or not path:
+    if data is None or not path:
         return None
 
+    path_seq: Sequence[str | int]
+    if isinstance(path, str):
+        path_seq = path.split(".")
+    else:
+        path_seq = path
+
     current = data
-    for key in path:
+    for key in path_seq:
         if isinstance(current, dict) and isinstance(key, str):
             if key not in current:
                 return None
@@ -267,15 +273,23 @@ def get_value_by_path(
 
 
 def set_value_by_path(
-    target: dict[str, Any] | list[Any], path: list[str | int], value: Any
+    target: dict[str, Any] | list[Any],
+    path: Sequence[str | int] | str | None,
+    value: Any,
 ) -> None:
     """Set a value in a deeply nested dictionary/list structure. Aborts securely if target is falsy."""
     if not target or not path:
         return
 
+    path_seq: Sequence[str | int]
+    if isinstance(path, str):
+        path_seq = path.split(".")
+    else:
+        path_seq = path
+
     current = target
-    for i, key in enumerate(path[:-1]):
-        next_key = path[i + 1]
+    for i, key in enumerate(path_seq[:-1]):
+        next_key = path_seq[i + 1]
         is_next_list = isinstance(next_key, int)
 
         if isinstance(current, dict) and isinstance(key, str):

@@ -9,6 +9,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsFlow
 from homeassistant.const import UnitOfTemperature
 from homeassistant.helpers.selector import (
+    SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
@@ -38,18 +39,20 @@ from .const import (
 from .helpers import validate_poll_interval
 
 
-class OptionsFlowHandler(OptionsFlow):  # pylint: disable=too-few-public-methods
-    """Handle an options flow for climate_ip."""
+class OptionsFlowHandler(OptionsFlow):
+    """Handle options flow for Climate IP."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:
-        """Initialize options flow."""
+        """Initialize the options flow."""
         self._config_entry = config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manage the options."""
+        errors: dict[str, str] = {}
         schema = self._get_options_schema()
+
         if user_input is not None:
             if (
                 CONF_POLL_INTERVAL in user_input
@@ -59,10 +62,11 @@ class OptionsFlowHandler(OptionsFlow):  # pylint: disable=too-few-public-methods
                     seconds = validate_poll_interval(user_input[CONF_POLL_INTERVAL])
                     user_input[CONF_POLL_INTERVAL] = seconds
                 except ValueError:
+                    errors[CONF_POLL_INTERVAL] = "invalid_poll_interval"
                     return self.async_show_form(
                         step_id="init",
                         data_schema=schema,
-                        errors={CONF_POLL_INTERVAL: "invalid_poll_interval"},
+                        errors=errors,
                     )
 
             if CONF_TARGET_TEMP_STEP in user_input:
@@ -92,12 +96,18 @@ class OptionsFlowHandler(OptionsFlow):  # pylint: disable=too-few-public-methods
                 SelectSelector(
                     SelectSelectorConfig(
                         options=[
-                            {
-                                "value": CONN_METHOD_REQUESTS,
-                                "label": "Legacy (Obsolete)",
-                            },
-                            {"value": CONN_METHOD_AIOHTTP, "label": "Modern (aiohttp)"},
-                            {"value": CONN_METHOD_RAW, "label": "Robust (raw socket)"},
+                            SelectOptionDict(
+                                value=CONN_METHOD_REQUESTS,
+                                label="Legacy (Obsolete)",
+                            ),
+                            SelectOptionDict(
+                                value=CONN_METHOD_AIOHTTP,
+                                label="Modern (aiohttp)",
+                            ),
+                            SelectOptionDict(
+                                value=CONN_METHOD_RAW,
+                                label="Robust (raw socket)",
+                            ),
                         ],
                         mode=SelectSelectorMode.DROPDOWN,
                         translation_key="connection_method",
@@ -147,9 +157,9 @@ class OptionsFlowHandler(OptionsFlow):  # pylint: disable=too-few-public-methods
             vol.Optional(CONF_TARGET_TEMP_STEP, default=str(opt_step)): SelectSelector(
                 SelectSelectorConfig(
                     options=[
-                        {"value": "0.1", "label": "0.1°"},
-                        {"value": "0.5", "label": "0.5°"},
-                        {"value": "1.0", "label": "1.0°"},
+                        SelectOptionDict(value="0.1", label="0.1°"),
+                        SelectOptionDict(value="0.5", label="0.5°"),
+                        SelectOptionDict(value="1.0", label="1.0°"),
                     ],
                     mode=SelectSelectorMode.DROPDOWN,
                 )

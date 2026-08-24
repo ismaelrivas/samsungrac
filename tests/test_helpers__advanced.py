@@ -9,7 +9,7 @@ import ssl
 import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.helpers.entity import EntityCategory
+from homeassistant.const import EntityCategory
 import pytest
 
 from custom_components.climate_ip.helpers import (

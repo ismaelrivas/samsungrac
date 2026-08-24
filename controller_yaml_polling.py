@@ -1174,7 +1174,7 @@ class YamlStatePoller:
         conn = self.controller.loader.connection
         if conn:
 
-            async def _try(coro):  # pylint: disable=invalid-name
+            async def _try(coro: Any) -> None:  # pylint: disable=invalid-name
                 try:
                     await coro
                 except Exception as e:  # pylint: disable=broad-exception-caught

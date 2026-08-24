@@ -13,7 +13,7 @@ import logging
 import os
 from pathlib import Path
 import ssl
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import aiohttp
 from aiohttp.hdrs import AUTHORIZATION, CONNECTION, CONTENT_TYPE
@@ -93,11 +93,11 @@ class ConnectionAiohttp8888(Connection):
         self,
         config: dict[str, Any],
         logger: logging.Logger,
-        hass: HomeAssistant,
-        session: aiohttp.ClientSession,
-        ip_address: str,
+        hass: HomeAssistant | None = None,
+        session: aiohttp.ClientSession | None = None,
+        ip_address: str | None = None,
     ) -> None:
-        super().__init__(config, logger)
+        super().__init__(config, logger, hass=hass)
         self._hass = hass
         self._controller: YamlController | None = (
             None  # Initialize controller reference
@@ -218,7 +218,11 @@ class ConnectionAiohttp8888(Connection):
         insecure_ssl = self._config.get(CONF_INSECURE_SSL, False)
 
         # Consolidated executor call
-        if self._cert_path is None and self._raw_cert_path is not None:
+        if (
+            self._cert_path is None
+            and self._raw_cert_path is not None
+            and self._hass is not None
+        ):
             resolved = await self._hass.async_add_executor_job(
                 self._resolve_and_verify_cert, self._raw_cert_path
             )
@@ -305,7 +309,7 @@ class ConnectionAiohttp8888(Connection):
             if connection_template is not None:
                 new_connection._connection_template = Template(
                     connection_template,
-                    self._hass,
+                    cast(HomeAssistant, self._hass),
                 )
             elif CONFIG_DEVICE_CONNECTION_PARAMS in yaml_node:
                 node_params = yaml_node.get(CONFIG_DEVICE_CONNECTION_PARAMS)
@@ -326,7 +330,7 @@ class ConnectionAiohttp8888(Connection):
                     if new_connection._embedded_command is not None:
                         new_connection._embedded_command.condition_template = Template(
                             condition_str,
-                            self._hass,
+                            cast(HomeAssistant, self._hass),
                         )
         # pylint: enable=protected-access
 
@@ -352,6 +356,11 @@ class ConnectionAiohttp8888(Connection):
         """Return the embedded connection template."""
         return self._connection_template
 
+    @connection_template.setter
+    def connection_template(self, value: Template | None) -> None:
+        """Set the embedded connection template."""
+        self._connection_template = value
+
     @property
     def params(self) -> dict[str, Any]:
         """Return the embedded connection parameters."""
@@ -359,11 +368,8 @@ class ConnectionAiohttp8888(Connection):
 
     def _format_connector_error(self, e: aiohttp.ClientConnectorError) -> str:
         """Format a clean error message from a ClientConnectorError."""
-        try:
-            host = e.host
-            port = e.port
-        except AttributeError:
-            host, port = "?", "?"
+        host = getattr(e, "host", "?")
+        port = getattr(e, "port", "?")
         reason = (
             str(e.os_error) if e.os_error is not None else type(e).__name__
         )  # pragma: no mutate
@@ -411,10 +417,10 @@ class ConnectionAiohttp8888(Connection):
                 # CRITICAL FIX: Do NOT access self._session directly — it may be None
                 # when keep_alive=False. Always go through _get_session() which handles
                 # both a HA-shared session and a locally-created one.
-                test_ssl_ctx = (
+                test_ssl_ctx: ssl.SSLContext | bool = (
                     False
                     if probe_url.startswith("http://")
-                    else self._shared_state.ssl_context
+                    else (self._shared_state.ssl_context or True)
                 )
                 probe_session = await self._get_session()
                 async with probe_session.request(
@@ -539,7 +545,7 @@ class ConnectionAiohttp8888(Connection):
             else:
                 connector = aiohttp.TCPConnector(
                     keepalive_timeout=KEEPALIVE_TIMEOUT,
-                    ssl=ssl_context,
+                    ssl=ssl_context if ssl_context is not None else True,
                     limit=1,  # pragma: no mutate
                 )  # type: ignore[arg-type]
 
@@ -668,7 +674,7 @@ class ConnectionAiohttp8888(Connection):
             headers, current_token, host, dev_id, mac
         )
 
-        ssl_context = self._shared_state.ssl_context
+        ssl_context: ssl.SSLContext | bool | None = self._shared_state.ssl_context
 
         # Detect if the path is actually an absolute URL (for SmartThings).
         if full_url.startswith("https://") and ssl_context is None:

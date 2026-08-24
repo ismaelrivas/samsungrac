@@ -92,7 +92,9 @@ class ConnectionRaw8888(Connection):
 
         template_str = yaml_node.get(CONFIG_DEVICE_CONNECTION_TEMPLATE)
         if template_str:
-            new_conn._connection_template = Template(template_str, self._hass)
+            new_conn._connection_template = Template(
+                template_str, cast(HomeAssistant, self._hass)
+            )
 
         params_node = yaml_node.get(CONFIG_DEVICE_CONNECTION_PARAMS)
         if params_node:
@@ -104,7 +106,7 @@ class ConnectionRaw8888(Connection):
             condition_str = embedded_node.get(CONFIG_DEVICE_CONDITION_TEMPLATE)
             if condition_str and new_conn._embedded_command:
                 new_conn._embedded_command.condition_template = Template(
-                    condition_str, self._hass
+                    condition_str, cast(HomeAssistant, self._hass)
                 )
 
         return new_conn
@@ -130,12 +132,12 @@ class ConnectionRaw8888(Connection):
         self,
         config: dict[str, Any],
         logger: logging.Logger,
-        hass: HomeAssistant,
+        hass: HomeAssistant | None = None,
         session: Any | None = None,
         ip_address: str | None = None,
     ) -> None:
         """Initialize the connection."""
-        super().__init__(config, logger)
+        super().__init__(config, logger, hass=hass)
         self._hass = hass
 
         self._host: str = ip_address or cast(str, config.get(CONF_IP_ADDRESS, ""))
@@ -222,6 +224,11 @@ class ConnectionRaw8888(Connection):
         """Return the embedded connection template."""
         return self._connection_template
 
+    @connection_template.setter
+    def connection_template(self, value: Template | None) -> None:
+        """Set the embedded connection template."""
+        self._connection_template = value
+
     @property
     def params(self) -> dict[str, Any]:
         """Return the embedded connection parameters."""
@@ -278,7 +285,10 @@ class ConnectionRaw8888(Connection):
 
         if embedded_template:
             embedded_params_str = embedded_template.async_render(parse_result=False)
-            embedded_params = json_loads(str(embedded_params_str))
+            rendered_json = json_loads(str(embedded_params_str))
+            embedded_params = (
+                rendered_json if isinstance(rendered_json, dict) else {}
+            )
         elif not embedded_params:
             return
 

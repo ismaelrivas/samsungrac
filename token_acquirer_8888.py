@@ -115,7 +115,10 @@ class SamsungTokenAcquirer8888:
                     try:
                         json_candidate = decoded_data[json_start:]
                         json_data = json_loads(json_candidate)
-                        token = json_data.get("DeviceToken")
+                        if isinstance(json_data, dict):
+                            raw_tok = json_data.get("DeviceToken")
+                            if isinstance(raw_tok, str):
+                                token = raw_tok
                         if token:
                             _LOGGER.info(
                                 "Token successfully extracted via JSON parsing."

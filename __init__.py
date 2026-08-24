@@ -164,7 +164,10 @@ def _build_device_setup_tasks(
     """Build list of concurrent setup tasks for sub-devices."""
     setup_tasks = []
     for device_info in devices_config:
-        device_id = device_info.get(CONF_SUBDEVICE_ID)
+        raw_device_id = device_info.get(CONF_SUBDEVICE_ID)
+        if raw_device_id is None:
+            continue
+        device_id = str(raw_device_id)
         device_name = device_info.get(CONF_NAME)
 
         if device_id == WIFI_KIT_MGMT_ID:

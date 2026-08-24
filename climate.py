@@ -165,13 +165,14 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         return float(default_val)
 
     @property
-    def hvac_mode(self) -> HVACMode | str | None:
+    def hvac_mode(self) -> HVACMode | None:
         if not self.coordinator.data:
             return None
-        return self.coordinator.data.hvac_mode or HVACMode.OFF
+        mode = self.coordinator.data.hvac_mode or HVACMode.OFF
+        return HVACMode(mode) if not isinstance(mode, HVACMode) else mode
 
     @property
-    def hvac_action(self) -> HVACAction | str | None:
+    def hvac_action(self) -> HVACAction | None:
         """Return the current running hvac operation if supported."""
         if not self.coordinator.data or self.hvac_mode == HVACMode.OFF:
             return HVACAction.OFF
@@ -244,10 +245,13 @@ class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
         }
 
     @property
-    def hvac_modes(self) -> list[HVACMode] | list[str]:
+    def hvac_modes(self) -> list[HVACMode]:
         if not self.coordinator.data:
             return []
-        modes = list(self.coordinator.data.hvac_modes)
+        modes = [
+            HVACMode(m) if not isinstance(m, HVACMode) else m
+            for m in self.coordinator.data.hvac_modes
+        ]
         if (
             ClimateEntityFeature.TURN_OFF in self._attr_supported_features
             and HVACMode.OFF not in modes

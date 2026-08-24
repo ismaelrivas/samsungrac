@@ -20,13 +20,14 @@ import logging
 from pathlib import Path
 import ssl
 import time
-from typing import Any, Final
+from typing import Any, Final, cast
 import warnings
 import weakref
 
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.json import json_dumps
+from homeassistant.helpers.template import Template
 from homeassistant.util.json import JSON_DECODE_EXCEPTIONS, json_loads
-from jinja2 import Template
 import requests  # type: ignore[import-untyped]
 from requests.adapters import HTTPAdapter  # type: ignore[import-untyped]
 from requests.packages.urllib3.exceptions import (  # type: ignore[import-untyped]  # pylint: disable=import-error
@@ -126,7 +127,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
             None  # An optional nested command.
         )
         self._controller: Any = None  # Will be set by the property that creates this.
-        self._parent: ConnectionRequestBase | None = ()
+        self._parent: ConnectionRequestBase | None = None
         self.update_configuration_from_hass(hass_config)
         self._condition_template: Template | None = None
         self._is_closing = False
@@ -351,6 +352,11 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         """Return the condition template for execution."""
         return self._condition_template
 
+    @condition_template.setter
+    def condition_template(self, value: Template | None) -> None:
+        """Set the condition template for execution."""
+        self._condition_template = value
+
     def update_configuration_from_hass(
         self, hass_config: dict[str, Any] | None
     ) -> None:
@@ -389,7 +395,8 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                     )
             if CONFIG_DEVICE_CONDITION_TEMPLATE in node:
                 self._condition_template = Template(
-                    node[CONFIG_DEVICE_CONDITION_TEMPLATE]
+                    node[CONFIG_DEVICE_CONDITION_TEMPLATE],
+                    cast(HomeAssistant, self._hass),
                 )
 
         return True
@@ -425,7 +432,9 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                 if isinstance(rendered_template, (dict, Mapping)):
                     params.update(rendered_template)
                 else:
-                    params.update(json_loads(rendered_template))
+                    loaded_json = json_loads(rendered_template)
+                    if isinstance(loaded_json, dict):
+                        params.update(loaded_json)
             except Exception as exc:
                 _LOGGER.error(
                     "%s Error rendering template or parsing JSON: %s",
@@ -654,17 +663,19 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                         raise ValueError("Failed to parse JSON response") from e
 
                     except requests.exceptions.HTTPError as e:
-                        if e.response.status_code in (401, 403):
+                        resp_err: Any = getattr(e, "response", None)
+                        status = resp_err.status_code if resp_err is not None else 0
+                        if status in (401, 403):
                             _LOGGER.error(
                                 "%s Authentication error: %s. Not retrying",
                                 self.log_prefix,
                                 e,
                             )
                             raise AuthError(
-                                f"Authentication failed with status {e.response.status_code}"
+                                f"Authentication failed with status {status}"
                             ) from e
                         if (
-                            500 <= e.response.status_code < 600
+                            500 <= status < 600
                             and attempt < REQUEST_MAX_RETRIES - 1
                         ):
                             if self._is_closing:
@@ -672,10 +683,10 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                             _LOGGER.debug(
                                 "%s Server error (%s). Delegating retry to async loop.",
                                 self.log_prefix,
-                                e.response.status_code,
+                                status,
                             )
                             raise RetryNextAttempt(
-                                f"Server error {e.response.status_code}"
+                                f"Server error {status}"
                             ) from e
 
                         # Enhanced error logging
@@ -683,10 +694,10 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                             "%s HTTP error: %s. Body: %s. Not retrying",
                             self.log_prefix,
                             e,
-                            getattr(e.response, "text", "No Body"),
+                            getattr(resp_err, "text", "No Body") if resp_err is not None else "No Body",
                         )
                         raise CannotConnect(
-                            f"HTTP error {e.response.status_code}"
+                            f"HTTP error {status}"
                         ) from e
 
                     except requests.exceptions.ReadTimeout as e:

@@ -4,12 +4,12 @@ import copy
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.components.climate import ClimateEntityFeature
-from homeassistant.components.climate.const import (
+from homeassistant.components.climate import (
     ATTR_FAN_MODE,
     ATTR_HVAC_MODE,
     ATTR_PRESET_MODE,
     ATTR_SWING_MODE,
+    ClimateEntityFeature,
 )
 from homeassistant.const import ATTR_TEMPERATURE
 from homeassistant.helpers.update_coordinator import UpdateFailed

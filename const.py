@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import Final
 
-from homeassistant.components.climate import ClimateEntityFeature
-from homeassistant.components.climate.const import (
+from homeassistant.components.climate import (
     ATTR_FAN_MODE,
     ATTR_HVAC_MODE,
     ATTR_PRESET_MODE,
     ATTR_SWING_MODE,
+    ClimateEntityFeature,
 )
 from homeassistant.const import (
     CONF_HOST,

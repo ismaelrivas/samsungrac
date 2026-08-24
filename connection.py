@@ -9,6 +9,7 @@ import dataclasses
 import logging
 from typing import Any
 
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.template import Template
 
 CLIMATE_IP_CONNECTIONS: list[type[Connection]] = []
@@ -29,13 +30,16 @@ class Connection:
     """Abstract base class for all climate_ip connection types."""
 
     def __init__(
-        self, config: dict[str, Any], logger: logging.Logger, hass: Any | None = None
+        self,
+        config: dict[str, Any],
+        logger: logging.Logger,
+        hass: HomeAssistant | None = None,
     ) -> None:
         """Initialize the connection with config and logger."""
         self._params: dict[str, Any] = {}
         self._logger = logger
         self._config = config
-        self._hass = hass
+        self._hass: HomeAssistant | None = hass
         self._lock = asyncio.Lock()
 
         # FAIL-FAST DOCTRINE: Formalize ghost attributes
