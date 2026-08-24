@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from homeassistant.components.climate import (
+from homeassistant.components.climate.const import (
     ATTR_FAN_MODE,
     ATTR_HVAC_MODE,
     ATTR_PRESET_MODE,

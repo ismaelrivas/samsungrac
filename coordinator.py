@@ -10,7 +10,7 @@ from enum import Enum
 import logging
 from typing import Any, Final
 
-from homeassistant.components.climate import ATTR_HVAC_MODE, HVACMode
+from homeassistant.components.climate.const import ATTR_HVAC_MODE, HVACMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_MAC, CONF_TOKEN
 from homeassistant.core import HomeAssistant, callback

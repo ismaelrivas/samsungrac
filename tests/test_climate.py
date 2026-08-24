@@ -5,10 +5,10 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.components.climate import (
+from homeassistant.components.climate import ClimateEntityDescription
+from homeassistant.components.climate.const import (
     ATTR_FAN_MODE,
     ATTR_HVAC_MODE,
-    ClimateEntityDescription,
     HVACMode,
 )
 from homeassistant.const import (
@@ -291,7 +291,7 @@ async def test_hvac_action_dynamic_auto_heuristic(
     base_climate_entity: ClimateIP,
 ) -> None:
     """Verify dynamic temperature heuristic for hvac_action in AUTO / HEAT_COOL mode."""
-    from homeassistant.components.climate import HVACAction
+    from homeassistant.components.climate.const import HVACAction
 
     state = MagicMock()
     state.hvac_mode = HVACMode.AUTO
@@ -636,7 +636,10 @@ def test_climate_supported_features_bitwise_strict_accumulation(
     base_climate_entity: ClimateIP,
 ) -> None:
     """Kill mutants in __init__ (features |= feature)."""
-    from homeassistant.components.climate import ATTR_PRESET_MODE, ClimateEntityFeature
+    from homeassistant.components.climate.const import (
+        ATTR_PRESET_MODE,
+        ClimateEntityFeature,
+    )
 
     from custom_components.climate_ip.climate import ClimateIP
 
@@ -692,7 +695,7 @@ def test_climate_extra_state_attributes_filtering(
 
 def test_climate_min_temp_from_coordinator_property(hass: HomeAssistant) -> None:
     """Kill mutants 1, 3, 5 in min_temp when coordinator property object is valid."""
-    from homeassistant.components.climate import ATTR_MIN_TEMP
+    from homeassistant.components.climate.const import ATTR_MIN_TEMP
 
     mock_coord = MagicMock(spec=SamsungClimateCoordinator)
     mock_coord.unique_id = "test_min_temp_id"
@@ -741,7 +744,7 @@ def test_climate_min_temp_fallback_on_invalid_value(
 
 def test_climate_max_temp_from_coordinator_property(hass: HomeAssistant) -> None:
     """Kill mutants 1, 3, 5 in max_temp when coordinator property object is valid."""
-    from homeassistant.components.climate import ATTR_MAX_TEMP
+    from homeassistant.components.climate.const import ATTR_MAX_TEMP
 
     mock_coord = MagicMock(spec=SamsungClimateCoordinator)
     mock_coord.unique_id = "test_max_temp_id"

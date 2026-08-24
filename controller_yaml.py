@@ -6,7 +6,7 @@ import math
 import types
 from typing import TYPE_CHECKING, Any, cast
 
-from homeassistant.components.climate import (
+from homeassistant.components.climate.const import (
     ATTR_CURRENT_TEMPERATURE,
     ATTR_FAN_MODE,
     ATTR_HVAC_MODE,

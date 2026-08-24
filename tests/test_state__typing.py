@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from homeassistant.components.climate import HVACMode
+from homeassistant.components.climate.const import HVACMode
 import pytest
 
 from custom_components.climate_ip.state import ClimateIPDeviceState

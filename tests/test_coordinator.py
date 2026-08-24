@@ -1237,7 +1237,7 @@ async def test_coordinator_unwraps_hvac_enum_before_sending(
     """Verify that Enums are unwrapped to their primitive values before dispatching."""
     from unittest.mock import AsyncMock, MagicMock
 
-    from homeassistant.components.climate import HVACMode
+    from homeassistant.components.climate.const import HVACMode
 
     from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 

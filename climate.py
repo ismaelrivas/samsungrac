@@ -6,6 +6,10 @@ import logging
 from typing import TYPE_CHECKING, Any, Final
 
 from homeassistant.components.climate import (
+    ClimateEntity,
+    ClimateEntityDescription,
+)
+from homeassistant.components.climate.const import (
     ATTR_CURRENT_TEMPERATURE,
     ATTR_FAN_MODE,
     ATTR_HVAC_MODE,
@@ -13,8 +17,6 @@ from homeassistant.components.climate import (
     ATTR_MIN_TEMP,
     ATTR_PRESET_MODE,
     ATTR_SWING_MODE,
-    ClimateEntity,
-    ClimateEntityDescription,
     ClimateEntityFeature,
     HVACAction,
     HVACMode,

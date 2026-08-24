@@ -7,7 +7,7 @@ import asyncio
 import logging
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
-from homeassistant.components.climate import (
+from homeassistant.components.climate.const import (
     ATTR_FAN_MODE,
     ATTR_FAN_MODES,
     ATTR_HVAC_MODE,
@@ -745,7 +745,7 @@ async def test_basicdeviceoperation_load_from_yaml_edge_cases(
     mock_connection, mock_controller
 ):
     """Kill mutants related to load_from_yaml fallbacks, empty values, feature flags."""
-    from homeassistant.components.climate import ClimateEntityFeature
+    from homeassistant.components.climate.const import ClimateEntityFeature
 
     with patch.dict(
         "custom_components.climate_ip.properties.YAML_NAME_TO_HA_FEATURE",

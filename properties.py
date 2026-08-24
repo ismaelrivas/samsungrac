@@ -7,7 +7,7 @@ import dataclasses
 import logging
 from typing import Any, Final, Protocol, runtime_checkable
 
-from homeassistant.components.climate import (
+from homeassistant.components.climate.const import (
     ATTR_FAN_MODE,
     ATTR_FAN_MODES,
     ATTR_HVAC_MODE,

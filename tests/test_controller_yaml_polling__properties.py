@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.components.climate import ClimateEntityFeature
+from homeassistant.components.climate.const import ClimateEntityFeature
 from homeassistant.const import STATE_UNKNOWN
 import pytest
 
@@ -583,7 +583,7 @@ async def test_async_update_properties_loop_sequences_and_eviction_handling():
 
 
 async def test_async_update_properties_fan_flicker_flag():
-    from homeassistant.components.climate import ClimateEntityFeature
+    from homeassistant.components.climate.const import ClimateEntityFeature
 
     from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 
