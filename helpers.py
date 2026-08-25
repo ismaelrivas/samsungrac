@@ -544,10 +544,14 @@ async def async_check_network_reachability(
 
     # Strip URL scheme, paths, or ports
     clean_host = host.split("://")[-1].split("/")[0]
-    if ":" in clean_host and not clean_host.startswith("[") and clean_host.count(":") == 1:
+    if (
+        ":" in clean_host
+        and not clean_host.startswith("[")
+        and clean_host.count(":") == 1
+    ):
         clean_host = clean_host.split(":")[0]
     elif clean_host.startswith("[") and "]" in clean_host:
-        clean_host = clean_host[1:clean_host.index("]")]
+        clean_host = clean_host[1 : clean_host.index("]")]
 
     if clean_host in ("localhost", "127.0.0.1", "::1"):
         return True

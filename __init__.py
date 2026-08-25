@@ -138,7 +138,9 @@ async def _async_setup_single_device(
         controller,
         entry,
         device_info=device_info if has_devices_list else None,
-        parent_unique_id=entry.unique_id if (has_devices_list and device_id != MAIN_DEVICE_ID) else None,
+        parent_unique_id=entry.unique_id
+        if (has_devices_list and device_id != MAIN_DEVICE_ID)
+        else None,
     )
 
     try:
@@ -197,7 +199,9 @@ def _build_device_setup_tasks(
                 entry,
                 device_id,
                 device_name or DEFAULT_UNKNOWN,
-                device_info if (has_devices_list and device_id != MAIN_DEVICE_ID) else None,
+                device_info
+                if (has_devices_list and device_id != MAIN_DEVICE_ID)
+                else None,
                 session,
             )
         )

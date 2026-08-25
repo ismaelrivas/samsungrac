@@ -362,7 +362,9 @@ class ConnectionRequestBase(Connection):
                 raise ValueError(f"Template rendering failed: {exc}") from exc
 
         # CRITICAL FIX: Replace placeholders in URLs and headers consistently
-        cfg_dev_id = self._controller.config.get("device_id") if self._controller else None
+        cfg_dev_id = (
+            self._controller.config.get("device_id") if self._controller else None
+        )
         effective_dev_id = (
             cfg_dev_id
             if (cfg_dev_id and cfg_dev_id != "main")

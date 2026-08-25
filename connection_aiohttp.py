@@ -259,10 +259,10 @@ class ConnectionAiohttp8888(Connection):
             return None
 
         try:
-            debug_msg = (
-                "%s [aiohttp] Creating custom SSL context. Cert: %s, Insecure: %s, Local: %s"
+            debug_msg = "%s [aiohttp] Creating custom SSL context. Cert: %s, Insecure: %s, Local: %s"
+            _LOGGER.debug(
+                debug_msg, self.log_prefix, has_cert, insecure_ssl, is_local_target
             )
-            _LOGGER.debug(debug_msg, self.log_prefix, has_cert, insecure_ssl, is_local_target)
 
             context = await async_create_samsung_ssl_context(
                 cert_path=self._cert_path if has_cert else None,

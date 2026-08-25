@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any, Self
 
 import aiohttp
-
 from homeassistant.config_entries import (
     SOURCE_RECONFIGURE,
     ConfigEntry,
@@ -433,8 +432,14 @@ class ClimateIpConfigFlow(
                             resp_json = await response.json()
                             if isinstance(resp_json, dict) and "items" in resp_json:
                                 items = resp_json.get("items", [])
-                                if items and isinstance(items[0], dict) and "deviceId" in items[0]:
-                                    self.flow_data[CONF_DEVICE_ID] = str(items[0]["deviceId"])
+                                if (
+                                    items
+                                    and isinstance(items[0], dict)
+                                    and "deviceId" in items[0]
+                                ):
+                                    self.flow_data[CONF_DEVICE_ID] = str(
+                                        items[0]["deviceId"]
+                                    )
                         except Exception:  # pylint: disable=broad-except
                             pass
 
@@ -763,7 +768,9 @@ class ClimateIpConfigFlow(
                 dev_id = str(self.flow_data.get(CONF_DEVICE_ID) or "")
                 token_val = str(self.flow_data.get(CONF_TOKEN) or "")
                 ip_val = str(self.flow_data.get(CONF_IP_ADDRESS) or "")
-                suffix = dev_id or (token_val[-8:] if len(token_val) >= 8 else ip_val or "default")
+                suffix = dev_id or (
+                    token_val[-8:] if len(token_val) >= 8 else ip_val or "default"
+                )
                 final_unique_id = f"{device_type}_{suffix}"
             else:
                 return self.async_abort(reason="no_mac_address_found")
@@ -775,13 +782,11 @@ class ClimateIpConfigFlow(
             self._abort_if_unique_id_configured(updates=self.flow_data)
         self.flow_data["unique_id"] = final_unique_id
 
-        title = (
-            str(self.flow_data.get("name", "")).strip()
-            or (
-                f"Samsung {device_type.replace('_', ' ').title()}"
-                if device_type in (DEVICE_TYPE_SMARTTHINGS_HVAC, DEVICE_TYPE_SMARTTHINGS_DHW)
-                else f"Samsung AC {final_unique_id}"
-            )
+        title = str(self.flow_data.get("name", "")).strip() or (
+            f"Samsung {device_type.replace('_', ' ').title()}"
+            if device_type
+            in (DEVICE_TYPE_SMARTTHINGS_HVAC, DEVICE_TYPE_SMARTTHINGS_DHW)
+            else f"Samsung AC {final_unique_id}"
         )
         self.flow_data["name"] = title
 

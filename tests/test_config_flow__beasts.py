@@ -900,7 +900,9 @@ async def test_rest_api_unique_id_empty_fallback(hass: HomeAssistant) -> None:
     ) as mock_sess:
         mock_get = AsyncMock()
         mock_get.status = 200
-        mock_get.json = AsyncMock(return_value={"items": [{"deviceId": "st-device-123"}]})
+        mock_get.json = AsyncMock(
+            return_value={"items": [{"deviceId": "st-device-123"}]}
+        )
         mock_get.__aenter__.return_value = mock_get
         mock_sess.return_value.get.return_value = mock_get
 
@@ -918,7 +920,9 @@ async def test_rest_api_unique_id_empty_fallback(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.asyncio
-async def test_rest_api_smartthings_custom_port_and_fallback_uid(hass: HomeAssistant) -> None:
+async def test_rest_api_smartthings_custom_port_and_fallback_uid(
+    hass: HomeAssistant,
+) -> None:
     """Verify SmartThings with custom host:port and fallback unique_id when items empty."""
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 
@@ -939,10 +943,12 @@ async def test_rest_api_smartthings_custom_port_and_fallback_uid(hass: HomeAssis
         mock_get.__aenter__.return_value = mock_get
         mock_sess.return_value.get.return_value = mock_get
 
-        res = await flow.async_step_rest_api({
-            CONF_IP_ADDRESS: "my-custom-host.local:8443",
-            CONF_TOKEN: "my-smartthings-pat-token-9999",
-        })
+        res = await flow.async_step_rest_api(
+            {
+                CONF_IP_ADDRESS: "my-custom-host.local:8443",
+                CONF_TOKEN: "my-smartthings-pat-token-9999",
+            }
+        )
 
         assert res["type"] == FlowResultType.CREATE_ENTRY
         assert flow.unique_id == "smartthings_dhw_ken-9999"
