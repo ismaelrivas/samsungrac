@@ -33,15 +33,22 @@ cd "${WORKSPACE_ROOT}"
 echo "✅ Directorio de trabajo: $(pwd)"
 
 # ── 2. Forzar PYTHONPATH siempre ─────────────────────────────────────────────
-export PYTHONPATH="${WORKSPACE_ROOT}"
+export PYTHONPATH="${WORKSPACE_ROOT}:${WORKSPACE_ROOT}/mutmut_antigravity/src"
 echo "✅ PYTHONPATH=${PYTHONPATH}"
+
+PYTHON_BIN="/workspaces/ha_data/.dev-tools/bin/python"
+if [[ ! -x "${PYTHON_BIN}" ]]; then
+    PYTHON_BIN="$(which python3)"
+fi
+echo "✅ PYTHON_BIN=${PYTHON_BIN}"
 
 # ── 3. Verificar importaciones ───────────────────────────────────────────────
 echo ""
 echo "🔍 Verificando importaciones..."
-if ! python -c "import custom_components.climate_ip.config_flow" 2>/dev/null; then
+if ! "${PYTHON_BIN}" -c "import custom_components.climate_ip.config_flow" 2>/dev/null; then
     echo "❌ ERROR CRÍTICO: Python no puede importar custom_components.climate_ip.config_flow"
     echo "   PYTHONPATH actual: ${PYTHONPATH}"
+    echo "   PYTHON_BIN actual: ${PYTHON_BIN}"
     exit 1
 fi
 echo "✅ Importaciones OK"
@@ -66,7 +73,7 @@ rm -rf mutants/ .mutmut-cache .coverage custom_components/climate_ip/.coverage \
        mutmut_processed.txt survived_latest.log mutantes.txt mutantes_filtrados.txt \
        mutant_analysis.md
 mkdir -p mutants/custom_components/climate_ip/tests
-PYTHONPATH=. /workspaces/ha_data/.dev-tools/bin/python -m mutmut reset
+PYTHONPATH=. "${PYTHON_BIN}" -m mutmut reset
 echo "✅ Limpieza completa"
 
 # ── 8. Proteger el .git anidado ───────────────────────────────────────────────
@@ -110,13 +117,13 @@ for ((i=0; i<${#args[@]}; i++)); do
 done
 
 PYTHONPATH="${WORKSPACE_ROOT}/mutants:${PYTHONPATH}" \
-/workspaces/ha_data/.dev-tools/bin/python -W "ignore:This process:DeprecationWarning" \
--m mutmut run --source "${TARGET_FILE}" --exclude-dir scripts --workers 7 "$@" &
+"${PYTHON_BIN}" -W "ignore:This process:DeprecationWarning" \
+-m mutmut run --source "${TARGET_FILE}" --exclude-dir scripts "$@" &
 MUTMUT_PID=$!
 wait $MUTMUT_PID || true
 
 # emite un sonido
-alerta&
+alerta 2>/dev/null || true &
 
 ELAPSED_TIME=$(( SECONDS - START_TIME ))
 export PIPELINE_DURATION_SECONDS="${ELAPSED_TIME}"

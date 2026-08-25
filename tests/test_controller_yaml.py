@@ -22,6 +22,7 @@ from homeassistant.const import (
     ATTR_TEMPERATURE,
     CONF_IP_ADDRESS,
     CONF_MAC,
+    CONF_PORT,
     CONF_TOKEN,
     STATE_UNKNOWN,
 )
@@ -34,6 +35,8 @@ from custom_components.climate_ip.const import (
     CONF_DEVICE_TYPE,
     DEVICE_TYPE_SAMSUNG_2878,
     DOMAIN,
+    MAIN_DEVICE_ID,
+    PORT_SAMSUNG_8888,
 )
 from custom_components.climate_ip.controller_yaml import YamlController
 from custom_components.climate_ip.controller_yaml_config import _YAML_FILE_CACHE
@@ -402,26 +405,34 @@ async def test_async_set_property_error_scenarios(mock_yaml_controller) -> None:
         await mock_yaml_controller.async_set_property("prop", "val")
     mock_yaml_controller.loader.is_fully_initialized = True  # Restore state
 
-    # Scenario 2: Property does not exist -> raises ServiceValidationError
-    with pytest.raises(ServiceValidationError):
+    # Scenario 2: Property does not exist -> raises HomeAssistantError
+    with pytest.raises(HomeAssistantError):
         await mock_yaml_controller.async_set_property("missing_prop", "val")
 
-    # Scenario 3: Domain network error -> Wrapped as HomeAssistantError
+    # Scenario 3: Transport error (TimeoutError / OSError) -> Wrapped as HomeAssistantError
     from custom_components.climate_ip.properties import DeviceProperty
 
     mock_op = AsyncMock()
     mock_op.__class__ = DeviceProperty
     mock_yaml_controller.loader.operations = {"test_prop": mock_op}
-    mock_op.async_set_value.side_effect = CannotConnect("Host down")
+    mock_op.async_set_value.side_effect = TimeoutError("Host down")
     with pytest.raises(HomeAssistantError) as exc_info:
         await mock_yaml_controller.async_set_property("test_prop", "val")
     assert "Host down" in str(exc_info.value)
 
-    # Scenario 4: Domain Auth error -> Wrapped as HomeAssistantError
-    mock_op.async_set_value.side_effect = AuthError("Auth failed")
-    with pytest.raises(HomeAssistantError) as exc_info:
+    mock_op.async_set_value.side_effect = OSError("Socket error")
+    with pytest.raises(HomeAssistantError) as exc_info2:
         await mock_yaml_controller.async_set_property("test_prop", "val")
-    assert "Auth failed" in str(exc_info.value)
+    assert "Socket error" in str(exc_info2.value)
+
+    # Scenario 4: Domain exceptions propagate directly without swallowing
+    mock_op.async_set_value.side_effect = CannotConnect("Host unreachable")
+    with pytest.raises(CannotConnect):
+        await mock_yaml_controller.async_set_property("test_prop", "val")
+
+    mock_op.async_set_value.side_effect = AuthError("Auth failed")
+    with pytest.raises(AuthError):
+        await mock_yaml_controller.async_set_property("test_prop", "val")
 
     # Scenario 5: Programming bugs / ValueErrors -> Raises natively (Fail-Fast)
     mock_op.async_set_value.side_effect = ValueError("Boom")
@@ -950,3 +961,338 @@ def test_yaml_controller_safe_parse_temperature(mock_yaml_controller) -> None:
     # 5. Invalid string raises ValueError
     with pytest.raises(ValueError, match="Invalid numeric string"):
         mock_yaml_controller._safe_parse_temperature("invalid_num", "temp")
+
+
+def test_yaml_controller_port_resolution_and_validation() -> None:
+    """Test resolution and fail-fast validation of the port property."""
+    mock_logger = logging.getLogger("test_logger")
+
+    with (
+        patch("custom_components.climate_ip.controller_yaml.YamlConfigLoader"),
+        patch("custom_components.climate_ip.controller_yaml.YamlStatePoller"),
+    ):
+        # 1. Explicit valid integer ports (including boundaries 1, 65535, and standard 8888)
+        controller_int = YamlController(
+            {"port": 8888, "ip_address": "127.0.0.1"}, mock_logger
+        )
+        assert controller_int.port == 8888
+        assert isinstance(controller_int.port, int)
+
+        controller_min = YamlController(
+            {"port": 1, "ip_address": "127.0.0.1"}, mock_logger
+        )
+        assert controller_min.port == 1
+
+        controller_max = YamlController(
+            {"port": 65535, "ip_address": "127.0.0.1"}, mock_logger
+        )
+        assert controller_max.port == 65535
+
+        # 2. Default fallback when CONF_PORT is absent or None
+        controller_absent = YamlController(
+            {"ip_address": "127.0.0.1"}, mock_logger
+        )
+        assert controller_absent.port == PORT_SAMSUNG_8888
+        assert isinstance(controller_absent.port, int)
+
+        controller_none = YamlController(
+            {"port": None, "ip_address": "127.0.0.1"}, mock_logger
+        )
+        assert controller_none.port == PORT_SAMSUNG_8888
+        assert isinstance(controller_none.port, int)
+
+        # 3. Numeric string coercion
+        controller_str_8888 = YamlController(
+            {"port": "8888", "ip_address": "127.0.0.1"}, mock_logger
+        )
+        assert controller_str_8888.port == 8888
+        assert isinstance(controller_str_8888.port, int)
+
+        controller_str_2878 = YamlController(
+            {"port": "2878", "ip_address": "127.0.0.1"}, mock_logger
+        )
+        assert controller_str_2878.port == 2878
+        assert isinstance(controller_str_2878.port, int)
+
+        controller_str_padded = YamlController(
+            {"port": "  8888  ", "ip_address": "127.0.0.1"}, mock_logger
+        )
+        assert controller_str_padded.port == 8888
+
+        controller_str_min = YamlController(
+            {"port": "1", "ip_address": "127.0.0.1"}, mock_logger
+        )
+        assert controller_str_min.port == 1
+
+        controller_str_max = YamlController(
+            {"port": "65535", "ip_address": "127.0.0.1"}, mock_logger
+        )
+        assert controller_str_max.port == 65535
+
+        # 4. Out-of-range integer validation (ValueError)
+        for invalid_int in (-1, 0, 65536, 70000):
+            controller_invalid_int = YamlController(
+                {"port": invalid_int, "ip_address": "127.0.0.1"}, mock_logger
+            )
+            with pytest.raises(
+                ValueError, match="Port must be between 1 and 65535"
+            ):
+                _ = controller_invalid_int.port
+
+        # 5. Malformed string validation (ValueError)
+        for invalid_str in (
+            "-1",
+            "0",
+            "65536",
+            "70000",
+            "invalid",
+            "",
+            "   ",
+            "8888abc",
+            "12.34",
+        ):
+            controller_invalid_str = YamlController(
+                {"port": invalid_str, "ip_address": "127.0.0.1"}, mock_logger
+            )
+            with pytest.raises(ValueError):
+                _ = controller_invalid_str.port
+
+        # 6. Unsupported types (TypeError)
+        for invalid_type in (
+            True,
+            False,
+            [8888],
+            {"port": 8888},
+            8888.0,
+            (8888,),
+        ):
+            controller_invalid_type = YamlController(
+                {"port": invalid_type, "ip_address": "127.0.0.1"}, mock_logger
+            )
+            with pytest.raises(TypeError, match="Unsupported port type"):
+                _ = controller_invalid_type.port
+
+
+@pytest.mark.asyncio
+async def test_yaml_controller_async_set_property_fail_fast_branches(
+    mock_yaml_controller,
+) -> None:
+    """Test async_set_property fail-fast branches, deterministic target device resolution, and rollback."""
+    from custom_components.climate_ip.properties import DeviceProperty
+
+    # 1. Invalid property_name type / empty string -> TypeError
+    with pytest.raises(TypeError):
+        await mock_yaml_controller.async_set_property("", "val")
+    with pytest.raises(TypeError):
+        await mock_yaml_controller.async_set_property("   ", "val")
+    with pytest.raises(TypeError):
+        await mock_yaml_controller.async_set_property(None, "val")  # type: ignore[arg-type]
+
+    # 2. Invalid device_id type -> TypeError
+    with pytest.raises(TypeError):
+        await mock_yaml_controller.async_set_property(
+            "fan_mode", "high", device_id=12345  # type: ignore[arg-type]
+        )
+
+    # 3. Uninitialized Loader -> HomeAssistantError
+    mock_yaml_controller.loader.is_fully_initialized = False
+    with pytest.raises(HomeAssistantError):
+        await mock_yaml_controller.async_set_property("target_temperature", 22)
+    mock_yaml_controller.loader.is_fully_initialized = True
+
+    # 4. Missing / Unregistered Property -> HomeAssistantError
+    mock_yaml_controller.loader.operations = {}
+    with pytest.raises(HomeAssistantError):
+        await mock_yaml_controller.async_set_property("non_existent_prop", 22)
+
+    # Setup a mock DeviceProperty operation
+    mock_op = AsyncMock()
+    mock_op.__class__ = DeviceProperty
+    mock_op.async_set_value.return_value = True
+    mock_yaml_controller.loader.operations = {"target_temperature": mock_op}
+    mock_yaml_controller._unique_id = "uniq_base_123"
+    mock_yaml_controller._device_id = "dev_base_456"
+
+    # 5. Device ID Branching:
+    # 5a. Explicit sub-device id -> forwarded trimmed to op.async_set_value
+    mock_op.reset_mock()
+    res = await mock_yaml_controller.async_set_property(
+        "target_temperature", 22, device_id="sub_device_1"
+    )
+    assert res is True
+    mock_op.async_set_value.assert_called_once_with(22, "sub_device_1")
+
+    # 5b. Whitespace-padded sub-device id -> trimmed
+    mock_op.reset_mock()
+    res = await mock_yaml_controller.async_set_property(
+        "target_temperature", 23, device_id="  sub_device_2  "
+    )
+    assert res is True
+    mock_op.async_set_value.assert_called_once_with(23, "sub_device_2")
+
+    # 5c. device_id=None -> falls back to self.device_id ("dev_base_456")
+    mock_op.reset_mock()
+    res = await mock_yaml_controller.async_set_property(
+        "target_temperature", 24, device_id=None
+    )
+    assert res is True
+    mock_op.async_set_value.assert_called_once_with(24, "dev_base_456")
+
+    # 5d. device_id="" or whitespace -> raises TypeError
+    with pytest.raises(TypeError):
+        await mock_yaml_controller.async_set_property(
+            "target_temperature", 25, device_id=""
+        )
+
+    with pytest.raises(TypeError):
+        await mock_yaml_controller.async_set_property(
+            "target_temperature", 25, device_id="   "
+        )
+
+    # 5e. device_id=MAIN_DEVICE_ID ("main") -> resolves to self._unique_id ("uniq_base_123")
+    mock_op.reset_mock()
+    res = await mock_yaml_controller.async_set_property(
+        "target_temperature", 26, device_id=MAIN_DEVICE_ID
+    )
+    assert res is True
+    mock_op.async_set_value.assert_called_once_with(26, "uniq_base_123")
+
+    # 5f. device_id=None and self.device_id is MAIN_DEVICE_ID -> resolves to self._unique_id
+    mock_yaml_controller._device_id = MAIN_DEVICE_ID
+    mock_op.reset_mock()
+    res = await mock_yaml_controller.async_set_property(
+        "target_temperature", 27, device_id=None
+    )
+    assert res is True
+    mock_op.async_set_value.assert_called_once_with(27, "uniq_base_123")
+
+    # 5g. device_id=None and self.device_id is None -> resolves to self._unique_id
+    mock_yaml_controller._device_id = None
+    mock_op.reset_mock()
+    res = await mock_yaml_controller.async_set_property(
+        "target_temperature", 28, device_id=None
+    )
+    assert res is True
+    mock_op.async_set_value.assert_called_once_with(28, "uniq_base_123")
+
+    # 5h. device_id=None and self.device_id is "" -> resolves to self._unique_id
+    mock_yaml_controller._device_id = ""
+    mock_op.reset_mock()
+    res = await mock_yaml_controller.async_set_property(
+        "target_temperature", 29, device_id=None
+    )
+    assert res is True
+    mock_op.async_set_value.assert_called_once_with(29, "uniq_base_123")
+
+    # 6. Exception Handling & Rollback (TimeoutError & OSError -> HomeAssistantError)
+    mock_yaml_controller.async_clear_pending_updates = AsyncMock()
+
+    # 6a. TimeoutError -> HomeAssistantError + rollback
+    mock_op.async_set_value.side_effect = TimeoutError("Connection timed out")
+    mock_yaml_controller.async_clear_pending_updates.reset_mock()
+    with pytest.raises(
+        HomeAssistantError, match="Communication failed: Connection timed out"
+    ):
+        await mock_yaml_controller.async_set_property("target_temperature", 22)
+    mock_yaml_controller.async_clear_pending_updates.assert_awaited_once_with(
+        ["target_temperature"]
+    )
+
+    # 6b. OSError -> HomeAssistantError + rollback
+    mock_op.async_set_value.side_effect = OSError("Socket unreachable")
+    mock_yaml_controller.async_clear_pending_updates.reset_mock()
+    with pytest.raises(
+        HomeAssistantError, match="Communication failed: Socket unreachable"
+    ):
+        await mock_yaml_controller.async_set_property("target_temperature", 22)
+    mock_yaml_controller.async_clear_pending_updates.assert_awaited_once_with(
+        ["target_temperature"]
+    )
+
+    # 6c. Domain exceptions propagate directly + rollback
+    mock_op.async_set_value.side_effect = CannotConnect("No route to host")
+    mock_yaml_controller.async_clear_pending_updates.reset_mock()
+    with pytest.raises(CannotConnect):
+        await mock_yaml_controller.async_set_property("target_temperature", 22)
+    mock_yaml_controller.async_clear_pending_updates.assert_awaited_once_with(
+        ["target_temperature"]
+    )
+
+    # 6d. Result is False -> Rollback
+    mock_op.async_set_value.side_effect = None
+    mock_op.async_set_value.return_value = False
+    mock_yaml_controller.async_clear_pending_updates.reset_mock()
+    res_false = await mock_yaml_controller.async_set_property(
+        "target_temperature", 22
+    )
+    assert res_false is False
+    mock_yaml_controller.async_clear_pending_updates.assert_awaited_once_with(
+        ["target_temperature"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_yaml_controller_async_set_property_state_injection(
+    mock_yaml_controller,
+) -> None:
+    """Kills mutants in async_set_property state injection (L437, L442, L456)."""
+    from custom_components.climate_ip.properties import DeviceProperty
+
+    mock_op = AsyncMock()
+    mock_op.__class__ = DeviceProperty
+    mock_op.async_set_value.return_value = True
+    mock_yaml_controller.loader.operations = {"fan_mode": mock_op}
+
+    # Case 1: _pure_network_state is None and loader has valid state_getter dict
+    mock_yaml_controller.poller._pure_network_state = None
+    mock_yaml_controller.poller._inject_value_into_state = MagicMock()
+    mock_state_getter = MagicMock()
+    mock_state_getter.value = {"fan_speed": "low", "power": "on"}
+    mock_yaml_controller.loader.state_getter = mock_state_getter
+
+    res = await mock_yaml_controller.async_set_property("fan_mode", "high")
+    assert res is True
+
+    # Check deepcopy occurred and _pure_network_state was populated
+    assert mock_yaml_controller.poller._pure_network_state == {
+        "fan_speed": "low",
+        "power": "on",
+    }
+    assert (
+        mock_yaml_controller.poller._pure_network_state
+        is not mock_state_getter.value
+    )
+
+    # Check injection called twice: once for _pure_network_state and once for state_getter.value
+    assert mock_yaml_controller.poller._inject_value_into_state.call_count == 2
+    mock_yaml_controller.poller._inject_value_into_state.assert_any_call(
+        mock_op, mock_yaml_controller.poller._pure_network_state, "high"
+    )
+    mock_yaml_controller.poller._inject_value_into_state.assert_any_call(
+        mock_op, mock_state_getter.value, "high"
+    )
+
+    # Case 2: _pure_network_state is already set (not None) -> deepcopy skipped, injection still runs
+    mock_yaml_controller.poller._pure_network_state = {"fan_speed": "medium"}
+    mock_yaml_controller.poller._inject_value_into_state.reset_mock()
+    mock_state_getter.value = {"fan_speed": "medium"}
+
+    res = await mock_yaml_controller.async_set_property("fan_mode", "auto")
+    assert res is True
+    assert mock_yaml_controller.poller._inject_value_into_state.call_count == 2
+
+    # Case 3: state_getter is None
+    mock_yaml_controller.loader.state_getter = None
+    mock_yaml_controller.poller._inject_value_into_state.reset_mock()
+    res = await mock_yaml_controller.async_set_property("fan_mode", "auto")
+    assert res is True
+    assert mock_yaml_controller.poller._inject_value_into_state.call_count == 1
+
+    # Case 4: state_getter.value is not a dict (e.g. None or string)
+    mock_state_getter_non_dict = MagicMock()
+    mock_state_getter_non_dict.value = "not_a_dict"
+    mock_yaml_controller.loader.state_getter = mock_state_getter_non_dict
+    mock_yaml_controller.poller._inject_value_into_state.reset_mock()
+    res = await mock_yaml_controller.async_set_property("fan_mode", "auto")
+    assert res is True
+    assert mock_yaml_controller.poller._inject_value_into_state.call_count == 1

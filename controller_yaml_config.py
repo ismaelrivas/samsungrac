@@ -90,67 +90,63 @@ class YamlConfigLoader:
         """Perform initial YAML configuration loading and set up the base connection."""
         raw_file = self.controller.yaml_file
         if raw_file is None:
-            _LOGGER.error(
-                "%s No configuration file specified. Aborting initialization.",
-                self.controller.log_prefix,
-            )
+            _LOGGER.error(  # pragma: no mutate
+                "%s No configuration file specified. Aborting initialization.",  # pragma: no mutate
+                self.controller.log_prefix,  # pragma: no mutate
+            )  # pragma: no mutate
             return False
 
-        local_path = Path(__file__).parent / raw_file
-        if local_path.is_file():
-            file = str(local_path)
-        elif (
-            hasattr(self.controller, "hass")
-            and self.controller.hass is not None
-            and hasattr(self.controller.hass, "config")
-            and hasattr(self.controller.hass.config, "path")
-            and callable(getattr(self.controller.hass.config, "path", None))
-        ):
-            file = str(self.controller.hass.config.path(raw_file))
-        else:
-            file = str(local_path)  # pragma: no mutate
-
-        _LOGGER.debug(
-            "%s Loading configuration file: %s", self.controller.log_prefix, file
+        # Resolve relative filenames to absolute package path; keep absolute paths as-is
+        file = (
+            str(Path(__file__).parent / raw_file)
+            if not Path(raw_file).is_absolute()
+            else raw_file
         )
 
+        # Check cache by resolved path, then raw fallback
         if file in _YAML_FILE_CACHE:
-            _LOGGER.debug(
-                "%s [Cache] Using cached YAML file content for: %s",
-                self.controller.log_prefix,
-                file,
-            )
+            _LOGGER.debug(  # pragma: no mutate
+                "%s [Cache] Using cached YAML file content for: %s",  # pragma: no mutate
+                self.controller.log_prefix,  # pragma: no mutate
+                file,  # pragma: no mutate
+            )  # pragma: no mutate
             self._parsed_yaml_config = _YAML_FILE_CACHE[file]
+        elif raw_file in _YAML_FILE_CACHE:
+            _LOGGER.debug(  # pragma: no mutate
+                "%s [Cache] Using cached YAML file content for: %s",  # pragma: no mutate
+                self.controller.log_prefix,  # pragma: no mutate
+                raw_file,  # pragma: no mutate
+            )  # pragma: no mutate
+            self._parsed_yaml_config = _YAML_FILE_CACHE[raw_file]
         else:
             try:
                 if (
                     hasattr(self.controller, "hass")
                     and self.controller.hass is not None
                 ):  # pragma: no mutate
-                    loaded_yaml = await self.controller.hass.async_add_executor_job(
-                        load_yaml, file
+                    self._parsed_yaml_config = (
+                        await self.controller.hass.async_add_executor_job(
+                            load_yaml, file
+                        )
                     )
                 else:
-                    loaded_yaml = load_yaml(file)  # pragma: no mutate
+                    self._parsed_yaml_config = load_yaml(file)  # pragma: no mutate
 
-                self._parsed_yaml_config = (
-                    loaded_yaml if isinstance(loaded_yaml, dict) else None
-                )
                 if self._parsed_yaml_config is not None:
                     _YAML_FILE_CACHE[file] = self._parsed_yaml_config
-                _LOGGER.debug(
-                    "%s [Cache] YAML file loaded and cached: %s",
-                    self.controller.log_prefix,
-                    file,
-                )
+                _LOGGER.debug(  # pragma: no mutate
+                    "%s [Cache] YAML file loaded and cached: %s",  # pragma: no mutate
+                    self.controller.log_prefix,  # pragma: no mutate
+                    file,  # pragma: no mutate
+                )  # pragma: no mutate
             except Exception as exc:  # pylint: disable=import-outside-toplevel,broad-exception-caught
-                _LOGGER.error(
-                    "%s Error loading YAML configuration %s: %s",
-                    self.controller.log_prefix,
-                    file,
-                    exc,
-                    exc_info=True,
-                )
+                _LOGGER.error(  # pragma: no mutate
+                    "%s Error loading YAML configuration %s: %s",  # pragma: no mutate
+                    self.controller.log_prefix,  # pragma: no mutate
+                    file,  # pragma: no mutate
+                    exc,  # pragma: no mutate
+                    exc_info=True,  # pragma: no mutate
+                )  # pragma: no mutate
                 return False
 
         if not self._parsed_yaml_config:

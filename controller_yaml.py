@@ -20,6 +20,7 @@ from homeassistant.const import (
     CONF_HOST,
     CONF_IP_ADDRESS,
     CONF_MAC,
+    CONF_PORT,
     CONF_TOKEN,
     CONF_UNIQUE_ID,
     STATE_UNKNOWN,
@@ -59,6 +60,8 @@ from .const import (
     IMMUTABLE_CONFIG_KEYS,
     LABEL_CURRENT_TEMP,
     LABEL_TARGET_TEMP,
+    MAIN_DEVICE_ID,
+    PORT_SAMSUNG_8888,
 )
 from .controller import ClimateController, register_controller
 from .controller_yaml_config import YamlConfigLoader
@@ -300,11 +303,43 @@ class YamlController(ClimateController):
         return self.loader.connection
 
     @property
-    def port(self) -> int | str | None:
-        """Return the port of the controller if configured."""
-        if hasattr(self, "_config") and self._config is not None:
-            return self._config.get("port")
-        return None
+    def port(self) -> int:
+        """Return the port of the controller if configured.
+
+        Applies Fail-Fast validation:
+        - When missing or None, returns default protocol port (PORT_SAMSUNG_8888).
+        - When provided as an int, validates range 1 <= port <= 65535 and returns it;
+          raises ValueError for out-of-range values.
+        - When provided as a numeric string (e.g. "8888"), casts to int and validates range;
+          raises ValueError for invalid strings or out-of-range values.
+        - Raises TypeError for unsupported types (e.g. bool, list, dict).
+        """
+        raw_port = self._config.get(CONF_PORT)
+        if raw_port is None:
+            return PORT_SAMSUNG_8888
+
+        if isinstance(raw_port, bool):
+            raise TypeError("Unsupported port type: bool")
+
+        if isinstance(raw_port, int):
+            if not (1 <= raw_port <= 65535):
+                raise ValueError(
+                    f"Port must be between 1 and 65535, got {raw_port}"
+                )
+            return raw_port
+
+        if isinstance(raw_port, str):
+            stripped = raw_port.strip()
+            if not stripped.isdigit():
+                raise ValueError(f"Invalid port string: {raw_port!r}")
+            port_int = int(stripped)
+            if not (1 <= port_int <= 65535):
+                raise ValueError(
+                    f"Port must be between 1 and 65535, got {port_int}"
+                )
+            return port_int
+
+        raise TypeError(f"Unsupported port type: {type(raw_port).__name__}")
 
     @property
     def name(self) -> str:
@@ -385,11 +420,20 @@ class YamlController(ClimateController):
         device_id: str | None = None,
     ) -> bool:
         """Asynchronously set a property on the device."""
-        if not isinstance(property_name, str) or len(property_name.strip()) == 0:
+        # Step 1: Immediate argument validation (Fail-Fast)
+        if not isinstance(property_name, str) or not property_name.strip():
             raise TypeError(
                 f"Expected non-empty str for property_name, got {property_name!r}"
             )
 
+        if device_id is not None and (
+            not isinstance(device_id, str) or not device_id.strip()
+        ):
+            raise TypeError(
+                f"Expected non-empty str or None for device_id, got {device_id!r}"
+            )
+
+        # Step 2: Loader initialization check
         if not self.loader.is_fully_initialized:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
@@ -397,25 +441,21 @@ class YamlController(ClimateController):
                 translation_placeholders={"property": property_name},
             )
 
+        # Step 3: Property lookup
         op = self.get_property_object(property_name)
         if not isinstance(op, DeviceProperty):
-            raise ServiceValidationError(
+            raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key=ERR_PROPERTY_NOT_FOUND,
                 translation_placeholders={"property": property_name},
             )
 
-        if device_id is not None and not isinstance(device_id, str):
-            raise TypeError(
-                f"device_id must be a string, got {type(device_id).__name__}"
-            )
-
         target_device_id = (
-            device_id
-            if (device_id is not None and len(device_id.strip()) > 0)
+            device_id.strip()
+            if (isinstance(device_id, str) and bool(device_id.strip()))
             else self.device_id
         )
-        if target_device_id is None or not self._is_subdevice(target_device_id):
+        if target_device_id in (None, "", MAIN_DEVICE_ID):
             target_device_id = self._unique_id
 
         self.poller.register_pending_update(property_name, new_value)
@@ -457,15 +497,8 @@ class YamlController(ClimateController):
                         op, self.loader.state_getter.value, new_value
                     )
             return result
-        except asyncio.CancelledError:
-            await self.async_clear_pending_updates([property_name])
-            raise
-        except (CannotConnect, AuthError) as err:
-            await self.async_clear_pending_updates([property_name])
+        except (TimeoutError, OSError) as err:
             raise HomeAssistantError(f"Communication failed: {err}") from err
-        except HomeAssistantError:
-            await self.async_clear_pending_updates([property_name])
-            raise
         finally:
             if not success:
                 await self.async_clear_pending_updates([property_name])
