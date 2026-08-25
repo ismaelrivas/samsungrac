@@ -72,7 +72,9 @@ class GenericYamlTokenAcquirer:
                             break
                         data += chunk
                         if extract_regex:
-                            decoded_check = data.decode("utf-8", errors="ignore")  # pragma: no mutate
+                            decoded_check = data.decode(
+                                "utf-8", errors="ignore"
+                            )  # pragma: no mutate
                             match = re.search(extract_regex, decoded_check)
                             if match:
                                 token = match.group(1).strip('"')
@@ -82,7 +84,9 @@ class GenericYamlTokenAcquirer:
 
             if not token and extract_regex and data:
                 # Final attempt on fully accumulated data
-                decoded_data = data.decode("utf-8", errors="ignore")  # pragma: no mutate
+                decoded_data = data.decode(
+                    "utf-8", errors="ignore"
+                )  # pragma: no mutate
                 match = re.search(extract_regex, decoded_data)
                 if match:
                     token = match.group(1).strip('"')
@@ -167,9 +171,7 @@ class GenericYamlTokenAcquirer:
                 return
             except OSError as err:
                 if err.errno == 98:  # EADDRINUSE
-                    _LOGGER.debug(
-                        "Port %s already in use, trying next port", port
-                    )
+                    _LOGGER.debug("Port %s already in use, trying next port", port)
                     last_error = err
                     continue
                 raise  # Other OS errors are unexpected, propagate immediately

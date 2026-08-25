@@ -129,7 +129,9 @@ async def test_start_listener_server_cleans_up_lingering_server(acquirer):
 async def test_start_listener_server_lingering_server_exception_swallowed(acquirer):
     """Test that exceptions during lingering server wait_closed are cleanly swallowed."""
     mock_lingering_server = AsyncMock()
-    mock_lingering_server.wait_closed.side_effect = RuntimeError("Lingering server close error")
+    mock_lingering_server.wait_closed.side_effect = RuntimeError(
+        "Lingering server close error"
+    )
     acquirer._server = mock_lingering_server
 
     mock_ssl_ctx = MagicMock()
@@ -223,7 +225,9 @@ async def test_start_listener_server_eaddrinuse_exhaustion_raises(acquirer):
         assert acquirer._server is None
 
 
-async def test_start_listener_server_unexpected_oserror_propagates_immediately(acquirer):
+async def test_start_listener_server_unexpected_oserror_propagates_immediately(
+    acquirer,
+):
     """Test that unexpected OSErrors (errno != 98) are raised immediately without retries."""
     mock_ssl_ctx = MagicMock()
     perm_error = OSError(13, "Permission denied")
@@ -855,7 +859,7 @@ async def test_handle_client_fallback_extraction_outside_loop(acquirer):
 
 async def test_handle_client_fallback_extraction_strips_quotes(acquirer):
     """Test that fallback token extraction strictly extracts group(1) and strips quotes."""
-    acquirer.auth_config["extract_template"]["regex"] = r'Token[\s:]*([^\s]+)'
+    acquirer.auth_config["extract_template"]["regex"] = r"Token[\s:]*([^\s]+)"
     data_payload = b'Token: "quoted_fallback_token"'
     mock_reader = MockStreamReader([data_payload])
     mock_writer = MockStreamWriter()
@@ -864,7 +868,7 @@ async def test_handle_client_fallback_extraction_strips_quotes(acquirer):
         "custom_components.climate_ip.token_acquirer_yaml.re.search",
         side_effect=[
             None,
-            re.search(r'Token[\s:]*([^\s]+)', data_payload.decode("utf-8")),
+            re.search(r"Token[\s:]*([^\s]+)", data_payload.decode("utf-8")),
         ],
     ):
         await acquirer._handle_client(mock_reader, mock_writer)
