@@ -431,4 +431,3 @@ def test_controller_port_invalid_types_and_ranges() -> None:
 
     with pytest.raises(TypeError, match="Unsupported port type"):
         _ = DummyController({"port": False}, logger).port
-

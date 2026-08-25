@@ -989,9 +989,7 @@ def test_yaml_controller_port_resolution_and_validation() -> None:
         assert controller_max.port == 65535
 
         # 2. Default fallback when CONF_PORT is absent or None
-        controller_absent = YamlController(
-            {"ip_address": "127.0.0.1"}, mock_logger
-        )
+        controller_absent = YamlController({"ip_address": "127.0.0.1"}, mock_logger)
         assert controller_absent.port == PORT_SAMSUNG_8888
         assert isinstance(controller_absent.port, int)
 
@@ -1034,9 +1032,7 @@ def test_yaml_controller_port_resolution_and_validation() -> None:
             controller_invalid_int = YamlController(
                 {"port": invalid_int, "ip_address": "127.0.0.1"}, mock_logger
             )
-            with pytest.raises(
-                ValueError, match="Port must be between 1 and 65535"
-            ):
+            with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
                 _ = controller_invalid_int.port
 
         # 5. Malformed string validation (ValueError)
@@ -1091,7 +1087,9 @@ async def test_yaml_controller_async_set_property_fail_fast_branches(
     # 2. Invalid device_id type -> TypeError
     with pytest.raises(TypeError):
         await mock_yaml_controller.async_set_property(
-            "fan_mode", "high", device_id=12345  # type: ignore[arg-type]
+            "fan_mode",
+            "high",
+            device_id=12345,  # type: ignore[arg-type]
         )
 
     # 3. Uninitialized Loader -> HomeAssistantError
@@ -1222,9 +1220,7 @@ async def test_yaml_controller_async_set_property_fail_fast_branches(
     mock_op.async_set_value.side_effect = None
     mock_op.async_set_value.return_value = False
     mock_yaml_controller.async_clear_pending_updates.reset_mock()
-    res_false = await mock_yaml_controller.async_set_property(
-        "target_temperature", 22
-    )
+    res_false = await mock_yaml_controller.async_set_property("target_temperature", 22)
     assert res_false is False
     mock_yaml_controller.async_clear_pending_updates.assert_awaited_once_with(
         ["target_temperature"]
@@ -1259,8 +1255,7 @@ async def test_yaml_controller_async_set_property_state_injection(
         "power": "on",
     }
     assert (
-        mock_yaml_controller.poller._pure_network_state
-        is not mock_state_getter.value
+        mock_yaml_controller.poller._pure_network_state is not mock_state_getter.value
     )
 
     # Check injection called twice: once for _pure_network_state and once for state_getter.value

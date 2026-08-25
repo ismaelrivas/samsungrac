@@ -38,6 +38,7 @@ from .const import (
     CONFIG_DEVICE,
     DEVICE_TYPE_MIM_H03,
     DEVICE_TYPE_SAMSUNG_2878,
+    MAIN_DEVICE_ID,
 )
 from .exceptions import AuthError, CannotConnect, InvalidHeaderError
 from .helpers import async_check_network_reachability, get_value_by_path
@@ -715,24 +716,56 @@ class YamlStatePoller:
                     exc_info=True,
                 )
 
-    def _find_device_node(
-        self, state_dict: dict[str, Any], id_map: dict[str, Any]
-    ) -> dict[str, Any] | None:
-        """Find the matching device node in the state dictionary based on id_map."""
-        devices_list = get_value_by_path(state_dict, id_map.get("path_to_devices"))
-        if not devices_list:
+    def _find_device_node(self, raw_state: dict[str, Any]) -> dict[str, Any] | None:
+        """Locate the target device dictionary in the raw network payload."""
+        if not isinstance(raw_state, dict):
             return None
 
-        target_id = str(getattr(self.controller, "device_id", ""))
-        found = next(
-            (
-                d
-                for d in devices_list
-                if d and str(get_value_by_path(d, id_map.get("id"))) == target_id
-            ),
-            None,
+        # 1. Retrieve cached YAML structure for this device (fallback to 'XXXX')
+        cache = getattr(self.controller.loader, "_parsed_yaml_cache", {})
+        if not isinstance(cache, dict):
+            return raw_state
+
+        cache_key = getattr(self.controller, "device_id", "XXXX")
+        dev_cfg = cache.get(cache_key, {})
+        if not isinstance(dev_cfg, dict):  # pragma: no mutate
+            dev_cfg = {}
+        device_section = dev_cfg.get(CONFIG_DEVICE, {})
+        identifiers = (
+            device_section.get("identifiers", {})
+            if isinstance(device_section, dict)
+            else {}
         )
-        return cast(dict[str, Any] | None, found if found else devices_list[0])
+
+        path_to_devices = (
+            identifiers.get("path_to_devices")
+            if isinstance(identifiers, dict)
+            else None
+        )
+        id_path = identifiers.get("id") if isinstance(identifiers, dict) else None
+
+        # 2. Extract devices list using get_value_by_path
+        devices_list = get_value_by_path(raw_state, path_to_devices)
+        if not isinstance(devices_list, list) or len(devices_list) == 0:
+            return raw_state
+
+        # 3. Match target device ID (strictly evaluating default fallback to "")
+        target_id = str(getattr(self.controller, "device_id", ""))
+
+        matched_device = None
+        for dev in devices_list:
+            if isinstance(dev, dict):
+                curr_id = get_value_by_path(dev, id_path)
+                if curr_id is not None and str(curr_id) == target_id:
+                    matched_device = dev
+                    break
+
+        # Fallback to the matched device, or the first item if no exact match found
+        return (
+            matched_device
+            if matched_device is not None
+            else (devices_list[0] if isinstance(devices_list[0], dict) else raw_state)
+        )
 
     def _extract_device_nodes(
         self, full_device_state: dict[str, Any], pure_network_state: dict[str, Any]
@@ -741,22 +774,13 @@ class YamlStatePoller:
         device_to_process = full_device_state
         pure_device_to_process = pure_network_state
         try:
-            cache = getattr(self.controller.loader, "_parsed_yaml_cache", {})
-            if isinstance(cache, dict):
-                dev_conf = cache.get(getattr(self.controller, "device_id", "XXXX"), {})
-                if isinstance(dev_conf, dict):
-                    device_config = dev_conf.get(CONFIG_DEVICE) or {}
-                    id_map = device_config.get("identifiers")
-                    if isinstance(id_map, dict):
-                        found_device = self._find_device_node(full_device_state, id_map)
-                        if isinstance(found_device, dict):
-                            device_to_process = found_device
+            found_device = self._find_device_node(full_device_state)
+            if isinstance(found_device, dict):
+                device_to_process = found_device
 
-                        found_pure_device = self._find_device_node(
-                            pure_network_state, id_map
-                        )
-                        if isinstance(found_pure_device, dict):
-                            pure_device_to_process = found_pure_device
+            found_pure_device = self._find_device_node(pure_network_state)
+            if isinstance(found_pure_device, dict):
+                pure_device_to_process = found_pure_device
 
         except Exception as e:  # pylint: disable=broad-exception-caught
             _LOGGER.debug(

@@ -330,9 +330,7 @@ class ConfigFlowDiscoveryMixin(_FlowMixinBase):
                 {req_key: cv.multi_select(device_options)}
             )  # pragma: no mutate
 
-        desc_placeholders: dict[str, Any] = {
-            "device_count": len(discovered_devices)
-        }
+        desc_placeholders: dict[str, Any] = {"device_count": len(discovered_devices)}
 
         if user_input:
             selected_devices_ids = (

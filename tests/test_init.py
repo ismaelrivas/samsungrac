@@ -840,7 +840,9 @@ def test_build_device_setup_tasks_device_name_and_id_strict(
 
     entry = MagicMock()
     devices_config = [
-        {"name": "Missing ID Initial Item"},  # raw_device_id is None -> MUST continue, NOT break (kills M5)
+        {
+            "name": "Missing ID Initial Item"
+        },  # raw_device_id is None -> MUST continue, NOT break (kills M5)
         {"id": "0", "name": "Management Wifi"},  # must be skipped
         {"id": "1", "name": "Living Room AC"},  # explicit name
         {"id": "2"},  # missing name -> DEFAULT_UNKNOWN
@@ -934,8 +936,13 @@ def test_build_device_setup_tasks_cardinality_and_payload(
 
     # 3. Fail-Fast & Boundary Cases: interspersed malformed items, none, empty strings, invalid types
     interleaved_config = [
-        {"name": "No ID Device"},  # raw_device_id is None -> continue (KILLS Mutant ID 5)
-        {"id": None, "name": "Explicit None ID"},  # raw_device_id is None -> continue (KILLS M5)
+        {
+            "name": "No ID Device"
+        },  # raw_device_id is None -> continue (KILLS Mutant ID 5)
+        {
+            "id": None,
+            "name": "Explicit None ID",
+        },  # raw_device_id is None -> continue (KILLS M5)
         {"id": "", "name": "Empty string ID"},  # empty ID -> continue
         {"id": "   ", "name": "Whitespace ID"},  # whitespace ID -> continue
         "invalid_str_payload",  # non-dict -> continue

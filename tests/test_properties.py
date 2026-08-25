@@ -2337,11 +2337,7 @@ def test_apply_optimistic_cascades_complete_matrix(mock_connection, mock_control
             }
         ]
     }
-    state_case4 = {
-        "Devices": [
-            {}
-        ]
-    }
+    state_case4 = {"Devices": [{}]}
     prop.apply_optimistic_cascades(state_case4, "heat")
     assert state_case4["Operation"]["sub"]["power"] == "On"
     assert state_case4["Devices"][0]["Operation"]["sub"]["power"] == "On"
@@ -2429,13 +2425,15 @@ async def test_device_property_async_set_value_flow_and_cascades(
 
     mock_connection.async_execute.side_effect = CannotConnect("Cannot connect")
     with pytest.raises(
-        HomeAssistantError, match="Connection error: could not set value for test_operation"
+        HomeAssistantError,
+        match="Connection error: could not set value for test_operation",
     ):
         await op.async_set_value("off", device_id="main")
 
     mock_connection.async_execute.side_effect = AuthError("Unauthorized")
     with pytest.raises(
-        HomeAssistantError, match="Connection error: could not set value for test_operation"
+        HomeAssistantError,
+        match="Connection error: could not set value for test_operation",
     ):
         await op.async_set_value("off", device_id="main")
 
@@ -2448,20 +2446,19 @@ async def test_device_property_async_set_value_flow_and_cascades(
         op.connection_template, "off", {}, "main"
     )
 
-
-
-
     mock_connection.async_execute_with_retry.side_effect = CannotConnect(
         "Sync cannot connect"
     )
     with pytest.raises(
-        HomeAssistantError, match="Connection error: could not set value for test_operation"
+        HomeAssistantError,
+        match="Connection error: could not set value for test_operation",
     ):
         await op.async_set_value("off", device_id="main")
 
     mock_connection.async_execute_with_retry.side_effect = AuthError("Sync auth failed")
     with pytest.raises(
-        HomeAssistantError, match="Connection error: could not set value for test_operation"
+        HomeAssistantError,
+        match="Connection error: could not set value for test_operation",
     ):
         await op.async_set_value("off", device_id="main")
 
@@ -2478,4 +2475,3 @@ async def test_device_property_async_set_value_flow_and_cascades(
     test_state = {"Operation": {"power": "On"}}
     op.apply_optimistic_cascades(test_state, "off")
     assert test_state["Operation"]["power"] == "Off"
-

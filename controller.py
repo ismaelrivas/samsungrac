@@ -220,9 +220,7 @@ class ClimateController(ABC):
 
         if isinstance(raw_port, int):
             if not (1 <= raw_port <= 65535):
-                raise ValueError(
-                    f"Port must be between 1 and 65535, got {raw_port}"
-                )
+                raise ValueError(f"Port must be between 1 and 65535, got {raw_port}")
             return raw_port
 
         if isinstance(raw_port, str):
@@ -231,9 +229,7 @@ class ClimateController(ABC):
                 raise ValueError(f"Invalid port string: {raw_port!r}")
             port_int = int(stripped)
             if not (1 <= port_int <= 65535):
-                raise ValueError(
-                    f"Port must be between 1 and 65535, got {port_int}"
-                )
+                raise ValueError(f"Port must be between 1 and 65535, got {port_int}")
             return port_int
 
         raise TypeError(f"Unsupported port type: {type(raw_port).__name__}")

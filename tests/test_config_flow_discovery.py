@@ -1246,4 +1246,3 @@ async def test_async_step_select_devices_reauth_and_reconfigure_skip_abort():
         res = await flow.async_step_select_devices({CONF_SELECTED_DEVICES: ["1"]})
         assert res["type"] == FlowResultType.CREATE_ENTRY
         mock_abort_if.assert_not_called()
-

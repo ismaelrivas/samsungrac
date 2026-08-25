@@ -15,7 +15,10 @@ from homeassistant.const import ATTR_TEMPERATURE
 from homeassistant.helpers.update_coordinator import UpdateFailed
 import pytest
 
-from custom_components.climate_ip.const import DEVICE_TYPE_SAMSUNG_2878
+from custom_components.climate_ip.const import (
+    DEVICE_TYPE_SAMSUNG_2878,
+    MAIN_DEVICE_ID,
+)
 from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 from custom_components.climate_ip.exceptions import CannotConnect
 
@@ -1927,3 +1930,146 @@ async def test_build_device_state_power_ternary_mutual_exclusivity() -> None:
     assert res_cool["AC_FUN_POWER"] == "On", (
         "Mutant survived! Power should be strictly 'On' when device_value is 'Cool'."
     )
+
+
+def test_find_device_node_matrix_and_survivor_annihilation():
+    """Lethal sniper unit tests targeting YamlStatePoller._find_device_node.
+
+    Enforces deterministic subdevice node traversal, exact ID matching,
+    and malformed payload resilience.
+    """
+    mock_controller = DummyController(device_id="0")
+    poller = YamlStatePoller(mock_controller)
+
+    # Configure cache on loader
+    mock_controller.loader._parsed_yaml_cache = {
+        "0": {
+            "device": {
+                "identifiers": {
+                    "path_to_devices": ["Devices"],
+                    "id": ["id"],
+                }
+            }
+        },
+        "1": {
+            "device": {
+                "identifiers": {
+                    "path_to_devices": ["Devices"],
+                    "id": ["id"],
+                }
+            }
+        },
+        "99": {
+            "device": {
+                "identifiers": {
+                    "path_to_devices": ["Devices"],
+                    "id": ["id"],
+                }
+            }
+        },
+        "XXXX": {
+            "device": {
+                "identifiers": {
+                    "path_to_devices": ["Devices"],
+                    "id": ["id"],
+                }
+            }
+        },
+    }
+
+    sample_payload = {
+        "Devices": [
+            {"id": "0", "val": 10, "name": "Primary"},
+            {"id": "1", "val": 20, "name": "Secondary"},
+        ]
+    }
+
+    # Case A: Exact Match for target_id "1"
+    mock_controller.device_id = "1"
+    assert poller._find_device_node(sample_payload) == {
+        "id": "1",
+        "val": 20,
+        "name": "Secondary",
+    }
+
+    # Case B: Exact Match for target_id "0"
+    mock_controller.device_id = "0"
+    assert poller._find_device_node(sample_payload) == {
+        "id": "0",
+        "val": 10,
+        "name": "Primary",
+    }
+
+    # Case C: Non-existent ID "99" falls back to index 0
+    mock_controller.device_id = "99"
+    assert poller._find_device_node(sample_payload) == {
+        "id": "0",
+        "val": 10,
+        "name": "Primary",
+    }
+
+    # Case D: Missing/Unset device_id resolves to "XXXX" cache
+    if hasattr(mock_controller, "device_id"):
+        delattr(mock_controller, "device_id")
+    assert poller._find_device_node(sample_payload) == {
+        "id": "0",
+        "val": 10,
+        "name": "Primary",
+    }
+
+    # Case E: Malformed & Missing Payload Resilience
+    mock_controller.device_id = "0"
+    assert poller._find_device_node(None) is None
+    assert poller._find_device_node("not_a_dict") is None
+
+    # Empty cache returns raw_state
+    mock_controller.loader._parsed_yaml_cache = {}
+    assert poller._find_device_node(sample_payload) == sample_payload
+
+    # Malformed devices list returns raw_state
+    mock_controller.loader._parsed_yaml_cache = {
+        "0": {
+            "device": {
+                "identifiers": {
+                    "path_to_devices": ["Devices"],
+                    "id": ["id"],
+                }
+            }
+        }
+    }
+    assert poller._find_device_node({"Devices": "invalid"}) == {"Devices": "invalid"}
+    assert poller._find_device_node({"Devices": []}) == {"Devices": []}
+
+
+def test_find_device_node_integration_in_extract_nodes():
+    """Verifies that _extract_device_nodes integrates _find_device_node correctly."""
+    mock_controller = DummyController(device_id="1")
+    poller = YamlStatePoller(mock_controller)
+
+    mock_controller.loader._parsed_yaml_cache = {
+        "1": {
+            "device": {
+                "identifiers": {
+                    "path_to_devices": ["Devices"],
+                    "id": ["id"],
+                }
+            }
+        }
+    }
+
+    full_state = {
+        "Devices": [
+            {"id": "0", "temp": 20},
+            {"id": "1", "temp": 25},
+        ]
+    }
+    pure_state = {
+        "Devices": [
+            {"id": "0", "pure_temp": 20},
+            {"id": "1", "pure_temp": 25},
+        ]
+    }
+
+    dev_proc, pure_dev_proc = poller._extract_device_nodes(full_state, pure_state)
+    assert dev_proc == {"id": "1", "temp": 25}
+    assert pure_dev_proc == {"id": "1", "pure_temp": 25}
