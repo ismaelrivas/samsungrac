@@ -103,9 +103,10 @@ class ClimateIpConfigFlow(
         if not isinstance(main_config, dict):
             raise ValueError(f"Invalid YAML configuration loaded from {main_yaml_name}")
 
+        device_config = main_config.get("device")
         auth_file = (
-            main_config.get("device", {}).get("auth_flow_file")
-            if isinstance(main_config.get("device"), dict)
+            device_config.get("auth_flow_file")
+            if isinstance(device_config, dict)
             else None
         )
         if not auth_file:
@@ -115,7 +116,7 @@ class ClimateIpConfigFlow(
         auth_config = await self.hass.async_add_executor_job(load_yaml, auth_yaml_path)
         if not isinstance(auth_config, dict):
             raise ValueError(f"Invalid YAML configuration loaded from {auth_file}")
-        auth_flow = auth_config.get("auth_flow", {})
+        auth_flow = auth_config.get("auth_flow")
         return auth_flow if isinstance(auth_flow, dict) else {}
 
     def is_matching(self, other_flow: Self) -> bool:

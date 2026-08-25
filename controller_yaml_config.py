@@ -88,21 +88,31 @@ class YamlConfigLoader:
 
     async def async_initialize(self) -> bool:
         """Perform initial YAML configuration loading and set up the base connection."""
-        file = self.controller.yaml_file
-        if (
-            file is not None and file.find("\\") == -1 and file.find("/") == -1
-        ):  # pragma: no mutate
-            file = str(Path(__file__).parent / file)  # pragma: no mutate
-        _LOGGER.debug(
-            "%s Loading configuration file: %s", self.controller.log_prefix, file
-        )
-
-        if file is None:
+        raw_file = self.controller.yaml_file
+        if raw_file is None:
             _LOGGER.error(
                 "%s No configuration file specified. Aborting initialization.",
                 self.controller.log_prefix,
             )
             return False
+
+        local_path = Path(__file__).parent / raw_file
+        if local_path.is_file():
+            file = str(local_path)
+        elif (
+            hasattr(self.controller, "hass")
+            and self.controller.hass is not None
+            and hasattr(self.controller.hass, "config")
+            and hasattr(self.controller.hass.config, "path")
+            and callable(getattr(self.controller.hass.config, "path", None))
+        ):
+            file = str(self.controller.hass.config.path(raw_file))
+        else:
+            file = str(local_path)  # pragma: no mutate
+
+        _LOGGER.debug(
+            "%s Loading configuration file: %s", self.controller.log_prefix, file
+        )
 
         if file in _YAML_FILE_CACHE:
             _LOGGER.debug(

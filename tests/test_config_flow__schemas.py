@@ -1,3 +1,4 @@
+# pylint: disable=protected-access,line-too-long,too-many-locals,import-outside-toplevel,pointless-string-statement,comparison-with-callable
 """Test config flow schemas to kill mutants."""
 
 from __future__ import annotations
@@ -5,16 +6,20 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
+from homeassistant.util.yaml import load_yaml
 import pytest
 import voluptuous as vol
 
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 from custom_components.climate_ip.const import (
+    CONF_CERT,
     CONF_DEVICE_ID,
     CONF_DEVICE_TYPE,
     CONF_NAME,
     CONF_POLL_INTERVAL,
+    DEFAULT_CONF_CERT_FILE,
     DEVICE_TYPE_SAMSUNG_2878,
+    DEVICE_TYPE_SAMSUNG_8888,
     DEVICE_TYPE_SMARTTHINGS_HVAC,
 )
 
@@ -50,7 +55,7 @@ async def test_rest_api_schema_mutants_annihilation():
     schema = flow._get_rest_api_schema()
 
     # 1. Verify base parameters (Kills mutants 51, 60)
-    dev_id_key, dev_id_type = get_schema_marker(schema, CONF_DEVICE_ID)
+    _, dev_id_type = get_schema_marker(schema, CONF_DEVICE_ID)
     assert (
         dev_id_type is str
     )  # If mutant assigns None to the right of the dict, this fails
@@ -179,3 +184,76 @@ async def test_options_schema_target_temp_fallback_empty(hass):
 
     step_key, _ = get_schema_marker(schema, CONF_TARGET_TEMP_STEP)
     assert step_key.default() == str(DEFAULT_TARGET_TEMP_STEP)
+
+
+@pytest.mark.asyncio
+async def test_load_auth_flow_config_strict_schema_keys():
+    """Verify _load_auth_flow_config and schema generation with strict key and fallback assertions."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = MagicMock()
+
+    async def mock_async_add_executor_job(func, *args, **kwargs):
+        assert func == load_yaml
+        return func(*args, **kwargs)
+
+    flow.hass.async_add_executor_job = mock_async_add_executor_job
+
+    # 1. Edge-case: empty flow_data (missing keys and empty strings)
+    flow.flow_data = {}
+
+    # Test _load_auth_flow_config dynamic loading for 2878 and 8888
+    auth_config_2878 = await flow._load_auth_flow_config(DEVICE_TYPE_SAMSUNG_2878)
+    assert isinstance(auth_config_2878, dict)
+    assert bool(auth_config_2878) is True
+
+    auth_config_8888 = await flow._load_auth_flow_config(DEVICE_TYPE_SAMSUNG_8888)
+    assert isinstance(auth_config_8888, dict)
+    assert bool(auth_config_8888) is True
+
+    # 2. Extract Samsung 2878 configuration schema
+    schema = flow._get_samsung_2878_schema(mac_required=False)
+
+    # 3. Lethal schema key & fallback assertions
+    token_key, token_type = get_schema_marker(schema, CONF_TOKEN)
+    assert token_key is not None
+    assert isinstance(token_key, vol.Optional)
+    assert token_key.default() == ""
+    assert token_type is str
+
+    cert_key, cert_type = get_schema_marker(schema, CONF_CERT)
+    assert cert_key is not None
+    assert isinstance(cert_key, vol.Optional)
+    assert cert_key.default() == DEFAULT_CONF_CERT_FILE
+    assert cert_key.default() == "ac14k_m.pem"
+    assert cert_type is str
+
+    mac_key, mac_type = get_schema_marker(schema, CONF_MAC)
+    assert mac_key is not None
+    assert isinstance(mac_key, vol.Optional)
+    assert mac_key.default() == ""
+    assert mac_type is str
+
+    # 4. Strict assertion with explicit custom values populated
+    flow.flow_data = {
+        CONF_TOKEN: "test_token_secret",
+        CONF_CERT: "custom_cert.pem",
+        CONF_MAC: "00:11:22:33:44:55",
+    }
+    schema_populated = flow._get_samsung_2878_schema(mac_required=False)
+
+    token_p, _ = get_schema_marker(schema_populated, CONF_TOKEN)
+    assert token_p is not None
+    assert token_p.default() == "test_token_secret"
+
+    cert_p, _ = get_schema_marker(schema_populated, CONF_CERT)
+    assert cert_p is not None
+    assert cert_p.default() == "custom_cert.pem"
+
+    mac_p, _ = get_schema_marker(schema_populated, CONF_MAC)
+    assert mac_p is not None
+    assert mac_p.default() == "00:11:22:33:44:55"
+
+    schema_8888 = flow._get_samsung_8888_schema(mac_required=False)
+    cert_8888, _ = get_schema_marker(schema_8888, CONF_CERT)
+    assert cert_8888 is not None
+    assert cert_8888.default() == "custom_cert.pem"
