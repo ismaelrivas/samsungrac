@@ -94,10 +94,27 @@ class GenericYamlTokenAcquirer:
             except (OSError, ssl.SSLError, Exception):
                 pass
 
+    MAX_PORT_RETRIES = 5  # Try up to 5 alternative ports (e.g. 8889-8893)
+
     async def _start_listener_server(self) -> None:
-        """Start the local TLS listener server."""
+        """Start the local TLS listener server.
+
+        If the configured port is already in use (EADDRINUSE), automatically
+        retries on consecutive ports up to MAX_PORT_RETRIES times. This handles
+        the case where a previous config flow or integration instance left the
+        port occupied.
+        """
+        # Close any lingering server from a previous attempt
+        if self._server is not None:
+            try:
+                self._server.close()
+                await self._server.wait_closed()
+            except Exception:  # pylint: disable=broad-except
+                pass
+            self._server = None
+
         listener_cfg = self.auth_config.get("listener", {})
-        port = listener_cfg.get("port", 8889)
+        base_port = listener_cfg.get("port", 8889)
         tls_cfg = self.auth_config.get("tls_config", {})
 
         cert_path = self._resolve_cert_path(tls_cfg.get("default_cert"))
@@ -108,9 +125,35 @@ class GenericYamlTokenAcquirer:
         )
 
         bind_ip = getattr(self.hass.config.api, "local_ip", None) or "0.0.0.0"
-        self._server = await asyncio.start_server(
-            self._handle_client, bind_ip, port, ssl=ssl_context
-        )
+
+        last_error: OSError | None = None
+        for offset in range(self.MAX_PORT_RETRIES):
+            port = base_port + offset
+            try:
+                self._server = await asyncio.start_server(
+                    self._handle_client, bind_ip, port, ssl=ssl_context
+                )
+                if offset > 0:
+                    _LOGGER.info(
+                        "Listener port %s was busy, successfully bound to fallback port %s",
+                        base_port,
+                        port,
+                    )
+                # Update the listener config so the pairing request sends
+                # the correct Host header pointing to the actual bound port
+                listener_cfg["port"] = port
+                return
+            except OSError as err:
+                if err.errno == 98:  # EADDRINUSE
+                    _LOGGER.debug(
+                        "Port %s already in use, trying next port", port
+                    )
+                    last_error = err
+                    continue
+                raise  # Other OS errors are unexpected, propagate immediately
+
+        # All ports exhausted
+        raise last_error  # type: ignore[misc]
 
     # ==========================================
     # STREAM MODE LOGIC (Port 2878)

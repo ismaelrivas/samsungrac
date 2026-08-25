@@ -501,6 +501,10 @@ class ClimateIpConfigFlow(
                 auth_flow_dict = await self._load_auth_flow_config(new_device_type)
                 target_cert_val = cert_path if cert_path else None
 
+                # Close the previous acquirer's listener before rebinding
+                if self.acquirer is not None:
+                    await self.acquirer.async_close()
+
                 self.acquirer = GenericYamlTokenAcquirer(
                     self.hass, ip_address, auth_flow_dict, target_cert_val
                 )
