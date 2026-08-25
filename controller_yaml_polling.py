@@ -38,6 +38,8 @@ from .const import (
     CONFIG_DEVICE,
     DEVICE_TYPE_MIM_H03,
     DEVICE_TYPE_SAMSUNG_2878,
+    DEVICE_TYPE_SMARTTHINGS_DHW,
+    DEVICE_TYPE_SMARTTHINGS_HVAC,
     MAIN_DEVICE_ID,
 )
 from .exceptions import AuthError, CannotConnect, InvalidHeaderError
@@ -324,7 +326,11 @@ class YamlStatePoller:
 
     def _requires_icmp_ping(self, device_type: str) -> bool:
         """Determine if this device type requires an ICMP ping before polling."""
-        return device_type != DEVICE_TYPE_SAMSUNG_2878
+        return device_type not in (
+            DEVICE_TYPE_SAMSUNG_2878,
+            DEVICE_TYPE_SMARTTHINGS_HVAC,
+            DEVICE_TYPE_SMARTTHINGS_DHW,
+        )
 
     async def _async_perform_icmp_check(self) -> None:
         """Perform ICMP ping connectivity check."""

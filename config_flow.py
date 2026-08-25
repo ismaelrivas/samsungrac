@@ -9,6 +9,8 @@ import logging
 from pathlib import Path
 from typing import Any, Self
 
+import aiohttp
+
 from homeassistant.config_entries import (
     SOURCE_RECONFIGURE,
     ConfigEntry,
@@ -394,15 +396,21 @@ class ClimateIpConfigFlow(
                         step_id=step_id_err2, data_schema=schema_err2, errors=errors
                     )
 
+            is_st = device_type in (
+                DEVICE_TYPE_SMARTTHINGS_HVAC,
+                DEVICE_TYPE_SMARTTHINGS_DHW,
+            )
+
             try:
                 _LOGGER.debug(
                     "Testing lightweight REST API connection..."
                 )  # pragma: no mutate
                 session = aiohttp_client.async_get_clientsession(self.hass)
-                ip_addr = str(self.flow_data[CONF_IP_ADDRESS])
-                host_str = (
-                    f"[{ip_addr}]" if ":" in ip_addr else ip_addr
-                )  # pragma: no mutate
+                ip_addr = str(self.flow_data[CONF_IP_ADDRESS]).strip()
+                if ip_addr.count(":") > 1 and not ip_addr.startswith("["):
+                    host_str = f"[{ip_addr}]"
+                else:
+                    host_str = ip_addr
                 url = f"https://{host_str}/v1/devices"
                 headers = {
                     "Authorization": f"Bearer {self.flow_data.get(CONF_TOKEN)}"
@@ -411,6 +419,7 @@ class ClimateIpConfigFlow(
                 async with session.get(
                     url,
                     headers=headers,
+                    ssl=False,
                     timeout=GLOBAL_HTTP_TIMEOUT,  # type: ignore[arg-type] # pragma: no mutate
                 ) as response:  # pragma: no mutate
                     if response.status != 200:
@@ -419,17 +428,33 @@ class ClimateIpConfigFlow(
                         )  # pragma: no mutate
                         raise CannotConnect("HTTP Status Error")  # pragma: no mutate
 
+                    if is_st and not self.flow_data.get(CONF_DEVICE_ID):
+                        try:
+                            resp_json = await response.json()
+                            if isinstance(resp_json, dict) and "items" in resp_json:
+                                items = resp_json.get("items", [])
+                                if items and isinstance(items[0], dict) and "deviceId" in items[0]:
+                                    self.flow_data[CONF_DEVICE_ID] = str(items[0]["deviceId"])
+                        except Exception:  # pylint: disable=broad-except
+                            pass
+
                 unique_id = str(
                     self.flow_data.get(CONF_DEVICE_ID)
                     or self.flow_data.get(CONF_MAC)
                     or ""  # pragma: no mutate
                 )
                 if not unique_id:
-                    _LOGGER.error(
-                        "REST API connection test failed..."
-                    )  # pragma: no mutate
-                    return self.async_abort(reason="no_mac_address_found")
+                    if is_st:
+                        token_str = str(self.flow_data.get(CONF_TOKEN, ""))
+                        suffix = token_str[-8:] if len(token_str) >= 8 else ip_addr
+                        unique_id = f"{device_type}_{suffix}"
+                    else:
+                        _LOGGER.error(
+                            "REST API connection test failed..."
+                        )  # pragma: no mutate
+                        return self.async_abort(reason="no_mac_address_found")
 
+                self.flow_data["unique_id"] = unique_id
                 await self.async_set_unique_id(unique_id)
                 if self.reauth_entry is None:
                     self._abort_if_unique_id_configured()
@@ -437,7 +462,7 @@ class ClimateIpConfigFlow(
 
             except AbortFlow:
                 raise
-            except CannotConnect:
+            except (CannotConnect, aiohttp.ClientError):
                 errors["base"] = "cannot_connect"
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception(
@@ -731,7 +756,17 @@ class ClimateIpConfigFlow(
         final_unique_id = uid_data if uid_data else mac_data
 
         if not final_unique_id:
-            return self.async_abort(reason="no_mac_address_found")
+            if device_type in (
+                DEVICE_TYPE_SMARTTHINGS_HVAC,
+                DEVICE_TYPE_SMARTTHINGS_DHW,
+            ):
+                dev_id = str(self.flow_data.get(CONF_DEVICE_ID) or "")
+                token_val = str(self.flow_data.get(CONF_TOKEN) or "")
+                ip_val = str(self.flow_data.get(CONF_IP_ADDRESS) or "")
+                suffix = dev_id or (token_val[-8:] if len(token_val) >= 8 else ip_val or "default")
+                final_unique_id = f"{device_type}_{suffix}"
+            else:
+                return self.async_abort(reason="no_mac_address_found")
 
         await self.async_set_unique_id(final_unique_id)
         if (
@@ -742,7 +777,11 @@ class ClimateIpConfigFlow(
 
         title = (
             str(self.flow_data.get("name", "")).strip()
-            or f"Samsung AC {final_unique_id}"
+            or (
+                f"Samsung {device_type.replace('_', ' ').title()}"
+                if device_type in (DEVICE_TYPE_SMARTTHINGS_HVAC, DEVICE_TYPE_SMARTTHINGS_DHW)
+                else f"Samsung AC {final_unique_id}"
+            )
         )
         self.flow_data["name"] = title
 

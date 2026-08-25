@@ -27,6 +27,7 @@ import yarl
 from .connection import Connection, register_connection
 from .const import (
     CONF_CERT,
+    CONF_DEVICE_ID,
     CONF_INSECURE_SSL,
     CONF_KEEP_ALIVE,
     CONF_USE_HTTP,
@@ -35,6 +36,7 @@ from .const import (
     CONFIG_DEVICE_CONNECTION_PARAMS,
     CONFIG_DEVICE_CONNECTION_TEMPLATE,
     GLOBAL_HTTP_TIMEOUT,
+    MAIN_DEVICE_ID,
     NETWORK_POLL_TIMEOUT,
 )
 from .exceptions import AuthError, CannotConnect, InvalidHeaderError
@@ -170,7 +172,13 @@ class ConnectionAiohttp8888(Connection):
         dev_id = None
         if self._controller is not None:
             token = self._controller.config.get(CONF_TOKEN, self._token)
-            dev_id = self._controller.device_id
+            cfg_dev_id = self._controller.config.get(CONF_DEVICE_ID)
+            ctrl_dev_id = self._controller.device_id
+            dev_id = (
+                cfg_dev_id
+                if (cfg_dev_id and cfg_dev_id != MAIN_DEVICE_ID)
+                else (ctrl_dev_id or cfg_dev_id)
+            )
         return token, dev_id
 
     @property
@@ -217,6 +225,20 @@ class ConnectionAiohttp8888(Connection):
         # Read insecure_ssl. It comes from 'config' passed to __init__.
         insecure_ssl = self._config.get(CONF_INSECURE_SSL, False)
 
+        # Detect if target is local/private (e.g. localhost, 127.0.0.1, or local subnet)
+        host, _ = self._resolved_target
+        is_local_target = False
+        if host:
+            clean_host = host.split("://")[-1].split("/")[0].split(":")[0].strip("[]")
+            if (
+                clean_host in ("localhost", "127.0.0.1", "::1")
+                or clean_host.startswith("192.168.")
+                or clean_host.startswith("10.")
+                or clean_host.startswith("172.")
+                or clean_host.endswith(".local")
+            ):
+                is_local_target = True
+
         # Consolidated executor call
         if (
             self._cert_path is None
@@ -230,7 +252,7 @@ class ConnectionAiohttp8888(Connection):
 
         has_cert = self._cert_path is not None and len(self._cert_path.strip()) > 0
 
-        if not has_cert and not insecure_ssl:
+        if not has_cert and not insecure_ssl and not is_local_target:
             # Standard Secure Cloud Connection
             debug_msg = "%s [aiohttp] No cert and insecure_ssl=False. Using default aiohttp SSL context (Strict)."
             _LOGGER.debug(debug_msg, self.log_prefix)
@@ -238,9 +260,9 @@ class ConnectionAiohttp8888(Connection):
 
         try:
             debug_msg = (
-                "%s [aiohttp] Creating custom SSL context. Cert: %s, Insecure: %s"
+                "%s [aiohttp] Creating custom SSL context. Cert: %s, Insecure: %s, Local: %s"
             )
-            _LOGGER.debug(debug_msg, self.log_prefix, has_cert, insecure_ssl)
+            _LOGGER.debug(debug_msg, self.log_prefix, has_cert, insecure_ssl, is_local_target)
 
             context = await async_create_samsung_ssl_context(
                 cert_path=self._cert_path if has_cert else None,
@@ -274,13 +296,20 @@ class ConnectionAiohttp8888(Connection):
         return type_str == CONNECTION_TYPE_AIOHTTP_8888
 
     def load_from_yaml(
-        self, node: dict[str, Any] | None, connection_base: Connection
+        self, node: dict[str, Any] | None, connection_base: Connection | None = None
     ) -> bool:
         """Load configuration from yaml node dictionary."""
+        if connection_base is not None and hasattr(connection_base, "_params"):
+            self._params.update(connection_base._params.copy())
+
         if node is not None:
             keep_alive = node.get(CONF_KEEP_ALIVE)
             if keep_alive is not None:
                 self._keep_alive = keep_alive
+            if CONFIG_DEVICE_CONNECTION_PARAMS in node:
+                node_params = node.get(CONFIG_DEVICE_CONNECTION_PARAMS)
+                if isinstance(node_params, dict):
+                    self._params.update(node_params)
         return True
 
     def create_updated(self, yaml_node: dict[str, Any] | None) -> ConnectionAiohttp8888:
@@ -295,7 +324,7 @@ class ConnectionAiohttp8888(Connection):
             session=self._session,
             ip_address=self._ip_address,
         )
-        new_connection._params = {}
+        new_connection._params = dict(self._params)
         new_connection._controller = self._controller
         new_connection._shared_state = self._shared_state
         new_connection._cert_path = self._cert_path
@@ -311,14 +340,10 @@ class ConnectionAiohttp8888(Connection):
                     connection_template,
                     cast(HomeAssistant, self._hass),
                 )
-            elif CONFIG_DEVICE_CONNECTION_PARAMS in yaml_node:
+            if CONFIG_DEVICE_CONNECTION_PARAMS in yaml_node:
                 node_params = yaml_node.get(CONFIG_DEVICE_CONNECTION_PARAMS)
-                node_params = node_params if node_params is not None else {}
-                params = {
-                    **self._params,
-                    **node_params,
-                }
-                new_connection._params.update(params)
+                if isinstance(node_params, dict):
+                    new_connection._params.update(node_params)
 
             embedded_node = yaml_node.get(CONFIG_DEVICE_CONNECTION)
             if embedded_node is not None:
@@ -575,7 +600,10 @@ class ConnectionAiohttp8888(Connection):
             port = self._config.get(CONF_PORT, DEFAULT_PORT)
             protocol = "http" if self._config.get(CONF_USE_HTTP, False) else "https"
             path = url_path if url_path is not None else ""
-            full_url = f"{protocol}://{host}:{port}{path}"
+            if ":" in host and not (host.startswith("[") and host.endswith("]")):
+                full_url = f"{protocol}://{host}{path}"
+            else:
+                full_url = f"{protocol}://{host}:{port}{path}"
 
         return self._format_url(full_url)
 
@@ -590,8 +618,8 @@ class ConnectionAiohttp8888(Connection):
         # 2. Parse URL safely
         parsed_url = yarl.URL(url)
 
-        # 3. Mutate port if it matches default and config specifies otherwise
-        if parsed_url.port == DEFAULT_PORT:
+        # 3. Mutate port if host did not specify a custom port and port matches default
+        if ":" not in host and parsed_url.port == DEFAULT_PORT:
             parsed_url = parsed_url.with_port(
                 int(self._config.get(CONF_PORT, DEFAULT_PORT))
             )

@@ -128,7 +128,8 @@ class YamlController(ClimateController):
         extracted[CONF_ENTRY_ID] = config_entry.entry_id
         extracted[CONF_UNIQUE_ID] = resolved_unique_id
         if isinstance(device_id, str) and len(device_id.strip()) > 0:
-            extracted[CONF_DEVICE_ID] = device_id.strip()
+            if device_id.strip() != MAIN_DEVICE_ID or not extracted.get(CONF_DEVICE_ID):
+                extracted[CONF_DEVICE_ID] = device_id.strip()
 
         return extracted
 

@@ -15,10 +15,13 @@ from homeassistant.helpers.device_registry import DeviceEntry
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .const import (
+    CONF_DEVICE_ID,
     CONF_DEVICE_TYPE,
     CONF_DEVICES,
     CONF_SUBDEVICE_ID,
     CONFIG_ENTRY_VERSION,
+    DEVICE_TYPE_SMARTTHINGS_DHW,
+    DEVICE_TYPE_SMARTTHINGS_HVAC,
     DOMAIN,
     MAIN_DEVICE_ID,
     WIFI_KIT_MGMT_ID,
@@ -129,12 +132,13 @@ async def _async_setup_single_device(
         await _async_safe_shutdown(controller)
         return device_id, None
 
+    has_devices_list = bool(_get_config_value(entry, CONF_DEVICES))
     coordinator = SamsungClimateCoordinator(
         hass,
         controller,
         entry,
-        device_info=device_info,
-        parent_unique_id=entry.unique_id if device_id != MAIN_DEVICE_ID else None,
+        device_info=device_info if has_devices_list else None,
+        parent_unique_id=entry.unique_id if (has_devices_list and device_id != MAIN_DEVICE_ID) else None,
     )
 
     try:
@@ -165,6 +169,7 @@ def _build_device_setup_tasks(
     if not isinstance(devices_config, (list, tuple)):
         return []
 
+    has_devices_list = bool(_get_config_value(entry, CONF_DEVICES))
     setup_tasks = []
     for device_info in devices_config:
         if not isinstance(device_info, dict):
@@ -192,7 +197,7 @@ def _build_device_setup_tasks(
                 entry,
                 device_id,
                 device_name or DEFAULT_UNKNOWN,
-                device_info if device_id != MAIN_DEVICE_ID else None,
+                device_info if (has_devices_list and device_id != MAIN_DEVICE_ID) else None,
                 session,
             )
         )
@@ -222,9 +227,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
 
     # Normalize: If no sub-devices are defined, create a synthetic list for the main unit
     if not devices_config:
+        st_dev_id = _get_config_value(entry, CONF_DEVICE_ID, None)
+        is_st = device_type in (
+            DEVICE_TYPE_SMARTTHINGS_HVAC,
+            DEVICE_TYPE_SMARTTHINGS_DHW,
+        )
+        subdev_id = (
+            str(st_dev_id).strip()
+            if (is_st and st_dev_id and str(st_dev_id).strip())
+            else MAIN_DEVICE_ID
+        )
         devices_config = [
             {
-                CONF_SUBDEVICE_ID: MAIN_DEVICE_ID,
+                CONF_SUBDEVICE_ID: subdev_id,
                 CONF_NAME: _get_config_value(entry, CONF_NAME, entry.title),
             }
         ]

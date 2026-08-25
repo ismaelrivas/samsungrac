@@ -5717,20 +5717,19 @@ async def test_rest_api_ipv6_url_has_brackets(hass: HomeAssistant) -> None:
 
 @pytest.mark.asyncio
 async def test_rest_api_no_mac_abort_reason(hass: HomeAssistant) -> None:
-    """Verify mutant M81 kill, M82, M84, M85, M86: empty unique_id aborts with exact reason 'no_mac_address_found'."""
+    """Verify mutant M81 kill, M82, M84, M85, M86: empty unique_id aborts with exact reason 'no_mac_address_found' for non-SmartThings devices."""
     from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
 
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
     from custom_components.climate_ip.const import (
         CONF_DEVICE_TYPE,
-        DEVICE_TYPE_SMARTTHINGS_HVAC,
     )
 
     flow = ClimateIpConfigFlow()
     flow.hass = hass
     flow.DEBUG_ME = True
     flow.context = {}
-    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
+    flow.flow_data = {CONF_DEVICE_TYPE: "generic_rest"}
 
     with patch(
         "homeassistant.helpers.aiohttp_client.async_get_clientsession"
@@ -5744,7 +5743,7 @@ async def test_rest_api_no_mac_abort_reason(hass: HomeAssistant) -> None:
             async with asyncio.timeout(0.5):
                 res = await flow.async_step_rest_api(
                     {
-                        CONF_IP_ADDRESS: "api.smartthings.com",
+                        CONF_IP_ADDRESS: "192.168.1.50",
                         CONF_TOKEN: "valid-token-12345",
                     }
                 )
@@ -6262,6 +6261,45 @@ async def test_test_connection_safe_unknown_device_type_dict_strict(
 
 
 @pytest.mark.asyncio
+async def test_rest_api_empty_unique_id_aborts(hass: HomeAssistant) -> None:
+    """Verify mutant M77 kill, M78: unique_id vacío debe abortar con 'no_mac_address_found' para dispositivos no SmartThings."""
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
+
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+    from custom_components.climate_ip.const import (
+        CONF_DEVICE_TYPE,
+    )
+
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.context = {}
+    flow.flow_data = {CONF_DEVICE_TYPE: "generic_rest"}
+
+    with patch(
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
+    ) as mock_sess:
+        mock_get = AsyncMock()
+        mock_get.status = 200
+        mock_get.__aenter__.return_value = mock_get
+        mock_sess.return_value.get.return_value = mock_get
+
+        # Sin CONF_DEVICE_ID ni CONF_MAC → unique_id = "" → debe abortar
+        try:
+            async with asyncio.timeout(0.5):
+                result = await flow.async_step_rest_api(
+                    {
+                        CONF_IP_ADDRESS: "192.168.1.50",
+                        CONF_TOKEN: "valid-token-12345",
+                    }
+                )
+        except TimeoutError:
+            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "no_mac_address_found"
+
+
+@pytest.mark.asyncio
 async def test_rest_api_unique_id_empty_fallback_strict(hass: HomeAssistant) -> None:
     """Verify mutant M77 kill, M78: unique_id vacío debe abortar con 'no_mac_address_found', no con XXXX truthy."""
     from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
@@ -6269,14 +6307,13 @@ async def test_rest_api_unique_id_empty_fallback_strict(hass: HomeAssistant) -> 
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
     from custom_components.climate_ip.const import (
         CONF_DEVICE_TYPE,
-        DEVICE_TYPE_SMARTTHINGS_HVAC,
     )
 
     flow = ClimateIpConfigFlow()
     flow.hass = hass
     flow.DEBUG_ME = True
     flow.context = {}
-    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
+    flow.flow_data = {CONF_DEVICE_TYPE: "generic_rest"}
 
     with patch(
         "homeassistant.helpers.aiohttp_client.async_get_clientsession"
@@ -6292,7 +6329,7 @@ async def test_rest_api_unique_id_empty_fallback_strict(hass: HomeAssistant) -> 
             async with asyncio.timeout(0.5):
                 result = await flow.async_step_rest_api(
                     {
-                        CONF_IP_ADDRESS: "api.smartthings.com",
+                        CONF_IP_ADDRESS: "192.168.1.50",
                         CONF_TOKEN: "valid-token-12345",
                         # No device_id or MAC → only fallback is ""
                     }

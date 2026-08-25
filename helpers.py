@@ -542,9 +542,19 @@ async def async_check_network_reachability(
         )  # pragma: no mutate
         return True
 
+    # Strip URL scheme, paths, or ports
+    clean_host = host.split("://")[-1].split("/")[0]
+    if ":" in clean_host and not clean_host.startswith("[") and clean_host.count(":") == 1:
+        clean_host = clean_host.split(":")[0]
+    elif clean_host.startswith("[") and "]" in clean_host:
+        clean_host = clean_host[1:clean_host.index("]")]
+
+    if clean_host in ("localhost", "127.0.0.1", "::1"):
+        return True
+
     try:
         host_obj = await async_ping(  # pragma: no mutate
-            address=host,
+            address=clean_host,
             count=1,
             timeout=0.5,
             interval=0.2,

@@ -362,7 +362,13 @@ class ConnectionRequestBase(Connection):
                 raise ValueError(f"Template rendering failed: {exc}") from exc
 
         # CRITICAL FIX: Replace placeholders in URLs and headers consistently
-        params = format_placeholders(params, token, ip_address, device_id, mac)
+        cfg_dev_id = self._controller.config.get("device_id") if self._controller else None
+        effective_dev_id = (
+            cfg_dev_id
+            if (cfg_dev_id and cfg_dev_id != "main")
+            else (device_id or cfg_dev_id)
+        )
+        params = format_placeholders(params, token, ip_address, effective_dev_id, mac)
 
         with warnings.catch_warnings():
             for attempt in range(self._max_retries):

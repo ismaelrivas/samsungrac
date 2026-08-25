@@ -883,15 +883,14 @@ async def test_rest_api_broad_exception_base_error(hass: HomeAssistant) -> None:
 
 @pytest.mark.asyncio
 async def test_rest_api_unique_id_empty_fallback(hass: HomeAssistant) -> None:
-    """Verify mutant M77 kill, M78: Forces completely empty unique_id."""
+    """Verify SmartThings succeeds without requiring a MAC address."""
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 
     flow = ClimateIpConfigFlow()
     flow.hass = hass
-    # <- CORRECTION! Use valid token to pass sanitization
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
-        CONF_IP_ADDRESS: "1.1.1.1",
+        CONF_IP_ADDRESS: "127.0.0.1:8888",
         CONF_TOKEN: "valid_token_1234",
     }
     # NO DEVICE_ID OR MAC IN FLOW_DATA
@@ -901,10 +900,56 @@ async def test_rest_api_unique_id_empty_fallback(hass: HomeAssistant) -> None:
     ) as mock_sess:
         mock_get = AsyncMock()
         mock_get.status = 200
+        mock_get.json = AsyncMock(return_value={"items": [{"deviceId": "st-device-123"}]})
         mock_get.__aenter__.return_value = mock_get
         mock_sess.return_value.get.return_value = mock_get
 
-        res = await flow.async_step_rest_api({CONF_IP_ADDRESS: "1.1.1.1"})
+        res = await flow.async_step_rest_api({CONF_IP_ADDRESS: "127.0.0.1:8888"})
 
-        assert res["type"] == FlowResultType.ABORT
-        assert res["reason"] == "no_mac_address_found"
+        assert res["type"] == FlowResultType.CREATE_ENTRY
+        assert flow.flow_data[CONF_DEVICE_ID] == "st-device-123"
+        assert flow.unique_id == "st-device-123"
+        mock_sess.return_value.get.assert_called_once_with(
+            "https://127.0.0.1:8888/v1/devices",
+            headers={"Authorization": "Bearer valid_token_1234"},
+            ssl=False,
+            timeout=10,
+        )
+
+
+@pytest.mark.asyncio
+async def test_rest_api_smartthings_custom_port_and_fallback_uid(hass: HomeAssistant) -> None:
+    """Verify SmartThings with custom host:port and fallback unique_id when items empty."""
+    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_DHW,
+        CONF_IP_ADDRESS: "my-custom-host.local:8443",
+        CONF_TOKEN: "my-smartthings-pat-token-9999",
+    }
+
+    with patch(
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
+    ) as mock_sess:
+        mock_get = AsyncMock()
+        mock_get.status = 200
+        mock_get.json = AsyncMock(return_value={"items": []})
+        mock_get.__aenter__.return_value = mock_get
+        mock_sess.return_value.get.return_value = mock_get
+
+        res = await flow.async_step_rest_api({
+            CONF_IP_ADDRESS: "my-custom-host.local:8443",
+            CONF_TOKEN: "my-smartthings-pat-token-9999",
+        })
+
+        assert res["type"] == FlowResultType.CREATE_ENTRY
+        assert flow.unique_id == "smartthings_dhw_ken-9999"
+        assert flow.flow_data["name"] == "Samsung Smartthings Dhw"
+        mock_sess.return_value.get.assert_called_once_with(
+            "https://my-custom-host.local:8443/v1/devices",
+            headers={"Authorization": "Bearer my-smartthings-pat-token-9999"},
+            ssl=False,
+            timeout=10,
+        )

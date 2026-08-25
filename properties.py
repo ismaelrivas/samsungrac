@@ -712,6 +712,14 @@ class GetJsonStatus(DeviceProperty):
             ) or getattr(self._connection, "_connection_template", None)
             if conn_tmpl is not None:
                 self._connection_template = conn_tmpl
+            elif hasattr(self._connection, "_params") and self._connection._params.get("url"):
+                _LOGGER.debug(
+                    "%s [GetJsonStatus] Synthesizing connection_template from connection._params.",
+                    self.log_prefix,
+                )
+                self._connection_template = Template(
+                    json_dumps(self._connection._params), self._controller.hass
+                )
             else:
                 _LOGGER.debug(
                     "%s [GetJsonStatus] No connection_template found for aiohttp. Creating a default one.",
@@ -765,11 +773,20 @@ class GetJsonStatus(DeviceProperty):
 
         if connection.is_async_native:
             if self.connection_template is None:
-                _LOGGER.error(
-                    "%s [GetJsonStatus] Connection template is missing for async execution.",
-                    self.log_prefix,
-                )  # pragma: no mutate
-                return None
+                if hasattr(connection, "_params") and connection._params.get("url"):
+                    _LOGGER.debug(
+                        "%s [GetJsonStatus] Synthesizing connection_template from connection._params.",
+                        self.log_prefix,
+                    )
+                    self._connection_template = Template(
+                        json_dumps(connection._params), self._controller.hass
+                    )
+                else:
+                    _LOGGER.error(
+                        "%s [GetJsonStatus] Connection template is missing for async execution.",
+                        self.log_prefix,
+                    )  # pragma: no mutate
+                    return None
 
             render_context: dict[str, Any] = dict(connection._params)
 
@@ -1006,19 +1023,40 @@ class DeviceOperation(DeviceProperty):
                     if KEY_JSON_PAYLOAD in params
                     else None
                 )
-                method = params.get(KEY_METHOD)
-                url = params.get(KEY_URL)
+                method = params.get(KEY_METHOD) or (
+                    connection._params.get(KEY_METHOD)
+                    if hasattr(connection, "_params") and isinstance(connection._params, dict)
+                    else None
+                )
+                url = params.get(KEY_URL) or (
+                    connection._params.get(KEY_URL)
+                    if hasattr(connection, "_params") and isinstance(connection._params, dict)
+                    else None
+                )
+                if url is None and self._controller is not None and getattr(self._controller, "connection", None) is not None:
+                    url = getattr(self._controller.connection, "_params", {}).get(KEY_URL)
+                if method is None and self._controller is not None and getattr(self._controller, "connection", None) is not None:
+                    method = getattr(self._controller.connection, "_params", {}).get(KEY_METHOD)
+
+                if method is None and KEY_JSON_PAYLOAD in params:
+                    method = "POST"
 
                 if method is None or url is None:
                     raise ValueError(
                         f"Strict routing failed: Missing method or url in YAML configuration for {self.id}"
                     )
 
+                req_headers = params.get(KEY_HEADERS) or (
+                    connection._params.get(KEY_HEADERS)
+                    if hasattr(connection, "_params") and isinstance(connection._params, dict)
+                    else {}
+                )
+
                 response, _ = await connection.async_execute(
                     method,
                     url,
                     data_payload,
-                    params.get(KEY_HEADERS) or {},
+                    req_headers or {},
                     device_state=current_full_state,
                 )
                 if response is not None:
