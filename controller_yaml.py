@@ -274,7 +274,7 @@ class YamlController(ClimateController):
         else:
             self._temperature_unit = DEFAULT_CONF_TEMP_UNIT
         self._attributes: dict[str, Any] = {}
-        self._config = types.MappingProxyType(config)
+        self._config = dict(config)
 
         self._obj_id_cache: dict[str, DeviceProperty] | None = None
         self._cached_static_modes: (

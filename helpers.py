@@ -198,12 +198,12 @@ def tolerant_header_parsing() -> Generator[None]:
     with _header_patch_lock:
         if _HEADER_PATCH_REFCOUNT == 0:
             _HEADER_PATCH_ORIGINAL_RESPONSE = response_util.assert_header_parsing
-            _HEADER_PATCH_ORIGINAL_CONNECTION = connection_mod.assert_header_parsing
+            _HEADER_PATCH_ORIGINAL_CONNECTION = connection_mod.assert_header_parsing  # type: ignore[attr-defined]
             _HEADER_PATCH_ORIGINAL_PARSE_HEADERS = (
                 http.client.parse_headers
             )  # pragma: no mutate
             response_util.assert_header_parsing = _tolerant_assert
-            connection_mod.assert_header_parsing = _tolerant_assert
+            connection_mod.assert_header_parsing = _tolerant_assert  # type: ignore[attr-defined]
             http.client.parse_headers = _patched_parse_headers
         _HEADER_PATCH_REFCOUNT += 1
     try:
@@ -215,7 +215,7 @@ def tolerant_header_parsing() -> Generator[None]:
                 response_util.assert_header_parsing = (
                     _HEADER_PATCH_ORIGINAL_RESPONSE  # pragma: no mutate
                 )
-                connection_mod.assert_header_parsing = (
+                connection_mod.assert_header_parsing = (  # type: ignore[attr-defined]
                     _HEADER_PATCH_ORIGINAL_CONNECTION  # pragma: no mutate
                 )
                 http.client.parse_headers = (
