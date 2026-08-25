@@ -8,12 +8,12 @@ from collections.abc import Callable, Coroutine, Mapping
 import logging
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import CONF_PORT, UnitOfTemperature
 
 if TYPE_CHECKING:
     from .state import ClimateIPDeviceState
 
-from .const import ATTR_POWER  # noqa: F401
+from .const import ATTR_POWER, PORT_SAMSUNG_8888  # noqa: F401
 
 CLIMATE_CONTROLLERS: list[type[ClimateController]] = []
 
@@ -100,6 +100,7 @@ class ClimateController(ABC):
 
     def __init__(self, config: dict[str, Any], logger: logging.Logger) -> None:
         """Initialize the controller."""
+        self._config = config
         self._logger = logger
         self.hass: Any | None = None
         self._connection: Any = None
@@ -199,12 +200,43 @@ class ClimateController(ABC):
         return self.ip_address
 
     @property
-    def port(self) -> int | str | None:
-        """Return the port of the controller if configured."""
-        config = getattr(self, "_config", None)
-        if config is not None and isinstance(config, (dict, Mapping)):
-            return config.get("port")
-        return None
+    def port(self) -> int:
+        """Return the port of the controller.
+
+        Applies Fail-Fast validation:
+        - When missing or None, returns default port (PORT_SAMSUNG_8888).
+        - When provided as an int, validates range 1 <= port <= 65535 and returns it;
+          raises ValueError for out-of-range values.
+        - When provided as a string integer (e.g. "8888"), strictly parses/casts and validates range;
+          raises ValueError for invalid strings or out-of-range values.
+        - Raises TypeError for unsupported types (e.g. list, dict, float, bool).
+        """
+        raw_port = self._config.get(CONF_PORT)
+        if raw_port is None:
+            return PORT_SAMSUNG_8888
+
+        if isinstance(raw_port, bool):
+            raise TypeError("Unsupported port type: bool")
+
+        if isinstance(raw_port, int):
+            if not (1 <= raw_port <= 65535):
+                raise ValueError(
+                    f"Port must be between 1 and 65535, got {raw_port}"
+                )
+            return raw_port
+
+        if isinstance(raw_port, str):
+            stripped = raw_port.strip()
+            if not stripped.isdigit():
+                raise ValueError(f"Invalid port string: {raw_port!r}")
+            port_int = int(stripped)
+            if not (1 <= port_int <= 65535):
+                raise ValueError(
+                    f"Port must be between 1 and 65535, got {port_int}"
+                )
+            return port_int
+
+        raise TypeError(f"Unsupported port type: {type(raw_port).__name__}")
 
     @property
     def log_prefix(self) -> str:

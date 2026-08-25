@@ -306,3 +306,129 @@ def test_controller_token_callback_lifecycle() -> None:
         controller.on_token_refreshed(12345)  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="new_token must be a non-empty string"):
         controller.on_token_refreshed(["token"])  # type: ignore[arg-type]
+
+
+def test_controller_port_explicit_integer() -> None:
+    """Test Case 1: Initialize with explicit integer port and verify exact value and type."""
+    logger = logging.getLogger(__name__)
+
+    # Standard explicit port
+    controller = DummyController({"port": 2878}, logger)
+    assert controller.port == 2878
+    assert isinstance(controller.port, int)
+    assert type(controller.port) is int
+
+    # Boundary valid integer ports: 1 and 65535
+    controller_min = DummyController({"port": 1}, logger)
+    assert controller_min.port == 1
+    assert isinstance(controller_min.port, int)
+
+    controller_max = DummyController({"port": 65535}, logger)
+    assert controller_max.port == 65535
+    assert isinstance(controller_max.port, int)
+
+    controller_8888 = DummyController({"port": 8888}, logger)
+    assert controller_8888.port == 8888
+    assert isinstance(controller_8888.port, int)
+
+
+def test_controller_port_default_fallback() -> None:
+    """Test Case 2: Initialize with empty config or None port and verify default fallback."""
+    logger = logging.getLogger(__name__)
+
+    # Empty dictionary
+    controller_empty = DummyController({}, logger)
+    assert controller_empty.port == 8888
+    assert isinstance(controller_empty.port, int)
+    assert type(controller_empty.port) is int
+
+    # Explicit None port
+    controller_none = DummyController({"port": None}, logger)
+    assert controller_none.port == 8888
+    assert isinstance(controller_none.port, int)
+    assert type(controller_none.port) is int
+
+
+def test_controller_port_string_coercion_and_validation() -> None:
+    """Test Case 3: Test valid string integer coercion and invalid string rejection."""
+    logger = logging.getLogger(__name__)
+
+    # Valid string port coercion
+    controller_str = DummyController({"port": "8888"}, logger)
+    assert controller_str.port == 8888
+    assert isinstance(controller_str.port, int)
+    assert type(controller_str.port) is int
+
+    # Valid string port with whitespace and boundaries
+    controller_ws = DummyController({"port": " 2878 "}, logger)
+    assert controller_ws.port == 2878
+
+    controller_str_min = DummyController({"port": "1"}, logger)
+    assert controller_str_min.port == 1
+
+    controller_str_max = DummyController({"port": "65535"}, logger)
+    assert controller_str_max.port == 65535
+
+    # Invalid non-numeric strings raise ValueError
+    with pytest.raises(ValueError, match="Invalid port string"):
+        _ = DummyController({"port": "invalid_port"}, logger).port
+
+    with pytest.raises(ValueError, match="Invalid port string"):
+        _ = DummyController({"port": ""}, logger).port
+
+    with pytest.raises(ValueError, match="Invalid port string"):
+        _ = DummyController({"port": "   "}, logger).port
+
+    with pytest.raises(ValueError, match="Invalid port string"):
+        _ = DummyController({"port": "88.88"}, logger).port
+
+    with pytest.raises(ValueError, match="Invalid port string"):
+        _ = DummyController({"port": "-1"}, logger).port
+
+    # Out-of-range string integers raise ValueError
+    with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
+        _ = DummyController({"port": "0"}, logger).port
+
+    with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
+        _ = DummyController({"port": "65536"}, logger).port
+
+    with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
+        _ = DummyController({"port": "99999"}, logger).port
+
+
+def test_controller_port_invalid_types_and_ranges() -> None:
+    """Test Case 4: Pass invalid configurations and assert ValueError or TypeError is raised."""
+    logger = logging.getLogger(__name__)
+
+    # Out-of-range integer values -> ValueError
+    with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
+        _ = DummyController({"port": -1}, logger).port
+
+    with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
+        _ = DummyController({"port": 0}, logger).port
+
+    with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
+        _ = DummyController({"port": 65536}, logger).port
+
+    with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
+        _ = DummyController({"port": 99999}, logger).port
+
+    # Unsupported types -> TypeError
+    with pytest.raises(TypeError, match="Unsupported port type"):
+        _ = DummyController({"port": []}, logger).port
+
+    with pytest.raises(TypeError, match="Unsupported port type"):
+        _ = DummyController({"port": {}}, logger).port
+
+    with pytest.raises(TypeError, match="Unsupported port type"):
+        _ = DummyController({"port": (8888,)}, logger).port
+
+    with pytest.raises(TypeError, match="Unsupported port type"):
+        _ = DummyController({"port": 88.88}, logger).port
+
+    with pytest.raises(TypeError, match="Unsupported port type"):
+        _ = DummyController({"port": True}, logger).port
+
+    with pytest.raises(TypeError, match="Unsupported port type"):
+        _ = DummyController({"port": False}, logger).port
+
