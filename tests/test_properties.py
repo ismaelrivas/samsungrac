@@ -2209,3 +2209,273 @@ async def test_temperatureoperation_async_update_state_status_getter(
     assert val == 25.0
     assert op.value == 25.0
     assert op._device_unit == UnitOfTemperature.FAHRENHEIT
+
+
+def test_apply_optimistic_cascades_complete_matrix(mock_connection, mock_controller):
+    """Complete matrix test for apply_optimistic_cascades killing all mutant variants."""
+    prop = DeviceProperty("test_matrix_cascades", mock_connection, mock_controller)
+
+    # --- Case 1: Empty / Missing Cascades ---
+    # Missing optimistic_cascades
+    prop._config = {}
+    state_case1 = {"Operation": {"power": "Off"}}
+    prop.apply_optimistic_cascades(state_case1, "heat")
+    assert state_case1 == {"Operation": {"power": "Off"}}
+
+    # Empty list optimistic_cascades
+    prop._config = {"optimistic_cascades": []}
+    prop.apply_optimistic_cascades(state_case1, "heat")
+    assert state_case1 == {"Operation": {"power": "Off"}}
+
+    # Non-list optimistic_cascades (None, string, int)
+    prop._config = {"optimistic_cascades": None}
+    prop.apply_optimistic_cascades(state_case1, "heat")
+    assert state_case1 == {"Operation": {"power": "Off"}}
+
+    prop._config = {"optimistic_cascades": "not_a_list"}
+    prop.apply_optimistic_cascades(state_case1, "heat")
+    assert state_case1 == {"Operation": {"power": "Off"}}
+
+    # Non-dict state
+    prop._config = {
+        "optimistic_cascades": [
+            {"target_node": "Operation.power", "value_map": {"heat": "On"}}
+        ]
+    }
+    prop.apply_optimistic_cascades("not_a_dict", "heat")  # type: ignore
+
+    # --- Case 2: Exact Value Match ---
+    prop._config = {
+        "optimistic_cascades": [
+            {
+                "target_node": "Operation.power",
+                "value_map": {
+                    "off": "Off",
+                    "heat": "On",
+                    "default": "Standby",
+                },
+            }
+        ]
+    }
+    state_case2 = {"Operation": {"power": "Initial"}}
+    prop.apply_optimistic_cascades(state_case2, "off")
+    assert state_case2["Operation"]["power"] == "Off"
+
+    prop.apply_optimistic_cascades(state_case2, "heat")
+    assert state_case2["Operation"]["power"] == "On"
+
+    # Exact value match with boolean keys (Annihilating Mutant 30 & 32 at lines 599-600)
+    prop._config = {
+        "optimistic_cascades": [
+            {
+                "target_node": "Operation.power",
+                "value_map": {
+                    False: "PowerOff",
+                    True: "PowerOn",
+                },
+            }
+        ]
+    }
+    # Test bool key False mapped to "off"
+    state_bool = {"Operation": {"power": "Initial"}}
+    prop.apply_optimistic_cascades(state_bool, "off")
+    assert state_bool["Operation"]["power"] == "PowerOff"
+
+    # Test bool key False mapped to "false" (string or boolean value)
+    state_bool["Operation"]["power"] = "Initial"
+    prop.apply_optimistic_cascades(state_bool, False)
+    assert state_bool["Operation"]["power"] == "PowerOff"
+
+    state_bool["Operation"]["power"] = "Initial"
+    prop.apply_optimistic_cascades(state_bool, "false")
+    assert state_bool["Operation"]["power"] == "PowerOff"
+
+    # Test bool key True mapped to "on"
+    state_bool["Operation"]["power"] = "Initial"
+    prop.apply_optimistic_cascades(state_bool, "on")
+    assert state_bool["Operation"]["power"] == "PowerOn"
+
+    # Test bool key True mapped to "true" (string or boolean value)
+    state_bool["Operation"]["power"] = "Initial"
+    prop.apply_optimistic_cascades(state_bool, True)
+    assert state_bool["Operation"]["power"] == "PowerOn"
+
+    state_bool["Operation"]["power"] = "Initial"
+    prop.apply_optimistic_cascades(state_bool, "true")
+    assert state_bool["Operation"]["power"] == "PowerOn"
+
+    # --- Case 3: Default Fallback Match ---
+    prop._config = {
+        "optimistic_cascades": [
+            {
+                "target_node": "Operation.power",
+                "value_map": {
+                    "off": "Off",
+                    "heat": "On",
+                    "default": "Standby",
+                },
+            }
+        ]
+    }
+    state_case3 = {"Operation": {"power": "Initial"}}
+    prop.apply_optimistic_cascades(state_case3, "cool")
+    assert state_case3["Operation"]["power"] == "Standby"
+
+    state_case3["Operation"]["power"] = "Initial"
+    prop.apply_optimistic_cascades(state_case3, "dry")
+    assert state_case3["Operation"]["power"] == "Standby"
+
+    # --- Case 4: Deep Nested Paths & Device Sub-nodes ---
+    prop._config = {
+        "optimistic_cascades": [
+            {
+                "target_node": "Operation.sub.power",
+                "value_map": {
+                    "off": "Off",
+                    "heat": "On",
+                },
+            }
+        ]
+    }
+    state_case4 = {
+        "Devices": [
+            {}
+        ]
+    }
+    prop.apply_optimistic_cascades(state_case4, "heat")
+    assert state_case4["Operation"]["sub"]["power"] == "On"
+    assert state_case4["Devices"][0]["Operation"]["sub"]["power"] == "On"
+
+    # Intermediate non-dict structures get safely converted to dicts
+    state_case4_non_dict = {
+        "Operation": "primitive_string",
+        "Devices": [{"Operation": 12345}],
+    }
+    prop.apply_optimistic_cascades(state_case4_non_dict, "off")
+    assert isinstance(state_case4_non_dict["Operation"], dict)
+    assert state_case4_non_dict["Operation"]["sub"]["power"] == "Off"
+    assert isinstance(state_case4_non_dict["Devices"][0]["Operation"], dict)
+    assert state_case4_non_dict["Devices"][0]["Operation"]["sub"]["power"] == "Off"
+
+    # --- Case 5: Malformed Rules Guard ---
+    prop._config = {
+        "optimistic_cascades": [
+            None,
+            "invalid_non_dict",
+            123,
+            {"target_node": None, "value_map": {"on": "On"}},
+            {"target_node": "", "value_map": {"on": "On"}},
+            {"target_node": "Operation.power", "value_map": None},
+            {"target_node": "Operation.power", "value_map": "not_a_dict"},
+            {"target_node": "Operation.power", "value_map": 123},
+            {"value_map": {"on": "On"}},
+        ]
+    }
+    state_case5 = {"Operation": {"power": "Initial"}}
+    prop.apply_optimistic_cascades(state_case5, "on")
+    assert state_case5 == {"Operation": {"power": "Initial"}}
+
+
+async def test_device_property_async_set_value_flow_and_cascades(
+    mock_connection, mock_controller
+):
+    """Test DeviceProperty and DeviceOperation async_set_value execution flow, error handling, and line 664 mutants."""
+    # 1. Base DeviceProperty.async_set_value (strictly returns False, annihilating mutants at line 664)
+    base_prop = DeviceProperty("base_prop", mock_connection, mock_controller)
+    res1 = await base_prop.async_set_value("off")
+    assert res1 is False
+    res2 = await base_prop.async_set_value("off", device_id="main")
+    assert res2 is False
+
+    # 2. DeviceOperation with mock async connection
+    op = DeviceOperation("test_operation", mock_connection, mock_controller)
+    mock_connection.is_async_native = True
+    mock_connection.config = {"duid": "main_duid"}
+    mock_connection.async_execute = AsyncMock(return_value=({"status": "ok"}, 200))
+    op._connection_template = Template(
+        template='{"method": "POST", "url": "/api/set/{{ value }}", "json": {"state": "{{ value }}"}}',
+        hass=mock_controller.hass,
+    )
+
+    # Set value flow and connection dispatch arguments
+    success = await op.async_set_value("off", device_id="main")
+    assert success is True
+    mock_connection.async_execute.assert_awaited_once_with(
+        "POST",
+        "/api/set/off",
+        json_dumps({"state": "off"}),
+        {},
+        device_state={},
+    )
+
+    # Returned status is False when response is None
+    mock_connection.async_execute.reset_mock()
+    mock_connection.async_execute.return_value = (None, 500)
+    failed_res = await op.async_set_value("off", device_id="main")
+    assert failed_res is False
+
+    # 3. Transport error handling in async native mode
+    mock_connection.async_execute.side_effect = TimeoutError("Connection timed out")
+    with pytest.raises(
+        HomeAssistantError, match="Unexpected error when setting test_operation"
+    ):
+        await op.async_set_value("off", device_id="main")
+
+    mock_connection.async_execute.side_effect = OSError("Network unreachable")
+    with pytest.raises(
+        HomeAssistantError, match="Unexpected error when setting test_operation"
+    ):
+        await op.async_set_value("off", device_id="main")
+
+    mock_connection.async_execute.side_effect = CannotConnect("Cannot connect")
+    with pytest.raises(
+        HomeAssistantError, match="Connection error: could not set value for test_operation"
+    ):
+        await op.async_set_value("off", device_id="main")
+
+    mock_connection.async_execute.side_effect = AuthError("Unauthorized")
+    with pytest.raises(
+        HomeAssistantError, match="Connection error: could not set value for test_operation"
+    ):
+        await op.async_set_value("off", device_id="main")
+
+    # 4. Sync connection fallback flow and error handling
+    mock_connection.is_async_native = False
+    mock_connection.async_execute_with_retry = AsyncMock(return_value=True)
+    sync_res = await op.async_set_value("off", device_id="main")
+    assert sync_res is True
+    mock_connection.async_execute_with_retry.assert_awaited_once_with(
+        op.connection_template, "off", {}, "main"
+    )
+
+
+
+
+    mock_connection.async_execute_with_retry.side_effect = CannotConnect(
+        "Sync cannot connect"
+    )
+    with pytest.raises(
+        HomeAssistantError, match="Connection error: could not set value for test_operation"
+    ):
+        await op.async_set_value("off", device_id="main")
+
+    mock_connection.async_execute_with_retry.side_effect = AuthError("Sync auth failed")
+    with pytest.raises(
+        HomeAssistantError, match="Connection error: could not set value for test_operation"
+    ):
+        await op.async_set_value("off", device_id="main")
+
+    # 5. Verify optimistic cascades capability and invocation
+    assert hasattr(op, "apply_optimistic_cascades")
+    op._config = {
+        "optimistic_cascades": [
+            {
+                "target_node": "Operation.power",
+                "value_map": {"off": "Off", "on": "On"},
+            }
+        ]
+    }
+    test_state = {"Operation": {"power": "On"}}
+    op.apply_optimistic_cascades(test_state, "off")
+    assert test_state["Operation"]["power"] == "Off"
+

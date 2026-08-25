@@ -567,10 +567,13 @@ class DeviceProperty:
         self, state: dict[str, Any], value: Any, _dev_val: Any = None
     ) -> None:
         """Optimistically cascade state changes based on YAML configuration."""
+        if not isinstance(state, dict):
+            return
+
         property_config = self._config
         cascades = property_config.get(CONFIG_OPTIMISTIC_CASCADES)
 
-        if cascades is None or not isinstance(cascades, list):
+        if cascades is None or not isinstance(cascades, list) or not cascades:
             return
 
         val_str = str(value).lower() if value is not None else ""
@@ -590,7 +593,12 @@ class DeviceProperty:
             target_path = cascade_rule.get(CONFIG_TARGET_NODE)
             raw_value_map = cascade_rule.get(CONFIG_VALUE_MAP)
 
-            if target_path is None or not isinstance(raw_value_map, dict):
+            if (
+                target_path is None
+                or not isinstance(target_path, str)
+                or not target_path
+                or not isinstance(raw_value_map, dict)
+            ):
                 continue
 
             value_map: dict[str, Any] = {}

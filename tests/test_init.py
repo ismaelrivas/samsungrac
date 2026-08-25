@@ -1,4 +1,4 @@
-# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,missing-class-docstring,too-few-public-methods,too-many-lines
+# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,missing-class-docstring,too-few-public-methods,too-many-lines,too-many-locals
 """Test the Climate IP setup and actions."""
 
 from __future__ import annotations
@@ -840,6 +840,7 @@ def test_build_device_setup_tasks_device_name_and_id_strict(
 
     entry = MagicMock()
     devices_config = [
+        {"name": "Missing ID Initial Item"},  # raw_device_id is None -> MUST continue, NOT break (kills M5)
         {"id": "0", "name": "Management Wifi"},  # must be skipped
         {"id": "1", "name": "Living Room AC"},  # explicit name
         {"id": "2"},  # missing name -> DEFAULT_UNKNOWN
@@ -862,6 +863,156 @@ def test_build_device_setup_tasks_device_name_and_id_strict(
         call2_args = mock_setup_single.call_args_list[1].args
         assert call2_args[2] == "2"
         assert call2_args[3] == DEFAULT_UNKNOWN
+
+        for coro in tasks:
+            if hasattr(coro, "close"):
+                coro.close()
+
+
+def test_build_device_setup_tasks_cardinality_and_payload(
+    hass: HomeAssistant,
+) -> None:
+    """Test _build_device_setup_tasks cardinality, distinct payloads, and boundary sanitization (kills M5)."""
+    from custom_components.climate_ip import (
+        DEFAULT_UNKNOWN,
+        _build_device_setup_tasks,
+    )
+    from custom_components.climate_ip.const import MAIN_DEVICE_ID
+
+    entry = MagicMock()
+    session = MagicMock()
+
+    # 1. Single Device / Default Fallback (synthesized list for main device)
+    single_device_config = [
+        {
+            "id": MAIN_DEVICE_ID,
+            "name": "Main Unit",
+        }
+    ]
+    with patch(
+        "custom_components.climate_ip._async_setup_single_device"
+    ) as mock_setup_single:
+        tasks_single = _build_device_setup_tasks(
+            hass, entry, single_device_config, session
+        )
+
+        assert len(tasks_single) == 1
+        mock_setup_single.assert_called_once_with(
+            hass, entry, MAIN_DEVICE_ID, "Main Unit", None, session
+        )
+        for coro in tasks_single:
+            if hasattr(coro, "close"):
+                coro.close()
+
+    # 2. Multi-Device Configuration with distinct device IDs
+    sub_devices = [
+        {"id": "1", "name": "Zone 1", "model": "M1"},
+        {"id": "2", "name": "Zone 2", "model": "M2"},
+        {"id": "3", "name": "Zone 3", "model": "M3"},
+    ]
+    with patch(
+        "custom_components.climate_ip._async_setup_single_device"
+    ) as mock_setup_multi:
+        tasks_multi = _build_device_setup_tasks(hass, entry, sub_devices, session)
+
+        # Integrity & cardinality assertions
+        assert len(tasks_multi) == 3
+        assert mock_setup_multi.call_count == 3
+        for i, dev in enumerate(sub_devices):
+            assert mock_setup_multi.call_args_list[i].args == (
+                hass,
+                entry,
+                dev["id"],
+                dev["name"],
+                dev,
+                session,
+            )
+
+        for coro in tasks_multi:
+            if hasattr(coro, "close"):
+                coro.close()
+
+    # 3. Fail-Fast & Boundary Cases: interspersed malformed items, none, empty strings, invalid types
+    interleaved_config = [
+        {"name": "No ID Device"},  # raw_device_id is None -> continue (KILLS Mutant ID 5)
+        {"id": None, "name": "Explicit None ID"},  # raw_device_id is None -> continue (KILLS M5)
+        {"id": "", "name": "Empty string ID"},  # empty ID -> continue
+        {"id": "   ", "name": "Whitespace ID"},  # whitespace ID -> continue
+        "invalid_str_payload",  # non-dict -> continue
+        99999,  # non-dict -> continue
+        None,  # non-dict -> continue
+        {"id": "0", "name": "Management Wifi"},  # ID 0 -> continue
+        {"id": "1", "name": "Zone 1"},  # VALID -> task 1
+        {"no_id_here": True},  # raw_device_id is None -> continue (KILLS M5)
+        {"id": None},  # raw_device_id is None -> continue (KILLS M5)
+        {"id": "2", "name": "Zone 2"},  # VALID -> task 2
+        {"id": "   "},  # whitespace ID -> continue
+        {"id": "3"},  # VALID -> task 3
+    ]
+    with patch(
+        "custom_components.climate_ip._async_setup_single_device"
+    ) as mock_setup_interleaved:
+        tasks_interleaved = _build_device_setup_tasks(
+            hass, entry, interleaved_config, session
+        )
+
+        assert len(tasks_interleaved) == 3
+        assert mock_setup_interleaved.call_count == 3
+        calls = mock_setup_interleaved.call_args_list
+        assert calls[0].args[2] == "1"
+        assert calls[0].args[3] == "Zone 1"
+        assert calls[1].args[2] == "2"
+        assert calls[1].args[3] == "Zone 2"
+        assert calls[2].args[2] == "3"
+        assert calls[2].args[3] == DEFAULT_UNKNOWN
+
+        for coro in tasks_interleaved:
+            if hasattr(coro, "close"):
+                coro.close()
+
+    # 4. Non-iterable / Invalid devices_config container types
+    assert not _build_device_setup_tasks(hass, entry, None, session)  # type: ignore[arg-type]
+    assert not _build_device_setup_tasks(hass, entry, "invalid_str", session)  # type: ignore[arg-type]
+    assert not _build_device_setup_tasks(hass, entry, 12345, session)  # type: ignore[arg-type]
+    assert not _build_device_setup_tasks(hass, entry, {}, session)  # type: ignore[arg-type]
+
+
+async def test_async_setup_entry_empty_devices_fallback_to_main(
+    hass: HomeAssistant,
+) -> None:
+    """Test async_setup_entry creates 1 task for MAIN_DEVICE_ID when CONF_DEVICES is empty."""
+    from custom_components.climate_ip.const import MAIN_DEVICE_ID
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "ip_address": "192.168.1.100",
+            "device_type": "samsung_2878",
+            CONF_DEVICES: [],
+        },
+        title="Primary AC",
+        unique_id="test_empty_devices_main",
+    )
+    entry.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.climate_ip._async_setup_single_device",
+            new_callable=AsyncMock,
+        ) as mock_setup_single,
+        patch("custom_components.climate_ip.async_get_clientsession"),
+        patch.object(hass.config_entries, "async_forward_entry_setups"),
+    ):
+        mock_setup_single.return_value = (MAIN_DEVICE_ID, MagicMock())
+
+        result = await async_setup_entry(hass, entry)
+        assert result is True
+
+        mock_setup_single.assert_awaited_once()
+        args = mock_setup_single.call_args.args
+        assert args[2] == MAIN_DEVICE_ID
+        assert args[3] == "Primary AC"
+        assert args[4] is None
 
 
 async def test_async_setup_entry_single_device_custom_name(hass: HomeAssistant) -> None:

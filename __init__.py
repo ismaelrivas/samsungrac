@@ -162,12 +162,22 @@ def _build_device_setup_tasks(
     session: Any,
 ) -> list[Any]:
     """Build list of concurrent setup tasks for sub-devices."""
+    if not isinstance(devices_config, (list, tuple)):
+        return []
+
     setup_tasks = []
     for device_info in devices_config:
+        if not isinstance(device_info, dict):
+            continue
+
         raw_device_id = device_info.get(CONF_SUBDEVICE_ID)
         if raw_device_id is None:
             continue
-        device_id = str(raw_device_id)
+
+        device_id = str(raw_device_id).strip()
+        if not device_id:
+            continue
+
         device_name = device_info.get(CONF_NAME)
 
         if device_id == WIFI_KIT_MGMT_ID:
