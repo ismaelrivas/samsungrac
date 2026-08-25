@@ -85,6 +85,9 @@ async def test_start_listener_server_success(acquirer):
             return_value=mock_ssl_ctx,
         ) as mock_create_ssl,
         patch("asyncio.start_server", return_value=mock_server) as mock_start_server,
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml._LOGGER"
+        ) as mock_logger,
     ):
         await acquirer._start_listener_server()
 
@@ -97,6 +100,156 @@ async def test_start_listener_server_success(acquirer):
         mock_start_server.assert_called_once_with(
             acquirer._handle_client, "192.168.1.100", 8889, ssl=mock_ssl_ctx
         )
+        mock_logger.info.assert_not_called()
+
+
+async def test_start_listener_server_cleans_up_lingering_server(acquirer):
+    """Test that any lingering server from a previous attempt is closed and awaited."""
+    mock_lingering_server = AsyncMock()
+    acquirer._server = mock_lingering_server
+
+    mock_ssl_ctx = MagicMock()
+    mock_new_server = AsyncMock()
+
+    with (
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context",
+            return_value=mock_ssl_ctx,
+        ),
+        patch("asyncio.start_server", return_value=mock_new_server),
+    ):
+        await acquirer._start_listener_server()
+
+        mock_lingering_server.close.assert_called_once()
+        mock_lingering_server.wait_closed.assert_awaited_once()
+        assert acquirer._server == mock_new_server
+
+
+async def test_start_listener_server_lingering_server_exception_swallowed(acquirer):
+    """Test that exceptions during lingering server wait_closed are cleanly swallowed."""
+    mock_lingering_server = AsyncMock()
+    mock_lingering_server.wait_closed.side_effect = RuntimeError("Lingering server close error")
+    acquirer._server = mock_lingering_server
+
+    mock_ssl_ctx = MagicMock()
+    mock_new_server = AsyncMock()
+
+    with (
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context",
+            return_value=mock_ssl_ctx,
+        ),
+        patch("asyncio.start_server", return_value=mock_new_server),
+    ):
+        await acquirer._start_listener_server()
+
+        mock_lingering_server.close.assert_called_once()
+        assert acquirer._server == mock_new_server
+
+
+async def test_start_listener_server_retry_on_eaddrinuse_success(acquirer):
+    """Test retrying on next consecutive port when initial port is already in use (EADDRINUSE)."""
+    mock_ssl_ctx = MagicMock()
+    mock_server = AsyncMock()
+
+    with (
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context",
+            return_value=mock_ssl_ctx,
+        ),
+        patch(
+            "asyncio.start_server",
+            side_effect=[OSError(98, "Address already in use"), mock_server],
+        ) as mock_start_server,
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml._LOGGER"
+        ) as mock_logger,
+    ):
+        await acquirer._start_listener_server()
+
+        assert acquirer._server == mock_server
+        assert mock_start_server.call_count == 2
+        assert mock_start_server.call_args_list == [
+            call(acquirer._handle_client, "192.168.1.100", 8889, ssl=mock_ssl_ctx),
+            call(acquirer._handle_client, "192.168.1.100", 8890, ssl=mock_ssl_ctx),
+        ]
+        # offset > 0 triggered logger info exactly once
+        mock_logger.info.assert_called_once_with(
+            "Listener port %s was busy, successfully bound to fallback port %s",
+            8889,
+            8890,
+        )
+        mock_logger.debug.assert_called_once_with(
+            "Port %s already in use, trying next port", 8889
+        )
+        assert acquirer.auth_config["listener"]["port"] == 8890
+
+
+async def test_start_listener_server_eaddrinuse_exhaustion_raises(acquirer):
+    """Test that exhaustion of all retry attempts due to EADDRINUSE raises the final OSError."""
+    mock_ssl_ctx = MagicMock()
+    addr_in_use_error = OSError(98, "Address already in use")
+
+    with (
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context",
+            return_value=mock_ssl_ctx,
+        ),
+        patch(
+            "asyncio.start_server",
+            side_effect=addr_in_use_error,
+        ) as mock_start_server,
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml._LOGGER"
+        ) as mock_logger,
+    ):
+        with pytest.raises(OSError) as exc_info:
+            await acquirer._start_listener_server()
+
+        assert exc_info.value is addr_in_use_error
+        assert exc_info.value.errno == 98
+        assert mock_start_server.call_count == acquirer.MAX_PORT_RETRIES
+        assert mock_start_server.call_args_list == [
+            call(acquirer._handle_client, "192.168.1.100", 8889 + i, ssl=mock_ssl_ctx)
+            for i in range(acquirer.MAX_PORT_RETRIES)
+        ]
+        assert mock_logger.debug.call_count == acquirer.MAX_PORT_RETRIES
+        assert mock_logger.debug.call_args_list == [
+            call("Port %s already in use, trying next port", 8889 + i)
+            for i in range(acquirer.MAX_PORT_RETRIES)
+        ]
+        mock_logger.info.assert_not_called()
+        assert acquirer._server is None
+
+
+async def test_start_listener_server_unexpected_oserror_propagates_immediately(acquirer):
+    """Test that unexpected OSErrors (errno != 98) are raised immediately without retries."""
+    mock_ssl_ctx = MagicMock()
+    perm_error = OSError(13, "Permission denied")
+
+    with (
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context",
+            return_value=mock_ssl_ctx,
+        ),
+        patch(
+            "asyncio.start_server",
+            side_effect=perm_error,
+        ) as mock_start_server,
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml._LOGGER"
+        ) as mock_logger,
+    ):
+        with pytest.raises(OSError) as exc_info:
+            await acquirer._start_listener_server()
+
+        assert exc_info.value is perm_error
+        assert exc_info.value.errno == 13
+        mock_start_server.assert_called_once_with(
+            acquirer._handle_client, "192.168.1.100", 8889, ssl=mock_ssl_ctx
+        )
+        mock_logger.debug.assert_not_called()
+        mock_logger.info.assert_not_called()
 
 
 async def test_start_listener_server_custom_port_and_ciphers(
