@@ -635,7 +635,7 @@ class DeviceProperty:
             try:
                 v = render_template(self.status_template, device_state=device_state)
             except (TemplateError, TypeError, ValueError) as e:
-                _LOGGER.error(
+                _LOGGER.debug(
                     "%s Status template evaluation failed for %s: %s",
                     self.log_prefix,
                     self.id,
@@ -739,7 +739,7 @@ class GetJsonStatus(DeviceProperty):
                         return v
                 return v
             except (TemplateError, TypeError, ValueError) as e:
-                _LOGGER.error(
+                _LOGGER.debug(
                     "%s [GetJsonStatus] Status template evaluation failed: %s",
                     self.log_prefix,
                     e,

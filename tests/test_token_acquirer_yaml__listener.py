@@ -4,6 +4,7 @@
 
 import asyncio
 import json
+import re
 import ssl
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
@@ -471,6 +472,103 @@ async def test_initiate_pairing_listener_body_bytes_and_custom_headers(
         assert res == {"ok": True, "config": "listener_started"}
 
 
+async def test_initiate_pairing_raw_socket_write_exception(acquirer):
+    """Test exception when writing/draining to raw socket during initiate pairing raises CannotConnect and closes."""
+    mock_ssl_ctx = MagicMock()
+
+    with (
+        patch.object(
+            acquirer, "_start_listener_server", new_callable=AsyncMock
+        ) as mock_start,
+        patch("asyncio.open_connection") as mock_open_connection,
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context",
+            return_value=mock_ssl_ctx,
+        ),
+        patch.object(acquirer, "async_close", new_callable=AsyncMock) as mock_close,
+    ):
+        mock_reader = MockStreamReader([])
+        mock_writer = MockStreamWriter()
+        drain_error = OSError("Raw socket write/drain failed")
+        mock_writer.drain = AsyncMock(side_effect=drain_error)
+        mock_open_connection.return_value = (mock_reader, mock_writer)
+
+        with pytest.raises(CannotConnect) as exc_info:
+            await acquirer.async_initiate_pairing()
+
+        assert exc_info.value.__cause__ is drain_error
+        assert (
+            str(exc_info.value)
+            == "Failed to connect to device via raw socket (192.168.1.50:8888): Raw socket write/drain failed"
+        )
+        mock_start.assert_called_once()
+        mock_close.assert_called_once()
+
+
+async def test_initiate_pairing_raw_socket_timeout_custom_port(
+    mock_hass, listener_config
+):
+    """Test TimeoutError on custom port raises CannotConnect with custom port and calls async_close."""
+    listener_config["request_pairing"]["port"] = 7777
+    acq = GenericYamlTokenAcquirer(
+        mock_hass, "192.168.1.50", listener_config, "ac14k_m.pem"
+    )
+
+    with (
+        patch.object(acq, "_start_listener_server", new_callable=AsyncMock),
+        patch("asyncio.open_connection") as mock_open_connection,
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context",
+            return_value=MagicMock(),
+        ),
+        patch.object(acq, "async_close", new_callable=AsyncMock) as mock_close,
+    ):
+        timeout_err = TimeoutError("Connection timed out")
+        mock_open_connection.side_effect = timeout_err
+
+        with pytest.raises(CannotConnect) as exc_info:
+            await acq.async_initiate_pairing()
+
+        assert exc_info.value.__cause__ is timeout_err
+        assert (
+            str(exc_info.value)
+            == "Failed to connect to device via raw socket (192.168.1.50:7777): Connection timed out"
+        )
+        mock_close.assert_called_once()
+
+
+async def test_initiate_pairing_raw_socket_connection_error_default_port(mock_hass):
+    """Test ConnectionError when request_pairing has no port specified (fallback to 8888)."""
+    acq = GenericYamlTokenAcquirer(
+        mock_hass,
+        "192.168.1.50",
+        {"mode": "listener", "listener": {"port": 8889}},
+        cert_path=None,
+    )
+
+    with (
+        patch.object(acq, "_start_listener_server", new_callable=AsyncMock),
+        patch("asyncio.open_connection") as mock_open_connection,
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context",
+            return_value=MagicMock(),
+        ),
+        patch.object(acq, "async_close", new_callable=AsyncMock) as mock_close,
+    ):
+        conn_err = ConnectionError("Connection refused by peer")
+        mock_open_connection.side_effect = conn_err
+
+        with pytest.raises(CannotConnect) as exc_info:
+            await acq.async_initiate_pairing()
+
+        assert exc_info.value.__cause__ is conn_err
+        assert (
+            str(exc_info.value)
+            == "Failed to connect to device via raw socket (192.168.1.50:8888): Connection refused by peer"
+        )
+        mock_close.assert_called_once()
+
+
 async def test_wait_for_token_success(acquirer):
     """Test successfully waiting for and receiving a token."""
     acquirer._received_token = "new_secret_token"
@@ -542,31 +640,73 @@ async def test_wait_for_token_timeout(acquirer):
         mock_close.assert_called_once()
 
 
+async def test_handle_client_timeout_value(acquirer):
+    """Test that client handler uses exactly 10.0 seconds timeout."""
+    mock_timeout_ctx = make_mock_timeout_cm()
+    mock_reader = MockStreamReader([b'DeviceToken: "tok_123"'])
+    mock_writer = MockStreamWriter()
+
+    with patch(
+        "custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout",
+        return_value=mock_timeout_ctx,
+    ) as mock_timeout:
+        await acquirer._handle_client(mock_reader, mock_writer)
+        mock_timeout.assert_called_once_with(10.0)
+        assert acquirer._received_token == "tok_123"
+
+
+async def test_handle_client_chunk_accumulation_concatenation(acquirer):
+    """Test TCP client handler concatenating chunks across boundary where single chunks do not match regex."""
+    chunk1 = b'POST / HTTP/1.1\r\nHost: 192.168.1.100\r\n\r\n{"DeviceTok'
+    chunk2 = b'en": "accumulated_split_12345"}'
+    mock_reader = MockStreamReader([chunk1, chunk2])
+    mock_writer = MockStreamWriter()
+
+    await acquirer._handle_client(mock_reader, mock_writer)
+
+    assert acquirer._received_token == "accumulated_split_12345"
+    assert acquirer._token_received_event.is_set()
+    assert b"200 OK" in mock_writer.written_data
+
+
 async def test_handle_client_chunk_accumulation_and_regex(acquirer):
     """Test TCP client handler extracting token via regex and sending default 200 OK response."""
     chunk = b'HTTP/1.1 200 OK\r\nDeviceToken: "chunked_token_123"\r\n}'
     mock_reader = MockStreamReader([chunk])
     mock_writer = MockStreamWriter()
 
-    captured_timeouts = []
+    await acquirer._handle_client(mock_reader, mock_writer)
 
-    async def spy_wait_for(coro, timeout_seconds=None, **kwargs):
-        captured_timeouts.append(kwargs.get("timeout", timeout_seconds))
-        return await coro
+    assert mock_reader.last_read_size == 4096
+    assert acquirer._received_token == "chunked_token_123"
+    assert acquirer._token_received_event.is_set()
+    assert mock_writer.written_data == b"HTTP/1.1 200 OK\r\n\r\n"
+    assert mock_writer.closed is True
+    assert mock_writer.wait_closed_called is True
 
-    with patch(
-        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
-        side_effect=spy_wait_for,
-    ):
-        await acquirer._handle_client(mock_reader, mock_writer)
 
-        assert captured_timeouts == [10.0]
-        assert mock_reader.last_read_size == 4096
-        assert acquirer._received_token == "chunked_token_123"
-        assert acquirer._token_received_event.is_set()
-        assert mock_writer.written_data == b"HTTP/1.1 200 OK\r\n\r\n"
-        assert mock_writer.closed is True
-        assert mock_writer.wait_closed_called is True
+async def test_handle_client_multipart_requests_post_simulation(acquirer):
+    """Test full simulation of requests.post sending separate TLS packets for headers and body."""
+    headers_packet = (
+        b"POST / HTTP/1.1\r\n"
+        b"Host: 192.168.1.110:8889\r\n"
+        b"User-Agent: python-requests/2.31.0\r\n"
+        b"Accept-Encoding: gzip, deflate\r\n"
+        b"Accept: */*\r\n"
+        b"Connection: keep-alive\r\n"
+        b"Content-Length: 44\r\n"
+        b"Content-Type: application/json\r\n\r\n"
+    )
+    body_packet = b'{"DeviceToken": "EMULATOR_FAKE_TOKEN_12345"}'
+
+    mock_reader = MockStreamReader([headers_packet, body_packet])
+    mock_writer = MockStreamWriter()
+
+    await acquirer._handle_client(mock_reader, mock_writer)
+
+    assert acquirer._received_token == "EMULATOR_FAKE_TOKEN_12345"
+    assert acquirer._token_received_event.is_set()
+    assert b"200 OK" in mock_writer.written_data
 
 
 async def test_handle_client_custom_buffer_size(mock_hass, listener_config):
@@ -578,13 +718,9 @@ async def test_handle_client_custom_buffer_size(mock_hass, listener_config):
     mock_reader = MockStreamReader([b'HTTP/1.1 200 OK\r\nDeviceToken: "buf_token"\r\n'])
     mock_writer = MockStreamWriter()
 
-    with patch(
-        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
-        side_effect=mock_wait_for,
-    ):
-        await acq._handle_client(mock_reader, mock_writer)
-        assert mock_reader.last_read_size == 1024
-        assert acq._received_token == "buf_token"
+    await acq._handle_client(mock_reader, mock_writer)
+    assert mock_reader.last_read_size == 1024
+    assert acq._received_token == "buf_token"
 
 
 async def test_handle_client_explicit_utf8_decoding(mock_hass, listener_config):
@@ -592,20 +728,11 @@ async def test_handle_client_explicit_utf8_decoding(mock_hass, listener_config):
     acq = GenericYamlTokenAcquirer(
         mock_hass, "192.168.1.50", listener_config, "ac14k_m.pem"
     )
-    mock_data = MagicMock(spec=bytes)
-    mock_data.decode.return_value = 'DeviceToken: "explicit_utf8_tok"'
-
-    mock_reader = AsyncMock()
-    mock_reader.read.return_value = mock_data
+    mock_reader = MockStreamReader([b'DeviceToken: "explicit_utf8_tok"'])
     mock_writer = MockStreamWriter()
 
-    with patch(
-        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
-        side_effect=mock_wait_for,
-    ):
-        await acq._handle_client(mock_reader, mock_writer)
-        mock_data.decode.assert_called_once_with("utf-8", errors="ignore")
-        assert acq._received_token == "explicit_utf8_tok"
+    await acq._handle_client(mock_reader, mock_writer)
+    assert acq._received_token == "explicit_utf8_tok"
 
 
 async def test_handle_client_default_success_response(mock_hass):
@@ -622,15 +749,11 @@ async def test_handle_client_default_success_response(mock_hass):
     mock_reader = MockStreamReader([b'DeviceToken: "default_succ_token"'])
     mock_writer = MockStreamWriter()
 
-    with patch(
-        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
-        side_effect=mock_wait_for,
-    ):
-        await acq._handle_client(mock_reader, mock_writer)
-        assert mock_reader.last_read_size == 4096
-        assert acq._received_token == "default_succ_token"
-        assert acq._token_received_event.is_set()
-        assert mock_writer.written_data == b"HTTP/1.1 200 OK\r\n\r\n"
+    await acq._handle_client(mock_reader, mock_writer)
+    assert mock_reader.last_read_size == 4096
+    assert acq._received_token == "default_succ_token"
+    assert acq._token_received_event.is_set()
+    assert mock_writer.written_data == b"HTTP/1.1 200 OK\r\n\r\n"
 
 
 async def test_handle_client_custom_success_and_error_responses(
@@ -646,13 +769,9 @@ async def test_handle_client_custom_success_and_error_responses(
     # Success branch (token present)
     mock_reader_succ = MockStreamReader([b'DeviceToken: "valid_token_abc"'])
     mock_writer_succ = MockStreamWriter()
-    with patch(
-        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
-        side_effect=mock_wait_for,
-    ):
-        await acq._handle_client(mock_reader_succ, mock_writer_succ)
-        assert acq._received_token == "valid_token_abc"
-        assert mock_writer_succ.written_data == b"HTTP/1.1 200 CUSTOM_OK\r\n\r\n"
+    await acq._handle_client(mock_reader_succ, mock_writer_succ)
+    assert acq._received_token == "valid_token_abc"
+    assert mock_writer_succ.written_data == b"HTTP/1.1 200 CUSTOM_OK\r\n\r\n"
 
     # Reset token
     acq._received_token = None
@@ -661,14 +780,10 @@ async def test_handle_client_custom_success_and_error_responses(
     # Error branch (no token present)
     mock_reader_err = MockStreamReader([b'{"NoToken": "here"}'])
     mock_writer_err = MockStreamWriter()
-    with patch(
-        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
-        side_effect=mock_wait_for,
-    ):
-        await acq._handle_client(mock_reader_err, mock_writer_err)
-        assert acq._received_token is None
-        assert not acq._token_received_event.is_set()
-        assert mock_writer_err.written_data == b"HTTP/1.1 400 CUSTOM_BAD\r\n\r\n"
+    await acq._handle_client(mock_reader_err, mock_writer_err)
+    assert acq._received_token is None
+    assert not acq._token_received_event.is_set()
+    assert mock_writer_err.written_data == b"HTTP/1.1 400 CUSTOM_BAD\r\n\r\n"
 
 
 async def test_handle_client_no_regex_configured(mock_hass, listener_config):
@@ -681,32 +796,109 @@ async def test_handle_client_no_regex_configured(mock_hass, listener_config):
     mock_reader = MockStreamReader([b'DeviceToken: "token_123"'])
     mock_writer = MockStreamWriter()
 
-    with patch(
-        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
-        side_effect=mock_wait_for,
-    ):
-        await acq._handle_client(mock_reader, mock_writer)
-        assert acq._received_token is None
-        assert not acq._token_received_event.is_set()
-        assert b"400 Bad Request" in mock_writer.written_data
+    await acq._handle_client(mock_reader, mock_writer)
+    assert acq._received_token is None
+    assert not acq._token_received_event.is_set()
+    assert b"400 Bad Request" in mock_writer.written_data
 
 
-async def test_handle_client_wait_for_timeout(acquirer):
-    """Test client handler when asyncio.wait_for raises TimeoutError."""
-    mock_reader = MockStreamReader([b""])
+async def test_handle_client_read_timeout_handled(acquirer):
+    """Test client handler when reading hits TimeoutError."""
+    mock_reader = AsyncMock()
+    mock_reader.read.side_effect = TimeoutError("Read timeout in listener")
     mock_writer = MockStreamWriter()
 
-    async def mock_wait_for_timeout(coro, timeout_seconds=None, **kwargs):
-        raise TimeoutError("Read timeout in listener")
+    await acquirer._handle_client(mock_reader, mock_writer)
+    assert acquirer._received_token is None
+    assert mock_writer.closed is True
+    assert mock_writer.wait_closed_called is True
+
+
+async def test_handle_client_timeout_after_accumulating_data(acquirer):
+    """Test client handler extracting token after read timeout when data was accumulated."""
+    mock_reader = AsyncMock()
+    mock_reader.read.side_effect = [
+        b"DeviceToken: ",
+        TimeoutError("Read timeout"),
+    ]
+    mock_writer = MockStreamWriter()
+
+    await acquirer._handle_client(mock_reader, mock_writer)
+    assert mock_writer.closed is True
+
+
+async def test_handle_client_fallback_extraction_outside_loop(acquirer):
+    """Test client handler extracting token in fallback block when regex did not trigger in while loop."""
+    data_payload = b'DeviceToken: "fallback_token_98765"'
+    mock_reader = MockStreamReader([data_payload])
+    mock_writer = MockStreamWriter()
+
+    # First call in while loop returns None (simulating regex not matching during streaming);
+    # second call in fallback block outside the loop (lines 83-88) returns the match.
+    with patch(
+        "custom_components.climate_ip.token_acquirer_yaml.re.search",
+        side_effect=[
+            None,
+            re.search(
+                acquirer.auth_config["extract_template"]["regex"],
+                data_payload.decode("utf-8"),
+            ),
+        ],
+    ) as mock_re_search:
+        await acquirer._handle_client(mock_reader, mock_writer)
+
+        assert mock_re_search.call_count == 2
+        assert acquirer._received_token == "fallback_token_98765"
+        assert acquirer._token_received_event.is_set()
+        assert b"200 OK" in mock_writer.written_data
+
+
+async def test_handle_client_fallback_extraction_strips_quotes(acquirer):
+    """Test that fallback token extraction strictly extracts group(1) and strips quotes."""
+    acquirer.auth_config["extract_template"]["regex"] = r'Token[\s:]*([^\s]+)'
+    data_payload = b'Token: "quoted_fallback_token"'
+    mock_reader = MockStreamReader([data_payload])
+    mock_writer = MockStreamWriter()
 
     with patch(
-        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
-        side_effect=mock_wait_for_timeout,
+        "custom_components.climate_ip.token_acquirer_yaml.re.search",
+        side_effect=[
+            None,
+            re.search(r'Token[\s:]*([^\s]+)', data_payload.decode("utf-8")),
+        ],
     ):
         await acquirer._handle_client(mock_reader, mock_writer)
-        assert acquirer._received_token is None
-        assert mock_writer.closed is True
-        assert mock_writer.wait_closed_called is True
+
+        assert acquirer._received_token == "quoted_fallback_token"
+        assert acquirer._token_received_event.is_set()
+        assert b"200 OK" in mock_writer.written_data
+
+
+async def test_handle_client_timeout_triggers_fallback_extraction(acquirer):
+    """Test client handler when timeout occurs in loop and token is extracted in fallback block."""
+    mock_reader = AsyncMock()
+    mock_reader.read.side_effect = [
+        b'DeviceToken: "timeout_fallback_token"',
+        TimeoutError("Read timeout in loop"),
+    ]
+    mock_writer = MockStreamWriter()
+
+    with patch(
+        "custom_components.climate_ip.token_acquirer_yaml.re.search",
+        side_effect=[
+            None,
+            re.search(
+                acquirer.auth_config["extract_template"]["regex"],
+                'DeviceToken: "timeout_fallback_token"',
+            ),
+        ],
+    ) as mock_re_search:
+        await acquirer._handle_client(mock_reader, mock_writer)
+
+        assert mock_re_search.call_count == 2
+        assert acquirer._received_token == "timeout_fallback_token"
+        assert acquirer._token_received_event.is_set()
+        assert b"200 OK" in mock_writer.written_data
 
 
 async def test_handle_client_exception_during_write(acquirer):
@@ -716,14 +908,10 @@ async def test_handle_client_exception_during_write(acquirer):
     mock_writer = MockStreamWriter()
     mock_writer.write = MagicMock(side_effect=RuntimeError("Socket write error"))
 
-    with patch(
-        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
-        side_effect=mock_wait_for,
-    ):
-        await acquirer._handle_client(mock_reader, mock_writer)
+    await acquirer._handle_client(mock_reader, mock_writer)
 
-        assert mock_writer.closed is True
-        assert mock_writer.wait_closed_called is True
+    assert mock_writer.closed is True
+    assert mock_writer.wait_closed_called is True
 
 
 async def test_handle_client_wait_closed_exception_swallowed(acquirer):
@@ -733,13 +921,9 @@ async def test_handle_client_wait_closed_exception_swallowed(acquirer):
     mock_writer = MockStreamWriter()
     mock_writer.wait_closed = AsyncMock(side_effect=ssl.SSLError("SSL close failure"))
 
-    with patch(
-        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
-        side_effect=mock_wait_for,
-    ):
-        # Should not raise exception
-        await acquirer._handle_client(mock_reader, mock_writer)
-        assert mock_writer.closed is True
+    # Should not raise exception
+    await acquirer._handle_client(mock_reader, mock_writer)
+    assert mock_writer.closed is True
 
 
 async def test_listener_mode_defaults_when_config_empty(mock_hass):
@@ -785,10 +969,6 @@ async def test_listener_mode_defaults_when_config_empty(mock_hass):
     acq._received_token = None
     mock_reader = MockStreamReader([b'DeviceToken: "extracted_123"'])
     mock_writer = MockStreamWriter()
-    with patch(
-        "custom_components.climate_ip.token_acquirer_yaml.asyncio.wait_for",
-        side_effect=mock_wait_for,
-    ):
-        await acq._handle_client(mock_reader, mock_writer)
-        assert mock_writer.written_data == b"HTTP/1.1 400 Bad Request\r\n\r\n"
-        assert acq._received_token is None
+    await acq._handle_client(mock_reader, mock_writer)
+    assert mock_writer.written_data == b"HTTP/1.1 400 Bad Request\r\n\r\n"
+    assert acq._received_token is None

@@ -205,6 +205,9 @@ class ClimateIpConfigFlow(
             if device_type == DEVICE_TYPE_SAMSUNG_2878:
                 return await self.async_step_samsung_2878()
 
+            if device_type == DEVICE_TYPE_MIM_H03:
+                return await self.async_step_mim_h03()
+
             if device_type in DEVICE_TYPE_8888_GROUP:
                 return await self.async_step_samsung_8888()
 
@@ -335,6 +338,14 @@ class ClimateIpConfigFlow(
         """Process step for Port 8888 devices."""
         return await self._async_process_samsung_device_step(
             step_id="samsung_8888", is_8888=True, user_input=user_input
+        )
+
+    async def async_step_mim_h03(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Process step for MIM-H03 devices."""
+        return await self._async_process_samsung_device_step(
+            step_id="mim_h03", is_8888=True, user_input=user_input
         )
 
     async def async_step_rest_api(
@@ -817,6 +828,9 @@ class ClimateIpConfigFlow(
                 DEVICE_TYPE_SMARTTHINGS_DHW,
             ):
                 return await self.async_step_rest_api()
+
+            if device_type == DEVICE_TYPE_MIM_H03:
+                return await self.async_step_mim_h03()
 
             if device_type == DEVICE_TYPE_SAMSUNG_2878:
                 return await self.async_step_samsung_2878()

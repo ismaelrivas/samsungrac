@@ -58,25 +58,47 @@ class GenericYamlTokenAcquirer:
         """Handle incoming client connection on the local listener server."""
         try:
             buffer_size = self.auth_config.get("buffer_size", 4096)
-            data = await asyncio.wait_for(reader.read(buffer_size), timeout=10.0)
-            decoded_data = data.decode("utf-8", errors="ignore")
-
             extract_regex = self.auth_config.get("extract_template", {}).get("regex")
+            data = b""
             token = None
 
-            if extract_regex:
+            # Read in a loop to handle TLS record fragmentation (headers and
+            # body are typically sent as separate TLS records by HTTP clients).
+            try:
+                async with asyncio.timeout(10.0):
+                    while True:
+                        chunk = await reader.read(buffer_size)
+                        if not chunk:
+                            break
+                        data += chunk
+                        if extract_regex:
+                            decoded_check = data.decode("utf-8", errors="ignore")  # pragma: no mutate
+                            match = re.search(extract_regex, decoded_check)
+                            if match:
+                                token = match.group(1).strip('"')
+                                break
+            except TimeoutError:
+                pass  # Use whatever was accumulated before timeout
+
+            if not token and extract_regex and data:
+                # Final attempt on fully accumulated data
+                decoded_data = data.decode("utf-8", errors="ignore")  # pragma: no mutate
                 match = re.search(extract_regex, decoded_data)
                 if match:
                     token = match.group(1).strip('"')
 
             listener_cfg = self.auth_config.get("listener", {})
             if token:
+                _LOGGER.info("Token successfully received by listener.")
                 self._received_token = token
                 self._token_received_event.set()
                 response = listener_cfg.get(
                     "success_response", "HTTP/1.1 200 OK\r\n\r\n"
                 )
             else:
+                _LOGGER.warning(
+                    "Connection received by listener, but no token could be extracted."
+                )
                 response = listener_cfg.get(
                     "error_response", "HTTP/1.1 400 Bad Request\r\n\r\n"
                 )
@@ -235,40 +257,49 @@ class GenericYamlTokenAcquirer:
                 cert_path=cert_path, ciphers=ciphers, verify_mode=verify_mode
             )
 
-            reader, writer = await asyncio.open_connection(
-                self.ip_address, req_cfg.get("port", 8888), ssl=ssl_ctx
-            )
+            try:
+                reader, writer = await asyncio.open_connection(
+                    self.ip_address, req_cfg.get("port", 8888), ssl=ssl_ctx
+                )
 
-            body = req_cfg.get("payload", "")
-            body_bytes = body.encode("utf-8") if isinstance(body, str) else body
-            local_ip = getattr(self.hass.config.api, "local_ip", None) or "0.0.0.0"
-            host = f"{local_ip}:{self.auth_config['listener']['port']}"
-            path = req_cfg.get("path", "/devicetoken/request")
+                body = req_cfg.get("payload", "")
+                body_bytes = body.encode("utf-8") if isinstance(body, str) else body
+                local_ip = getattr(self.hass.config.api, "local_ip", None) or "0.0.0.0"
+                host = f"{local_ip}:{self.auth_config['listener']['port']}"
+                path = req_cfg.get("path", "/devicetoken/request")
 
-            headers = dict(req_cfg.get("headers", {}))
-            if body and "Content-Length" not in headers:
-                headers["Content-Length"] = str(len(body_bytes))
+                headers = dict(req_cfg.get("headers", {}))
+                if body and "Content-Length" not in headers:
+                    headers["Content-Length"] = str(len(body_bytes))
 
-            req_lines = [
-                f"POST {path} HTTP/1.1",
-                f"Host: {host}",
-            ]
-            for k, v in headers.items():
-                req_lines.append(f"{k}: {v}")
-            req_lines.extend(
-                ["", body if isinstance(body, str) else body.decode("utf-8")]
-            )
+                req_lines = [
+                    f"POST {path} HTTP/1.1",
+                    f"Host: {host}",
+                ]
+                for k, v in headers.items():
+                    req_lines.append(f"{k}: {v}")
+                req_lines.extend(
+                    ["", body if isinstance(body, str) else body.decode("utf-8")]
+                )
 
-            writer.write("\r\n".join(req_lines).encode("utf-8"))
-            await writer.drain()
+                writer.write("\r\n".join(req_lines).encode("utf-8"))
+                await writer.drain()
+            except (TimeoutError, ConnectionError, OSError) as err:
+                await self.async_close()
+                raise CannotConnect(
+                    f"Failed to connect to device via raw socket ({self.ip_address}:{req_cfg.get('port', 8888)}): {err}"
+                ) from err
 
             try:
                 await asyncio.wait_for(reader.read(4096), timeout=5.0)
             except Exception:
                 pass
 
-            writer.close()
-            await writer.wait_closed()
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
 
             return {"ok": True, "config": "listener_started"}
 
