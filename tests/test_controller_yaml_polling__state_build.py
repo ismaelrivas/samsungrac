@@ -1590,7 +1590,7 @@ async def test_predict_and_correct_state_mutants():
     )
 
     poller = YamlStatePoller(ctrl)
-    poller._pending_updates = {"target_temp": ("old_val", time.time())}
+    poller._pending_updates = {"target_temp": ("old_val", time.monotonic())}
 
     # 3. EXPLICIT ROUTING
     await poller.async_predict_and_correct_state(

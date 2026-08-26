@@ -320,12 +320,12 @@ async def test_sniper_update_properties_delegations():
     poller._rebuild_attributes = MagicMock()
 
     # Scenario A: < 15 seconds (Passes through convert_hass_to_dev but hits continue)
-    poller._pending_updates = {"prop1": ("pending_val", time.time() - 5.0)}
+    poller._pending_updates = {"prop1": ("pending_val", time.monotonic() - 5.0)}
     with patch.object(poller, "_get_state_node_from_prop", return_value="prop1_key"):
         await poller.async_update_properties_from_state({"dummy": "state_A"})
 
     # Escenario B: >= 15 segundos (Llama a async_update_state completo)
-    poller._pending_updates = {"prop1": ("pending_val", time.time() - 20.0)}
+    poller._pending_updates = {"prop1": ("pending_val", time.monotonic() - 20.0)}
     with patch.object(poller, "_get_state_node_from_prop", return_value="prop1_key"):
         await poller.async_update_properties_from_state({"dummy": "state_B"})
         assert prop.async_update_state.await_count >= 1
@@ -502,7 +502,7 @@ async def test_sniper_update_properties_pending_and_is_valid_mutations():
     poller._rebuild_attributes = MagicMock()
 
     # Insert pending update < 15 seconds to force L534
-    poller._pending_updates = {"prop1": ("pending_val", time.time() - 5.0)}
+    poller._pending_updates = {"prop1": ("pending_val", time.monotonic() - 5.0)}
 
     with patch.object(
         poller,

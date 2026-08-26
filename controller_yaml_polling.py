@@ -123,8 +123,6 @@ class YamlStatePoller:
         self._last_device_state: dict[str, Any] | None = None
         self._consecutive_connection_errors: int = 0
 
-        # 💥 ISOLATED PURE STATE: Stores network truth without UI pollution
-        self._pure_device_state: dict[str, Any] | None = None
         self._pure_network_state: dict[str, Any] | None = None
 
         # Caches resolved state_nodes for properties
@@ -135,7 +133,7 @@ class YamlStatePoller:
 
     def register_pending_update(self, property_id: str, value: Any) -> None:
         """Register a pending update to shield the UI from stale network polling echoes."""
-        self._pending_updates[property_id] = (value, time.time())
+        self._pending_updates[property_id] = (value, time.monotonic())
 
     def clear_pending_updates(self, keys: list[str]) -> None:
         """Clear specific pending updates (anti-flicker locks) instantly."""
@@ -146,7 +144,6 @@ class YamlStatePoller:
         """Clear internal state cache buffer to prevent stale data (anti-ghosting)."""
         self._cached_device_state = None
         self._last_device_state = None
-        self._pure_device_state = None
         if hasattr(self, "_pure_network_state"):
             self._pure_network_state = None
 
@@ -305,7 +302,7 @@ class YamlStatePoller:
 
     async def async_get_status(self) -> dict[str, Any] | None:
         """Fetch status prioritizing memory state to shield from polling flicker."""
-        now_ts = time.time()
+        now_ts = time.monotonic()
         if self._cached_device_state and (
             now_ts - self._last_state_fetch_time < self.CACHE_FRESHNESS_SEC
         ):
@@ -444,7 +441,7 @@ class YamlStatePoller:
             self._consecutive_connection_errors = 0
 
         self._cached_device_state = full_device_state
-        self._last_state_fetch_time = time.time()
+        self._last_state_fetch_time = time.monotonic()
 
         # 💥 NETWORK TRUTH STORAGE: Isolated from UI pollution
         self._pure_network_state = copy.deepcopy(full_device_state)
@@ -793,7 +790,7 @@ class YamlStatePoller:
                             exc_info=True,
                         )
 
-        now = time.time()
+        now = time.monotonic()
 
         props_by_id = {}
         for op in all_properties:

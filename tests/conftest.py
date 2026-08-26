@@ -356,7 +356,7 @@ def mock_oauth_session():
 def mock_time():
     """Original fixture restored: congela el tiempo en 100.0 para las matemáticas de TTL."""
     with patch(
-        "custom_components.climate_ip.controller_yaml_polling.time.time",
+        "custom_components.climate_ip.controller_yaml_polling.time.monotonic",
         return_value=100.0,
     ) as mock:
         yield mock

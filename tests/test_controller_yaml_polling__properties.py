@@ -69,7 +69,7 @@ def create_valid_loader():
 def _helper_evict_invalidated_pending_updates(self, push_data=None):
     if push_data is None or not isinstance(push_data, dict):
         return
-    now = time.time()
+    now = time.monotonic()
     loader = getattr(self.controller, "loader", None)
     ops = getattr(loader, "operations", {}) or {}
     props = getattr(loader, "properties", {}) or {}
@@ -198,7 +198,7 @@ async def test_update_properties_dirty_check_logic_mutants():
     poller._rebuild_attributes.assert_called_once()
 
     poller._last_device_state = state_a.copy()
-    poller._pending_updates = {"fake": ("val", time.time())}
+    poller._pending_updates = {"fake": ("val", time.monotonic())}
     poller._rebuild_attributes.reset_mock()
     await poller.async_update_properties_from_state(state_a.copy())
     poller._rebuild_attributes.assert_called_once()
@@ -275,7 +275,7 @@ async def test_async_update_properties_pending_ttl_and_degradation():
     mock_controller.loader.properties = {}
     mock_controller.loader.sensors = {}
 
-    now = time.time()
+    now = time.monotonic()
     poller._pending_updates = {
         "prop_valid": ("ha_val_valid", now - 60.0),
         "prop_stale": ("ha_val_stale", now - 60.0),
@@ -331,7 +331,7 @@ async def test_async_update_properties_dirty_check():
     mock_prop.async_update_state.assert_called_once()
     mock_prop.reset_mock()
 
-    poller._pending_updates = {"hvac": ("val", time.time())}
+    poller._pending_updates = {"hvac": ("val", time.monotonic())}
     result_pending = await poller.async_update_properties_from_state(
         fake_state, is_prediction=False, force_update=False
     )
@@ -447,7 +447,7 @@ async def test_async_update_properties_ttl():
 
     device_payload = {"WindLevel": "low_dev"}
 
-    with patch("time.time", return_value=100.0):
+    with patch("time.monotonic", return_value=100.0):
         poller._pending_updates = {"wind_speed": ("high", 95.0)}
         poller._last_device_state_str = "dirty"
         await poller.async_update_properties_from_state(device_payload)
@@ -456,7 +456,7 @@ async def test_async_update_properties_ttl():
         assert "wind_speed" in poller._pending_updates
 
     mock_prop.async_update_state.reset_mock()
-    with patch("time.time", return_value=100.0):
+    with patch("time.monotonic", return_value=100.0):
         poller._pending_updates = {"wind_speed": ("high", 40.0)}
         poller._last_device_state_str = "dirty2"
         await poller.async_update_properties_from_state(device_payload)
@@ -478,12 +478,12 @@ async def test_async_get_status_cache_ttl():
     poller._cached_device_state = {"power": "on"}
     poller._last_state_fetch_time = 100.0
 
-    with patch("time.time", return_value=102.0):
+    with patch("time.monotonic", return_value=102.0):
         await poller.async_get_status()
         poller.async_update_state.assert_called_once()
 
     poller.async_update_state.reset_mock()
-    with patch("time.time", return_value=101.99):
+    with patch("time.monotonic", return_value=101.99):
         await poller.async_get_status()
         poller.async_update_state.assert_not_called()
 
@@ -556,7 +556,7 @@ async def test_async_update_properties_loop_sequences_and_eviction_handling():
     mock_controller.loader.properties = {}
     mock_controller.loader.sensors = {}
 
-    now = time.time()
+    now = time.monotonic()
     poller._pending_updates = {
         "active_prop": ("ha_active", now - 2.0),
         "stale_prop": ("ha_stale", now - 60.0),
@@ -637,7 +637,7 @@ async def test_evict_invalidated_pending_updates():
     }
 
     poller = YamlStatePoller(mock_controller)
-    now = time.time()
+    now = time.monotonic()
     # Matching value -> evicted
     poller._pending_updates["hvac_mode"] = ("cool", now)
     assert isinstance(poller._pending_updates, dict)
@@ -668,7 +668,7 @@ async def test_evict_invalidated_pending_updates_power_on_guard():
     }
 
     poller = YamlStatePoller(mock_controller)
-    poller._pending_updates["hvac_mode"] = ("heat", time.time())
+    poller._pending_updates["hvac_mode"] = ("heat", time.monotonic())
 
     # Incoming push is Power ON (not Off) -> MUST NOT evict hvac_mode pending update!
     poller._evict_invalidated_pending_updates({"AC_FUN_POWER": "On"})
@@ -691,6 +691,7 @@ async def test_evict_invalidated_pending_updates_power_properties_fallback():
     if hasattr(mock_power_prop, "convert_hass_to_dev"):
         delattr(mock_power_prop, "convert_hass_to_dev")
     mock_power_prop.id = "power"
+    mock_power_prop.state_node = "AC_FUN_POWER"
     mock_power_prop.status_template = "{{ device_state.AC_FUN_POWER }}"
 
     # operations has NO power op (returns None), properties HAS power_prop
@@ -698,12 +699,10 @@ async def test_evict_invalidated_pending_updates_power_properties_fallback():
     mock_controller.loader.properties = {"power": mock_power_prop}
 
     poller = YamlStatePoller(mock_controller)
-    poller._pending_updates["hvac_mode"] = ("heat", 123456789.0)
+    poller._pending_updates["hvac_mode"] = ("heat", time.monotonic())
 
     # Incoming push is Power Off -> MUST evict hvac_mode pending update via properties.get("power") fallback!
-    await poller.async_update_properties_from_state(
-        {"AC_FUN_POWER": "Off"}, force_update=True, changed_keys={"AC_FUN_POWER"}
-    )
+    poller._evict_invalidated_pending_updates({"AC_FUN_POWER": "Off"})
     assert len(poller._pending_updates) == 0, (
         "Mutant survived! Eviction failed when power operation was in properties instead of operations."
     )
@@ -764,7 +763,7 @@ async def test_update_props_pending_update_uvalue():
     mock_controller.loader.properties = {"uprop": prop_uvalue}
     mock_controller.loader.operations = {}
 
-    poller._pending_updates = {"uprop": ("new_val", time.time())}
+    poller._pending_updates = {"uprop": ("new_val", time.monotonic())}
 
     await poller.async_update_properties_from_state({"some": "state"})
     assert prop_uvalue.value == "new_val"
@@ -865,7 +864,7 @@ async def test_async_update_properties_from_state_strict_logger():
     op_mock = MagicMock(id="test_op")
     op_mock.value = None  # AÑADIDO
     op_mock.async_update_state = AsyncMock()
-    poller._pending_updates = {"test_op": ("val", time.time() - 15.0)}
+    poller._pending_updates = {"test_op": ("val", time.monotonic() - 15.0)}
     poller.controller.loader.properties = {"test_op": op_mock}
     poller._get_state_node_from_prop = MagicMock(return_value=None)
 
@@ -915,7 +914,7 @@ async def test_evict_invalidated_pending_updates_strict_logic():
     poller.controller.loader.operations = {"op1": prop1, "op2": prop2}
     poller.controller.loader.properties = {}
 
-    now = time.time() - 25.0
+    now = time.monotonic() - 25.0
     poller._pending_updates = {"op1": ("v1", now), "op2": ("v2", now)}
 
     def mock_get_key(prop):
@@ -964,7 +963,7 @@ async def test_evict_invalidated_pending_updates_float_formatting_match():
     poller.controller.loader.properties = {}
     poller._get_state_node_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
 
-    now = time.time() - 25.0
+    now = time.monotonic() - 25.0
     poller._pending_updates["temperature"] = (22.0, now)
 
     # Push data is "22" string, pending expected is 22.0 float -> MUST match and evict!
@@ -989,7 +988,7 @@ async def test_evict_invalidated_pending_updates_value_mismatch_retained():
     poller.controller.loader.properties = {}
     poller._get_state_node_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
 
-    now = time.time()
+    now = time.monotonic()
     # User requested 23.0
     poller._pending_updates["temperature"] = (23.0, now)
 
@@ -1014,7 +1013,7 @@ async def test_evict_invalidated_pending_updates_ttl_fallback():
     poller._get_state_node_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
 
     # Stale timestamp (12 seconds ago > 10.0s TTL)
-    stale_time = time.time() - 12.0
+    stale_time = time.monotonic() - 12.0
     poller._pending_updates["temperature"] = (23.0, stale_time)
 
     # Incoming push data carries 22.0 (mismatch), but timestamp > 10s -> TTL fallback evicts it!
@@ -1090,7 +1089,7 @@ async def test_async_update_properties_from_state_attribute_crashes():
         assert True
 
 
-@patch("time.time", return_value=100.0)
+@patch("time.monotonic", return_value=100.0)
 async def test_update_properties_time_exact_boundary(mock_time):
     poller = YamlStatePoller(MagicMock())
     poller.controller.loader.is_fully_initialized = True
@@ -1134,7 +1133,7 @@ async def test_evict_invalidated_pending_updates_loop_mutations():
 
     poller._get_state_node_from_prop = MagicMock(side_effect=mock_get_key)
 
-    now = time.time()
+    now = time.monotonic()
     poller._pending_updates = {
         "prop1": ("data", now),
         "prop2": ("data", now),
@@ -1171,7 +1170,7 @@ async def test_evict_invalidated_pending_updates_loop_continuation():
     poller.controller.loader.properties = {}
     poller._get_state_node_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
 
-    now = time.time() - 5.0
+    now = time.monotonic() - 5.0
     # Insertion order: "null_entry" (stale), "missing_prop_id" (no prop), then "temperature" (valid)
     poller._pending_updates = {
         "null_entry": ("val_null", now - 50.0),
@@ -1200,7 +1199,7 @@ async def test_evict_invalidated_pending_updates_converter_called_strictly():
     poller.controller.loader.properties = {}
     poller._get_state_node_from_prop = MagicMock(return_value="AC_FUN_TEMPSET")
 
-    now = time.time()
+    now = time.monotonic()
     poller._pending_updates = {"temperature": (22.0, now)}
 
     await poller.async_update_properties_from_state(
@@ -1212,7 +1211,7 @@ async def test_evict_invalidated_pending_updates_converter_called_strictly():
     assert isinstance(poller._pending_updates, dict)
 
 
-@patch("time.time", return_value=100.0)
+@patch("time.monotonic", return_value=100.0)
 @pytest.mark.asyncio
 async def test_evict_invalidated_pending_updates_exact_ttl_boundary(mock_time):
     """Kills mutant mutating '>' to '>=' at line 946 (exact 10.0s TTL boundary)."""
@@ -1268,7 +1267,7 @@ async def test_evict_invalidated_pending_updates_fallbacks_and_missing_converter
 
     poller._get_state_node_from_prop = MagicMock(side_effect=mock_get_key)
 
-    now = time.time() - 25.0
+    now = time.monotonic() - 25.0
     poller._pending_updates = {
         "custom_prop": ("val_str", now),
         "hvac_mode": ("cool", now),

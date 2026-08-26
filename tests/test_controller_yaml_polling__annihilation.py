@@ -32,7 +32,7 @@ class NakedObj:
 async def test_mutant_deepcopy_async_get_status():
     """KILLS: copy.copy vs copy.deepcopy mutants in async_get_status & async_merge_device_state."""
     poller = YamlStatePoller(MagicMock())
-    poller._last_state_fetch_time = time.time()
+    poller._last_state_fetch_time = time.monotonic()
 
     # 1. Test async_get_status deepcopy
     nested_state = {"nested": {"k": "safe"}}
