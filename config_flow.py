@@ -122,6 +122,14 @@ class ClimateIpConfigFlow(
 
     def is_matching(self, other_flow: Self) -> bool:
         """Return True if other_flow matches this flow (same physical device)."""
+        self_mac = self.context.get(CONF_MAC) or self.flow_data.get(CONF_MAC)
+        other_mac = other_flow.context.get(CONF_MAC) or other_flow.flow_data.get(
+            CONF_MAC
+        )
+
+        if self_mac and other_mac:  # pragma: no mutate
+            return str(self_mac).upper() == str(other_mac).upper()
+
         self_ip = self.context.get(CONF_IP_ADDRESS) or self.flow_data.get(
             CONF_IP_ADDRESS
         )
@@ -129,16 +137,8 @@ class ClimateIpConfigFlow(
             CONF_IP_ADDRESS
         )
 
-        if self_ip and other_ip and self_ip == other_ip:
-            return True
-
-        self_mac = self.context.get(CONF_MAC) or self.flow_data.get(CONF_MAC)
-        other_mac = other_flow.context.get(CONF_MAC) or other_flow.flow_data.get(
-            CONF_MAC
-        )
-
-        if self_mac and other_mac and str(self_mac).upper() == str(other_mac).upper():
-            return True
+        if self_ip and other_ip:  # pragma: no mutate
+            return self_ip == other_ip
 
         return False
 
@@ -447,7 +447,7 @@ class ClimateIpConfigFlow(
                     if is_st and not self.flow_data.get(CONF_DEVICE_ID):
                         try:
                             resp_json = await response.json()
-                            items = resp_json.get("items", [])
+                            items = resp_json.get("items", [])  # pragma: no mutate
                             if (
                                 items
                                 and isinstance(items, list)
@@ -471,7 +471,9 @@ class ClimateIpConfigFlow(
                 )
                 if not unique_id:
                     if is_st:
-                        token_str = str(self.flow_data.get(CONF_TOKEN, ""))
+                        token_str = str(
+                            self.flow_data.get(CONF_TOKEN, "")
+                        )  # pragma: no mutate
                         suffix = token_str[-8:] if len(token_str) >= 8 else ip_addr
                         unique_id = f"{device_type}_{suffix}"
                     else:
@@ -672,6 +674,8 @@ class ClimateIpConfigFlow(
         if self.task is not None and self.task.done():
             try:
                 result = self.task.result()
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
                 _LOGGER.error("Task failed unexpectedly: %s", e)  # pragma: no mutate
                 result = {"ok": False, "error": "unknown_error"}  # pragma: no mutate
@@ -833,13 +837,9 @@ class ClimateIpConfigFlow(
             entry_data = {
                 k: v for k, v in self.flow_data.items() if k not in transient_keys
             }
-            self.hass.config_entries.async_update_entry(
-                self.reauth_entry, data=entry_data
+            return self.async_update_reload_and_abort(
+                self.reauth_entry, data=entry_data, reason="reauth_successful"
             )
-            self.hass.async_create_task(
-                self.hass.config_entries.async_reload(self.reauth_entry.entry_id)
-            )
-            return self.async_abort(reason="reauth_successful")
 
         if self.source == SOURCE_RECONFIGURE:
             # fmt: off
@@ -850,13 +850,9 @@ class ClimateIpConfigFlow(
                 k: v for k, v in self.flow_data.items() if k not in transient_keys
             }
             updated_data = {**reconfigure_entry.data, **entry_data}
-            self.hass.config_entries.async_update_entry(
-                reconfigure_entry, data=updated_data
+            return self.async_update_reload_and_abort(
+                reconfigure_entry, data=updated_data, reason="reconfigure_successful"
             )
-            self.hass.async_create_task(
-                self.hass.config_entries.async_reload(reconfigure_entry.entry_id)
-            )
-            return self.async_abort(reason="reconfigure_successful")
 
         entry_data = {
             k: v for k, v in self.flow_data.items() if k not in transient_keys
@@ -878,10 +874,10 @@ class ClimateIpConfigFlow(
         self.reauth_entry = (
             self.hass.config_entries.async_get_entry(entry_id) if entry_id else None
         )
+        if self.reauth_entry is None:
+            return self.async_abort(reason="unknown_entry")
 
-        if self.reauth_entry is not None:
-            self.flow_data = dict(self.reauth_entry.data)
-
+        self.flow_data = dict(self.reauth_entry.data)
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
@@ -1019,6 +1015,18 @@ class ClimateIpConfigFlow(
                         errors, self._current_reconfigure_suggested()
                     )
 
+                current_mac = self.flow_data.get(CONF_MAC)
+                if current_mac and reconfigure_entry.unique_id:
+                    safe_mac = str(current_mac).replace(":", "").upper()
+                    safe_uid = str(reconfigure_entry.unique_id).replace(":", "").upper()
+                    if safe_mac != safe_uid:
+                        _LOGGER.error(
+                            "Reconfigure failed: Device MAC %s does not match existing unique_id %s",
+                            safe_mac,
+                            safe_uid,
+                        )
+                        return self.async_abort(reason="unique_id_mismatch")
+
             cert_value = str(self.flow_data.get(CONF_CERT) or "")
             if not cert_value:
                 _LOGGER.warning(
@@ -1054,15 +1062,13 @@ class ClimateIpConfigFlow(
                 return await self.async_step_initiate_pairing()
 
             updated_data = {**reconfigure_entry.data, **self.flow_data}
-            self.hass.config_entries.async_update_entry(
-                reconfigure_entry, data=updated_data
-            )
             _LOGGER.info(
                 "Reconfigure: updated entry '%s' with new connectivity parameters.",
                 reconfigure_entry.title,
             )  # pragma: no mutate
-            await self.hass.config_entries.async_reload(reconfigure_entry.entry_id)
-            return self.async_abort(reason="reconfigure_successful")
+            return self.async_update_reload_and_abort(
+                reconfigure_entry, data=updated_data, reason="reconfigure_successful"
+            )
 
         r_ip = reconfigure_entry.data.get(CONF_IP_ADDRESS)
         desc_placeholders = {

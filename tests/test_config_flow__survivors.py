@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.config_entries import SOURCE_RECONFIGURE
 from homeassistant.const import CONF_DEVICE_ID, CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
+from homeassistant.core import HomeAssistant
 import pytest
 
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
@@ -105,6 +106,7 @@ async def test_kill_acquirer_auth_flow_dict_initiate_pairing(hass):
     """Kill auth_flow_dict = None mutant in async_step_initiate_pairing."""
     flow = ClimateIpConfigFlow()
     flow.hass = hass
+    flow.acquirer = MagicMock(async_close=AsyncMock())
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
         CONF_IP_ADDRESS: "192.168.1.100",
@@ -139,6 +141,7 @@ async def test_kill_acquirer_auth_flow_dict_reconfigure_confirm(hass):
     flow.hass = hass
 
     mock_entry = MagicMock()
+    mock_entry.unique_id = "AABBCCDDEEFF"
     mock_entry.data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
         CONF_IP_ADDRESS: "192.168.1.100",
@@ -328,18 +331,31 @@ async def test_kill_create_entry_more_cases(hass):
         "selected_devices": ["temp"],
         CONF_TOKEN: "new_token",
     }
-    with (
-        patch.object(hass.config_entries, "async_update_entry") as mock_update,
-        patch.object(hass.config_entries, "async_reload") as mock_reload,
-    ):
+    with patch.object(
+        flow,
+        "async_update_reload_and_abort",
+        return_value={"aborted": True, "reason": "reauth_successful"},
+    ) as mock_update_reload_and_abort:
         res_reauth = await flow._create_entry()
         assert res_reauth == {"aborted": True, "reason": "reauth_successful"}
-        mock_update.assert_called_once()
-        assert mock_update.call_args[0][0] == mock_reauth_entry
-        assert "discovered_devices" not in mock_update.call_args[1]["data"]
-        assert "selected_devices" not in mock_update.call_args[1]["data"]
-        assert mock_update.call_args[1]["data"][CONF_TOKEN] == "new_token"
-        mock_reload.assert_called_once_with("reauth_123")
+        mock_update_reload_and_abort.assert_called_once()
+        assert mock_update_reload_and_abort.call_args[0][0] == mock_reauth_entry
+        assert (
+            "discovered_devices"
+            not in mock_update_reload_and_abort.call_args.kwargs["data"]
+        )
+        assert (
+            "selected_devices"
+            not in mock_update_reload_and_abort.call_args.kwargs["data"]
+        )
+        assert (
+            mock_update_reload_and_abort.call_args.kwargs["data"][CONF_TOKEN]
+            == "new_token"
+        )
+        assert (
+            mock_update_reload_and_abort.call_args.kwargs["reason"]
+            == "reauth_successful"
+        )
 
     # 8. Reconfigure source update
     flow.reauth_entry = None
@@ -353,17 +369,27 @@ async def test_kill_create_entry_more_cases(hass):
         CONF_MAC: "11:22:33:44:55:66",
         CONF_IP_ADDRESS: "2.2.2.2",
     }
-    with (
-        patch.object(hass.config_entries, "async_update_entry") as mock_update,
-        patch.object(hass.config_entries, "async_reload") as mock_reload,
-    ):
+    with patch.object(
+        flow,
+        "async_update_reload_and_abort",
+        return_value={"aborted": True, "reason": "reconfigure_successful"},
+    ) as mock_update_reload_and_abort:
         res_reconfig = await flow._create_entry()
         assert res_reconfig == {"aborted": True, "reason": "reconfigure_successful"}
-        mock_update.assert_called_once()
-        assert mock_update.call_args[0][0] == mock_reconfig_entry
-        assert mock_update.call_args[1]["data"][CONF_IP_ADDRESS] == "2.2.2.2"
-        assert mock_update.call_args[1]["data"]["old_key"] == "old_val"
-        mock_reload.assert_called_once_with("reconfig_123")
+        mock_update_reload_and_abort.assert_called_once()
+        assert mock_update_reload_and_abort.call_args[0][0] == mock_reconfig_entry
+        assert (
+            mock_update_reload_and_abort.call_args.kwargs["data"][CONF_IP_ADDRESS]
+            == "2.2.2.2"
+        )
+        assert (
+            mock_update_reload_and_abort.call_args.kwargs["data"]["old_key"]
+            == "old_val"
+        )
+        assert (
+            mock_update_reload_and_abort.call_args.kwargs["reason"]
+            == "reconfigure_successful"
+        )
 
     # 9. Additional dev_id values: "main", "", "None" deleted; valid kept
     flow.context["source"] = "user"
@@ -575,23 +601,6 @@ async def test_kill_process_samsung_token_present_and_cert_forms(hass):
     assert res_initial["errors"] == {}
 
 
-async def test_kill_rest_api_token_invalid_form(hass):
-    """Kill mutants in async_step_rest_api for invalid token formatting."""
-    flow = ClimateIpConfigFlow()
-    flow.hass = hass
-    flow.context = {}
-    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
-
-    # Invalid token (e.g. spaces only) -> returns form with step_id="rest_api" and error on CONF_TOKEN
-    with patch("custom_components.climate_ip.helpers.sanitize_token", return_value=""):
-        res = await flow.async_step_rest_api(
-            {CONF_TOKEN: "   ", CONF_IP_ADDRESS: "192.168.1.50"}
-        )
-        assert res["type"] == "form"
-        assert res["step_id"] == "rest_api"
-        assert res["errors"] == {CONF_TOKEN: "invalid_token_format"}
-
-
 async def test_kill_reconfigure_confirm_is_8888_mim_h03_flag(hass):
     """Kill mutants in async_step_reconfigure_confirm checking is_8888 logic for MIM-H03 and 2878."""
     flow = ClimateIpConfigFlow()
@@ -628,3 +637,293 @@ async def test_kill_reconfigure_confirm_is_8888_mim_h03_flag(hass):
     res_st = await flow.async_step_reconfigure_confirm(None)
     assert res_st["type"] == "form"
     assert res_st["step_id"] == "reconfigure_confirm"
+
+
+@pytest.mark.asyncio
+async def test_create_entry_smartthings_fallback_unique_id(hass) -> None:
+    """Kill mutants generating unique_id from token in _create_entry."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.context = {"source": "user"}
+    # Provide a token of EXACTLY 8 characters to kill the `>= 8` vs `> 8` mutant
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
+        CONF_TOKEN: "12345678",
+        CONF_IP_ADDRESS: "1.1.1.1",
+    }
+    flow.async_set_unique_id = AsyncMock()
+    with patch.object(
+        flow, "async_create_entry", return_value={"type": "create_entry"}
+    ):
+        await flow._create_entry()
+        flow.async_set_unique_id.assert_called_once_with("smartthings_hvac_12345678")
+
+
+@pytest.mark.asyncio
+async def test_progress_steps_flow_state_lost_abort(hass) -> None:
+    """Kill reason=None mutants in acquirer None checks."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.acquirer = None  # Force state loss
+
+    res1 = await flow.async_step_initiate_pairing()
+    assert res1["type"] == "abort"
+    assert res1["reason"] == "flow_state_lost"
+
+    res2 = await flow.async_step_await_button()
+    assert res2["type"] == "abort"
+    assert res2["reason"] == "flow_state_lost"
+
+
+@pytest.mark.asyncio
+async def test_reauth_unknown_entry_abort(hass) -> None:
+    """Kill reason=None mutant in async_step_reauth."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.context = {"entry_id": "ghost_entry"}
+    # Force config_entries.async_get_entry to return None
+    flow.hass.config_entries.async_get_entry = MagicMock(return_value=None)
+
+    res = await flow.async_step_reauth({})
+    assert res["type"] == "abort"
+    assert res["reason"] == "unknown_entry"
+
+
+@pytest.mark.asyncio
+async def test_initiate_pairing_closes_existing_acquirer(hass) -> None:
+    """Kill condition flip mutant ensuring old acquirer is closed on fallback."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
+        CONF_IP_ADDRESS: "1.1.1.1",
+    }
+    flow.acquirer = MagicMock(async_close=AsyncMock())
+    old_acquirer = flow.acquirer
+    flow.task = MagicMock(done=lambda: True, result=lambda: {"ok": False})
+
+    with (
+        patch(
+            "custom_components.climate_ip.config_flow.ClimateIpConfigFlow._load_auth_flow_config",
+            return_value={},
+        ),
+        patch("custom_components.climate_ip.config_flow.GenericYamlTokenAcquirer"),
+    ):
+        await flow.async_step_initiate_pairing()
+
+    old_acquirer.async_close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_rest_api_items_explicit_none(hass) -> None:
+    """Kill mutant assigning None as fallback for items."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.context = {}
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
+        CONF_IP_ADDRESS: "1.1.1.1",
+        CONF_TOKEN: "valid_token_123",
+    }
+
+    with patch(
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
+    ) as mock_sess:
+        mock_response = AsyncMock(status=200)
+        mock_response.json.return_value = {"items": None}
+        mock_response.__aenter__.return_value = mock_response
+        mock_sess.return_value.get.return_value = mock_response
+
+        with (
+            patch.object(flow, "_abort_if_unique_id_configured"),
+            patch.object(flow, "_create_entry", return_value={"type": "create_entry"}),
+        ):
+            await flow.async_step_rest_api({})
+            # Should not crash and proceed to create_entry
+
+
+@pytest.mark.asyncio
+async def test_reconfigure_user_input_forwarding(hass: HomeAssistant) -> None:
+    """Kill mutant in async_step_reconfigure replacing u_input with None."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    mock_entry = MagicMock()
+    mock_entry.data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
+    mock_entry.unique_id = "AABBCCDDEEFF"
+    flow._get_reconfigure_entry = MagicMock(return_value=mock_entry)
+
+    test_input = {CONF_IP_ADDRESS: "10.0.0.1", CONF_MAC: "AA:BB:CC:DD:EE:FF"}
+
+    with patch.object(
+        flow, "async_step_reconfigure_confirm", new_callable=AsyncMock
+    ) as mock_confirm:
+        mock_confirm.return_value = {"type": "create_entry"}
+        await flow.async_step_reconfigure(test_input)
+        mock_confirm.assert_awaited_once_with(test_input)
+
+
+@pytest.mark.asyncio
+async def test_reconfigure_unique_id_mismatch(hass: HomeAssistant) -> None:
+    """Test reconfigure aborts with unique_id_mismatch when MAC does not match existing unique_id."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    mock_entry = MagicMock()
+    mock_entry.data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
+    mock_entry.unique_id = "112233445566"
+    flow._get_reconfigure_entry = MagicMock(return_value=mock_entry)
+    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
+
+    with patch.object(flow, "_async_resolve_mac_and_set_unique_id", return_value=None):
+        result = await flow.async_step_reconfigure_confirm(
+            user_input={CONF_IP_ADDRESS: "192.168.1.100", CONF_MAC: "AABBCCDDEEFF"}
+        )
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "unique_id_mismatch"
+
+
+@pytest.mark.asyncio
+async def test_async_step_rest_api_device_id_extraction(hass: HomeAssistant) -> None:
+    """Test extracting deviceId from SmartThings items array in async_step_rest_api."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.context = {}
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
+        CONF_TOKEN: "valid-smartthings-token-12345",
+    }
+
+    with patch(
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
+    ) as mock_session:
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(
+            return_value={"items": [{"deviceId": "test-st-device-123"}]}
+        )
+        mock_response.__aenter__.return_value = mock_response
+        mock_session.return_value.get.return_value = mock_response
+
+        with (
+            patch.object(
+                flow, "async_set_unique_id", new_callable=AsyncMock
+            ) as mock_set_uid,
+            patch.object(flow, "_create_entry", new_callable=AsyncMock) as mock_create,
+        ):
+            mock_create.return_value = {"type": "create_entry"}
+            result = await flow.async_step_rest_api(
+                {CONF_IP_ADDRESS: "api.smartthings.com"}
+            )
+
+            assert result["type"] == "create_entry"
+            assert flow.flow_data[CONF_DEVICE_ID] == "test-st-device-123"
+            mock_set_uid.assert_awaited_once_with("test-st-device-123")
+
+
+@pytest.mark.asyncio
+async def test_create_entry_smartthings_fallback_to_ip(
+    hass: HomeAssistant,
+) -> None:
+    """Kill mutants in _create_entry SmartThings unique_id fallback to IP (short token, no MAC)."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.context = {}
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
+        CONF_TOKEN: "short",
+        CONF_IP_ADDRESS: "192.168.1.50",
+    }
+
+    flow.async_set_unique_id = AsyncMock()
+    with patch.object(
+        flow, "async_create_entry", return_value={"type": "create_entry"}
+    ):
+        await flow._create_entry()
+        flow.async_set_unique_id.assert_called_once_with(
+            "smartthings_hvac_192.168.1.50"
+        )
+        assert flow.flow_data["unique_id"] == "smartthings_hvac_192.168.1.50"
+
+
+@pytest.mark.asyncio
+async def test_create_entry_smartthings_prefers_device_id_over_token(
+    hass: HomeAssistant,
+) -> None:
+    """Kill mutant in _create_entry where dev_id is replaced with None."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.context = {}
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
+        CONF_DEVICE_ID: "st-device-override-id",
+        CONF_TOKEN: "valid-long-token-12345678",
+        CONF_IP_ADDRESS: "192.168.1.50",
+    }
+
+    flow.async_set_unique_id = AsyncMock()
+    with patch.object(
+        flow, "async_create_entry", return_value={"type": "create_entry"}
+    ):
+        await flow._create_entry()
+        flow.async_set_unique_id.assert_called_once_with(
+            "smartthings_hvac_st-device-override-id"
+        )
+        assert flow.flow_data["unique_id"] == "smartthings_hvac_st-device-override-id"
+
+
+@pytest.mark.asyncio
+async def test_rest_api_invalid_token_returns_form_step_id(
+    hass: HomeAssistant,
+) -> None:
+    """Kill mutants in async_step_rest_api where step_id or data_schema is None or omitted on token error."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.context = {}
+    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
+
+    with patch("custom_components.climate_ip.helpers.sanitize_token", return_value=""):
+        result = await flow.async_step_rest_api(
+            {CONF_TOKEN: "   ", CONF_IP_ADDRESS: "192.168.1.10"}
+        )
+        assert result["type"] == "form"
+        assert result["step_id"] == "rest_api"
+        assert result["errors"] == {CONF_TOKEN: "invalid_token_format"}
+        assert result["data_schema"] is not None
+        schema_keys = [getattr(k, "schema", k) for k in result["data_schema"].schema]
+        assert CONF_IP_ADDRESS in schema_keys
+        assert CONF_TOKEN in schema_keys
+
+
+@pytest.mark.asyncio
+async def test_rest_api_smartthings_token_exact_8_chars_suffix(
+    hass: HomeAssistant,
+) -> None:
+    """Kill mutant 71 in async_step_rest_api checking len(token_str) >= 8 vs > 8."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.context = {}
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
+        CONF_TOKEN: "12345678",
+    }
+
+    with patch(
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
+    ) as mock_session:
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={"items": []})
+        mock_response.__aenter__.return_value = mock_response
+        mock_session.return_value.get.return_value = mock_response
+
+        with (
+            patch.object(
+                flow, "async_set_unique_id", new_callable=AsyncMock
+            ) as mock_set_uid,
+            patch.object(flow, "_create_entry", new_callable=AsyncMock) as mock_create,
+        ):
+            mock_create.return_value = {"type": "create_entry"}
+            result = await flow.async_step_rest_api({CONF_IP_ADDRESS: "192.168.1.99"})
+
+            assert result["type"] == "create_entry"
+            mock_set_uid.assert_awaited_once_with("smartthings_hvac_12345678")

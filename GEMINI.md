@@ -123,18 +123,49 @@ The workspace provides `./generate_ultra_table.py` to extract, aggregate, and re
 
 ---
 
-## 5. Integration Architecture, Quirks & Learnings
+## 5. Test Redundancy & Overlap Detection Tool (`scripts/find_test_redundancy.py`)
 
-### 5.1 Device Topologies & Pairing Flow
+The repository includes `scripts/find_test_redundancy.py` to statically audit Python test files for:
+1. **Exact Duplicate Test Names** across different test files.
+2. **High AST / Body Similarity** using normalized token sequence matching.
+3. **Cross-File Overloaded Methods Under Test** (detecting multiple tests exercising the exact same entry points/methods).
+4. **Assertion & Mock Overlaps**.
+
+### Standard CLI Options:
+* `paths`: File paths, globs, or directories (e.g. `tests/test_config_flow*.py` or `tests/`).
+* `-t, --threshold <float>`: Similarity ratio threshold between 0.0 and 1.0 (default: `0.60`).
+* `-v, --verbose`: Display complete caller lists and cross-references.
+* `--json`: Export full structured audit analysis to JSON.
+
+### Canonical Usage Examples:
+```bash
+# 1. Scan a specific grouping of tests (e.g. Config Flow suites)
+python3 scripts/find_test_redundancy.py tests/test_config_flow*.py
+
+# 2. Scan entire test suite with an 80% similarity filter
+python3 scripts/find_test_redundancy.py tests/ --threshold 0.80
+
+# 3. Scan controller and coordinator test suites
+python3 scripts/find_test_redundancy.py tests/test_controller*.py tests/test_coordinator*.py
+
+# 4. Export JSON report for automated processing
+python3 scripts/find_test_redundancy.py tests/ --json > test_redundancy_report.json
+```
+
+---
+
+## 6. Integration Architecture, Quirks & Learnings
+
+### 6.1 Device Topologies & Pairing Flow
 * **`samsung_2878`**: Legacy devices using TLS raw stream on port `2878`.
 * **`samsung_8888`**: Modern AC units. HA initiates pairing on port `8888` and listens on local port `8889` for the callback token.
 * **`mim_h03`**: Samsung MIM-H03 heatpump controller. Communicates on port `8888` via `auth_flows/samsungrac_auth.yaml` and handles indoor unit sub-devices (`_async_process_mim_h03`).
 * **`smartthings_hvac` / `smartthings_dhw`**: Cloud REST API devices.
 
-### 5.2 Home Assistant Config Flow Step Integrity Rule
+### 6.2 Home Assistant Config Flow Step Integrity Rule
 * Every step passed to `self.async_show_form(step_id="<step>", ...)` (including fallback and error recovery in `async_step_handle_error`) **MUST** correspond to a method `async_step_<step>` on `ClimateIpConfigFlow`. Otherwise, Home Assistant's `DataEntryFlow._raise_if_step_does_not_exist` will raise `UnknownStep`.
 
-### 5.3 Python 3.14 / OpenSSL 3.x Protocol Quirks
+### 6.3 Python 3.14 / OpenSSL 3.x Protocol Quirks
 * **`APPLICATION_DATA_AFTER_CLOSE_NOTIFY`:**
   During socket communication, if an AC/emulator sends a TLS `close_notify`, post-write read or socket shutdown (`writer.wait_closed()`) may raise `ssl.SSLError: [SSL: APPLICATION_DATA_AFTER_CLOSE_NOTIFY]`. Once `writer.drain()` completes successfully, the payload was delivered. Post-transmission reads and closes must be wrapped in isolated exception blocks to prevent aborting active listener servers.
 * **`TimeoutError` Hierarchy:**
@@ -142,7 +173,7 @@ The workspace provides `./generate_ultra_table.py` to extract, aggregate, and re
 * **Listener Port Retries (`EADDRINUSE`):**
   `_start_listener_server` retries up to `MAX_PORT_RETRIES = 5` ports (e.g. `8889`..`8893`) when catching `errno == 98` (`EADDRINUSE`), logging a fallback message only when `offset > 0`.
 
-### 5.4 Tools & Emulators
+### 6.4 Tools & Emulators
 * **MIM Emulator:** `/workspaces/ha_data/config/custom_components/climate_ip_tools/emulator_MIM.py`
   Simulates a Samsung MIM-H03 heatpump controller on port 8888, responding to `POST /devicetoken/request` and sending tokens back to port 8889 after 5 seconds.
 

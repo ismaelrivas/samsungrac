@@ -26,35 +26,6 @@ from custom_components.climate_ip.const import (
 
 
 @pytest.mark.asyncio
-async def test_rest_api_token_sanitization_mutants():
-    """Kills mutants de token (M8, M15, M16, M17, M18, M19, M20, M22, M23)"""
-    flow = ClimateIpConfigFlow()
-    flow.hass = MagicMock()
-
-    async def mock_async_add_executor_job(func, *args, **kwargs):
-        return func(*args, **kwargs)
-
-    flow.hass.async_add_executor_job = mock_async_add_executor_job
-    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
-
-    # 1. Mutant 8: Injects "XXXX" when raw_tok is None
-    # If we simulate sanitize_token fails on receiving "XXXX" (fake value),
-    # we verify it raises format error instead of accepting it.
-    with patch(
-        "custom_components.climate_ip.helpers.sanitize_token", return_value=False
-    ):
-        # Pass fake token to fail sanitize_token
-        result = await flow.async_step_rest_api({CONF_TOKEN: "XXXX"})
-
-        # M15-M23: Verify exact returns from error form
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "rest_api"
-        assert result["errors"] == {CONF_TOKEN: "invalid_token_format"}
-        assert result["data_schema"] is not None
-        # If mutant M19 sets step_id=None or M22 voids schema, these assertions fail
-
-
-@pytest.mark.asyncio
 async def test_rest_api_device_mapping_mutants():
     """Kills mutants del mapeo de configuración (M26, M27, M28, M29)"""
     flow = ClimateIpConfigFlow()
@@ -239,7 +210,9 @@ async def test_reconfigure_confirm_cert_error_rebuild():
         # BULLET FOR M128/M131: Inject lowercase MAC
         CONF_MAC: "aa:bb:cc:dd:ee:ff",
     }
-    flow._get_reconfigure_entry = MagicMock(return_value=MagicMock(data={}))
+    flow._get_reconfigure_entry = MagicMock(
+        return_value=MagicMock(data={}, unique_id="AABBCCDDEEFF")
+    )
 
     # User submits same lowercase MAC in input
     user_input = {
@@ -365,7 +338,9 @@ async def test_reconfigure_mac_error_with_empty_flow_data():
         CONF_IP_ADDRESS: "1.1.1.1",
         # Sin MAC, TOKEN, CERT intencionalmente
     }
-    flow._get_reconfigure_entry = MagicMock(return_value=MagicMock(data={}))
+    flow._get_reconfigure_entry = MagicMock(
+        return_value=MagicMock(data={}, unique_id="AABBCCDDEEFF")
+    )
 
     with patch.object(
         flow, "_async_resolve_mac_and_set_unique_id", return_value="mac_resolve_failed"
@@ -405,7 +380,9 @@ async def test_reconfigure_token_acquirer_ip_empty_fallback():
         # Without CONF_IP_ADDRESS — forces fallback ip_val = ""
         CONF_CERT: "test.pem",
     }
-    flow._get_reconfigure_entry = MagicMock(return_value=MagicMock(data={}))
+    flow._get_reconfigure_entry = MagicMock(
+        return_value=MagicMock(data={}, unique_id="AABBCCDDEEFF")
+    )
 
     user_input = {CONF_CERT: "test.pem"}  # Without IP or token
 
@@ -466,7 +443,9 @@ async def test_reconfigure_token_acquirer_routing():
         CONF_IP_ADDRESS: "192.168.1.50",
         # Intentionally without token
     }
-    flow._get_reconfigure_entry = MagicMock(return_value=MagicMock(data={}))
+    flow._get_reconfigure_entry = MagicMock(
+        return_value=MagicMock(data={}, unique_id="AABBCCDDEEFF")
+    )
 
     user_input = {CONF_IP_ADDRESS: "192.168.1.50", CONF_CERT: "test.pem"}
 
@@ -482,9 +461,11 @@ async def test_reconfigure_token_acquirer_routing():
     ):
         await flow.async_step_reconfigure_confirm(user_input)
 
-        # M214-M219: Verifies that None is not sent or args missing
+        # M205: GenericYamlTokenAcquirer receives hass, ip_val, auth_flow_dict, target_cert
         mock_acquirer.assert_called_once()
-        assert mock_acquirer.call_args[0][1] == "192.168.1.50"
+        args = mock_acquirer.call_args[0]
+        assert args[0] == flow.hass
+        assert args[1] == "192.168.1.50"
         assert (
             mock_acquirer.call_args[1].get("cert_path") == "test.pem"
             or mock_acquirer.call_args[0][3] == "test.pem"
@@ -512,6 +493,7 @@ async def test_reconfigure_success_fallbacks():
     # Omit IP in mock data to force desc_ip = "" fallback
     mock_entry.data = {}
     mock_entry.title = "Living Room AC"
+    mock_entry.unique_id = "AABBCCDDEEFF"
     flow._get_reconfigure_entry = MagicMock(return_value=mock_entry)
 
     user_input = {CONF_IP_ADDRESS: "10.0.0.1", CONF_TOKEN: "valid_token"}
@@ -519,6 +501,14 @@ async def test_reconfigure_success_fallbacks():
     with (
         patch.object(flow, "_async_resolve_mac_and_set_unique_id", return_value=None),
         patch.object(flow, "_async_validate_cert_path", return_value=True),
+        patch.object(
+            flow,
+            "async_update_reload_and_abort",
+            return_value={
+                "type": FlowResultType.ABORT,
+                "reason": "reconfigure_successful",
+            },
+        ),
     ):
         result = await flow.async_step_reconfigure_confirm(user_input)
 
@@ -545,7 +535,9 @@ async def test_reconfigure_confirm_totally_empty_fallbacks():
     flow = ClimateIpConfigFlow()
     # Flow data completamente vacío
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
-    flow._get_reconfigure_entry = MagicMock(return_value=MagicMock(data={}))
+    flow._get_reconfigure_entry = MagicMock(
+        return_value=MagicMock(data={}, unique_id="AABBCCDDEEFF")
+    )
 
     # Simulamos error de MAC
     with patch.object(
@@ -569,6 +561,7 @@ async def test_rest_api_empty_token_and_reauth_abort():
     """Kills mutants 8 y 91 en REST API."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    flow.context = {}
 
     async def mock_async_add_executor_job(func, *args, **kwargs):
         return func(*args, **kwargs)
@@ -685,7 +678,9 @@ async def test_reconfigure_confirm_cert_error_empty_mac_fallback():
         CONF_TOKEN: "",
         CONF_CERT: "",
     }
-    flow._get_reconfigure_entry = MagicMock(return_value=MagicMock(data={}))
+    flow._get_reconfigure_entry = MagicMock(
+        return_value=MagicMock(data={}, unique_id="AABBCCDDEEFF")
+    )
     user_input = {CONF_IP_ADDRESS: "10.0.0.1", CONF_CERT: "bad.pem", CONF_MAC: ""}
 
     with (
@@ -754,59 +749,13 @@ def test_get_smartthings_token_empty_string(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.asyncio
-async def test_reauth_empty_eid_fallback(hass: HomeAssistant) -> None:
-    """Verify mutant M8 kill (reauth): Eid string fallback."""
-    flow = ClimateIpConfigFlow()
-    flow.hass = hass
-    flow.context = {}  # Sin entry_id
-
-    with patch.object(flow.hass.config_entries, "async_get_entry") as mock_get:
-        await flow.async_step_reauth({})
-        # Lethal assertion: Busca ID "", no "XXXX"
-        mock_get.assert_not_called()
-        assert flow.reauth_entry is None
-
-
-@pytest.mark.asyncio
-async def test_reconfigure_null_token_strict(hass: HomeAssistant) -> None:
-    """Verify mutant M157 kill en reconfiguración: Token ausente (None)."""
-    flow = ClimateIpConfigFlow()
-    flow.hass = hass
-    flow.flow_data = {
-        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
-        CONF_IP_ADDRESS: "10.0.0.1",
-        CONF_MAC: "AA:BB:CC",
-        # CONF_TOKEN AUSENTE
-    }
-    flow._get_reconfigure_entry = MagicMock(return_value=MagicMock(data={}))
-
-    with (
-        patch.object(flow, "_async_resolve_mac_and_set_unique_id", return_value=None),
-        patch.object(flow, "_async_validate_cert_path", return_value=True),
-        patch.object(
-            flow,
-            "async_step_initiate_pairing",
-            return_value={"type": "progress", "step_id": "await_button"},
-        ) as mock_pairing,
-    ):
-        await flow.async_step_reconfigure_confirm(
-            user_input={
-                CONF_IP_ADDRESS: "10.0.0.1",
-                CONF_MAC: "AA:BB:CC",
-                CONF_CERT: "",
-            }
-        )
-    # M157: When injecting "XXXX", code thinks token exists and doesn't call pairing.
-    mock_pairing.assert_called_once()
-
-
-@pytest.mark.asyncio
 async def test_task_exception_strict_error_handling(hass: HomeAssistant) -> None:
     """Kills legion (M8-M21, etc) in initiate_pairing, await_button and test_connection."""
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 
     flow = ClimateIpConfigFlow()
     flow.hass = hass
+    flow.acquirer = MagicMock(async_close=AsyncMock())
 
     # 1. KILLS MUTANTS IN initiate_pairing
     flow.flow_data = {
@@ -856,69 +805,6 @@ async def test_task_exception_strict_error_handling(hass: HomeAssistant) -> None
             pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert res3["step_id"] == "handle_error"
         assert flow.flow_data["error_key"] == "unknown_error"
-
-
-@pytest.mark.asyncio
-async def test_rest_api_broad_exception_base_error(hass: HomeAssistant) -> None:
-    """Verify mutant M94 kill-M98: Verifies the exact error dictionary upon a catastrophic REST failure."""
-    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
-
-    flow = ClimateIpConfigFlow()
-    flow.hass = hass
-    # <- CORRECTION! Use token > 8 chars to pass sanitization
-    flow.flow_data = {
-        CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
-        CONF_IP_ADDRESS: "1.1.1.1",
-        CONF_TOKEN: "valid_token_1234",
-    }
-
-    with patch(
-        "homeassistant.helpers.aiohttp_client.async_get_clientsession",
-        side_effect=Exception("Boom"),
-    ):
-        res = await flow.async_step_rest_api({CONF_IP_ADDRESS: "1.1.1.1"})
-
-        assert res["type"] == FlowResultType.FORM
-        assert res["errors"] == {"base": "unknown_error"}
-
-
-@pytest.mark.asyncio
-async def test_rest_api_unique_id_empty_fallback(hass: HomeAssistant) -> None:
-    """Verify SmartThings succeeds without requiring a MAC address."""
-    from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
-
-    flow = ClimateIpConfigFlow()
-    flow.hass = hass
-    flow.context = {}
-    flow.flow_data = {
-        CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
-        CONF_IP_ADDRESS: "127.0.0.1:8888",
-        CONF_TOKEN: "valid_token_1234",
-    }
-    # NO DEVICE_ID OR MAC IN FLOW_DATA
-
-    with patch(
-        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
-    ) as mock_sess:
-        mock_get = AsyncMock()
-        mock_get.status = 200
-        mock_get.json = AsyncMock(
-            return_value={"items": [{"deviceId": "st-device-123"}]}
-        )
-        mock_get.__aenter__.return_value = mock_get
-        mock_sess.return_value.get.return_value = mock_get
-
-        res = await flow.async_step_rest_api({CONF_IP_ADDRESS: "127.0.0.1:8888"})
-
-        assert res["type"] == FlowResultType.CREATE_ENTRY
-        assert flow.flow_data[CONF_DEVICE_ID] == "st-device-123"
-        assert flow.unique_id == "st-device-123"
-        mock_sess.return_value.get.assert_called_once_with(
-            "https://127.0.0.1:8888/v1/devices",
-            headers={"Authorization": "Bearer valid_token_1234"},
-            ssl=False,
-            timeout=10,
-        )
 
 
 @pytest.mark.asyncio

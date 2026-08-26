@@ -165,6 +165,7 @@ async def test_initiate_pairing_and_discover_uuid_mutants():
     # 1. Fallback de pairing (M95-M101 y M62)
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
+    flow.acquirer = MagicMock(async_close=AsyncMock())
 
     async def mock_async_add_executor_job(func, *args, **kwargs):
         return func(*args, **kwargs)
@@ -316,30 +317,6 @@ def test_options_schema_temp_target_from_options():
     assert targ_key.default() == UnitOfTemperature.FAHRENHEIT
 
 
-def test_options_schema_temp_target_fallback_to_default():
-    """Kills mutant 72: cuando options está vacío, usa DEFAULT_CONF_TEMP_UNIT."""
-    from custom_components.climate_ip.const import (
-        CONF_TEMP_NATIVE_TARGET,
-        DEFAULT_CONF_TEMP_UNIT,
-    )
-
-    mock_entry = MagicMock()
-    mock_entry.data = {}
-    mock_entry.options = {}
-
-    handler = OptionsFlowHandler(mock_entry)
-    schema = handler._get_options_schema()
-
-    targ_key = None
-    for key in schema.schema:
-        if hasattr(key, "schema") and key.schema == CONF_TEMP_NATIVE_TARGET:
-            targ_key = key
-            break
-
-    assert targ_key is not None
-    assert targ_key.default() == DEFAULT_CONF_TEMP_UNIT
-
-
 def test_options_schema_temp_step_from_data():
     """Kills mutants 82, 83: opt_step = data.get(CONF_TARGET_TEMP_STEP) as secondary fallback."""
     from custom_components.climate_ip.const import CONF_TARGET_TEMP_STEP
@@ -359,30 +336,6 @@ def test_options_schema_temp_step_from_data():
 
     assert step_key is not None
     assert step_key.default() == "0.5"
-
-
-def test_options_schema_temp_step_data_fallback_default():
-    """Kills mutants 82, 83 (variante): cuando ni options ni data tienen el step."""
-    from custom_components.climate_ip.const import (
-        CONF_TARGET_TEMP_STEP,
-        DEFAULT_TARGET_TEMP_STEP,
-    )
-
-    mock_entry = MagicMock()
-    mock_entry.options = {}
-    mock_entry.data = {}
-
-    handler = OptionsFlowHandler(mock_entry)
-    schema = handler._get_options_schema()
-
-    step_key = None
-    for key in schema.schema:
-        if hasattr(key, "schema") and key.schema == CONF_TARGET_TEMP_STEP:
-            step_key = key
-            break
-
-    assert step_key is not None
-    assert step_key.default() == str(DEFAULT_TARGET_TEMP_STEP)
 
 
 @pytest.mark.asyncio

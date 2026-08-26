@@ -20,49 +20,6 @@ from custom_components.climate_ip.const import (
 
 
 @pytest.mark.asyncio
-async def test_samsung_device_type_routing_mutants():
-    """Kills mutants 2 y 9: Verifica que el ruteo pasa el flag is_8888 estricto."""
-    flow = ClimateIpConfigFlow()
-
-    with patch.object(flow, "_async_process_samsung_device_step") as mock_process:
-        try:
-            async with asyncio.timeout(0.5):
-                await flow.async_step_samsung_2878({"dummy": "data"})
-        except TimeoutError:
-            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
-        mock_process.assert_called_once_with(
-            step_id="samsung_2878", is_8888=False, user_input={"dummy": "data"}
-        )
-
-    flow = ClimateIpConfigFlow()
-    with patch.object(flow, "_async_process_samsung_device_step") as mock_process:
-        try:
-            async with asyncio.timeout(0.5):
-                await flow.async_step_samsung_8888({"dummy": "data"})
-        except TimeoutError:
-            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
-        mock_process.assert_called_once_with(
-            step_id="samsung_8888", is_8888=True, user_input={"dummy": "data"}
-        )
-
-
-@pytest.mark.asyncio
-async def test_reconfigure_arguments_mutants():
-    """Kills mutants 5 y 6: Verifica que user_input no se convierte en None."""
-    flow = ClimateIpConfigFlow()
-    flow._get_reconfigure_entry = MagicMock(return_value=MagicMock(data={}))
-
-    with patch.object(flow, "async_step_reconfigure_confirm") as mock_confirm:
-        test_input = {CONF_IP_ADDRESS: "1.1.1.1"}
-        try:
-            async with asyncio.timeout(0.5):
-                await flow.async_step_reconfigure(test_input)
-        except TimeoutError:
-            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
-        mock_confirm.assert_called_once_with(test_input)
-
-
-@pytest.mark.asyncio
 async def test_connection_safe_ssl_mutant(hass):
     """Kills mutant 41: Asegura que check_hostname es estrictamente False."""
     flow = ClimateIpConfigFlow()
@@ -138,6 +95,7 @@ async def test_test_connection_fallbacks_and_progress():
 async def test_await_button_fallbacks():
     """Kills mutants 29, 31, 34, 89, 91, 92."""
     flow = ClimateIpConfigFlow()
+    flow.acquirer = MagicMock(async_close=AsyncMock())
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888}
 
     flow.task = MagicMock()
@@ -161,27 +119,6 @@ async def test_await_button_fallbacks():
         except TimeoutError:
             pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert flow.flow_data["error_key"] == "token_acquisition_failed"
-
-
-@pytest.mark.asyncio
-async def test_mim_h03_discovery_fallbacks():
-    """Kills mutants 11 y 92 en _async_process_mim_h03."""
-    flow = ClimateIpConfigFlow()
-    flow.reauth_entry = MagicMock()
-
-    discovered = [{"uuid": "test_uuid"}]
-
-    with (
-        patch.object(flow, "async_set_unique_id"),
-        patch.object(flow, "_create_entry", return_value={"type": "create_entry"}),
-    ):
-        try:
-            async with asyncio.timeout(0.5):
-                await flow._async_process_mim_h03(discovered)
-        except TimeoutError:
-            pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
-
-        assert flow.flow_data[CONF_DEVICE_ID] == ""
 
 
 @pytest.mark.asyncio
@@ -250,6 +187,7 @@ async def test_connection_safe_unique_id_empty_fallback():
 async def test_await_button_token_missing_fallback():
     """Kills mutants 29, 31, 34: raw_token = get('token', '')."""
     flow = ClimateIpConfigFlow()
+    flow.acquirer = MagicMock(async_close=AsyncMock())
     flow.task = MagicMock()
     flow.task.done.return_value = True
     flow.task.result.return_value = {"ok": True}

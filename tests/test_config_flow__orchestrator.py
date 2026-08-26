@@ -12,44 +12,10 @@ import pytest
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 from custom_components.climate_ip.const import (
     CONF_DEVICE_TYPE,
-    CONF_NAME,
     DEVICE_TYPE_MIM_H03,
     DEVICE_TYPE_SAMSUNG_2878,
     DEVICE_TYPE_SAMSUNG_8888,
 )
-
-
-@pytest.mark.asyncio
-async def test_form_user_step(hass: HomeAssistant) -> None:
-    """Test user step form rendering and selection."""
-    flow = ClimateIpConfigFlow()
-    flow.hass = hass
-
-    result = await flow.async_step_user(None)
-    assert result["type"] == FlowResultType.FORM
-    assert result["step_id"] == "user"
-
-    with patch.object(
-        flow, "async_step_samsung_2878", new_callable=AsyncMock
-    ) as mock_step:
-        mock_step.return_value = {
-            "type": FlowResultType.FORM,
-            "step_id": "samsung_2878",
-        }
-        _ = await flow.async_step_user({CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878})
-        assert flow.flow_data[CONF_DEVICE_TYPE] == DEVICE_TYPE_SAMSUNG_2878
-        mock_step.assert_called_once()
-
-    with patch.object(
-        flow, "async_step_mim_h03", new_callable=AsyncMock
-    ) as mock_step_mim:
-        mock_step_mim.return_value = {
-            "type": FlowResultType.FORM,
-            "step_id": "mim_h03",
-        }
-        _ = await flow.async_step_user({CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03})
-        assert flow.flow_data[CONF_DEVICE_TYPE] == DEVICE_TYPE_MIM_H03
-        mock_step_mim.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -149,7 +115,7 @@ async def test_is_matching_ip_and_mac(hass: HomeAssistant) -> None:
     flow2 = ClimateIpConfigFlow()
     flow2.flow_data = {CONF_IP_ADDRESS: "192.168.1.10", CONF_MAC: "112233445566"}
 
-    assert flow1.is_matching(flow2) is True
+    assert flow1.is_matching(flow2) is False
 
     flow3 = ClimateIpConfigFlow()
     flow3.flow_data = {CONF_IP_ADDRESS: "192.168.1.11", CONF_MAC: "aabbccddeeff"}
@@ -157,19 +123,12 @@ async def test_is_matching_ip_and_mac(hass: HomeAssistant) -> None:
     assert flow1.is_matching(flow3) is True
 
 
-@pytest.mark.asyncio
-async def test_create_entry_logic(hass: HomeAssistant) -> None:
-    """Test _create_entry builds correct title and entry data."""
-    flow = ClimateIpConfigFlow()
-    flow.hass = hass
-    flow.flow_data = {
-        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888,
-        CONF_MAC: "001122334455",
-        CONF_NAME: "Living Room AC",
-    }
+def test_is_matching_asymmetric_inputs() -> None:
+    """Kill 'and' to 'or' logic flips in is_matching."""
+    flow1 = ClimateIpConfigFlow()
+    flow1.flow_data = {CONF_MAC: "AA:BB:CC"}
+    flow2 = ClimateIpConfigFlow()
+    flow2.flow_data = {CONF_IP_ADDRESS: "1.1.1.1"}  # Missing MAC
 
-    with patch.object(flow, "async_set_unique_id", new_callable=AsyncMock):
-        result = await flow._create_entry()
-        assert result["type"] == FlowResultType.CREATE_ENTRY
-        assert "Living Room AC" in result["title"]
-        assert "001122334455" in result["title"]
+    # If 'and' was flipped to 'or', this would throw AttributeError on None.upper()
+    assert flow1.is_matching(flow2) is False
