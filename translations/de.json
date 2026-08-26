@@ -109,6 +109,7 @@
       "final_validation_failed": "Konfiguration fehlgeschlagen. Die Verbindung konnte mit den neu erhaltenen Anmeldeinformationen nicht überprüft werden."
     },
     "abort": {
+      "flow_state_lost": "Die Kopplungssitzung ist verloren gegangen (z. B. nach einem Neustart). Bitte starten Sie die Einrichtung erneut.",
       "already_configured": "Dieses Gerät ist bereits in Home Assistant konfiguriert.",
       "not_implemented": "Dieses spezielle Gerätemodell oder diese Topologie wird noch nicht vollständig unterstützt.",
       "no_mac_address_found": "Es konnte keine eindeutige Netzwerkkennung (MAC/UUID) für das Gerät ermittelt werden.",

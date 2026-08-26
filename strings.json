@@ -109,6 +109,7 @@
             "final_validation_failed": "Configuration failed. Could not verify the connection using the newly acquired credentials."
         },
         "abort": {
+            "flow_state_lost": "The pairing session was lost (e.g. after a restart). Please start the setup process again.",
             "already_configured": "This device is already configured in Home Assistant.",
             "not_implemented": "This specific device model or topology is not yet fully supported.",
             "no_mac_address_found": "Could not determine a unique network identifier (MAC/UUID) for the device.",

@@ -144,15 +144,16 @@ class ClimateIpConfigFlow(
 
     async def async_step_import(self, user_input: dict[str, Any]) -> ConfigFlowResult:
         """Handle the import of a YAML configuration (legacy platform)."""
+        payload = dict(user_input)
         _LOGGER.debug(
-            "Starting YAML import for: %s", user_input.get(CONF_IP_ADDRESS)
+            "Starting YAML import for: %s", payload.get(CONF_IP_ADDRESS)
         )  # pragma: no mutate
 
-        mac_address = user_input.get(CONF_MAC)
+        mac_address = payload.get(CONF_MAC)
         if mac_address is not None:
-            user_input[CONF_MAC] = str(mac_address).replace(":", "").upper()
+            payload[CONF_MAC] = dr.format_mac(mac_address).upper()
 
-        unique_id = user_input.get(CONF_MAC)
+        unique_id = payload.get(CONF_MAC)
         if not unique_id:
             _LOGGER.error(
                 "YAML import failed: No MAC address provided."
@@ -162,17 +163,17 @@ class ClimateIpConfigFlow(
         await self.async_set_unique_id(str(unique_id))
         self._abort_if_unique_id_configured()
 
-        config_file = user_input.get(CONF_CONFIG_FILE)
+        config_file = payload.get(CONF_CONFIG_FILE)
         if config_file is not None:
             if config_file in CONFIG_FILE_TO_DEVICE_TYPE:
-                user_input[CONF_DEVICE_TYPE] = CONFIG_FILE_TO_DEVICE_TYPE[config_file]
+                payload[CONF_DEVICE_TYPE] = CONFIG_FILE_TO_DEVICE_TYPE[config_file]
                 # fmt: off
-                _LOGGER.debug("Inferred device_type '%s' from config_file '%s'", user_input[CONF_DEVICE_TYPE], config_file)  # pragma: no mutate
+                _LOGGER.debug("Inferred device_type '%s' from config_file '%s'", payload[CONF_DEVICE_TYPE], config_file)  # pragma: no mutate
                 # fmt: on
 
-        device_name = str(user_input.get(CONFIG_DEVICE_NAME, f"Climate {unique_id}"))
+        device_name = str(payload.get(CONFIG_DEVICE_NAME, f"Climate {unique_id}"))
 
-        self.flow_data.update(user_input)
+        self.flow_data.update(payload)
         if CONF_DEVICE_TYPE in self.flow_data:
             test_result = await self._test_connection_safe()
             if not test_result.get("ok"):
@@ -184,7 +185,7 @@ class ClimateIpConfigFlow(
         _LOGGER.info(
             "Creating new entry for '%s' from imported YAML.", device_name
         )  # pragma: no mutate
-        return self.async_create_entry(title=device_name, data=user_input)
+        return self.async_create_entry(title=device_name, data=payload)
 
     @callback
     def async_remove(self) -> None:
@@ -446,17 +447,21 @@ class ClimateIpConfigFlow(
                     if is_st and not self.flow_data.get(CONF_DEVICE_ID):
                         try:
                             resp_json = await response.json()
-                            if isinstance(resp_json, dict) and "items" in resp_json:
-                                items = resp_json.get("items", [])
-                                if (
-                                    items
-                                    and isinstance(items[0], dict)
-                                    and "deviceId" in items[0]
-                                ):
-                                    self.flow_data[CONF_DEVICE_ID] = str(
-                                        items[0]["deviceId"]
-                                    )
-                        except Exception:  # pylint: disable=broad-except
+                            items = resp_json.get("items", [])
+                            if (
+                                items
+                                and isinstance(items, list)
+                                and "deviceId" in items[0]
+                            ):
+                                self.flow_data[CONF_DEVICE_ID] = str(
+                                    items[0]["deviceId"]
+                                )
+                        except (
+                            ValueError,
+                            TypeError,
+                            KeyError,
+                            aiohttp.ClientPayloadError,
+                        ):
                             pass
 
                 unique_id = str(
@@ -483,13 +488,8 @@ class ClimateIpConfigFlow(
 
             except AbortFlow:
                 raise
-            except (CannotConnect, aiohttp.ClientError):
+            except (CannotConnect, TimeoutError, aiohttp.ClientError):
                 errors["base"] = "cannot_connect"
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception(
-                    "Unexpected error during connection test"
-                )  # pragma: no mutate
-                errors["base"] = "unknown_error"
 
         step_id_def = "rest_api"
         schema_def = self._get_rest_api_schema()
@@ -504,6 +504,10 @@ class ClimateIpConfigFlow(
     ) -> ConfigFlowResult:
         """Phase 1: Put the device in pairing mode using a safe wrapper."""
         _LOGGER.debug("Entering async_step_initiate_pairing.")  # pragma: no mutate
+        if self.acquirer is None:
+            _LOGGER.warning("Flow state lost (acquirer is None). Aborting pairing.")
+            return self.async_abort(reason="flow_state_lost")
+
         if self.task is None:
             _LOGGER.debug(
                 "Creating task for _initiate_pairing_safe."
@@ -513,7 +517,9 @@ class ClimateIpConfigFlow(
         if self.task is not None and self.task.done():
             try:
                 result = self.task.result()
-            except Exception as e:
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # pylint: disable=broad-except
                 _LOGGER.error("Task failed unexpectedly: %s", e)  # pragma: no mutate
                 result = {"ok": False, "error": "unknown_error"}  # pragma: no mutate
             self.task = None
@@ -592,6 +598,10 @@ class ClimateIpConfigFlow(
     ) -> ConfigFlowResult:
         """Phase 2: Wait for the user to press the required button."""
         _LOGGER.debug("Entering async_step_await_button.")  # pragma: no mutate
+        if self.acquirer is None:
+            _LOGGER.warning("Flow state lost (acquirer is None). Aborting pairing.")
+            return self.async_abort(reason="flow_state_lost")
+
         if self.task is None:
             _LOGGER.debug("Creating task for _wait_token_safe.")  # pragma: no mutate
             self.task = self.hass.async_create_task(self._wait_token_safe())
@@ -599,7 +609,9 @@ class ClimateIpConfigFlow(
         if self.task is not None and self.task.done():
             try:
                 result = self.task.result()
-            except Exception as e:
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # pylint: disable=broad-except
                 _LOGGER.error("Task failed unexpectedly: %s", e)  # pragma: no mutate
                 result = {"ok": False, "error": "unknown_error"}  # pragma: no mutate
             self.task = None

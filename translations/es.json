@@ -109,6 +109,7 @@
       "final_validation_failed": "La configuración falló. No se pudo verificar la conexión con las credenciales recién obtenidas."
     },
     "abort": {
+      "flow_state_lost": "La sesión de emparejamiento se ha perdido (p. ej. tras un reinicio). Por favor, inicie la configuración de nuevo.",
       "already_configured": "Este dispositivo ya está configurado en Home Assistant.",
       "not_implemented": "Este modelo o topología de dispositivo específico aún no es totalmente compatible.",
       "no_mac_address_found": "No se pudo determinar un identificador de red único (MAC/UUID) para el dispositivo.",

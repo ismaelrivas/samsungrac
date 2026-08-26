@@ -54,13 +54,14 @@ class OptionsFlowHandler(OptionsFlow):
         schema = self._get_options_schema()
 
         if user_input is not None:
+            payload = dict(user_input)
             if (
-                CONF_POLL_INTERVAL in user_input
-                and user_input[CONF_POLL_INTERVAL] is not None
+                CONF_POLL_INTERVAL in payload
+                and payload[CONF_POLL_INTERVAL] is not None
             ):
                 try:
-                    seconds = validate_poll_interval(user_input[CONF_POLL_INTERVAL])
-                    user_input[CONF_POLL_INTERVAL] = seconds
+                    seconds = validate_poll_interval(payload[CONF_POLL_INTERVAL])
+                    payload[CONF_POLL_INTERVAL] = seconds
                 except ValueError:
                     errors[CONF_POLL_INTERVAL] = "invalid_poll_interval"
                     return self.async_show_form(
@@ -69,15 +70,15 @@ class OptionsFlowHandler(OptionsFlow):
                         errors=errors,
                     )
 
-            if CONF_TARGET_TEMP_STEP in user_input:
+            if CONF_TARGET_TEMP_STEP in payload:
                 try:
-                    user_input[CONF_TARGET_TEMP_STEP] = float(
-                        user_input[CONF_TARGET_TEMP_STEP]
+                    payload[CONF_TARGET_TEMP_STEP] = float(
+                        payload[CONF_TARGET_TEMP_STEP]
                     )
                 except (ValueError, TypeError):
-                    user_input[CONF_TARGET_TEMP_STEP] = DEFAULT_TARGET_TEMP_STEP
+                    payload[CONF_TARGET_TEMP_STEP] = DEFAULT_TARGET_TEMP_STEP
 
-            return self.async_create_entry(title="", data=user_input)
+            return self.async_create_entry(title="", data=payload)
 
         return self.async_show_form(step_id="init", data_schema=schema)
 

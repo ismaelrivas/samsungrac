@@ -109,6 +109,7 @@
       "final_validation_failed": "La configuration a échoué. Impossible de vérifier la connexion avec les informations d'identification nouvellement acquises."
     },
     "abort": {
+      "flow_state_lost": "La session de jumelage a été perdue (par exemple après un redémarrage). Veuillez recommencer la configuration.",
       "already_configured": "Cet appareil est déjà configuré dans Home Assistant.",
       "not_implemented": "Ce modèle d'appareil ou cette topologie spécifique n'est pas encore entièrement pris en charge.",
       "no_mac_address_found": "Impossible de déterminer un identifiant réseau unique (MAC/UUID) pour l'appareil.",
