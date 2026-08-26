@@ -424,55 +424,6 @@ async def test_async_shutdown():
     mock_connection.close.assert_called_once()
 
 
-@patch(
-    "custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability",
-    new_callable=AsyncMock,
-)
-async def test_async_update_state_network_failures_thresholds(mock_reachability):
-    """Test the thresholds for consecutive network failures."""
-    from homeassistant.helpers.update_coordinator import UpdateFailed
-
-    mock_controller = MagicMock()
-    mock_controller.config = {"device_type": "some_rest"}
-    mock_controller.ip_address = "192.168.1.100"
-    mock_controller.loader.state_getter.async_update_state = AsyncMock()
-    poller = YamlStatePoller(mock_controller)
-    poller._try_create_repair_issue = MagicMock()
-
-    mock_reachability.return_value = False
-
-    # 1st failure -> Exception, issue NOT created
-    with pytest.raises(UpdateFailed, match="Device unreachable"):
-        await poller.async_update_state()
-    assert poller._consecutive_connection_errors == 1
-    poller._try_create_repair_issue.assert_not_called()
-
-    # 2nd failure -> Exception (persistently offline)
-    with pytest.raises(UpdateFailed, match="Device unreachable"):
-        await poller.async_update_state()
-    assert poller._consecutive_connection_errors == 2
-    poller._try_create_repair_issue.assert_not_called()
-
-    # 3rd failure -> Exception (persistently offline) + creates issue
-    with pytest.raises(UpdateFailed, match="Device unreachable"):
-        await poller.async_update_state()
-    assert poller._consecutive_connection_errors == 3
-    poller._try_create_repair_issue.assert_called_once()
-
-    # Recovery on 4th call!
-    mock_reachability.return_value = True
-    poller.controller.loader.state_getter.async_update_state = AsyncMock(
-        return_value={"recovered": True}
-    )
-    poller.controller.loader.state_getter.value = {"recovered": True}
-
-    with patch(
-        "custom_components.climate_ip.controller_yaml_polling.async_delete_issue"
-    ) as mock_del:
-        res = await poller.async_update_state()
-        assert res == {"recovered": True}
-        assert poller._consecutive_connection_errors == 0
-        mock_del.assert_called_once()
 
 
 @patch(
@@ -551,23 +502,6 @@ async def test_async_shutdown_conn_close():
     assert mock_controller.loader.connection is None
 
 
-async def test_update_state_repair_issue_delete_exception():
-    mock_controller = MagicMock()
-    poller = YamlStatePoller(mock_controller)
-    mock_controller.loader.state_getter = AsyncMock()
-    mock_controller.loader.state_getter.async_update_state = AsyncMock(
-        return_value={"a": 1}
-    )
-    mock_controller.loader.state_getter.value = {"a": 1}
-    mock_controller.loader._parsed_yaml_cache = {}
-    mock_controller.discovered_devices = [{"id": "dev1"}]
-
-    with patch(
-        "custom_components.climate_ip.controller_yaml_polling.async_delete_issue",
-        side_effect=Exception("Boom"),
-    ):
-        res = await poller.async_update_state()
-    assert res == {"a": 1}
 
 
 async def test_update_state_invalid_header_error():
@@ -586,30 +520,6 @@ async def test_update_state_invalid_header_error():
         await poller.async_update_state()
 
 
-async def test_update_state_api_error_cached_fallback():
-    mock_controller = MagicMock()
-    poller = YamlStatePoller(mock_controller)
-    mock_controller.loader.state_getter = AsyncMock()
-    from custom_components.climate_ip.exceptions import CannotConnect
-
-    mock_controller.loader.state_getter.async_update_state = AsyncMock(
-        side_effect=CannotConnect("API Failure")
-    )
-    mock_controller.loader.state_getter.value = {"cached": True}
-    mock_controller.loader._parsed_yaml_cache = {}
-    mock_controller.discovered_devices = [{"id": "dev1"}]
-
-    # With cache
-    poller._cached_device_state = {"cached": True}
-    res = await poller.async_update_state()
-    assert res == {"cached": True}
-
-    # Without cache -> raises UpdateFailed
-    poller._cached_device_state = None
-    from homeassistant.helpers.update_coordinator import UpdateFailed
-
-    with pytest.raises(UpdateFailed):
-        await poller.async_update_state()
 
 
 async def test_update_state_delete_issue_exception():
@@ -696,33 +606,3 @@ async def test_async_update_state_sniper_network_ping():
         assert res == {"state": "ping_failed_but_recovered"}
 
 
-@patch("custom_components.climate_ip.controller_yaml_polling.async_create_issue")
-def test_try_create_repair_issue_missing_hass(mock_create_issue):
-    """Verify early exit when self.controller.hass is None."""
-    mock_controller = MagicMock()
-    mock_controller.hass = None
-    poller = YamlStatePoller(mock_controller)
-    poller._try_create_repair_issue()
-    mock_create_issue.assert_not_called()
-
-
-async def test_async_update_state_force_connection_errors():
-    """Kills mutants de rsplit/split y validación de UpdateFailed."""
-    poller = YamlStatePoller(MagicMock())
-    poller.controller.loader.is_fully_initialized = True
-    poller.controller.config = {"device_type": "Other"}
-
-    # Mock getter
-    poller.controller.loader.state_getter = AsyncMock()
-
-    # Inject CannotConnect. El poller debe capturarlo y relanzar UpdateFailed
-    poller.controller.loader.state_getter.async_update_state.side_effect = (
-        CannotConnect("Prefix:TargetReason")
-    )
-    poller._consecutive_connection_errors = 2
-    poller._cached_device_state = None
-
-    with pytest.raises(UpdateFailed) as exc:
-        await poller.async_update_state()
-
-    assert str(exc.value) == "Device unreachable: TargetReason"

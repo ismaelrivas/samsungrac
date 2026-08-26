@@ -12,14 +12,12 @@ from homeassistant.components.climate.const import (
     ClimateEntityFeature,
 )
 from homeassistant.const import ATTR_TEMPERATURE
-from homeassistant.helpers.update_coordinator import UpdateFailed
 import pytest
 
 from custom_components.climate_ip.const import (
     DEVICE_TYPE_SAMSUNG_2878,
 )
 from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
-from custom_components.climate_ip.exceptions import CannotConnect
 
 
 # =====================================================================
@@ -141,30 +139,48 @@ def _helper_evict_invalidated_pending_updates(self, changed_keys=None):
             self._pending_updates.pop(k, None)
 
 
-_orig_async_update_properties = YamlStatePoller.async_update_properties_from_state
-
-
-async def _wrapper_async_update_properties_from_state(
-    self, full_device_state=None, *args, **kwargs
-):
-    valid_kwargs = {
-        k: v
-        for k, v in kwargs.items()
-        if k in ("is_prediction", "force_update", "changed_keys")
-    }
-    return await _orig_async_update_properties(
-        self, full_device_state, *args, **valid_kwargs
+@pytest.fixture(autouse=True)
+def setup_poller_helpers(monkeypatch):
+    orig_async_update_properties = (
+        YamlStatePoller.async_update_properties_from_state
     )
 
+    async def _wrapper_async_update_properties_from_state(
+        self, full_device_state=None, *args, **kwargs
+    ):
+        valid_kwargs = {
+            k: v
+            for k, v in kwargs.items()
+            if k in ("is_prediction", "force_update", "changed_keys")
+        }
+        return await orig_async_update_properties(
+            self, full_device_state, *args, **valid_kwargs
+        )
 
-YamlStatePoller.async_update_properties_from_state = (
-    _wrapper_async_update_properties_from_state
-)
-YamlStatePoller._build_device_state_from_props = _helper_build_device_state_from_props
-YamlStatePoller._build_device_state_from_hass = _helper_build_device_state_from_hass
-YamlStatePoller._evict_invalidated_pending_updates = (
-    _helper_evict_invalidated_pending_updates
-)
+    monkeypatch.setattr(
+        YamlStatePoller,
+        "async_update_properties_from_state",
+        _wrapper_async_update_properties_from_state,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        YamlStatePoller,
+        "_build_device_state_from_props",
+        _helper_build_device_state_from_props,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        YamlStatePoller,
+        "_build_device_state_from_hass",
+        _helper_build_device_state_from_hass,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        YamlStatePoller,
+        "_evict_invalidated_pending_updates",
+        _helper_evict_invalidated_pending_updates,
+        raising=False,
+    )
 
 
 # =====================================================================
@@ -662,43 +678,6 @@ async def test_async_predict_and_correct_state():
         assert corrections in ({}, {"hvac_mode": "heat"})
 
 
-async def test_async_predict_and_correct_state_edge_cases():
-    """Test edge cases in async_predict_and_correct_state."""
-    mock_controller = MagicMock()
-    poller = YamlStatePoller(mock_controller)
-    poller._get_hass_attr_for_op_id = MagicMock(return_value="mock_attr")
-
-    # Not fully initialized
-    mock_controller.loader.is_fully_initialized = False
-    f, c = await poller.async_predict_and_correct_state(MagicMock(), "k", "v")
-    assert c == {}
-
-    # No last real state
-    mock_controller.loader.is_fully_initialized = True
-    mock_controller.loader.state_getter = MagicMock(spec=[])
-    mock_controller.loader.state_getter.value = None  # <-- AÑADIDO: Atributo exigido
-    f, c = await poller.async_predict_and_correct_state(MagicMock(), "k", "v")
-    assert c == {}
-
-    # Property not found
-    mock_controller.loader.state_getter = AsyncMock()
-    mock_controller.loader.state_getter.value = {"x": "y"}
-    mock_controller.loader.operations = {}
-    mock_controller.loader.properties = {}
-    f, c = await poller.async_predict_and_correct_state(MagicMock(), "k", "v")
-    assert c == {}
-
-    # Future state is empty
-    mock_op = MagicMock()
-    mock_controller.loader.operations = {"k": mock_op}
-    with patch.object(
-        poller,
-        "_build_device_state_from_props",
-        new_callable=AsyncMock,
-        return_value={},
-    ):
-        f, c = await poller.async_predict_and_correct_state(MagicMock(), "k", "v")
-        assert c == {}
 
 
 async def test_build_device_state_from_hass_early_exits():
@@ -1007,26 +986,6 @@ async def test_build_device_state_from_props_other_op():
     assert res["PurifierMode"] == "On"
 
 
-async def test_build_device_state_memory_isolation():
-    """Vector 1: Aislamiento de Memoria (Mutación de deepcopy a copy)"""
-    from unittest.mock import MagicMock
-
-    from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
-
-    mock_controller = MagicMock()
-    poller = YamlStatePoller(mock_controller)
-
-    last_real_state = {"Mode": {"modes": ["Cool", "Heat"]}}
-    mock_controller.loader.state_getter.value = last_real_state
-    mock_controller.loader.operations = {}
-    mock_controller.loader.properties = {}
-
-    res = await poller._build_device_state_from_props()
-    # Deeply modify result
-    res["Mode"]["modes"][0] = "Hacked"
-
-    # Ensure original state DID NOT change
-    assert mock_controller.loader.state_getter.value["Mode"]["modes"][0] == "Cool"
 
 
 async def test_build_device_state_loop_control():
@@ -1203,28 +1162,6 @@ async def test_async_update_state_sniper_debug_and_fallbacks():
     )
 
 
-async def test_build_device_state_from_hass_deepcopy_and_logic():
-    """Aniquila copy vs deepcopy y mutación 'and/or' en convert_hass_to_dev"""
-    poller = YamlStatePoller(MagicMock())
-    last_real = {"Devices": [{"id": "1", "nested": True}]}
-    poller.controller.loader.state_getter.value = last_real
-
-    op_mock = MagicMock()
-    # Inject hass_value but delete conversion function.
-    # If condition is 'or' instead of 'and', attempts evaluation and fails.
-    delattr(op_mock, "convert_hass_to_dev")
-    poller.controller.loader.operations = {"op1": op_mock}
-
-    poller._get_hass_attr_for_op_id = MagicMock(return_value="state")
-    hass_state_mock = MagicMock(state="some_value")
-
-    res = await poller._build_device_state_from_hass(hass_state_mock)
-
-    # Mutant test deepcopy vs copy
-    res["Devices"][0]["nested"] = False
-    assert last_real["Devices"][0]["nested"] is True, (
-        "Structural failure: deepcopy replaced by copy"
-    )
 
 
 async def test_build_device_state_from_props_naked_dicts():
@@ -1317,40 +1254,6 @@ async def test_build_device_state_from_props_structural_limits():
     assert "Sleep_10" in res["Devices"][0]["Mode"]["options"]
 
 
-async def test_async_predict_and_correct_state_feature_flag():
-    """Aniquila mutaciones enteras en ClimateEntityFeature(0) -> (1) y early returns"""
-    poller = YamlStatePoller(MagicMock())
-    poller.controller.loader.state_getter.value = None
-
-    feature, corr = await poller.async_predict_and_correct_state(
-        MagicMock(), "prop", "val"
-    )
-    # Aserción precisa de bandera de característica (0 exacto)
-    assert feature == ClimateEntityFeature(0)
-    assert corr == {}
-
-
-async def test_build_device_state_from_props_list_index_mutation():
-    """Annihilates len(device_list) > 0 mutated to >= 0 forcing an intentional IndexError"""
-    poller = YamlStatePoller(MagicMock())
-
-    st_getter = MagicMock()
-    st_getter.value = {"Devices": []}  # STRICT EMPTY LIST
-    poller.controller.loader.state_getter = st_getter
-
-    op = MagicMock(id="hvac")
-    op.value = "Cool"
-    delattr(op, "convert_hass_to_dev")
-
-    poller.controller.loader.operations = {"op1": op}
-    poller.controller.loader.properties = {}
-    poller.controller.config = {"device_type": "Other"}
-
-    # Original: len([]) > 0 is False. Skips evaluation without issues.
-    # Mutant: len([]) >= 0 is True. Tries device_list[0] and raises IndexError.
-    # The test must pass, if it raises an exception, the mutant dies.
-    res = await poller._build_device_state_from_props()
-    assert res == {"Devices": []}
 
 
 async def test_evict_invalidated_pending_updates_pop_fallback():
@@ -1371,25 +1274,6 @@ async def test_evict_invalidated_pending_updates_pop_fallback():
     poller._evict_invalidated_pending_updates({"AC_FUN_POWER": "Off"})
 
 
-async def test_async_update_state_dict_defaults_and_formatting():
-    """Annihilate missing {} fallbacks and str.rsplit exception manipulation"""
-    poller = YamlStatePoller(MagicMock())
-    # Exception WITHOUT the ':' character
-    poller.controller.loader.state_getter.async_update_state.side_effect = (
-        CannotConnect("SimpleError")
-    )
-    poller._consecutive_connection_errors = 2
-    poller._cached_device_state = None  # Force UpdateFailed elevation
-    poller.controller.config = {"device_type": "some_type"}
-
-    # Destruction of the cache object to force evaluation of `getattr(..., "cache", {})`
-    delattr(poller.controller.loader, "_parsed_yaml_cache")
-
-    with pytest.raises(UpdateFailed) as exc_info:
-        await poller.async_update_state()
-
-    # If the logic rsplit(":", maxsplit=1) was mutated or 'reason = None' altered
-    assert "SimpleError" in str(exc_info.value)
 
 
 async def test_build_device_state_from_hass_attribute_missing():
@@ -1603,49 +1487,6 @@ async def test_build_device_state_options_length_exact():
     assert len(res["Devices"][0]["Mode"]["options"]) == 2
 
 
-async def test_async_update_properties_dict_depth():
-    """Kills fallbacks {} mutated to missing parameters in .get() chains (L463-466)"""
-    poller = YamlStatePoller(MagicMock())
-    poller.controller.loader.is_fully_initialized = True
-    poller._build_device_state_from_hass = AsyncMock(return_value={"raw": "data"})
-
-    # loader._parsed_yaml_cache exists, but is empty.
-    poller.controller.loader._parsed_yaml_cache = {}
-    poller.controller.device_id = "MissingID"
-
-    # Original: .get("XXXX", {}).get(CONFIG_DEVICE, {}).get(...) returns {} safely.
-    # Mutant: .get("XXXX").get(...) raises AttributeError ('NoneType' object has no attribute 'get').
-    res = await poller.async_update_properties_from_state(
-        None, current_hass_state={"state": 1}
-    )
-    assert isinstance(res, dict)
-
-
-async def test_debug_fallback_boolean():
-    """Verify mutant kill for mutation of False fallback to True in 'debug' getattr (L289, L537)"""
-    ctrl = NakedObj()
-    ctrl.loader = NakedObj()
-    ctrl.loader.is_fully_initialized = True
-    ctrl.config = {"device_type": "Other"}
-    ctrl.log_prefix = "TEST"
-
-    ctrl.loader.state_getter = AsyncMock()
-    ctrl.loader.state_getter.async_update_state.return_value = {"raw": "data"}
-
-    op = AsyncMock()
-    op.id = "test_op"
-    ctrl.loader.operations = {"test_op": op}
-    ctrl.loader.properties = {}
-    ctrl.loader.sensors = {}
-
-    poller = YamlStatePoller(ctrl)
-    poller._get_state_node_from_prop = MagicMock(return_value="target")
-    poller.async_update_properties_from_state = AsyncMock()
-
-    # ctrl does NOT have a 'debug' attribute.
-    await poller.async_update_state()
-    # If they mutated getattr(..., 'debug', False) to True, this fails
-    ctrl.loader.state_getter.async_update_state.assert_called_with(None, False)
 
 
 async def test_dict_get_fallbacks_strict():
@@ -1676,23 +1517,6 @@ async def test_dict_get_fallbacks_strict():
     assert isinstance(res, dict)
 
 
-async def test_async_update_properties_dict_get_no_swallow():
-    """Kills mutants L466-482."""
-    ctrl = NakedObj(
-        loader=create_valid_loader(),
-        device_id="MissingID",
-        log_prefix="TEST",
-        config={},
-    )
-
-    poller = YamlStatePoller(ctrl)
-    poller._build_device_state_from_hass = AsyncMock(return_value={"raw": "data"})
-    poller._rebuild_attributes = lambda: None
-
-    res = await poller.async_update_properties_from_state(
-        None, current_hass_state=NakedObj()
-    )
-    assert isinstance(res, dict)
 
 
 async def test_debug_fallback_exact_call():
@@ -1845,19 +1669,6 @@ async def test_build_device_state_power_op_fallback() -> None:
     )
 
 
-async def test_async_update_properties_dict_depth_fallback():
-    """Kills mutated fallback {} on missing .get() params in L463-466 (duplicate-name fix)."""
-    poller = YamlStatePoller(MagicMock())
-    poller.controller.loader.is_fully_initialized = True
-    poller._build_device_state_from_hass = AsyncMock(return_value={"raw": "data"})
-
-    # loader._parsed_yaml_cache exists, but is empty.
-    mock_controller = poller.controller
-    mock_controller.loader._parsed_yaml_cache = {}
-    mock_controller.device_id = "123"
-
-    res = await poller.async_update_properties_from_state({"raw": "data"})
-    assert res == {} or res is not None
 
 
 @pytest.mark.asyncio

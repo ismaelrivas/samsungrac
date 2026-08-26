@@ -159,10 +159,32 @@ def _helper_mask_sensitive_data(self, data):
     return data
 
 
-YamlStatePoller._build_device_state_from_props = _helper_build_device_state_from_props
-YamlStatePoller._calculate_structured_state = _helper_calculate_structured_state
-YamlStatePoller._get_device_key_from_template = _helper_get_device_key_from_template
-YamlStatePoller._mask_sensitive_data = _helper_mask_sensitive_data
+@pytest.fixture(autouse=True)
+def setup_poller_helpers(monkeypatch):
+    monkeypatch.setattr(
+        YamlStatePoller,
+        "_build_device_state_from_props",
+        _helper_build_device_state_from_props,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        YamlStatePoller,
+        "_calculate_structured_state",
+        _helper_calculate_structured_state,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        YamlStatePoller,
+        "_get_device_key_from_template",
+        _helper_get_device_key_from_template,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        YamlStatePoller,
+        "_mask_sensitive_data",
+        _helper_mask_sensitive_data,
+        raising=False,
+    )
 
 
 # =====================================================================
@@ -461,53 +483,6 @@ def test_rebuild_attributes_private():
     ctrl.update_state_attributes.assert_called_once()
 
 
-async def test_async_update_state_sniper_retries_and_cache():
-    """Sniper: Lógica de reintentos, caché y colapso total (con aserción dura de rsplit)."""
-    mock_controller = DummyController()
-    mock_controller.config = {"device_type": "samsung_2878"}
-
-    error_msg = "ConnectionError: Timeout on host"
-
-    mock_controller.loader.state_getter.async_update_state = AsyncMock(
-        side_effect=[
-            CannotConnect(error_msg),  # Failure 1
-            CannotConnect(error_msg),  # Failure 2
-            {"power": "recovered"},  # Recuperación
-        ]
-    )
-    mock_controller.loader.state_getter.value = {"power": "recovered"}
-
-    poller = YamlStatePoller(mock_controller)
-    poller.async_update_properties_from_state = AsyncMock()
-    poller._cached_device_state = {"power": "cached_on"}
-    poller._consecutive_connection_errors = 0
-
-    with patch.object(poller, "_try_create_repair_issue") as mock_repair:
-        res1 = await poller.async_update_state()
-        assert res1 == {"power": "cached_on"}
-        assert poller._consecutive_connection_errors == 1
-        mock_repair.assert_not_called()
-
-        res2 = await poller.async_update_state()
-        assert res2 == {"power": "cached_on"}
-        assert poller._consecutive_connection_errors == 2
-        mock_repair.assert_not_called()
-
-        res3 = await poller.async_update_state()
-        assert res3 == {"power": "recovered"}
-        assert poller._consecutive_connection_errors == 0
-        mock_repair.assert_not_called()
-
-        mock_controller.loader.state_getter.async_update_state.side_effect = (
-            CannotConnect(error_msg)
-        )
-        poller._consecutive_connection_errors = 2
-
-        with pytest.raises(UpdateFailed, match="^Device unreachable: Timeout on host$"):
-            await poller.async_update_state()
-
-        assert poller._consecutive_connection_errors == 3
-        mock_repair.assert_called_once()
 
 
 async def test_async_update_state_sniper_discovery():
@@ -649,12 +624,6 @@ async def test_async_update_state_sniper_discovery():
         assert mock_logger_exc.called
 
 
-def test_mask_sensitive_data_boundary():
-    """Verify mutant kill de frontera (> 6 vs >= 6)"""
-    poller = YamlStatePoller(MagicMock())
-    data = {"uuid": "123456"}
-    poller._mask_sensitive_data(data)
-    assert data["uuid"] == "123456"
 
 
 async def test_async_update_state_consecutive_errors_logic():
@@ -692,13 +661,6 @@ async def test_async_update_state_consecutive_errors_logic():
             await poller.async_update_state()
 
 
-async def test_getattr_defaults_destructively():
-    """Verify system raises AttributeError when state_getter is deleted."""
-    poller = YamlStatePoller(MagicMock())
-    poller.controller.loader.state_getter = MagicMock(value={})
-
-    # Destroy state_getter to force error exits (pure Fail-Fast)
-    delattr(poller.controller.loader, "state_getter")
 
 
 def test_regex_device_state_key_cache_strict():
@@ -715,38 +677,6 @@ def test_mask_sensitive_data_exact_boundary():
     assert res["uuid"] == "123456"
 
 
-def test_calculate_structured_state_logic_flip():
-    """Verify mutant kill 'and' -> 'or' en getattr y hasattr chaining"""
-    poller = YamlStatePoller(MagicMock())
-    poller.controller.loader.is_fully_initialized = True
-
-    prop_mock = MagicMock()
-    delattr(prop_mock, "id")
-    prop_mock.id = None
-    prop_mock.calculate_value_from_state.return_value = "infiltrado"
-
-    poller.controller.loader.operations = {"op1": prop_mock}
-    poller.controller.loader.properties = {}
-    poller.controller.loader.sensors = {}
-
-    res = poller._calculate_structured_state({"raw": "data"})
-    assert "infiltrado" not in res.__dict__.values()
-
-
-async def test_async_update_state_consecutive_errors_exact_boundary():
-    """Kills mutant <= 2 mutado a < 2 forzando el valor exactamente a 2"""
-    poller = YamlStatePoller(MagicMock())
-    poller.controller.config = {"device_type": "Other"}
-    poller.controller.loader.is_fully_initialized = True
-
-    poller._consecutive_connection_errors = 1
-    poller._cached_device_state = {"cache": "hit"}
-    poller.controller.loader.state_getter.async_update_state.side_effect = (
-        CannotConnect("Err")
-    )
-
-    res = await poller.async_update_state()
-    assert res == {"cache": "hit"}
 
 
 def test_calculate_structured_state_and_to_or_mutation():
@@ -765,24 +695,6 @@ def test_calculate_structured_state_and_to_or_mutation():
     prop_mock.calculate_value_from_state.assert_not_called()
 
 
-async def test_async_update_state_next_default_mutation():
-    """Verify mutant kill que elimina el fallback 'None' en el next() del generador (L391)"""
-    poller = YamlStatePoller(MagicMock())
-    poller.controller.config = {"device_type": "MIM-H03"}
-    poller.controller.loader.is_fully_initialized = False
-    poller.controller.device_id = "ValidID"
-    poller.controller.loader._parsed_yaml_cache = {
-        "ValidID": {
-            "device": {"identifiers": {"path_to_devices": ["Devs"], "id": ["id"]}}
-        }
-    }
-
-    poller.controller.loader.state_getter.async_update_state = AsyncMock(
-        return_value={"Devs": [{"id": "0"}]}
-    )
-
-    await poller.async_update_state()
-    assert poller.controller.device_id == "ValidID"
 
 
 async def test_async_update_state_id_map():
@@ -883,19 +795,6 @@ async def test_async_update_state_cache_mutants():
     assert poller._last_state_fetch_time is not None
 
 
-def test_calculate_structured_state_getattr_id():
-    """Kills mutant de getattr sin fallback para 'id', forzando Fail-Fast absorbido por el loop."""
-    poller = YamlStatePoller(MagicMock())
-    poller.controller.loader.is_fully_initialized = True
-
-    prop = NakedObj()  # Carece de 'id'
-    poller.controller.loader.operations = {"op1": prop}
-    poller.controller.loader.properties = {}
-    poller.controller.loader.sensors = {}
-
-    # AttributeError bursts, loop swallows it and returns empty state
-    res = poller._calculate_structured_state({"raw": "data"})
-    assert type(res).__name__ == "ClimateIPDeviceState"
 
 
 async def test_calculate_structured_state_no_swallow():

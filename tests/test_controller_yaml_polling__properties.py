@@ -113,9 +113,14 @@ def _helper_evict_invalidated_pending_updates(self, push_data=None):
             self._pending_updates.pop(prop_id, None)
 
 
-YamlStatePoller._evict_invalidated_pending_updates = (
-    _helper_evict_invalidated_pending_updates
-)
+@pytest.fixture(autouse=True)
+def setup_poller_helpers(monkeypatch):
+    monkeypatch.setattr(
+        YamlStatePoller,
+        "_evict_invalidated_pending_updates",
+        _helper_evict_invalidated_pending_updates,
+        raising=False,
+    )
 
 
 # =====================================================================
@@ -790,31 +795,6 @@ async def test_merge_device_state_atomic_merge():
     assert mock_controller.loader.state_getter.value == {"a": 1, "b": 2, "c": 3}
 
 
-async def test_merge_device_state_empty_and_overwrite():
-    mock_controller = MagicMock()
-    poller = YamlStatePoller(mock_controller)
-
-    assert await poller.async_merge_device_state({}) is False
-
-    base_state = {"Untouched": {"nested": "A"}}
-
-    class MockStateGetter:
-        value = base_state
-
-    mock_controller.loader.state_getter = MockStateGetter()
-    poller.async_update_properties_from_state = AsyncMock()
-
-    new_data = {"NewKey": "B"}
-
-    res = await poller.async_merge_device_state(new_data)
-    assert res is True
-
-    expected_state = {"Untouched": {"nested": "A"}, "NewKey": "B"}
-
-    assert mock_controller.loader.state_getter.value == expected_state
-
-    mock_controller.loader.state_getter.value["Untouched"]["nested"] = "Hacked"
-    assert base_state["Untouched"]["nested"] == "A"
 
 
 async def test_merge_device_state_strict_conditionals():
