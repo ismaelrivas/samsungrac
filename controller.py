@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Coroutine, Mapping
+from collections.abc import Callable, Coroutine
 import logging
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 

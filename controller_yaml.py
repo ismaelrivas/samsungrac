@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import math
 import types
@@ -26,7 +25,7 @@ from homeassistant.const import (
     STATE_UNKNOWN,
     UnitOfTemperature,
 )
-from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -66,7 +65,6 @@ from .const import (
 from .controller import ClimateController, register_controller
 from .controller_yaml_config import YamlConfigLoader
 from .controller_yaml_polling import YamlStatePoller
-from .exceptions import AuthError, CannotConnect
 from .properties import DeviceProperty, parse_temperature_unit
 from .state import ClimateIPDeviceState
 

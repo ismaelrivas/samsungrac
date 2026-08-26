@@ -712,9 +712,9 @@ class GetJsonStatus(DeviceProperty):
             ) or getattr(self._connection, "_connection_template", None)
             if conn_tmpl is not None:
                 self._connection_template = conn_tmpl
-            elif hasattr(self._connection, "_params") and self._connection._params.get(
-                "url"
-            ):
+            elif isinstance(
+                getattr(self._connection, "_params", None), dict
+            ) and isinstance(self._connection._params.get("url"), str):
                 _LOGGER.debug(
                     "%s [GetJsonStatus] Synthesizing connection_template from connection._params.",
                     self.log_prefix,
@@ -775,7 +775,9 @@ class GetJsonStatus(DeviceProperty):
 
         if connection.is_async_native:
             if self.connection_template is None:
-                if hasattr(connection, "_params") and connection._params.get("url"):
+                if isinstance(
+                    getattr(connection, "_params", None), dict
+                ) and isinstance(connection._params.get("url"), str):
                     _LOGGER.debug(
                         "%s [GetJsonStatus] Synthesizing connection_template from connection._params.",
                         self.log_prefix,
@@ -1025,34 +1027,36 @@ class DeviceOperation(DeviceProperty):
                     if KEY_JSON_PAYLOAD in params
                     else None
                 )
-                method = params.get(KEY_METHOD) or (
-                    connection._params.get(KEY_METHOD)
-                    if hasattr(connection, "_params")
-                    and isinstance(connection._params, dict)
+                method = params.get(KEY_METHOD)
+                url = params.get(KEY_URL)
+
+                conn_params = getattr(connection, "_params", None)
+                if isinstance(conn_params, dict):
+                    if method is None:
+                        method = conn_params.get(KEY_METHOD)
+                    if url is None:
+                        url = conn_params.get(KEY_URL)
+
+                ctrl_conn = (
+                    getattr(self._controller, "connection", None)
+                    if self._controller is not None
                     else None
                 )
-                url = params.get(KEY_URL) or (
-                    connection._params.get(KEY_URL)
-                    if hasattr(connection, "_params")
-                    and isinstance(connection._params, dict)
+                ctrl_params = (
+                    getattr(ctrl_conn, "_params", None)
+                    if ctrl_conn is not None
                     else None
                 )
-                if (
-                    url is None
-                    and self._controller is not None
-                    and getattr(self._controller, "connection", None) is not None
-                ):
-                    url = getattr(self._controller.connection, "_params", {}).get(
-                        KEY_URL
-                    )
-                if (
-                    method is None
-                    and self._controller is not None
-                    and getattr(self._controller, "connection", None) is not None
-                ):
-                    method = getattr(self._controller.connection, "_params", {}).get(
-                        KEY_METHOD
-                    )
+                if isinstance(ctrl_params, dict):
+                    if url is None:
+                        url = ctrl_params.get(KEY_URL)
+                    if method is None:
+                        method = ctrl_params.get(KEY_METHOD)
+
+                if not isinstance(method, str):
+                    method = None
+                if not isinstance(url, str):
+                    url = None
 
                 if method is None and KEY_JSON_PAYLOAD in params:
                     method = "POST"

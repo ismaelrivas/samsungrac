@@ -415,11 +415,27 @@ class ClimateIpConfigFlow(
                     "Authorization": f"Bearer {self.flow_data.get(CONF_TOKEN)}"
                 }  # pragma: no mutate
 
+                req_kwargs: dict[str, Any] = {
+                    "headers": headers,
+                    "timeout": GLOBAL_HTTP_TIMEOUT,  # type: ignore[arg-type] # pragma: no mutate
+                }
+                if any(
+                    loc in host_str.lower()
+                    for loc in (
+                        "localhost",
+                        "127.0.0.1",
+                        "::1",
+                        "192.168.",
+                        "10.",
+                        "172.",
+                        ".local",
+                    )
+                ):
+                    req_kwargs["ssl"] = False
+
                 async with session.get(
                     url,
-                    headers=headers,
-                    ssl=False,
-                    timeout=GLOBAL_HTTP_TIMEOUT,  # type: ignore[arg-type] # pragma: no mutate
+                    **req_kwargs,
                 ) as response:  # pragma: no mutate
                     if response.status != 200:
                         _LOGGER.warning(

@@ -211,7 +211,7 @@ async def test_create_updated(connection_config, mock_logger, mock_hass, mock_se
         new_conn_none = conn.create_updated(None)
         assert isinstance(new_conn_none, ConnectionAiohttp8888)
         assert new_conn_none is not conn
-        assert new_conn_none._params == {}
+        assert new_conn_none._params == {"test": "param"}
         assert new_conn_none._force_close_connection is True
         assert new_conn_none._cert_path == "/path/to/cert.pem"
         assert new_conn_none._shared_state is conn._shared_state
@@ -220,7 +220,7 @@ async def test_create_updated(connection_config, mock_logger, mock_hass, mock_se
         new_conn = conn.create_updated({})
         assert isinstance(new_conn, ConnectionAiohttp8888)
         assert new_conn is not conn
-        assert new_conn._params == {}
+        assert new_conn._params == {"test": "param"}
         assert new_conn._hass is mock_hass
         assert new_conn._session is mock_session
         assert new_conn._logger is mock_logger
@@ -257,7 +257,10 @@ async def test_create_updated(connection_config, mock_logger, mock_hass, mock_se
         new_conn_nested = conn.create_updated(yaml_node_nested)
         assert new_conn_nested._embedded_command is not None
         assert isinstance(new_conn_nested._embedded_command, ConnectionAiohttp8888)
-        assert new_conn_nested._embedded_command._params == {"nested": "val"}
+        assert new_conn_nested._embedded_command._params == {
+            "test": "param",
+            "nested": "val",
+        }
         assert new_conn_nested._embedded_command.condition_template is not None
         assert (
             new_conn_nested._embedded_command.condition_template.template
@@ -498,14 +501,14 @@ def test_create_updated_strict():
     new_conn = conn.create_updated(yaml_node)
 
     # Must preserve the base parameter but NOT leak the child parameter to the root
-    assert new_conn._params == {}
+    assert new_conn._params == {"base": 1}
     assert new_conn._keep_alive is True
     assert new_conn._connection_template is not None
     assert new_conn._connection_template.template == "{{ top_level }}"
 
     # The embedded command must receive the child parameter since it lacks connection_template
     assert new_conn._embedded_command is not None
-    assert new_conn._embedded_command._params == {"child": 2}
+    assert new_conn._embedded_command._params == {"base": 1, "child": 2}
     assert new_conn._embedded_command._connection_template is None
 
     # Check condition template was compiled with exact template string

@@ -18,6 +18,7 @@ from custom_components.climate_ip.const import (
     CONF_POLL_INTERVAL,
     DEVICE_TYPE_SAMSUNG_2878,
     DEVICE_TYPE_SAMSUNG_8888,
+    DEVICE_TYPE_SMARTTHINGS_DHW,
     DEVICE_TYPE_SMARTTHINGS_HVAC,
     DEVICE_TYPE_TO_CONFIG_FILE,
     GLOBAL_HTTP_TIMEOUT,
@@ -888,6 +889,7 @@ async def test_rest_api_unique_id_empty_fallback(hass: HomeAssistant) -> None:
 
     flow = ClimateIpConfigFlow()
     flow.hass = hass
+    flow.context = {}
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
         CONF_IP_ADDRESS: "127.0.0.1:8888",
@@ -928,6 +930,7 @@ async def test_rest_api_smartthings_custom_port_and_fallback_uid(
 
     flow = ClimateIpConfigFlow()
     flow.hass = hass
+    flow.context = {}
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_DHW,
         CONF_IP_ADDRESS: "my-custom-host.local:8443",

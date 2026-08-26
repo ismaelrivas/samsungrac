@@ -5712,6 +5712,7 @@ async def test_rest_api_ipv6_url_has_brackets(hass: HomeAssistant) -> None:
         "https://[fe80::1]/v1/devices",
         headers={"Authorization": "Bearer valid-token-12345"},
         timeout=GLOBAL_HTTP_TIMEOUT,
+        ssl=False,
     )
 
 

@@ -22,11 +22,10 @@ from homeassistant.const import (
     ATTR_TEMPERATURE,
     CONF_IP_ADDRESS,
     CONF_MAC,
-    CONF_PORT,
     CONF_TOKEN,
     STATE_UNKNOWN,
 )
-from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError
 import pytest
 
 from custom_components.climate_ip.const import (

@@ -40,7 +40,6 @@ from .const import (
     DEVICE_TYPE_SAMSUNG_2878,
     DEVICE_TYPE_SMARTTHINGS_DHW,
     DEVICE_TYPE_SMARTTHINGS_HVAC,
-    MAIN_DEVICE_ID,
 )
 from .exceptions import AuthError, CannotConnect, InvalidHeaderError
 from .helpers import async_check_network_reachability, get_value_by_path

@@ -17,7 +17,6 @@ import pytest
 
 from custom_components.climate_ip.const import (
     DEVICE_TYPE_SAMSUNG_2878,
-    MAIN_DEVICE_ID,
 )
 from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 from custom_components.climate_ip.exceptions import CannotConnect
