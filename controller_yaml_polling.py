@@ -575,42 +575,7 @@ class YamlStatePoller:
                     while len(current) <= idx:
                         current.append(None)
 
-                    # If value is a prefixed option string (e.g. "Spi_Off", "Autoclean_Off", "Comode_Sleep"),
-                    # update the matching option slot in the list by prefix rather than clobbering an unrelated slot.
-                    if isinstance(value, str) and "_" in value:
-                        opt_prefix = value.split("_", 1)[0]
-                        found_idx = next(
-                            (
-                                j
-                                for j, item in enumerate(current)
-                                if isinstance(item, str)
-                                and item.startswith(f"{opt_prefix}_")
-                            ),
-                            None,
-                        )
-                        if found_idx is not None:
-                            current[found_idx] = value
-                            return
-
-                    # If target element was an existing prefixed string (e.g. "Sleep_0") and value is raw (e.g. 0),
-                    # preserve the prefix so the prediction dictionary remains 100% faithful to device protocol.
-                    target_val = value
-                    existing = current[idx]
-                    if (
-                        isinstance(existing, str)
-                        and "_" in existing
-                        and not (isinstance(target_val, str) and "_" in target_val)
-                    ):
-                        prefix = existing.split("_", 1)[0]
-                        clean_num = (
-                            int(target_val)
-                            if isinstance(target_val, (int, float))
-                            and target_val == int(target_val)
-                            else target_val
-                        )
-                        target_val = f"{prefix}_{clean_num}"
-
-                    current[idx] = target_val
+                    current[idx] = value
                 return
 
             if isinstance(current, dict):
