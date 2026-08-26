@@ -26,7 +26,11 @@ class NakedObj:
         self.config = {}
         self.state_getter = None
         self.hass = __import__("unittest.mock").mock.MagicMock()
+        self._attributes = {}
         self.__dict__.update(kwargs)
+
+    def update_state_attributes(self, new_attrs):
+        self._attributes = new_attrs
 
 
 class DummyController(NakedObj):
@@ -373,6 +377,10 @@ async def test_async_update_properties_sniper_signature_and_flags():
             self.loader = DummyLoader()
             self.device_id = "test_dev"
             self.debug = False
+            self._attributes = {}
+
+        def update_state_attributes(self, new_attrs):
+            self._attributes = new_attrs
 
     controller = DummyController()
     poller = YamlStatePoller(controller)
@@ -440,6 +448,10 @@ async def test_async_update_properties_ttl():
             self.available = True
             self.device_id = "XXXX"
             self.name = "TestFake"
+            self._attributes = {}
+
+        def update_state_attributes(self, new_attrs):
+            self._attributes = new_attrs
 
     mock_controller = FakeController()
     poller = YamlStatePoller(mock_controller)

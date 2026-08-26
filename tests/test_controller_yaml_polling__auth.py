@@ -22,7 +22,11 @@ class NakedObj:
         self.available = True
         self.device_id = "XXXX"
         self.hass = __import__("unittest.mock").mock.MagicMock()
+        self._attributes = {}
         self.__dict__.update(kwargs)
+
+    def update_state_attributes(self, new_attrs):
+        self._attributes = new_attrs
 
 
 class DummyController(NakedObj):
@@ -184,7 +188,11 @@ async def test_refresh_smartthings_token_sniper_failures(
             self.available = True
             self.device_id = "XXXX"
             self.log_prefix = "[AuthTest]"
+            self._attributes = {}
             # hass is intentionally not defined at start
+
+        def update_state_attributes(self, new_attrs):
+            self._attributes = new_attrs
 
     mock_controller = DummyController()
     poller = YamlStatePoller(mock_controller)

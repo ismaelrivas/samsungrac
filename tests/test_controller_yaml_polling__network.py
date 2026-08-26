@@ -23,7 +23,11 @@ class NakedObj:
         self.available = True
         self.device_id = "XXXX"
         self.hass = __import__("unittest.mock").mock.MagicMock()
+        self._attributes = {}
         self.__dict__.update(kwargs)
+
+    def update_state_attributes(self, new_attrs):
+        self._attributes = new_attrs
 
 
 class DummyController(NakedObj):

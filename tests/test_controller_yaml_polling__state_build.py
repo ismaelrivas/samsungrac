@@ -36,7 +36,11 @@ class NakedObj:
         self.config = {}
         self.state_getter = None
         self.hass = __import__("unittest.mock").mock.MagicMock()
+        self._attributes = {}
         self.__dict__.update(kwargs)
+
+    def update_state_attributes(self, new_attrs):
+        self._attributes = new_attrs
 
 
 class DummyController(NakedObj):
@@ -522,9 +526,12 @@ async def test_async_update_properties_defaults_and_chaos_cache():
             self.device_id = "XXXX"
             self.hass = __import__("unittest.mock").mock.MagicMock()
             self.loader = MagicMock()
-            self.debug = False
             self.log_prefix = "test"
+            self._attributes = {}
             # device_id is deliberately missing
+
+        def update_state_attributes(self, new_attrs):
+            self._attributes = new_attrs
 
     mock_controller = FakeController()
     mock_controller.loader.is_fully_initialized = True

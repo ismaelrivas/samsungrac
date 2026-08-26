@@ -33,8 +33,12 @@ class NakedObj:
         self.sensors = {}
         self.properties = {}
         self.operations = {}
+        self._attributes = {}
         for k, v in kwargs.items():
             setattr(self, k, v)
+
+    def update_state_attributes(self, new_attrs):
+        self._attributes = new_attrs
 
 
 class DummyController:
@@ -57,9 +61,12 @@ class DummyController:
             _parsed_yaml_cache={},
             state_getter=None,
         )
-        # Overwrite with injected test kwargs if present
+        self._attributes = {}
         for k, v in kwargs.items():
             setattr(self, k, v)
+
+    def update_state_attributes(self, new_attrs):
+        self._attributes = new_attrs
 
 
 async def _helper_build_device_state_from_props(self):

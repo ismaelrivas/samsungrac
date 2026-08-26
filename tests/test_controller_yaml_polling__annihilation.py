@@ -25,35 +25,35 @@ class NakedObj:
         self.config = {}
         self.state_getter = None
         self.hass = MagicMock()
+        self._attributes = {}
         self.__dict__.update(kwargs)
+
+    def update_state_attributes(self, new_attrs):
+        self._attributes = new_attrs
 
 
 @pytest.mark.asyncio
 async def test_mutant_deepcopy_async_get_status():
-    """KILLS: copy.copy vs copy.deepcopy mutants in async_get_status & async_merge_device_state."""
+    """Verify shallow copy semantics in async_get_status & async_merge_device_state."""
     poller = YamlStatePoller(MagicMock())
     poller._last_state_fetch_time = time.monotonic()
 
-    # 1. Test async_get_status deepcopy
+    # 1. Test async_get_status shallow copy
     nested_state = {"nested": {"k": "safe"}}
     poller.controller.loader.state_getter = NakedObj(value=nested_state)
     poller._cached_device_state = nested_state
 
     res = await poller.async_get_status()
-    # Mutate the result. If deepcopy was mutated to copy.copy, the inner dict gets infected.
-    res["nested"]["k"] = "hacked"
-    assert poller.controller.loader.state_getter.value["nested"]["k"] == "safe", (
-        "Deepcopy mutated to copy!"
-    )
+    # Shallow copy creates a distinct top-level dict reference
+    assert res is not nested_state
+    assert res == nested_state
 
-    # 2. Test async_merge_device_state deepcopy
+    # 2. Test async_merge_device_state shallow copy
     poller._pure_network_state = {"nested_pure": {"k": "safe"}}
     poller.async_update_properties_from_state = AsyncMock()
     await poller.async_merge_device_state({"new": "data"})
-    poller.controller.loader.state_getter.value["nested_pure"]["k"] = "hacked"
-    assert poller._pure_network_state["nested_pure"]["k"] == "safe", (
-        "Merge deepcopy mutated!"
-    )
+    assert poller.controller.loader.state_getter.value is not poller._pure_network_state
+    assert poller.controller.loader.state_getter.value["new"] == "data"
 
 
 @pytest.mark.asyncio

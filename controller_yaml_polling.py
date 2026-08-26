@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import asyncio
-import copy
 import logging
 import time
 from typing import Any, Protocol, cast, runtime_checkable
@@ -310,13 +309,18 @@ class YamlStatePoller:
             if st_getter and st_getter.value:  # pragma: no mutate
                 # Return RAM state injected with locks to lock the UI without flickering
                 return cast(
-                    dict[str, Any] | None, copy.deepcopy(st_getter.value)
+                    dict[str, Any] | None,
+                    dict(st_getter.value)
+                    if isinstance(st_getter.value, dict)
+                    else st_getter.value,
                 )  # pragma: no mutate
             return self._cached_device_state.copy()
 
         device_state = await self.async_update_state()
         return (
-            copy.deepcopy(device_state) if device_state else None
+            dict(device_state)
+            if isinstance(device_state, dict)
+            else device_state
         )  # pragma: no mutate
 
     def _requires_icmp_ping(self, device_type: str) -> bool:
@@ -444,7 +448,11 @@ class YamlStatePoller:
         self._last_state_fetch_time = time.monotonic()
 
         # 💥 NETWORK TRUTH STORAGE: Isolated from UI pollution
-        self._pure_network_state = copy.deepcopy(full_device_state)
+        self._pure_network_state = (
+            dict(full_device_state)
+            if isinstance(full_device_state, dict)
+            else full_device_state
+        )
 
         if not self.controller.loader.is_fully_initialized:
             try:
@@ -969,7 +977,11 @@ class YamlStatePoller:
             ):
                 return {}
 
-            self._last_device_state = copy.deepcopy(device_to_process)
+            self._last_device_state = (
+                dict(device_to_process)
+                if isinstance(device_to_process, dict)
+                else device_to_process
+            )
 
         all_properties = (
             list(self.controller.loader.operations.values())
@@ -1041,10 +1053,7 @@ class YamlStatePoller:
                 new_attrs.update(prop.state_attributes)
         new_attrs["last_sync"] = dt_util.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        if hasattr(self.controller, "update_state_attributes"):
-            self.controller.update_state_attributes(new_attrs)
-        elif hasattr(self.controller, "_attributes"):
-            self.controller._attributes = new_attrs
+        self.controller.update_state_attributes(new_attrs)
 
     def _get_hass_attr_for_op_id(self, op_id: str) -> str:
         """Map YAML operation IDs to HA Attributes for validation mapping."""
@@ -1064,8 +1073,10 @@ class YamlStatePoller:
 
         if not self._pure_network_state:
             if st_getter.value:
-                self._pure_network_state = copy.deepcopy(
-                    st_getter.value
+                self._pure_network_state = (
+                    dict(st_getter.value)
+                    if isinstance(st_getter.value, dict)
+                    else st_getter.value
                 )  # pragma: no mutate
             else:
                 return False
@@ -1074,7 +1085,11 @@ class YamlStatePoller:
         self._pure_network_state.update(new_data)
 
         # Clone pure network base before Anti-Flicker engine poisons it for UX
-        candidate_state = copy.deepcopy(self._pure_network_state)
+        candidate_state = (
+            dict(self._pure_network_state)
+            if isinstance(self._pure_network_state, dict)
+            else self._pure_network_state
+        )
 
         self._set_prop_value(st_getter, candidate_state)
 

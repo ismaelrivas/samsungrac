@@ -28,7 +28,11 @@ class NakedObj:
         self.config = {}
         self.state_getter = None
         self.hass = __import__("unittest.mock").mock.MagicMock()
+        self._attributes = {}
         self.__dict__.update(kwargs)
+
+    def update_state_attributes(self, new_attrs):
+        self._attributes = new_attrs
 
     def __getattr__(self, name):
         """Dispara AttributeError explícito si el test olvida definir algo que la producción exige."""
