@@ -2037,3 +2037,39 @@ def test_inject_value_into_state_payload_options_exact_equality():
     state3 = {"Device_Mode": "Off"}
     poller._inject_value_into_state(prop_empty, state3, 2)
     assert state3 == {"Device_Mode": 2}
+
+
+def test_inject_value_into_state_state_node_structural_integrity():
+    """Target 2: Kills Mutant 45 on Line 656 in _inject_value_into_state (if state_node and isinstance(state_node, str))."""
+    poller = YamlStatePoller(DummyController())
+    prop = MagicMock(id="temperature", connection_template=None)
+    del prop.apply_optimistic_cascades
+    del prop.set_device_state_for_values
+    del prop.convert_hass_to_dev
+
+    # 1. Empty string state_node -> falsy: must NOT inject or mutate device_state (kills 'and' -> 'or' mutant)
+    poller._get_state_node_from_prop = MagicMock(return_value="")
+    state_empty_str = {"temp": 20, "mode": "cool"}
+    poller._inject_value_into_state(prop, state_empty_str, 25)
+    assert state_empty_str == {"temp": 20, "mode": "cool"}
+    assert "" not in state_empty_str
+
+    # 2. None state_node -> falsy: must NOT inject or mutate device_state
+    poller._get_state_node_from_prop = MagicMock(return_value=None)
+    state_none = {"temp": 20}
+    poller._inject_value_into_state(prop, state_none, 25)
+    assert state_none == {"temp": 20}
+
+    # 3. Non-string state_node (int) -> not a string: must NOT inject or mutate device_state
+    poller._get_state_node_from_prop = MagicMock(return_value=123)
+    state_int = {"temp": 20}
+    poller._inject_value_into_state(prop, state_int, 25)
+    assert state_int == {"temp": 20}
+
+    # 4. Valid string state_node -> strictly injects and preserves full dictionary structure
+    poller._get_state_node_from_prop = MagicMock(return_value="temp")
+    state_valid = {"temp": 20, "power": "on"}
+    poller._inject_value_into_state(prop, state_valid, 25)
+    assert state_valid == {"temp": 25, "power": "on"}
+    assert state_valid["temp"] == 25
+    assert state_valid["power"] == "on"

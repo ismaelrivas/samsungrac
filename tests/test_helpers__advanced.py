@@ -1129,10 +1129,22 @@ async def test_async_check_network_reachability_string_slicing_survivors(mock_pi
         "privileged": False,
     }
 
-    # IPv6 with just brackets: [fe80::1] -> "fe80::1"
+    # IPv6 with just brackets: [fe80::1] -> "fe80::1" (kills 1 -> 0 or 1 -> 2 slice mutant)
     mock_ping.reset_mock()
     res3 = await async_check_network_reachability("[fe80::1]")
     assert res3 is True
+    assert mock_ping.call_args.kwargs == {
+        "address": "fe80::1",
+        "count": 1,
+        "timeout": 0.5,
+        "interval": 0.2,
+        "privileged": False,
+    }
+
+    # IPv6 with port: [fe80::1]:8888 -> "fe80::1"
+    mock_ping.reset_mock()
+    res3_port = await async_check_network_reachability("[fe80::1]:8888")
+    assert res3_port is True
     assert mock_ping.call_args.kwargs == {
         "address": "fe80::1",
         "count": 1,

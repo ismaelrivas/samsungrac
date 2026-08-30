@@ -1544,3 +1544,133 @@ async def test_async_setup_entry_options_override_and_task_dispatch(
             [{CONF_SUBDEVICE_ID: "opt_dev_id", CONF_NAME: "Opt Name"}],
             "custom_session_obj",
         )
+
+
+async def test_async_setup_entry_missing_device_id_default_none_strict(
+    hass: HomeAssistant,
+) -> None:
+    """Target 3: Kills Mutant 22 on Line 234 (verifies None default for missing CONF_DEVICE_ID)."""
+    from custom_components.climate_ip.const import (
+        CONF_DEVICE_TYPE,
+        CONF_NAME,
+        CONF_SUBDEVICE_ID,
+        DEVICE_TYPE_SMARTTHINGS_HVAC,
+        MAIN_DEVICE_ID,
+    )
+
+    # Missing CONF_DEVICE_ID in both data and options for SmartThings HVAC
+    entry_missing_id = MockConfigEntry(
+        domain=DOMAIN,
+        title="Default ST Title",
+        data={
+            "ip_address": "1.2.3.4",
+            CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
+            CONF_NAME: "Default ST Name",
+        },
+        options={},
+        unique_id="MISSING_DEV_ID_UID",
+    )
+    entry_missing_id.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.climate_ip._build_device_setup_tasks"
+        ) as mock_build_tasks,
+        patch(
+            "custom_components.climate_ip.async_get_clientsession"
+        ) as mock_session_getter,
+        patch(
+            "asyncio.gather",
+            new=AsyncMock(return_value=[(MAIN_DEVICE_ID, MagicMock())]),
+        ),
+        patch.object(
+            hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
+        ),
+    ):
+        mock_session_getter.return_value = "session_obj_val"
+        res = await async_setup_entry(hass, entry_missing_id)
+        assert res is True
+        # If default None was mutated, subdev_id would be the mutated string instead of MAIN_DEVICE_ID
+        mock_build_tasks.assert_called_once_with(
+            hass,
+            entry_missing_id,
+            [{CONF_SUBDEVICE_ID: MAIN_DEVICE_ID, CONF_NAME: "Default ST Name"}],
+            "session_obj_val",
+        )
+
+
+async def test_async_setup_single_device_strict_initialization_and_args(
+    hass: HomeAssistant,
+) -> None:
+    """Target 3: Kills Mutant 9 on Line 105 in _async_setup_single_device."""
+    import logging
+
+    from custom_components.climate_ip import _async_setup_single_device
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"ip_address": "192.168.1.100", "device_type": "samsung_2878"},
+        unique_id="STRICT_INIT_UID",
+    )
+    entry.add_to_hass(hass)
+    session_obj = "strict_session_marker"
+    integration_logger = logging.getLogger("custom_components.climate_ip")
+
+    with (
+        patch("custom_components.climate_ip.YamlController") as mock_yaml,
+        patch("custom_components.climate_ip.SamsungClimateCoordinator") as mock_coord,
+    ):
+        # 1. Successful initialization
+        ctrl_ok = MagicMock(
+            initialize=AsyncMock(return_value=True), async_shutdown=AsyncMock()
+        )
+        mock_yaml.return_value = ctrl_ok
+        coord_ok = MagicMock(
+            async_config_entry_first_refresh=AsyncMock(), async_shutdown=AsyncMock()
+        )
+        mock_coord.return_value = coord_ok
+
+        dev_id, res_coord = await _async_setup_single_device(
+            hass, entry, "dev_target9", "Living Room", None, session_obj
+        )
+        assert dev_id == "dev_target9"
+        assert res_coord is coord_ok
+        assert res_coord is not None
+        mock_yaml.assert_called_once_with(
+            config_entry=entry,
+            device_id="dev_target9",
+            logger=integration_logger,
+            hass=hass,
+            session=session_obj,
+        )
+
+        # 2. Failed initialization (returns False) -> must shutdown and return None
+        mock_yaml.reset_mock()
+        ctrl_false = MagicMock(
+            initialize=AsyncMock(return_value=False), async_shutdown=AsyncMock()
+        )
+        mock_yaml.return_value = ctrl_false
+
+        dev_id_false, res_coord_false = await _async_setup_single_device(
+            hass, entry, "dev_target9", "Living Room", None, session_obj
+        )
+        assert dev_id_false == "dev_target9"
+        assert res_coord_false is None
+        ctrl_false.async_shutdown.assert_awaited_once()
+
+        # 3. ConnectionRefusedError during initialize -> must shutdown and return None
+        mock_yaml.reset_mock()
+        ctrl_refused = MagicMock(
+            initialize=AsyncMock(
+                side_effect=ConnectionRefusedError("Connection refused")
+            ),
+            async_shutdown=AsyncMock(),
+        )
+        mock_yaml.return_value = ctrl_refused
+
+        dev_id_refused, res_coord_refused = await _async_setup_single_device(
+            hass, entry, "dev_target9", "Living Room", None, session_obj
+        )
+        assert dev_id_refused == "dev_target9"
+        assert res_coord_refused is None
+        ctrl_refused.async_shutdown.assert_awaited_once()
