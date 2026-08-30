@@ -464,6 +464,10 @@ def test_mutant_apply_anti_flicker_global_evict():
         changed_keys=changed_keys,
     )
 
+    op_evict.should_evict_all_locks.assert_called_with(
+        pure_device_to_process, changed_keys
+    )
+
     # When unmutated: global_evict is True -> can_release is True -> lock is released
     # When mutated (global_evict = False): can_release is False -> lock remains in _pending_updates
     assert "temperature" not in poller._pending_updates

@@ -1890,3 +1890,87 @@ def test_find_device_node_integration_in_extract_nodes():
     dev_proc, pure_dev_proc = poller._extract_device_nodes(full_state, pure_state)
     assert dev_proc == {"id": "1", "temp": 25}
     assert pure_dev_proc == {"id": "1", "pure_temp": 25}
+
+
+# =====================================================================
+# TEMPORAL ANTI-FLICKER & EVICTION ASSERTIONS (PHASE 3)
+# =====================================================================
+def test_apply_anti_flicker_should_evict_all_locks_arguments():
+    """Target 1: Kills Mutants 7 & 8 by strictly verifying should_evict_all_locks arguments."""
+    poller = YamlStatePoller(DummyController())
+    mock_op = MagicMock(id="power")
+    mock_op.should_evict_all_locks.return_value = True
+
+    all_props = [mock_op]
+    device_to_process = {"power_node": "Off"}
+    pure_device_to_process = {"power_node": "Off", "meta": "raw_state"}
+    changed_keys = {"power_node", "extra_key"}
+
+    poller._apply_anti_flicker_locks(
+        all_props,
+        device_to_process,
+        pure_device_to_process,
+        is_prediction=False,
+        changed_keys=changed_keys,
+    )
+
+    mock_op.should_evict_all_locks.assert_called_once_with(
+        pure_device_to_process, changed_keys
+    )
+
+
+@pytest.mark.asyncio
+async def test_anti_flicker_time_exact_boundary():
+    """Target 2: Eradicate Mutant 59 by testing the exact boundary condition of LOCK_SHIELD_SEC."""
+    poller = YamlStatePoller(DummyController())
+    op = MagicMock(id="mode")
+    del op.should_evict_all_locks
+    op.calculate_value_from_state.return_value = "cool"
+    poller._get_state_node_from_prop = MagicMock(return_value="mode_node")
+    all_props = [op]
+    device_to_process = {"mode_node": "cool"}
+    pure_device_to_process = {"mode_node": "cool"}
+
+    # Test Sub-Case 1: Exactly 1 millisecond before shield expiry (lock_age = 2.999s < 3.0s) -> SHIELD HELD
+    with patch("time.monotonic", return_value=102.999):
+        poller._pending_updates = {"mode": ("cool", 100.0)}
+        poller._apply_anti_flicker_locks(
+            all_props,
+            device_to_process,
+            pure_device_to_process,
+            is_prediction=False,
+            changed_keys=None,
+        )
+        assert "mode" in poller._pending_updates, (
+            "Temporal shield must remain active when lock_age < LOCK_SHIELD_SEC (2.999s < 3.0s)"
+        )
+
+    # Test Sub-Case 2: Exactly AT the boundary (lock_age = 3.000s == LOCK_SHIELD_SEC) -> SHIELD RELEASED
+    # KILLS Mutant 59 (changing `<` to `<=`)
+    with patch("time.monotonic", return_value=103.000):
+        poller._pending_updates = {"mode": ("cool", 100.0)}
+        poller._apply_anti_flicker_locks(
+            all_props,
+            device_to_process,
+            pure_device_to_process,
+            is_prediction=False,
+            changed_keys=None,
+        )
+        assert "mode" not in poller._pending_updates, (
+            "Temporal shield must release at exact boundary (3.0s is NOT < 3.0s, allowing lock release)"
+        )
+
+    # Test Sub-Case 3: Just past the boundary (lock_age = 3.001s > 3.0s) -> SHIELD RELEASED
+    with patch("time.monotonic", return_value=103.001):
+        poller._pending_updates = {"mode": ("cool", 100.0)}
+        poller._apply_anti_flicker_locks(
+            all_props,
+            device_to_process,
+            pure_device_to_process,
+            is_prediction=False,
+            changed_keys=None,
+        )
+        assert "mode" not in poller._pending_updates, (
+            "Temporal shield must release when lock_age > LOCK_SHIELD_SEC"
+        )
+
