@@ -629,7 +629,7 @@ class YamlStatePoller:
         conn_tmpl = getattr(prop, "connection_template", None)
         if conn_tmpl is not None:
             try:
-                rendered = render_template(conn_tmpl, value=value)
+                rendered = render_template(conn_tmpl, value=value, device_state=device_state)
                 parsed = (
                     rendered
                     if isinstance(rendered, dict)
@@ -649,7 +649,7 @@ class YamlStatePoller:
                 ):
                     if payload["options"] and isinstance(payload["options"][0], str):
                         dev_val = payload["options"][0]
-            except Exception:  # pylint: disable=broad-exception-caught
+            except (ValueError, TypeError, KeyError):
                 pass
 
         state_node = self._get_state_node_from_prop(prop)
@@ -700,15 +700,15 @@ class YamlStatePoller:
             return raw_state
 
         cache_key = getattr(self.controller, "device_id", "XXXX")
-        dev_cfg = cache.get(cache_key, {})
+        dev_cfg = cache.get(cache_key)
         if not isinstance(dev_cfg, dict):  # pragma: no mutate
             dev_cfg = {}
-        device_section = dev_cfg.get(CONFIG_DEVICE, {})
-        identifiers = (
-            device_section.get("identifiers", {})
-            if isinstance(device_section, dict)
-            else {}
-        )
+        device_section = dev_cfg.get(CONFIG_DEVICE)
+        if not isinstance(device_section, dict):
+            device_section = {}
+        identifiers = device_section.get("identifiers")
+        if not isinstance(identifiers, dict):
+            identifiers = {}
 
         path_to_devices = (
             identifiers.get("path_to_devices")

@@ -2475,3 +2475,127 @@ async def test_device_property_async_set_value_flow_and_cascades(
     test_state = {"Operation": {"power": "On"}}
     op.apply_optimistic_cascades(test_state, "off")
     assert test_state["Operation"]["power"] == "Off"
+
+
+# --- Sniper Tests for Fallback & Template Synthesis (Target 1) ---
+@pytest.mark.asyncio
+async def test_device_operation_async_set_value_routing_fallbacks_and_missing_params(
+    mock_controller,
+):
+    """Target 1: Force and validate all fallback branches and strict routing errors in async_set_value."""
+    # 1. Fallback to connection._params when params misses method and url
+    mock_conn = MagicMock()
+    mock_conn.is_async_native = True
+    mock_conn._connection_template = None
+    mock_conn.connection_template = None
+    mock_conn.config = {KEY_DUID: "duid_123"}
+    mock_conn._params = {
+        "method": "PUT",
+        "url": "/conn_endpoint",
+        "headers": {"X-Custom": "1"},
+    }
+    mock_conn.async_execute = AsyncMock(return_value=('{"status": "ok"}', None))
+    mock_controller.connection = None
+
+    op = DeviceOperation("test_op", mock_conn, mock_controller)
+    op._connection_template = Template(
+        hass=mock_controller.hass, template='{"json": {"power": "on"}}'
+    )
+    op._device_state = {"power": "off"}
+
+    res = await op.async_set_value("on")
+    assert res is True
+    mock_conn.async_execute.assert_called_once_with(
+        "PUT",
+        "/conn_endpoint",
+        json_dumps({"power": "on"}),
+        {"X-Custom": "1"},
+        device_state={"power": "off"},
+    )
+
+    # 2. Fallback to controller.connection._params when connection._params misses url/method
+    mock_conn._params = {}
+    mock_ctrl_conn = MagicMock()
+    mock_ctrl_conn._params = {"method": "PATCH", "url": "/ctrl_endpoint"}
+    mock_controller.connection = mock_ctrl_conn
+
+    mock_conn.async_execute.reset_mock()
+    res = await op.async_set_value("on")
+    assert res is True
+    mock_conn.async_execute.assert_called_once_with(
+        "PATCH",
+        "/ctrl_endpoint",
+        json_dumps({"power": "on"}),
+        {},
+        device_state={"power": "off"},
+    )
+
+    # 3. Default to 'POST' when method is missing in params/conn/ctrl but KEY_JSON_PAYLOAD exists
+    mock_ctrl_conn._params = {"url": "/ctrl_endpoint"}  # no method
+    mock_conn.async_execute.reset_mock()
+    res = await op.async_set_value("on")
+    assert res is True
+    assert mock_conn.async_execute.call_args[0][0] == "POST"
+
+    # 4. Strict routing error (ValueError) when url is missing and not in fallbacks
+    mock_ctrl_conn._params = {"method": "POST"}  # no url
+    with pytest.raises(
+        ValueError,
+        match="Strict routing failed: Missing method or url in YAML configuration",
+    ):
+        await op.async_set_value("on")
+
+    # 5. Non-string method/url sanitized to None and triggers strict routing error
+    mock_conn._params = {"method": 12345, "url": 67890}
+    mock_controller.connection = None
+    with pytest.raises(
+        ValueError,
+        match="Strict routing failed: Missing method or url in YAML configuration",
+    ):
+        await op.async_set_value("on")
+
+
+@pytest.mark.asyncio
+async def test_get_json_status_synthesizes_connection_template_from_params(
+    mock_controller,
+):
+    """Target 1: Validate _connection_template synthesis logic in load_from_yaml and async_update_state."""
+    # 1. load_from_yaml synthesizes connection_template from connection._params
+    conn = MagicMock()
+    conn.is_async_native = True
+    conn.connection_template = None
+    conn._connection_template = None
+    conn._params = {"method": "GET", "url": "/api/v1/devicestate"}
+    conn.create_updated.return_value = conn
+
+    getter = GetJsonStatus("status_getter", conn, mock_controller)
+    getter._connection_template = None
+
+    loaded = getter.load_from_yaml({"type": STATUS_GETTER_JSON})
+    assert loaded is True
+    assert getter._connection_template is not None
+    assert getter._connection_template.template == json_dumps(
+        {"method": "GET", "url": "/api/v1/devicestate"}
+    )
+
+    # 2. async_update_state synthesizes connection_template on-the-fly when _connection_template is None
+    getter._connection_template = None
+    conn.async_execute = AsyncMock(
+        return_value=('{"power": "on", "mode": "cool"}', 200)
+    )
+    mock_controller.device_id = "test_ac_001"
+
+    state_result = await getter.async_update_state()
+    assert state_result == {"power": "on", "mode": "cool"}
+    assert getter._connection_template is not None
+    assert getter._connection_template.template == json_dumps(
+        {"method": "GET", "url": "/api/v1/devicestate"}
+    )
+    conn.async_execute.assert_called_once_with(
+        "GET",
+        "/api/v1/devicestate",
+        None,
+        {},
+        _is_poll=True,
+    )
+

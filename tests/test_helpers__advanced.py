@@ -993,3 +993,59 @@ async def test_async_get_mac_address_token_filtering_and_loop_resilience(mock_ex
     # 6. Slow Killed Target 50: Lowercase return assertion on uppercase input
     mock_proc.communicate.return_value = (b"AA:BB:CC:DD:EE:FF", b"")
     assert await async_get_mac_address("192.168.1.50") == "aa:bb:cc:dd:ee:ff"
+
+
+# --- Sniper Matrix for async_check_network_reachability (Target 2) ---
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("input_host", "expected_ip", "is_bypass"),
+    [
+        # Plain IPv4
+        ("192.168.1.100", "192.168.1.100", False),
+        ("10.0.0.50", "10.0.0.50", False),
+        # HTTP / HTTPS URLs with ports and paths
+        ("http://192.168.1.50:8888", "192.168.1.50", False),
+        ("http://192.168.1.50:8888/api/status", "192.168.1.50", False),
+        ("https://10.0.0.1:443/", "10.0.0.1", False),
+        ("http://172.16.0.15/device", "172.16.0.15", False),
+        ("192.168.1.200:8888", "192.168.1.200", False),
+        # IPv6 bracket parsing with and without ports
+        ("http://[fe80::1]:8888", "fe80::1", False),
+        ("https://[2001:db8::1]:8443/status", "2001:db8::1", False),
+        ("[2001:db8::1]", "2001:db8::1", False),
+        ("[fe80::dead:beef:cafe]", "fe80::dead:beef:cafe", False),
+        # Localhost bypasses
+        ("localhost", "localhost", True),
+        ("http://localhost:8080", "localhost", True),
+        ("127.0.0.1", "127.0.0.1", True),
+        ("http://127.0.0.1:8888/test", "127.0.0.1", True),
+        ("::1", "::1", True),
+        ("http://[::1]:8888", "::1", True),
+        ("[::1]", "::1", True),
+    ],
+)
+@patch("custom_components.climate_ip.helpers.async_ping")
+async def test_x_async_check_network_reachability_matrix(
+    mock_ping, input_host, expected_ip, is_bypass
+):
+    """Sniper matrix for async_check_network_reachability to eradicate string slicing mutants."""
+    mock_host = MagicMock()
+    mock_host.is_alive = True
+    mock_ping.return_value = mock_host
+
+    result = await async_check_network_reachability(input_host)
+    assert result is True
+
+    if is_bypass:
+        mock_ping.assert_not_called()
+    else:
+        assert mock_ping.call_count == 1
+        call_kwargs = mock_ping.call_args.kwargs
+        assert call_kwargs["address"] == expected_ip, (
+            f"Expected cleaned IP '{expected_ip}' for input '{input_host}', got '{call_kwargs['address']}'"
+        )
+        assert call_kwargs["count"] == 1
+        assert call_kwargs["timeout"] == 0.5
+        assert call_kwargs["interval"] == 0.2
+        assert call_kwargs["privileged"] is False
+
