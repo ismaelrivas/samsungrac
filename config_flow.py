@@ -418,7 +418,7 @@ class ClimateIpConfigFlow(
 
                 req_kwargs: dict[str, Any] = {
                     "headers": headers,
-                    "timeout": GLOBAL_HTTP_TIMEOUT,  # type: ignore[arg-type] # pragma: no mutate
+                    "timeout": GLOBAL_HTTP_TIMEOUT,  # pragma: no mutate
                 }
                 if any(
                     loc in host_str.lower()
