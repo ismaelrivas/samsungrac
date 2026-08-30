@@ -35,7 +35,7 @@ def acquirer(mock_hass, stream_config):
     )
 
 
-async def test_cert_not_found(acquirer, caplog):
+async def test_yaml_cert_not_found(acquirer, caplog):
     """Test that a CertNotFound error is gracefully caught and logs properly if all strategies fail."""
     with patch(
         "custom_components.climate_ip.token_acquirer_yaml.async_create_samsung_ssl_context",
@@ -449,7 +449,7 @@ async def test_wait_for_token_no_reader(acquirer):
         await acquirer.async_wait_for_token()
 
 
-async def test_wait_for_token_timeout(acquirer):
+async def test_stream_wait_for_token_timeout(acquirer):
     """Test timeout in async_wait_for_token."""
     mock_reader = AsyncMock()
     mock_reader.read.side_effect = TimeoutError()

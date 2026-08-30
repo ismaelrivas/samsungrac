@@ -397,22 +397,6 @@ def test_mask_sensitive_data():
     assert masked["nested"]["list_val"][0]["uuid"] == "***abcdef"
 
 
-async def test_update_props_not_initialized():
-    mock_controller = MagicMock()
-    poller = YamlStatePoller(mock_controller)
-    mock_controller.loader.is_fully_initialized = False
-    mock_controller.discovered_devices = [{"id": "dev1"}]
-    assert await poller.async_update_properties_from_state({"a": 1}) == {}
-
-
-async def test_update_props_null_device_state():
-    mock_controller = MagicMock()
-    poller = YamlStatePoller(mock_controller)
-    mock_controller.loader.is_fully_initialized = True
-    mock_controller.discovered_devices = [{"id": "dev1"}]
-    assert await poller.async_update_properties_from_state(None) == {}
-
-
 def test_mask_sensitive_data_primitive():
     """L183: Retorno temprano para datos primitivos."""
     poller = YamlStatePoller(MagicMock())

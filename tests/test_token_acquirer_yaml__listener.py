@@ -623,7 +623,7 @@ async def test_wait_for_token_custom_timeout(mock_hass, listener_config):
         mock_close.assert_called_once()
 
 
-async def test_wait_for_token_timeout(acquirer):
+async def test_listener_wait_for_token_timeout(acquirer):
     """Test waiting for a token timing out."""
     mock_timeout_ctx = make_mock_timeout_cm()
 

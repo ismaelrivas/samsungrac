@@ -109,7 +109,7 @@ async def test_init_path_resolution(mock_hass):
     assert acq_rel._resolved_cert_path == "certs/cert.pem"
 
 
-async def test_cert_not_found(acquirer, caplog):
+async def test_legacy_cert_not_found(acquirer, caplog):
     """Test that a CertNotFound error is gracefully caught and logs properly if all strategies fail."""
     with patch(
         "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",

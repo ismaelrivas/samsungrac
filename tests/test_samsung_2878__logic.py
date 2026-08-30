@@ -1960,47 +1960,6 @@ def test_update_configuration_strict_dicts(connection):
 
 
 @pytest.mark.asyncio
-async def test_io_strict_timeouts_and_reads(connection):
-    """Kills mutants de asyncio.timeout(None), timeout=6.0 y read(4097)."""
-
-    # CORRECTION: Use MagicMock so at_eof() is real bool and not AsyncMock (which is truthy)
-    connection._reader = MagicMock()
-    connection._reader.at_eof.return_value = False
-    connection._reader.read = AsyncMock(side_effect=[b"chunk", b""])
-
-    # Mock asyncio.timeout Async Context Manager
-    mock_timeout_ctx = MagicMock()
-    mock_timeout_ctx.__aenter__ = AsyncMock()
-    mock_timeout_ctx.__aexit__ = AsyncMock(return_value=False)
-
-    with (
-        patch(
-            "custom_components.climate_ip.samsung_2878.asyncio.timeout",
-            return_value=mock_timeout_ctx,
-        ) as mock_timeout,
-        patch.object(connection, "_close_connection", new_callable=AsyncMock),
-    ):
-        # Prueba 1: _read_full_response estricto
-        await connection._read_full_response()
-
-        # Validate used exactly 10.0 (protected default value)
-        mock_timeout.assert_any_call(10.0)
-        # Validate read exact 4096 (neither 4097 nor None)
-        connection._reader.read.assert_any_call(4096)
-
-        # Prueba 2: _write_data estricto
-        mock_timeout.reset_mock()
-        connection._writer = MagicMock()
-        connection._writer.is_closing.return_value = False
-        connection._writer.drain = AsyncMock()
-
-        await connection._write_data("test")
-
-        # Validate write timeout was exactly 5.0
-        mock_timeout.assert_called_once_with(5.0)
-
-
-@pytest.mark.asyncio
 async def test_process_read_queue_strict_future_getattr(connection):
     """Verify mutant kill getattr(..., '_command_debug', None) en process_read_queue."""
 

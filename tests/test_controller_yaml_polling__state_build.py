@@ -893,11 +893,20 @@ async def test_update_state_discovery_fallback():
     await poller.async_update_state()
 
 
-async def test_update_props_invalid_dict():
+async def test_update_props_early_returns():
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)
-    mock_controller.loader.is_fully_initialized = True
     mock_controller.discovered_devices = [{"id": "dev1"}]
+
+    # Caso 1: Not initialized
+    mock_controller.loader.is_fully_initialized = False
+    assert await poller.async_update_properties_from_state({"a": 1}) == {}
+
+    # Caso 2: Null state
+    mock_controller.loader.is_fully_initialized = True
+    assert await poller.async_update_properties_from_state(None) == {}
+
+    # Caso 3: Invalid type (not a dict)
     assert await poller.async_update_properties_from_state(["not", "a", "dict"]) == {}
 
 
