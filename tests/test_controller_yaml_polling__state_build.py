@@ -1955,3 +1955,40 @@ async def test_anti_flicker_time_exact_boundary():
         assert "mode" not in poller._pending_updates, (
             "Temporal shield must release when lock_age > LOCK_SHIELD_SEC"
         )
+
+
+def test_inject_value_into_state_devices_key_strict():
+    """Target 4: Kills mutant on line 660 ('and Devices in device_state') in _inject_value_into_state."""
+    poller = YamlStatePoller(DummyController())
+    prop = MagicMock(id="temperature", connection_template=None)
+    del prop.apply_optimistic_cascades
+    del prop.set_device_state_for_values
+    del prop.convert_hass_to_dev
+    poller._get_state_node_from_prop = MagicMock(return_value="target_temp")
+
+    # 1. State WITHOUT "Devices" key -> updates root device_state directly, does NOT raise KeyError
+    state_without_devices = {"target_temp": 20}
+    poller._inject_value_into_state(prop, state_without_devices, 25)
+    assert state_without_devices == {"target_temp": 25}
+    assert "Devices" not in state_without_devices
+
+    # 2. State WITH "Devices" key containing a device dict -> updates BOTH root AND device_state["Devices"][0]
+    state_with_devices = {
+        "target_temp": 20,
+        "Devices": [{"target_temp": 20, "id": "0"}],
+    }
+    poller._inject_value_into_state(prop, state_with_devices, 25)
+    assert state_with_devices["target_temp"] == 25
+    assert state_with_devices["Devices"][0]["target_temp"] == 25
+
+    # 3. State WITH "Devices" key that is empty list -> does not crash or modify Devices
+    state_empty_devices = {"target_temp": 20, "Devices": []}
+    poller._inject_value_into_state(prop, state_empty_devices, 25)
+    assert state_empty_devices["target_temp"] == 25
+    assert state_empty_devices["Devices"] == []
+
+    # 4. State WITH "Devices" key that is list of non-dict -> does not crash or modify Devices
+    state_non_dict_devices = {"target_temp": 20, "Devices": ["not_a_dict"]}
+    poller._inject_value_into_state(prop, state_non_dict_devices, 25)
+    assert state_non_dict_devices["target_temp"] == 25
+    assert state_non_dict_devices["Devices"] == ["not_a_dict"]

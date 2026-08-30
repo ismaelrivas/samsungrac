@@ -1173,3 +1173,231 @@ async def test_async_unload_entry_last_entry_clears_yaml_cache_strict(
         hass.config_entries.async_entries.assert_called_once_with(DOMAIN)
         # Verify clear_yaml_cache was called because other_active_entries was empty (kills M27)
         mock_clear_cache.assert_called_once()
+
+
+# =====================================================================
+# PHASE 4 TARGET 2: __INIT__.PY SURVIVOR ERADICATION
+# =====================================================================
+async def test_async_setup_single_device_boundary_args_and_fallbacks(
+    hass: HomeAssistant,
+) -> None:
+    """Target 2: Verify _async_setup_single_device parent_unique_id, device_info and error paths."""
+    from custom_components.climate_ip import _async_setup_single_device
+    from custom_components.climate_ip.const import (
+        CONF_DEVICES,
+        CONF_SUBDEVICE_ID,
+        MAIN_DEVICE_ID,
+    )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"ip_address": "192.168.1.100", "device_type": "samsung_2878"},
+        unique_id="PARENT_UID",
+    )
+    entry.add_to_hass(hass)
+
+    with (
+        patch("custom_components.climate_ip.YamlController") as mock_yaml,
+        patch("custom_components.climate_ip.SamsungClimateCoordinator") as mock_coord,
+    ):
+        # 1. No CONF_DEVICES -> has_devices_list is False -> device_info=None, parent_unique_id=None
+        ctrl1 = MagicMock(
+            initialize=AsyncMock(return_value=True), async_shutdown=AsyncMock()
+        )
+        mock_yaml.return_value = ctrl1
+        coord1 = MagicMock(
+            async_config_entry_first_refresh=AsyncMock(), async_shutdown=AsyncMock()
+        )
+        mock_coord.return_value = coord1
+
+        dev_id, res_coord = await _async_setup_single_device(
+            hass, entry, MAIN_DEVICE_ID, "Living Room", {"model": "AC"}, None
+        )
+        assert dev_id == MAIN_DEVICE_ID
+        assert res_coord is coord1
+        mock_coord.assert_called_once_with(
+            hass, ctrl1, entry, device_info=None, parent_unique_id=None
+        )
+
+        # 2. With CONF_DEVICES, but device_id is MAIN_DEVICE_ID ("main") -> parent_unique_id is None
+        mock_coord.reset_mock()
+        entry_main_dev = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                "ip_address": "192.168.1.100",
+                "device_type": "samsung_2878",
+                CONF_DEVICES: [{"id": MAIN_DEVICE_ID}],
+            },
+            unique_id="PARENT_UID",
+        )
+        entry_main_dev.add_to_hass(hass)
+        dev_id, res_coord = await _async_setup_single_device(
+            hass,
+            entry_main_dev,
+            MAIN_DEVICE_ID,
+            "Main Unit",
+            {"model": "AC_Main"},
+            None,
+        )
+        assert dev_id == MAIN_DEVICE_ID
+        assert res_coord is coord1
+        mock_coord.assert_called_once_with(
+            hass,
+            ctrl1,
+            entry_main_dev,
+            device_info={"model": "AC_Main"},
+            parent_unique_id=None,
+        )
+
+        # 3. With CONF_DEVICES, and device_id is "sub1" -> parent_unique_id is entry.unique_id
+        mock_coord.reset_mock()
+        dev_id, res_coord = await _async_setup_single_device(
+            hass, entry_main_dev, "sub1", "Sub Unit", {"model": "AC_Sub"}, None
+        )
+        assert dev_id == "sub1"
+        assert res_coord is coord1
+        mock_coord.assert_called_once_with(
+            hass,
+            ctrl1,
+            entry_main_dev,
+            device_info={"model": "AC_Sub"},
+            parent_unique_id="PARENT_UID",
+        )
+
+        # 4. Controller initialize returns False -> safe shutdown and returns (device_id, None)
+        ctrl_fail = MagicMock(
+            initialize=AsyncMock(return_value=False), async_shutdown=AsyncMock()
+        )
+        mock_yaml.return_value = ctrl_fail
+        dev_id, res_coord = await _async_setup_single_device(
+            hass, entry, "sub1", "Sub Unit", None, None
+        )
+        assert dev_id == "sub1"
+        assert res_coord is None
+        ctrl_fail.async_shutdown.assert_awaited_once()
+
+        # 5. Controller initialize raises OSError -> safe shutdown and returns (device_id, None)
+        ctrl_err = MagicMock(
+            initialize=AsyncMock(side_effect=OSError("Network down")),
+            async_shutdown=AsyncMock(),
+        )
+        mock_yaml.return_value = ctrl_err
+        dev_id, res_coord = await _async_setup_single_device(
+            hass, entry, "sub1", "Sub Unit", None, None
+        )
+        assert dev_id == "sub1"
+        assert res_coord is None
+        ctrl_err.async_shutdown.assert_awaited_once()
+
+
+async def test_build_device_setup_tasks_strict_validation(hass: HomeAssistant) -> None:
+    """Target 2: Verify _build_device_setup_tasks filtering on non-lists, missing subdevice_ids, and wifi-kit id 0."""
+    from custom_components.climate_ip import _build_device_setup_tasks
+    from custom_components.climate_ip.const import (
+        CONF_NAME,
+        CONF_SUBDEVICE_ID,
+        WIFI_KIT_MGMT_ID,
+    )
+
+    entry = MockConfigEntry(domain=DOMAIN, data={}, unique_id="TEST_UID")
+
+    # Non list/tuple -> returns []
+    assert _build_device_setup_tasks(hass, entry, None, None) == []
+    assert _build_device_setup_tasks(hass, entry, "string_config", None) == []
+
+    # Filtered list: invalid dicts, missing subdevice_id, empty string id, and wifi kit 0
+    devices = [
+        "not_a_dict",
+        {CONF_NAME: "No Sub ID"},
+        {CONF_SUBDEVICE_ID: None, CONF_NAME: "None Sub ID"},
+        {CONF_SUBDEVICE_ID: "   ", CONF_NAME: "Blank Sub ID"},
+        {CONF_SUBDEVICE_ID: WIFI_KIT_MGMT_ID, CONF_NAME: "Wifi Kit 0"},
+        {CONF_SUBDEVICE_ID: "1", CONF_NAME: "Zone 1"},
+        {CONF_SUBDEVICE_ID: "2", CONF_NAME: None},  # Tests fallback to DEFAULT_UNKNOWN
+    ]
+
+    with patch(
+        "custom_components.climate_ip._async_setup_single_device"
+    ) as mock_setup_single:
+        tasks = _build_device_setup_tasks(hass, entry, devices, None)
+        assert len(tasks) == 2
+
+
+async def test_async_setup_entry_smartthings_device_id_normalization(
+    hass: HomeAssistant,
+) -> None:
+    """Target 2: Verify async_setup_entry SmartThings subdevice ID normalization paths."""
+    from custom_components.climate_ip.const import (
+        CONF_DEVICE_ID,
+        CONF_DEVICE_TYPE,
+        CONF_NAME,
+        CONF_SUBDEVICE_ID,
+        DEVICE_TYPE_SMARTTHINGS_DHW,
+        DEVICE_TYPE_SMARTTHINGS_HVAC,
+        MAIN_DEVICE_ID,
+    )
+
+    # 1. SmartThings HVAC with valid device_id
+    entry_st_hvac = MockConfigEntry(
+        domain=DOMAIN,
+        title="Living Room AC",
+        data={
+            "ip_address": "1.2.3.4",
+            CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
+            CONF_DEVICE_ID: "st_hvac_123",
+            CONF_NAME: "Custom HVAC Name",
+        },
+        unique_id="ST_HVAC_UID",
+    )
+    entry_st_hvac.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.climate_ip._build_device_setup_tasks"
+        ) as mock_build_tasks,
+        patch("custom_components.climate_ip.async_get_clientsession"),
+        patch(
+            "asyncio.gather", new=AsyncMock(return_value=[("st_hvac_123", MagicMock())])
+        ),
+        patch.object(
+            hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
+        ),
+    ):
+        await async_setup_entry(hass, entry_st_hvac)
+        # Verify devices_config passed to _build_device_setup_tasks
+        called_devices = mock_build_tasks.call_args[0][2]
+        assert called_devices == [
+            {CONF_SUBDEVICE_ID: "st_hvac_123", CONF_NAME: "Custom HVAC Name"}
+        ]
+
+    # 2. SmartThings DHW with empty device_id -> falls back to MAIN_DEVICE_ID
+    entry_st_dhw = MockConfigEntry(
+        domain=DOMAIN,
+        title="DHW Water Heater",
+        data={
+            "ip_address": "1.2.3.4",
+            CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_DHW,
+            CONF_DEVICE_ID: "   ",
+        },
+        unique_id="ST_DHW_UID",
+    )
+    entry_st_dhw.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.climate_ip._build_device_setup_tasks"
+        ) as mock_build_tasks,
+        patch("custom_components.climate_ip.async_get_clientsession"),
+        patch(
+            "asyncio.gather",
+            new=AsyncMock(return_value=[(MAIN_DEVICE_ID, MagicMock())]),
+        ),
+        patch.object(
+            hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
+        ),
+    ):
+        await async_setup_entry(hass, entry_st_dhw)
+        called_devices = mock_build_tasks.call_args[0][2]
+        assert called_devices == [
+            {CONF_SUBDEVICE_ID: MAIN_DEVICE_ID, CONF_NAME: "DHW Water Heater"}
+        ]

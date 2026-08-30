@@ -1684,3 +1684,61 @@ async def test_async_finish_initialization_state_flag(mock_controller) -> None:
     assert loader.is_fully_initialized is True, (
         "INFRACCIÓN: La bandera de inicialización no fue levantada."
     )
+
+
+@pytest.mark.asyncio
+async def test_async_initialize_yaml_cache_non_dict_and_dict_strict(
+    mock_controller,
+) -> None:
+    """Target 4: Kills mutant on line 139 (if self._parsed_yaml_config is not None) in async_initialize."""
+    from custom_components.climate_ip.controller_yaml_config import (
+        _YAML_FILE_CACHE,
+        YamlConfigLoader,
+    )
+
+    mock_controller.hass.async_add_executor_job = AsyncMock(
+        side_effect=lambda f, *args: f(*args)
+    )
+    loader = YamlConfigLoader(mock_controller)
+    test_yaml_path = "/non_dict_test.yaml"
+    _YAML_FILE_CACHE.pop(test_yaml_path, None)
+    mock_controller.yaml_file = test_yaml_path
+
+    # 1. Non-dict return from load_yaml -> self._parsed_yaml_config is None, NOT added to _YAML_FILE_CACHE
+    with patch(
+        "custom_components.climate_ip.controller_yaml_config.load_yaml",
+        return_value="not_a_dictionary_string",
+    ):
+        res = await loader.async_initialize()
+        assert res is False
+        assert loader._parsed_yaml_config is None
+        assert test_yaml_path not in _YAML_FILE_CACHE
+
+    # 2. Dict return from load_yaml -> self._parsed_yaml_config is dict, added to _YAML_FILE_CACHE
+    valid_dict_path = "/valid_dict_test.yaml"
+    _YAML_FILE_CACHE.pop(valid_dict_path, None)
+    mock_controller.yaml_file = valid_dict_path
+    with (
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.load_yaml",
+            return_value={
+                "device": {"connection": {"type": "request"}, "token": "test"}
+            },
+        ),
+        patch(
+            "custom_components.climate_ip.connection_request.ConnectionRequest.load_from_yaml",
+            return_value=True,
+        ),
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.create_status_getter",
+            return_value=MagicMock(),
+        ),
+        pytest.warns(DeprecationWarning),
+    ):
+        await loader.async_initialize()
+        assert loader._parsed_yaml_config == {
+            "device": {"connection": {"type": "request"}, "token": "test"}
+        }
+        assert _YAML_FILE_CACHE[valid_dict_path] == {
+            "device": {"connection": {"type": "request"}, "token": "test"}
+        }

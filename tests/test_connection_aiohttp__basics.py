@@ -2179,6 +2179,56 @@ def test_load_from_yaml_annihilation(mock_logger, mock_hass, mock_session):
     assert conn._keep_alive is True
 
 
+def test_load_from_yaml_connection_base_and_params_strict(
+    mock_logger, mock_hass, mock_session
+):
+    """Target 3: Kills mutants in ConnectionAiohttp8888.load_from_yaml (Lines 302, 309, 310)."""
+    from custom_components.climate_ip.const import CONFIG_DEVICE_CONNECTION_PARAMS
+
+    conn = ConnectionAiohttp8888(
+        {CONF_TOKEN: "tok"}, mock_logger, mock_hass, mock_session, "192.168.1.100"
+    )
+    conn._params = {"initial": "val"}
+
+    # 1. Line 302: connection_base is not None and hasattr(connection_base, "_params")
+    # Base without _params (e.g. bare object) -> hasattr is False, _params is unchanged
+    base_no_params = object()
+    res = conn.load_from_yaml(None, base_no_params)
+    assert res is True
+    assert conn._params == {"initial": "val"}
+
+    # Base with _params -> params copied and updated
+    base_with_params = MagicMock()
+    base_with_params._params = {"base_key": "base_val"}
+    res = conn.load_from_yaml(None, base_with_params)
+    assert res is True
+    assert conn._params == {"initial": "val", "base_key": "base_val"}
+
+    # 2. Line 309 & 310: if CONFIG_DEVICE_CONNECTION_PARAMS in node and isinstance(node_params, dict)
+    # node with CONFIG_DEVICE_CONNECTION_PARAMS as a valid dict
+    res = conn.load_from_yaml(
+        {CONFIG_DEVICE_CONNECTION_PARAMS: {"node_k": "node_v"}}, None
+    )
+    assert res is True
+    assert conn._params["node_k"] == "node_v"
+
+    # node with CONFIG_DEVICE_CONNECTION_PARAMS as non-dict (string, None, list)
+    conn._params = {"clean": "yes"}
+    res = conn.load_from_yaml(
+        {CONFIG_DEVICE_CONNECTION_PARAMS: "string_not_dict"}, None
+    )
+    assert res is True
+    assert conn._params == {"clean": "yes"}
+
+    res = conn.load_from_yaml({CONFIG_DEVICE_CONNECTION_PARAMS: None}, None)
+    assert res is True
+    assert conn._params == {"clean": "yes"}
+
+    res = conn.load_from_yaml({CONFIG_DEVICE_CONNECTION_PARAMS: [1, 2, 3]}, None)
+    assert res is True
+    assert conn._params == {"clean": "yes"}
+
+
 def test_is_async_native_and_is_push_supported(mock_logger, mock_hass, mock_session):
     """Kill mutants in is_async_native and is_push_supported properties."""
     conn = ConnectionAiohttp8888(

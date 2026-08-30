@@ -1022,6 +1022,13 @@ async def test_async_get_mac_address_token_filtering_and_loop_resilience(mock_ex
         ("::1", "::1", True),
         ("http://[::1]:8888", "::1", True),
         ("[::1]", "::1", True),
+        # Extra edge cases for string slicing on lines 546, 553, 554
+        ("http://fake.schema://192.168.1.55/foo/bar", "192.168.1.55", False),
+        ("192.168.1.55/foo/bar", "192.168.1.55", False),
+        ("[invalid", "[invalid", False),
+        ("invalid]", "invalid]", False),
+        ("http://[fe80::1]", "fe80::1", False),
+        ("https://[2001:db8::3]:443/status", "2001:db8::3", False),
     ],
 )
 @patch("custom_components.climate_ip.helpers.async_ping")
@@ -1040,11 +1047,40 @@ async def test_x_async_check_network_reachability_matrix(
         mock_ping.assert_not_called()
     else:
         assert mock_ping.call_count == 1
-        call_kwargs = mock_ping.call_args.kwargs
-        assert call_kwargs["address"] == expected_ip, (
-            f"Expected cleaned IP '{expected_ip}' for input '{input_host}', got '{call_kwargs['address']}'"
+        assert mock_ping.call_args == (
+            (),
+            {
+                "address": expected_ip,
+                "count": 1,
+                "timeout": 0.5,
+                "interval": 0.2,
+                "privileged": False,
+            },
         )
-        assert call_kwargs["count"] == 1
-        assert call_kwargs["timeout"] == 0.5
-        assert call_kwargs["interval"] == 0.2
-        assert call_kwargs["privileged"] is False
+
+
+@pytest.mark.asyncio
+@patch("custom_components.climate_ip.helpers.async_ping")
+async def test_async_check_network_reachability_string_slicing_survivors(mock_ping):
+    """Kills any remaining mutants on lines 546, 553, 554 in async_check_network_reachability."""
+    mock_host = MagicMock()
+    mock_host.is_alive = True
+    mock_ping.return_value = mock_host
+
+    # 1. Line 546: rsplit("://", maxsplit=1)[-1] vs [0], and split("/", maxsplit=1)[0] vs [1]
+    # Input with multiple :// and multiple /
+    await async_check_network_reachability(
+        "http://sub.domain://10.20.30.40/path1/path2/path3"
+    )
+    assert mock_ping.call_args[1]["address"] == "10.20.30.40"
+
+    # 2. Line 553 & 554: clean_host.startswith("[") and "]" in clean_host
+    # IPv6 with port and path: [2001:db8::cafe]:8443/status -> "2001:db8::cafe"
+    mock_ping.reset_mock()
+    await async_check_network_reachability("https://[2001:db8::cafe]:8443/status")
+    assert mock_ping.call_args[1]["address"] == "2001:db8::cafe"
+
+    # 3. Port stripping on IPv4 with port: 192.168.1.50:9999 -> "192.168.1.50"
+    mock_ping.reset_mock()
+    await async_check_network_reachability("192.168.1.50:9999")
+    assert mock_ping.call_args[1]["address"] == "192.168.1.50"
