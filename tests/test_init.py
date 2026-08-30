@@ -1363,7 +1363,8 @@ async def test_async_setup_entry_smartthings_device_id_normalization(
             hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
         ),
     ):
-        await async_setup_entry(hass, entry_st_hvac)
+        result_st_hvac = await async_setup_entry(hass, entry_st_hvac)
+        assert result_st_hvac is True
         # Verify devices_config passed to _build_device_setup_tasks
         called_devices = mock_build_tasks.call_args[0][2]
         assert called_devices == [
@@ -1396,8 +1397,150 @@ async def test_async_setup_entry_smartthings_device_id_normalization(
             hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
         ),
     ):
-        await async_setup_entry(hass, entry_st_dhw)
+        result_st_dhw = await async_setup_entry(hass, entry_st_dhw)
+        assert result_st_dhw is True
         called_devices = mock_build_tasks.call_args[0][2]
         assert called_devices == [
             {CONF_SUBDEVICE_ID: MAIN_DEVICE_ID, CONF_NAME: "DHW Water Heater"}
         ]
+
+
+async def test_async_setup_single_device_refresh_error_shutdowns(
+    hass: HomeAssistant,
+) -> None:
+    """Target 3: Kills mutants on lines 105, 149, 158 in _async_setup_single_device."""
+    from custom_components.climate_ip import _async_setup_single_device
+    from custom_components.climate_ip.const import MAIN_DEVICE_ID
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"ip_address": "192.168.1.100", "device_type": "samsung_2878"},
+        unique_id="PARENT_UID_SHUTDOWN",
+    )
+    entry.add_to_hass(hass)
+    session_obj = "mock_session_marker"
+
+    with (
+        patch("custom_components.climate_ip.YamlController") as mock_yaml,
+        patch("custom_components.climate_ip.SamsungClimateCoordinator") as mock_coord,
+    ):
+        # 1. Line 105: Verify exact constructor signature and kwargs passed to YamlController
+        ctrl1 = MagicMock(
+            initialize=AsyncMock(return_value=True), async_shutdown=AsyncMock()
+        )
+        mock_yaml.return_value = ctrl1
+        coord1 = MagicMock(
+            async_config_entry_first_refresh=AsyncMock(), async_shutdown=AsyncMock()
+        )
+        mock_coord.return_value = coord1
+
+        dev_id, res_coord = await _async_setup_single_device(
+            hass, entry, "dev_kw", "Living Room", None, session_obj
+        )
+        assert dev_id == "dev_kw"
+        assert res_coord is coord1
+        assert mock_yaml.call_args.kwargs["config_entry"] is entry
+        assert mock_yaml.call_args.kwargs["device_id"] == "dev_kw"
+        assert mock_yaml.call_args.kwargs["hass"] is hass
+        assert mock_yaml.call_args.kwargs["session"] == session_obj
+
+        # 2. Line 149: ConfigEntryAuthFailed triggers safe shutdown on controller and re-raises
+        ctrl_auth = MagicMock(
+            initialize=AsyncMock(return_value=True), async_shutdown=AsyncMock()
+        )
+        mock_yaml.return_value = ctrl_auth
+        coord_auth = MagicMock(
+            async_config_entry_first_refresh=AsyncMock(
+                side_effect=ConfigEntryAuthFailed("Auth invalid")
+            ),
+            async_shutdown=AsyncMock(),
+        )
+        mock_coord.return_value = coord_auth
+
+        with pytest.raises(ConfigEntryAuthFailed):
+            await _async_setup_single_device(
+                hass, entry, "dev_auth", "Living Room", None, session_obj
+            )
+        ctrl_auth.async_shutdown.assert_awaited_once()
+
+        # 3. Line 158: UpdateFailed, TimeoutError, ConnectionRefusedError, OSError trigger safe shutdown on controller and return (device_id, None)
+        error_types = [
+            UpdateFailed("Update failed"),
+            TimeoutError("Refresh timeout"),
+            ConnectionRefusedError("Connection refused"),
+            OSError("Network socket error"),
+        ]
+        for err in error_types:
+            ctrl_err = MagicMock(
+                initialize=AsyncMock(return_value=True), async_shutdown=AsyncMock()
+            )
+            mock_yaml.return_value = ctrl_err
+            coord_err = MagicMock(
+                async_config_entry_first_refresh=AsyncMock(side_effect=err),
+                async_shutdown=AsyncMock(),
+            )
+            mock_coord.return_value = coord_err
+
+            dev_id_err, res_coord_err = await _async_setup_single_device(
+                hass, entry, "dev_fail", "Living Room", None, session_obj
+            )
+            assert dev_id_err == "dev_fail"
+            assert res_coord_err is None
+            ctrl_err.async_shutdown.assert_awaited_once()
+
+
+async def test_async_setup_entry_options_override_and_task_dispatch(
+    hass: HomeAssistant,
+) -> None:
+    """Target 3: Kills mutant on line 234 in async_setup_entry (options vs data for CONF_DEVICE_ID)."""
+    from custom_components.climate_ip.const import (
+        CONF_DEVICE_ID,
+        CONF_DEVICE_TYPE,
+        CONF_NAME,
+        CONF_SUBDEVICE_ID,
+        DEVICE_TYPE_SMARTTHINGS_HVAC,
+        MAIN_DEVICE_ID,
+    )
+
+    # Options override data for CONF_DEVICE_ID
+    entry_opt = MockConfigEntry(
+        domain=DOMAIN,
+        title="Opt Unit",
+        data={
+            "ip_address": "1.2.3.4",
+            CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
+            CONF_DEVICE_ID: "data_dev_id",
+            CONF_NAME: "Data Name",
+        },
+        options={
+            CONF_DEVICE_ID: "opt_dev_id",
+            CONF_NAME: "Opt Name",
+        },
+        unique_id="OPT_OVERRIDE_UID",
+    )
+    entry_opt.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.climate_ip._build_device_setup_tasks"
+        ) as mock_build_tasks,
+        patch(
+            "custom_components.climate_ip.async_get_clientsession"
+        ) as mock_session_getter,
+        patch(
+            "asyncio.gather", new=AsyncMock(return_value=[("opt_dev_id", MagicMock())])
+        ),
+        patch.object(
+            hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
+        ),
+    ):
+        mock_session_getter.return_value = "custom_session_obj"
+        res = await async_setup_entry(hass, entry_opt)
+        assert res is True
+        # Exact kwargs and parameters dispatched to _build_device_setup_tasks
+        mock_build_tasks.assert_called_once_with(
+            hass,
+            entry_opt,
+            [{CONF_SUBDEVICE_ID: "opt_dev_id", CONF_NAME: "Opt Name"}],
+            "custom_session_obj",
+        )

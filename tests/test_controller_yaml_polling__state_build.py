@@ -1992,3 +1992,48 @@ def test_inject_value_into_state_devices_key_strict():
     poller._inject_value_into_state(prop, state_non_dict_devices, 25)
     assert state_non_dict_devices["target_temp"] == 25
     assert state_non_dict_devices["Devices"] == ["not_a_dict"]
+
+
+def test_inject_value_into_state_payload_options_exact_equality():
+    """Target 2: Kills Mutant 41 on Line 650 in _inject_value_into_state with full dictionary equality."""
+    poller = YamlStatePoller(DummyController())
+    poller._get_state_node_from_prop = MagicMock(return_value="Device_Mode")
+
+    # Case 1: Template renders JSON with options list containing string -> dev_val becomes payload['options'][0]
+    prop_str = MagicMock(id="good_sleep")
+    del prop_str.apply_optimistic_cascades
+    del prop_str.set_device_state_for_values
+    del prop_str.convert_hass_to_dev
+    prop_str.connection_template = '{"json": {"options": ["Sleep_2"]}}'
+
+    state1 = {"Device_Mode": "Off"}
+    poller._inject_value_into_state(prop_str, state1, 2)
+    # Strict full dictionary output assertion catches any structural alteration
+    assert state1 == {"Device_Mode": "Sleep_2"}
+    assert isinstance(state1["Device_Mode"], str)
+    assert state1["Device_Mode"] == "Sleep_2"
+
+    # Case 2: Template renders options list with non-string (int) -> dev_val remains original value
+    prop_non_str = MagicMock(id="good_sleep")
+    del prop_non_str.apply_optimistic_cascades
+    del prop_non_str.set_device_state_for_values
+    del prop_non_str.convert_hass_to_dev
+    prop_non_str.connection_template = '{"json": {"options": [999]}}'
+
+    state2 = {"Device_Mode": "Off"}
+    poller._inject_value_into_state(prop_non_str, state2, 2)
+    # Strict full dictionary output assertion
+    assert state2 == {"Device_Mode": 2}
+    assert isinstance(state2["Device_Mode"], int)
+    assert state2["Device_Mode"] == 2
+
+    # Case 3: Template renders empty options list -> dev_val remains original value
+    prop_empty = MagicMock(id="good_sleep")
+    del prop_empty.apply_optimistic_cascades
+    del prop_empty.set_device_state_for_values
+    del prop_empty.convert_hass_to_dev
+    prop_empty.connection_template = '{"json": {"options": []}}'
+
+    state3 = {"Device_Mode": "Off"}
+    poller._inject_value_into_state(prop_empty, state3, 2)
+    assert state3 == {"Device_Mode": 2}

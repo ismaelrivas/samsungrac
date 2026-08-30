@@ -617,20 +617,53 @@ async def test_async_check_network_reachability(mock_ping):
     mock_ping.return_value = mock_host
     assert await async_check_network_reachability("192.168.1.100") is True
 
-    mock_ping.assert_called_with(
-        address="192.168.1.100", count=1, timeout=0.5, interval=0.2, privileged=False
-    )
+    assert mock_ping.call_args.kwargs == {
+        "address": "192.168.1.100",
+        "count": 1,
+        "timeout": 0.5,
+        "interval": 0.2,
+        "privileged": False,
+    }
+    assert isinstance(mock_ping.call_args.kwargs["address"], str)
+    assert isinstance(mock_ping.call_args.kwargs["count"], int)
+    assert isinstance(mock_ping.call_args.kwargs["timeout"], float)
+    assert isinstance(mock_ping.call_args.kwargs["interval"], float)
+    assert isinstance(mock_ping.call_args.kwargs["privileged"], bool)
 
+    mock_ping.reset_mock()
     mock_host.is_alive = False
     assert await async_check_network_reachability("192.168.1.100") is False
+    assert mock_ping.call_args.kwargs == {
+        "address": "192.168.1.100",
+        "count": 1,
+        "timeout": 0.5,
+        "interval": 0.2,
+        "privileged": False,
+    }
 
+    mock_ping.reset_mock()
     mock_ping.side_effect = OSError("Permission denied")
     assert await async_check_network_reachability("192.168.1.100") is True
+    assert mock_ping.call_args.kwargs == {
+        "address": "192.168.1.100",
+        "count": 1,
+        "timeout": 0.5,
+        "interval": 0.2,
+        "privileged": False,
+    }
 
     # THE TRAP FOR MUTANT 23!
     if ICMPSocketError is not None:
+        mock_ping.reset_mock()
         mock_ping.side_effect = ICMPSocketError("Mocked socket error")
         assert await async_check_network_reachability("192.168.1.100") is False
+        assert mock_ping.call_args.kwargs == {
+            "address": "192.168.1.100",
+            "count": 1,
+            "timeout": 0.5,
+            "interval": 0.2,
+            "privileged": False,
+        }
 
 
 # --- async_check_network_reachability (New Test for Mutants 2 and 5) ---
@@ -1069,18 +1102,60 @@ async def test_async_check_network_reachability_string_slicing_survivors(mock_pi
 
     # 1. Line 546: rsplit("://", maxsplit=1)[-1] vs [0], and split("/", maxsplit=1)[0] vs [1]
     # Input with multiple :// and multiple /
-    await async_check_network_reachability(
+    res1 = await async_check_network_reachability(
         "http://sub.domain://10.20.30.40/path1/path2/path3"
     )
-    assert mock_ping.call_args[1]["address"] == "10.20.30.40"
+    assert res1 is True
+    assert mock_ping.call_args.kwargs == {
+        "address": "10.20.30.40",
+        "count": 1,
+        "timeout": 0.5,
+        "interval": 0.2,
+        "privileged": False,
+    }
 
     # 2. Line 553 & 554: clean_host.startswith("[") and "]" in clean_host
     # IPv6 with port and path: [2001:db8::cafe]:8443/status -> "2001:db8::cafe"
     mock_ping.reset_mock()
-    await async_check_network_reachability("https://[2001:db8::cafe]:8443/status")
-    assert mock_ping.call_args[1]["address"] == "2001:db8::cafe"
+    res2 = await async_check_network_reachability(
+        "https://[2001:db8::cafe]:8443/status"
+    )
+    assert res2 is True
+    assert mock_ping.call_args.kwargs == {
+        "address": "2001:db8::cafe",
+        "count": 1,
+        "timeout": 0.5,
+        "interval": 0.2,
+        "privileged": False,
+    }
+
+    # IPv6 with just brackets: [fe80::1] -> "fe80::1"
+    mock_ping.reset_mock()
+    res3 = await async_check_network_reachability("[fe80::1]")
+    assert res3 is True
+    assert mock_ping.call_args.kwargs == {
+        "address": "fe80::1",
+        "count": 1,
+        "timeout": 0.5,
+        "interval": 0.2,
+        "privileged": False,
+    }
 
     # 3. Port stripping on IPv4 with port: 192.168.1.50:9999 -> "192.168.1.50"
     mock_ping.reset_mock()
-    await async_check_network_reachability("192.168.1.50:9999")
-    assert mock_ping.call_args[1]["address"] == "192.168.1.50"
+    res4 = await async_check_network_reachability("192.168.1.50:9999")
+    assert res4 is True
+    assert mock_ping.call_args.kwargs == {
+        "address": "192.168.1.50",
+        "count": 1,
+        "timeout": 0.5,
+        "interval": 0.2,
+        "privileged": False,
+    }
+
+    # 4. Strict byte-for-byte type checks on mock_ping kwargs
+    assert isinstance(mock_ping.call_args.kwargs["address"], str)
+    assert isinstance(mock_ping.call_args.kwargs["count"], int)
+    assert isinstance(mock_ping.call_args.kwargs["timeout"], float)
+    assert isinstance(mock_ping.call_args.kwargs["interval"], float)
+    assert isinstance(mock_ping.call_args.kwargs["privileged"], bool)
