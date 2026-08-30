@@ -318,9 +318,7 @@ class YamlStatePoller:
 
         device_state = await self.async_update_state()
         return (
-            dict(device_state)
-            if isinstance(device_state, dict)
-            else device_state
+            dict(device_state) if isinstance(device_state, dict) else device_state
         )  # pragma: no mutate
 
     def _requires_icmp_ping(self, device_type: str) -> bool:
@@ -629,7 +627,9 @@ class YamlStatePoller:
         conn_tmpl = getattr(prop, "connection_template", None)
         if conn_tmpl is not None:
             try:
-                rendered = render_template(conn_tmpl, value=value, device_state=device_state)
+                rendered = render_template(
+                    conn_tmpl, value=value, device_state=device_state
+                )
                 parsed = (
                     rendered
                     if isinstance(rendered, dict)
@@ -880,7 +880,8 @@ class YamlStatePoller:
                     and pure_val is not None
                     and (
                         self._values_match(pure_val, pend_val)
-                        or lock_age > self.LOCK_PHYSICAL_TIMEOUT_SEC  # pragma: no mutate
+                        or lock_age
+                        > self.LOCK_PHYSICAL_TIMEOUT_SEC  # pragma: no mutate
                     )
                 ):
                     _LOGGER.debug(

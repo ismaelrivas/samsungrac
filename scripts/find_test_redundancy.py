@@ -237,7 +237,7 @@ def print_cli_report(results: dict[str, Any], verbose: bool = False) -> None:
             sim = pair["similarity"]
             ta = pair["test_a"]
             tb = pair["test_b"]
-            print(f"  ⚠️  Similarity: {sim*100:.1f}%")
+            print(f"  ⚠️  Similarity: {sim * 100:.1f}%")
             print(f"     A: {ta['file']}:{ta['lineno']} [{ta['name']}]")
             if ta["doc"]:
                 print(f"        Doc: {ta['doc'][:80]}")
@@ -250,9 +250,7 @@ def print_cli_report(results: dict[str, Any], verbose: bool = False) -> None:
 
     # Section 3: Overloaded Methods under test
     overloaded = results.get("overloaded_methods", {})
-    print(
-        f"[3] Cross-File Overloaded Methods Under Test: {len(overloaded)} detected"
-    )
+    print(f"[3] Cross-File Overloaded Methods Under Test: {len(overloaded)} detected")
     if overloaded:
         top_methods = list(overloaded.items())[:10]
         for method, callers in top_methods:
@@ -264,7 +262,7 @@ def print_cli_report(results: dict[str, Any], verbose: bool = False) -> None:
                 for c in callers[:4]:
                     print(f"     - {c}")
                 if len(callers) > 4:
-                    print(f"     ... and {len(callers)-4} more tests.")
+                    print(f"     ... and {len(callers) - 4} more tests.")
     print("=" * 80)
 
 

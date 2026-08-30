@@ -428,8 +428,6 @@ async def test_async_shutdown():
     mock_connection.close.assert_called_once()
 
 
-
-
 @patch(
     "custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability",
     new_callable=AsyncMock,
@@ -506,8 +504,6 @@ async def test_async_shutdown_conn_close():
     assert mock_controller.loader.connection is None
 
 
-
-
 async def test_update_state_invalid_header_error():
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)
@@ -522,8 +518,6 @@ async def test_update_state_invalid_header_error():
 
     with pytest.raises(InvalidHeaderError):
         await poller.async_update_state()
-
-
 
 
 async def test_update_state_delete_issue_exception():
@@ -608,5 +602,3 @@ async def test_async_update_state_sniper_network_ping():
 
         res = await poller.async_update_state()
         assert res == {"state": "ping_failed_but_recovered"}
-
-

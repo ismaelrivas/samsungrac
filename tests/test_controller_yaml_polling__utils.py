@@ -487,8 +487,6 @@ def test_rebuild_attributes_private():
     ctrl.update_state_attributes.assert_called_once()
 
 
-
-
 async def test_async_update_state_sniper_discovery():
     """Sniper: Valida la inicialización de estado, fallbacks de diccionario en id_map, y el filtro estricto de discovery."""
     mock_controller = DummyController()
@@ -628,8 +626,6 @@ async def test_async_update_state_sniper_discovery():
         assert mock_logger_exc.called
 
 
-
-
 async def test_async_update_state_consecutive_errors_logic():
     """Verify mutant kill for flip conditions (< vs <=) y el log reason slicing"""
     poller = YamlStatePoller(MagicMock())
@@ -665,8 +661,6 @@ async def test_async_update_state_consecutive_errors_logic():
             await poller.async_update_state()
 
 
-
-
 def test_regex_device_state_key_cache_strict():
     """Verify mutant kill de regex + a * en inicialización"""
     poller = YamlStatePoller(MagicMock())
@@ -679,8 +673,6 @@ def test_mask_sensitive_data_exact_boundary():
     poller = YamlStatePoller(MagicMock())
     res = poller._mask_sensitive_data({"uuid": "123456"})
     assert res["uuid"] == "123456"
-
-
 
 
 def test_calculate_structured_state_and_to_or_mutation():
@@ -697,8 +689,6 @@ def test_calculate_structured_state_and_to_or_mutation():
 
     poller._calculate_structured_state({"raw": "data"})
     prop_mock.calculate_value_from_state.assert_not_called()
-
-
 
 
 async def test_async_update_state_id_map():
@@ -797,8 +787,6 @@ async def test_async_update_state_cache_mutants():
 
     assert poller._cached_device_state == expected_state
     assert poller._last_state_fetch_time is not None
-
-
 
 
 async def test_calculate_structured_state_no_swallow():

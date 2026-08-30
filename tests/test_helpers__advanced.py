@@ -1048,4 +1048,3 @@ async def test_x_async_check_network_reachability_matrix(
         assert call_kwargs["timeout"] == 0.5
         assert call_kwargs["interval"] == 0.2
         assert call_kwargs["privileged"] is False
-

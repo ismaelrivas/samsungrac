@@ -2598,4 +2598,3 @@ async def test_get_json_status_synthesizes_connection_template_from_params(
         {},
         _is_poll=True,
     )
-

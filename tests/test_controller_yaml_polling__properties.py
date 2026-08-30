@@ -806,8 +806,6 @@ async def test_merge_device_state_atomic_merge():
     assert mock_controller.loader.state_getter.value == {"a": 1, "b": 2, "c": 3}
 
 
-
-
 async def test_merge_device_state_strict_conditionals():
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)

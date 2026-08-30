@@ -346,8 +346,6 @@ async def test_sniper_update_properties_delegations():
         assert mock_exc.called or True
 
 
-
-
 @pytest.mark.asyncio
 async def test_sniper_discovery_empty_or_invalid_devices():
     """Prueba que next(..., None) funciona correctamente ante basura y evita StopIteration."""
@@ -452,8 +450,6 @@ async def test_sniper_build_device_state_success_flow():
         assert res.get("target_key") == "On_Dev"
 
 
-
-
 @pytest.mark.asyncio
 async def test_sniper_merge_device_state_protected_value_mutation():
     """Annihilates Mutant L899: Guarantees protected branch _value executes and writes."""
@@ -535,8 +531,6 @@ async def test_sniper_update_properties_pending_and_is_valid_mutations():
         )
 
 
-
-
 async def test_async_merge_device_state_logic_flips():
     """Kills mutants de 'and -> or' y 'return False -> return True'."""
     # Object without 'get_current_state_callback'. If 'and' changes to 'or' (M5),
@@ -572,8 +566,6 @@ async def test_update_properties_private_value_pending():
 
     # If mutmut altered hasattr('_value') statements or assignment, '_value' remains "old_val"
     assert prop_private._value == "NEW_DATA"
-
-
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,6 @@
 # pylint: disable=protected-access,too-few-public-methods,too-many-instance-attributes
 """Tests dedicated to annihilating surviving and untested mutants in YamlStatePoller."""
+
 from __future__ import annotations
 
 import time
@@ -491,9 +492,7 @@ def test_mutant_apply_anti_flicker_hass_attr_mapping():
     pure_device_to_process = {"target_temp_node": 20}
 
     # The pending update is registered under the HA attribute name ("target_temperature")
-    poller._pending_updates = {
-        "target_temperature": (22, now - 1.0)
-    }
+    poller._pending_updates = {"target_temperature": (22, now - 1.0)}
 
     poller._apply_anti_flicker_locks(
         all_props,
@@ -525,9 +524,7 @@ def test_mutant_apply_anti_flicker_physical_timeout_or():
 
     # Lock age is past LOCK_PHYSICAL_TIMEOUT_SEC (e.g. 20s) but below LOCK_TTL_SEC (45s)
     lock_age = poller.LOCK_PHYSICAL_TIMEOUT_SEC + 5.0
-    poller._pending_updates = {
-        "mode": ("heat", now - lock_age)
-    }
+    poller._pending_updates = {"mode": ("heat", now - lock_age)}
 
     poller._apply_anti_flicker_locks(
         all_props,

@@ -145,9 +145,7 @@ def _helper_evict_invalidated_pending_updates(self, changed_keys=None):
 
 @pytest.fixture(autouse=True)
 def setup_poller_helpers(monkeypatch):
-    orig_async_update_properties = (
-        YamlStatePoller.async_update_properties_from_state
-    )
+    orig_async_update_properties = YamlStatePoller.async_update_properties_from_state
 
     async def _wrapper_async_update_properties_from_state(
         self, full_device_state=None, *args, **kwargs
@@ -685,8 +683,6 @@ async def test_async_predict_and_correct_state():
         assert corrections in ({}, {"hvac_mode": "heat"})
 
 
-
-
 async def test_build_device_state_from_hass_early_exits():
     """Test early exits in _build_device_state_from_hass."""
     mock_controller = MagicMock()
@@ -993,8 +989,6 @@ async def test_build_device_state_from_props_other_op():
     assert res["PurifierMode"] == "On"
 
 
-
-
 async def test_build_device_state_loop_control():
     """Vector 2: Control de Bucle (Mutación de continue a break)"""
     from unittest.mock import MagicMock
@@ -1169,8 +1163,6 @@ async def test_async_update_state_sniper_debug_and_fallbacks():
     )
 
 
-
-
 async def test_build_device_state_from_props_naked_dicts():
     """Aniquila inicializadores setdefault desnudos, límites de lista y getattr anidados"""
     poller = YamlStatePoller(MagicMock())
@@ -1261,8 +1253,6 @@ async def test_build_device_state_from_props_structural_limits():
     assert "Sleep_10" in res["Devices"][0]["Mode"]["options"]
 
 
-
-
 async def test_evict_invalidated_pending_updates_pop_fallback():
     """Destroys None fallback mutant in dict.pop"""
     poller = YamlStatePoller(MagicMock())
@@ -1279,8 +1269,6 @@ async def test_evict_invalidated_pending_updates_pop_fallback():
     # If self._pending_updates.pop(prop_id, None) was mutated to pop(prop_id, )
     # It will raise KeyError when trying to remove something that no longer exists.
     poller._evict_invalidated_pending_updates({"AC_FUN_POWER": "Off"})
-
-
 
 
 async def test_build_device_state_from_hass_attribute_missing():
@@ -1494,8 +1482,6 @@ async def test_build_device_state_options_length_exact():
     assert len(res["Devices"][0]["Mode"]["options"]) == 2
 
 
-
-
 async def test_dict_get_fallbacks_strict():
     """Kills mutants that delete chained '{}' or '[]' fallbacks (L463, L465, L479)"""
     ctrl = NakedObj()
@@ -1522,8 +1508,6 @@ async def test_dict_get_fallbacks_strict():
         None, current_hass_state={"state": 1}
     )
     assert isinstance(res, dict)
-
-
 
 
 async def test_debug_fallback_exact_call():
@@ -1674,8 +1658,6 @@ async def test_build_device_state_power_op_fallback() -> None:
     assert "AC_FUN_POWER" not in res2, (
         "Mutant survived! Power key was injected even when power_op was None."
     )
-
-
 
 
 @pytest.mark.asyncio
@@ -1973,4 +1955,3 @@ async def test_anti_flicker_time_exact_boundary():
         assert "mode" not in poller._pending_updates, (
             "Temporal shield must release when lock_age > LOCK_SHIELD_SEC"
         )
-
