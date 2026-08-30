@@ -9,56 +9,7 @@ from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 from custom_components.climate_ip.exceptions import AuthError
 
 
-# =====================================================================
-# UTILITY HELPERS FOR YAML POLLING TESTS
-# =====================================================================
-class NakedObj:
-    """Sterile object without mock overhead to prevent side-effects."""
 
-    def __init__(self, **kwargs):
-        self.debug = False
-        self.name = "TestName"
-        self.ip_address = "1.2.3.4"
-        self.available = True
-        self.device_id = "XXXX"
-        self.hass = __import__("unittest.mock").mock.MagicMock()
-        self._attributes = {}
-        self.__dict__.update(kwargs)
-
-    def update_state_attributes(self, new_attrs):
-        self._attributes = new_attrs
-
-
-class DummyController(NakedObj):
-    """Simulated controller resistant to AttributeErrors."""
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        # Prevention of common AttributeErrors in poller
-        if not hasattr(self, "config"):
-            self.config = {}
-        if not hasattr(self, "log_prefix"):
-            self.log_prefix = "TEST"
-        if not hasattr(self, "ip_address"):
-            self.ip_address = "127.0.0.1"
-        if not hasattr(self, "loader"):
-            self.loader = create_valid_loader()
-
-
-def create_valid_loader():
-    """Crea un loader mínimo para evadir validaciones tempranas."""
-    from unittest.mock import MagicMock
-
-    loader = MagicMock()
-    loader.is_fully_initialized = True
-    loader.operations = {}
-    loader.properties = {}
-    loader.sensors = {}
-    loader.state_getter = NakedObj(value={})
-    return loader
-
-
-# =====================================================================
 
 
 async def test_async_update_state_auth_refresh_flow():
@@ -191,8 +142,7 @@ async def test_refresh_smartthings_token_sniper_failures(
             self._attributes = {}
             # hass is intentionally not defined at start
 
-        def update_state_attributes(self, new_attrs):
-            self._attributes = new_attrs
+
 
     mock_controller = DummyController()
     poller = YamlStatePoller(mock_controller)

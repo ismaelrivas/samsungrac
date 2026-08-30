@@ -47,7 +47,7 @@ async def test_connection_safe_ssl_mutant(hass):
         try:
             async with asyncio.timeout(0.5):
                 await flow._test_connection_safe()
-        except TimeoutError:
+        except TimeoutError:  # pragma: no cover
             pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
         assert mock_context.check_hostname is False
@@ -70,7 +70,7 @@ async def test_test_connection_fallbacks_and_progress():
     try:
         async with asyncio.timeout(0.5):
             result = await flow.async_step_test_connection()
-    except TimeoutError:
+    except TimeoutError:  # pragma: no cover
         pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     assert result["type"] == FlowResultType.SHOW_PROGRESS
@@ -83,7 +83,7 @@ async def test_test_connection_fallbacks_and_progress():
     try:
         async with asyncio.timeout(0.5):
             result_done = await flow.async_step_test_connection()
-    except TimeoutError:
+    except TimeoutError:  # pragma: no cover
         pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     assert result_done["type"] == FlowResultType.SHOW_PROGRESS_DONE
@@ -103,7 +103,7 @@ async def test_await_button_fallbacks():
     try:
         async with asyncio.timeout(0.5):
             result = await flow.async_step_await_button()
-    except TimeoutError:
+    except TimeoutError:  # pragma: no cover
         pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
     assert result["description_placeholders"]["ip_address"] == ""
 
@@ -116,7 +116,7 @@ async def test_await_button_fallbacks():
         try:
             async with asyncio.timeout(0.5):
                 await flow.async_step_await_button()
-        except TimeoutError:
+        except TimeoutError:  # pragma: no cover
             pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert flow.flow_data["error_key"] == "token_acquisition_failed"
 
@@ -135,7 +135,7 @@ async def test_fallback_raw_discovery_controller_mutant(hass):
         try:
             async with asyncio.timeout(0.5):
                 result = await flow._async_fallback_raw_discovery({})
-        except TimeoutError:
+        except TimeoutError:  # pragma: no cover
             pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
         assert result["type"] == FlowResultType.ABORT
@@ -167,7 +167,7 @@ async def test_connection_safe_unique_id_empty_fallback():
         try:
             async with asyncio.timeout(0.5):
                 await flow._test_connection_safe()
-        except TimeoutError:
+        except TimeoutError:  # pragma: no cover
             pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         args, kwargs = mock_yaml.call_args
         assert kwargs["config"]["unique_id"] == ""
@@ -197,7 +197,7 @@ async def test_await_button_token_missing_fallback():
         try:
             async with asyncio.timeout(0.5):
                 await flow.async_step_await_button()
-        except TimeoutError:
+        except TimeoutError:  # pragma: no cover
             pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         mock_san.assert_called_once_with("")
 
@@ -223,7 +223,7 @@ async def test_select_devices_error_schema_default_keys():
             result = await flow.async_step_select_devices(
                 user_input={CONF_SELECTED_DEVICES: []}
             )
-    except TimeoutError:
+    except TimeoutError:  # pragma: no cover
         pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
     assert result["errors"] == {"base": "no_devices_selected"}
@@ -273,7 +273,7 @@ async def test_select_devices_unique_id_from_device_id():
                 await flow.async_step_select_devices(
                     user_input={CONF_SELECTED_DEVICES: ["dev_abc"]}
                 )
-        except TimeoutError:
+        except TimeoutError:  # pragma: no cover
             pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
         mock_set_uid.assert_called_once_with("dev_abc", raise_on_progress=False)
@@ -301,7 +301,7 @@ async def test_discover_uuid_controller_init_none_is_correct_start():
         try:
             async with asyncio.timeout(0.5):
                 result = await flow.async_step_discover_uuid()
-        except TimeoutError:
+        except TimeoutError:  # pragma: no cover
             pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
         assert result["type"] == FlowResultType.ABORT
         assert result["reason"] == "unknown_error"
@@ -351,7 +351,7 @@ async def test_discover_uuid_hasattr_exact_attribute_name():
             try:
                 async with asyncio.timeout(0.5):
                     await flow.async_step_discover_uuid()
-            except TimeoutError:
+            except TimeoutError:  # pragma: no cover
                 pytest.fail(
                     "MUTANT KILLED: Asynchronous deadlock detected in flow step."
                 )
@@ -398,7 +398,7 @@ async def test_discover_uuid_invalid_header_controller_shutdown():
             try:
                 async with asyncio.timeout(0.5):
                     await flow.async_step_discover_uuid()
-            except TimeoutError:
+            except TimeoutError:  # pragma: no cover
                 pytest.fail(
                     "MUTANT KILLED: Asynchronous deadlock detected in flow step."
                 )
