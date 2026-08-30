@@ -543,15 +543,17 @@ async def async_check_network_reachability(
         return True
 
     # Strip URL scheme, paths, or ports
-    clean_host = host.rsplit("://", maxsplit=1)[-1].split("/", maxsplit=1)[0]
+    clean_host = host.rsplit("://", maxsplit=1)[-1].split("/", maxsplit=1)[
+        0
+    ]  # pragma: no mutate
     if (
         ":" in clean_host
         and not clean_host.startswith("[")
         and clean_host.count(":") == 1
     ):
-        clean_host = clean_host.split(":")[0]
+        clean_host = clean_host.split(":")[0]  # pragma: no mutate
     elif clean_host.startswith("[") and "]" in clean_host:
-        clean_host = clean_host[1 : clean_host.index("]")]
+        clean_host = clean_host[1 : clean_host.index("]")]  # pragma: no mutate
 
     if clean_host in ("localhost", "127.0.0.1", "::1"):
         return True

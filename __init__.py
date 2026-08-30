@@ -231,7 +231,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
 
     # Normalize: If no sub-devices are defined, create a synthetic list for the main unit
     if not devices_config:
-        st_dev_id = _get_config_value(entry, CONF_DEVICE_ID, None)
+        st_dev_id = _get_config_value(entry, CONF_DEVICE_ID)
         is_st = device_type in (
             DEVICE_TYPE_SMARTTHINGS_HVAC,
             DEVICE_TYPE_SMARTTHINGS_DHW,

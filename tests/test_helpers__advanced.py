@@ -1153,6 +1153,18 @@ async def test_async_check_network_reachability_string_slicing_survivors(mock_pi
         "privileged": False,
     }
 
+    # IPv6 with spurious trailing brackets: [fe80::1]:8888]spurious] -> "fe80::1" (Kills Mutant 31: index vs rindex)
+    mock_ping.reset_mock()
+    res3_spurious = await async_check_network_reachability("[fe80::1]:8888]spurious]")
+    assert res3_spurious is True
+    assert mock_ping.call_args.kwargs == {
+        "address": "fe80::1",
+        "count": 1,
+        "timeout": 0.5,
+        "interval": 0.2,
+        "privileged": False,
+    }
+
     # 3. Port stripping on IPv4 with port: 192.168.1.50:9999 -> "192.168.1.50"
     mock_ping.reset_mock()
     res4 = await async_check_network_reachability("192.168.1.50:9999")
