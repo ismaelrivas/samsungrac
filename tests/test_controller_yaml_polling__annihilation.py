@@ -1,3 +1,5 @@
+# pylint: disable=protected-access,too-few-public-methods,too-many-instance-attributes
+"""Tests dedicated to annihilating surviving and untested mutants in YamlStatePoller."""
 from __future__ import annotations
 
 import time
@@ -29,6 +31,7 @@ class NakedObj:
         self.__dict__.update(kwargs)
 
     def update_state_attributes(self, new_attrs):
+        """Update simulated state attributes."""
         self._attributes = new_attrs
 
 
@@ -58,7 +61,7 @@ async def test_mutant_deepcopy_async_get_status():
 
 @pytest.mark.asyncio
 async def test_mutant_async_update_state_available_consecutive():
-    """KILLS: mutants in `if getattr(...) and errors <= 2 and cached:` (lines 348-350) and `reason.split`."""
+    """KILLS: mutants in consecutive errors <= 2 and reason.split."""
     poller = YamlStatePoller(MagicMock())
     poller._cached_device_state = {"cache": "hit"}
 
@@ -127,6 +130,7 @@ async def test_mutant_predict_and_correct_logic_flips():
     poller.controller.loader.state_getter = NakedObj(value=None)
     feat, corr = await poller.async_predict_and_correct_state(None, "prop", "val")
     assert feat == 0
+    assert corr == {}
 
     # Setup for successful flow
     poller.controller.loader.state_getter = NakedObj(value={"state": "ok"})
@@ -135,7 +139,7 @@ async def test_mutant_predict_and_correct_logic_flips():
     )
     poller.register_pending_update = MagicMock()
 
-    # KILLS: `if op_id == property_name or self._get_hass_attr_for_op_id(op_id) == property_name:` mutated to `and`
+    # KILLS: `if op_id == property_name or ...` mutated to `and`
     fake_op = MagicMock(id="not_the_prop")
     del fake_op.convert_hass_to_dev
     poller._get_state_node_from_prop = MagicMock(return_value="not_the_prop")
@@ -198,6 +202,7 @@ async def test_mutant_predict_and_correct_dict_check():
     # If state is a list (not a dict), it must abort. If mutated to AND, it proceeds and crashes.
     poller.controller.loader.state_getter = NakedObj(value=["not", "a", "dict"])
     feat, corr = await poller.async_predict_and_correct_state(None, "p", "v")
+    assert feat == 0
     assert corr == {}
 
 
@@ -224,7 +229,7 @@ async def test_mutant_pure_network_state_dict_init():
     poller._pure_network_state = None
     poller.async_update_properties_from_state = AsyncMock()
 
-    # 2. If the mutant changes `{}` to `None`, this update step will throw an AttributeError: 'NoneType' object has no attribute 'update'
+    # 2. If the mutant changes `{}` to `None`, this update step will throw AttributeError
     await poller.async_merge_device_state({"new": "update"})
 
     # 3. Assert the dictionary was correctly initialized and updated
@@ -234,7 +239,7 @@ async def test_mutant_pure_network_state_dict_init():
 
 @pytest.mark.asyncio
 async def test_mutant_predict_action_removals():
-    """KILLS: removal of _set_prop_value and _inject_value_into_state calls in async_predict_and_correct_state."""
+    """KILLS: removal of _set_prop_value and _inject_value_into_state calls."""
     poller = YamlStatePoller(MagicMock())
     poller.controller.loader.is_fully_initialized = True
 
@@ -264,7 +269,7 @@ async def test_mutant_predict_action_removals():
 
 
 def test_mutant_inject_value_connection_template_json_key():
-    """KILLS: parsed.get("json", parsed) mutated to parsed.get(None, parsed) in _inject_value_into_state."""
+    """KILLS: parsed.get("json", parsed) mutated to parsed.get(None, parsed)."""
     poller = YamlStatePoller(MagicMock())
     target_state = {}
 
@@ -416,3 +421,240 @@ def test_mutant_inject_value_options_not_list():
     assert target_state.get("Node") != "S", (
         "Mutant survived: options list check was bypassed!"
     )
+
+
+def test_mutant_apply_anti_flicker_global_evict():
+    """KILLS: global_evict = True mutated to False in _apply_anti_flicker_locks (Line 790)."""
+    poller = YamlStatePoller(MagicMock())
+    now = time.monotonic()
+
+    # op_evict has should_evict_all_locks returning True
+    op_evict = MagicMock(id="power")
+    op_evict.should_evict_all_locks.return_value = True
+
+    # op_target has a pending lock
+    op_target = MagicMock(id="temperature")
+    op_target.calculate_value_from_state.return_value = 24
+    del op_target.should_evict_all_locks
+
+    def get_state_node(op):
+        if op.id == "power":
+            return "power_node"
+        return "temp_node"
+
+    poller._get_state_node_from_prop = get_state_node
+
+    all_props = [op_evict, op_target]
+    device_to_process = {"temp_node": 24}
+    pure_device_to_process = {"temp_node": 24}
+
+    # Set pending update with age past LOCK_SHIELD_SEC (e.g. 5s)
+    poller._pending_updates = {
+        "temperature": (24, now - (poller.LOCK_SHIELD_SEC + 1.0))
+    }
+
+    # changed_keys does NOT include "temp_node", but global_evict is True
+    changed_keys = {"power_node"}
+
+    poller._apply_anti_flicker_locks(
+        all_props,
+        device_to_process,
+        pure_device_to_process,
+        is_prediction=False,
+        changed_keys=changed_keys,
+    )
+
+    # When unmutated: global_evict is True -> can_release is True -> lock is released
+    # When mutated (global_evict = False): can_release is False -> lock remains in _pending_updates
+    assert "temperature" not in poller._pending_updates
+
+
+def test_mutant_apply_anti_flicker_hass_attr_mapping():
+    """KILLS: if hass_attr != op_id mutated to == in _apply_anti_flicker_locks (Line 809)."""
+    poller = YamlStatePoller(MagicMock())
+    now = time.monotonic()
+
+    # Create an operation where hass_attr differs from op.id
+    op = MagicMock(id="target_temperature_op")
+    del op.should_evict_all_locks
+    del op.convert_hass_to_dev
+    op.calculate_value_from_state.return_value = 22
+    poller._get_state_node_from_prop = MagicMock(return_value="target_temp_node")
+    poller._get_hass_attr_for_op_id = MagicMock(return_value="target_temperature")
+
+    all_props = [op]
+    device_to_process = {"target_temp_node": 20}
+    pure_device_to_process = {"target_temp_node": 20}
+
+    # The pending update is registered under the HA attribute name ("target_temperature")
+    poller._pending_updates = {
+        "target_temperature": (22, now - 1.0)
+    }
+
+    poller._apply_anti_flicker_locks(
+        all_props,
+        device_to_process,
+        pure_device_to_process,
+        is_prediction=False,
+        changed_keys=None,
+    )
+
+    # Unmutated: props_by_id["target_temperature"] = op -> op found -> lock enforced on op
+    # Mutated (if hass_attr == op_id): props_by_id["target_temperature"] not set -> not enforced
+    assert device_to_process["target_temp_node"] == 22
+
+
+def test_mutant_apply_anti_flicker_physical_timeout_or():
+    """KILLS: self._values_match(pure_val, pend_val) or ... mutated to AND (Line 880)."""
+    poller = YamlStatePoller(MagicMock())
+    now = time.monotonic()
+
+    op = MagicMock(id="mode")
+    del op.should_evict_all_locks
+    # Physical state is "cool", but pending is "heat" -> values do NOT match
+    op.calculate_value_from_state.return_value = "cool"
+    poller._get_state_node_from_prop = MagicMock(return_value="mode_node")
+
+    all_props = [op]
+    device_to_process = {"mode_node": "cool"}
+    pure_device_to_process = {"mode_node": "cool"}
+
+    # Lock age is past LOCK_PHYSICAL_TIMEOUT_SEC (e.g. 20s) but below LOCK_TTL_SEC (45s)
+    lock_age = poller.LOCK_PHYSICAL_TIMEOUT_SEC + 5.0
+    poller._pending_updates = {
+        "mode": ("heat", now - lock_age)
+    }
+
+    poller._apply_anti_flicker_locks(
+        all_props,
+        device_to_process,
+        pure_device_to_process,
+        is_prediction=False,
+        changed_keys=None,
+    )
+
+    # Unmutated (OR): values don't match, but lock_age > timeout -> lock is released!
+    # Mutated (AND): lock is NOT released because values don't match.
+    assert "mode" not in poller._pending_updates
+
+
+def test_mutant_predict_dependency_cascades_continue():
+    """KILLS: continue mutated to break in _predict_dependency_cascades (Line 913)."""
+    poller = YamlStatePoller(MagicMock())
+
+    # op1 is invalid (is_valid returns False)
+    op1 = MagicMock(id="op1_invalid")
+    op1.is_valid.return_value = False
+    del op1.get_valid_values
+
+    # op2 is valid and needs cascade correction
+    op2 = MagicMock(id="op2_valid")
+    op2.is_valid.return_value = True
+    del op2.get_valid_values
+    op2.values = ["val_a", "val_b"]
+    poller._get_prop_value = MagicMock(
+        side_effect=lambda op: "invalid_val" if op.id == "op2_valid" else None
+    )
+    poller._get_state_node_from_prop = MagicMock(return_value="op2_node")
+
+    poller.controller.loader.operations = {
+        "op1": op1,
+        "op2": op2,
+    }
+
+    corrections = poller._predict_dependency_cascades({})
+
+    # Unmutated (continue): op1 skipped, op2 processed -> op2 corrected to "val_a"
+    # Mutated (break): loop breaks at op1, op2 never processed -> corrections is empty
+    assert corrections == {"op2_valid": "val_a"}
+
+
+@pytest.mark.asyncio
+async def test_mutant_async_merge_device_state_is_none():
+    """KILLS: if getattr(..., '_pure_network_state', None) is None flip (Line 1071)."""
+    poller = YamlStatePoller(MagicMock())
+    poller.async_update_properties_from_state = AsyncMock()
+
+    # Pre-existing state in _pure_network_state, while st_getter.value is None
+    poller._pure_network_state = {"existing_key": "existing_value"}
+    poller.controller.loader.state_getter = NakedObj(value=None)
+
+    res = await poller.async_merge_device_state({"new_key": "new_value"})
+
+    # Unmutated: _pure_network_state is not None, so line 1071 is skipped.
+    # not self._pure_network_state is False.
+    # update() is called with new_data -> returns True.
+    # Mutated (is not None): line 1071 executes -> self._pure_network_state = {}
+    # not self._pure_network_state is True -> st_getter.value is None -> returns False!
+    assert res is True
+    assert poller._pure_network_state == {
+        "existing_key": "existing_value",
+        "new_key": "new_value",
+    }
+
+
+@pytest.mark.asyncio
+async def test_mutant_async_update_properties_st_getter_and_value():
+    """KILLS: if st_getter and st_getter.value mutated to or (Line 962)."""
+    poller = YamlStatePoller(MagicMock())
+    poller.controller.loader.is_fully_initialized = True
+
+    # st_getter exists (truthy object), but value is None
+    poller.controller.loader.state_getter = NakedObj(value=None)
+
+    poller._extract_device_nodes = MagicMock()
+
+    # Call with full_device_state=None
+    res = await poller.async_update_properties_from_state(full_device_state=None)
+
+    # Unmutated: `st_getter and st_getter.value` is False -> returns {} without calling extract
+    # Mutated (or): `st_getter or st_getter.value` is True -> calls _extract_device_nodes
+    assert res == {}
+    poller._extract_device_nodes.assert_not_called()
+
+
+def test_untested_device_state_and_pure_network_state_properties():
+    """Test full branch coverage for device_state and pure_network_state properties."""
+    poller = YamlStatePoller(MagicMock())
+
+    # --- Test device_state ---
+    poller._last_device_state = None
+    assert poller.device_state == {}
+
+    poller._last_device_state = {"power": "on"}
+    assert poller.device_state == {"power": "on"}
+
+    # --- Test pure_network_state ---
+    # 1. None state
+    poller._pure_network_state = None
+    assert poller.pure_network_state == {}
+
+    # 2. Empty dict
+    poller._pure_network_state = {}
+    assert poller.pure_network_state == {}
+
+    # 3. Non-dict type
+    poller._pure_network_state = ["not", "a", "dict"]  # type: ignore[assignment]
+    assert poller.pure_network_state == {}
+
+    # 4. Standard dict without Devices key
+    poller._pure_network_state = {"temp": 21, "mode": "cool"}
+    assert poller.pure_network_state == {"temp": 21, "mode": "cool"}
+
+    # 5. Devices key is a valid list of dicts (Samsung format unwrap)
+    poller._pure_network_state = {
+        "Devices": [{"id": "0", "power": "on"}, {"id": "1", "power": "off"}]
+    }
+    assert poller.pure_network_state == {"id": "0", "power": "on"}
+
+    # 6. Devices key is empty list
+    poller._pure_network_state = {"Devices": []}
+    assert poller.pure_network_state == {"Devices": []}
+
+    # 7. Devices key is not a list (e.g. dict or str)
+    poller._pure_network_state = {"Devices": "invalid"}
+    assert poller.pure_network_state == {"Devices": "invalid"}
+
+    # 8. Devices list contains non-dict first element
+    poller._pure_network_state = {"Devices": ["invalid_string"]}
+    assert poller.pure_network_state == {"Devices": ["invalid_string"]}
