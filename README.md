@@ -10,15 +10,15 @@ A highly resilient, mathematically verified, and asynchronously optimized custom
 
 ---
 
-## 🏆 Version History & Release Notes (v10.0.0b0)
+## 🏆 Version History & Release Notes (v10.0.1b1)
 
-This release marks a monumental milestone in the `climate_ip` integration. The entire codebase has been surgically refactored to align with the strictest Home Assistant Core standards (targeting 2026.x).
+This release represents a monumental overhaul of the `climate_ip` integration codebase. Through an exhaustive modernization and hardening effort, the component has been restructured from the ground up to ensure absolute stability, greater error resilience, and a cleaner architecture.
 
 **Engineering Highlights:**
-* 🛡️ **Refactored Core:** 100% Mutation Coverage across all connection protocols.
-* 🔧 **Legacy Port 8888 Fix:** Replaced `aiohttp` in Phase 1 pairing with raw asyncio sockets to bypass malformed HTTP response headers from older Samsung firmware (K-Series/2016).
-* ⚡ **Fail-Fast & Event Loop Protection:** Eradicated infinite loops and CPU starvation paths in socket retry managers.
-* 🎯 **1045 Unit Tests:** A comprehensive, sniper-precision `pytest` suite validating every conditional branch, hardware fallback, and malformed device response.
+* 🏗️ **Architecture & EAFP Refactoring:** Massive refactoring to use the Pythonic EAFP pattern alongside direct checks via `getattr`, eradicating unsafe `hasattr()` uses.
+* 🛡️ **Absolute Zero Mutants (1399/1399):** The configuration flow (`config_flow.py`) and core files were iteratively refactored until reaching mathematically proven 0 surviving mutants.
+* ⚡ **Connection Engine Overhaul:** Replaced dictionary-based shared state with a strictly typed `AiohttpSharedState` Dataclass and logically separated SSL context creation.
+* 🐛 **Hang & Loop Prevention:** Resolved a dangerous potential infinite loop during substring redaction and fixed floating-point parsing failures.
 
 ---
 
