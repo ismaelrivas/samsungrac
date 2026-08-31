@@ -1,5 +1,6 @@
 {
   "name": "Climate IP",
   "render_readme": true,
-  "domain": "climate_ip"
+  "domain": "climate_ip",
+  "content_in_root": true
 }
