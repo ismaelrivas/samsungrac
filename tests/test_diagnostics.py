@@ -781,3 +781,48 @@ def test_sniper_extractors_typeerrors():
     # Python will raise TypeError immediately, killing mutant without using syrupy.
     assert _extract_controller_diagnostics(MockEmpty()) == {}
     assert _extract_raw_device_state(MockCoordinator()) == {}
+
+
+def test_get_mac_threat_patterns_strict() -> None:
+    """Strict test matching exact generated threat patterns to eradicate mutants 20, 50, 54, 59, 61."""
+    entry = MagicMock()
+    entry.data = {CONF_MAC: "aa:bb:cc:dd:ee:ff"}
+    entry.title = ""
+    entry.unique_id = ""
+
+    result = _get_mac_threat_patterns(entry)
+    assert result == {
+        "aabbccddeeff",
+        "AABBCCDDEEFF",
+        "aa:bb:cc:dd:ee:ff",
+        "AA:BB:CC:DD:EE:FF",
+        "aa-bb-cc-dd-ee-ff",
+        "AA-BB-CC-DD-EE-FF",
+    }
+
+
+def test_deep_redact_substrings_overlap() -> None:
+    """Strict test verifying sort order and nested structure redaction to eradicate mutants 14, 28."""
+    threat_patterns = {"aabbcc", "aabbccddeeff"}
+    payload = {"network": ["MAC is aabbccddeeff", "Short is aabbcc"]}
+    redacted = _deep_redact_substrings(payload, threat_patterns)
+    assert redacted == {"network": ["MAC is **REDACTED**", "Short is **REDACTED**"]}
+
+
+def test_get_mac_threat_patterns_non_12_hex_strict() -> None:
+    """Strict test for candidate with length > 5 but clean len != 12 (kills mutants 59, 61 on lines 95, 96)."""
+    entry = MagicMock()
+    entry.data = {CONF_MAC: "abcdefg"}
+    entry.title = ""
+    entry.unique_id = ""
+
+    result = _get_mac_threat_patterns(entry)
+    assert result == {"abcdefg", "ABCDEFG"}
+
+
+def test_deep_redact_substrings_empty_pattern_continue() -> None:
+    """Strict test ensuring empty string pattern in threat_patterns is safely skipped (kills mutant on line 114)."""
+    threat_patterns = {"", "secret"}
+    payload = {"key": "this is a secret"}
+    redacted = _deep_redact_substrings(payload, threat_patterns)
+    assert redacted == {"key": "this is a **REDACTED**"}
