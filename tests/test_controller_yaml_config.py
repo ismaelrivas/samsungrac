@@ -1742,3 +1742,49 @@ async def test_async_initialize_yaml_cache_non_dict_and_dict_strict(
         assert _YAML_FILE_CACHE[valid_dict_path] == {
             "device": {"connection": {"type": "request"}, "token": "test"}
         }
+
+
+@pytest.mark.asyncio
+async def test_async_initialize_device_id_cache_key_strict() -> None:
+    """Target: Kills Mutant ID 25 on line 167 in async_initialize (dev_id = self.controller.device_id or "")."""
+    from custom_components.climate_ip.controller_yaml_config import (
+        YamlConfigLoader,
+    )
+
+    mock_controller = MagicMock()
+    mock_controller.config = {CONF_CONFIG_FILE: "sniper_test.yaml"}
+    mock_controller.log_prefix = "[SniperTest]"
+    mock_controller.device_id = "sniper_target_id"
+    mock_controller.unique_id = "uid_sniper"
+    mock_controller.hass = MagicMock()
+    mock_controller.yaml_file = "/fake/sniper_test.yaml"
+    mock_controller.hass.async_add_executor_job = AsyncMock(
+        side_effect=lambda f, *args: f(*args)
+    )
+
+    loader = YamlConfigLoader(mock_controller)
+
+    with (
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.load_yaml",
+            return_value={
+                "device": {"connection": {"type": "request"}, "token": "test"}
+            },
+        ),
+        patch(
+            "custom_components.climate_ip.connection_request.ConnectionRequest.load_from_yaml",
+            return_value=True,
+        ),
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.create_status_getter",
+            return_value=MagicMock(),
+        ),
+        pytest.warns(DeprecationWarning),
+    ):
+        await loader.async_initialize()
+        # If mutated to (device_id and ""), the key becomes "" instead of "sniper_target_id"
+        assert "sniper_target_id" in loader._parsed_yaml_cache
+        assert "" not in loader._parsed_yaml_cache
+        assert loader._parsed_yaml_cache["sniper_target_id"] == {
+            "device": {"connection": {"type": "request"}, "token": "test"}
+        }
