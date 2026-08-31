@@ -539,6 +539,41 @@ def test_mutant_apply_anti_flicker_physical_timeout_or():
     assert "mode" not in poller._pending_updates
 
 
+def test_mutant_apply_anti_flicker_changed_keys_is_not_none_or():
+    """KILLS: changed_keys is not None mutated to is None in _apply_anti_flicker_locks."""
+    poller = YamlStatePoller(MagicMock())
+    now = time.monotonic()
+
+    op = MagicMock(id="mode")
+    del op.should_evict_all_locks
+    # Physical state is "cool", but pending is "heat" -> values do NOT match
+    op.calculate_value_from_state.return_value = "cool"
+    poller._get_state_node_from_prop = MagicMock(return_value="mode_node")
+
+    all_props = [op]
+    device_to_process = {"mode_node": "cool"}
+    pure_device_to_process = {"mode_node": "cool"}
+
+    # Lock age is past LOCK_SHIELD_SEC (e.g. 5s) but below LOCK_PHYSICAL_TIMEOUT_SEC (15s)
+    lock_age = poller.LOCK_SHIELD_SEC + 3.0
+    poller._pending_updates = {"mode": ("heat", now - lock_age)}
+
+    # Push update arrived with changed_keys containing mode_node
+    changed_keys = {"mode_node"}
+
+    poller._apply_anti_flicker_locks(
+        all_props,
+        device_to_process,
+        pure_device_to_process,
+        is_prediction=False,
+        changed_keys=changed_keys,
+    )
+
+    # When unmutated: changed_keys is not None (True) -> lock is released
+    # When mutated (changed_keys is None): condition is False -> lock remains in _pending_updates
+    assert "mode" not in poller._pending_updates
+
+
 def test_mutant_predict_dependency_cascades_continue():
     """KILLS: continue mutated to break in _predict_dependency_cascades (Line 913)."""
     poller = YamlStatePoller(MagicMock())

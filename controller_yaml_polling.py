@@ -779,7 +779,6 @@ class YamlStatePoller:
         # MUST RUN FIRST to inject optimistic locks into device_to_process BEFORE parsing properties
 
         # Check for global evictions driven dynamically by property object metadata
-        global_evict = False
         if changed_keys is not None:
             for op in all_properties:
                 if hasattr(op, "should_evict_all_locks"):
@@ -787,7 +786,6 @@ class YamlStatePoller:
                         if op.should_evict_all_locks(
                             pure_device_to_process, changed_keys
                         ):
-                            global_evict = True
                             self._pending_updates.clear()
                             break
                     except Exception as e:  # pylint: disable=broad-exception-caught
@@ -850,14 +848,10 @@ class YamlStatePoller:
                 if lock_age < self.LOCK_SHIELD_SEC:
                     # Temporal Shield: Prevent immediate premature release on fast echo before physical AC reacts
                     can_release = False
-                elif changed_keys is not None:
-                    # Delegate global eviction (like Power Off) to the declarative property hook
-                    if global_evict:
-                        can_release = True
-                    elif device_key and device_key not in changed_keys:
-                        # Push update was for another property (e.g. Wind or Power), NOT for this property!
-                        # Keep shield active until THIS property's device_key arrives in push update or poll.
-                        can_release = False
+                elif changed_keys is not None and device_key and device_key not in changed_keys:
+                    # Push update was for another property (e.g. Wind or Power), NOT for this property!
+                    # Keep shield active until THIS property's device_key arrives in push update or poll.
+                    can_release = False
 
                 _LOGGER.debug(
                     "%s [Forensic-Verbose] Eval %s: pend_val=%s, pure_val=%s, changed_keys=%s, device_key=%s, can_release=%s",

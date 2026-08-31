@@ -611,6 +611,81 @@ async def test_switchoperation_load_from_yaml(mock_connection, mock_controller):
     assert True not in op_off_only._values_ha_to_dev_map
 
 
+async def test_switchoperation_should_evict_all_locks(mock_connection, mock_controller):
+    """Test SwitchOperation should_evict_all_locks for power IDs, state values, and fallbacks."""
+    # 1. Switch with ID "power" turning OFF returns True
+    op_power = SwitchOperation("power", mock_connection, mock_controller)
+    op_power._status_template = Template(
+        hass=mock_controller.hass, template="{{ device_state.power }}"
+    )
+    assert op_power.should_evict_all_locks({"power": "off"}, {"power"}) is True
+    assert op_power.should_evict_all_locks({"power": "Off"}, {"power"}) is True
+    assert op_power.should_evict_all_locks({"power": "OFF"}, {"power"}) is True
+    assert op_power.should_evict_all_locks({"power": STATE_OFF}, {"power"}) is True
+    assert op_power.should_evict_all_locks({"power": "on"}, {"power"}) is False
+    assert op_power.should_evict_all_locks({"power": "On"}, {"power"}) is False
+    assert op_power.should_evict_all_locks({"power": "ON"}, {"power"}) is False
+    assert op_power.should_evict_all_locks({"power": "standby"}, {"power"}) is False
+    assert op_power.should_evict_all_locks({}, set()) is False
+
+    # 2. Switch with ID "AC_FUN_POWER" turning OFF returns True
+    op_samsung_power = SwitchOperation("AC_FUN_POWER", mock_connection, mock_controller)
+    op_samsung_power._status_template = Template(
+        hass=mock_controller.hass, template="{{ device_state.AC_FUN_POWER }}"
+    )
+    assert (
+        op_samsung_power.should_evict_all_locks(
+            {"AC_FUN_POWER": "Off"}, {"AC_FUN_POWER"}
+        )
+        is True
+    )
+    assert (
+        op_samsung_power.should_evict_all_locks(
+            {"AC_FUN_POWER": "off"}, {"AC_FUN_POWER"}
+        )
+        is True
+    )
+    assert (
+        op_samsung_power.should_evict_all_locks(
+            {"AC_FUN_POWER": "OFF"}, {"AC_FUN_POWER"}
+        )
+        is True
+    )
+    assert (
+        op_samsung_power.should_evict_all_locks(
+            {"AC_FUN_POWER": "On"}, {"AC_FUN_POWER"}
+        )
+        is False
+    )
+
+    # 3. Non-power switch IDs always return False regardless of state
+    for non_power_id in (
+        "other_switch",
+        "fan_power",
+        "power_mode",
+        "AC_FUN_POWER_2",
+        "switch",
+    ):
+        op_other = SwitchOperation(non_power_id, mock_connection, mock_controller)
+        op_other._status_template = Template(
+            hass=mock_controller.hass, template="{{ device_state.val }}"
+        )
+        assert op_other.should_evict_all_locks({"val": "off"}, {"val"}) is False
+        assert op_other.should_evict_all_locks({"val": "Off"}, {"val"}) is False
+        assert op_other.should_evict_all_locks({"val": "on"}, {"val"}) is False
+
+    # 4. Direct calculate_value_from_state return checks
+    with patch.object(op_power, "calculate_value_from_state", return_value="Off") as mock_calc:
+        assert op_power.should_evict_all_locks({"dummy": 1}, set()) is True
+        mock_calc.assert_called_once_with({"dummy": 1})
+
+    with patch.object(op_power, "calculate_value_from_state", return_value="On"):
+        assert op_power.should_evict_all_locks({"dummy": 1}, set()) is False
+
+    with patch.object(op_power, "calculate_value_from_state", return_value=None):
+        assert op_power.should_evict_all_locks({"dummy": 1}, set()) is False
+
+
 async def test_basicnumericoperation_value_property(mock_connection, mock_controller):
     """Test BasicNumericOperation value parsing and fallbacks."""
     op = BasicNumericOperation("test_num", mock_connection, mock_controller)
