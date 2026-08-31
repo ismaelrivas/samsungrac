@@ -574,6 +574,78 @@ def test_mutant_apply_anti_flicker_changed_keys_is_not_none_or():
     assert "mode" not in poller._pending_updates
 
 
+def test_mutant_apply_anti_flicker_global_evict_return_stops_iteration():
+    """KILLS: return mutated to break/pass in _apply_anti_flicker_locks (Line 790)."""
+    poller = YamlStatePoller(MagicMock())
+
+    op1 = MagicMock(id="power1")
+    op1.should_evict_all_locks.return_value = True
+
+    op2 = MagicMock(id="power2")
+    op2.should_evict_all_locks.return_value = True
+
+    poller._pending_updates = {"temp": ("24", time.monotonic())}
+
+    poller._apply_anti_flicker_locks(
+        [op1, op2],
+        {},
+        {},
+        is_prediction=False,
+        changed_keys={"power"},
+    )
+
+    assert len(poller._pending_updates) == 0
+    op1.should_evict_all_locks.assert_called_once()
+    op2.should_evict_all_locks.assert_not_called()
+
+
+def test_mutant_apply_anti_flicker_expired_ttl_continue():
+    """KILLS: continue mutated to break in _apply_anti_flicker_locks (Line 820)."""
+    poller = YamlStatePoller(MagicMock())
+    now = time.monotonic()
+
+    # Create two properties: one expired, one active
+    op_expired = MagicMock(id="expired_prop")
+    del op_expired.should_evict_all_locks
+    del op_expired.calculate_value_from_state
+    del op_expired.convert_hass_to_dev
+
+    op_active = MagicMock(id="active_prop")
+    del op_active.should_evict_all_locks
+    del op_active.calculate_value_from_state
+    del op_active.convert_hass_to_dev
+
+    poller._get_state_node_from_prop = lambda op: "node_" + op.id
+    poller._get_hass_attr_for_op_id = lambda op_id: op_id
+
+    all_props = [op_expired, op_active]
+    device_to_process = {"node_expired_prop": "old1", "node_active_prop": "old2"}
+    pure_device_to_process = {"node_expired_prop": "old1", "node_active_prop": "old2"}
+
+    # Set pending updates: first one expired (> LOCK_TTL_SEC), second one fresh (5s)
+    poller._pending_updates = {
+        "expired_prop": ("val1", now - (poller.LOCK_TTL_SEC + 10.0)),
+        "active_prop": ("val2", now - 5.0),
+    }
+
+    poller._apply_anti_flicker_locks(
+        all_props,
+        device_to_process,
+        pure_device_to_process,
+        is_prediction=False,
+        changed_keys=None,
+    )
+
+    # 1. The expired lock must be deleted
+    assert "expired_prop" not in poller._pending_updates
+
+    # 2. The active lock MUST be processed and injected into device_to_process
+    # If continue was mutated to break, active_prop would never be processed!
+    assert "active_prop" in poller._pending_updates
+    assert poller._pending_updates["active_prop"][0] == "val2"
+    assert device_to_process["node_active_prop"] == "val2"
+
+
 def test_mutant_predict_dependency_cascades_continue():
     """KILLS: continue mutated to break in _predict_dependency_cascades (Line 913)."""
     poller = YamlStatePoller(MagicMock())

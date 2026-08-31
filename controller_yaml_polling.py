@@ -787,7 +787,7 @@ class YamlStatePoller:
                             pure_device_to_process, changed_keys
                         ):
                             self._pending_updates.clear()
-                            break
+                            return
                     except Exception as e:  # pylint: disable=broad-exception-caught
                         _LOGGER.debug(
                             "%s Error evaluating global eviction for %s: %s",
