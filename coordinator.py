@@ -292,6 +292,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     """Manages data fetching for Samsung Climate devices."""
 
     config_entry: ConfigEntry
+    devices: dict[str, Any]
 
     def __init__(
         self,
@@ -303,6 +304,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     ) -> None:  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
         """Initialize the data coordinator."""
         self.controller = controller
+        self.devices = {}
         self.debouncer = PropertyDebouncer(self, delay=DEFAULT_DEBOUNCE_DELAY)
         self._global_network_lock = asyncio.Lock()
         self.config_entry = entry

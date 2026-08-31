@@ -1,4 +1,4 @@
-# pylint: disable=import-outside-toplevel,too-many-public-methods,useless-return
+# pylint: disable=import-outside-toplevel,too-many-public-methods,useless-return,missing-function-docstring
 """Base class for a climate device controller. Strict enforcement."""
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from homeassistant.const import CONF_PORT, UnitOfTemperature
 if TYPE_CHECKING:
     from .state import ClimateIPDeviceState
 
-from .const import ATTR_POWER, PORT_SAMSUNG_8888  # noqa: F401
+from .const import PORT_SAMSUNG_8888  # noqa: F401
 
 CLIMATE_CONTROLLERS: list[type[ClimateController]] = []
 
@@ -56,6 +56,16 @@ class ControllerInterface(Protocol):
     def pure_device_state(self) -> dict[str, Any] | None: ...
     @property
     def token(self) -> str | None: ...
+    @property
+    def connection(self) -> Any | None: ...
+    @property
+    def raw_state(self) -> dict[str, Any] | None: ...
+    @property
+    def last_poll_data(self) -> dict[str, Any] | None: ...
+    @property
+    def connection_diagnostics(self) -> dict[str, Any]: ...
+
+    def get_diagnostics(self) -> dict[str, Any]: ...
 
     def get_property(self, property_name: str) -> Any: ...
     def get_property_object(self, property_name: str) -> Any: ...
@@ -163,6 +173,25 @@ class ClimateController(ABC):
     def connection(self) -> Any | None:
         """Return the active connection object."""
         return self._connection
+
+    @property
+    def raw_state(self) -> dict[str, Any] | None:
+        """Return raw state if available."""
+        return None
+
+    @property
+    def last_poll_data(self) -> dict[str, Any] | None:
+        """Return the last raw poll response."""
+        return None
+
+    @property
+    def connection_diagnostics(self) -> dict[str, Any]:
+        """Return connection diagnostics."""
+        return {}
+
+    def get_diagnostics(self) -> dict[str, Any]:
+        """Return diagnostic data."""
+        return self.connection_diagnostics
 
     @property
     @abstractmethod

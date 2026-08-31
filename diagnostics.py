@@ -4,16 +4,19 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import re
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Final, Protocol, cast, runtime_checkable
 
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.const import CONF_MAC
 from homeassistant.core import HomeAssistant
 
+from .coordinator import SamsungClimateCoordinator
+
 if TYPE_CHECKING:
     from . import ClimateIPConfigEntry
-from .const import DOMAIN
-from .coordinator import SamsungClimateCoordinator
+
+KEY_MAIN_DEVICE: Final = "main"
+REDACTED_TOKEN: Final = "**REDACTED**"
 
 # Keys containing sensitive data that must be redacted from diagnostic payloads.
 # Kept in sync with helpers.mask_sensitive_data — any new sensitive field should
@@ -43,6 +46,22 @@ RE_MAC_DUID = re.compile(
 )
 
 
+@runtime_checkable
+class DiagnosticController(Protocol):
+    """Protocol for controllers providing diagnostic data."""
+
+    @property
+    def connection_diagnostics(self) -> dict[str, Any]:
+        """Return connection telemetry diagnostics."""
+
+    def get_diagnostics(self) -> dict[str, Any]:
+        """Return diagnostic data."""
+
+    @property
+    def connection(self) -> Any:
+        """Return the underlying connection."""
+
+
 def _get_mac_threat_patterns(entry: ClimateIPConfigEntry) -> set[str]:
     """Extract MAC address and DUID variants to build threat patterns for substring redaction."""
     patterns: set[str] = set()
@@ -61,15 +80,20 @@ def _get_mac_threat_patterns(entry: ClimateIPConfigEntry) -> set[str]:
                 candidates.append(match)
 
     for candidate in candidates:
-        clean = candidate.replace(":", "").replace("-", "").strip()
+        stripped = candidate.strip()
+        clean = stripped.replace(":", "").replace("-", "")
         if len(clean) == 12:
-            patterns.add(clean)
+            patterns.add(clean.lower())
+            patterns.add(clean.upper())
             formatted_colon = ":".join(clean[i : i + 2] for i in range(0, 12, 2))
             formatted_dash = "-".join(clean[i : i + 2] for i in range(0, 12, 2))
-            patterns.add(formatted_colon)
-            patterns.add(formatted_dash)
-        elif len(candidate) > 5:
-            patterns.add(candidate)
+            patterns.add(formatted_colon.lower())
+            patterns.add(formatted_colon.upper())
+            patterns.add(formatted_dash.lower())
+            patterns.add(formatted_dash.upper())
+        elif len(stripped) > 5:
+            patterns.add(stripped.lower())
+            patterns.add(stripped.upper())
 
     return {p for p in patterns if p}
 
@@ -85,9 +109,22 @@ def _deep_redact_substrings(val: Any, threat_patterns: set[str]) -> Any:
     if isinstance(val, str):
         result = val
         for pattern in sorted_patterns:
-            result = re.sub(
-                re.escape(pattern), "**REDACTED**", result, flags=re.IGNORECASE
-            )
+            target_len = len(pattern)
+            if not target_len:
+                continue
+            target_lower = pattern.lower()
+            res_lower = result.lower()
+            start = 0
+            chunks: list[str] = []
+            while True:
+                idx = res_lower.find(target_lower, start)
+                if idx == -1:
+                    chunks.append(result[start:])
+                    break
+                chunks.append(result[start:idx])
+                chunks.append(REDACTED_TOKEN)
+                start = idx + target_len
+            result = "".join(chunks)
         return result
 
     if isinstance(val, dict):
@@ -102,51 +139,67 @@ def _deep_redact_substrings(val: Any, threat_patterns: set[str]) -> Any:
     return val
 
 
-def _extract_controller_diagnostics(controller: Any) -> dict[str, Any]:
+def _extract_controller_diagnostics(controller: DiagnosticController) -> dict[str, Any]:
     """Safely extract connection telemetry diagnostics from controller or connection."""
-    if hasattr(controller, "connection_diagnostics") and isinstance(
-        getattr(controller, "connection_diagnostics", None), dict
-    ):
-        return cast(dict[str, Any], controller.connection_diagnostics)
+    try:
+        diag = controller.connection_diagnostics
+        if isinstance(diag, dict):
+            return diag
+    except AttributeError:
+        pass
 
-    if hasattr(controller, "get_diagnostics"):
+    try:
         get_diag = controller.get_diagnostics
         if callable(get_diag):
-            res = get_diag()
-            if isinstance(res, dict):
-                return res
+            diag = get_diag()
+            if isinstance(diag, dict):
+                return diag
+    except AttributeError:
+        pass
 
-    if hasattr(controller, "connection"):
-        conn = controller.connection
-        if hasattr(conn, "get_diagnostics"):
-            get_diag = conn.get_diagnostics
-            if callable(get_diag):
-                res = get_diag()
-                if isinstance(res, dict):
-                    return res
+    try:
+        get_diag = controller.connection.get_diagnostics
+        if callable(get_diag):
+            diag = get_diag()
+            if isinstance(diag, dict):
+                return diag
+    except AttributeError:
+        pass
 
     return {}
 
 
-def _extract_raw_device_state(coordinator: Any) -> dict[str, Any]:
+def _extract_raw_device_state(coordinator: SamsungClimateCoordinator) -> dict[str, Any]:
     """Extract raw payload/state representation of the AC unit."""
     devices_state: dict[str, Any] = {}
 
-    if hasattr(coordinator, "devices") and isinstance(coordinator.devices, dict):
+    try:
         for device_id, device in coordinator.devices.items():
-            if hasattr(device, "raw_state"):
+            try:
                 devices_state[device_id] = device.raw_state
-            elif hasattr(device, "device_state"):
-                devices_state[device_id] = device.device_state
+            except AttributeError:
+                try:
+                    devices_state[device_id] = device.device_state
+                except AttributeError:
+                    pass
+    except AttributeError:
+        pass
 
-    if not devices_state and hasattr(coordinator, "controller"):
-        ctrl = coordinator.controller
-        if hasattr(ctrl, "raw_state"):
-            devices_state["main"] = ctrl.raw_state
-        elif hasattr(ctrl, "device_state"):
-            devices_state["main"] = ctrl.device_state
-        elif hasattr(ctrl, "last_poll_data"):
-            devices_state["main"] = ctrl.last_poll_data
+    if not devices_state:
+        try:
+            ctrl = coordinator.controller
+            try:
+                devices_state[KEY_MAIN_DEVICE] = ctrl.raw_state
+            except AttributeError:
+                try:
+                    devices_state[KEY_MAIN_DEVICE] = ctrl.device_state
+                except AttributeError:
+                    try:
+                        devices_state[KEY_MAIN_DEVICE] = ctrl.last_poll_data
+                    except AttributeError:
+                        pass
+        except AttributeError:
+            pass
 
     return devices_state
 
