@@ -107,6 +107,10 @@ class Connection:
         # pylint: disable=unused-argument
         return False
 
+    def set_controller_ref(self, controller: Any) -> None:
+        """Set a reference to the main controller."""
+        self._controller = controller
+
     def get_diagnostics(self) -> dict[str, Any]:
         """Return diagnostic information about the connection for troubleshooting."""
         return {

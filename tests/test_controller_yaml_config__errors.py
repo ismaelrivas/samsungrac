@@ -159,7 +159,7 @@ async def test_async_finish_initialization_duck_typing_snipers(mock_controller_e
     naked_attr.device_class = "temperature"
     naked_attr.set_hass_unit = MagicMock()
     # INTENTIONALLY NO set_device_unit.
-    # If mutmut changes 'and' to 'or', it will enter the block and raise AttributeError.
+    # In Phase 2 EAFP try-except, missing set_device_unit should just be caught and pass.
 
     def fake_create(key, node, conn, ctrl, getter):
         if key == "op_key_fallback":
@@ -184,8 +184,9 @@ async def test_async_finish_initialization_duck_typing_snipers(mock_controller_e
         assert "op_key_fallback" in loader.operations
 
         # Lethal assertion for Target 98:
-        # Lacking 'set_device_unit', the 'and' evaluated False, and it MUST NOT have executed 'set_hass_unit'
-        naked_attr.set_hass_unit.assert_not_called()
+        # In Phase 2 (Zero Object-Oriented Distrust), try-except EAFP means set_hass_unit IS executed,
+        # but the missing set_device_unit must NOT crash initialization (AttributeError is caught).
+        naked_attr.set_hass_unit.assert_called_once()
 
 
 @pytest.mark.asyncio

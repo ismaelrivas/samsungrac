@@ -810,12 +810,12 @@ async def test_apply_temperature_units_master_matrix() -> None:
         general_sensor.device_class = "humidity"
 
         # Generic temperature sensor
-        current_temp = MagicMock()
+        current_temp = MagicMock(spec=TemperatureOperation)
         current_temp.device_class = "temperature"
         current_temp.id = "current_temperature"
 
         # Operación específica de target
-        target_temp = MagicMock()
+        target_temp = MagicMock(spec=TemperatureOperation)
         target_temp.device_class = "temperature"
         target_temp.id = ATTR_TEMPERATURE
 
@@ -850,7 +850,7 @@ async def test_apply_temperature_units_no_hass() -> None:
     loader._parsed_yaml_config = {"device": {}}
     loader._parsed_yaml_cache = {"dev_123": loader._parsed_yaml_config}
 
-    target_temp = MagicMock()
+    target_temp = MagicMock(spec=TemperatureOperation)
     target_temp.device_class = "temperature"
     target_temp.id = ATTR_TEMPERATURE
     loader.operations = {ATTR_TEMPERATURE: target_temp}
@@ -1392,7 +1392,7 @@ async def test_apply_temperature_units_logic(mock_controller) -> None:
     generic_temp.id = "room_temp"
 
     # 2. Operación ATTR_TEMPERATURE (Debe recibir native_target_unit)
-    target_temp = MagicMock()
+    target_temp = MagicMock(spec=TemperatureOperation)
     target_temp.device_class = "temperature"
     target_temp.id = ATTR_TEMPERATURE
 

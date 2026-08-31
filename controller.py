@@ -31,6 +31,10 @@ class ControllerInterface(Protocol):
     """Protocol for climate controllers. Defines the mandatory contract."""
 
     @property
+    def hass(self) -> Any | None: ...
+    @property
+    def config(self) -> dict[str, Any]: ...
+    @property
     def log_prefix(self) -> str: ...
     @property
     def unique_id(self) -> str | None: ...
@@ -38,6 +42,10 @@ class ControllerInterface(Protocol):
     def device_id(self) -> str | None: ...
     @property
     def port(self) -> int | str | None: ...
+    @property
+    def ip_address(self) -> str | None: ...
+    @property
+    def _session(self) -> Any | None: ...
     @property
     def poll(self) -> bool | None: ...
     @property
@@ -173,6 +181,11 @@ class ClimateController(ABC):
     def connection(self) -> Any | None:
         """Return the active connection object."""
         return self._connection
+
+    @property
+    def config(self) -> dict[str, Any]:
+        """Return the controller configuration."""
+        return self._config
 
     @property
     def raw_state(self) -> dict[str, Any] | None:

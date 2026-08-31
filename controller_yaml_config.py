@@ -121,11 +121,13 @@ class YamlConfigLoader:
         else:
             try:
                 raw_loaded_yaml: Any
-                if (
-                    hasattr(self.controller, "hass")
-                    and self.controller.hass is not None
-                ):  # pragma: no mutate
-                    raw_loaded_yaml = await self.controller.hass.async_add_executor_job(
+                try:
+                    hass_ref = self.controller.hass
+                except AttributeError:
+                    hass_ref = None
+
+                if hass_ref is not None:  # pragma: no mutate
+                    raw_loaded_yaml = await hass_ref.async_add_executor_job(
                         load_yaml, file
                     )
                 else:
@@ -161,7 +163,11 @@ class YamlConfigLoader:
             return False
 
         yaml_device = self._parsed_yaml_config
-        self._parsed_yaml_cache[getattr(self.controller, "device_id", "")] = yaml_device
+        try:
+            dev_id = self.controller.device_id or ""
+        except AttributeError:
+            dev_id = ""
+        self._parsed_yaml_cache[dev_id] = yaml_device
 
         if CONFIG_DEVICE not in yaml_device:
             _LOGGER.error(
@@ -176,9 +182,13 @@ class YamlConfigLoader:
         connection_node = ac.get(CONFIG_DEVICE_CONNECTION, {}).copy()
 
         # Sanitized configuration dictionary access
-        controller_config = getattr(
-            self.controller, "_config", getattr(self.controller, "config", {})
-        )
+        try:
+            controller_config = self.controller.config
+        except AttributeError:
+            try:
+                controller_config = self.controller._config
+            except AttributeError:
+                controller_config = {}
         device_type = controller_config.get(CONF_DEVICE_TYPE)
 
         if device_type == DEVICE_TYPE_SAMSUNG_2878:
@@ -190,8 +200,13 @@ class YamlConfigLoader:
             conn_method = controller_config.get(CONF_CONN_METHOD, CONN_METHOD_AIOHTTP)
 
             entry_id = controller_config.get("entry_id")
-            if getattr(self.controller, "hass", None) and entry_id:
-                entry = self.controller.hass.config_entries.async_get_entry(entry_id)
+            try:
+                hass_ref = self.controller.hass
+            except AttributeError:
+                hass_ref = None
+
+            if hass_ref is not None and entry_id:
+                entry = hass_ref.config_entries.async_get_entry(entry_id)
                 if entry:
                     _LOGGER.debug(
                         "%s [Init] Retrieved ConfigEntry. Options: %s",
@@ -227,7 +242,10 @@ class YamlConfigLoader:
                     ).get(CONFIG_DEVICE_CONNECTION_TYPE, "request")
                 )  # pragma: no mutate
 
-        key = getattr(self.controller, "unique_id", None)
+        try:
+            key = self.controller.unique_id
+        except AttributeError:
+            key = None
         if not key:
             _LOGGER.error(
                 "%s Cannot create a unique connection without a unique_id",
@@ -250,28 +268,41 @@ class YamlConfigLoader:
                     conn_class.__name__,
                     conn_type_str,
                 )
+                try:
+                    hass_ref = self.controller.hass
+                except AttributeError:
+                    hass_ref = None
+                try:
+                    session_ref = self.controller._session
+                except AttributeError:
+                    session_ref = None
+                try:
+                    ip_ref = self.controller.ip_address
+                except AttributeError:
+                    ip_ref = None
+
                 if conn_class.__name__ == "ConnectionAiohttp8888":
                     merged_config = {**controller_config, **connection_node}
                     self.connection = conn_class(
                         merged_config,
                         _LOGGER,
-                        getattr(self.controller, "hass", None),
-                        getattr(self.controller, "_session", None),
-                        getattr(self.controller, "ip_address", None),
+                        hass_ref,
+                        session_ref,
+                        ip_ref,
                     )
                 elif conn_class.__name__ == "ConnectionRaw8888":
                     self.connection = conn_class(
                         controller_config,
                         _LOGGER,
-                        getattr(self.controller, "hass", None),
-                        getattr(self.controller, "_session", None),
-                        getattr(self.controller, "ip_address", None),
+                        hass_ref,
+                        session_ref,
+                        ip_ref,
                     )
                 else:
                     self.connection = conn_class(
                         controller_config,
                         _LOGGER,
-                        hass=getattr(self.controller, "hass", None),
+                        hass=hass_ref,
                     )
 
                 if self.connection and self.connection.load_from_yaml(
@@ -287,8 +318,10 @@ class YamlConfigLoader:
             )
             return False
 
-        if hasattr(self.connection, "set_controller_ref"):
+        try:
             self.connection.set_controller_ref(self.controller)
+        except AttributeError:
+            pass
 
         _LOGGER.debug(
             "%s Connection object created successfully. Type: %s",
@@ -324,7 +357,10 @@ class YamlConfigLoader:
         if self.is_fully_initialized or not self._parsed_yaml_config:
             return
 
-        dev_id = getattr(self.controller, "device_id", "")  # pragma: no mutate
+        try:
+            dev_id = self.controller.device_id or ""  # pragma: no mutate
+        except AttributeError:
+            dev_id = ""
         if dev_id in self._parsed_yaml_cache:
             yaml_device = self._parsed_yaml_cache[dev_id]
         else:
@@ -343,11 +379,16 @@ class YamlConfigLoader:
                 self.state_getter,
             )
             if op is not None:
-                op_id = getattr(op, "id", op_key)
+                try:
+                    op_id = op.id
+                except AttributeError:
+                    op_id = op_key
                 self.operations[op_id] = op
-                self.service_schema_map[vol.Optional(op_id)] = getattr(
-                    op, "config_validation_type", cv.string
-                )
+                try:
+                    schema = op.config_validation_type
+                except AttributeError:
+                    schema = cv.string
+                self.service_schema_map[vol.Optional(op_id)] = schema
 
         nodes = ac.get(CONFIG_DEVICE_SWITCHES, {})
         for op_key in nodes.keys():
@@ -359,13 +400,20 @@ class YamlConfigLoader:
                 self.state_getter,
             )
             if op is not None:  # pragma: no mutate
-                op_id = getattr(op, "id", op_key)  # pragma: no mutate
+                try:
+                    op_id = op.id
+                except AttributeError:
+                    op_id = op_key  # pragma: no mutate
                 self.operations[op_id] = op  # pragma: no mutate
                 if op_id not in self.operations_list:  # pragma: no mutate
                     self.operations_list.append(op_id)  # pragma: no mutate
-                self.service_schema_map[vol.Optional(op_id)] = getattr(
-                    op, "config_validation_type", cv.string
-                )  # pragma: no mutate
+                try:
+                    schema = op.config_validation_type
+                except AttributeError:
+                    schema = cv.string
+                self.service_schema_map[vol.Optional(op_id)] = (
+                    schema  # pragma: no mutate
+                )
 
         nodes = ac.get(CONFIG_DEVICE_ATTRIBUTES, {})
         for key in nodes.keys():
@@ -373,15 +421,18 @@ class YamlConfigLoader:
                 key, nodes[key], self.connection, self.controller, self.state_getter
             )
             if prop is not None:  # pragma: no mutate
-                prop_id = getattr(prop, "id", key)  # pragma: no mutate
+                try:
+                    prop_id = prop.id
+                except AttributeError:
+                    prop_id = key  # pragma: no mutate
                 self.properties[prop_id] = prop  # pragma: no mutate
-                if (
-                    hasattr(prop, "set_unit_of_measurement")
-                    and "unit_of_measurement" in nodes[key]
-                ):  # pragma: no mutate
-                    prop.set_unit_of_measurement(
-                        nodes[key]["unit_of_measurement"]
-                    )  # pragma: no mutate
+                if "unit_of_measurement" in nodes[key]:  # pragma: no mutate
+                    try:
+                        prop.set_unit_of_measurement(
+                            nodes[key]["unit_of_measurement"]
+                        )  # pragma: no mutate
+                    except AttributeError:
+                        pass
 
         node_sensors = ac.get(CONFIG_DEVICE_SENSORS, {})
         _LOGGER.debug(
@@ -401,18 +452,28 @@ class YamlConfigLoader:
 
         # Apply temperature units from config/options.
         configured_unit = DEFAULT_CONF_TEMP_UNIT
-        if getattr(self.controller, "hass", None):
-            configured_unit = self.controller.hass.config.units.temperature_unit
+        try:
+            hass_ref = self.controller.hass
+        except AttributeError:
+            hass_ref = None
+
+        if hass_ref:
+            configured_unit = hass_ref.config.units.temperature_unit
 
         native_current_unit = DEFAULT_CONF_TEMP_UNIT  # pragma: no mutate
         native_target_unit = DEFAULT_CONF_TEMP_UNIT  # pragma: no mutate
 
-        controller_config = getattr(
-            self.controller, "_config", getattr(self.controller, "config", {})
-        )
+        try:
+            controller_config = self.controller.config
+        except AttributeError:
+            try:
+                controller_config = self.controller._config
+            except AttributeError:
+                controller_config = {}
+
         entry_id = controller_config.get("entry_id")
-        if getattr(self.controller, "hass", None) and entry_id:
-            entry = self.controller.hass.config_entries.async_get_entry(
+        if hass_ref and entry_id:
+            entry = hass_ref.config_entries.async_get_entry(
                 entry_id
             )  # pragma: no mutate
             if entry:
@@ -441,34 +502,48 @@ class YamlConfigLoader:
             if not prop_instance:
                 return
 
+            try:
+                device_class = prop_instance.device_class
+            except AttributeError:
+                device_class = None
+
             is_temp = (
                 isinstance(prop_instance, TemperatureOperation)
-                or getattr(prop_instance, "device_class", None) == "temperature"
+                or device_class == "temperature"
             )
 
             if is_temp:
-                if hasattr(prop_instance, "set_hass_unit") and hasattr(
-                    prop_instance, "set_device_unit"
-                ):
-                    _LOGGER.debug(
-                        "%s Applying dual units to property '%s'. Display: %s",
-                        self.controller.log_prefix,
-                        getattr(prop_instance, "id", "unknown"),
-                        configured_unit,
-                    )  # pragma: no mutate
+                try:
                     prop_instance.set_hass_unit(configured_unit)
-                    if getattr(prop_instance, "id", None) == ATTR_TEMPERATURE:
+                    try:
+                        prop_id = prop_instance.id
+                    except AttributeError:
+                        prop_id = None
+                    if prop_id == ATTR_TEMPERATURE:
                         prop_instance.set_device_unit(native_target_unit)
                     else:
                         prop_instance.set_device_unit(native_current_unit)
-                elif hasattr(prop_instance, "set_unit_of_measurement"):
                     _LOGGER.debug(
-                        "%s Applying configured unit '%s' to property '%s'",
+                        "%s Applying dual units to property '%s'. Display: %s",
                         self.controller.log_prefix,
+                        prop_id or "unknown",
                         configured_unit,
-                        getattr(prop_instance, "id", "unknown"),
                     )  # pragma: no mutate
-                    prop_instance.set_unit_of_measurement(configured_unit)
+                except AttributeError:
+                    try:
+                        prop_instance.set_unit_of_measurement(configured_unit)
+                        try:
+                            prop_id = prop_instance.id
+                        except AttributeError:
+                            prop_id = None
+                        _LOGGER.debug(
+                            "%s Applying configured unit '%s' to property '%s'",
+                            self.controller.log_prefix,
+                            configured_unit,
+                            prop_id or "unknown",
+                        )  # pragma: no mutate
+                    except AttributeError:
+                        pass
 
         for op in self.operations.values():
             apply_unit(op)

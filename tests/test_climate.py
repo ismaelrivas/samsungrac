@@ -26,8 +26,7 @@ from custom_components.climate_ip.climate import (
     ClimateIP,
     async_setup_entry,
 )
-from custom_components.climate_ip.const import CONF_TARGET_TEMP_STEP
-from custom_components.climate_ip.controller import ATTR_POWER
+from custom_components.climate_ip.const import ATTR_POWER, CONF_TARGET_TEMP_STEP
 from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 
 
