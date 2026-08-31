@@ -1,4 +1,5 @@
 {
   "name": "Climate IP",
-  "render_readme": true
+  "render_readme": true,
+  "domain": "climate_ip"
 }
