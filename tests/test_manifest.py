@@ -36,6 +36,41 @@ def test_manifest_validation():
 
     # Requirements validation
     assert "requirements" in manifest
+    assert isinstance(manifest["requirements"], list)
+    for req in manifest["requirements"]:
+        assert not req.startswith("git+"), f"Direct git dependencies are forbidden: {req}"
+        assert not req.startswith("http"), f"HTTP/HTTPS dependencies are forbidden: {req}"
+
+
+def test_services_yaml_valid():
+    """Verify services.yaml exists and is valid YAML."""
+    from pathlib import Path
+
+    import yaml
+
+    integration_root = Path(__file__).parent.parent
+    services_file = integration_root / "services.yaml"
+    if services_file.exists():
+        data = yaml.safe_load(services_file.read_text(encoding="utf-8"))
+        assert isinstance(data, dict)
+
+
+def test_icons_and_quality_scale_valid():
+    """Verify icons.json and quality_scale.yaml if present."""
+    from pathlib import Path
+
+    import yaml
+
+    integration_root = Path(__file__).parent.parent
+    icons_file = integration_root / "icons.json"
+    if icons_file.exists():
+        data = json.loads(icons_file.read_text(encoding="utf-8"))
+        assert isinstance(data, dict)
+
+    qs_file = integration_root / "quality_scale.yaml"
+    if qs_file.exists():
+        qs_data = yaml.safe_load(qs_file.read_text(encoding="utf-8"))
+        assert isinstance(qs_data, dict)
 
 
 def test_translation_files_coherent():
