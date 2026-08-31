@@ -152,7 +152,7 @@ def _extract_controller_diagnostics(controller: DiagnosticController) -> dict[st
         pass
 
     try:
-        return controller.connection.get_diagnostics()
+        return cast(dict[str, Any], controller.connection.get_diagnostics())
     except AttributeError:
         return {}
 
@@ -272,9 +272,7 @@ async def async_get_config_entry_diagnostics(
                 total_discovered += getattr(coordinator, "discovered_devices_count", 1)
                 total_skipped += getattr(coordinator, "skipped_devices_count", 0)
                 entities = getattr(coordinator, "entities", None)
-                if entities is not None and isinstance(
-                    entities, list | set | dict
-                ):
+                if entities is not None and isinstance(entities, list | set | dict):
                     total_entities += len(entities)
 
         diagnostics_data["bootstrapping"]["total_devices_discovered"] = total_discovered

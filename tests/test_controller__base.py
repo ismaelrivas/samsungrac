@@ -431,3 +431,47 @@ def test_controller_port_invalid_types_and_ranges() -> None:
 
     with pytest.raises(TypeError, match="Unsupported port type"):
         _ = DummyController({"port": False}, logger).port
+
+
+class PristineDummyController(DummyController):
+    """Pristine dummy controller that executes ABC log_prefix without shadowing."""
+
+    def __init__(
+        self,
+        unique_id: str | None = None,
+        name: str | None = None,
+    ) -> None:
+        super().__init__({}, logging.getLogger("test_pristine"), uid_override=unique_id)
+        self._name = name
+
+
+@pytest.mark.parametrize(
+    ("uid", "name", "expected_prefix"),
+    [
+        # Case A: Fallbacks
+        (None, None, "[NO:ID]"),
+        ("", None, "[NO_ID]"),
+        # Case B: Colons stripped
+        ("00:11:22:33:44:55", None, "[334455]"),
+        # Case C: Hyphens stripped
+        ("00-11-22-33-44-55", None, "[334455]"),
+        # Case D: Main / 0 / mac_suffix / clean_mac / UUID sentinels ignored
+        ("001122334455_main", None, "[334455]"),
+        ("001122334455_0", None, "[334455]"),
+        ("001122334455_334455", None, "[334455]"),
+        ("001122334455_001122334455", None, "[334455]"),
+        ("001122334455_12345678-1234-1234-1234-123456789012", None, "[334455]"),
+        # Case E: Sub-device routing captured
+        ("001122334455_1", None, "[334455:1]"),
+        ("001122334455_zone2", None, "[334455:zone2]"),
+        # Fallback to name property when unique_id is None
+        (None, "00:11:22:33:44:55", "[334455]"),
+        (None, "LivingRoom_AC", "[ngRoom:AC]"),
+    ],
+)
+def test_controller_log_prefix_coverage(
+    uid: str | None, name: str | None, expected_prefix: str
+) -> None:
+    """Achieves 100% branch and statement coverage on ClimateController.log_prefix (kills Mutant ID 34)."""
+    controller = PristineDummyController(unique_id=uid, name=name)
+    assert controller.log_prefix == expected_prefix
