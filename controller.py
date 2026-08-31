@@ -250,7 +250,11 @@ class ClimateController(ABC):
         base_part, _, sub_part = ident.partition("_")
         clean_mac = base_part.replace(":", "").replace("-", "")
         mac_suffix = clean_mac[-6:] if len(clean_mac) > 0 else "NO_ID"
-        if len(sub_part) > 0 and sub_part not in ("main", "0", mac_suffix, clean_mac):
+        
+        # Hide sub_part if it looks like a UUID (e.g. 8888 device discovery token/UUID)
+        is_uuid = len(sub_part) == 36 and sub_part.count("-") == 4
+        
+        if len(sub_part) > 0 and sub_part not in ("main", "0", mac_suffix, clean_mac) and not is_uuid:
             return f"[{mac_suffix}:{sub_part}]"
         return f"[{mac_suffix}]"
 
