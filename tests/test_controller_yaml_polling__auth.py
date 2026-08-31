@@ -9,9 +9,6 @@ from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 from custom_components.climate_ip.exceptions import AuthError
 
 
-
-
-
 async def test_async_update_state_auth_refresh_flow():
     """Verifica el flujo de recuperación automática cuando el token expira (401)."""
     mock_controller = MagicMock()
@@ -141,8 +138,6 @@ async def test_refresh_smartthings_token_sniper_failures(
             self.log_prefix = "[AuthTest]"
             self._attributes = {}
             # hass is intentionally not defined at start
-
-
 
     mock_controller = DummyController()
     poller = YamlStatePoller(mock_controller)

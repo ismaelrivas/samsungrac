@@ -573,7 +573,7 @@ async def test_diagnostics_top_level_keys(mock_hass):
     mock_coord.discovered_devices_count = 0
     mock_coord.skipped_devices_count = 0
     mock_coord.entities = []
-    
+
     entry.runtime_data = mock_coord
 
     res = await async_get_config_entry_diagnostics(mock_hass, entry)
