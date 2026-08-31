@@ -788,6 +788,7 @@ class YamlStatePoller:
                             pure_device_to_process, changed_keys
                         ):
                             global_evict = True
+                            self._pending_updates.clear()
                             break
                     except Exception as e:  # pylint: disable=broad-exception-caught
                         _LOGGER.debug(
@@ -880,6 +881,7 @@ class YamlStatePoller:
                     and pure_val is not None
                     and (
                         self._values_match(pure_val, pend_val)
+                        or changed_keys is not None
                         or lock_age
                         > self.LOCK_PHYSICAL_TIMEOUT_SEC  # pragma: no mutate
                     )

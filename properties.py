@@ -1384,6 +1384,17 @@ class SwitchOperation(BasicDeviceOperation):
             return True
         return False
 
+    def should_evict_all_locks(
+        self, state: dict[str, Any], changed_keys: set[str]
+    ) -> bool:
+        """Return True if power is turned Off physically to evict all locks."""
+        # Only evict if this switch is the power property and it changed to Off
+        if self.id in ("power", "AC_FUN_POWER"):
+            pure_val = self.calculate_value_from_state(state)
+            if str(pure_val).lower() == "off":
+                return True
+        return False
+
 
 @register_property
 class BasicNumericOperation(DeviceOperation):

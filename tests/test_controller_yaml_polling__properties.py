@@ -1227,6 +1227,7 @@ async def test_evict_invalidated_pending_updates_exact_ttl_boundary(mock_time):
     """Kills mutant mutating '>' to '>=' at line 946 (exact 10.0s TTL boundary)."""
     poller = YamlStatePoller(MagicMock())
     temp_op = MagicMock(id="temperature")
+    del temp_op.should_evict_all_locks
     temp_op.calculate_value_from_state = MagicMock(return_value=22.0)
     temp_op.convert_hass_to_dev.side_effect = str
     poller.controller.loader.operations = {"temperature": temp_op}
