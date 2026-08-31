@@ -553,8 +553,8 @@ def test_extract_raw_device_state_controller_fallbacks():
     assert _extract_raw_device_state(coord3) == {"main": {"status": "ok"}}
 
 
-async def test_diagnostics_top_level_keys_and_hass_data_fallback(mock_hass):
-    """Kill mutants altering top-level dictionary keys and hass.data fallback in async_get_config_entry_diagnostics."""
+async def test_diagnostics_top_level_keys(mock_hass):
+    """Kill mutants altering top-level dictionary keys in async_get_config_entry_diagnostics."""
     from custom_components.climate_ip.diagnostics import (
         async_get_config_entry_diagnostics,
     )
@@ -566,7 +566,6 @@ async def test_diagnostics_top_level_keys_and_hass_data_fallback(mock_hass):
     entry.title = "AC"
     entry.domain = DOMAIN
     entry.unique_id = "uid"
-    entry.runtime_data = None  # Force fallback to hass.data
 
     mock_coord = MagicMock(spec=SamsungClimateCoordinator)
     mock_coord.data = None
@@ -574,8 +573,8 @@ async def test_diagnostics_top_level_keys_and_hass_data_fallback(mock_hass):
     mock_coord.discovered_devices_count = 0
     mock_coord.skipped_devices_count = 0
     mock_coord.entities = []
-
-    mock_hass.data = {DOMAIN: {"entry_123": mock_coord}}
+    
+    entry.runtime_data = mock_coord
 
     res = await async_get_config_entry_diagnostics(mock_hass, entry)
 

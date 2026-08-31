@@ -156,10 +156,8 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
 
-    # Retrieve coordinator(s) from runtime_data or hass.data
+    # Retrieve coordinator(s) from runtime_data
     entry_data = getattr(entry, "runtime_data", None)  # pragma: no mutate
-    if entry_data is None and hass and DOMAIN in hass.data:  # pragma: no mutate
-        entry_data = hass.data[DOMAIN].get(entry.entry_id)  # pragma: no mutate
 
     filtered_entry_data: dict[str, Any] = {
         "title": entry.title,
