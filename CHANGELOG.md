@@ -1,5 +1,29 @@
 # Changelog
 
+## [10.0.1b1] - 2026-08-31 (Major Update)
+
+> [!NOTE]
+> This update represents a monumental overhaul of the Climate IP integration codebase. Through an exhaustive modernization and hardening effort, the component has been restructured from the ground up to ensure absolute stability, greater error resilience, and a cleaner, more maintainable architecture.
+
+### Architecture & Deep Refactoring
+The core of the component has matured substantially through the application of strict and secure Pythonic design patterns:
+- **Connection Engine (Aiohttp & Raw):** Dictionary-based shared state was replaced by a strictly typed structured system (`AiohttpSharedState` Dataclass). SSL context creation was logically separated, embedded commands were heavily validated, and network exception handling was fortified to prevent silent disconnections.
+- **YAML Controllers & Properties:** Implemented advanced resilience in `YamlConfigLoader` and `ClimateController`, incorporating idempotency checks, conditional early exits, cascading fallbacks, and clean, predictable property factories.
+- **Transition to Pythonic Patterns (EAFP):** Massive refactoring to use the EAFP (*Easier to Ask for Forgiveness than Permission*) pattern alongside direct checks via `getattr`, eradicating the unsafe and inconsistent use of `hasattr()` and drastically improving state extraction and diagnostics logic.
+- **Strict Object-Oriented Programming:** Rigorous application of `@abstractmethod` decorators in base classes and reinforcement via defensive typing throughout the entire component.
+
+### Bug Fixes
+- **Hang & Loop Prevention:** Resolved a dangerous potential infinite loop that occurred during substring redaction when generating diagnostics, adding strict filters against empty text patterns.
+- **Reliable State Reads:** Fixed critical validation errors and floating-point parsing failures during sensor state update sequences.
+- **State & Legacy Code Cleanup:** Systematic elimination of dead code, unnecessary assignments, legacy use of the global Home Assistant dictionary (`hass.data`), and removal of dangerous default initializations that propagated errors.
+- **Clean Entity Naming:** Implemented logic to automatically hide the sub-part of entity names in the UI when they match a UUID format, significantly improving readability.
+
+### Testing & Reliability: Absolute Zero Mutants
+As a fundamental means to achieve and guarantee the aforementioned architectural refactoring, the code was subjected to an unprecedented Mutation Testing siege, ensuring the final code is mathematically resilient to failures.
+- **Hardened Config Flow (1399/1399):** The configuration flow (`config_flow.py`) was iteratively refactored until reaching 0 surviving mutants. All partial evaluations (`.get()`) were replaced by strict boolean schemas.
+- **Transactional Siege Batteries:** Creation of modular test fronts (*Fronts A-S*) to test integration files (`sensor.py`, `climate.py`, `switch.py`) not only functionally, but structurally, using white-box validations and exhaustive verification (`assert_called_once_with`).
+
+
 ## [10.0.0b1] - 2026-07-26 (HACS Pre-Release / Beta)
 
 > [!WARNING]

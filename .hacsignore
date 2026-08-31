@@ -4,3 +4,9 @@ survived.log
 *.pyc
 __pycache__/
 .pytest_cache/
+scripts/
+GEMINI.md
+TODO.md
+pytest.ini
+setup.cfg
+.pre-commit-config.yaml
