@@ -95,6 +95,7 @@ async def test_diagnostics_single_coordinator(mock_hass, mock_entry):
     """Test single coordinator diagnostics extraction."""
     mock_coordinator = MagicMock(spec=SamsungClimateCoordinator)
     mock_coordinator.data = DummyCoordinatorData(power="on", target_temperature=24.0)
+    mock_coordinator.devices = {}
 
     mock_controller = MagicMock()
     mock_controller.state_attributes = {"power": "on", "mode": "cool"}
@@ -117,6 +118,7 @@ async def test_diagnostics_single_coordinator_no_optional_attrs(mock_hass, mock_
     """Test single coordinator when optional attributes and data are absent."""
     mock_coordinator = MagicMock(spec=SamsungClimateCoordinator)
     mock_coordinator.data = None
+    mock_coordinator.devices = {}
     mock_coordinator.controller = object()  # Bare object without optional attributes
 
     mock_entry.runtime_data = mock_coordinator
@@ -360,6 +362,7 @@ async def test_diagnostics_bootstrapping_and_raw_state(mock_hass, mock_entry):
     mock_coordinator.devices = {"dev1": device1}
 
     mock_controller = MagicMock()
+    del mock_controller.connection_diagnostics  # Force cascade to get_diagnostics()
     mock_controller.get_diagnostics.return_value = {
         "is_connected": True,
         "socket_status": "open",
@@ -393,19 +396,30 @@ async def test_diagnostics_controller_missing_methods(mock_hass) -> None:
     assert _extract_controller_diagnostics(mock_ctrl_no_conn) == {}
 
     # 2. Controller with 'connection' but without 'get_diagnostics'
-    mock_ctrl_no_diag = MagicMock()
-    del mock_ctrl_no_diag.connection.get_diagnostics
-    assert _extract_controller_diagnostics(mock_ctrl_no_diag) == {}
+    # Use spec=[] to prevent auto-creation of connection_diagnostics
+    mock_ctrl_no_diag = MagicMock(spec=[])
+    mock_ctrl_no_diag.connection = MagicMock(spec=[])
+    result_no_diag = _extract_controller_diagnostics(mock_ctrl_no_diag)
+    assert result_no_diag == {}
 
-    # 3. get_diagnostics is not a callable method (e.g., a string)
-    mock_ctrl_not_callable = MagicMock()
+    # 3. get_diagnostics on connection is not callable (e.g., a string)
+    # Use spec=[] so connection_diagnostics doesn't auto-exist
+    mock_ctrl_not_callable = MagicMock(spec=[])
+    mock_ctrl_not_callable.connection = MagicMock(spec=[])
     mock_ctrl_not_callable.connection.get_diagnostics = "not_a_method"
-    assert _extract_controller_diagnostics(mock_ctrl_not_callable) == {}
+    # Calling a string raises TypeError, not AttributeError — uncaught = crash.
+    # But the Protocol cascade hits connection_diagnostics first (AttributeError from spec=[]),
+    # then get_diagnostics() on controller (AttributeError from spec=[]),
+    # then connection.get_diagnostics() which is a string — TypeError.
+    with pytest.raises(TypeError):
+        _extract_controller_diagnostics(mock_ctrl_not_callable)
 
-    # 4. get_diagnostics returns an invalid non-dict object
-    mock_ctrl_bad_return = MagicMock()
+    # 4. get_diagnostics returns a non-dict — Protocol trusts return type, passes through
+    mock_ctrl_bad_return = MagicMock(spec=[])
+    mock_ctrl_bad_return.connection = MagicMock()
     mock_ctrl_bad_return.connection.get_diagnostics.return_value = ["invalid", "list"]
-    assert _extract_controller_diagnostics(mock_ctrl_bad_return) == {}
+    result_bad = _extract_controller_diagnostics(mock_ctrl_bad_return)
+    assert result_bad == ["invalid", "list"]
 
 
 async def test_diagnostics_bootstrapping_math_mutants(mock_hass) -> None:
@@ -569,6 +583,7 @@ async def test_diagnostics_top_level_keys(mock_hass):
 
     mock_coord = MagicMock(spec=SamsungClimateCoordinator)
     mock_coord.data = None
+    mock_coord.devices = {}
     mock_coord.controller = MagicMock(spec=[])
     mock_coord.discovered_devices_count = 0
     mock_coord.skipped_devices_count = 0
@@ -604,6 +619,7 @@ async def test_diagnostics_single_coordinator_default_fallback_metrics(mock_hass
     # Coordinator without discovered_devices_count or skipped_devices_count attributes
     mock_coord = MagicMock(spec=SamsungClimateCoordinator)
     mock_coord.data = None
+    mock_coord.devices = {}
     mock_coord.controller = object()
     del mock_coord.discovered_devices_count
     del mock_coord.skipped_devices_count

@@ -140,66 +140,48 @@ def _deep_redact_substrings(val: Any, threat_patterns: set[str]) -> Any:
 
 
 def _extract_controller_diagnostics(controller: DiagnosticController) -> dict[str, Any]:
-    """Safely extract connection telemetry diagnostics from controller or connection."""
+    """Safely extract connection telemetry diagnostics strictly enforcing the Protocol."""
     try:
-        diag = controller.connection_diagnostics
-        if isinstance(diag, dict):
-            return diag
+        return controller.connection_diagnostics
     except AttributeError:
         pass
 
     try:
-        get_diag = controller.get_diagnostics
-        if callable(get_diag):
-            diag = get_diag()
-            if isinstance(diag, dict):
-                return diag
+        return controller.get_diagnostics()
     except AttributeError:
         pass
 
     try:
-        get_diag = controller.connection.get_diagnostics
-        if callable(get_diag):
-            diag = get_diag()
-            if isinstance(diag, dict):
-                return diag
+        return controller.connection.get_diagnostics()
     except AttributeError:
-        pass
-
-    return {}
+        return {}
 
 
 def _extract_raw_device_state(coordinator: SamsungClimateCoordinator) -> dict[str, Any]:
     """Extract raw payload/state representation of the AC unit."""
     devices_state: dict[str, Any] = {}
 
-    try:
-        for device_id, device in coordinator.devices.items():
+    for device_id, device in coordinator.devices.items():
+        try:
+            devices_state[device_id] = device.raw_state
+        except AttributeError:
             try:
-                devices_state[device_id] = device.raw_state
+                devices_state[device_id] = device.device_state
             except AttributeError:
-                try:
-                    devices_state[device_id] = device.device_state
-                except AttributeError:
-                    pass
-    except AttributeError:
-        pass
+                pass
 
     if not devices_state:
+        ctrl = coordinator.controller
         try:
-            ctrl = coordinator.controller
+            devices_state[KEY_MAIN_DEVICE] = ctrl.raw_state
+        except AttributeError:
             try:
-                devices_state[KEY_MAIN_DEVICE] = ctrl.raw_state
+                devices_state[KEY_MAIN_DEVICE] = ctrl.device_state
             except AttributeError:
                 try:
-                    devices_state[KEY_MAIN_DEVICE] = ctrl.device_state
+                    devices_state[KEY_MAIN_DEVICE] = ctrl.last_poll_data
                 except AttributeError:
-                    try:
-                        devices_state[KEY_MAIN_DEVICE] = ctrl.last_poll_data
-                    except AttributeError:
-                        pass
-        except AttributeError:
-            pass
+                    pass
 
     return devices_state
 
@@ -230,10 +212,9 @@ async def async_get_config_entry_diagnostics(
                 entry_data, "skipped_devices_count", 0
             ),
             "active_entities": (
-                len(entry_data.entities)
-                if entry_data is not None
-                and hasattr(entry_data, "entities")
-                and isinstance(entry_data.entities, list | set | dict)
+                len(entities)
+                if (entities := getattr(entry_data, "entities", None)) is not None
+                and isinstance(entities, list | set | dict)
                 else 0
             ),
         },
@@ -244,14 +225,13 @@ async def async_get_config_entry_diagnostics(
     if isinstance(entry_data, SamsungClimateCoordinator):
         if entry_data.data:
             diagnostics_data["coordinator_data"] = asdict(entry_data.data)
-        if hasattr(entry_data.controller, "state_attributes"):
-            diagnostics_data["controller_state"] = (
-                entry_data.controller.state_attributes
-            )
-        if hasattr(entry_data.controller, "last_poll_data"):
-            diagnostics_data["last_poll_response"] = (
-                entry_data.controller.last_poll_data
-            )
+        state_attrs = getattr(entry_data.controller, "state_attributes", None)
+        if state_attrs is not None:
+            diagnostics_data["controller_state"] = state_attrs
+
+        last_poll = getattr(entry_data.controller, "last_poll_data", None)
+        if last_poll is not None:
+            diagnostics_data["last_poll_response"] = last_poll
 
         conn_diag = _extract_controller_diagnostics(entry_data.controller)
         if conn_diag:
@@ -272,14 +252,13 @@ async def async_get_config_entry_diagnostics(
             if isinstance(coordinator, SamsungClimateCoordinator):
                 coordinator_diag: dict[str, Any] = {}
 
-                if hasattr(coordinator.controller, "state_attributes"):
-                    coordinator_diag["controller_state"] = (
-                        coordinator.controller.state_attributes
-                    )
-                if hasattr(coordinator.controller, "last_poll_data"):
-                    coordinator_diag["last_poll_response"] = (
-                        coordinator.controller.last_poll_data
-                    )
+                state_attrs = getattr(coordinator.controller, "state_attributes", None)
+                if state_attrs is not None:
+                    coordinator_diag["controller_state"] = state_attrs
+
+                last_poll = getattr(coordinator.controller, "last_poll_data", None)
+                if last_poll is not None:
+                    coordinator_diag["last_poll_response"] = last_poll
 
                 conn_diag = _extract_controller_diagnostics(coordinator.controller)
                 if conn_diag:
@@ -292,10 +271,11 @@ async def async_get_config_entry_diagnostics(
 
                 total_discovered += getattr(coordinator, "discovered_devices_count", 1)
                 total_skipped += getattr(coordinator, "skipped_devices_count", 0)
-                if hasattr(coordinator, "entities") and isinstance(
-                    coordinator.entities, list | set | dict
+                entities = getattr(coordinator, "entities", None)
+                if entities is not None and isinstance(
+                    entities, list | set | dict
                 ):
-                    total_entities += len(coordinator.entities)
+                    total_entities += len(entities)
 
         diagnostics_data["bootstrapping"]["total_devices_discovered"] = total_discovered
         diagnostics_data["bootstrapping"]["skipped_devices_missing_info"] = (
