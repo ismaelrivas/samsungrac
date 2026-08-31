@@ -104,14 +104,13 @@ def _deep_redact_substrings(val: Any, threat_patterns: set[str]) -> Any:
         return val
 
     # Sort patterns by length descending so longer MAC formats are replaced first
-    sorted_patterns = sorted(threat_patterns, key=len, reverse=True)
+    # and filter out any empty strings to prevent infinite loops during find()
+    sorted_patterns = [p for p in sorted(threat_patterns, key=len, reverse=True) if p]
 
     if isinstance(val, str):
         result = val
         for pattern in sorted_patterns:
             target_len = len(pattern)
-            if not target_len:
-                continue
             target_lower = pattern.lower()
             res_lower = result.lower()
             start = 0

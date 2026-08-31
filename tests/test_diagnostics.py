@@ -826,3 +826,11 @@ def test_deep_redact_substrings_empty_pattern_continue() -> None:
     payload = {"key": "this is a secret"}
     redacted = _deep_redact_substrings(payload, threat_patterns)
     assert redacted == {"key": "this is a **REDACTED**"}
+
+
+def test_deep_redact_substrings_multiple_occurrences() -> None:
+    """Strict test verifying that multiple occurrences are all redacted, preventing rfind mutations."""
+    threat_patterns = {"secret"}
+    payload = {"key": "this is a secret and another secret"}
+    redacted = _deep_redact_substrings(payload, threat_patterns)
+    assert redacted == {"key": "this is a **REDACTED** and another **REDACTED**"}
