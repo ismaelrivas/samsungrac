@@ -1332,15 +1332,6 @@ class ConnectionSamsung2878(Connection):
                             continue
                         buffer = read_buffer
 
-                    # Cleanup: Only cancel tasks that are NOT persistent
-                    # We usually don't have other tasks here, but good practice.
-                    # CRITICAL: Do NOT cancel queue_task if it's pending!
-                    # for task in pending:
-                    #     if task == self._read_task:  # pragma: no mutate
-                    #         continue  # pragma: no mutate
-                    #     if task == queue_task:  # pragma: no mutate
-                    #         continue  # pragma: no mutate
-                    #     task.cancel()
 
                 except (TimeoutError, OSError) as e:
                     _LOGGER.error(
@@ -1485,7 +1476,7 @@ class ConnectionSamsung2878(Connection):
                     "%s Command timed out. Forcing connection close to trigger reconnect.",
                     self.log_prefix,
                 )  # pragma: no mutate
-                asyncio.create_task(self._close_connection())
+                self._track_task(self._close_connection())
 
                 raise CannotConnect("Command timed out") from e
             except Exception as e:

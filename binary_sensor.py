@@ -16,6 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import ClimateIPConfigEntry
+from .const import DOMAIN
 from .coordinator import SamsungClimateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ class ClimateIPConnectivitySensor(
         """Initialize the connectivity binary sensor."""
         super().__init__(coordinator)
         self.entity_description = description
-        unique_prefix = getattr(coordinator, "unique_id", None) or "climate_ip"
+        unique_prefix = getattr(coordinator, "unique_id", None) or DOMAIN
         self._attr_unique_id = f"{unique_prefix}_{description.key}"
 
     @property

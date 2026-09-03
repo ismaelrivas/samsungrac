@@ -38,6 +38,7 @@ from .const import (
     DEVICE_TYPE_SAMSUNG_2878,
     DEVICE_TYPE_SMARTTHINGS_DHW,
     DEVICE_TYPE_SMARTTHINGS_HVAC,
+    DOMAIN,
 )
 from .exceptions import AuthError, CannotConnect, InvalidHeaderError
 from .helpers import async_check_network_reachability, get_value_by_path
@@ -228,7 +229,7 @@ class YamlStatePoller:
             )
             async_create_issue(
                 self.controller.hass,
-                "climate_ip",
+                DOMAIN,
                 f"device_offline_{safe_device_id}",
                 is_fixable=False,
                 is_persistent=False,
@@ -270,7 +271,7 @@ class YamlStatePoller:
 
             async_delete_issue(
                 self.controller.hass,
-                "climate_ip",
+                DOMAIN,
                 issue_id,
             )
             _LOGGER.debug(

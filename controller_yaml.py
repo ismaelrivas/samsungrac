@@ -62,7 +62,7 @@ from .const import (
     MAIN_DEVICE_ID,
     PORT_SAMSUNG_8888,
 )
-from .controller import ClimateController, register_controller
+from .controller import ClimateController
 from .controller_yaml_config import YamlConfigLoader
 from .controller_yaml_polling import YamlStatePoller
 from .properties import DeviceProperty, parse_temperature_unit
@@ -71,7 +71,6 @@ from .state import ClimateIPDeviceState
 _LOGGER = logging.getLogger(__name__)
 
 
-@register_controller
 class YamlController(ClimateController):
     """YAML-based controller mapped as a clean Facade pattern over composition."""
 

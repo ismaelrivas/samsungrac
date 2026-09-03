@@ -1185,7 +1185,6 @@ async def test_async_setup_single_device_boundary_args_and_fallbacks(
     from custom_components.climate_ip import _async_setup_single_device
     from custom_components.climate_ip.const import (
         CONF_DEVICES,
-        CONF_SUBDEVICE_ID,
         MAIN_DEVICE_ID,
     )
 
@@ -1316,9 +1315,7 @@ async def test_build_device_setup_tasks_strict_validation(hass: HomeAssistant) -
         {CONF_SUBDEVICE_ID: "2", CONF_NAME: None},  # Tests fallback to DEFAULT_UNKNOWN
     ]
 
-    with patch(
-        "custom_components.climate_ip._async_setup_single_device"
-    ) as mock_setup_single:
+    with patch("custom_components.climate_ip._async_setup_single_device"):
         tasks = _build_device_setup_tasks(hass, entry, devices, None)
         assert len(tasks) == 2
 
@@ -1410,7 +1407,6 @@ async def test_async_setup_single_device_refresh_error_shutdowns(
 ) -> None:
     """Target 3: Kills mutants on lines 105, 149, 158 in _async_setup_single_device."""
     from custom_components.climate_ip import _async_setup_single_device
-    from custom_components.climate_ip.const import MAIN_DEVICE_ID
 
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -1499,7 +1495,6 @@ async def test_async_setup_entry_options_override_and_task_dispatch(
         CONF_NAME,
         CONF_SUBDEVICE_ID,
         DEVICE_TYPE_SMARTTHINGS_HVAC,
-        MAIN_DEVICE_ID,
     )
 
     # Options override data for CONF_DEVICE_ID
