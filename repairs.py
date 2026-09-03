@@ -10,9 +10,9 @@ from homeassistant.core import HomeAssistant
 
 
 async def async_create_fix_flow(
-    hass: HomeAssistant,
-    issue_id: str,
-    data: dict[str, Any] | None = None,
+    hass: HomeAssistant,  # noqa: ARG001
+    issue_id: str,  # noqa: ARG001
+    data: dict[str, Any] | None = None,  # noqa: ARG001
 ) -> RepairsFlow:
     """Create flow using Home Assistant Core's official ConfirmRepairFlow."""
     return ConfirmRepairFlow()

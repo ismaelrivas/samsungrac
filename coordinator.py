@@ -7,6 +7,7 @@ import asyncio
 from collections.abc import Callable, Coroutine
 from datetime import timedelta
 from enum import Enum
+import functools
 import logging
 from typing import Any, Final, cast
 
@@ -490,8 +491,12 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     def _async_switch_to_raw_engine(self) -> None:
         """Switch connection method option to RAW permanently and notify the user."""
         new_options = {**self.config_entry.options, CONF_CONN_METHOD: CONN_METHOD_RAW}
-        self.hass.config_entries.async_update_entry(
-            self.config_entry, options=new_options
+        self.hass.loop.call_soon(
+            functools.partial(
+                self.hass.config_entries.async_update_entry,
+                self.config_entry,
+                options=new_options,
+            )
         )
 
         device_name = self.device_info.get("name") or self.safe_unique_id

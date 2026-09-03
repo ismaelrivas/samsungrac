@@ -236,6 +236,9 @@ def hass():
 
     mock_hass.async_add_executor_job = mock_async_add_executor_job
 
+    mock_hass.loop = MagicMock()
+    mock_hass.loop.call_soon = lambda func, *args: func(*args)
+
     return mock_hass
 
 

@@ -675,7 +675,9 @@ async def test_switchoperation_should_evict_all_locks(mock_connection, mock_cont
         assert op_other.should_evict_all_locks({"val": "on"}, {"val"}) is False
 
     # 4. Direct calculate_value_from_state return checks
-    with patch.object(op_power, "calculate_value_from_state", return_value="Off") as mock_calc:
+    with patch.object(
+        op_power, "calculate_value_from_state", return_value="Off"
+    ) as mock_calc:
         assert op_power.should_evict_all_locks({"dummy": 1}, set()) is True
         mock_calc.assert_called_once_with({"dummy": 1})
 

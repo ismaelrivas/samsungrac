@@ -142,8 +142,6 @@ def test_controller_log_prefix_truncation(unique_id, expected_prefix) -> None:
     assert controller.log_prefix == expected_prefix
 
 
-
-
 def test_controller_base_init_state() -> None:
     """Test the base state initialization to kill mutmut mutations."""
     logger = logging.getLogger(__name__)
@@ -151,8 +149,6 @@ def test_controller_base_init_state() -> None:
     assert controller._logger is logger
     assert controller._connection is None
     assert controller.discovered_devices is None
-
-
 
 
 def test_controller_host_property() -> None:

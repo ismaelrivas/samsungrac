@@ -6,18 +6,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any, Protocol, cast, runtime_checkable
+from typing import Any, ClassVar, Protocol, cast, runtime_checkable
 
-from homeassistant.components.climate.const import (
-    ATTR_FAN_MODE,
-    ATTR_HVAC_MODE,
-    ATTR_PRESET_MODE,
-    ATTR_SWING_MODE,
-    ClimateEntityFeature,
-)
+from homeassistant.components.climate.const import ClimateEntityFeature
 from homeassistant.const import (
     ATTR_NAME,
-    ATTR_TEMPERATURE,
     STATE_UNKNOWN,
 )
 from homeassistant.exceptions import ConfigEntryAuthFailed
@@ -81,23 +74,18 @@ class YamlStatePoller:
     LOCK_PHYSICAL_TIMEOUT_SEC = 15.0
     MAX_LIST_INFLATION_SIZE = 100
 
-    HASS_ATTR_MAP = {
+    HASS_ATTR_MAP: ClassVar[dict[str, str]] = {
         "hvac": "hvac_mode",
         "hvac_mode": "hvac_mode",
-        ATTR_HVAC_MODE: "hvac_mode",
         "temperature": "target_temperature",
         "target_temperature": "target_temperature",
-        ATTR_TEMPERATURE: "target_temperature",
         "current_temperature": "current_temperature",
         "fan": "fan_mode",
         "fan_mode": "fan_mode",
-        ATTR_FAN_MODE: "fan_mode",
         "swing": "swing_mode",
         "swing_mode": "swing_mode",
-        ATTR_SWING_MODE: "swing_mode",
         "preset": "preset_mode",
         "preset_mode": "preset_mode",
-        ATTR_PRESET_MODE: "preset_mode",
         "special": "preset_mode",
     }
 
@@ -849,7 +837,11 @@ class YamlStatePoller:
                 if lock_age < self.LOCK_SHIELD_SEC:
                     # Temporal Shield: Prevent immediate premature release on fast echo before physical AC reacts
                     can_release = False
-                elif changed_keys is not None and device_key and device_key not in changed_keys:
+                elif (
+                    changed_keys is not None
+                    and device_key
+                    and device_key not in changed_keys
+                ):
                     # Push update was for another property (e.g. Wind or Power), NOT for this property!
                     # Keep shield active until THIS property's device_key arrives in push update or poll.
                     can_release = False

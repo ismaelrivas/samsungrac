@@ -745,7 +745,7 @@ class GetJsonStatus(DeviceProperty):
                     v = v.strip()
                     try:
                         return json_loads(v)
-                    except JSON_DECODE_EXCEPTIONS:
+                    except (*JSON_DECODE_EXCEPTIONS,):
                         return v
                 return v
             except (TemplateError, TypeError, ValueError) as e:
@@ -855,7 +855,7 @@ class GetJsonStatus(DeviceProperty):
                 device_state_result = (
                     loaded_state if isinstance(loaded_state, dict) else None
                 )
-            except JSON_DECODE_EXCEPTIONS as e:
+            except (*JSON_DECODE_EXCEPTIONS,) as e:
                 _LOGGER.error(
                     "%s [GetJsonStatus] JSON parsing error. Response: '%s'. Error: %s",
                     self.log_prefix,

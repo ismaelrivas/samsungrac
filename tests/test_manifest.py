@@ -38,8 +38,12 @@ def test_manifest_validation():
     assert "requirements" in manifest
     assert isinstance(manifest["requirements"], list)
     for req in manifest["requirements"]:
-        assert not req.startswith("git+"), f"Direct git dependencies are forbidden: {req}"
-        assert not req.startswith("http"), f"HTTP/HTTPS dependencies are forbidden: {req}"
+        assert not req.startswith("git+"), (
+            f"Direct git dependencies are forbidden: {req}"
+        )
+        assert not req.startswith("http"), (
+            f"HTTP/HTTPS dependencies are forbidden: {req}"
+        )
 
 
 def test_services_yaml_valid():

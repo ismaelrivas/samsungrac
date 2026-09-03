@@ -399,7 +399,7 @@ class ConnectionRequestBase(Connection):
                         )
                         return (json_loads(resp.content), True, resp.status_code)
 
-                except JSON_DECODE_EXCEPTIONS as e:
+                except (*JSON_DECODE_EXCEPTIONS,) as e:
                     _LOGGER.warning(
                         "%s Failed to parse JSON response: %s",
                         self.log_prefix,

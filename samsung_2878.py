@@ -1332,7 +1332,6 @@ class ConnectionSamsung2878(Connection):
                             continue
                         buffer = read_buffer
 
-
                 except (TimeoutError, OSError) as e:
                     _LOGGER.error(
                         "%s Unhandled exception in connection manager: %s",

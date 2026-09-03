@@ -395,4 +395,3 @@ class ClimateController(ABC):
 
         Subclasses MUST implement via direct poller access. No getattr/hasattr.
         """
-

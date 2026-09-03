@@ -6415,7 +6415,7 @@ async def test_rest_api_errors_base_unknown_error_strict(hass: HomeAssistant) ->
 
 
 async def test_config_flow_async_remove(hass: HomeAssistant) -> None:
-    """Kill Mxx inside async_remove to test cleanup of background tasks."""
+    """Kill mutants 6, 7, 8, 9 inside async_remove by asserting task creation metadata."""
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 
     flow = ClimateIpConfigFlow()
@@ -6431,6 +6431,11 @@ async def test_config_flow_async_remove(hass: HomeAssistant) -> None:
 
     mock_task.cancel.assert_called_once()
     mock_acquirer.async_close.assert_called_once()
+
+    flow.hass.async_create_task.assert_called_once()
+    _, task_kwargs = flow.hass.async_create_task.call_args
+    assert task_kwargs.get("name") == "climate_ip_config_flow_acquirer_close"
+    assert task_kwargs.get("eager_start") is True
 
 
 async def test_config_flow_async_get_options_flow() -> None:

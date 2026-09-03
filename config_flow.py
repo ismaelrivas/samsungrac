@@ -194,7 +194,11 @@ class ClimateIpConfigFlow(
         if self.task is not None:
             self.task.cancel()
         if self.acquirer is not None:
-            self.hass.async_create_task(self.acquirer.async_close())
+            self.hass.async_create_task(
+                self.acquirer.async_close(),
+                name="climate_ip_config_flow_acquirer_close",
+                eager_start=True,
+            )
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
