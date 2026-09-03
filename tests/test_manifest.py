@@ -5,6 +5,10 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
+import re
+import subprocess
+import sys
 
 from custom_components.climate_ip.const import DOMAIN
 
@@ -114,3 +118,101 @@ def test_translation_files_coherent():
 
         missing = base_keys - lang_keys
         assert not missing, f"{lang}.json is missing translation keys: {missing}"
+
+
+def test_manifest_keys_order_and_cleanliness():
+    """Verify manifest.json has keys sorted per hassfest rules: domain, name, then alphabetical."""
+    manifest_path = os.path.join(os.path.dirname(__file__), "..", "manifest.json")
+    with open(manifest_path, encoding="utf-8") as f:
+        manifest_raw = json.load(f)
+
+    keys = list(manifest_raw.keys())
+    assert keys[0] == "domain"
+    assert keys[1] == "name"
+    assert keys[2:] == sorted(keys[2:])
+
+    # Ensure no deprecated/illegal keys in manifest
+    forbidden_keys = {"config_entry_version", "homeassistant", "strict_typing"}
+    found_forbidden = forbidden_keys.intersection(keys)
+    assert not found_forbidden, f"Forbidden keys in manifest.json: {found_forbidden}"
+
+
+def test_translations_hassfest_rules():
+    """Verify translations obey Home Assistant hassfest rules."""
+    integration_root = Path(__file__).parent.parent
+    files_to_check = [integration_root / "strings.json"] + list(
+        (integration_root / "translations").glob("*.json")
+    )
+
+    placeholder_quote_regex = re.compile(r"'\{[a-zA-Z0-9_]+\}'")
+    slug_regex = re.compile(r"^[a-z0-9-_]+$")
+
+    for file_path in files_to_check:
+        data = json.loads(file_path.read_text(encoding="utf-8"))
+
+        # 1. No placeholders inside single quotes in messages
+        def check_strings(val, path="", current_file=file_path):
+            if isinstance(val, str):
+                match = placeholder_quote_regex.search(val)
+                assert not match, (
+                    f"Placeholder in single quotes in {current_file} at {path}: {val}"
+                )
+            elif isinstance(val, dict):
+                for k, v in val.items():
+                    check_strings(v, f"{path}.{k}", current_file)
+
+        check_strings(data)
+
+        # 2. Issues: mutually exclusive description vs fix_flow
+        issues = data.get("issues", {})
+        for issue_id, issue_data in issues.items():
+            if "fix_flow" in issue_data:
+                assert "description" not in issue_data, (
+                    f"Issue '{issue_id}' in {file_path} has both description and fix_flow"
+                )
+
+        # 3. Entity translation keys must be valid slugs
+        entities = data.get("entity", {})
+        for platform, platform_entities in entities.items():
+            for entity_id, entity_data in platform_entities.items():
+                state_attrs = entity_data.get("state_attributes", {})
+                for attr_id, attr_data in state_attrs.items():
+                    states = attr_data.get("state", {})
+                    for state_key in states:
+                        assert slug_regex.match(state_key), (
+                            f"Invalid translation key '{state_key}' in {file_path} at {platform}.{entity_id}.{attr_id}"
+                        )
+
+
+def test_hassfest_validation_suite():
+    """Run core hassfest validator if available in the environment."""
+    core_path = Path("/workspaces/ha_data/core")
+    integration_path = Path(__file__).parent.parent
+
+    if not (core_path / "script" / "hassfest").exists():
+        return
+
+    python_bin = "/usr/local/bin/python3.14"
+    if not Path(python_bin).exists():
+        python_bin = sys.executable
+
+    result = subprocess.run(
+        [
+            python_bin,
+            "-m",
+            "script.hassfest",
+            "--action",
+            "validate",
+            "--integration-path",
+            str(integration_path),
+        ],
+        cwd=str(core_path),
+        env={**os.environ, "PYTHONPATH": str(core_path)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, (
+        f"Hassfest validation failed:\n{result.stdout}\n{result.stderr}"
+    )

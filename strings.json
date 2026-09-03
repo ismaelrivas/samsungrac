@@ -164,13 +164,13 @@
             "message": "Authentication failed. Please ensure the AC is in standby (OFF) before starting the pairing process."
         },
         "property_set_failed": {
-            "message": "Failed to set property '{property}': {error}"
+            "message": "Failed to set property {property}: {error}"
         },
         "controller_not_initialized": {
-            "message": "Cannot set property '{property}': controller is not fully initialized."
+            "message": "Cannot set property {property}: controller is not fully initialized."
         },
         "property_not_found": {
-            "message": "Failed to set property '{property}': property not found."
+            "message": "Failed to set property {property}: property not found."
         }
     },
     "issues": {
@@ -180,7 +180,6 @@
         },
         "auto_healing_raw": {
             "title": "Connection mode updated ({device_name})",
-            "description": "The device **{device_name}** sent non-standard HTTP responses.\n\nThe connection mode was automatically switched to **'Robust (raw socket)'** to ensure continuous operation.",
             "fix_flow": {
                 "step": {
                     "confirm": {
@@ -219,7 +218,7 @@
                 "state_attributes": {
                     "preset_mode": {
                         "state": {
-                            "WindFree": "WindFree"
+                            "wind_free": "WindFree"
                         }
                     }
                 }
