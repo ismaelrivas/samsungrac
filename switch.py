@@ -20,6 +20,8 @@ from .properties import PROPERTY_TYPE_SWITCH, DeviceProperty
 
 _LOGGER = logging.getLogger(__name__)
 
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(  # pylint: disable=import-outside-toplevel,too-many-branches,too-many-locals
     _hass: HomeAssistant,

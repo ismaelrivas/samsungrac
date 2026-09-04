@@ -1,4 +1,4 @@
-# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,too-many-lines,trailing-newlines,broad-exception-caught,comparison-with-callable,too-many-locals
+# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,too-many-lines,trailing-newlines,broad-exception-caught,comparison-with-callable,too-many-locals,not-callable
 """Test DataUpdateCoordinator and state polling behaviors."""
 # pylint: disable=redefined-outer-name,protected-access,import-outside-toplevel
 
