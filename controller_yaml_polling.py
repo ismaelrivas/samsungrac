@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import time
 from typing import Any, ClassVar, Protocol, cast, runtime_checkable
@@ -436,7 +437,7 @@ class YamlStatePoller:
 
         # 💥 NETWORK TRUTH STORAGE: Isolated from UI pollution
         self._pure_network_state = (
-            dict(full_device_state)
+            copy.deepcopy(full_device_state)
             if isinstance(full_device_state, dict)
             else full_device_state
         )
