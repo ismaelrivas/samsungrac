@@ -21,6 +21,8 @@ from .properties import DeviceProperty, UniqueIdProperty
 
 _LOGGER = logging.getLogger(__name__)
 
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     _hass: HomeAssistant,
@@ -76,7 +78,7 @@ async def async_setup_entry(
         msg = (
             "%s Adding %d YAML-defined sensors to Home Assistant."  # pragma: no mutate
         )
-        _LOGGER.info(
+        _LOGGER.debug(
             msg,
             coordinators[0].log_prefix if coordinators else "[ClimateIP]",
             len(entities_to_add),

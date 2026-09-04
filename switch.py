@@ -20,6 +20,8 @@ from .properties import PROPERTY_TYPE_SWITCH, DeviceProperty
 
 _LOGGER = logging.getLogger(__name__)
 
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(  # pylint: disable=import-outside-toplevel,too-many-branches,too-many-locals
     _hass: HomeAssistant,
@@ -115,7 +117,6 @@ class SamsungClimateSwitch(CoordinatorEntity[SamsungClimateCoordinator], SwitchE
         # Inject the standardized description provided by the platform
         self.entity_description = description
         self._operation = operation
-        self._controller = coordinator.controller
 
         # Internal state attribute for HA SwitchEntity
         self._attr_is_on = None
@@ -132,21 +133,13 @@ class SamsungClimateSwitch(CoordinatorEntity[SamsungClimateCoordinator], SwitchE
         """Turn the entity on."""
         msg = "Turning on %s"  # pragma: no mutate
         _LOGGER.debug(msg, self.name)  # pragma: no mutate
-        if await self._controller.async_set_property(self.entity_description.key, "on"):
-            self._attr_is_on = True
-            self.async_write_ha_state()
-            await self.coordinator.async_request_refresh()
+        await self.coordinator.async_set_property(self.entity_description.key, "on")
 
     async def async_turn_off(self, **kwargs: Any) -> None:  # pylint: disable=import-outside-toplevel,unused-argument
         """Turn the entity off."""
         msg = "Turning off %s"  # pragma: no mutate
         _LOGGER.debug(msg, self.name)  # pragma: no mutate
-        if await self._controller.async_set_property(
-            self.entity_description.key, "off"
-        ):
-            self._attr_is_on = False
-            self.async_write_ha_state()
-            await self.coordinator.async_request_refresh()
+        await self.coordinator.async_set_property(self.entity_description.key, "off")
 
     def _update_state(self) -> None:
         """Update internal state from operation value."""

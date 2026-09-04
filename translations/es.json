@@ -164,13 +164,13 @@
       "message": "Error de autenticación. Asegúrate de que el aire acondicionado esté en modo espera (APAGADO) antes de iniciar el proceso de emparejamiento."
     },
     "property_set_failed": {
-      "message": "Error al establecer la propiedad '{property}': {error}"
+      "message": "Error al establecer la propiedad {property}: {error}"
     },
     "controller_not_initialized": {
-      "message": "No se puede establecer la propiedad '{property}': el controlador no está completamente inicializado."
+      "message": "No se puede establecer la propiedad {property}: el controlador no está completamente inicializado."
     },
     "property_not_found": {
-      "message": "Error al establecer la propiedad '{property}': propiedad no encontrada."
+      "message": "Error al establecer la propiedad {property}: propiedad no encontrada."
     }
   },
   "issues": {
@@ -180,7 +180,6 @@
     },
     "auto_healing_raw": {
       "title": "Modo de conexión actualizado ({device_name})",
-      "description": "El dispositivo **{device_name}** ha enviado respuestas HTTP no estándar.\n\nEl modo de conexión se ha cambiado automáticamente a **'Robust (raw socket)'** para asegurar la operatividad continua.",
       "fix_flow": {
         "step": {
           "confirm": {
@@ -219,7 +218,7 @@
         "state_attributes": {
           "preset_mode": {
             "state": {
-              "WindFree": "Sin Viento"
+              "wind_free": "Sin Viento"
             }
           }
         }

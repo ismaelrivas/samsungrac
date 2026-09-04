@@ -4,20 +4,14 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import time
-from typing import Any, Protocol, cast, runtime_checkable
+from typing import Any, ClassVar, Protocol, cast, runtime_checkable
 
-from homeassistant.components.climate.const import (
-    ATTR_FAN_MODE,
-    ATTR_HVAC_MODE,
-    ATTR_PRESET_MODE,
-    ATTR_SWING_MODE,
-    ClimateEntityFeature,
-)
+from homeassistant.components.climate.const import ClimateEntityFeature
 from homeassistant.const import (
     ATTR_NAME,
-    ATTR_TEMPERATURE,
     STATE_UNKNOWN,
 )
 from homeassistant.exceptions import ConfigEntryAuthFailed
@@ -38,6 +32,7 @@ from .const import (
     DEVICE_TYPE_SAMSUNG_2878,
     DEVICE_TYPE_SMARTTHINGS_DHW,
     DEVICE_TYPE_SMARTTHINGS_HVAC,
+    DOMAIN,
 )
 from .exceptions import AuthError, CannotConnect, InvalidHeaderError
 from .helpers import async_check_network_reachability, get_value_by_path
@@ -80,23 +75,18 @@ class YamlStatePoller:
     LOCK_PHYSICAL_TIMEOUT_SEC = 15.0
     MAX_LIST_INFLATION_SIZE = 100
 
-    HASS_ATTR_MAP = {
+    HASS_ATTR_MAP: ClassVar[dict[str, str]] = {
         "hvac": "hvac_mode",
         "hvac_mode": "hvac_mode",
-        ATTR_HVAC_MODE: "hvac_mode",
         "temperature": "target_temperature",
         "target_temperature": "target_temperature",
-        ATTR_TEMPERATURE: "target_temperature",
         "current_temperature": "current_temperature",
         "fan": "fan_mode",
         "fan_mode": "fan_mode",
-        ATTR_FAN_MODE: "fan_mode",
         "swing": "swing_mode",
         "swing_mode": "swing_mode",
-        ATTR_SWING_MODE: "swing_mode",
         "preset": "preset_mode",
         "preset_mode": "preset_mode",
-        ATTR_PRESET_MODE: "preset_mode",
         "special": "preset_mode",
     }
 
@@ -228,7 +218,7 @@ class YamlStatePoller:
             )
             async_create_issue(
                 self.controller.hass,
-                "climate_ip",
+                DOMAIN,
                 f"device_offline_{safe_device_id}",
                 is_fixable=False,
                 is_persistent=False,
@@ -270,7 +260,7 @@ class YamlStatePoller:
 
             async_delete_issue(
                 self.controller.hass,
-                "climate_ip",
+                DOMAIN,
                 issue_id,
             )
             _LOGGER.debug(
@@ -447,7 +437,7 @@ class YamlStatePoller:
 
         # 💥 NETWORK TRUTH STORAGE: Isolated from UI pollution
         self._pure_network_state = (
-            dict(full_device_state)
+            copy.deepcopy(full_device_state)
             if isinstance(full_device_state, dict)
             else full_device_state
         )
@@ -779,7 +769,6 @@ class YamlStatePoller:
         # MUST RUN FIRST to inject optimistic locks into device_to_process BEFORE parsing properties
 
         # Check for global evictions driven dynamically by property object metadata
-        global_evict = False
         if changed_keys is not None:
             for op in all_properties:
                 if hasattr(op, "should_evict_all_locks"):
@@ -787,9 +776,8 @@ class YamlStatePoller:
                         if op.should_evict_all_locks(
                             pure_device_to_process, changed_keys
                         ):
-                            global_evict = True
                             self._pending_updates.clear()
-                            break
+                            return
                     except Exception as e:  # pylint: disable=broad-exception-caught
                         _LOGGER.debug(
                             "%s Error evaluating global eviction for %s: %s",
@@ -850,25 +838,14 @@ class YamlStatePoller:
                 if lock_age < self.LOCK_SHIELD_SEC:
                     # Temporal Shield: Prevent immediate premature release on fast echo before physical AC reacts
                     can_release = False
-                elif changed_keys is not None:
-                    # Delegate global eviction (like Power Off) to the declarative property hook
-                    if global_evict:
-                        can_release = True
-                    elif device_key and device_key not in changed_keys:
-                        # Push update was for another property (e.g. Wind or Power), NOT for this property!
-                        # Keep shield active until THIS property's device_key arrives in push update or poll.
-                        can_release = False
-
-                _LOGGER.debug(
-                    "%s [Forensic-Verbose] Eval %s: pend_val=%s, pure_val=%s, changed_keys=%s, device_key=%s, can_release=%s",
-                    self.controller.log_prefix,
-                    prop_id,
-                    pend_val,
-                    pure_val,
-                    changed_keys,
-                    device_key,
-                    can_release,
-                )
+                elif (
+                    changed_keys is not None
+                    and device_key
+                    and device_key not in changed_keys
+                ):
+                    # Push update was for another property (e.g. Wind or Power), NOT for this property!
+                    # Keep shield active until THIS property's device_key arrives in push update or poll.
+                    can_release = False
 
                 # Race Condition Fix: We DO NOT use hardware_override to blindly drop locks when the device_key arrives.
                 # If the user clicks rapidly, the AC will push delayed states from OLD commands.
@@ -955,7 +932,7 @@ class YamlStatePoller:
         if not self.controller.loader.is_fully_initialized:
             return {}
 
-        if is_prediction:
+        if is_prediction and self._pending_updates:
             _LOGGER.debug(
                 "%s [Forensic] Prediction started. pending_updates=%s",
                 self.controller.log_prefix,
@@ -1038,7 +1015,7 @@ class YamlStatePoller:
 
         self._rebuild_attributes()
 
-        if is_prediction:
+        if is_prediction and (self._pending_updates or corrections):
             _LOGGER.debug(
                 "%s [Forensic] Prediction ended. Corrections=%s",
                 self.controller.log_prefix,

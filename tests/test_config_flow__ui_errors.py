@@ -208,10 +208,6 @@ async def test_initiate_pairing_and_discover_uuid_mutants():
     # 3. Discover UUID (M39, M40, M62 de exception)
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
-
-    async def mock_async_add_executor_job(func, *args, **kwargs):
-        return func(*args, **kwargs)
-
     flow.hass.async_add_executor_job = mock_async_add_executor_job
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888}
     flow.context = {"unique_id": "test"}

@@ -99,9 +99,6 @@ def test_switch_initialization(base_switch_entity: SamsungClimateSwitch) -> None
     # Mutant 1: super().__init__(None) -> fails because coordinator would not be assigned.
     assert base_switch_entity.coordinator is not None
 
-    # Mutant 4: self._controller = None
-    assert base_switch_entity._controller is base_switch_entity.coordinator.controller
-
     # Mutant 5: self._attr_is_on = ""
     assert base_switch_entity._attr_is_on is None, (
         "Debe ser estrictamente None, no un string vacío."
@@ -200,31 +197,25 @@ def test_update_state_missing_value_attribute(
 @pytest.mark.asyncio
 async def test_async_turn_on(base_switch_entity: SamsungClimateSwitch) -> None:
     """Valida la delegación asíncrona de encendido."""
-    base_switch_entity._controller.async_set_property = AsyncMock(return_value=True)
+    base_switch_entity.coordinator.async_set_property = AsyncMock(return_value=True)
 
     await base_switch_entity.async_turn_on()
 
-    base_switch_entity._controller.async_set_property.assert_awaited_once_with(
+    base_switch_entity.coordinator.async_set_property.assert_awaited_once_with(
         "test_switch_id", "on"
     )
-    assert base_switch_entity._attr_is_on is True
-    base_switch_entity.async_write_ha_state.assert_called_once()
-    base_switch_entity.coordinator.async_request_refresh.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_async_turn_off(base_switch_entity: SamsungClimateSwitch) -> None:
     """Valida la delegación asíncrona de apagado."""
-    base_switch_entity._controller.async_set_property = AsyncMock(return_value=True)
+    base_switch_entity.coordinator.async_set_property = AsyncMock(return_value=True)
 
     await base_switch_entity.async_turn_off()
 
-    base_switch_entity._controller.async_set_property.assert_awaited_once_with(
+    base_switch_entity.coordinator.async_set_property.assert_awaited_once_with(
         "test_switch_id", "off"
     )
-    assert base_switch_entity._attr_is_on is False
-    base_switch_entity.async_write_ha_state.assert_called_once()
-    base_switch_entity.coordinator.async_request_refresh.assert_awaited_once()
 
 
 # ============================================================

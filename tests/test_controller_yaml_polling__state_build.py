@@ -12,6 +12,7 @@ from homeassistant.components.climate.const import (
     ClimateEntityFeature,
 )
 from homeassistant.const import ATTR_TEMPERATURE
+from homeassistant.helpers.template import Template
 import pytest
 
 from custom_components.climate_ip.const import (
@@ -2082,3 +2083,24 @@ def test_inject_value_into_state_state_node_structural_integrity():
     assert state_valid == {"temp": 25, "power": "on"}
     assert state_valid["temp"] == 25
     assert state_valid["power"] == "on"
+
+
+def test_inject_value_into_state_device_state_in_connection_template() -> None:
+    """Annihilates Mutant 25: verifies device_state is passed to render_template in _inject_value_into_state."""
+    poller = YamlStatePoller(DummyController())
+    poller._get_state_node_from_prop = MagicMock(return_value="Device_Mode")
+
+    prop = MagicMock(id="good_sleep")
+    del prop.apply_optimistic_cascades
+    del prop.set_device_state_for_values
+    del prop.convert_hass_to_dev
+    prop.connection_template = Template(
+        '{"json": {"options": ["{{ device_state.prefix }}_{{ value }}"]}}',
+        hass=MagicMock(data={}),
+    )
+
+    state = {"Device_Mode": "Off", "prefix": "DynamicSleep"}
+    poller._inject_value_into_state(prop, state, 3)
+
+    assert state["Device_Mode"] == "DynamicSleep_3"
+    assert isinstance(state["Device_Mode"], str)

@@ -69,6 +69,8 @@ _CORE_ATTRIBUTES: Final[set[str]] = {
     ATTR_PRESET_MODE,
 }
 
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     _hass: HomeAssistant,

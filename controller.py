@@ -15,15 +15,9 @@ if TYPE_CHECKING:
 
 from .const import PORT_SAMSUNG_8888  # noqa: F401
 
-CLIMATE_CONTROLLERS: list[type[ClimateController]] = []
-
 
 class ControllerError(Exception):
     """Base exception for controller errors."""
-
-
-class ControllerInitializationError(ControllerError):
-    """Raised when controller fails to initialize."""
 
 
 @runtime_checkable
@@ -401,51 +395,3 @@ class ClimateController(ABC):
 
         Subclasses MUST implement via direct poller access. No getattr/hasattr.
         """
-
-
-def register_controller(
-    controller: type[ClimateController],
-) -> type[ClimateController]:
-    """A decorator to register a controller class."""
-    CLIMATE_CONTROLLERS.append(controller)
-    return controller
-
-
-async def create_controller(
-    controller_type: str, config: dict[str, Any], logger: logging.Logger
-) -> ClimateController | None:
-    """Factory function to create a controller instance based on its type."""
-    for controller_class in CLIMATE_CONTROLLERS:
-        if controller_class.match_type(controller_type):
-            try:
-                controller = controller_class(config, logger)
-                if await controller.initialize():
-                    return controller
-
-                # Halt execution explicitly if matched but initialization fails
-                logger.error(
-                    "Failed to initialize controller for type %s", controller_type
-                )  # pragma: no mutate
-                raise ControllerInitializationError(
-                    f"Initialization failed for {controller_type}"
-                )
-
-            except (ValueError, TypeError, KeyError) as e:
-                logger.error(
-                    "climate_ip: Configuration or data error while creating controller %s: %s",  # pragma: no mutate
-                    controller_type,
-                    e,
-                )
-                return None
-            except (ConnectionError, OSError, TimeoutError) as e:
-                logger.error(
-                    "climate_ip: Network error while initializing controller %s: %s",  # pragma: no mutate
-                    controller_type,
-                    e,
-                )
-                return None
-
-    logger.error(
-        "Controller for type %s not found", controller_type
-    )  # pragma: no mutate
-    return None

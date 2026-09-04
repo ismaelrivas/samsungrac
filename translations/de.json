@@ -164,13 +164,13 @@
       "message": "Authentifizierung fehlgeschlagen. Bitte stellen Sie sicher, dass sich die Klimaanlage im Standby-Modus (AUS) befindet, bevor Sie mit dem Kopplungsvorgang beginnen."
     },
     "property_set_failed": {
-      "message": "Fehler beim Festlegen der Eigenschaft '{property}': {error}"
+      "message": "Fehler beim Festlegen der Eigenschaft {property}: {error}"
     },
     "controller_not_initialized": {
-      "message": "Eigenschaft '{property}' kann nicht gesetzt werden: Controller ist nicht vollständig initialisiert."
+      "message": "Eigenschaft {property} kann nicht gesetzt werden: Controller ist nicht vollständig initialisiert."
     },
     "property_not_found": {
-      "message": "Fehler beim Festlegen der Eigenschaft '{property}': Eigenschaft nicht gefunden."
+      "message": "Fehler beim Festlegen der Eigenschaft {property}: Eigenschaft nicht gefunden."
     }
   },
   "issues": {
@@ -180,7 +180,6 @@
     },
     "auto_healing_raw": {
       "title": "Verbindungsmodus aktualisiert ({device_name})",
-      "description": "Das Gerät **{device_name}** hat nicht standardkonforme HTTP-Antworten gesendet.\n\nDer Verbindungsmodus wurde automatisch auf **'Robust (Raw Socket)'** umgestellt, um den Betrieb zu sichern.",
       "fix_flow": {
         "step": {
           "confirm": {
@@ -219,7 +218,7 @@
         "state_attributes": {
           "preset_mode": {
             "state": {
-              "WindFree": "WindFree"
+              "wind_free": "WindFree"
             }
           }
         }

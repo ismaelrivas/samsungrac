@@ -1,4 +1,8 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+# ruff: noqa: F811, F401, F841
+# pylint: disable=protected-access,redefined-outer-name,unused-import
+"""Coverage tests for GenericYamlTokenAcquirer."""
+
+from unittest.mock import AsyncMock, patch
 
 import pytest
 

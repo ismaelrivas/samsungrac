@@ -164,13 +164,13 @@
       "message": "L'authentification a échoué. Veuillez vous assurer que le climatiseur est en mode veille (ÉTEINT) avant de commencer le processus d'appairage."
     },
     "property_set_failed": {
-      "message": "Échec de la définition de la propriété '{property}' : {error}"
+      "message": "Échec de la définition de la propriété {property} : {error}"
     },
     "controller_not_initialized": {
-      "message": "Impossible de définir la propriété '{property}' : le contrôleur n'est pas entièrement initialisé."
+      "message": "Impossible de définir la propriété {property} : le contrôleur n'est pas entièrement initialisé."
     },
     "property_not_found": {
-      "message": "Échec de la définition de la propriété '{property}' : propriété introuvable."
+      "message": "Échec de la définition de la propriété {property} : propriété introuvable."
     }
   },
   "issues": {
@@ -180,7 +180,6 @@
     },
     "auto_healing_raw": {
       "title": "Mode de connexion mis à jour ({device_name})",
-      "description": "L'appareil **{device_name}** a envoyé des réponses HTTP non standard.\n\nLe mode de connexion a été automatiquement basculé vers **'Robust (raw socket)'** pour garantir un fonctionnement continu.",
       "fix_flow": {
         "step": {
           "confirm": {
@@ -219,7 +218,7 @@
         "state_attributes": {
           "preset_mode": {
             "state": {
-              "WindFree": "WindFree"
+              "wind_free": "WindFree"
             }
           }
         }

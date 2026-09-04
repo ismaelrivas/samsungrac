@@ -1,3 +1,4 @@
+# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,not-callable,invalid-sequence-index,unsubscriptable-object
 from __future__ import annotations
 
 import copy
@@ -621,3 +622,92 @@ async def test_mutant_74_75_split_logic():
     assert str(exc_info.value) == "Device unreachable: Segment3", (
         "Mutantes M74/M75 detectados en el formateo del log."
     )
+
+
+@pytest.mark.asyncio
+async def test_sniper_prediction_forensic_logging_guards_m6_m81_m82():
+    """Kills mutant M6 (L935 and->or), M81 (L1018 and->or), and M82 (L1018 or->and).
+
+    Validates strict logical boundary for forensic prediction logging:
+    - L935: 'if is_prediction and self._pending_updates:'
+    - L1018: 'if is_prediction and (self._pending_updates or corrections):'
+    """
+    mock_controller = DummyController()
+    poller = YamlStatePoller(mock_controller)
+    poller.controller.loader.is_fully_initialized = True
+    poller.controller.loader.operations = {}
+    poller.controller.loader.properties = {}
+    poller.controller.loader.sensors = {}
+
+    with patch(
+        "custom_components.climate_ip.controller_yaml_polling._LOGGER.debug"
+    ) as mock_debug:
+        # 1. is_prediction=False, pending_updates is non-empty -> NEITHER start NOR end log
+        # KILLS M6: 'is_prediction or self._pending_updates' would log start when False
+        # KILLS M81: 'is_prediction or (...)' would log end when False
+        poller._pending_updates = {"temp": ("24", time.monotonic())}
+        await poller.async_update_properties_from_state(
+            {"Devices": [{}]}, is_prediction=False, force_update=True
+        )
+        assert not any(
+            "[Forensic] Prediction started" in str(c.args[0])
+            for c in mock_debug.call_args_list
+        ), "Mutant M6 survived: Prediction started logged when is_prediction=False"
+        assert not any(
+            "[Forensic] Prediction ended" in str(c.args[0])
+            for c in mock_debug.call_args_list
+        ), "Mutant M81 survived: Prediction ended logged when is_prediction=False"
+
+        # 2. is_prediction=True, pending_updates is EMPTY, corrections is EMPTY -> NEITHER log
+        # KILLS M6: 'is_prediction or self._pending_updates' would log start when True and pending={}
+        # KILLS M81: 'is_prediction or (...)' would log end when True and both are empty
+        mock_debug.reset_mock()
+        poller._pending_updates = {}
+        await poller.async_update_properties_from_state(
+            {"Devices": [{}]}, is_prediction=True
+        )
+        assert not any(
+            "[Forensic] Prediction started" in str(c.args[0])
+            for c in mock_debug.call_args_list
+        ), "Mutant M6 survived: Prediction started logged when pending_updates is empty"
+        assert not any(
+            "[Forensic] Prediction ended" in str(c.args[0])
+            for c in mock_debug.call_args_list
+        ), "Mutant M81 survived: Prediction ended logged when pending and corrections are empty"
+
+        # 3. is_prediction=True, pending_updates NON-EMPTY, corrections EMPTY -> BOTH start and end logs
+        # KILLS M82: 'is_prediction and (self._pending_updates and corrections)' would evaluate False
+        # and NOT log Prediction ended when corrections is empty!
+        mock_debug.reset_mock()
+        poller._pending_updates = {"temp": ("24", time.monotonic())}
+        await poller.async_update_properties_from_state(
+            {"Devices": [{}]}, is_prediction=True
+        )
+        assert any(
+            "[Forensic] Prediction started" in str(c.args[0])
+            for c in mock_debug.call_args_list
+        ), "Normal behavior failed: Prediction started not logged"
+        assert any(
+            "[Forensic] Prediction ended" in str(c.args[0])
+            for c in mock_debug.call_args_list
+        ), "Mutant M82 survived: Prediction ended NOT logged when corrections is empty but pending exists"
+
+        # 4. is_prediction=True, pending_updates EMPTY, corrections NON-EMPTY -> ONLY end log
+        # KILLS M82: 'is_prediction and (self._pending_updates and corrections)' would evaluate False
+        # and NOT log Prediction ended when pending_updates is empty!
+        mock_debug.reset_mock()
+        poller._pending_updates = {}
+        poller._predict_dependency_cascades = MagicMock(
+            return_value={"fan_mode": "auto"}
+        )
+        await poller.async_update_properties_from_state(
+            {"Devices": [{}]}, is_prediction=True
+        )
+        assert not any(
+            "[Forensic] Prediction started" in str(c.args[0])
+            for c in mock_debug.call_args_list
+        ), "Mutant M6 survived: Prediction started logged when pending_updates is empty"
+        assert any(
+            "[Forensic] Prediction ended" in str(c.args[0])
+            for c in mock_debug.call_args_list
+        ), "Mutant M82 survived: Prediction ended NOT logged when pending is empty but corrections exists"

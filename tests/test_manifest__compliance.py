@@ -58,3 +58,27 @@ def test_iot_class_is_local_polling() -> None:
     assert manifest["iot_class"] == "local_polling", (
         f"Expected iot_class='local_polling', got '{manifest['iot_class']}'"
     )
+
+
+def test_parallel_updates_defined_on_all_platforms() -> None:
+    """Every entity platform must define PARALLEL_UPDATES (Quality Scale Rule 023)."""
+    import ast
+
+    integration_root = Path(__file__).parent.parent
+    platforms = ["climate", "sensor", "switch", "binary_sensor"]
+
+    for platform in platforms:
+        platform_file = integration_root / f"{platform}.py"
+        assert platform_file.exists(), f"Platform file {platform_file} missing"
+        tree = ast.parse(platform_file.read_text(encoding="utf-8"))
+        has_parallel_updates = any(
+            isinstance(node, ast.Assign)
+            and any(
+                getattr(target, "id", None) == "PARALLEL_UPDATES"
+                for target in node.targets
+            )
+            for node in tree.body
+        )
+        assert has_parallel_updates, (
+            f"Platform {platform}.py does not define PARALLEL_UPDATES"
+        )

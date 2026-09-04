@@ -549,12 +549,11 @@ class DeviceProperty:
                     SensorDeviceClass.PRESSURE,
                 ):
                     self._state_class = SensorStateClass.MEASUREMENT
-            except ValueError as err:
-                _LOGGER.warning(
-                    "%s Invalid device_class '%s' cannot be mapped to state_class: %s",
+            except ValueError:
+                _LOGGER.debug(
+                    "%s Device class '%s' does not map to a SensorStateClass",
                     self.log_prefix,
                     self._device_class,
-                    err,
                 )
 
         return True
@@ -745,7 +744,7 @@ class GetJsonStatus(DeviceProperty):
                     v = v.strip()
                     try:
                         return json_loads(v)
-                    except JSON_DECODE_EXCEPTIONS:
+                    except (*JSON_DECODE_EXCEPTIONS,):
                         return v
                 return v
             except (TemplateError, TypeError, ValueError) as e:
@@ -855,7 +854,7 @@ class GetJsonStatus(DeviceProperty):
                 device_state_result = (
                     loaded_state if isinstance(loaded_state, dict) else None
                 )
-            except JSON_DECODE_EXCEPTIONS as e:
+            except (*JSON_DECODE_EXCEPTIONS,) as e:
                 _LOGGER.error(
                     "%s [GetJsonStatus] JSON parsing error. Response: '%s'. Error: %s",
                     self.log_prefix,

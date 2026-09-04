@@ -16,9 +16,12 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import ClimateIPConfigEntry
+from .const import DOMAIN
 from .coordinator import SamsungClimateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
@@ -47,7 +50,7 @@ async def async_setup_entry(
         entities_to_add.append(ClimateIPConnectivitySensor(coordinator, description))
 
     if entities_to_add:
-        _LOGGER.info(
+        _LOGGER.debug(
             "%s Adding diagnostic connectivity binary sensors to Home Assistant.",
             coordinators[0].log_prefix,
         )
@@ -71,7 +74,7 @@ class ClimateIPConnectivitySensor(
         """Initialize the connectivity binary sensor."""
         super().__init__(coordinator)
         self.entity_description = description
-        unique_prefix = getattr(coordinator, "unique_id", None) or "climate_ip"
+        unique_prefix = getattr(coordinator, "unique_id", None) or DOMAIN
         self._attr_unique_id = f"{unique_prefix}_{description.key}"
 
     @property
