@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.0.1b3] - 2026-09-04
+
+### Refactoring & Stability
+- **Anti-Flicker Lock Eviction**: Refactored lock eviction logic in polling controller and switch hooks, fixing `_apply_anti_flicker_locks` global eviction behavior to return instead of break.
+- **Network State Integrity**: Implemented `deepcopy` for network state storage to prevent accidental data mutation across polling cycles.
+- **Domain Standardization & Task Tracking**: Standardized domain usage, optimized background task tracking lifecycle, and pruned legacy unused controller logic.
+
+### Performance & Home Assistant Quality Scale
+- **Forensic Prediction Logging**: Optimized log levels and lowered verbosity of forensic prediction logging for cleaner runtime diagnostics.
+- **Parallel Updates Compliance**: Defined `PARALLEL_UPDATES` across all platforms (`climate`, `sensor`, `switch`) and added compliance test suite for Home Assistant quality scale.
+- **Hassfest & Translation Standards**: Enforced strict Hassfest standards for manifest requirements and translation string placeholders.
+
+### Mutation Testing & Test Coverage
+- **Forensic & Controller Hardening**: Added mutation testing guards and regression tests for forensic prediction logging, controller cache key logic, and switch eviction hooks.
+- **Full Suite Zero-Defect Baseline**: Maintained 100% test pass rate across 1,456 tests with clean Ruff linting.
+
 ## [10.0.1b1] - 2026-08-31 (Major Update)
 
 > [!NOTE]
