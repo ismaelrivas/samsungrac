@@ -193,7 +193,7 @@ class ConnectionSamsung2878(Connection):
         """Start the background connection manager."""
         self._ensure_callback_linked()
         if self._manager_task is None or self._manager_task.done():
-            _LOGGER.info(
+            _LOGGER.debug(
                 "%s Starting connection manager", self.log_prefix
             )  # pragma: no mutate
             self._reconnect_retries = 0
@@ -638,7 +638,7 @@ class ConnectionSamsung2878(Connection):
                 if ssl_object:
                     cipher = ssl_object.cipher()
                     negotiated_tls = ssl_object.version() or "Unknown"
-                    _LOGGER.info(
+                    _LOGGER.debug(
                         "%s SSL connection established. Protocol: %s, Cipher: %s, Verify: %s, Negotiated TLS: %s",
                         self.log_prefix,
                         cipher[1],
@@ -791,7 +791,7 @@ class ConnectionSamsung2878(Connection):
 
         # Stateful logging: Log when connection is re-established
         if not self._is_available:
-            _LOGGER.info(
+            _LOGGER.debug(
                 "%s Connection re-established", self.log_prefix
             )  # pragma: no mutate
             self._is_available = True
@@ -802,7 +802,7 @@ class ConnectionSamsung2878(Connection):
             self._track_task(self._post_connect_status_request())
             # Proactively refresh HA state after reconnection
             if self._controller and self._controller.request_refresh_callback:
-                _LOGGER.info(
+                _LOGGER.debug(
                     "%s Requesting immediate coordinator refresh after reconnection.",
                     self.log_prefix,
                 )  # pragma: no mutate

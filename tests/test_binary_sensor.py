@@ -49,7 +49,7 @@ def mock_config_entry(mock_coordinator):
 @pytest.fixture
 def mock_logger():
     """Fixture to patch the module logger."""
-    with patch("custom_components.climate_ip.binary_sensor._LOGGER.info") as mock_log:
+    with patch("custom_components.climate_ip.binary_sensor._LOGGER.debug") as mock_log:
         yield mock_log
 
 

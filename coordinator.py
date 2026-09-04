@@ -600,7 +600,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         """Handle a state update received via push from the connection."""
         try:
             _LOGGER.debug(
-                "%s Push update received with data: %s", self.log_prefix, new_data
+                "%s Push update received (%d attributes)",
+                self.log_prefix,
+                len(new_data) if new_data else 0,
             )  # pragma: no mutate
 
             if new_data is not None:

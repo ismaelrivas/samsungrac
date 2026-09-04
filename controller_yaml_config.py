@@ -192,7 +192,7 @@ class YamlConfigLoader:
         device_type = controller_config.get(CONF_DEVICE_TYPE)
 
         if device_type == DEVICE_TYPE_SAMSUNG_2878:
-            _LOGGER.info(
+            _LOGGER.debug(
                 "%s Using 'samsung_2878' connection engine", self.controller.log_prefix
             )
             connection_node[CONFIG_DEVICE_CONNECTION_TYPE] = "samsung_2878"
@@ -217,13 +217,13 @@ class YamlConfigLoader:
                         conn_method = entry.options.get(CONF_CONN_METHOD, conn_method)
 
             if conn_method == CONN_METHOD_AIOHTTP:
-                _LOGGER.info(
+                _LOGGER.debug(
                     "%s Using 'Modern (aiohttp)' connection engine (from options)",
                     self.controller.log_prefix,
                 )
                 connection_node[CONFIG_DEVICE_CONNECTION_TYPE] = "samsung_8888_aiohttp"
             elif conn_method == CONN_METHOD_RAW:
-                _LOGGER.info(
+                _LOGGER.debug(
                     "%s Using 'Robust (raw socket)' connection engine (from options)",
                     self.controller.log_prefix,
                 )

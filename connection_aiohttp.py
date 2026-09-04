@@ -535,7 +535,7 @@ class ConnectionAiohttp8888(Connection):
                     None  # Clear on failure to allow retries
                 )
                 err_msg = "%s [aiohttp_probe] HTTPS (mTLS) connection probe failed: %s"
-                _LOGGER.error(err_msg, self.log_prefix, e)
+                _LOGGER.debug(err_msg, self.log_prefix, e)
                 raise CannotConnect(
                     f"Connection initialization failed (HTTPS): {e}"
                 ) from e
@@ -841,13 +841,13 @@ class ConnectionAiohttp8888(Connection):
                     err_msg = (
                         "%s [aiohttp] Retry failed even with 'Connection: close': %s"
                     )
-                    _LOGGER.error(err_msg, self.log_prefix, retry_exc)
+                    _LOGGER.debug(err_msg, self.log_prefix, retry_exc)
                     error_msg = f"Target device returned an unexpected error response during retry: {retry_exc}"
                     raise CannotConnect(error_msg) from retry_exc
 
             # If we were already forcing close, then it's a real network issue.
             err_msg = "%s [aiohttp] Connection failed: %s"
-            _LOGGER.error(err_msg, self.log_prefix, clean_e)
+            _LOGGER.debug(err_msg, self.log_prefix, clean_e)
             exc_msg = f"Connection error: {clean_e}"
             raise CannotConnect(exc_msg) from e
         except (ValueError, KeyError, UnicodeDecodeError) as e:

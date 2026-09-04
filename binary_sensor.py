@@ -50,7 +50,7 @@ async def async_setup_entry(
         entities_to_add.append(ClimateIPConnectivitySensor(coordinator, description))
 
     if entities_to_add:
-        _LOGGER.info(
+        _LOGGER.debug(
             "%s Adding diagnostic connectivity binary sensors to Home Assistant.",
             coordinators[0].log_prefix,
         )

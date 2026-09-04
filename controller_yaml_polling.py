@@ -846,17 +846,6 @@ class YamlStatePoller:
                     # Keep shield active until THIS property's device_key arrives in push update or poll.
                     can_release = False
 
-                _LOGGER.debug(
-                    "%s [Forensic-Verbose] Eval %s: pend_val=%s, pure_val=%s, changed_keys=%s, device_key=%s, can_release=%s",
-                    self.controller.log_prefix,
-                    prop_id,
-                    pend_val,
-                    pure_val,
-                    changed_keys,
-                    device_key,
-                    can_release,
-                )
-
                 # Race Condition Fix: We DO NOT use hardware_override to blindly drop locks when the device_key arrives.
                 # If the user clicks rapidly, the AC will push delayed states from OLD commands.
                 # If we blindly drop our NEW prediction just because a push update arrived, the UI will flicker back to the old state.
@@ -942,7 +931,7 @@ class YamlStatePoller:
         if not self.controller.loader.is_fully_initialized:
             return {}
 
-        if is_prediction:
+        if is_prediction and self._pending_updates:
             _LOGGER.debug(
                 "%s [Forensic] Prediction started. pending_updates=%s",
                 self.controller.log_prefix,
@@ -1025,7 +1014,7 @@ class YamlStatePoller:
 
         self._rebuild_attributes()
 
-        if is_prediction:
+        if is_prediction and (self._pending_updates or corrections):
             _LOGGER.debug(
                 "%s [Forensic] Prediction ended. Corrections=%s",
                 self.controller.log_prefix,

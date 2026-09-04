@@ -549,12 +549,11 @@ class DeviceProperty:
                     SensorDeviceClass.PRESSURE,
                 ):
                     self._state_class = SensorStateClass.MEASUREMENT
-            except ValueError as err:
-                _LOGGER.warning(
-                    "%s Invalid device_class '%s' cannot be mapped to state_class: %s",
+            except ValueError:
+                _LOGGER.debug(
+                    "%s Device class '%s' does not map to a SensorStateClass",
                     self.log_prefix,
                     self._device_class,
-                    err,
                 )
 
         return True
