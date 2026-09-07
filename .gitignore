@@ -23,4 +23,5 @@ mutants/
 **/.codebase-memory/
 mutantes*.txt
 **/graph.db.zst
-scripts/
+*.zip
+climate_ip.zip

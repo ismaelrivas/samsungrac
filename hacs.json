@@ -2,5 +2,8 @@
   "name": "Climate IP",
   "render_readme": true,
   "domain": "climate_ip",
-  "content_in_root": true
+  "content_in_root": true,
+  "zip_release": true,
+  "filename": "climate_ip.zip",
+  "hide_default_branch": true
 }

@@ -1,0 +1,31 @@
+name: Release Package
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-upload:
+    name: Build & Attach HACS Release ZIP
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build clean distribution package
+        run: python3 scripts/build_release_zip.py
+
+      - name: Upload zip asset to release
+        uses: softprops/action-gh-release@v2
+        if: github.event_name == 'release'
+        with:
+          files: climate_ip.zip
