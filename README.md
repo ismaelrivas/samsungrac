@@ -10,7 +10,7 @@ A highly resilient, mathematically verified, and asynchronously optimized custom
 
 ---
 
-## 🏆 Version History & Release Notes (v10.0.1b3)
+## 🏆 Version History & Release Notes (v10.0.1b4)
 
 This release represents a monumental overhaul of the `climate_ip` integration codebase. Through an exhaustive modernization and hardening effort, the component has been restructured from the ground up to ensure absolute stability, greater error resilience, and a cleaner architecture.
 

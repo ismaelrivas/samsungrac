@@ -1,5 +1,11 @@
 # Changelog
 
+## [10.0.1b4] - 2026-09-07
+
+### Documentation & Packaging
+- **Release Documentation & Test Metrics**: Synchronized `README.md` release notes to reflect 1,456 passing unit tests and 100% mutation testing score across all modules.
+- **HACS Distribution**: Bumped version to `10.0.1b4` to ensure immediate discovery, fresh release timestamping, and clean cache invalidation in HACS.
+
 ## [10.0.1b3] - 2026-09-04
 
 ### Refactoring & Stability
