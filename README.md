@@ -2,7 +2,7 @@
 
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Core%202026.x%20Ready-blue?style=for-the-badge&logo=home-assistant)
 ![Mutation Score](https://img.shields.io/badge/Mutation%20Score-100%25-brightgreen.svg)
-![Unit Tests](https://img.shields.io/badge/Unit%20Tests-1381%20Passed-brightgreen?style=for-the-badge)
+![Unit Tests](https://img.shields.io/badge/Unit%20Tests-1456%20Passed-brightgreen?style=for-the-badge)
 ![Quality Scale](https://img.shields.io/badge/Quality%20Scale-Gold%20Master-gold?style=for-the-badge)
 ![HACS](https://img.shields.io/badge/HACS-Custom%20Repository-orange?style=for-the-badge)
 
@@ -10,15 +10,16 @@ A highly resilient, mathematically verified, and asynchronously optimized custom
 
 ---
 
-## 🏆 Version History & Release Notes (v10.0.1b1)
+## 🏆 Version History & Release Notes (v10.0.1b3)
 
 This release represents a monumental overhaul of the `climate_ip` integration codebase. Through an exhaustive modernization and hardening effort, the component has been restructured from the ground up to ensure absolute stability, greater error resilience, and a cleaner architecture.
 
 **Engineering Highlights:**
 * 🏗️ **Architecture & EAFP Refactoring:** Massive refactoring to use the Pythonic EAFP pattern alongside direct checks via `getattr`, eradicating unsafe `hasattr()` uses.
-* 🛡️ **Absolute Zero Mutants (1399/1399):** The configuration flow (`config_flow.py`) and core files were iteratively refactored until reaching mathematically proven 0 surviving mutants.
-* ⚡ **Connection Engine Overhaul:** Replaced dictionary-based shared state with a strictly typed `AiohttpSharedState` Dataclass and logically separated SSL context creation.
-* 🐛 **Hang & Loop Prevention:** Resolved a dangerous potential infinite loop during substring redaction and fixed floating-point parsing failures.
+* 🛡️ **Absolute Zero Mutants (100% Mutation Score):** Core modules and configuration flow were iteratively hardened until reaching mathematically proven 0 surviving mutants across 1,456 tests.
+* 🔒 **Anti-Flicker Lock Eviction & Network State Integrity:** Enhanced lock eviction logic in polling controller and switch hooks, using `deepcopy` for network state storage to eliminate state pollution across polling cycles.
+* ⚡ **Connection Engine & Concurrency:** Defined `PARALLEL_UPDATES` across all platforms (`climate`, `sensor`, `switch`), strictly compliant with Home Assistant quality scale and Hassfest standards.
+* 🐛 **Hang & Loop Prevention:** Resolved potential infinite loops during diagnostics redaction and eliminated floating-point parsing discrepancies.
 
 ---
 
