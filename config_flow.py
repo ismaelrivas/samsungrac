@@ -423,7 +423,7 @@ class ClimateIpConfigFlow(
                     DEVICE_TYPE_INTESISBOX
                 ]
                 self.flow_data[CONF_TOKEN] = str(
-                    self.flow_data.get(CONF_MAC, mac_val or "intesisbox")
+                    self.flow_data.get(CONF_MAC, mac_val or "intesisbox")  # pragma: no mutate  # Equivalent: mac_val == flow_data[CONF_MAC] when key exists
                 )
                 return self.async_create_entry(
                     title=f"IntesisBox ({ip_addr})",

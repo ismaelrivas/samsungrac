@@ -711,3 +711,24 @@ async def test_sniper_prediction_forensic_logging_guards_m6_m81_m82():
             "[Forensic] Prediction ended" in str(c.args[0])
             for c in mock_debug.call_args_list
         ), "Mutant M82 survived: Prediction ended NOT logged when pending is empty but corrections exists"
+
+
+async def test_async_update_properties_backup_native_injection():
+    """Kill mutant on L1010 of controller_yaml_polling.py: 'if val is not None:' mutated to 'if val is None:'."""
+    ctrl = DummyController()
+    poller = YamlStatePoller(ctrl)
+    poller._predict_dependency_cascades = MagicMock(return_value={})
+    poller._inject_value_into_state = MagicMock()
+    dummy_prop = NakedObj(id="target_temperature", value=20)
+    ctrl.loader.properties = {"target_temperature": dummy_prop}
+    poller._pending_updates = {"target_temperature": (24, time.monotonic())}
+
+    await poller.async_update_properties_from_state(
+        {"Devices": [{}]}, is_prediction=False, force_update=True
+    )
+
+    # Mutant changed 'if val is not None' to 'if val is None', which bypasses backup native injection
+    assert poller._inject_value_into_state.call_count == 2
+    assert poller._inject_value_into_state.call_args_list[1][0][0] == dummy_prop
+    assert poller._inject_value_into_state.call_args_list[1][0][2] == 24
+

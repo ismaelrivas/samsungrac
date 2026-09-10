@@ -651,11 +651,14 @@ class YamlController(ClimateController):
     @property
     def connection_diagnostics(self) -> dict[str, Any]:
         """Return standardized connection diagnostic dictionary from the underlying connection."""
+        diag: dict[str, Any] = {}
         if self.connection is not None and hasattr(self.connection, "get_diagnostics"):
-            diag = self.connection.get_diagnostics()
-            if isinstance(diag, dict):
-                return dict(diag)
-        return {}
+            conn_diag = self.connection.get_diagnostics()
+            if isinstance(conn_diag, dict):
+                diag = dict(conn_diag)
+        if hasattr(self, "poller") and getattr(self.poller, "last_icmp_diagnostic", None):
+            diag["network_reachability"] = self.poller.last_icmp_diagnostic
+        return diag
 
     @property
     def pure_device_state(self) -> dict[str, Any]:

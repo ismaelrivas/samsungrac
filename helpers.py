@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 
 from homeassistant.const import EntityCategory
 from homeassistant.helpers import config_validation as cv
+from homeassistant.util import dt as dt_util
 from voluptuous.error import Invalid
 
 _LOGGER = logging.getLogger(__name__)
@@ -538,6 +539,41 @@ except ImportError:
     SocketPermissionError = _DummyIcmpError
 
 
+@functools.lru_cache(maxsize=1)
+def _can_use_icmp_privileged() -> bool:
+    """Probe whether the environment supports raw ICMP sockets (root or CAP_NET_RAW)."""
+    if not _ICMPLIB_AVAILABLE:
+        return False
+    try:
+        from icmplib import (
+            ping as icmp_ping_sync,  # pylint: disable=import-outside-toplevel
+        )
+
+        icmp_ping_sync("127.0.0.1", count=0, timeout=0, privileged=True)
+        return True
+    except Exception:
+        return False
+
+
+_LAST_NETWORK_DIAGNOSTICS: dict[str, dict[str, Any]] = {}
+
+
+def get_last_network_diagnostic(host: str | None) -> dict[str, Any] | None:
+    """Return the last recorded ICMP network diagnostic for the host."""
+    if not host or not isinstance(host, str):
+        return None
+    clean_host = host.rsplit("://")[-1].split("/")[0]  # noqa: PLC0207
+    if (
+        ":" in clean_host
+        and not clean_host.startswith("[")
+        and clean_host.count(":") == 1
+    ):
+        clean_host = clean_host.split(":")[0]
+    elif clean_host.startswith("[") and "]" in clean_host:
+        clean_host = clean_host[1 : clean_host.index("]")]  # pragma: no mutate  # Equivalent: valid IPv6 has single ']'
+    return _LAST_NETWORK_DIAGNOSTICS.get(clean_host)
+
+
 # pylint: disable=too-many-return-statements
 async def async_check_network_reachability(
     host: str, log_prefix: str = ""
@@ -565,16 +601,25 @@ async def async_check_network_reachability(
     if clean_host in ("localhost", "127.0.0.1", "::1"):
         return True
 
+    use_privileged = _can_use_icmp_privileged()
+
     try:
         host_obj = await async_ping(  # pragma: no mutate
             address=clean_host,
             count=1,
             timeout=2.0,
             interval=0.2,
-            privileged=False,  # pragma: no mutate
+            privileged=use_privileged,  # pragma: no mutate
         )  # pragma: no mutate
 
         if host_obj.is_alive:
+            _LAST_NETWORK_DIAGNOSTICS[clean_host] = {
+                "is_reachable": True,
+                "avg_rtt_ms": getattr(host_obj, "avg_rtt", None),
+                "status": "alive",
+                "privileged_mode": use_privileged,
+                "timestamp": dt_util.utcnow().isoformat(),
+            }
             return True
 
         _LOGGER.debug(  # pragma: no mutate
@@ -583,6 +628,13 @@ async def async_check_network_reachability(
             log_prefix,  # pragma: no mutate
             host,  # pragma: no mutate
         )  # pragma: no mutate
+        _LAST_NETWORK_DIAGNOSTICS[clean_host] = {
+            "is_reachable": False,
+            "avg_rtt_ms": None,
+            "status": "unreachable_timeout",
+            "privileged_mode": use_privileged,
+            "timestamp": dt_util.utcnow().isoformat(),
+        }
         return False
 
     except SocketPermissionError as perm_err:
@@ -592,11 +644,28 @@ async def async_check_network_reachability(
             log_prefix,  # pragma: no mutate
             perm_err,  # pragma: no mutate
         )  # pragma: no mutate
+        _LAST_NETWORK_DIAGNOSTICS[clean_host] = {
+            "is_reachable": True,
+            "avg_rtt_ms": None,
+            "status": "permission_bypassed",
+            "privileged_mode": use_privileged,
+            "timestamp": dt_util.utcnow().isoformat(),
+        }
         return True
     except (IcmpNameLookupError, ICMPSocketError) as err:
         _LOGGER.debug(
             "%s Network diagnostic error for %s: %s", log_prefix, host, err
         )  # pragma: no mutate
+        status_name = (
+            "dns_error" if isinstance(err, IcmpNameLookupError) else "socket_error"
+        )
+        _LAST_NETWORK_DIAGNOSTICS[clean_host] = {
+            "is_reachable": False,
+            "avg_rtt_ms": None,
+            "status": status_name,
+            "privileged_mode": use_privileged,
+            "timestamp": dt_util.utcnow().isoformat(),
+        }
         return False
     except OSError as e:
         _LOGGER.debug(  # pragma: no mutate
@@ -605,7 +674,152 @@ async def async_check_network_reachability(
             log_prefix,  # pragma: no mutate
             e,  # pragma: no mutate
         )  # pragma: no mutate
+        _LAST_NETWORK_DIAGNOSTICS[clean_host] = {
+            "is_reachable": True,
+            "avg_rtt_ms": None,
+            "status": "permission_bypassed",
+            "privileged_mode": use_privileged,
+            "timestamp": dt_util.utcnow().isoformat(),
+        }
         return True
+
+
+# pylint: disable=too-many-return-statements
+async def async_get_network_diagnostics(
+    host: str, log_prefix: str = "", ping_timeout: float = 1.0
+) -> dict[str, Any]:
+    """Execute a detailed ICMP probe returning complete telemetry for diagnostics."""
+    now_iso = dt_util.utcnow().isoformat()
+    if not host or not isinstance(host, str):
+        return {
+            "is_reachable": False,
+            "avg_rtt_ms": None,
+            "status": "missing_host",
+            "privileged_mode": False,
+            "timestamp": now_iso,
+        }
+
+    if not _ICMPLIB_AVAILABLE or async_ping is None:
+        _LOGGER.debug(
+            "%s icmplib not available, skipping ICMP reachability check.", log_prefix
+        )
+        return {
+            "is_reachable": True,
+            "avg_rtt_ms": None,
+            "status": "library_missing",
+            "privileged_mode": False,
+            "timestamp": now_iso,
+        }
+
+    clean_host = host.rsplit("://")[-1].split("/")[0]  # noqa: PLC0207
+    if (
+        ":" in clean_host
+        and not clean_host.startswith("[")
+        and clean_host.count(":") == 1
+    ):
+        clean_host = clean_host.split(":")[0]
+    elif clean_host.startswith("[") and "]" in clean_host:
+        clean_host = clean_host[1 : clean_host.index("]")]  # pragma: no mutate  # Equivalent: valid IPv6 has single ']'
+
+    if clean_host in ("localhost", "127.0.0.1", "::1"):
+        return {
+            "is_reachable": True,
+            "avg_rtt_ms": 0.0,
+            "status": "loopback_bypass",
+            "privileged_mode": False,
+            "timestamp": now_iso,
+        }
+
+    use_privileged = _can_use_icmp_privileged()
+
+    def _record_and_return(res: dict[str, Any]) -> dict[str, Any]:
+        _LAST_NETWORK_DIAGNOSTICS[clean_host] = res
+        return res
+
+    try:
+        host_obj = await async_ping(
+            address=clean_host,
+            count=1,
+            timeout=ping_timeout,
+            interval=0.2,
+            privileged=use_privileged,
+        )
+
+        if host_obj.is_alive:
+            return _record_and_return({
+                "is_reachable": True,
+                "avg_rtt_ms": getattr(host_obj, "avg_rtt", None),
+                "status": "alive",
+                "privileged_mode": use_privileged,
+                "timestamp": now_iso,
+            })
+
+        _LOGGER.debug(
+            "%s Network diagnostic: Host %s is NOT reachable (UDP ping failed/timed out).",
+            log_prefix,
+            host,
+        )
+        return _record_and_return({
+            "is_reachable": False,
+            "avg_rtt_ms": None,
+            "status": "unreachable_timeout",
+            "privileged_mode": use_privileged,
+            "timestamp": now_iso,
+        })
+
+    except SocketPermissionError as perm_err:
+        _LOGGER.debug(
+            "%s Network diagnostic permission error (ping_group_range restriction): %s. "
+            "Bypassing ping check to protect AC firmware.",
+            log_prefix,
+            perm_err,
+        )
+        return _record_and_return({
+            "is_reachable": True,
+            "avg_rtt_ms": None,
+            "status": "permission_bypassed",
+            "privileged_mode": use_privileged,
+            "timestamp": now_iso,
+        })
+    except (IcmpNameLookupError, ICMPSocketError) as err:
+        _LOGGER.debug(
+            "%s Network diagnostic error for %s: %s", log_prefix, host, err
+        )
+        status_name = (
+            "dns_error" if isinstance(err, IcmpNameLookupError) else "socket_error"
+        )
+        return _record_and_return({
+            "is_reachable": False,
+            "avg_rtt_ms": None,
+            "status": status_name,
+            "privileged_mode": use_privileged,
+            "timestamp": now_iso,
+        })
+    except OSError as e:
+        _LOGGER.debug(
+            "%s Network diagnostic OS error (likely ping_group_range restriction): %s. "
+            "Bypassing ping check to protect AC firmware.",
+            log_prefix,
+            e,
+        )
+        return _record_and_return({
+            "is_reachable": True,
+            "avg_rtt_ms": None,
+            "status": "permission_bypassed",
+            "privileged_mode": use_privileged,
+            "timestamp": now_iso,
+        })
+    except Exception as err:
+        _LOGGER.debug(
+            "%s Unexpected network diagnostic error for %s: %s", log_prefix, host, err
+        )
+        return _record_and_return({
+            "is_reachable": False,
+            "avg_rtt_ms": None,
+            "status": f"error_{type(err).__name__}",
+            "privileged_mode": use_privileged,
+            "timestamp": now_iso,
+        })
 
 
 async def async_get_mac_address(ip_address: str) -> str | None:

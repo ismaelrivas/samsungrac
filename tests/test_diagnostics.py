@@ -598,6 +598,7 @@ async def test_diagnostics_top_level_keys(mock_hass):
     assert "raw_device_state" in res
     assert "bootstrapping" in res
     assert "entry" in res
+    assert "network_diagnostics" in res
     assert res["bootstrapping"]["total_devices_discovered"] == 0
     assert res["bootstrapping"]["skipped_devices_missing_info"] == 0
 
@@ -834,3 +835,230 @@ def test_deep_redact_substrings_multiple_occurrences() -> None:
     payload = {"key": "this is a secret and another secret"}
     redacted = _deep_redact_substrings(payload, threat_patterns)
     assert redacted == {"key": "this is a **REDACTED** and another **REDACTED**"}
+
+
+async def test_diagnostics_network_diagnostics_structure(mock_hass, mock_entry):
+    """Test network_diagnostics structure including active_probe and last_runtime_check."""
+    mock_coord = MagicMock(spec=SamsungClimateCoordinator)
+    mock_coord.data = None
+    mock_coord.devices = {}
+    mock_coord.controller = MagicMock()
+    mock_coord.controller.connection_diagnostics = {
+        "network_reachability": {
+            "is_reachable": True,
+            "avg_rtt_ms": 2.5,
+            "status": "alive",
+            "privileged_mode": False,
+        }
+    }
+    mock_entry.runtime_data = mock_coord
+
+    res = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+
+    assert "network_diagnostics" in res
+    net_diag = res["network_diagnostics"]
+    assert "privileged_probe_support" in net_diag
+    assert isinstance(net_diag["privileged_probe_support"], bool)
+    assert net_diag["last_runtime_check"] == {
+        "is_reachable": True,
+        "avg_rtt_ms": 2.5,
+        "status": "alive",
+        "privileged_mode": False,
+    }
+    assert net_diag["active_probe"]["is_reachable"] is True
+    assert net_diag["active_probe"]["status"] == "alive"
+
+
+async def test_diagnostics_network_diagnostics_no_host(mock_hass):
+    """Test network_diagnostics when no host or IP address is configured."""
+    entry = MagicMock()
+    entry.entry_id = "test_no_host"
+    entry.data = {}
+    entry.options = {}
+    entry.title = "No Host AC"
+    entry.domain = DOMAIN
+    entry.unique_id = "uid_no_host"
+
+    mock_coord = MagicMock(spec=SamsungClimateCoordinator)
+    mock_coord.data = None
+    mock_coord.devices = {}
+    mock_coord.controller = MagicMock(spec=[])
+    entry.runtime_data = mock_coord
+
+    res = await async_get_config_entry_diagnostics(mock_hass, entry)
+
+    assert "network_diagnostics" in res
+    net_diag = res["network_diagnostics"]
+    assert net_diag["active_probe"] == {
+        "is_reachable": None,
+        "status": "no_host_configured",
+    }
+    assert net_diag["last_runtime_check"] == {
+        "is_reachable": None,
+        "status": "not_recorded",
+    }
+
+
+async def test_diagnostics_network_diagnostics_multi_coordinator(mock_hass, mock_entry):
+    """Test network_diagnostics with multi-coordinator dictionary setup."""
+    coord1 = MagicMock(spec=SamsungClimateCoordinator)
+    coord1.data = None
+    coord1.devices = {}
+    coord1.controller = MagicMock()
+    coord1.controller.connection_diagnostics = {
+        "network_reachability": {
+            "is_reachable": False,
+            "avg_rtt_ms": None,
+            "status": "dead",
+        }
+    }
+
+    mock_entry.runtime_data = {"sub_unit_1": coord1}
+
+    res = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+
+    assert "network_diagnostics" in res
+    net_diag = res["network_diagnostics"]
+    assert net_diag["last_runtime_check"] == {
+        "is_reachable": False,
+        "avg_rtt_ms": None,
+        "status": "dead",
+    }
+
+
+async def test_diagnostics_network_diagnostics_fallback_to_global_registry(
+    mock_hass, mock_entry
+):
+    """Test fallback to get_last_network_diagnostic when controller has no network_reachability."""
+    from unittest.mock import patch
+
+    mock_coord = MagicMock(spec=SamsungClimateCoordinator)
+    mock_coord.data = None
+    mock_coord.devices = {}
+    mock_coord.controller = MagicMock(spec=[])
+    mock_entry.runtime_data = mock_coord
+
+    recorded_diag = {
+        "is_reachable": True,
+        "avg_rtt_ms": 3.1,
+        "status": "alive",
+        "privileged_mode": False,
+    }
+
+    with patch(
+        "custom_components.climate_ip.diagnostics.get_last_network_diagnostic",
+        return_value=recorded_diag,
+    ):
+        res = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+
+    assert "network_diagnostics" in res
+    assert res["network_diagnostics"]["last_runtime_check"] == recorded_diag
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_target_host_resolution_hierarchy(mock_hass, mock_entry):
+    """Kill L291, L293, L296-297, L301-311, and L331-332 mutants in diagnostics.py.
+
+    Tests target_host resolution across all possible config, option, coordinator, and
+    multi-coordinator sources, ensuring exact ping_timeout=1.0 forwarding.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    mock_probe = AsyncMock(return_value={"is_reachable": True, "status": "alive"})
+
+    with patch(
+        "custom_components.climate_ip.diagnostics.async_get_network_diagnostics",
+        mock_probe,
+    ):
+        # 1. Host in entry.data['host']
+        mock_entry.data = {"host": "10.0.0.1"}
+        mock_entry.options = {}
+        mock_entry.runtime_data = None
+        await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+        mock_probe.assert_called_with("10.0.0.1", ping_timeout=1.0)
+
+        # 2. Host in entry.data['ip_address'] (no 'host')
+        mock_entry.data = {"ip_address": "10.0.0.2"}
+        mock_entry.options = {}
+        mock_entry.runtime_data = None
+        await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+        mock_probe.assert_called_with("10.0.0.2", ping_timeout=1.0)
+
+        # 3. Host in entry.options['host']
+        mock_entry.data = {}
+        mock_entry.options = {"host": "10.0.0.3"}
+        mock_entry.runtime_data = None
+        await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+        mock_probe.assert_called_with("10.0.0.3", ping_timeout=1.0)
+
+        # 4. Host in entry.options['ip_address']
+        mock_entry.data = {}
+        mock_entry.options = {"ip_address": "10.0.0.4"}
+        mock_entry.runtime_data = None
+        await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+        mock_probe.assert_called_with("10.0.0.4", ping_timeout=1.0)
+
+        # 5. Host in single coordinator controller.ip_address
+        mock_entry.data = {}
+        mock_entry.options = {}
+        single_coord = MagicMock(spec=SamsungClimateCoordinator)
+        single_coord.data = None
+        single_coord.devices = {}
+        single_coord.controller = MagicMock()
+        single_coord.controller.ip_address = "10.0.0.5"
+        single_coord.controller.host = None
+        single_coord.controller._cfg = None
+        single_coord.controller.connection_diagnostics = {}
+        mock_entry.runtime_data = single_coord
+        await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+        mock_probe.assert_called_with("10.0.0.5", ping_timeout=1.0)
+
+        # 6. Host in single coordinator controller.host
+        single_coord.controller.ip_address = None
+        single_coord.controller.host = "10.0.0.6"
+        await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+        mock_probe.assert_called_with("10.0.0.6", ping_timeout=1.0)
+
+        # 7. Host in single coordinator controller._cfg.host
+        single_coord.controller.ip_address = None
+        single_coord.controller.host = None
+        single_coord.controller._cfg = MagicMock()
+        single_coord.controller._cfg.host = "10.0.0.7"
+        await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+        mock_probe.assert_called_with("10.0.0.7", ping_timeout=1.0)
+
+        # 8. Host in multi-coordinator dictionary (MIM-H03 indoor units) -> kills L301-311
+        multi_coord = MagicMock(spec=SamsungClimateCoordinator)
+        multi_coord.data = None
+        multi_coord.devices = {}
+        multi_coord.controller = MagicMock()
+        multi_coord.controller.ip_address = "10.0.0.8"
+        multi_coord.controller.connection_diagnostics = {}
+        mock_entry.runtime_data = {"indoor_1": multi_coord}
+        await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+        mock_probe.assert_called_with("10.0.0.8", ping_timeout=1.0)
+
+        # Multi-coordinator with controller.host
+        multi_coord.controller.ip_address = None
+        multi_coord.controller.host = "10.0.0.9"
+        await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+        mock_probe.assert_called_with("10.0.0.9", ping_timeout=1.0)
+
+        # Multi-coordinator with controller._cfg.host
+        multi_coord.controller.ip_address = None
+        multi_coord.controller.host = None
+        multi_coord.controller._cfg = MagicMock()
+        multi_coord.controller._cfg.host = "10.0.0.10"
+        await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+        mock_probe.assert_called_with("10.0.0.10", ping_timeout=1.0)
+
+        # 9. No host configured at all
+        mock_entry.data = {}
+        mock_entry.options = {}
+        mock_entry.runtime_data = None
+        res_no_host = await async_get_config_entry_diagnostics(mock_hass, mock_entry)
+        assert res_no_host["network_diagnostics"]["active_probe"] == {
+            "is_reachable": None,
+            "status": "no_host_configured",
+        }
+

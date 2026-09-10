@@ -47,6 +47,7 @@ from .helpers import (
     async_check_network_reachability,
     async_create_samsung_ssl_context,
     format_placeholders,
+    get_last_network_diagnostic,
     mask_sensitive_data,
     safe_xml_to_dict,
 )
@@ -275,6 +276,7 @@ class ConnectionSamsung2878(Connection):
 
         # Load the preferred connection settings if they were saved during pairing
         self._last_successful_config = None
+        self._last_icmp_diagnostic: dict[str, Any] | None = None
 
         # Restore last successful SSL config from ConfigEntry data across restarts
         stored = self._config.get("_ssl_config_2878")
@@ -386,6 +388,11 @@ class ConnectionSamsung2878(Connection):
             diag["last_successful_config"] = safe_config
         else:
             diag["last_successful_config"] = None
+
+        diag["network_reachability"] = self._last_icmp_diagnostic or {
+            "is_reachable": None,
+            "status": "not_checked_yet",
+        }
 
         return diag
 
@@ -1171,6 +1178,12 @@ class ConnectionSamsung2878(Connection):
             network_reachable = await async_check_network_reachability(
                 self._cfg.host or "", self.log_prefix
             )
+            self._last_icmp_diagnostic = get_last_network_diagnostic(
+                self._cfg.host
+            ) or {
+                "is_reachable": network_reachable,
+                "status": "alive" if network_reachable else "unreachable_timeout",
+            }
         except Exception as diag_err:
             _LOGGER.debug(
                 "%s Network diagnostic failed: %s", self.log_prefix, diag_err

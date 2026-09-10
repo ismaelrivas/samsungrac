@@ -301,6 +301,32 @@ def auto_mock_network() -> Any:
             new_callable=AsyncMock,
             return_value=True,
         ),
+        patch(
+            "custom_components.climate_ip.helpers.async_get_network_diagnostics",
+            new_callable=AsyncMock,
+            return_value={
+                "is_reachable": True,
+                "avg_rtt_ms": 1.2,
+                "status": "alive",
+                "privileged_mode": False,
+                "timestamp": "2026-09-10T19:00:00+00:00",
+            },
+        ),
+        patch(
+            "custom_components.climate_ip.diagnostics.async_get_network_diagnostics",
+            new_callable=AsyncMock,
+            return_value={
+                "is_reachable": True,
+                "avg_rtt_ms": 1.2,
+                "status": "alive",
+                "privileged_mode": False,
+                "timestamp": "2026-09-10T19:00:00+00:00",
+            },
+        ),
+        patch(
+            "custom_components.climate_ip.diagnostics._can_use_icmp_privileged",
+            return_value=False,
+        ),
     ):
         yield
 

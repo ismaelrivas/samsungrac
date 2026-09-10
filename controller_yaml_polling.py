@@ -35,7 +35,11 @@ from .const import (
     DOMAIN,
 )
 from .exceptions import AuthError, CannotConnect, InvalidHeaderError
-from .helpers import async_check_network_reachability, get_value_by_path
+from .helpers import (
+    async_check_network_reachability,
+    get_last_network_diagnostic,
+    get_value_by_path,
+)
 from .properties import render_template
 from .state import ClimateIPDeviceState
 
@@ -110,6 +114,7 @@ class YamlStatePoller:
         self._cached_device_state: dict[str, Any] | None = None
         self._last_state_fetch_time: float = 0.0
         self._last_device_state: dict[str, Any] | None = None
+        self._last_icmp_diagnostic: dict[str, Any] | None = None
         self._consecutive_connection_errors: int = 0
 
         self._pure_network_state: dict[str, Any] | None = None
@@ -128,6 +133,11 @@ class YamlStatePoller:
         """Clear specific pending updates (anti-flicker locks) instantly."""
         for key in keys:
             self._pending_updates.pop(key, None)
+
+    @property
+    def last_icmp_diagnostic(self) -> dict[str, Any] | None:
+        """Return the last ICMP network diagnostic result."""
+        return self._last_icmp_diagnostic
 
     def _clear_state_cache(self) -> None:
         """Clear internal state cache buffer to prevent stale data (anti-ghosting)."""
@@ -331,6 +341,13 @@ class YamlStatePoller:
             network_reachable = await async_check_network_reachability(
                 self.controller.ip_address, self.controller.log_prefix
             )
+            self._last_icmp_diagnostic = get_last_network_diagnostic(
+                self.controller.ip_address
+            ) or {
+                "is_reachable": network_reachable,
+                "status": "alive" if network_reachable else "unreachable_timeout",
+                "timestamp": dt_util.utcnow().isoformat(),
+            }
         except Exception as diag_err:
             _LOGGER.debug(
                 "%s ICMP check failed: %s", self.controller.log_prefix, diag_err

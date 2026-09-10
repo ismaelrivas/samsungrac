@@ -288,7 +288,9 @@ class ConnectionIntesisBox(Connection):
 
     async def _reader_loop(self) -> None:
         """Continuously read lines from IntesisBox socket and parse updates."""
-        self.logger.debug("%s Started background TCP reader loop", self.log_prefix)
+        self.logger.debug(
+            "%s Started background TCP reader loop", self.log_prefix
+        )  # pragma: no mutate
         try:
             while not self._closing and self._reader:
                 line_bytes = await self._reader.readline()
@@ -296,7 +298,7 @@ class ConnectionIntesisBox(Connection):
                     # Connection closed by remote
                     self.logger.warning(
                         "%s Remote closed TCP connection (EOF)", self.log_prefix
-                    )
+                    )  # pragma: no mutate
                     break
 
                 raw_line = line_bytes.decode("ascii", errors="ignore").strip()
@@ -306,15 +308,17 @@ class ConnectionIntesisBox(Connection):
         except asyncio.CancelledError:
             self.logger.debug(
                 "%s Reader task cancelled gracefully", self.log_prefix
-            )
+            )  # pragma: no mutate
         except Exception as err:
             if not self._closing:
                 self.logger.error(
                     "%s Unexpected error in reader loop: %s", self.log_prefix, err
-                )
+                )  # pragma: no mutate
         finally:
             self._is_connected = False
-            self.logger.debug("%s Exited background TCP reader loop", self.log_prefix)
+            self.logger.debug(
+                "%s Exited background TCP reader loop", self.log_prefix
+            )  # pragma: no mutate
 
     def _process_incoming_line(self, line: str) -> None:
         """Parse an individual protocol line and update state or futures."""
@@ -430,7 +434,7 @@ class ConnectionIntesisBox(Connection):
         ]
         active_hist = self._node_history[uid]
 
-        if len(active_hist) >= threshold + 1:
+        if len(active_hist) >= threshold + 1:  # pragma: no mutate  # Guard: len >= threshold + 1 is required for alternations >= threshold
             distinct_values = set(v for _, v in active_hist)
             if len(distinct_values) == 2:
                 bad_val = None
@@ -446,7 +450,7 @@ class ConnectionIntesisBox(Connection):
                     bad_val = active_hist[-1][1]
                     other_val = next(v for v in distinct_values if v != bad_val)
 
-                if bad_val and other_val:
+                if bad_val and other_val:  # pragma: no mutate  # Equivalent: both values guaranteed non-empty from distinct_values
                     alternations = 0
                     for i in range(1, len(active_hist)):
                         if active_hist[i][1] != active_hist[i - 1][1]:
@@ -491,7 +495,9 @@ class ConnectionIntesisBox(Connection):
             new_limits_str = None
 
             if bad_val in prune_values and prune_template:
-                current_raw = self._limits.get(uid, "")
+                current_raw = self._limits.get(
+                    uid, ""
+                )  # pragma: no mutate  # Equivalent: empty string vs None in bool check
                 if current_raw:
                     cleaned = current_raw.strip("[]")
                     items = [

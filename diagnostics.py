@@ -11,6 +11,11 @@ from homeassistant.const import CONF_MAC
 from homeassistant.core import HomeAssistant
 
 from .coordinator import SamsungClimateCoordinator
+from .helpers import (
+    _can_use_icmp_privileged,
+    async_get_network_diagnostics,
+    get_last_network_diagnostic,
+)
 
 if TYPE_CHECKING:
     from . import ClimateIPConfigEntry
@@ -279,6 +284,67 @@ async def async_get_config_entry_diagnostics(
             total_skipped
         )
         diagnostics_data["bootstrapping"]["active_entities"] = total_entities
+
+    # Determine target host for active probe and runtime telemetry lookup
+    target_host: str | None = None
+    if isinstance(entry.data, dict):
+        target_host = entry.data.get("host") or entry.data.get("ip_address")
+    if not target_host and isinstance(entry.options, dict):
+        target_host = entry.options.get("host") or entry.options.get("ip_address")
+    if not target_host and isinstance(entry_data, SamsungClimateCoordinator):
+        ctrl = entry_data.controller
+        target_host = (
+            getattr(ctrl, "ip_address", None)
+            or getattr(ctrl, "host", None)
+            or getattr(getattr(ctrl, "_cfg", None), "host", None)
+        )
+    elif not target_host and isinstance(entry_data, dict):
+        for coordinator in entry_data.values():
+            if isinstance(coordinator, SamsungClimateCoordinator):
+                ctrl = coordinator.controller
+                target_host = (
+                    getattr(ctrl, "ip_address", None)
+                    or getattr(ctrl, "host", None)
+                    or getattr(getattr(ctrl, "_cfg", None), "host", None)
+                )
+                if target_host:
+                    break
+
+    # Extract historical runtime ICMP telemetry
+    last_runtime_check: dict[str, Any] | None = None
+    if "connection_diagnostics" in diagnostics_data:
+        last_runtime_check = diagnostics_data["connection_diagnostics"].get(
+            "network_reachability"
+        )
+    if not last_runtime_check and "coordinators" in diagnostics_data:
+        for coord_diag in diagnostics_data["coordinators"].values():
+            conn_diag = coord_diag.get("connection_diagnostics", {})
+            if "network_reachability" in conn_diag:
+                last_runtime_check = conn_diag["network_reachability"]
+                break
+    if not last_runtime_check and target_host:
+        last_runtime_check = get_last_network_diagnostic(target_host)
+
+    # Perform on-demand live active probe with quick 1.0s timeout
+    active_probe: dict[str, Any]
+    if target_host:
+        active_probe = await async_get_network_diagnostics(
+            target_host, ping_timeout=1.0
+        )
+    else:
+        active_probe = {
+            "is_reachable": None,
+            "status": "no_host_configured",
+        }
+
+    diagnostics_data["network_diagnostics"] = {
+        "privileged_probe_support": _can_use_icmp_privileged(),
+        "last_runtime_check": last_runtime_check or {
+            "is_reachable": None,
+            "status": "not_recorded",
+        },
+        "active_probe": active_probe,
+    }
 
     # Apply Home Assistant's native async_redact_data to recursively clean
     # the entire diagnostic tree (including nested YAML dictionaries or raw responses).
