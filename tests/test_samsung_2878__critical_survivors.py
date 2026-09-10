@@ -280,3 +280,24 @@ async def test_read_full_response_reader_none(connection):
     connection._reader = None
     res = await connection._read_full_response()
     assert res is None
+
+
+def test_get_diagnostics_network_reachability_strict(connection):
+    """Kill mutants in ConnectionSamsung2878.get_diagnostics for network_reachability."""
+    # 1. When _last_icmp_diagnostic is None: must return default dict, not None
+    connection._last_icmp_diagnostic = None
+    diag1 = connection.get_diagnostics()
+    assert "network_reachability" in diag1
+    assert diag1["network_reachability"] == {
+        "is_reachable": None,
+        "status": "not_checked_yet",
+    }
+    assert diag1["network_reachability"] is not None
+
+    # 2. When _last_icmp_diagnostic is populated: must be preserved exactly
+    custom_diag = {"is_reachable": True, "avg_rtt_ms": 1.23, "status": "alive"}
+    connection._last_icmp_diagnostic = custom_diag
+    diag2 = connection.get_diagnostics()
+    assert diag2["network_reachability"] == custom_diag
+    assert diag2["network_reachability"] is not None
+

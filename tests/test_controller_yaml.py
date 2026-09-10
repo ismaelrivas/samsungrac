@@ -291,6 +291,7 @@ def mock_yaml_controller():
         controller.loader.properties = {}
         controller.loader.sensors = {}
         controller.loader.name = None
+        controller.poller._last_icmp_diagnostic = None
         controller._attributes = {}
 
         return controller
@@ -635,6 +636,7 @@ def test_yaml_controller_last_poll_data(mock_yaml_controller) -> None:
 def test_yaml_controller_connection_diagnostics(mock_yaml_controller) -> None:
     """Kills mutants in connection_diagnostics."""
     mock_yaml_controller.loader.connection = None
+    mock_yaml_controller.poller._last_icmp_diagnostic = None
     assert mock_yaml_controller.connection_diagnostics == {}
 
     mock_conn = MagicMock()
@@ -643,6 +645,21 @@ def test_yaml_controller_connection_diagnostics(mock_yaml_controller) -> None:
     assert mock_yaml_controller.connection_diagnostics == {
         "latency_ms": 12,
         "connected": True,
+    }
+
+    mock_yaml_controller.poller._last_icmp_diagnostic = {
+        "is_reachable": True,
+        "avg_rtt_ms": 1.5,
+        "status": "alive",
+    }
+    assert mock_yaml_controller.connection_diagnostics == {
+        "latency_ms": 12,
+        "connected": True,
+        "network_reachability": {
+            "is_reachable": True,
+            "avg_rtt_ms": 1.5,
+            "status": "alive",
+        },
     }
 
 

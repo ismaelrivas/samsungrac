@@ -1,5 +1,16 @@
 # Changelog
 
+## [10.0.1b7] - 2026-09-10
+
+### Improvements & Network Resilience
+- **3-Tier Dynamic ICMP Privilege Detection**: Added dynamic probe (`_can_use_icmp_privileged`) to automatically use raw ICMP sockets (`privileged=True`) in Home Assistant OS and container environments with root/`CAP_NET_RAW`, gracefully falling back to datagram sockets (`privileged=False`) for non-root users, and bypassing to direct TCP connection if OS policies restrict all ICMP sockets.
+- **Hybrid Network Diagnostics & Telemetry**: Integrated hybrid ICMP diagnostics combining runtime polling telemetry (`last_runtime_check` capturing status, RTT, and socket tier from `YamlStatePoller` and `ConnectionSamsung2878`) with an on-demand live probe (`active_probe` with a responsive 1.0s timeout) when generating Home Assistant diagnostics bundles in `diagnostics.py`.
+- **Global Network Diagnostics Registry**: Implemented `_LAST_NETWORK_DIAGNOSTICS` cache and `get_last_network_diagnostic()` in `helpers.py` ensuring telemetry availability across connection types while strictly complying with privacy redaction standards.
+
+### Quality Assurance & Test Suite Hardening
+- **Comprehensive Mutation Resistance**: Added targeted test suites (`test_config_flow__basics.py`, `test_token_acquirer_yaml__stream.py`, and `test_connection_intesisbox__yaml.py`) expanding test coverage to 1,533 passing tests with zero regressions.
+- **Network & Diagnostics Coverage**: Full coverage for 3-tier ICMP detection, string slicing boundaries, unbracketed IPv6 addresses, and active/passive diagnostic payloads in `test_helpers__advanced.py` and `test_diagnostics.py`.
+
 ## [10.0.1b6] - 2026-09-10
 
 ### Fixes & Hardware Robustness
@@ -18,7 +29,7 @@
 - **Multi-Language Support**: Complete configuration flow translations for English, Spanish, German, and French (`strings.json`, `en.json`, `es.json`, `de.json`, `fr.json`).
 
 ### Testing & Quality Assurance
-- **Comprehensive Test Suite**: Added `test_intesisbox_yaml.py` covering YAML validation, connection lifecycle, sequential ACK verification, live emulator interaction, and config flow discovery.
+- **Comprehensive Test Suite**: Added `test_connection_intesisbox__yaml.py` covering YAML validation, connection lifecycle, sequential ACK verification, live emulator interaction, and config flow discovery.
 - **Regression Baseline**: Maintained 100% test pass rate across 1,467 unit tests and zero lint errors with Ruff.
 
 ## [10.0.1b4] - 2026-09-07

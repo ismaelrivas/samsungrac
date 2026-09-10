@@ -1433,6 +1433,908 @@ async def test_intesisbox_swing_mode_dynamic_limits(hass: HomeAssistant) -> None
     assert climate_state2.swing_mode == "1"
 
 
+# ---------------------------------------------------------------------------
+# 11. Targeted Mutant Killing & Comprehensive Coverage Tests
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_intesisbox_set_update_callback_controller_fallback_and_linking() -> None:
+    """Kill L216-217 mutants in set_update_callback.
+
+    Test callback fallback to controller.on_push_update_callback when None is passed,
+    and ensure explicit callback is preserved and not overwritten.
+    """
+    conn = ConnectionIntesisBox(config={CONF_IP_ADDRESS: "127.0.0.1"}, logger=_LOGGER)
+
+    # 1. Controller has callable on_push_update_callback
+    mock_controller = MagicMock()
+    controller_cb = AsyncMock()
+    mock_controller.on_push_update_callback = controller_cb
+    conn.set_controller_ref(mock_controller)
+
+    # Pass None: must link controller callback
+    conn.set_update_callback(None)
+    assert conn._update_callback == controller_cb
+
+    # 2. Pass explicit user callback: must NOT overwrite with controller callback
+    user_cb = AsyncMock()
+    conn.set_update_callback(user_cb)
+    assert conn._update_callback == user_cb
+
+    # 3. Controller has non-callable on_push_update_callback: must stay None
+    mock_controller2 = MagicMock()
+    mock_controller2.on_push_update_callback = "not_a_callable"
+    conn2 = ConnectionIntesisBox(config={CONF_IP_ADDRESS: "127.0.0.1"}, logger=_LOGGER)
+    conn2.set_controller_ref(mock_controller2)
+    conn2.set_update_callback(None)
+    assert conn2._update_callback is None
+
+
+def test_intesisbox_load_from_yaml_handshake_single_string() -> None:
+    """Kill L153 untested mutants in load_from_yaml.
+
+    Test when handshake_commands is configured as a single string instead of a list.
+    """
+    conn = ConnectionIntesisBox(config={CONF_IP_ADDRESS: "127.0.0.1"}, logger=_LOGGER)
+    success = conn.load_from_yaml(
+        {"handshake_commands": "STATUS,{{ac_num}}"},
+        None,
+    )
+    assert success is True
+    assert conn._handshake_commands == [f"STATUS,{conn._ac_num}"]
+
+
+@pytest.mark.asyncio
+async def test_intesisbox_process_line_ack_err_without_pending_ack() -> None:
+    """Kill L325 and L330 mutants in _process_incoming_line.
+
+    When _pending_ack is None, receiving ACK or ERR must safely return without
+    AttributeError (mutant mutates 'and not' to 'or not' which calls None.done()).
+    """
+    conn = ConnectionIntesisBox(config={CONF_IP_ADDRESS: "127.0.0.1"}, logger=_LOGGER)
+    conn._pending_ack = None
+
+    # Should not raise AttributeError: 'NoneType' object has no attribute 'done'
+    conn._process_incoming_line("ACK")
+    conn._process_incoming_line("ERR")
+    assert conn._pending_ack is None
+
+
+@pytest.mark.asyncio
+async def test_intesisbox_process_line_splits_with_multiple_colons_and_commas(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Kill L321, L343, L373, and L381 mutants in _process_incoming_line.
+
+    Test that protocol splitting uses maxsplit=1:
+    - L321: verify RX logger format contains 'RX:'
+    - L343: LIMITS with extra colon in payload does not fail unpacking
+    - L373: STATUS / CHN with extra colon does not fail unpacking
+    - L381: UID,val item with extra comma does not fail unpacking
+    """
+    conn = ConnectionIntesisBox(config={CONF_IP_ADDRESS: "127.0.0.1"}, logger=_LOGGER)
+
+    with caplog.at_level(logging.DEBUG):
+        # L321: test logger RX formatting
+        conn._process_incoming_line("ACK")
+        assert "RX: 'ACK'" in caplog.text
+
+    # L343: LIMITS with extra colon in payload: "LIMITS:FANSP,[AUTO,1:2,3]"
+    conn._process_incoming_line("LIMITS:FANSP,[AUTO,1:2,3]")
+    assert conn._limits.get("FANSP") == "[AUTO,1:2,3]"
+    assert conn._device_status.get("_LIMITS_FANSP") == "[AUTO,1:2,3]"
+
+    # L373: STATUS line with extra colon: "STATUS,1:EXTRA:COLON,VAL"
+    conn._process_incoming_line("STATUS,1:EXTRA:COLON,VAL")
+    assert conn._device_status.get("EXTRA:COLON") == "VAL"
+
+    # L381: Item with extra comma in value: "1:DATA,VAL1,VAL2"
+    conn._process_incoming_line("1:DATA,VAL1,VAL2")
+    assert conn._device_status.get("DATA") == "VAL1,VAL2"
+
+
+@pytest.mark.asyncio
+async def test_intesisbox_process_line_awaitable_object_and_hass_fallback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Kill L354, L397, L398, and L403 mutants in _process_incoming_line.
+
+    - L354 & L397: Non-coroutine awaitables (custom __await__) must be scheduled
+      via hass.async_create_task (mutant changes 'or hasattr(__await__)' to 'and hasattr(__await__)').
+    - L398: If self._hass is not None but lacks async_create_task, fall back to asyncio.create_task.
+    - L403: Callback raising exception is caught and logged as error.
+    """
+    class CustomAwaitable:
+        def __await__(self):
+            async def _dummy():
+                return None
+            return _dummy().__await__()
+
+    conn = ConnectionIntesisBox(config={CONF_IP_ADDRESS: "127.0.0.1"}, logger=_LOGGER)
+    mock_hass = MagicMock()
+    conn._hass = mock_hass
+
+    # 1. Test L397 with custom awaitable in state update
+    custom_state_awaitable = CustomAwaitable()
+    conn.set_update_callback(lambda data: custom_state_awaitable)
+    conn._process_incoming_line("1:ONOFF,ON")
+    mock_hass.async_create_task.assert_called_with(custom_state_awaitable)
+
+    # 2. Test L354 with custom awaitable in LIMITS update
+    custom_limits_awaitable = CustomAwaitable()
+    conn.set_update_callback(lambda data: custom_limits_awaitable)
+    conn._process_incoming_line("LIMITS:MODE,[AUTO,COOL]")
+    mock_hass.async_create_task.assert_called_with(custom_limits_awaitable)
+
+    # 3. Test L398: hass object without async_create_task falls back to asyncio.create_task
+    coro_executed = False
+
+    async def real_coro():
+        nonlocal coro_executed
+        coro_executed = True
+
+    conn._hass = object()  # Truthy, but lacks async_create_task
+    conn.set_update_callback(lambda data: real_coro())
+    conn._process_incoming_line("1:ONOFF,ON")
+    await asyncio.sleep(0.02)
+    assert coro_executed is True
+
+    # 4. Test L403: Callback raising exception
+    def broken_callback(data):
+        raise RuntimeError("Callback explosion")
+
+    conn.set_update_callback(broken_callback)
+    with caplog.at_level(logging.ERROR):
+        conn._process_incoming_line("1:ONOFF,OFF")
+        assert "Failed dispatching push update" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_intesisbox_loop_breaker_state_node_and_custom_rule_attributes(
+    hass: HomeAssistant,
+) -> None:
+    """Kill L412, L420, L421, L422, and L423 mutants in loop breaker evaluation.
+
+    - L412: rule using 'state_node' instead of 'node'.
+    - L420: custom non-default fallback_value ("CUSTOM_STOP").
+    - L421: custom non-default threshold (2 instead of default 3).
+    - L422: custom non-default window_seconds (1.5 instead of default 3.0).
+    - L423: custom non-default prune_values (["CUSTOM_PRUNE"]).
+    """
+    hass.async_create_task.side_effect = asyncio.create_task
+    conn = ConnectionIntesisBox(
+        config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},
+        logger=_LOGGER,
+        hass=hass,
+    )
+    conn.load_from_yaml(
+        {
+            "loop_breakers": [
+                {
+                    "state_node": "FANSP",  # Tests L412
+                    "fallback_value": "CUSTOM_STOP",  # Tests L420
+                    "fallback_command": "SET,1:FANSP,CUSTOM_STOP",
+                    "threshold": 2,  # Tests L421 (triggers on 2 alternations / 3 values)
+                    "window_seconds": 1.5,  # Tests L422
+                    "prune_values": ["CUSTOM_PRUNE"],  # Tests L423
+                    "prune_command_template": "LIMITS:FANSP,{{new_limits}}",
+                }
+            ]
+        },
+        None,
+    )
+    conn._limits["FANSP"] = "[CUSTOM_STOP,CUSTOM_PRUNE,OTHER]"
+
+    sent_commands: list[str] = []
+
+    async def fake_send_raw(payload: str) -> None:
+        sent_commands.append(payload)
+
+    conn._send_raw = fake_send_raw
+
+    # Send 3 alternating values: CUSTOM_PRUNE -> CUSTOM_STOP -> CUSTOM_PRUNE (2 alternations)
+    conn._process_incoming_line("CHN,1:FANSP,CUSTOM_PRUNE")
+    conn._process_incoming_line("CHN,1:FANSP,CUSTOM_STOP")
+    conn._process_incoming_line("CHN,1:FANSP,CUSTOM_PRUNE")
+
+    await asyncio.sleep(0.05)
+
+    assert "SET,1:FANSP,CUSTOM_STOP\r\n" in sent_commands
+    assert "LIMITS:FANSP,[CUSTOM_STOP,OTHER]\r\n" in sent_commands
+    assert conn._limits["FANSP"] == "[CUSTOM_STOP,OTHER]"
+    assert conn._device_status["FANSP"] == "CUSTOM_STOP"
+
+
+@pytest.mark.asyncio
+async def test_intesisbox_loop_breaker_window_purging_and_alternation_boundary() -> None:
+    """Kill L429, L433, and L451 mutants in _evaluate_oscillation_rule.
+
+    - L429: Expired history entries outside window_seconds must be pruned.
+    - L433: len(active_hist) >= threshold + 1 boundary.
+    - L451: Alternations loop starts at index 1 (mutant range(len(...)) falsely compares index 0 to -1).
+    """
+    conn = ConnectionIntesisBox(
+        config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},
+        logger=_LOGGER,
+    )
+    rule = {
+        "node": "FANSP",
+        "fallback_value": "AUTO",
+        "threshold": 4,  # Requires 4 alternations (at least 5 values)
+        "window_seconds": 2.0,
+    }
+    conn._loop_breakers = [rule]
+
+    sent_commands: list[str] = []
+
+    async def fake_send(payload: str) -> None:
+        sent_commands.append(payload)
+
+    conn._send_raw = fake_send
+
+    # 1. L429: History window purging test
+    now = time.monotonic()
+    # Inject old entry 10 seconds ago
+    conn._node_history["FANSP"] = [(now - 10.0, "OLD_VAL")]
+    conn._evaluate_oscillation_rule("FANSP", "VAL1", rule)
+    # The old entry must be purged, leaving only VAL1
+    assert len(conn._node_history["FANSP"]) == 1
+    assert conn._node_history["FANSP"][0][1] == "VAL1"
+
+    # 2. L433 & L451: Test 4 alternating values ["A", "B", "A", "B"] with threshold=4
+    # Real alternations: A->B (1), B->A (2), A->B (3) = 3 alternations.
+    # Mutant range(len(...)) at i=0 compares active_hist[0] ("A") with active_hist[-1] ("B"),
+    # falsely adding a 4th alternation and triggering prematurely!
+    conn._node_history.clear()
+    sent_commands.clear()
+
+    conn._process_incoming_line("CHN,1:FANSP,A")
+    conn._process_incoming_line("CHN,1:FANSP,B")
+    conn._process_incoming_line("CHN,1:FANSP,A")
+    conn._process_incoming_line("CHN,1:FANSP,B")
+
+    await asyncio.sleep(0.02)
+    # Must NOT have triggered because 3 alternations < threshold (4)
+    assert len(sent_commands) == 0
+
+    # 3. Add 5th alternating value "A" -> 4 alternations reached, triggers!
+    conn._process_incoming_line("CHN,1:FANSP,A")
+    await asyncio.sleep(0.02)
+    assert conn._device_status["FANSP"] == "AUTO"
+
+
+@pytest.mark.asyncio
+async def test_intesisbox_loop_breaker_else_branch_and_value_selection() -> None:
+    """Kill L438, L441, L442, L443, L446-447, and L449 mutants.
+
+    Test oscillation between two values where NEITHER is in prune_values
+    and NEITHER is fallback_value. This executes the L446-447 else branch.
+    """
+    conn = ConnectionIntesisBox(
+        config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},
+        logger=_LOGGER,
+    )
+    rule = {
+        "node": "FANSP",
+        "fallback_value": "AUTO",
+        "fallback_command": "SET,1:FANSP,AUTO",
+        "prune_values": ["1"],  # '2' and '3' are not in prune_values
+        "threshold": 3,
+        "window_seconds": 5.0,
+    }
+    conn._loop_breakers = [rule]
+    conn._limits["FANSP"] = "[AUTO,1,2,3,4]"
+
+    sent_commands: list[str] = []
+
+    async def fake_send(payload: str) -> None:
+        sent_commands.append(payload)
+
+    conn._send_raw = fake_send
+
+    # Alternate between '2' and '3' (neither is '1', neither is 'AUTO')
+    conn._process_incoming_line("CHN,1:FANSP,2")
+    conn._process_incoming_line("CHN,1:FANSP,3")
+    conn._process_incoming_line("CHN,1:FANSP,2")
+    conn._process_incoming_line("CHN,1:FANSP,3")
+
+    await asyncio.sleep(0.05)
+
+    # Fallback command sent, but neither 2 nor 3 is pruned
+    assert "SET,1:FANSP,AUTO\r\n" in sent_commands
+    assert conn._limits["FANSP"] == "[AUTO,1,2,3,4]"
+    assert conn._device_status["FANSP"] == "AUTO"
+
+
+@pytest.mark.asyncio
+async def test_intesisbox_loop_breaker_without_hass_and_callback_and_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Kill L465, L472-473, L526, L527, and L532 mutants in loop breaker execution.
+
+    - L465 & L472-473: Connection with hass=None creates asyncio.create_task.
+    - L526 & L527: Update callback receives payload during loop break.
+    - L532: Error in _send_raw during loop break is logged.
+    """
+    conn = ConnectionIntesisBox(
+        config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},
+        logger=_LOGGER,
+        hass=None,  # hass=None forces L472-473 branch
+    )
+    callback_received: list[dict[str, Any]] = []
+
+    async def mock_cb(payload: dict[str, Any]) -> None:
+        callback_received.append(payload)
+
+    conn.set_update_callback(mock_cb)
+
+    # 1. Normal execution with callback
+    rule = {
+        "node": "FANSP",
+        "fallback_value": "AUTO",
+        "fallback_command": "SET,1:FANSP,AUTO",
+        "threshold": 2,
+        "window_seconds": 3.0,
+    }
+    conn._loop_breakers = [rule]
+    sent_commands: list[str] = []
+
+    async def fake_send(payload: str) -> None:
+        sent_commands.append(payload)
+
+    conn._send_raw = fake_send
+
+    conn._process_incoming_line("CHN,1:FANSP,1")
+    conn._process_incoming_line("CHN,1:FANSP,AUTO")
+    conn._process_incoming_line("CHN,1:FANSP,1")
+
+    await asyncio.sleep(0.05)
+
+    assert "SET,1:FANSP,AUTO\r\n" in sent_commands
+    assert len(callback_received) >= 1
+    assert callback_received[-1].get("FANSP") == "AUTO"
+
+    # 2. Test L532: Exception in _send_raw during loop break
+    async def broken_send(payload: str) -> None:
+        raise OSError("Socket write failure")
+
+    conn._send_raw = broken_send
+    with caplog.at_level(logging.ERROR):
+        await conn._async_execute_loop_break("FANSP", "1", "AUTO", rule)
+        assert "Error executing loop breaker" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_intesisbox_async_connect_handshake_failure_and_timeout(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Kill L268 and L277 mutants in async_connect.
+
+    - L268: Initial handshake send exception is caught and logged as warning.
+    - L277: Handshake wait timeout is caught cleanly without error.
+    """
+    conn = ConnectionIntesisBox(
+        config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},
+        logger=_LOGGER,
+    )
+    conn._connect_timeout = 1.0
+    conn._handshake_timeout = 0.01
+
+    mock_reader = AsyncMock()
+    mock_reader.readline = AsyncMock(return_value=b"")
+    mock_writer = MagicMock()
+    mock_writer.is_closing.return_value = False
+    mock_writer.drain = AsyncMock()
+    mock_writer.write = MagicMock()
+
+    # 1. Test L268: handshake command send fails
+    async def broken_send(payload: str) -> None:
+        raise OSError("Handshake network error")
+
+    conn._send_raw = broken_send
+
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with caplog.at_level(logging.WARNING):
+            await conn.async_connect()
+            assert "Initial handshake send failed" in caplog.text
+
+    await conn.close()
+
+    # 2. Test L277: Handshake wait timeout logs debug message
+    conn2 = ConnectionIntesisBox(
+        config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},
+        logger=_LOGGER,
+    )
+    conn2._connect_timeout = 1.0
+    conn2._handshake_timeout = 0.01
+
+    mock_reader2 = AsyncMock()
+    # Keep readline waiting
+    async def hanging_read() -> bytes:
+        await asyncio.sleep(999)
+        return b""
+    mock_reader2.readline = AsyncMock(side_effect=hanging_read)
+
+    with patch("asyncio.open_connection", return_value=(mock_reader2, mock_writer)):
+        with caplog.at_level(logging.DEBUG):
+            await conn2.async_connect()
+            assert "Handshake wait timed out" in caplog.text
+
+    await conn2.close()
+
+
+@pytest.mark.asyncio
+async def test_intesisbox_reader_loop_eof_and_unexpected_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Kill L297, L311, and L312 mutants in _reader_loop.
+
+    - L297: Remote closes TCP connection (EOF readline returns b"") -> warning logged, loop breaks.
+    - L311-312: Unexpected exception in reader loop while not closing -> error logged.
+    """
+    # 1. Test L297: EOF handling
+    conn = ConnectionIntesisBox(
+        config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},
+        logger=_LOGGER,
+    )
+    mock_reader = AsyncMock()
+    mock_reader.readline.return_value = b""  # EOF
+    conn._reader = mock_reader
+    conn._is_connected = True
+
+    with caplog.at_level(logging.WARNING):
+        await conn._reader_loop()
+        assert "Remote closed TCP connection (EOF)" in caplog.text
+        assert conn._is_connected is False
+
+    # 2. Test L311-312: Unexpected exception in reader loop
+    conn2 = ConnectionIntesisBox(
+        config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},
+        logger=_LOGGER,
+    )
+    mock_reader2 = AsyncMock()
+    mock_reader2.readline.side_effect = ConnectionResetError("Connection lost abruptly")
+    conn2._reader = mock_reader2
+    conn2._closing = False
+    conn2._is_connected = True
+
+    with caplog.at_level(logging.ERROR):
+        await conn2._reader_loop()
+        assert "Unexpected error in reader loop" in caplog.text
+        assert conn2._is_connected is False
+
+
+@pytest.mark.asyncio
+async def test_intesisbox_async_execute_all_branches() -> None:
+    """Kill L559, L564, L569, L572-573, L577-578, L584-587, and L589-592 in async_execute.
+
+    - L559: _is_poll=True with error in _send_raw.
+    - L564: data=None or data="" returns current status cache.
+    - L569: multi-line data with empty lines.
+    - L577-578: IntesisBox returns ERR rejection -> raises CannotConnect.
+    - L584-587: Command success updates local status cache with split parts.
+    - L589-592: Command timeout waiting for ACK -> raises CannotConnect.
+    """
+    conn = ConnectionIntesisBox(
+        config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},
+        logger=_LOGGER,
+    )
+    conn._is_connected = True
+    conn._writer = MagicMock()
+    conn._writer.is_closing.return_value = False
+    conn._command_timeout = 0.05
+
+    sent_cmds: list[str] = []
+
+    # 1. Test L564: data=None and empty data
+    conn._device_status = {"ONOFF": "ON"}
+    resp1, _ = await conn.async_execute(None, None, data=None, headers=None)
+    assert json.loads(resp1).get("ONOFF") == "ON"
+
+    resp2, _ = await conn.async_execute(None, None, data="", headers=None)
+    assert json.loads(resp2).get("ONOFF") == "ON"
+
+    # 2. Test L559: Polling with error in _send_raw
+    async def failing_send(payload: str) -> None:
+        raise OSError("Poll send failed")
+
+    conn._send_raw = failing_send
+    resp_poll, _ = await conn.async_execute(None, None, data=None, headers=None, _is_poll=True)
+    assert json.loads(resp_poll).get("ONOFF") == "ON"
+
+    # 3. Test L569, L572-573, L584-587: Sequential execution with ACK & cache update
+    async def ack_send(payload: str) -> None:
+        sent_cmds.append(payload)
+        # Simulate background ACK response from reader loop
+        if conn._pending_ack and not conn._pending_ack.done():
+            conn._pending_ack.set_result(True)
+
+    conn._send_raw = ack_send
+    # Multi-line with blank lines (tests L569 stripping)
+    cmd_data = "\n\nSET,1:FANSP,AUTO\nSET,1:MODE,COOL\n\n"
+    resp_ack, _ = await conn.async_execute(None, None, data=cmd_data, headers=None)
+    assert "SET,1:FANSP,AUTO\r\n" in sent_cmds
+    assert "SET,1:MODE,COOL\r\n" in sent_cmds
+    status = json.loads(resp_ack)
+    assert status.get("FANSP") == "AUTO"
+    assert status.get("MODE") == "COOL"
+
+    # 4. Test L577-578: Command rejected with ERR
+    async def err_send(payload: str) -> None:
+        if conn._pending_ack and not conn._pending_ack.done():
+            conn._pending_ack.set_result(False)
+
+    conn._send_raw = err_send
+    with pytest.raises(CannotConnect, match="rejected with ERR"):
+        await conn.async_execute(None, None, data="SET,1:SETPTEMP,999", headers=None)
+
+    # 5. Test L589-592: Command timeout waiting for ACK
+    async def hanging_cmd(payload: str) -> None:
+        pass  # Never set _pending_ack
+
+    conn._send_raw = hanging_cmd
+    with pytest.raises(CannotConnect, match="Timed out waiting for ACK"):
+        await conn.async_execute(None, None, data="SET,1:SETPTEMP,220", headers=None)
+
+
+@pytest.mark.asyncio
+async def test_intesisbox_async_execute_loop_break_direct() -> None:
+    """Kill L489-513 and L526-527 mutants in _async_execute_loop_break directly.
+
+    Tests exact limits string formatting, template substitution, bracket stripping,
+    dictionary updates, and awaitable callback scheduling.
+    """
+    conn = ConnectionIntesisBox(
+        config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},
+        logger=_LOGGER,
+    )
+    sent_cmds: list[str] = []
+
+    async def fake_send(payload: str) -> None:
+        sent_cmds.append(payload)
+
+    conn._send_raw = fake_send
+
+    rule = {
+        "fallback_command": "SET,1:FANSP,AUTO",
+        "prune_values": ["1"],
+        "prune_command_template": "LIMITS:FANSP,{{new_limits}}",
+    }
+    conn._limits["FANSP"] = "[AUTO,1,2,3,4]"
+    conn._device_status["_LIMITS_FANSP"] = "[AUTO,1,2,3,4]"
+
+    # Test callback with non-coroutine awaitable (kills L526-527)
+    class CustomAwaitable:
+        def __init__(self) -> None:
+            self.done = False
+
+        def __await__(self):
+            self.done = True
+            async def _d():
+                return None
+            return _d().__await__()
+
+    custom_cb = CustomAwaitable()
+    mock_hass = MagicMock()
+    conn._hass = mock_hass
+    conn.set_update_callback(lambda d: custom_cb)
+
+    # 1. Execute loop break with eligible pruning
+    await conn._async_execute_loop_break("FANSP", "1", "AUTO", rule)
+
+    # Assert exact command format (kills L490, L510, L513)
+    assert sent_cmds == [
+        "SET,1:FANSP,AUTO\r\n",
+        "LIMITS:FANSP,[AUTO,2,3,4]\r\n",
+    ]
+    # Assert exact limits string (kills L494, L497, L498, L500)
+    assert conn._limits["FANSP"] == "[AUTO,2,3,4]"
+    assert conn._device_status["_LIMITS_FANSP"] == "[AUTO,2,3,4]"
+    assert conn._device_status["FANSP"] == "AUTO"
+
+    # Assert callback scheduled via mock_hass (kills L526-527)
+    mock_hass.async_create_task.assert_called_with(custom_cb)
+
+    # 2. Bad val not in prune_values -> no pruning commands sent
+    sent_cmds.clear()
+    await conn._async_execute_loop_break("FANSP", "2", "AUTO", rule)
+    assert sent_cmds == ["SET,1:FANSP,AUTO\r\n"]
+
+    # 3. No prune_command_template -> no pruning commands sent
+    sent_cmds.clear()
+    rule_no_template = {"fallback_command": "SET,1:FANSP,AUTO", "prune_values": ["1"]}
+    await conn._async_execute_loop_break("FANSP", "1", "AUTO", rule_no_template)
+    assert sent_cmds == ["SET,1:FANSP,AUTO\r\n"]
+
+    # 4. Empty limits cache -> no pruning commands sent
+    sent_cmds.clear()
+    conn._limits["FANSP"] = ""
+    await conn._async_execute_loop_break("FANSP", "1", "AUTO", rule)
+    assert sent_cmds == ["SET,1:FANSP,AUTO\r\n"]
+
+
+@pytest.mark.asyncio
+async def test_intesisbox_evaluate_oscillation_rule_logging_and_boundaries(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Kill L420-423, L429, L433, L438, L441-443, L446-447, L449, and L451 mutants.
+
+    Verifies exact warning log output with distinct values, threshold boundary,
+    and history window inclusion.
+    """
+    conn = ConnectionIntesisBox(
+        config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},
+        logger=_LOGGER,
+    )
+    sent_cmds: list[str] = []
+
+    async def fake_send(payload: str) -> None:
+        sent_cmds.append(payload)
+
+    conn._send_raw = fake_send
+
+    rule = {
+        "node": "FANSP",
+        "fallback_value": "AUTO",
+        "fallback_command": "SET,1:FANSP,AUTO",
+        "prune_values": ["1"],
+        "threshold": 3,
+        "window_seconds": 3.0,
+    }
+    conn._loop_breakers = [rule]
+    conn._limits["FANSP"] = "[AUTO,1,2,3,4]"
+
+    # 1. Boundary: exactly threshold (3) updates must NOT trigger loop breaker (kills L433)
+    conn._process_incoming_line("CHN,1:FANSP,1")
+    conn._process_incoming_line("CHN,1:FANSP,AUTO")
+    conn._process_incoming_line("CHN,1:FANSP,1")
+    await asyncio.sleep(0.01)
+    assert len(sent_cmds) == 0
+
+    # 2. 4th update (threshold + 1) triggers with prune match
+    with caplog.at_level(logging.WARNING):
+        conn._process_incoming_line("CHN,1:FANSP,AUTO")
+        await asyncio.sleep(0.02)
+        assert len(sent_cmds) > 0
+        # Kills L441 (other_val == bad_val), L442, L443: must say between '1' and 'AUTO'
+        assert "oscillation detected between '1' and 'AUTO'" in caplog.text
+
+    # 3. Else branch: neither in prune_values, neither is fallback (kills L446, L447, L449)
+    sent_cmds.clear()
+    caplog.clear()
+    conn._node_history.clear()
+    conn._process_incoming_line("CHN,1:FANSP,2")
+    conn._process_incoming_line("CHN,1:FANSP,3")
+    conn._process_incoming_line("CHN,1:FANSP,2")
+    with caplog.at_level(logging.WARNING):
+        conn._process_incoming_line("CHN,1:FANSP,3")
+        await asyncio.sleep(0.02)
+        assert len(sent_cmds) > 0
+        # In else branch, bad_val is last item ('3') and other_val is '2'
+        assert "oscillation detected between '3' and '2'" in caplog.text
+
+    # 4. History window exact boundary (kills L429 <= vs <)
+    with patch("time.monotonic", return_value=100.0):
+        # Entry exactly at window_seconds boundary: now - t == 3.0 (100.0 - 97.0 == 3.0)
+        conn._node_history["FANSP"] = [(97.0, "BOUNDARY_VAL")]
+        conn._evaluate_oscillation_rule("FANSP", "NEW_VAL", rule)
+        # With <= window_seconds (3.0 <= 3.0), BOUNDARY_VAL is kept (2 items); with < it is discarded
+        assert any(v == "BOUNDARY_VAL" for _, v in conn._node_history["FANSP"])
+
+
+@pytest.mark.asyncio
+async def test_intesisbox_reader_loop_closing_and_ascii_decode() -> None:
+    """Kill L293 (while not self._closing or self._reader) and L302 (ascii decode) mutants."""
+    conn = ConnectionIntesisBox(
+        config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},
+        logger=_LOGGER,
+    )
+    # 1. Test immediate exit when _closing=True (kills L293 'while not self._closing or self._reader')
+    conn._closing = True
+    mock_reader = AsyncMock()
+    conn._reader = mock_reader
+    await conn._reader_loop()
+    mock_reader.readline.assert_not_called()
+
+    # 2. Test ASCII decoding with errors='ignore' vs UTF-8 (kills L302 decode default mutant)
+    conn._closing = False
+    mock_reader = AsyncMock()
+    # \xc3\x84 is invalid ASCII (ignored to "") but valid UTF-8 ("Ä")
+    mock_reader.readline = AsyncMock(
+        side_effect=[b"CHN,1:FANSP,\xc3\x84VALID\r\n", b""]
+    )
+    conn._reader = mock_reader
+
+    processed: list[str] = []
+    conn._process_incoming_line = MagicMock(side_effect=processed.append)
+
+    await conn._reader_loop()
+    assert processed == ["CHN,1:FANSP,VALID"]
+
+
+@pytest.mark.asyncio
+async def test_intesisbox_evaluate_oscillation_rule_precision_spying() -> None:
+    """Kill L420-423 defaults, L438, L443, L446, L451, and L465 in _evaluate_oscillation_rule."""
+    conn = ConnectionIntesisBox(
+        config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},
+        logger=_LOGGER,
+    )
+    spy_loop_break = AsyncMock()
+    conn._async_execute_loop_break = spy_loop_break
+
+    # 1. Rule without fallback_value (defaults to "AUTO", kills L420)
+    rule_no_fb = {"threshold": 3, "window_seconds": 3.0, "prune_values": []}
+    for val in ["MANUAL", "AUTO", "MANUAL", "AUTO"]:
+        conn._evaluate_oscillation_rule("FANSP", val, rule_no_fb)
+    spy_loop_break.assert_called_with("FANSP", "MANUAL", "AUTO", rule_no_fb)
+
+    # 2. Rule without threshold (defaults to 3, kills L421)
+    spy_loop_break.reset_mock()
+    conn._node_history.clear()
+    rule_no_th = {"fallback_value": "AUTO", "window_seconds": 3.0, "prune_values": []}
+    for val in ["1", "2", "1"]:
+        conn._evaluate_oscillation_rule("FANSP", val, rule_no_th)
+    assert not spy_loop_break.called
+    conn._evaluate_oscillation_rule("FANSP", "2", rule_no_th)
+    assert spy_loop_break.called
+
+    # 3. Rule without prune_values and without window_seconds (kills defaults)
+    spy_loop_break.reset_mock()
+    conn._node_history.clear()
+    rule_minimal = {"fallback_value": "AUTO", "threshold": 3}
+    for val in ["1", "2", "1", "2"]:
+        conn._evaluate_oscillation_rule("FANSP", val, rule_minimal)
+    assert spy_loop_break.called
+
+    # Rule with non-default window_seconds (kills L426 rule.get mutants [22, 26, 27, 28])
+    # Case A: window_seconds=2.0 with span 2.4s (10.0 -> 12.4).
+    # Original: span 2.4s > 2.0s -> first item purged, 3 items < 4 -> does NOT trigger.
+    # Mutants (using default 3.0s): span 2.4s <= 3.0s -> 4 items preserved -> TRIGGERS (fails assertion).
+    spy_loop_break.reset_mock()
+    conn._node_history.clear()
+    rule_win_2 = {
+        "fallback_value": "AUTO",
+        "threshold": 3,
+        "window_seconds": 2.0,
+        "prune_values": [],
+    }
+    with patch("time.monotonic", side_effect=[10.0, 10.8, 11.6, 12.4]):
+        for val in ["1", "2", "1", "2"]:
+            conn._evaluate_oscillation_rule("FANSP", val, rule_win_2)
+    assert not spy_loop_break.called
+
+    # Case B: window_seconds=4.0 with span 3.5s (10.0 -> 13.5).
+    # Original: span 3.5s <= 4.0s -> 4 items preserved -> TRIGGERS.
+    # Mutants (using default 3.0s): span 3.5s > 3.0s -> first item purged, 3 items < 4 -> does NOT trigger (fails assertion).
+    spy_loop_break.reset_mock()
+    conn._node_history.clear()
+    rule_win_4 = {
+        "fallback_value": "AUTO",
+        "threshold": 3,
+        "window_seconds": 4.0,
+        "prune_values": [],
+    }
+    with patch("time.monotonic", side_effect=[10.0, 10.9, 11.8, 13.5]):
+        for val in ["1", "2", "1", "2"]:
+            conn._evaluate_oscillation_rule("FANSP", val, rule_win_4)
+    assert spy_loop_break.called
+
+    # Case C: Rule WITHOUT window_seconds key, testing exact default 3.0s boundary (kills L426 Mutant 28: default 3.0 -> 4.0).
+    # Updates span 3.5s (10.0 -> 13.5).
+    # Original (default 3.0s): span 3.5s > 3.0s -> first item purged, 3 items < 4 -> does NOT trigger.
+    # Mutant 28 (default 4.0s): span 3.5s <= 4.0s -> all 4 items preserved -> TRIGGERS (fails assertion).
+    spy_loop_break.reset_mock()
+    conn._node_history.clear()
+    rule_default_win = {"fallback_value": "AUTO", "threshold": 3, "prune_values": []}
+    with patch("time.monotonic", side_effect=[10.0, 10.9, 11.8, 13.5]):
+        for val in ["1", "2", "1", "2"]:
+            conn._evaluate_oscillation_rule("FANSP", val, rule_default_win)
+    assert not spy_loop_break.called
+
+    # 4. Prune values matching (kills L423 list comp, L427 PRUNE_VALUES case, and L442 prune_matches = None)
+    # Uses fallback_value="AUTO" which is NOT one of the oscillating values ("PRUNE_ME", "OTHER_VAL").
+    # Ending on "OTHER_VAL":
+    # - Original: detects prune_matches=["PRUNE_ME"], bad_val="PRUNE_ME", fallback="AUTO".
+    # - Mutant 36 (PRUNE_VALUES): prune_values is empty, fallback not in values, falls to else -> bad_val="OTHER_VAL".
+    # - Mutant 50 (prune_matches=None): falls to else -> bad_val="OTHER_VAL".
+    spy_loop_break.reset_mock()
+    conn._node_history.clear()
+    rule_prune = {
+        "fallback_value": "AUTO",
+        "threshold": 3,
+        "window_seconds": 3.0,
+        "prune_values": ["PRUNE_ME"],
+    }
+    for val in ["PRUNE_ME", "OTHER_VAL", "PRUNE_ME", "OTHER_VAL"]:
+        conn._evaluate_oscillation_rule("FANSP", val, rule_prune)
+    spy_loop_break.assert_called_with("FANSP", "PRUNE_ME", "AUTO", rule_prune)
+
+    # 5. Fallback matching bad_val selection (kills L443 if v != fallback_val mutant '==')
+    spy_loop_break.reset_mock()
+    conn._node_history.clear()
+    rule_fb = {
+        "fallback_value": "FB_VAL",
+        "threshold": 3,
+        "window_seconds": 3.0,
+        "prune_values": [],
+    }
+    for val in ["FB_VAL", "BAD_VAL", "FB_VAL", "BAD_VAL"]:
+        conn._evaluate_oscillation_rule("FANSP", val, rule_fb)
+    spy_loop_break.assert_called_with("FANSP", "BAD_VAL", "FB_VAL", rule_fb)
+
+    # 6. Else branch: bad_val = active_hist[-1][1] vs [+1] (kills L446)
+    # With threshold=4 and 5 updates: ["A", "B", "A", "B", "A"]:
+    # Update 4 ("B") has 3 alternations (<4, does not trigger).
+    # Update 5 ("A") has 4 alternations (>=4, triggers).
+    # active_hist[-1] is "A", while mutant active_hist[+1] is "B".
+    spy_loop_break.reset_mock()
+    conn._node_history.clear()
+    rule_else = {
+        "fallback_value": "NEITHER",
+        "threshold": 4,
+        "window_seconds": 3.0,
+        "prune_values": [],
+    }
+    for val in ["A", "B", "A", "B", "A"]:
+        conn._evaluate_oscillation_rule("FANSP", val, rule_else)
+    spy_loop_break.assert_called_with("FANSP", "A", "NEITHER", rule_else)
+
+    # 7. Alternations range boundary (kills L451 range(1, len) vs range(len))
+    # 4 updates with threshold=4 has 3 alternations. range(len) wraps around and counts 4
+    spy_loop_break.reset_mock()
+    conn._node_history.clear()
+    rule_range = {
+        "fallback_value": "NEITHER",
+        "threshold": 4,
+        "window_seconds": 3.0,
+        "prune_values": [],
+    }
+    for val in ["A", "B", "A", "B"]:
+        conn._evaluate_oscillation_rule("FANSP", val, rule_range)
+    assert not spy_loop_break.called
+
+
+@pytest.mark.asyncio
+async def test_intesisbox_loop_breaker_hass_attribute_fallback() -> None:
+    """Kill L465 and L527 (if self._hass and hasattr(...) mutants) when hass lacks async_create_task."""
+    conn = ConnectionIntesisBox(
+        config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},
+        logger=_LOGGER,
+    )
+    # Set _hass to a non-None object that does NOT have async_create_task
+    # Mutants mutating 'and' to 'or' will try to access self._hass.async_create_task and fail
+    conn._hass = object()
+
+    rule = {
+        "node": "FANSP",
+        "fallback_value": "AUTO",
+        "fallback_command": "SET,1:FANSP,AUTO",
+        "prune_values": [],
+        "threshold": 3,
+        "window_seconds": 3.0,
+    }
+    conn._send_raw = AsyncMock()
+
+    # 1. Test _evaluate_oscillation_rule with non-HA hass (kills L465)
+    with patch("asyncio.create_task") as mock_task:
+        for val in ["MANUAL", "AUTO", "MANUAL", "AUTO"]:
+            conn._evaluate_oscillation_rule("FANSP", val, rule)
+        mock_task.assert_called_once()
+
+    # 2. Test _async_execute_loop_break with non-HA hass and coroutine callback (kills L527)
+    async def async_cb(payload: dict[str, Any]) -> None:
+        pass
+
+    conn._update_callback = async_cb
+
+    with patch("asyncio.create_task") as mock_task:
+        await conn._async_execute_loop_break("FANSP", "MANUAL", "AUTO", rule)
+        mock_task.assert_called_once()
+
+
+
+
+
+
 
 
 

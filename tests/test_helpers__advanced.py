@@ -14,12 +14,15 @@ import pytest
 
 from custom_components.climate_ip.helpers import (
     ICMPSocketError,
+    _can_use_icmp_privileged,
     async_check_network_reachability,
     async_create_samsung_ssl_context,
     async_get_mac_address,
+    async_get_network_diagnostics,
     create_samsung_ssl_context,
     find_key_in_data,
     format_placeholders,
+    get_last_network_diagnostic,
     get_tls_version_name,
     get_value_by_path,
     mask_sensitive_data,
@@ -609,8 +612,9 @@ def test_mask_sensitive_data_strings():
 
 # --- async_check_network_reachability (Updated) ---
 @pytest.mark.asyncio
+@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False)
 @patch("custom_components.climate_ip.helpers.async_ping")
-async def test_async_check_network_reachability(mock_ping):
+async def test_async_check_network_reachability(mock_ping, mock_can_use):
     mock_host = MagicMock()
     mock_host.is_alive = True
     mock_host.avg_rtt = 10
@@ -697,6 +701,62 @@ async def test_async_check_network_reachability_no_library():
     finally:
         # Restore module to original state so we don't break other tests
         helpers_module.async_ping = original_ping
+
+
+@pytest.mark.asyncio
+@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=True)
+@patch("custom_components.climate_ip.helpers.async_ping")
+async def test_async_check_network_reachability_privileged_true(mock_ping, mock_can_use):
+    """Verify that when _can_use_icmp_privileged returns True, async_ping receives privileged=True."""
+    mock_host = MagicMock()
+    mock_host.is_alive = True
+    mock_ping.return_value = mock_host
+
+    result = await async_check_network_reachability("192.168.1.100")
+    assert result is True
+    assert mock_ping.call_args.kwargs["privileged"] is True
+
+
+@pytest.mark.asyncio
+@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False)
+@patch("custom_components.climate_ip.helpers.async_ping")
+async def test_async_check_network_reachability_privileged_false(mock_ping, mock_can_use):
+    """Verify that when _can_use_icmp_privileged returns False, async_ping receives privileged=False."""
+    mock_host = MagicMock()
+    mock_host.is_alive = True
+    mock_ping.return_value = mock_host
+
+    result = await async_check_network_reachability("192.168.1.100")
+    assert result is True
+    assert mock_ping.call_args.kwargs["privileged"] is False
+
+
+def test_can_use_icmp_privileged_probe():
+    """Verify cached dynamic ICMP privilege probe behavior and fallbacks."""
+    import custom_components.climate_ip.helpers as helpers_mod
+
+    # 1. When _ICMPLIB_AVAILABLE is False -> False
+    with patch.object(helpers_mod, "_ICMPLIB_AVAILABLE", False):
+        _can_use_icmp_privileged.cache_clear()
+        assert _can_use_icmp_privileged() is False
+
+    # 2. When ping succeeds with privileged=True -> True
+    with patch("icmplib.ping", return_value=MagicMock()) as mock_ping_sync:
+        _can_use_icmp_privileged.cache_clear()
+        assert _can_use_icmp_privileged() is True
+        mock_ping_sync.assert_called_once_with(
+            "127.0.0.1", count=0, timeout=0, privileged=True
+        )
+
+    # 3. When ping raises Exception (e.g. SocketPermissionError) -> False
+    with patch("icmplib.ping", side_effect=Exception("Root privileges required")):
+        _can_use_icmp_privileged.cache_clear()
+        assert _can_use_icmp_privileged() is False
+
+    # Seed the cache with False so unmocked calls don't hit socket.socket
+    _can_use_icmp_privileged.cache_clear()
+    with patch("icmplib.ping", side_effect=Exception("Root privileges required")):
+        _can_use_icmp_privileged()
 
 
 def test_safe_xml_to_dict_non_string_mutation():
@@ -1078,9 +1138,10 @@ async def test_async_get_mac_address_token_filtering_and_loop_resilience(mock_ex
         ("https://[2001:db8::3]:443/status", "2001:db8::3", False),
     ],
 )
+@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False)
 @patch("custom_components.climate_ip.helpers.async_ping")
 async def test_x_async_check_network_reachability_matrix(
-    mock_ping, input_host, expected_ip, is_bypass
+    mock_ping, mock_priv, input_host, expected_ip, is_bypass
 ):
     """Sniper matrix for async_check_network_reachability to eradicate string slicing mutants."""
     mock_host = MagicMock()
@@ -1107,8 +1168,9 @@ async def test_x_async_check_network_reachability_matrix(
 
 
 @pytest.mark.asyncio
+@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False)
 @patch("custom_components.climate_ip.helpers.async_ping")
-async def test_async_check_network_reachability_string_slicing_survivors(mock_ping):
+async def test_async_check_network_reachability_string_slicing_survivors(mock_ping, mock_priv):
     """Kills any remaining mutants on lines 546, 553, 554 in async_check_network_reachability."""
     mock_host = MagicMock()
     mock_host.is_alive = True
@@ -1197,3 +1259,292 @@ async def test_async_check_network_reachability_string_slicing_survivors(mock_pi
     assert isinstance(mock_ping.call_args.kwargs["timeout"], float)
     assert isinstance(mock_ping.call_args.kwargs["interval"], float)
     assert isinstance(mock_ping.call_args.kwargs["privileged"], bool)
+
+
+@pytest.mark.asyncio
+@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False)
+@patch("custom_components.climate_ip.helpers.async_ping")
+async def test_async_get_network_diagnostics_success(mock_ping, mock_priv):
+    """Test async_get_network_diagnostics when host is alive."""
+    mock_host = MagicMock()
+    mock_host.is_alive = True
+    mock_host.avg_rtt = 12.34
+    mock_ping.return_value = mock_host
+
+    diag = await async_get_network_diagnostics("http://192.168.1.100:8888")
+    assert diag["is_reachable"] is True
+    assert diag["avg_rtt_ms"] == 12.34
+    assert diag["status"] == "alive"
+    assert diag["privileged_mode"] is False
+    assert "timestamp" in diag
+
+    # Verify cached in get_last_network_diagnostic
+    last = get_last_network_diagnostic("192.168.1.100")
+    assert last is not None
+    assert last["status"] == "alive"
+
+
+@pytest.mark.asyncio
+@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False)
+@patch("custom_components.climate_ip.helpers.async_ping")
+async def test_async_get_network_diagnostics_unreachable(mock_ping, mock_priv):
+    """Test async_get_network_diagnostics when ping times out."""
+    mock_host = MagicMock()
+    mock_host.is_alive = False
+    mock_ping.return_value = mock_host
+
+    diag = await async_get_network_diagnostics("192.168.1.101")
+    assert diag["is_reachable"] is False
+    assert diag["avg_rtt_ms"] is None
+    assert diag["status"] == "unreachable_timeout"
+
+
+@pytest.mark.asyncio
+@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False)
+@patch("custom_components.climate_ip.helpers.async_ping")
+async def test_async_get_network_diagnostics_permission_bypassed(mock_ping, mock_priv):
+    """Test async_get_network_diagnostics on SocketPermissionError and OSError."""
+    from icmplib import SocketPermissionError
+
+    mock_ping.side_effect = SocketPermissionError(privileged=False)
+    diag = await async_get_network_diagnostics("192.168.1.102")
+    assert diag["is_reachable"] is True
+    assert diag["status"] == "permission_bypassed"
+
+    mock_ping.side_effect = OSError("Permission denied")
+    diag_os = await async_get_network_diagnostics("192.168.1.102")
+    assert diag_os["is_reachable"] is True
+    assert diag_os["status"] == "permission_bypassed"
+
+
+@pytest.mark.asyncio
+@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False)
+@patch("custom_components.climate_ip.helpers.async_ping")
+async def test_async_get_network_diagnostics_errors(mock_ping, mock_priv):
+    """Test async_get_network_diagnostics on DNS and socket errors."""
+    from icmplib import ICMPSocketError, NameLookupError
+
+    mock_ping.side_effect = NameLookupError("Unknown host")
+    diag_dns = await async_get_network_diagnostics("unknown.device.lan")
+    assert diag_dns["is_reachable"] is False
+    assert diag_dns["status"] == "dns_error"
+
+    mock_ping.side_effect = ICMPSocketError("Socket closed")
+    diag_sock = await async_get_network_diagnostics("192.168.1.103")
+    assert diag_sock["is_reachable"] is False
+    assert diag_sock["status"] == "socket_error"
+
+    mock_ping.side_effect = RuntimeError("Unexpected")
+    diag_err = await async_get_network_diagnostics("192.168.1.104")
+    assert diag_err["is_reachable"] is False
+    assert diag_err["status"] == "error_RuntimeError"
+
+
+@pytest.mark.asyncio
+async def test_async_get_network_diagnostics_bypasses():
+    """Test async_get_network_diagnostics loopback, missing host, and missing library."""
+    # 1. Missing / invalid host
+    diag_none = await async_get_network_diagnostics("")
+    assert diag_none["is_reachable"] is False
+    assert diag_none["status"] == "missing_host"
+
+    diag_invalid = await async_get_network_diagnostics(12345)  # type: ignore[arg-type]
+    assert diag_invalid["is_reachable"] is False
+    assert diag_invalid["status"] == "missing_host"
+
+    # 2. Loopback bypass
+    diag_loop = await async_get_network_diagnostics("http://127.0.0.1:8888")
+    assert diag_loop["is_reachable"] is True
+    assert diag_loop["status"] == "loopback_bypass"
+
+    # 3. Missing library
+    import custom_components.climate_ip.helpers as helpers_mod
+
+    orig_ping = helpers_mod.async_ping
+    helpers_mod.async_ping = None
+    try:
+        diag_no_lib = await async_get_network_diagnostics("192.168.1.105")
+        assert diag_no_lib["is_reachable"] is True
+        assert diag_no_lib["status"] == "library_missing"
+    finally:
+        helpers_mod.async_ping = orig_ping
+
+    # 4. get_last_network_diagnostic with None
+    assert get_last_network_diagnostic(None) is None
+    assert get_last_network_diagnostic("") is None
+
+
+@pytest.mark.asyncio
+async def test_get_last_network_diagnostic_parsing_and_types():
+    """Kill L563, L565, L567-569, and L572-573 mutants in get_last_network_diagnostic."""
+    from custom_components.climate_ip.helpers import _LAST_NETWORK_DIAGNOSTICS
+
+    # 1. Non-string and empty inputs (kills L563 mutants)
+    assert get_last_network_diagnostic(12345) is None  # type: ignore[arg-type]
+    assert get_last_network_diagnostic([1, 2, 3]) is None  # type: ignore[arg-type]
+
+    # 2. Host parsing: schemes, paths, ports, and IPv6
+    diag_data = {"is_reachable": True, "status": "alive"}
+
+    _LAST_NETWORK_DIAGNOSTICS["192.168.1.50"] = dict(diag_data)
+    _LAST_NETWORK_DIAGNOSTICS["fe80::1"] = dict(diag_data)
+    _LAST_NETWORK_DIAGNOSTICS["fe80:1"] = dict(diag_data)
+    _LAST_NETWORK_DIAGNOSTICS["192.168.1.50]"] = dict(diag_data)
+    _LAST_NETWORK_DIAGNOSTICS["[192.168.1.50"] = dict(diag_data)
+
+    # IPv4 with URL scheme and path (kills L565)
+    assert get_last_network_diagnostic("http://192.168.1.50/api/v1") == diag_data
+    # IPv4 with path but no port (kills split without '/')
+    assert get_last_network_diagnostic("http://192.168.1.50/status") == diag_data
+    # IPv4 with port (kills L567-568)
+    assert get_last_network_diagnostic("192.168.1.50:2878") == diag_data
+    # Bracketed IPv6 with port (kills L572-573)
+    assert get_last_network_diagnostic("[fe80::1]:8080") == diag_data
+    # Bracketed IPv6 with single colon (kills L567-569 and L572-573 or-mutation)
+    assert get_last_network_diagnostic("[fe80:1]") == diag_data
+    # Unmatched brackets: closing only (kills startswith or ']' in clean_host)
+    assert get_last_network_diagnostic("192.168.1.50]") == diag_data
+    # Unmatched brackets: opening only (kills startswith or ']' in clean_host)
+    assert get_last_network_diagnostic("[192.168.1.50") == diag_data
+    # Raw unbracketed IPv6 with multiple colons (kills L568-569 untested mutant 25)
+    assert get_last_network_diagnostic("fe80::1") == diag_data
+
+
+@pytest.mark.asyncio
+@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=True)
+@patch("custom_components.climate_ip.helpers.async_ping")
+async def test_async_get_network_diagnostics_strict_args_and_clean_host(
+    mock_ping, mock_priv
+):
+    """Kill L698, L710, L715-723, L730, and L741-747 mutants in async_get_network_diagnostics."""
+    import custom_components.climate_ip.helpers as helpers_mod
+
+    mock_host_obj = MagicMock()
+    mock_host_obj.is_alive = True
+    mock_host_obj.avg_rtt = 2.45
+    mock_ping.return_value = mock_host_obj
+
+    # 1. Test exact kwargs passed to async_ping (kills L741-747)
+    diag = await async_get_network_diagnostics("192.168.1.100", ping_timeout=2.5)
+    mock_ping.assert_called_with(
+        address="192.168.1.100",
+        count=1,
+        timeout=2.5,
+        interval=0.2,
+        privileged=True,
+    )
+    assert diag["is_reachable"] is True
+    assert diag["avg_rtt_ms"] == 2.45
+    assert diag["privileged_mode"] is True
+
+    # 2. Test URL with scheme, port, and path cleaning (kills L715, L717, L722-723)
+    await async_get_network_diagnostics("http://192.168.1.101:8080/status", ping_timeout=1.0)
+    mock_ping.assert_called_with(
+        address="192.168.1.101",
+        count=1,
+        timeout=1.0,
+        interval=0.2,
+        privileged=True,
+    )
+
+    # URL with path but no port (kills split without '/')
+    await async_get_network_diagnostics("http://192.168.1.101/status", ping_timeout=1.0)
+    mock_ping.assert_called_with(
+        address="192.168.1.101",
+        count=1,
+        timeout=1.0,
+        interval=0.2,
+        privileged=True,
+    )
+
+    # Bracketed IPv6 cleaning
+    await async_get_network_diagnostics("[fe80::2]:8888", ping_timeout=1.0)
+    mock_ping.assert_called_with(
+        address="fe80::2",
+        count=1,
+        timeout=1.0,
+        interval=0.2,
+        privileged=True,
+    )
+
+    # Bracketed IPv6 with single colon (kills L717 or-mutation)
+    await async_get_network_diagnostics("[fe80:1]", ping_timeout=1.0)
+    mock_ping.assert_called_with(
+        address="fe80:1",
+        count=1,
+        timeout=1.0,
+        interval=0.2,
+        privileged=True,
+    )
+
+    # Unmatched brackets: closing only (kills L722 startswith or ']' in clean_host)
+    await async_get_network_diagnostics("192.168.1.50]", ping_timeout=1.0)
+    mock_ping.assert_called_with(
+        address="192.168.1.50]",
+        count=1,
+        timeout=1.0,
+        interval=0.2,
+        privileged=True,
+    )
+
+    # Unmatched brackets: opening only (kills L722 startswith or ']' in clean_host)
+    await async_get_network_diagnostics("[192.168.1.50", ping_timeout=1.0)
+    mock_ping.assert_called_with(
+        address="[192.168.1.50",
+        count=1,
+        timeout=1.0,
+        interval=0.2,
+        privileged=True,
+    )
+
+    # 3. Test privileged_mode is strictly False on bypasses (kills L698, L710, L730)
+    # Missing host (L698)
+    res_none = await async_get_network_diagnostics(None)  # type: ignore[arg-type]
+    assert res_none["privileged_mode"] is False
+
+    # Library missing (L710)
+    orig_ping = helpers_mod.async_ping
+    helpers_mod.async_ping = None
+    try:
+        res_no_lib = await async_get_network_diagnostics("192.168.1.102")
+        assert res_no_lib["privileged_mode"] is False
+    finally:
+        helpers_mod.async_ping = orig_ping
+
+    # Loopback bypass (L730)
+    res_loop = await async_get_network_diagnostics("127.0.0.1")
+    assert res_loop["privileged_mode"] is False
+    assert res_loop["status"] == "loopback_bypass"
+
+
+@pytest.mark.asyncio
+@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False)
+@patch("custom_components.climate_ip.helpers.async_ping")
+async def test_async_check_network_reachability_strict_diagnostics_recording(
+    mock_ping, mock_priv
+):
+    """Kill L616-617 and L662-663 mutants in async_check_network_reachability."""
+    from custom_components.climate_ip.helpers import ICMPSocketError
+
+    # 1. Host is alive (kills L616-617)
+    mock_alive = MagicMock()
+    mock_alive.is_alive = True
+    mock_alive.avg_rtt = 1.1
+    mock_ping.return_value = mock_alive
+
+    ok = await async_check_network_reachability("192.168.1.200")
+    assert ok is True
+    rec_alive = get_last_network_diagnostic("192.168.1.200")
+    assert rec_alive is not None
+    assert rec_alive["is_reachable"] is True
+    assert rec_alive["status"] == "alive"
+
+    # 2. ICMPSocketError (kills L662-663)
+    mock_ping.side_effect = ICMPSocketError("Socket fail")
+    fail = await async_check_network_reachability("192.168.1.201")
+    assert fail is False
+    rec_fail = get_last_network_diagnostic("192.168.1.201")
+    assert rec_fail is not None
+    assert rec_fail["is_reachable"] is False
+    assert rec_fail["status"] == "socket_error"
+
