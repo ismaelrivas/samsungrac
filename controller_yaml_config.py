@@ -35,6 +35,7 @@ from .const import (
     CONN_METHOD_RAW,
     DEFAULT_CONF_TEMP_UNIT,
     DEVICE_TYPE_AIOHTTP_SUPPORTED,
+    DEVICE_TYPE_INTESISBOX,
     DEVICE_TYPE_SAMSUNG_2878,
 )
 from .properties import TemperatureOperation, create_property, create_status_getter
@@ -196,6 +197,11 @@ class YamlConfigLoader:
                 "%s Using 'samsung_2878' connection engine", self.controller.log_prefix
             )
             connection_node[CONFIG_DEVICE_CONNECTION_TYPE] = "samsung_2878"
+        elif device_type == DEVICE_TYPE_INTESISBOX:
+            _LOGGER.debug(
+                "%s Using 'intesisbox' connection engine", self.controller.log_prefix
+            )
+            connection_node[CONFIG_DEVICE_CONNECTION_TYPE] = "intesisbox"
         elif device_type in DEVICE_TYPE_AIOHTTP_SUPPORTED:
             conn_method = controller_config.get(CONF_CONN_METHOD, CONN_METHOD_AIOHTTP)
 
@@ -290,7 +296,7 @@ class YamlConfigLoader:
                         session_ref,
                         ip_ref,
                     )
-                elif conn_class.__name__ == "ConnectionRaw8888":
+                elif conn_class.__name__ in ("ConnectionRaw8888", "ConnectionIntesisBox"):
                     self.connection = conn_class(
                         controller_config,
                         _LOGGER,

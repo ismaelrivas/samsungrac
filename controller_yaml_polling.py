@@ -1005,11 +1005,10 @@ class YamlStatePoller:
 
             if lock_val is not None:
                 self._set_prop_value(prop, lock_val)
-
-            # 3. BACKUP NATIVE INJECTION (Ensures memory consistency for HA)
-            val = self._get_prop_value(prop)
-            if val is not None:
-                self._inject_value_into_state(prop, device_to_process, val)
+                # 3. BACKUP NATIVE INJECTION (Ensures memory consistency for HA)
+                val = self._get_prop_value(prop)
+                if val is not None:
+                    self._inject_value_into_state(prop, device_to_process, val)
 
         corrections = self._predict_dependency_cascades(device_to_process)
 

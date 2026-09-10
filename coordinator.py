@@ -33,6 +33,7 @@ from homeassistant.helpers.update_coordinator import (
 from .const import (
     ATTR_POWER,
     CONF_CONN_METHOD,
+    CONF_DEVICE_TYPE,
     CONF_ENABLE_POLLING,
     CONF_NAME,
     CONF_POLL_INTERVAL,
@@ -42,8 +43,10 @@ from .const import (
     DEFAULT_DEBOUNCE_DELAY,
     DEFAULT_DEVICE_NAME_PREFIX,
     DEFAULT_ENABLE_POLLING,
+    DEFAULT_INTESISBOX_NAME_PREFIX,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_SUBDEVICE_NAME,
+    DEVICE_TYPE_INTESISBOX,
     DOMAIN,
     ERR_AUTO_HEALING_RAW_IN_PROGRESS,
     ERR_DEVICE_OFFLINE_PREFIX,
@@ -51,6 +54,7 @@ from .const import (
     FALSY_STRINGS,
     HARDWARE_BREATHING_ROOM_SEC,
     ISSUE_AUTO_HEALING_RAW,
+    MANUFACTURER_INTESIS,
     MANUFACTURER_SAMSUNG,
     MAX_POLL_INTERVAL,
     MIN_POLL_INTERVAL,
@@ -418,11 +422,20 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 else data_name
             )
             name_str = name_candidate.strip() if isinstance(name_candidate, str) else ""
-            device_name = name_str or f"{DEFAULT_DEVICE_NAME_PREFIX} {safe_uid}"
+            is_intesis = (
+                self.config_entry.data.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_INTESISBOX
+            )
+            default_prefix = (
+                DEFAULT_INTESISBOX_NAME_PREFIX
+                if is_intesis
+                else DEFAULT_DEVICE_NAME_PREFIX
+            )
+            device_name = name_str or f"{default_prefix} {safe_uid}"
+            manufacturer = MANUFACTURER_INTESIS if is_intesis else MANUFACTURER_SAMSUNG
             self.device_info = DeviceInfo(
                 identifiers={(DOMAIN, safe_uid)},
                 name=device_name,
-                manufacturer=MANUFACTURER_SAMSUNG,
+                manufacturer=manufacturer,
                 connections=conns,
             )  # pragma: no mutate
 
@@ -754,14 +767,25 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
         except (CannotConnect, OSError) as err:
             await self._async_handle_set_property_failure(properties_to_set)
-            _LOGGER.error(
-                "%s Network error setting properties: %s",
+            _LOGGER.warning(
+                "%s Network error setting property '%s': %s",
                 self.log_prefix,
-                type(err).__name__,
+                property_name,
+                err,
             )  # pragma: no mutate
+            dev_label = (
+                self.device_info.get("name")
+                or getattr(self.controller, "name", None)
+                or self.safe_unique_id
+            )
+            dev_host = (
+                getattr(self.controller, "ip_address", None)
+                or getattr(self.controller, "host", None)
+                or "unknown"
+            )
             raise HomeAssistantError(
-                f"Network error setting property {property_name}: {err}"
-            ) from err  # pragma: no mutate
+                f"Device '{dev_label}' ({dev_host}) is unreachable. Check power and network connection."
+            ) from None  # pragma: no mutate
 
         except (ValueError, TypeError, KeyError) as err:
             await self._async_handle_set_property_failure(properties_to_set)

@@ -787,6 +787,19 @@ class YamlController(ClimateController):
             self._cached_static_modes
         )
 
+        def _get_dynamic_modes(
+            prop_name: str, static_fallback: tuple[str, ...]
+        ) -> tuple[str, ...]:
+            prop = self.get_property_object(prop_name)
+            if prop is not None and hasattr(prop, "values"):
+                dynamic_vals = prop.values
+                if isinstance(dynamic_vals, (list, tuple, set)) and dynamic_vals:
+                    return tuple(str(v) for v in dynamic_vals)
+            return static_fallback
+
+        fan_modes_tuple = _get_dynamic_modes(ATTR_FAN_MODE, fan_modes_tuple)
+        swing_modes_tuple = _get_dynamic_modes(ATTR_SWING_MODE, swing_modes_tuple)
+
         def _get_val(prop_name: str) -> Any:
             try:
                 return self.get_property(prop_name)

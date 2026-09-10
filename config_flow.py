@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
+import re
 from typing import Any, Self
 
 import aiohttp
@@ -17,7 +18,7 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlow,
 )
-from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
+from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_NAME, CONF_TOKEN
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import AbortFlow
 from homeassistant.helpers import aiohttp_client, device_registry as dr
@@ -46,6 +47,7 @@ from .const import (
     CONFIG_FILE_TO_DEVICE_TYPE,
     DEFAULT_CONF_CERT_FILE,
     DEVICE_TYPE_8888_GROUP,
+    DEVICE_TYPE_INTESISBOX,
     DEVICE_TYPE_MIM_H03,
     DEVICE_TYPE_SAMSUNG_2878,
     DEVICE_TYPE_SAMSUNG_8888,
@@ -223,6 +225,9 @@ class ClimateIpConfigFlow(
             ):
                 return await self.async_step_rest_api()
 
+            if device_type == DEVICE_TYPE_INTESISBOX:
+                return await self.async_step_intesisbox()
+
             return self.async_abort(reason="not_implemented")
 
         schema = vol.Schema(
@@ -233,6 +238,7 @@ class ClimateIpConfigFlow(
                             DEVICE_TYPE_SAMSUNG_2878,
                             DEVICE_TYPE_SAMSUNG_8888,
                             DEVICE_TYPE_MIM_H03,
+                            DEVICE_TYPE_INTESISBOX,
                             DEVICE_TYPE_SMARTTHINGS_HVAC,
                             DEVICE_TYPE_SMARTTHINGS_DHW,
                         ],
@@ -352,6 +358,98 @@ class ClimateIpConfigFlow(
         """Process step for MIM-H03 devices."""
         return await self._async_process_samsung_device_step(
             step_id="mim_h03", is_8888=True, user_input=user_input
+        )
+
+    async def async_step_intesisbox(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Process step for IntesisBox devices."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            self.flow_data.update(user_input)
+            ip_addr = str(self.flow_data[CONF_IP_ADDRESS])
+            mac_val = self.flow_data.get(CONF_MAC)
+
+            if (
+                CONF_POLL_INTERVAL in user_input
+                and user_input[CONF_POLL_INTERVAL] is not None
+            ):
+                try:
+                    seconds = helpers.validate_poll_interval(
+                        user_input[CONF_POLL_INTERVAL]
+                    )
+                    self.flow_data[CONF_POLL_INTERVAL] = seconds
+                except ValueError:
+                    errors[CONF_POLL_INTERVAL] = "invalid_poll_interval"
+
+            if not errors:
+                try:
+                    reader, writer = await asyncio.wait_for(
+                        asyncio.open_connection(ip_addr, 3310), timeout=5.0
+                    )
+                    writer.write(b"ID\r\n")
+                    await writer.drain()
+                    resp = await asyncio.wait_for(reader.read(1024), timeout=5.0)
+                    decoded = resp.decode("ascii", errors="ignore")
+                    writer.close()
+                    await writer.wait_closed()
+
+                    if "ID:" in decoded and not mac_val:
+                        match = re.search(
+                            r"ID:[^,]+,([0-9A-Fa-f]{12}|(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2})",
+                            decoded,
+                        )
+                        if match:
+                            mac_val = match.group(1).replace(":", "").replace("-", "").lower()
+                except Exception as err:
+                    _LOGGER.warning(
+                        "Could not connect to IntesisBox at %s:3310: %s", ip_addr, err
+                    )
+                    errors["base"] = "cannot_connect"
+
+            if not errors:
+                error_reason = await self._async_resolve_mac_and_set_unique_id(
+                    ip_address=ip_addr, mac_address=mac_val
+                )
+                if error_reason is not None:
+                    errors["base"] = error_reason
+                else:
+                    self._abort_if_unique_id_configured()
+
+            if not errors:
+                self.flow_data[CONF_NAME] = f"IntesisBox ({ip_addr})"
+                self.flow_data[CONF_DEVICE_TYPE] = DEVICE_TYPE_INTESISBOX
+                self.flow_data[CONF_CONFIG_FILE] = DEVICE_TYPE_TO_CONFIG_FILE[
+                    DEVICE_TYPE_INTESISBOX
+                ]
+                self.flow_data[CONF_TOKEN] = str(
+                    self.flow_data.get(CONF_MAC, mac_val or "intesisbox")
+                )
+                return self.async_create_entry(
+                    title=f"IntesisBox ({ip_addr})",
+                    data=self.flow_data,
+                )
+
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_IP_ADDRESS,
+                    default=self.flow_data.get(CONF_IP_ADDRESS, ""),
+                ): str,
+                vol.Optional(
+                    CONF_MAC,
+                    description={"suggested_value": self.flow_data.get(CONF_MAC, "")},
+                ): str,
+                vol.Optional(
+                    CONF_POLL_INTERVAL,
+                    default=60,
+                ): int,
+            }
+        )
+        return self.async_show_form(
+            step_id="intesisbox",
+            data_schema=schema,
+            errors=errors,
         )
 
     async def async_step_rest_api(

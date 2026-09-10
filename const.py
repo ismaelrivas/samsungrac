@@ -109,6 +109,8 @@ DEFAULT_TARGET_TEMP_STEP = 1.0
 CONF_TOKEN_KEY = "token"
 CONF_SSL_CONFIG_KEY = "_ssl_config_2878"
 MANUFACTURER_SAMSUNG = "Samsung"
+MANUFACTURER_INTESIS = "Intesis"
+DEFAULT_INTESISBOX_NAME_PREFIX = "IntesisBox"
 HARDWARE_BREATHING_ROOM_SEC = 1.0
 
 # --- Connection Method Constants (for Dual Engine) ---
@@ -131,6 +133,7 @@ DEVICE_TYPE_SAMSUNG_2878 = "samsung_2878"
 DEVICE_TYPE_MIM_H03 = "mim_h03"
 DEVICE_TYPE_SMARTTHINGS_HVAC = "smartthings_hvac"
 DEVICE_TYPE_SMARTTHINGS_DHW = "smartthings_dhw"
+DEVICE_TYPE_INTESISBOX = "intesisbox"
 
 # Group for modern devices that will get the new engine option
 DEVICE_TYPE_8888_GROUP = [DEVICE_TYPE_SAMSUNG_8888, DEVICE_TYPE_MIM_H03]
@@ -148,6 +151,7 @@ DEVICE_TYPE_TO_CONFIG_FILE = {
     DEVICE_TYPE_MIM_H03: "mim-h03_heatpump.yaml",
     DEVICE_TYPE_SMARTTHINGS_HVAC: "samsung_smartthings_hvac.yaml",
     DEVICE_TYPE_SMARTTHINGS_DHW: "samsung_smartthings_dhw.yaml",
+    DEVICE_TYPE_INTESISBOX: "intesisbox.yaml",
 }
 
 # Reverse map for inferring device type during YAML import.
@@ -240,6 +244,7 @@ PROPERTY_TYPE_SWITCH = "switch"
 PROPERTY_TYPE_NUMBER = "number"
 PROPERTY_TYPE_TEMP = "temperature"
 PROPERTY_TYPE_STRING = "string"
+PROPERTY_TYPE_SENSOR = "sensor"
 PROPERTY_TYPE_ENUM = "enum"
 PROPERTY_TYPE_UNIQUE_ID = "unique_id"
 STATUS_GETTER_JSON = "json_status"

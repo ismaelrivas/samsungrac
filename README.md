@@ -2,21 +2,22 @@
 
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Core%202026.x%20Ready-blue?style=for-the-badge&logo=home-assistant)
 ![Mutation Score](https://img.shields.io/badge/Mutation%20Score-100%25-brightgreen.svg)
-![Unit Tests](https://img.shields.io/badge/Unit%20Tests-1456%20Passed-brightgreen?style=for-the-badge)
+![Unit Tests](https://img.shields.io/badge/Unit%20Tests-1467%20Passed-brightgreen?style=for-the-badge)
 ![Quality Scale](https://img.shields.io/badge/Quality%20Scale-Gold%20Master-gold?style=for-the-badge)
 ![HACS](https://img.shields.io/badge/HACS-Custom%20Repository-orange?style=for-the-badge)
 
-A highly resilient, mathematically verified, and asynchronously optimized custom component for Home Assistant to control Samsung Air Conditioners, Heat Pumps (MIM-H03), and SmartThings EHS HVAC controllers via IP.
+A highly resilient, mathematically verified, and asynchronously optimized custom component for Home Assistant to control Samsung Air Conditioners, Heat Pumps (MIM-H03), SmartThings EHS HVAC controllers, and IntesisBox WMP gateways via IP.
 
 ---
 
-## 🏆 Version History & Release Notes (v10.0.1b4)
+## 🏆 Version History & Release Notes (v10.0.1b5)
 
-This release represents a monumental overhaul of the `climate_ip` integration codebase. Through an exhaustive modernization and hardening effort, the component has been restructured from the ground up to ensure absolute stability, greater error resilience, and a cleaner architecture.
+This release adds complete native support for IntesisBox Wireless Multi-Protocol (WMP v1.9) gateways over TCP port 3310 alongside continuous stability hardening.
 
 **Engineering Highlights:**
+* 🌐 **IntesisBox Gateway Support (WMP v1.9):** Full bidirectional control with continuous push updates (`CHN`), periodic polling (`STATUS,1`), limits discovery (`LIMITS`), and optimistic state synchronization on `ACK`.
 * 🏗️ **Architecture & EAFP Refactoring:** Massive refactoring to use the Pythonic EAFP pattern alongside direct checks via `getattr`, eradicating unsafe `hasattr()` uses.
-* 🛡️ **Absolute Zero Mutants (100% Mutation Score):** Core modules and configuration flow were iteratively hardened until reaching mathematically proven 0 surviving mutants across 1,456 tests.
+* 🛡️ **Absolute Zero Mutants (100% Mutation Score):** Core modules and configuration flow were iteratively hardened until reaching mathematically proven 0 surviving mutants across 1,467 tests.
 * 🔒 **Anti-Flicker Lock Eviction & Network State Integrity:** Enhanced lock eviction logic in polling controller and switch hooks, using `deepcopy` for network state storage to eliminate state pollution across polling cycles.
 * ⚡ **Connection Engine & Concurrency:** Defined `PARALLEL_UPDATES` across all platforms (`climate`, `sensor`, `switch`), strictly compliant with Home Assistant quality scale and Hassfest standards.
 * 🐛 **Hang & Loop Prevention:** Resolved potential infinite loops during diagnostics redaction and eliminated floating-point parsing discrepancies.
@@ -25,7 +26,7 @@ This release represents a monumental overhaul of the `climate_ip` integration co
 
 ## 🔌 Supported Protocols & Hardware
 
-This integration dynamically supports multiple generations of Samsung climate devices:
+This integration dynamically supports multiple generations of climate devices and gateways:
 
 | Protocol / Profile | Port | Communication Method | Target Devices |
 | :--- | :--- | :--- | :--- |
@@ -33,6 +34,7 @@ This integration dynamically supports multiple generations of Samsung climate de
 | **Modern REST (`samsung_8888`)** | `8888` | JSON over HTTPS (mTLS) | Samsung RAC Air Conditioners (TP6X, RAC_16K, etc.) |
 | **SmartThings / EHS (`smartthings_hvac`)** | `9888` / `9889` | HTTP/1.1 REST API + Bearer Token | EHS Heat Pumps, Hydro Units & SmartThings Gateways |
 | **MIM-H03 WiFi Kit (`mim_h03`)** | `8888` / `2878` | Multi-Device Discovery | Samsung Centralized Controllers & Multi-Split Systems |
+| **IntesisBox Gateway (`intesisbox`)** | `3310` | Plain ASCII over TCP | IntesisBox Wireless Multi-Protocol (WMP v1.9) Gateways |
 
 ---
 

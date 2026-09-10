@@ -297,6 +297,7 @@ class Connection:
 # registry whenever `connection.py` is loaded, while strictly avoiding circular imports.
 # (Moved here from __init__.py / controller_yaml_config.py)
 from .connection_aiohttp import ConnectionAiohttp8888  # noqa: F401, E402
+from .connection_intesisbox import ConnectionIntesisBox  # noqa: F401, E402
 from .connection_raw import ConnectionRaw8888  # noqa: F401, E402
 from .connection_request import (  # noqa: F401, E402
     ConnectionRequest,
