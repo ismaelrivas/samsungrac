@@ -2282,3 +2282,68 @@ async def test_connection_manager_read_task_in_done_strict(connection):
 
         mock_process_read.assert_awaited_once()
         assert mock_wait.call_args.kwargs.get("return_when") == asyncio.FIRST_COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_establish_connection_preferred_fallback_to_others(connection):
+    """Test that if preferred/matching config fails, handshake falls back to remaining attempts."""
+    connection._cfg.host = "10.0.0.1"
+    connection._cfg.port = 2878
+    connection._cfg.cert = None
+    connection._connection_init_template = MagicMock(
+        async_render=MagicMock(return_value='<Update Type="InvalidateAccount"/>')
+    )
+    # Set a preferred config that will fail on first attempt
+    connection._last_successful_config = {
+        "cert": None,
+        "cipher_name": "Cipher Suite D (Anonymous / All Supported)",
+        "verify_mode": ssl.CERT_NONE,
+    }
+
+    mock_socket_instance = MagicMock()
+    mock_socket_cls = MagicMock(return_value=mock_socket_instance)
+
+    mock_writer = MagicMock()
+    mock_writer.get_extra_info.return_value = MagicMock(
+        cipher=MagicMock(return_value=("AES256-SHA", "TLSv1.0", 256)),
+        version=MagicMock(return_value="TLSv1"),
+    )
+    mock_reader = MagicMock()
+
+    call_count = 0
+
+    async def mock_open_conn(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            # First attempt (preferred config) fails with SSLError
+            raise ssl.SSLError("Handshake failure with preferred cipher")
+        # Second attempt (fallback config) succeeds
+        return mock_reader, mock_writer
+
+    mock_loop = MagicMock()
+    mock_loop.sock_connect = AsyncMock()
+
+    with (
+        patch("socket.socket", mock_socket_cls),
+        patch(
+            "custom_components.climate_ip.samsung_2878.async_create_samsung_ssl_context",
+            new_callable=AsyncMock,
+        ),
+        patch("asyncio.get_running_loop", return_value=mock_loop),
+        patch("asyncio.open_connection", side_effect=mock_open_conn),
+        patch.object(
+            connection, "_read_full_response", new_callable=AsyncMock
+        ) as mock_read,
+        patch.object(connection, "_write_data", new_callable=AsyncMock),
+        patch.object(
+            connection, "_parse_and_update_state", new_callable=AsyncMock
+        ) as mock_parse,
+    ):
+        mock_read.side_effect = ["DPLUG-1.6\n", 'Status="Okay"']
+        mock_parse.return_value = (False, False, None)
+
+        assert await connection._establish_connection_and_handshake() is True
+        # Verified fallback occurred: open_connection was called at least twice
+        assert call_count >= 2
+

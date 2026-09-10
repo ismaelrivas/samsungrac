@@ -571,7 +571,8 @@ class ConnectionSamsung2878(Connection):
                 and (not pref_cipher or a["cipher_config"][1] == pref_cipher)
             ]
             if matching:
-                all_attempts = matching
+                fallback_attempts = [a for a in all_attempts if a not in matching]
+                all_attempts = matching + fallback_attempts
 
         connection_successful = False  # pragma: no mutate
         last_error: Exception | None = None  # pragma: no mutate

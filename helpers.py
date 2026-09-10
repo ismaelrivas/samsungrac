@@ -515,12 +515,17 @@ def mask_sensitive_data(data: Any) -> Any:
     return data
 
 
+class _DummyIcmpError(Exception):
+    """Fallback when icmplib is not installed."""
+
+
 # --- Native ICMP Ping via icmplib ---
 try:
     # pylint: disable=import-outside-toplevel
     from icmplib import (
         ICMPSocketError,
         NameLookupError as IcmpNameLookupError,
+        SocketPermissionError,
         async_ping,
     )
 
@@ -528,10 +533,12 @@ try:
 except ImportError:
     _ICMPLIB_AVAILABLE = False
     async_ping = None
-    IcmpNameLookupError = None
-    ICMPSocketError = None
+    IcmpNameLookupError = _DummyIcmpError
+    ICMPSocketError = _DummyIcmpError
+    SocketPermissionError = _DummyIcmpError
 
 
+# pylint: disable=too-many-return-statements
 async def async_check_network_reachability(
     host: str, log_prefix: str = ""
 ) -> bool:  # pragma: no mutate
@@ -562,7 +569,7 @@ async def async_check_network_reachability(
         host_obj = await async_ping(  # pragma: no mutate
             address=clean_host,
             count=1,
-            timeout=0.5,
+            timeout=2.0,
             interval=0.2,
             privileged=False,  # pragma: no mutate
         )  # pragma: no mutate
@@ -578,6 +585,14 @@ async def async_check_network_reachability(
         )  # pragma: no mutate
         return False
 
+    except SocketPermissionError as perm_err:
+        _LOGGER.debug(  # pragma: no mutate
+            "%s Network diagnostic permission error (ping_group_range restriction): %s. "  # pragma: no mutate
+            "Bypassing ping check to protect AC firmware.",  # pragma: no mutate
+            log_prefix,  # pragma: no mutate
+            perm_err,  # pragma: no mutate
+        )  # pragma: no mutate
+        return True
     except (IcmpNameLookupError, ICMPSocketError) as err:
         _LOGGER.debug(
             "%s Network diagnostic error for %s: %s", log_prefix, host, err

@@ -620,7 +620,7 @@ async def test_async_check_network_reachability(mock_ping):
     assert mock_ping.call_args.kwargs == {
         "address": "192.168.1.100",
         "count": 1,
-        "timeout": 0.5,
+        "timeout": 2.0,
         "interval": 0.2,
         "privileged": False,
     }
@@ -636,7 +636,7 @@ async def test_async_check_network_reachability(mock_ping):
     assert mock_ping.call_args.kwargs == {
         "address": "192.168.1.100",
         "count": 1,
-        "timeout": 0.5,
+        "timeout": 2.0,
         "interval": 0.2,
         "privileged": False,
     }
@@ -647,7 +647,21 @@ async def test_async_check_network_reachability(mock_ping):
     assert mock_ping.call_args.kwargs == {
         "address": "192.168.1.100",
         "count": 1,
-        "timeout": 0.5,
+        "timeout": 2.0,
+        "interval": 0.2,
+        "privileged": False,
+    }
+
+    # Test SocketPermissionError bypasses ping check and returns True
+    from icmplib import SocketPermissionError
+
+    mock_ping.reset_mock()
+    mock_ping.side_effect = SocketPermissionError(privileged=False)
+    assert await async_check_network_reachability("192.168.1.100") is True
+    assert mock_ping.call_args.kwargs == {
+        "address": "192.168.1.100",
+        "count": 1,
+        "timeout": 2.0,
         "interval": 0.2,
         "privileged": False,
     }
@@ -660,7 +674,7 @@ async def test_async_check_network_reachability(mock_ping):
         assert mock_ping.call_args.kwargs == {
             "address": "192.168.1.100",
             "count": 1,
-            "timeout": 0.5,
+            "timeout": 2.0,
             "interval": 0.2,
             "privileged": False,
         }
@@ -1085,7 +1099,7 @@ async def test_x_async_check_network_reachability_matrix(
             {
                 "address": expected_ip,
                 "count": 1,
-                "timeout": 0.5,
+                "timeout": 2.0,
                 "interval": 0.2,
                 "privileged": False,
             },
@@ -1109,7 +1123,7 @@ async def test_async_check_network_reachability_string_slicing_survivors(mock_pi
     assert mock_ping.call_args.kwargs == {
         "address": "10.20.30.40",
         "count": 1,
-        "timeout": 0.5,
+        "timeout": 2.0,
         "interval": 0.2,
         "privileged": False,
     }
@@ -1124,7 +1138,7 @@ async def test_async_check_network_reachability_string_slicing_survivors(mock_pi
     assert mock_ping.call_args.kwargs == {
         "address": "2001:db8::cafe",
         "count": 1,
-        "timeout": 0.5,
+        "timeout": 2.0,
         "interval": 0.2,
         "privileged": False,
     }
@@ -1136,7 +1150,7 @@ async def test_async_check_network_reachability_string_slicing_survivors(mock_pi
     assert mock_ping.call_args.kwargs == {
         "address": "fe80::1",
         "count": 1,
-        "timeout": 0.5,
+        "timeout": 2.0,
         "interval": 0.2,
         "privileged": False,
     }
@@ -1148,7 +1162,7 @@ async def test_async_check_network_reachability_string_slicing_survivors(mock_pi
     assert mock_ping.call_args.kwargs == {
         "address": "fe80::1",
         "count": 1,
-        "timeout": 0.5,
+        "timeout": 2.0,
         "interval": 0.2,
         "privileged": False,
     }
@@ -1160,7 +1174,7 @@ async def test_async_check_network_reachability_string_slicing_survivors(mock_pi
     assert mock_ping.call_args.kwargs == {
         "address": "fe80::1",
         "count": 1,
-        "timeout": 0.5,
+        "timeout": 2.0,
         "interval": 0.2,
         "privileged": False,
     }
@@ -1172,7 +1186,7 @@ async def test_async_check_network_reachability_string_slicing_survivors(mock_pi
     assert mock_ping.call_args.kwargs == {
         "address": "192.168.1.50",
         "count": 1,
-        "timeout": 0.5,
+        "timeout": 2.0,
         "interval": 0.2,
         "privileged": False,
     }
