@@ -1,0 +1,261 @@
+device:
+  name: 'intesisbox'
+  poll: True
+  auth_flow_file: 'auth_flows/intesisbox_auth.yaml'
+  connection:
+    type: intesisbox
+    params:
+      host: "__CLIMATE_IP_HOST__"
+      port: 3310
+      ac_num: 1
+      command_timeout: 5.0
+      connect_timeout: 10.0
+      handshake_timeout: 3.0
+      limits_prefix: "_LIMITS_"
+    handshake_commands:
+      - 'ID'
+      - 'LIMITS:*'
+      - 'STATUS,1'
+      - 'GET,1:*'
+    loop_breakers:
+      - node: 'FANSP'
+        fallback_value: 'AUTO'
+        fallback_command: 'SET,1:FANSP,AUTO'
+        prune_values: ['1']
+        prune_command_template: 'LIMITS:FANSP,{{new_limits}}'
+        threshold: 3
+        window_seconds: 3.0
+  status:
+    type: 'json_status'
+    connection_template: 'STATUS,1'
+
+  switches:
+    power:
+      type: switch
+      values:
+        'off': { value: 'OFF' }
+        'on': { value: 'ON' }
+      state_node: 'ONOFF'
+      status_template: '{{ device_state.ONOFF | lower }}'
+      connection_template: 'SET,1:ONOFF,{{value}}'
+
+  operations:
+    hvac: # hvac_mode
+      type: modes
+      optimistic_cascades:
+        - target_node: "ONOFF"
+          value_map:
+            off: "OFF"
+            default: "ON"
+        - target_node: "FANSP"
+          value_map:
+            dry: "AUTO"
+      values:
+        'cool': { value: 'COOL' }
+        'heat': { value: 'HEAT' }
+        'dry': { value: 'DRY' }
+        'fan_only': { value: 'FAN' }
+        'heat_cool': { value: 'AUTO' }
+        'off': { value: 'OFF' }
+      state_node: 'MODE'
+      status_template: >-
+        {% if 'ONOFF' in device_state and device_state['ONOFF'] == 'OFF' -%}
+          off
+        {%- elif 'MODE' in device_state and device_state['MODE'] == 'AUTO' -%}
+          heat_cool
+        {%- elif 'MODE' in device_state and device_state['MODE'] == 'FAN' -%}
+          fan_only
+        {%- elif 'MODE' in device_state -%}
+          {{ device_state['MODE'] | lower }}
+        {%- else -%}
+          off
+        {%- endif %}
+      connection_template: |
+        {% if value == "OFF" %}
+        SET,1:ONOFF,OFF
+        {% elif device_state.get('ONOFF') | upper != "ON" %}
+        SET,1:ONOFF,ON
+        {% if value == "DRY" %}
+        SET,1:FANSP,AUTO
+        {% endif %}
+        SET,1:MODE,{{value}}
+        {% else %}
+        {% if value == "DRY" %}
+        SET,1:FANSP,AUTO
+        {% endif %}
+        SET,1:MODE,{{value}}
+        {% endif %}
+
+    temperature:
+      type: temperature
+      min: 16.0
+      max: 30.0
+      step: 0.5
+      state_node: 'SETPTEMP'
+      status_template: >-
+        {% if 'SETPTEMP' not in device_state %}
+          22.0
+        {% else %}
+          {% set raw = device_state['SETPTEMP'] | float(0) %}
+          {% if raw >= 1000 or raw <= 0 %}
+            None
+          {% elif raw >= 100 %}
+            {{ (raw / 10.0) | round(1) }}
+          {% else %}
+            {{ raw | round(1) }}
+          {% endif %}
+        {% endif %}
+      connection_template: 'SET,1:SETPTEMP,{{ (value * 10) | int }}'
+      unit_template: "°C"
+
+    fan: # fan_mode
+      type: modes
+      values:
+        'auto':
+          value: 'AUTO'
+        'quiet':
+          value: '1'
+          validation_template: '{% if (device_state.get("MODE", "") | upper) != "DRY" and "1" in device_state.get("_LIMITS_FANSP", "") %}valid{% endif %}'
+        'low':
+          value: '2'
+          validation_template: '{% if (device_state.get("MODE", "") | upper) != "DRY" and "2" in device_state.get("_LIMITS_FANSP", "2") %}valid{% endif %}'
+        'medium':
+          value: '3'
+          validation_template: '{% if (device_state.get("MODE", "") | upper) != "DRY" and "3" in device_state.get("_LIMITS_FANSP", "3") %}valid{% endif %}'
+        'high':
+          value: '4'
+          validation_template: '{% if (device_state.get("MODE", "") | upper) != "DRY" and "4" in device_state.get("_LIMITS_FANSP", "4") %}valid{% endif %}'
+      state_node: 'FANSP'
+      status_template: >-
+        {% if (device_state.get('MODE', '') | upper) == 'DRY' %}
+          auto
+        {% else %}
+          {{ {'AUTO':'auto','1':'quiet','2':'low','3':'medium','4':'high'}.get(device_state.get('FANSP', 'AUTO'), 'auto') }}
+        {% endif %}
+      connection_template: |
+        {% if (device_state.get('MODE', '') | upper) != 'DRY' %}
+        SET,1:FANSP,{{value}}
+        {% endif %}
+
+    swing: # swing_mode
+      type: modes
+      values:
+        'off':
+          value: 'OFF'
+          validation_template: '{% if "_LIMITS_VANEUD" not in device_state or "AUTO" in device_state.get("_LIMITS_VANEUD", "") or "AUTO" in device_state.get("_LIMITS_VANELR", "") %}valid{% endif %}'
+        'vertical':
+          value: 'VERTICAL'
+          validation_template: '{% if "_LIMITS_VANEUD" not in device_state or "SWING" in device_state.get("_LIMITS_VANEUD", "") %}valid{% endif %}'
+        'horizontal':
+          value: 'HORIZONTAL'
+          validation_template: '{% if "SWING" in device_state.get("_LIMITS_VANELR", "") %}valid{% endif %}'
+        'both':
+          value: 'BOTH'
+          validation_template: '{% if "SWING" in device_state.get("_LIMITS_VANEUD", "") and "SWING" in device_state.get("_LIMITS_VANELR", "") %}valid{% endif %}'
+        'pulse':
+          value: 'PULSE'
+          validation_template: '{% if "PULSE" in device_state.get("_LIMITS_VANEUD", "") %}valid{% endif %}'
+        '1':
+          value: '1'
+          validation_template: '{% if "1" in device_state.get("_LIMITS_VANEUD", "") %}valid{% endif %}'
+        '2':
+          value: '2'
+          validation_template: '{% if "2" in device_state.get("_LIMITS_VANEUD", "") %}valid{% endif %}'
+        '3':
+          value: '3'
+          validation_template: '{% if "3" in device_state.get("_LIMITS_VANEUD", "") %}valid{% endif %}'
+        '4':
+          value: '4'
+          validation_template: '{% if "4" in device_state.get("_LIMITS_VANEUD", "") %}valid{% endif %}'
+        '5':
+          value: '5'
+          validation_template: '{% if "5" in device_state.get("_LIMITS_VANEUD", "") %}valid{% endif %}'
+      state_node: 'VANEUD'
+      status_template: >-
+        {% set ud = device_state.get('VANEUD', 'AUTO') | upper %}
+        {% set lr = device_state.get('VANELR', 'AUTO') | upper %}
+        {% if ud == 'SWING' and lr == 'SWING' %}
+          both
+        {% elif ud == 'SWING' %}
+          vertical
+        {% elif lr == 'SWING' %}
+          horizontal
+        {% elif ud == 'PULSE' %}
+          pulse
+        {% elif ud in ['1', '2', '3', '4', '5'] %}
+          {{ ud }}
+        {% else %}
+          off
+        {% endif %}
+      connection_template: |
+        {% if value == 'OFF' %}
+        SET,1:VANEUD,AUTO
+        {% if 'SWING' in device_state.get('_LIMITS_VANELR', '') or 'AUTO' in device_state.get('_LIMITS_VANELR', '') %}
+        SET,1:VANELR,AUTO
+        {% endif %}
+        {% elif value == 'VERTICAL' %}
+        SET,1:VANEUD,SWING
+        {% if 'SWING' in device_state.get('_LIMITS_VANELR', '') or 'AUTO' in device_state.get('_LIMITS_VANELR', '') %}
+        SET,1:VANELR,AUTO
+        {% endif %}
+        {% elif value == 'HORIZONTAL' %}
+        {% if 'SWING' in device_state.get('_LIMITS_VANEUD', '') or 'AUTO' in device_state.get('_LIMITS_VANEUD', '') %}
+        SET,1:VANEUD,AUTO
+        {% endif %}
+        SET,1:VANELR,SWING
+        {% elif value == 'BOTH' %}
+        SET,1:VANEUD,SWING
+        SET,1:VANELR,SWING
+        {% elif value == 'PULSE' %}
+        SET,1:VANEUD,PULSE
+        {% else %}
+        SET,1:VANEUD,{{value}}
+        {% endif %}
+
+  attributes:
+    current_temperature:
+      type: temperature
+      status_template: >-
+        {% if 'AMBTEMP' not in device_state %}
+          23.0
+        {% else %}
+          {% set raw = device_state['AMBTEMP'] | float(0) %}
+          {% if raw >= 100 %}
+            {{ (raw / 10.0) | round(1) }}
+          {% elif raw > 0 %}
+            {{ raw | round(1) }}
+          {% else %}
+            23.0
+          {% endif %}
+        {% endif %}
+      unit_template: "°C"
+    min_temp:
+      type: number
+      status_template: '16.0'
+      unit_template: "°C"
+    max_temp:
+      type: number
+      status_template: '30.0'
+      unit_template: "°C"
+
+  sensors:
+    error_status:
+      type: sensor
+      name: "Error Status"
+      state_node: 'ERRSTATUS'
+      status_template: "{{ device_state.get('ERRSTATUS', 'OK') }}"
+      icon: "mdi:alert-circle-outline"
+
+    error_code:
+      type: sensor
+      name: "Error Code"
+      state_node: 'ERRCODE'
+      status_template: "{{ device_state.get('ERRCODE', '0') }}"
+      icon: "mdi:numeric"
+
+    vane_horizontal:
+      type: sensor
+      name: "Horizontal Vane"
+      state_node: 'VANELR'
+      status_template: "{{ device_state.get('VANELR', 'AUTO') }}"
+      icon: "mdi:arrow-left-right"

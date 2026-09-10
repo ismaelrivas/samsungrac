@@ -73,6 +73,7 @@ from .const import (
     PROPERTY_TYPE_ENUM,
     PROPERTY_TYPE_MODE,
     PROPERTY_TYPE_NUMBER,
+    PROPERTY_TYPE_SENSOR,
     PROPERTY_TYPE_STRING,
     PROPERTY_TYPE_SWITCH as PROPERTY_TYPE_SWITCH,  # noqa: PLC0414
     PROPERTY_TYPE_TEMP,
@@ -264,12 +265,13 @@ class DeviceProperty:
         self._state_class: SensorStateClass | None = None
         self._entity_category: str | None = None
         self._feature_flag: ClimateEntityFeature | None = None
+        self._icon: str | None = None
         self._config: dict[str, Any] = {}
 
     @staticmethod
     def match_type(prop_type: str) -> bool:
         """Return True if this property handles the given type."""
-        return prop_type == PROPERTY_TYPE_STRING
+        return prop_type in (PROPERTY_TYPE_STRING, PROPERTY_TYPE_SENSOR)
 
     @property
     def log_prefix(self) -> str:
@@ -309,9 +311,12 @@ class DeviceProperty:
             return self._status_getter.value
 
         if self._controller is not None:
-            status_prop = self._controller.get_property(KEY_STATUS)
-            if status_prop is not None and isinstance(status_prop.value, dict):
-                return status_prop.value
+            try:
+                status_prop = self._controller.get_property(KEY_STATUS)
+                if status_prop is not None and isinstance(status_prop.value, dict):
+                    return status_prop.value
+            except (KeyError, AttributeError, TypeError):
+                pass
 
         # 4. Raw device_state fallback (dataclass / dict)
         if isinstance(self._device_state, dict):
@@ -475,6 +480,7 @@ class DeviceProperty:
             self._type
             in (
                 PROPERTY_TYPE_STRING,
+                PROPERTY_TYPE_SENSOR,
                 PROPERTY_TYPE_ENUM,
             )
             or self.device_class == SensorDeviceClass.ENUM
@@ -556,7 +562,14 @@ class DeviceProperty:
                     self._device_class,
                 )
 
+        self._icon = node.get("icon")
+
         return True
+
+    @property
+    def icon(self) -> str | None:
+        """Return the icon from configuration."""
+        return self._icon
 
     def convert_dev_to_hass(self, dev_value: Any) -> Any:
         """Convert device state value to HASS."""

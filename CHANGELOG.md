@@ -1,5 +1,18 @@
 # Changelog
 
+## [10.0.1b5] - 2026-09-08
+
+### New Features & Hardware Support
+- **IntesisBox Gateway Support (WMP v1.9)**: Added native support for IntesisBox Wireless Multi-Protocol gateways communicating over plain TCP socket on port `3310`.
+- **Bidirectional Control & Push Updates**: Full bidirectional integration parsing continuous push notifications (`CHN,1:...`), periodic polls (`STATUS,1`), and limits discovery (`LIMITS:*`), with instantaneous optimistic state updates upon command acknowledgement (`ACK`).
+- **Declarative Device Architecture (`intesisbox.yaml`)**: Complete YAML specification supporting HVAC modes (`cool`, `heat`, `dry`, `fan_only`, `heat_cool`, `off`), fan speeds (`auto`, `low`, `medium`, `high`, `turbo`), swing positions (`vane_horizontal`, `swing_mode`), and error status/code sensors (`ERRSTATUS`, `ERRCODE`).
+- **Automatic Discovery & Pairing Flow (`intesisbox_auth.yaml`)**: Seamless UI configuration step auto-detecting gateway device info and MAC address via ASCII `ID` query over TCP without requiring pre-shared secrets.
+- **Multi-Language Support**: Complete configuration flow translations for English, Spanish, German, and French (`strings.json`, `en.json`, `es.json`, `de.json`, `fr.json`).
+
+### Testing & Quality Assurance
+- **Comprehensive Test Suite**: Added `test_intesisbox_yaml.py` covering YAML validation, connection lifecycle, sequential ACK verification, live emulator interaction, and config flow discovery.
+- **Regression Baseline**: Maintained 100% test pass rate across 1,467 unit tests and zero lint errors with Ruff.
+
 ## [10.0.1b4] - 2026-09-07
 
 ### Documentation & Packaging

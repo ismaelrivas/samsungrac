@@ -61,6 +61,15 @@
           "poll_interval": "Intervalo de sondeo (segundos)"
         }
       },
+      "intesisbox": {
+        "title": "Configurar Pasarela IntesisBox (Puerto 3310)",
+        "description": "Configuración para pasarelas IntesisBox Wireless Multi-Protocol (WMP v1.9). Introduce la dirección IP para descubrir el dispositivo automáticamente.",
+        "data": {
+          "ip_address": "Dirección IP",
+          "mac": "Dirección MAC (Opcional)",
+          "poll_interval": "Intervalo de actualización (Segundos)"
+        }
+      },
       "select_devices": {
         "title": "Seleccionar Unidades Interiores",
         "description": "Se han encontrado {device_count} unidades. Por favor selecciona las que quieres añadir a Home Assistant.",
@@ -197,7 +206,8 @@
         "samsung_8888": "Dispositivo Moderno (Puerto 8888)",
         "mim_h03": "Controlador MIM-H03",
         "smartthings_hvac": "SmartThings HVAC (API REST)",
-        "smartthings_dhw": "SmartThings DHW (API REST)"
+        "smartthings_dhw": "SmartThings DHW (API REST)",
+        "intesisbox": "Pasarela IntesisBox WMP (Puerto 3310)"
       }
     },
     "connection_method": {
@@ -266,6 +276,15 @@
       },
       "external_unit_version": {
         "name": "Versión Unidad Exterior"
+      },
+      "error_status": {
+        "name": "Estado de Error"
+      },
+      "error_code": {
+        "name": "Código de Error"
+      },
+      "vane_horizontal": {
+        "name": "Deflector Horizontal"
       }
     },
     "binary_sensor": {

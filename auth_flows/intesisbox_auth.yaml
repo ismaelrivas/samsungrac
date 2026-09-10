@@ -1,0 +1,27 @@
+# Identification and pairing flow for IntesisBox gateways (Port 3310 WMP v1.9)
+# Mode: stream (plain TCP socket connection)
+
+auth_flow:
+  mode: "stream"
+  buffer_size: 4096
+  reconnect_delay: 1.0
+
+  tls_config:
+    enabled: false
+    strategies: []
+
+  request_pairing:
+    method: "tcp"
+    port: 3310
+    payload: "ID\r\n"
+    success_template:
+      match: 'ID:'
+      fallback_match: 'IS-IR-WMP'
+
+  wait_token:
+    timeout_seconds: 10
+
+  extract_template:
+    regex: 'ID:[^,]+,([0-9A-Fa-f]{12}|(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2})'
+  error_template:
+    match: 'ERR'

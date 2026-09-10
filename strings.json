@@ -61,6 +61,15 @@
                     "poll_interval": "Update Interval (HH:MM:SS format)"
                 }
             },
+            "intesisbox": {
+                "title": "Configure IntesisBox Gateway (Port 3310)",
+                "description": "Configuration for IntesisBox Wireless Multi-Protocol (WMP v1.9) gateways. Enter the IP address to discover device details automatically.",
+                "data": {
+                    "ip_address": "IP Address",
+                    "mac": "MAC Address (Optional)",
+                    "poll_interval": "Update Interval (Seconds)"
+                }
+            },
             "select_devices": {
                 "title": "Select Indoor Units",
                 "description": "Found {device_count} indoor units. Please select which ones you want to add to Home Assistant.",
@@ -197,7 +206,8 @@
                 "samsung_8888": "Modern Samsung AC (Port 8888)",
                 "mim_h03": "Samsung MIM-H03 Heatpump",
                 "smartthings_hvac": "SmartThings HVAC (REST API)",
-                "smartthings_dhw": "SmartThings DHW (REST API)"
+                "smartthings_dhw": "SmartThings DHW (REST API)",
+                "intesisbox": "IntesisBox WMP Gateway (Port 3310)"
             }
         },
         "connection_method": {
@@ -266,6 +276,15 @@
             },
             "external_unit_version": {
                 "name": "External Unit Version"
+            },
+            "error_status": {
+                "name": "Error Status"
+            },
+            "error_code": {
+                "name": "Error Code"
+            },
+            "vane_horizontal": {
+                "name": "Horizontal Vane"
             }
         },
         "binary_sensor": {

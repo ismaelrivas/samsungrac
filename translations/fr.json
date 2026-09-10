@@ -61,6 +61,15 @@
           "poll_interval": "Intervalle de mise à jour (format HH:MM:SS)"
         }
       },
+      "intesisbox": {
+        "title": "Configurer la passerelle IntesisBox (Port 3310)",
+        "description": "Configuration pour les passerelles IntesisBox Wireless Multi-Protocol (WMP v1.9). Entrez l'adresse IP pour détecter automatiquement les détails de l'appareil.",
+        "data": {
+          "ip_address": "Adresse IP",
+          "mac": "Adresse MAC (Optionnel)",
+          "poll_interval": "Intervalle de mise à jour (Secondes)"
+        }
+      },
       "select_devices": {
         "title": "Sélectionner les unités intérieures",
         "description": "Trouvé {device_count} unités intérieures. Veuillez sélectionner celles que vous souhaitez ajouter à Home Assistant.",
@@ -197,7 +206,8 @@
         "samsung_8888": "Climatiseur Samsung moderne (Port 8888)",
         "mim_h03": "Pompe à chaleur Samsung MIM-H03",
         "smartthings_hvac": "SmartThings HVAC (API REST)",
-        "smartthings_dhw": "SmartThings ECS (API REST)"
+        "smartthings_dhw": "SmartThings ECS (API REST)",
+        "intesisbox": "Passerelle IntesisBox WMP (Port 3310)"
       }
     },
     "connection_method": {
@@ -266,6 +276,15 @@
       },
       "external_unit_version": {
         "name": "Version Unité Extérieure"
+      },
+      "error_status": {
+        "name": "État de l'erreur"
+      },
+      "error_code": {
+        "name": "Code d'erreur"
+      },
+      "vane_horizontal": {
+        "name": "Volet horizontal"
       }
     },
     "binary_sensor": {

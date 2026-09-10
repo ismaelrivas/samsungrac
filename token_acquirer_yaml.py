@@ -35,6 +35,7 @@ class GenericYamlTokenAcquirer:
         # Stream State
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
+        self._initial_stream_data: str | None = None
 
     def _resolve_cert_path(self, cert_sentinel: str | None) -> str | None:
         """Resolve the YAML sentinel to an absolute file path."""
@@ -183,11 +184,37 @@ class GenericYamlTokenAcquirer:
     # STREAM MODE LOGIC (Port 2878)
     # ==========================================
     async def _connect_stream(self) -> dict[str, Any]:
-        """Establish a TLS stream socket connection across configured strategies."""
+        """Establish a stream socket connection across configured strategies or plain TCP."""
         tls_cfg = self.auth_config.get("tls_config", {})
         strategies = tls_cfg.get("strategies", [])
         ciphers = tls_cfg.get("ciphers", [])
         delay = self.auth_config.get("reconnect_delay", 1.5)
+        req_cfg = self.auth_config.get("request_pairing", {})
+        port = req_cfg.get("port", 2878)
+
+        # Plain TCP stream connection only if explicitly configured (enabled=False or method='tcp')
+        if tls_cfg.get("enabled") is False or req_cfg.get("method") == "tcp":
+            try:
+                async with asyncio.timeout(15.0):
+                    self._reader, self._writer = await asyncio.open_connection(
+                        self.ip_address,
+                        port,
+                        ssl=None,
+                    )
+                    # Read any initial banner if sent immediately
+                    try:
+                        async with asyncio.timeout(1.0):
+                            await self._reader.read(
+                                self.auth_config.get("buffer_size", 4096)
+                            )
+                    except TimeoutError:
+                        pass
+                    return {"plain_tcp": True}
+            except Exception as err:
+                await self.async_close()
+                raise CannotConnect(
+                    f"Failed to connect via plain TCP to {self.ip_address}:{port}: {err}"
+                ) from err
 
         for strategy in strategies:
             cert_path = self._resolve_cert_path(strategy.get("cert"))
@@ -334,6 +361,7 @@ class GenericYamlTokenAcquirer:
                 ) from exc
 
             decoded = data.decode("utf-8", errors="ignore")
+            self._initial_stream_data = decoded
 
             succ_cfg = req_cfg.get("success_template", {})
             match_str = succ_cfg.get("match", "")
@@ -364,6 +392,15 @@ class GenericYamlTokenAcquirer:
             elif mode == "stream":
                 if not self._reader:
                     raise TokenAcquisitionError("Connection not established.")
+
+                extract_regex = self.auth_config.get("extract_template", {}).get(
+                    "regex"
+                )
+                if self._initial_stream_data and extract_regex:
+                    match = re.search(extract_regex, self._initial_stream_data)
+                    if match:
+                        return match.group(1)
+
                 timeout = self.auth_config.get("wait_token", {}).get(
                     "timeout_seconds", 45
                 )
