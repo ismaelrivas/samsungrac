@@ -1,5 +1,13 @@
 # Changelog
 
+## [10.0.1b6] - 2026-09-10
+
+### Fixes & Hardware Robustness
+- **Legacy Samsung 2878 Connection Hardening**: Restored ordered fallback to alternative cipher suites and connection strategies (`all_attempts = matching + fallback_attempts`) if the cached or preferred configuration fails during handshake.
+- **ICMP Reachability Resilience**: Increased network diagnostic ping timeout from `0.5s` to `2.0s` in `helpers.py`, preventing false-positive unreachable states on Wi-Fi devices in power-save mode.
+- **Unprivileged ICMP Permission Guard**: Safely handle `SocketPermissionError` in systems without `net.ipv4.ping_group_range` configured, gracefully bypassing the ping check to allow direct TCP/TLS connections without blocking.
+- **Regression Test Coverage**: Added dedicated test cases in `test_helpers__advanced.py` and `test_samsung_2878__logic.py` asserting the 2.0s timeout, permission error handling, and sequential cipher fallback.
+
 ## [10.0.1b5] - 2026-09-08
 
 ### New Features & Hardware Support
