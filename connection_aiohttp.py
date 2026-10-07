@@ -72,6 +72,12 @@ HEADER_VALUE_JSON = "application/json"
 HEADER_VALUE_CLOSE = "close"
 KEEPALIVE_TIMEOUT = 75
 
+# Lower-cased message fragments emitted by aiohttp's HTTP parser on malformed headers
+# (e.g. "Invalid header token: b'X-API-Version : v1.0.0'").
+_HEADER_VIOLATION_MARKERS = ("invalid header", "header token")
+# Upper bound when walking __cause__/__context__ chains (guards against cycles).
+_MAX_EXC_CHAIN_DEPTH = 5
+
 _KEY_PROBE_URL = "probe_url"
 _KEY_URL = "url"
 _KEY_JSON = "json"
@@ -276,10 +282,38 @@ class ConnectionAiohttp8888(Connection):
             raise CannotConnect(f"SSL context creation failed: {e}") from e
 
     @staticmethod
+    def _is_wrapped_parser_violation(exc: aiohttp.ClientResponseError) -> bool:
+        """Detect HTTP parser violations wrapped by aiohttp into ClientResponseError.
+
+        aiohttp's client protocol re-raises low-level parser failures (e.g. an illegal
+        space before the colon in ``X-API-Version : v1.0.0``) as
+        ``ClientResponseError(status=400)`` chained from ``HttpProcessingError``.
+        Genuine HTTP error replies raised by ``raise_for_status()`` carry neither the
+        parser message markers nor a parser exception in their cause chain.
+        """
+        message = exc.message if isinstance(exc.message, str) else ""
+        if exc.status == HTTPStatus.BAD_REQUEST and any(
+            marker in message.lower() for marker in _HEADER_VIOLATION_MARKERS
+        ):
+            return True
+
+        # HttpProcessingError is the base of BadHttpMessage, InvalidHeader and LineTooLong.
+        cause: BaseException | None = exc.__cause__ or exc.__context__
+        depth = 0
+        while cause is not None and depth < _MAX_EXC_CHAIN_DEPTH:  # pragma: no mutate
+            if isinstance(cause, aiohttp.http_exceptions.HttpProcessingError):
+                return True
+            cause = cause.__cause__ or cause.__context__
+            depth += 1  # pragma: no mutate
+        return False
+
+    @staticmethod
     def _is_http_protocol_violation(exc: BaseException) -> bool:
         """Check if exception represents an HTTP protocol/header violation requiring fallback to RAW."""
         if isinstance(exc, aiohttp.ClientConnectorError):
             return False  # pragma: no mutate
+        if isinstance(exc, aiohttp.ClientResponseError):
+            return ConnectionAiohttp8888._is_wrapped_parser_violation(exc)
         return isinstance(
             exc,
             (
@@ -518,7 +552,7 @@ class ConnectionAiohttp8888(Connection):
                 ValueError,
             ) as e:
                 if self._is_http_protocol_violation(e):
-                    _LOGGER.warning(
+                    _LOGGER.debug(
                         "%s [aiohttp_probe] Device HTTP protocol/header violation detected: %s. "
                         "Switching to 'Robust (raw socket)' engine.",
                         self.log_prefix,
@@ -784,7 +818,7 @@ class ConnectionAiohttp8888(Connection):
                     "%s [aiohttp] Device HTTP protocol/header violation detected: %s. "
                     "Switching to 'Robust (raw socket)' engine."
                 )
-                _LOGGER.warning(err_msg, self.log_prefix, e)
+                _LOGGER.debug(err_msg, self.log_prefix, e)
                 raise InvalidHeaderError(
                     f"HTTP header/protocol error on aiohttp: {e}"
                 ) from e
@@ -831,7 +865,7 @@ class ConnectionAiohttp8888(Connection):
                             "%s [aiohttp] Device HTTP protocol/header violation during retry: %s. "
                             "Switching to 'Robust (raw socket)' engine."
                         )
-                        _LOGGER.warning(
+                        _LOGGER.debug(
                             err_msg, self.log_prefix, retry_exc
                         )  # pragma: no mutate
                         raise InvalidHeaderError(

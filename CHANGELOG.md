@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.0.1b8] - 2026-10-07
+
+### Fixes & Hardware Robustness
+- **HTTP Parser Violation Detection & Automatic Raw Fallback**: Resolved RFC 7230/9110 HTTP parser violation detection in `connection_aiohttp.py` where modern Samsung AC firmwares (e.g., `TP6X_RAC_17K`) emit non-compliant response headers with spaces before colon (`X-API-Version : v1.0.0`). Extended `_is_http_protocol_violation()` to detect wrapped `aiohttp.ClientResponseError(400)` chained from `HttpProcessingError` or matching parser error tokens, correctly raising `InvalidHeaderError`.
+- **Seamless Discovery Onboarding Fallback**: Ensured discovery (`async_step_discover_uuid` in `config_flow_discovery.py`) catches `InvalidHeaderError` and invokes `_async_fallback_raw_discovery()`, seamlessly migrating devices to `CONN_METHOD_RAW` ("Robust (raw socket)") without aborting onboarding.
+
+### Diagnostics & Auto-Healing Streamlining
+- **Non-Alarming Auto-Healing Logs**: Streamlined log levels during transient auto-healing transitions:
+  - In `__init__.py`, transient `ConfigEntryNotReady` during auto-healing is logged as `WARNING` ("Device setup task deferred") rather than a critical `ERROR` ("fatal exception"). Rollback on sibling failure likewise scales to `WARNING`.
+  - In `coordinator.py`, redundant auto-healing activation warnings were downgraded to `DEBUG`, preserving the Home Assistant Repairs notification without cluttering the console.
+  - In `connection_aiohttp.py`, raw header dump warnings were downgraded to `DEBUG` as the exception is automatically handled by the engine fallback.
+
+### Quality Assurance & Test Suite Hardening
+- **Mock Introspection Hardening**: Resolved pre-existing `test_yaml_controller_connection_diagnostics` failure in `test_controller_yaml.py` by aligning unspecced poller mock attributes with the public `last_icmp_diagnostic` property, eradicating `getattr` mock trap collisions. Added contract verification test `test_yaml_state_poller_last_icmp_diagnostic_contract`.
+- **Comprehensive Test Coverage**: Expanded test suite to 1,556 unit tests across `test_connection_aiohttp__try.py` (covering wrapped parser exception chains, cause inspection, circular cause guards, and exception propagation) and `test_config_flow_discovery.py` (end-to-end fallback from aiohttp probe to raw socket).
+
 ## [10.0.1b7] - 2026-09-10
 
 ### Improvements & Network Resilience

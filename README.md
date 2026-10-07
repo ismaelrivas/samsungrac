@@ -2,7 +2,7 @@
 
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Core%202026.x%20Ready-blue?style=for-the-badge&logo=home-assistant)
 ![Mutation Score](https://img.shields.io/badge/Mutation%20Score-100%25-brightgreen.svg)
-![Unit Tests](https://img.shields.io/badge/Unit%20Tests-1467%20Passed-brightgreen?style=for-the-badge)
+![Unit Tests](https://img.shields.io/badge/Unit%20Tests-1556%20Passed-brightgreen?style=for-the-badge)
 ![Quality Scale](https://img.shields.io/badge/Quality%20Scale-Gold%20Master-gold?style=for-the-badge)
 ![HACS](https://img.shields.io/badge/HACS-Custom%20Repository-orange?style=for-the-badge)
 
@@ -10,17 +10,15 @@ A highly resilient, mathematically verified, and asynchronously optimized custom
 
 ---
 
-## 🏆 Version History & Release Notes (v10.0.1b5)
+## 🏆 Version History & Release Notes (v10.0.1b8)
 
-This release adds complete native support for IntesisBox Wireless Multi-Protocol (WMP v1.9) gateways over TCP port 3310 alongside continuous stability hardening.
+This release delivers automatic fallback resilience for non-standard HTTP header violations (e.g. `TP6X_RAC_17K` firmwares), clean and streamlined auto-healing log telemetry, and hardened test mock introspection.
 
 **Engineering Highlights:**
-* 🌐 **IntesisBox Gateway Support (WMP v1.9):** Full bidirectional control with continuous push updates (`CHN`), periodic polling (`STATUS,1`), limits discovery (`LIMITS`), and optimistic state synchronization on `ACK`.
-* 🏗️ **Architecture & EAFP Refactoring:** Massive refactoring to use the Pythonic EAFP pattern alongside direct checks via `getattr`, eradicating unsafe `hasattr()` uses.
-* 🛡️ **Absolute Zero Mutants (100% Mutation Score):** Core modules and configuration flow were iteratively hardened until reaching mathematically proven 0 surviving mutants across 1,467 tests.
-* 🔒 **Anti-Flicker Lock Eviction & Network State Integrity:** Enhanced lock eviction logic in polling controller and switch hooks, using `deepcopy` for network state storage to eliminate state pollution across polling cycles.
-* ⚡ **Connection Engine & Concurrency:** Defined `PARALLEL_UPDATES` across all platforms (`climate`, `sensor`, `switch`), strictly compliant with Home Assistant quality scale and Hassfest standards.
-* 🐛 **Hang & Loop Prevention:** Resolved potential infinite loops during diagnostics redaction and eliminated floating-point parsing discrepancies.
+* 🛡️ **HTTP Parser Violation Resilience & Auto-Fallback:** Detects RFC 7230/9110 non-compliant header responses (spaces before colon like `X-API-Version : v1.0.0`) wrapped in `aiohttp.ClientResponseError(400)` and triggers automatic fallback to the "Robust (raw socket)" engine during discovery and runtime.
+* 🧹 **Streamlined & Non-Alarming Auto-Healing Telemetry:** Downgraded transient auto-healing errors and redundant warnings to clean `DEBUG`/`WARNING` levels (`ConfigEntryNotReady`), ensuring the console remains clear while keeping the Home Assistant Repairs UI active.
+* 🔧 **Mock Introspection Hardening:** Fixed unspecced poller mock attributes against the public `last_icmp_diagnostic` property in `test_controller_yaml.py`, resolving mock `getattr` collisions and adding poller property contract verification.
+* 🧪 **Zero-Defect Test Baseline:** Expanded test suite to **1,556 unit tests** with a 100% pass rate and zero regressions.
 
 ---
 

@@ -39,6 +39,7 @@ from custom_components.climate_ip.const import (
 )
 from custom_components.climate_ip.controller_yaml import YamlController
 from custom_components.climate_ip.controller_yaml_config import _YAML_FILE_CACHE
+from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 from custom_components.climate_ip.exceptions import AuthError, CannotConnect
 
 
@@ -291,7 +292,9 @@ def mock_yaml_controller():
         controller.loader.properties = {}
         controller.loader.sensors = {}
         controller.loader.name = None
-        controller.poller._last_icmp_diagnostic = None
+        # The controller reads the public property; the poller mock is unspecced, so an
+        # unset attribute would be auto-synthesized as a truthy MagicMock (getattr trap).
+        controller.poller.last_icmp_diagnostic = None
         controller._attributes = {}
 
         return controller
@@ -636,7 +639,7 @@ def test_yaml_controller_last_poll_data(mock_yaml_controller) -> None:
 def test_yaml_controller_connection_diagnostics(mock_yaml_controller) -> None:
     """Kills mutants in connection_diagnostics."""
     mock_yaml_controller.loader.connection = None
-    mock_yaml_controller.poller._last_icmp_diagnostic = None
+    mock_yaml_controller.poller.last_icmp_diagnostic = None
     assert mock_yaml_controller.connection_diagnostics == {}
 
     mock_conn = MagicMock()
@@ -647,7 +650,7 @@ def test_yaml_controller_connection_diagnostics(mock_yaml_controller) -> None:
         "connected": True,
     }
 
-    mock_yaml_controller.poller._last_icmp_diagnostic = {
+    mock_yaml_controller.poller.last_icmp_diagnostic = {
         "is_reachable": True,
         "avg_rtt_ms": 1.5,
         "status": "alive",
@@ -661,6 +664,17 @@ def test_yaml_controller_connection_diagnostics(mock_yaml_controller) -> None:
             "status": "alive",
         },
     }
+
+
+def test_yaml_state_poller_last_icmp_diagnostic_contract() -> None:
+    """The real poller property must expose _last_icmp_diagnostic (consumed by connection_diagnostics)."""
+    poller = object.__new__(YamlStatePoller)
+    poller._last_icmp_diagnostic = None
+    assert poller.last_icmp_diagnostic is None
+
+    diag = {"is_reachable": False, "status": "unreachable_timeout"}
+    poller._last_icmp_diagnostic = diag
+    assert poller.last_icmp_diagnostic is diag
 
 
 def test_yaml_controller_device_state(mock_yaml_controller) -> None:

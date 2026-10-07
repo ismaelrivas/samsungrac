@@ -514,7 +514,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
         device_name = self.device_info.get("name") or self.safe_unique_id
 
-        _LOGGER.warning(
+        _LOGGER.debug(
             "%s Auto-healing to RAW mode activated: The device sent non-standard HTTP responses "
             "(RFC 7230 violation). The connection engine has been automatically and permanently "
             "migrated to 'Robust (raw socket)' to preserve full AC control without disconnections.",
@@ -545,7 +545,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             return self._create_device_state()
         except InvalidHeaderError as err:
             if self.connection_method != CONN_METHOD_RAW:
-                _LOGGER.warning(
+                _LOGGER.debug(
                     "%s Auto-healing to RAW mode triggered", self.log_prefix
                 )  # pragma: no mutate
                 self._async_switch_to_raw_engine()
