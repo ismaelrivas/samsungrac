@@ -263,7 +263,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
         if isinstance(result, Exception):
             if not fatal_exception:
                 fatal_exception = result
-            _LOGGER.error("Device setup task raised fatal exception: %s", result)
+            if isinstance(result, ConfigEntryNotReady):
+                _LOGGER.warning("Device setup task deferred: %s", result)
+            else:
+                _LOGGER.error("Device setup task raised fatal exception: %s", result)
             continue
 
         if isinstance(result, tuple):
@@ -274,8 +277,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
     # 4. ROLLBACK CHECK: Tear down successfully booted orphans if a sibling failed fatally
     if fatal_exception is not None:
         if coordinators:
-            _LOGGER.error(
-                "Rolling back %d booted coordinators due to sibling fatal exception: %s",
+            log_level = (
+                logging.WARNING
+                if isinstance(fatal_exception, ConfigEntryNotReady)
+                else logging.ERROR
+            )
+            _LOGGER.log(
+                log_level,
+                "Rolling back %d booted coordinators due to sibling failure: %s",
                 len(coordinators),
                 fatal_exception,
             )

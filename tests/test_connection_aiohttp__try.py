@@ -470,3 +470,225 @@ async def test_try_connection_http_probe_passes_ssl_false(
     mock_session.request.assert_called_once()
     _, kwargs = mock_session.request.call_args
     assert kwargs["ssl"] is False
+
+
+# ============================================================================
+# Wrapped parser violations (ClientResponseError chained from HttpProcessingError)
+# ============================================================================
+
+_TP6X_PARSER_MESSAGE = (
+    "Invalid header token:\n\n  b'X-API-Version : v1.0.0'\n                 ^"
+)
+
+
+def _make_response_error(
+    status: int, message: str, cause: BaseException | None = None
+) -> aiohttp.ClientResponseError:
+    err = aiohttp.ClientResponseError(
+        request_info=MagicMock(), history=(), status=status, message=message
+    )
+    err.__cause__ = cause
+    return err
+
+
+def _make_tp6x_wrapped_error() -> aiohttp.ClientResponseError:
+    """Replicate the exact exception chain raised by aiohttp 3.13 for TP6X_RAC_17K firmware.
+
+    ClientResponseError(400) -> HttpProcessingError -> BadHttpMessage
+    """
+    bad_msg = aiohttp.http_exceptions.BadHttpMessage(_TP6X_PARSER_MESSAGE)
+    processing = aiohttp.http_exceptions.HttpProcessingError(
+        code=400, message=_TP6X_PARSER_MESSAGE
+    )
+    processing.__cause__ = bad_msg
+    return _make_response_error(400, _TP6X_PARSER_MESSAGE, processing)
+
+
+def test_is_http_protocol_violation_wrapped_tp6x_error():
+    """The real-world wrapped chain must be classified as a protocol violation."""
+    assert (
+        ConnectionAiohttp8888._is_http_protocol_violation(_make_tp6x_wrapped_error())
+        is True
+    )
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        _TP6X_PARSER_MESSAGE,
+        "INVALID HEADER value",
+        "Bad header token found",
+    ],
+)
+def test_is_http_protocol_violation_response_error_message_markers(message):
+    """Status 400 plus either marker (case-insensitive) is a violation, even without cause."""
+    assert (
+        ConnectionAiohttp8888._is_http_protocol_violation(
+            _make_response_error(400, message)
+        )
+        is True
+    )
+
+
+@pytest.mark.parametrize(
+    ("status", "message"),
+    [
+        (400, "Bad Request"),
+        (500, _TP6X_PARSER_MESSAGE),
+        (401, "Unauthorized"),
+        (404, "header token"),
+    ],
+)
+def test_is_http_protocol_violation_response_error_genuine_http_errors(status, message):
+    """Genuine HTTP error replies (raise_for_status) must NOT trigger the raw fallback."""
+    assert (
+        ConnectionAiohttp8888._is_http_protocol_violation(
+            _make_response_error(status, message)
+        )
+        is False
+    )
+
+
+@pytest.mark.parametrize(
+    "cause",
+    [
+        aiohttp.http_exceptions.HttpProcessingError(code=400, message="x"),
+        aiohttp.http_exceptions.BadHttpMessage("x"),
+        aiohttp.http_exceptions.InvalidHeader("x"),
+        aiohttp.http_exceptions.LineTooLong("x", 8190, 4096),
+    ],
+)
+def test_is_http_protocol_violation_response_error_parser_cause(cause):
+    """A parser exception in __cause__ is a violation regardless of status/message."""
+    assert (
+        ConnectionAiohttp8888._is_http_protocol_violation(
+            _make_response_error(0, "", cause)
+        )
+        is True
+    )
+
+
+def test_is_http_protocol_violation_response_error_nested_cause():
+    """The parser exception is found deeper in the __cause__ chain."""
+    middle = RuntimeError("wrapper")
+    middle.__cause__ = aiohttp.http_exceptions.BadHttpMessage("x")
+    assert (
+        ConnectionAiohttp8888._is_http_protocol_violation(
+            _make_response_error(0, "", middle)
+        )
+        is True
+    )
+
+
+def test_is_http_protocol_violation_response_error_context_only():
+    """Implicit chaining (__context__ without __cause__) is also inspected."""
+    err = _make_response_error(0, "")
+    err.__context__ = aiohttp.http_exceptions.BadHttpMessage("x")
+    assert ConnectionAiohttp8888._is_http_protocol_violation(err) is True
+
+
+def test_is_http_protocol_violation_response_error_non_parser_cause():
+    """A non-parser cause chain must not be classified as a violation."""
+    middle = RuntimeError("wrapper")
+    middle.__cause__ = TimeoutError()
+    assert (
+        ConnectionAiohttp8888._is_http_protocol_violation(
+            _make_response_error(0, "", middle)
+        )
+        is False
+    )
+
+
+def test_is_http_protocol_violation_response_error_cyclic_chain():
+    """Cyclic cause chains terminate without a parser match."""
+    first = RuntimeError("a")
+    second = RuntimeError("b")
+    first.__cause__ = second
+    second.__cause__ = first
+    assert (
+        ConnectionAiohttp8888._is_http_protocol_violation(
+            _make_response_error(0, "", first)
+        )
+        is False
+    )
+
+
+def test_is_http_protocol_violation_response_error_non_str_message():
+    """A non-string message attribute is tolerated and treated as empty."""
+    err = _make_response_error(400, "")
+    err.message = None  # type: ignore[assignment]
+    assert ConnectionAiohttp8888._is_http_protocol_violation(err) is False
+
+
+async def test_try_connection_wrapped_invalid_header_raises_invalid_header_error(
+    connection_config, mock_logger, mock_hass, mock_session
+):
+    """The wrapped TP6X error during the probe raises InvalidHeaderError (not plain CannotConnect)."""
+    with patch("os.path.exists", return_value=True):
+        conn = ConnectionAiohttp8888(
+            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+        )
+        conn._create_ssl_context = AsyncMock(return_value=MagicMock())
+        wrapped = _make_tp6x_wrapped_error()
+        mock_session.request.side_effect = wrapped
+
+        with pytest.raises(InvalidHeaderError) as exc_info:
+            await conn._try_connection()
+
+        assert exc_info.value.__cause__ is wrapped
+        assert "Protocol violation during probe" in str(exc_info.value)
+        assert conn._shared_state.initialized is False
+
+
+async def test_try_connection_genuine_400_raises_cannot_connect(
+    connection_config, mock_logger, mock_hass, mock_session
+):
+    """A genuine 400 ClientResponseError during the probe stays a plain CannotConnect."""
+    with patch("os.path.exists", return_value=True):
+        conn = ConnectionAiohttp8888(
+            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+        )
+        conn._create_ssl_context = AsyncMock(return_value=MagicMock())
+        mock_session.request.side_effect = _make_response_error(400, "Bad Request")
+
+        with pytest.raises(CannotConnect) as exc_info:
+            await conn._try_connection()
+
+        assert not isinstance(exc_info.value, InvalidHeaderError)
+
+
+async def test_async_execute_request_wrapped_invalid_header_raises_invalid_header_error(
+    connection_config, mock_logger, mock_hass, mock_session
+):
+    """The wrapped TP6X error during request execution raises InvalidHeaderError without retry."""
+    with patch("os.path.exists", return_value=True):
+        conn = ConnectionAiohttp8888(
+            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+        )
+        conn._create_ssl_context = AsyncMock(return_value=MagicMock())
+        wrapped = _make_tp6x_wrapped_error()
+        mock_session.request.side_effect = wrapped
+
+        with pytest.raises(InvalidHeaderError) as exc_info:
+            await conn._async_execute_request(
+                "GET", "https://192.168.1.100:8888/devices", None, None
+            )
+
+        assert exc_info.value.__cause__ is wrapped
+        mock_session.request.assert_called_once()
+        assert conn._force_close_connection is False
+
+
+async def test_async_execute_wrapped_invalid_header_propagates_from_probe(
+    connection_config, mock_logger, mock_hass, mock_session
+):
+    """async_execute surfaces InvalidHeaderError raised by the initial probe."""
+    with patch("os.path.exists", return_value=True):
+        conn = ConnectionAiohttp8888(
+            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+        )
+        conn._create_ssl_context = AsyncMock(return_value=MagicMock())
+        mock_session.request.side_effect = _make_tp6x_wrapped_error()
+
+        with pytest.raises(InvalidHeaderError):
+            await conn.async_execute("GET", "/devices", None, None)

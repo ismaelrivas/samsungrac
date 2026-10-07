@@ -1030,6 +1030,104 @@ async def test_async_step_discover_uuid_invalid_header_shutdown_and_fallback():
 
 
 @pytest.mark.asyncio
+async def test_async_step_discover_uuid_wrapped_aiohttp_header_error_falls_back_to_raw():
+    """End-to-end: a TP6X wrapped ClientResponseError from the real aiohttp probe triggers raw fallback.
+
+    The HTTP controller's initialize() drives a real ConnectionAiohttp8888 probe whose
+    session raises ClientResponseError(400) chained from HttpProcessingError. Discovery
+    must catch the resulting InvalidHeaderError and rebuild the controller with
+    CONN_METHOD_RAW instead of aborting with cannot_connect.
+    """
+    import logging
+
+    import aiohttp
+
+    from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
+
+    parser_msg = (
+        "Invalid header token:\n\n  b'X-API-Version : v1.0.0'\n                 ^"
+    )
+    processing = aiohttp.http_exceptions.HttpProcessingError(
+        code=400, message=parser_msg
+    )
+    processing.__cause__ = aiohttp.http_exceptions.BadHttpMessage(parser_msg)
+    wrapped = aiohttp.ClientResponseError(
+        request_info=MagicMock(), history=(), status=400, message=parser_msg
+    )
+    wrapped.__cause__ = processing
+
+    session = MagicMock(spec=["closed", "request", "close"])
+    session.closed = False
+    session.request.side_effect = wrapped
+    conn = ConnectionAiohttp8888(
+        {"token": "test_token"},
+        logging.getLogger("test_discovery"),
+        MagicMock(),
+        session,
+        "192.168.1.100",
+    )
+    conn._create_ssl_context = AsyncMock(return_value=MagicMock())
+
+    async def _http_initialize():
+        await conn._try_connection()
+        return True
+
+    flow = ClimateIpConfigFlow()
+    flow.hass = MagicMock()
+    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888}
+    flow.reauth_entry = None
+    flow.context = {"source": SOURCE_USER}
+
+    http_ctrl = MagicMock()
+    http_ctrl.initialize = AsyncMock(side_effect=_http_initialize)
+    http_ctrl.async_get_status = AsyncMock(return_value={"ok": True})
+    http_ctrl.async_shutdown = AsyncMock()
+
+    raw_ctrl = MagicMock()
+    raw_ctrl.initialize = AsyncMock(return_value=True)
+    raw_ctrl.async_get_status = AsyncMock(return_value={"ok": True})
+    raw_ctrl.async_shutdown = AsyncMock()
+
+    # Snapshot each config at construction time: the fallback mutates config_data in place.
+    ctrl_queue = [http_ctrl, raw_ctrl]
+    config_snapshots: list[dict] = []
+
+    def _build_controller(**kwargs):
+        config_snapshots.append(dict(kwargs["config"]))
+        return ctrl_queue.pop(0)
+
+    with (
+        patch(
+            "custom_components.climate_ip.controller_yaml.YamlController",
+            side_effect=_build_controller,
+        ),
+        patch(
+            "custom_components.climate_ip.config_flow_discovery.aiohttp_client.async_get_clientsession",
+            return_value=MagicMock(),
+        ),
+        patch.object(
+            flow,
+            "_create_entry",
+            new_callable=AsyncMock,
+            return_value={"type": FlowResultType.CREATE_ENTRY},
+        ) as mock_create,
+    ):
+        res = await flow.async_step_discover_uuid()
+
+    assert res["type"] == FlowResultType.CREATE_ENTRY
+    assert len(config_snapshots) == 2
+    assert config_snapshots[0].get(CONF_CONN_METHOD) != CONN_METHOD_RAW
+    assert config_snapshots[1][CONF_CONN_METHOD] == CONN_METHOD_RAW
+    assert flow.flow_data[CONF_CONN_METHOD] == CONN_METHOD_RAW
+    http_ctrl.async_get_status.assert_not_called()
+    http_ctrl.async_shutdown.assert_awaited_once()
+    raw_ctrl.initialize.assert_awaited_once()
+    raw_ctrl.async_get_status.assert_awaited_once()
+    raw_ctrl.async_shutdown.assert_awaited_once()
+    mock_create.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_async_step_discover_uuid_generic_exception():
     """Test async_step_discover_uuid catches unexpected Exception and aborts with unknown_error."""
     flow = ClimateIpConfigFlow()
