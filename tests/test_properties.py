@@ -1616,6 +1616,22 @@ async def test_device_operation_resolve_async_params_missing_attr():
     assert params == {"method": "GET", "url": "/api"}
 
 
+async def test_device_operation_resolve_async_params_empty_params_returns_none():
+    """An empty connection params dict without template must resolve to None."""
+    conn = MagicMock(spec=["_params", "_connection_template"])
+    conn._params = {}
+    conn._connection_template = None
+    ctrl = MagicMock()
+    ctrl.loader = MagicMock()
+    ctrl.loader.parsed_yaml_cache = {}
+    ctrl.log_prefix = "TEST"
+
+    op = DeviceOperation("test", conn, ctrl)
+    op._connection_template = None
+
+    assert op._resolve_async_params(conn, "val") is None
+
+
 async def test_device_operation_resolve_async_params_condition_flip():
     """Test base_template resolution when conn template is different or matches template_to_use."""
     conn = MagicMock(spec=["_params", "_connection_template"])
@@ -2001,6 +2017,29 @@ def test_device_property_route_to_subdevice():
     ]
     routed_abs = prop._route_to_subdevice({"Devices": devices_abs_fallback})
     assert routed_abs == {"id": "other_1", "power": "on"}
+
+    # 6. A custom subdevice id path must be honoured (non-colliding with default ["id"])
+    ctrl.loader.parsed_yaml_cache["ac_unit_2"][KEY_DEVICE_CONFIG][KEY_IDENTIFIERS] = {
+        KEY_PATH_TO_DEVICES: ["Devices"],
+        CONF_SUBDEVICE_ID: ["uuid"],
+    }
+    devices_custom_path = [
+        {"id": "ac_unit_2", "uuid": "decoy", "name": "Decoy"},
+        {"id": "other", "uuid": "ac_unit_2", "name": "Target"},
+    ]
+    routed_custom = prop._route_to_subdevice({"Devices": devices_custom_path})
+    assert routed_custom == {"id": "other", "uuid": "ac_unit_2", "name": "Target"}
+
+    # 7. A missing subdevice id key falls back to the default ["id"] path
+    ctrl.loader.parsed_yaml_cache["ac_unit_2"][KEY_DEVICE_CONFIG][KEY_IDENTIFIERS] = {
+        KEY_PATH_TO_DEVICES: ["Devices"],
+    }
+    devices_default_path = [
+        {"id": "other", "name": "First"},
+        {"id": "ac_unit_2", "name": "Target"},
+    ]
+    routed_default = prop._route_to_subdevice({"Devices": devices_default_path})
+    assert routed_default == {"id": "ac_unit_2", "name": "Target"}
 
 
 def test_device_property_is_valid_strict(mock_connection, mock_controller):

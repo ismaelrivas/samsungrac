@@ -575,6 +575,18 @@ async def test_async_update_state_sniper_discovery():
         "": {"device": {"identifiers": {"path_to_devices": ["devices"], "id": ["id"]}}}
     }
     await poller.async_update_state()
+    # An empty device_id must be replaced by the discovered MIM-H03 node id
+    assert mock_controller.device_id == "target_id"
+
+    # A configured (non-empty, non-"0") device_id must never be overwritten
+    mock_controller.device_id = "configured_id"
+    mock_controller.loader._parsed_yaml_cache = {
+        "configured_id": {
+            "device": {"identifiers": {"path_to_devices": ["devices"], "id": ["id"]}}
+        }
+    }
+    await poller.async_update_state()
+    assert mock_controller.device_id == "configured_id"
 
     # =========================================================================
     # PHASE 4: The Void Tests

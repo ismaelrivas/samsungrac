@@ -2341,8 +2341,14 @@ def test_aiohttp_init_without_token_raises_auth_error(
 ):
     """Test __init__ immediately raises AuthError when token is missing or empty."""
     config = {} if invalid_token is None else {CONF_TOKEN: invalid_token}
-    with pytest.raises(
-        AuthError, match=r"\[aiohttp_init\] aiohttp engine started without a token\."
+    with (
+        patch(
+            "custom_components.climate_ip.connection_aiohttp._LOGGER.error"
+        ) as mock_log_error,
+        pytest.raises(
+            AuthError,
+            match=r"\[aiohttp_init\] aiohttp engine started without a token\.",
+        ),
     ):
         ConnectionAiohttp8888(
             config=config,
@@ -2351,6 +2357,9 @@ def test_aiohttp_init_without_token_raises_auth_error(
             session=mock_session,
             ip_address="192.168.1.100",
         )
+    mock_log_error.assert_called_once_with(
+        "[aiohttp_init] aiohttp engine started without a token. This will fail."
+    )
 
 
 @pytest.mark.asyncio

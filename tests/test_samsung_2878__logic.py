@@ -124,6 +124,58 @@ async def test_parse_and_update_state_empty(connection):
     _is_response, _is_update, _data = await connection._parse_and_update_state("")
 
 
+def _wire_inline_executor(connection):
+    """Run executor jobs inline so safe_xml_to_dict parses synchronously."""
+    connection._controller = MagicMock()
+    connection._controller.hass = MagicMock()
+
+    async def _inline_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    connection._controller.hass.async_add_executor_job = AsyncMock(
+        side_effect=_inline_job
+    )
+
+
+async def test_parse_and_update_state_skips_attr_missing_value(connection):
+    """An Attr without Value must be skipped, not abort the remaining attributes."""
+    _wire_inline_executor(connection)
+    xml = """<?xml version="1.0" encoding="utf-8" ?>
+    <Response Type="DeviceState" Status="Okay">
+        <DeviceState>
+            <Device DUID="AABBCCDDEEFF" GroupID="AC" ModelID="AC" >
+                <Attr ID="AC_FUN_TEMPSET" />
+                <Attr ID="AC_FUN_POWER" Value="On" />
+            </Device>
+        </DeviceState>
+    </Response>
+    """
+    is_response, is_update, data = await connection._parse_and_update_state(xml)
+
+    assert is_response is True
+    assert is_update is False
+    assert data == {"AC_FUN_POWER": "On"}
+
+
+async def test_parse_and_update_state_multi_attr_update_not_ignored(connection):
+    """A multi-attribute update containing Power On must not be dropped as redundant."""
+    _wire_inline_executor(connection)
+    connection._device_status["AC_FUN_POWER"] = "On"
+    xml = """<?xml version="1.0" encoding="utf-8" ?>
+    <Update Type="Status">
+        <Status DUID="AABBCCDDEEFF" GroupID="AC" ModelID="AC" >
+            <Attr ID="AC_FUN_POWER" Value="On" />
+            <Attr ID="AC_FUN_TEMPSET" Value="24" />
+        </Status>
+    </Update>
+    """
+    is_response, is_update, data = await connection._parse_and_update_state(xml)
+
+    assert is_response is False
+    assert is_update is True
+    assert data == {"AC_FUN_POWER": "On", "AC_FUN_TEMPSET": "24"}
+
+
 async def test_async_create_samsung_ssl_context_properties():
     """Test that the SSL context used for 2878 has the correct minimum properties."""
 
@@ -1198,6 +1250,52 @@ async def test_establish_connection_callbacks_and_generic_catch(connection):
                 connection._controller.request_refresh_callback.assert_called_once()
 
 
+@pytest.mark.asyncio
+async def test_establish_connection_initial_response_skips_update_callback(
+    connection,
+):
+    """An initial message that is a response (not an update) must not fire the update callback."""
+    connection._cfg.host = "1.1.1.1"
+    connection._connection_init_template = MagicMock()
+    connection._is_available = False
+    connection._initial_connection_done = True
+
+    mock_update_cb = AsyncMock()
+    connection.set_update_callback(mock_update_cb)
+    connection._controller = MagicMock()
+    connection._controller.hass = MagicMock()
+    connection._controller.request_refresh_callback = AsyncMock()
+
+    with (
+        patch("socket.socket"),
+        patch("asyncio.get_running_loop") as mock_loop,
+        patch(
+            "custom_components.climate_ip.samsung_2878.async_create_samsung_ssl_context",
+            new_callable=AsyncMock,
+        ),
+        patch("asyncio.open_connection", new_callable=AsyncMock) as mock_open,
+        patch.object(
+            connection, "_read_full_response", new_callable=AsyncMock
+        ) as mock_read,
+        patch.object(connection, "_write_data", new_callable=AsyncMock),
+        patch.object(
+            connection, "_parse_and_update_state", new_callable=AsyncMock
+        ) as mock_parse,
+        patch.object(
+            connection, "_post_connect_status_request", new_callable=AsyncMock
+        ),
+    ):
+        mock_loop.return_value.sock_connect = AsyncMock()
+        mock_open.return_value = (MagicMock(), get_safe_mock_writer())
+        mock_read.side_effect = ["DPLUG-1.6", 'Status="Okay"']
+        mock_parse.return_value = (True, False, {"fake": "state"})
+
+        assert await connection._establish_connection_and_handshake() is True
+
+        assert connection._device_status["fake"] == "state"
+        mock_update_cb.assert_not_called()
+
+
 def test_load_from_yaml_missing_mac(connection):
     """Verify mutant kill que altera el retorno cuando falta el DUID/MAC."""
     connection._cfg.duid = None  # Forzamos que falte el MAC
@@ -1271,8 +1369,19 @@ async def test_establish_connection_deep_mutants(connection):
                 "DPLUG-1.6",
                 '<Response Status="Failed" ErrorCode="999" />',
             ]
-            with pytest.raises(AuthError, match="Authentication failed"):
+            with (
+                patch.object(samsung_module._LOGGER, "error") as mock_log_error,
+                pytest.raises(AuthError, match="Authentication failed"),
+            ):
                 await connection._establish_connection_and_handshake()
+
+            error_code_calls = [
+                c
+                for c in mock_log_error.call_args_list
+                if "Authentication failed with ErrorCode" in str(c.args[0])
+            ]
+            assert len(error_code_calls) == 1
+            assert error_code_calls[0].args[2] == "999"
 
 
 @pytest.mark.asyncio
