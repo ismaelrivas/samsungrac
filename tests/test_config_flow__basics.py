@@ -4048,8 +4048,11 @@ async def test_test_connection_safe_8888_strict_kwargs(hass: HomeAssistant) -> N
         mock_session_cert.get.return_value = mock_get_cert
         mock_session_func_cert.return_value = mock_session_cert
 
-        # Spy on load_verify_locations method
-        with patch.object(ssl.SSLContext, "load_verify_locations") as mock_load_verify:
+        # Spy on load_verify_locations and load_cert_chain methods
+        with (
+            patch.object(ssl.SSLContext, "load_verify_locations") as mock_load_verify,
+            patch.object(ssl.SSLContext, "load_cert_chain") as mock_load_chain,
+        ):
             try:
                 async with asyncio.timeout(0.5):
                     res_cert = await flow._test_connection_safe()
@@ -4062,6 +4065,8 @@ async def test_test_connection_safe_8888_strict_kwargs(hass: HomeAssistant) -> N
 
             # Kills mutants 41-45 and 48-49: Demands exact CA file loading
             mock_load_verify.assert_called_once_with(cafile="/fake/valid_cert.pem")
+            # Legacy 8888 units require the .pem as client certificate (mTLS)
+            mock_load_chain.assert_called_once_with("/fake/valid_cert.pem")
 
             # Táctica 3: Strict mock assertions
             mock_session_func_cert.assert_called_with(flow.hass)

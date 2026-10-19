@@ -641,6 +641,46 @@ async def test_async_execute_poll_and_keep_alive(
                 client_to_close2.close.assert_called_once()
 
 
+async def test_is_available_follows_successful_requests(
+    connection_config, mock_logger, mock_hass
+):
+    """Test is_available turns True after a successful request and False on close.
+
+    The poller only serves the cached state on transient errors while the base
+    connection reports itself as available, but requests run on the copies
+    made by create_updated, so the state must be shared with them.
+    """
+    with patch("os.path.exists", return_value=True):
+        conn = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
+        op_conn = conn.create_updated({})
+        mock_client = AsyncMock()
+        device_error = "HTTP 500: InvokeGetDeviceListFunc fail"
+
+        with patch.object(op_conn, "async_get_client", return_value=mock_client):
+            assert conn.is_available is False
+
+            # A failed request before any success keeps it unavailable
+            mock_client.request.return_value = (None, device_error)
+            with pytest.raises(CannotConnect):
+                await op_conn.async_execute("GET", "/devices", None, None)
+            assert conn.is_available is False
+
+            mock_client.request.return_value = ('{"Devices": []}', None)
+            await op_conn.async_execute("GET", "/devices", None, None)
+            assert conn.is_available is True
+            assert op_conn.is_available is True
+
+            # A transient error afterwards does not flip it back
+            mock_client.request.return_value = (None, device_error)
+            with pytest.raises(CannotConnect):
+                await op_conn.async_execute("GET", "/devices", None, None)
+            assert conn.is_available is True
+
+        await conn.close()
+        assert conn.is_available is False
+        assert op_conn.is_available is False
+
+
 async def test_async_execute_placeholders_and_request(
     connection_config, mock_logger, mock_hass
 ):
