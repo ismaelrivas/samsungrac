@@ -184,7 +184,8 @@
             "pairing_connection_failed": "Could not connect to device at {ip_address}. Verify that the AC is powered on, connected to Wi-Fi, and that the IP address is correct. \n\nDetails: {error_details}",
             "unknown_error": "An unexpected error forced the setup process to abort.",
             "reauth_successful": "Re-authentication was successful. Your device is ready to use.",
-            "reconfigure_successful": "The device network and connectivity settings have been successfully updated."
+            "reconfigure_successful": "The device network and connectivity settings have been successfully updated.",
+            "unique_id_mismatch": "The device does not match the previously configured device."
         }
     },
     "options": {
@@ -242,6 +243,30 @@
         },
         "property_not_found": {
             "message": "Failed to set property {property}: property not found."
+        },
+        "missing_temp_or_mode": {
+            "message": "No temperature or HVAC mode provided in set_temperature action."
+        },
+        "invalid_hvac_mode": {
+            "message": "Requested HVAC mode {hvac_mode} is not available."
+        },
+        "invalid_fan_mode": {
+            "message": "Requested fan mode {fan_mode} is not available."
+        },
+        "invalid_swing_mode": {
+            "message": "Requested swing mode {swing_mode} is not available."
+        },
+        "invalid_preset_mode": {
+            "message": "Requested preset mode {preset_mode} is not available."
+        },
+        "invalid_operation": {
+            "message": "Action set_property failed: {key} is not a valid operation for this device."
+        },
+        "invalid_value_type": {
+            "message": "Action set_property failed: Invalid value type {type} for key {key}."
+        },
+        "device_unreachable": {
+            "message": "Device {device_name} ({host}) is unreachable. Check power and network connection."
         }
     },
     "issues": {

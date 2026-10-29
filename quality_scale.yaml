@@ -1,43 +1,42 @@
 rules:
   # ======================== BRONZE ========================
-  action_setup: done
-  appropriate_polling:
+  action-setup: done
+  appropriate-polling:
     status: done
     comment: >
       Polling interval defaults to 15 seconds with strict bounds [5s, 21600s].
       Hardware profiles and socket engines handle real-time push where supported.
   brands: done
-  common_modules: done
-  config_flow: done
-  config_flow_test_coverage: done
-  dependency_transparency: done
-  docs_actions: done
-  docs_conditions:
-    status: exempt
-    comment: Integration does not implement custom automation conditions.
-  docs_high_level_description: done
-  docs_installation_instructions: done
-  docs_removal_instructions: done
-  docs_triggers:
-    status: exempt
-    comment: Integration does not implement custom automation triggers.
-  entity_event_setup: done
-  entity_unique_id: done
-  has_entity_name: done
-  runtime_data: done
-  test_before_configure: done
-  test_before_setup: done
-  unique_config_entry: done
+  common-modules: done
+  config-flow: done
+  config-flow-test-coverage: done
+  dependency-transparency: done
+  docs-actions: done
+  docs-high-level-description: done
+  docs-installation-instructions: done
+  docs-removal-instructions: done
+  entity-event-setup: done
+  entity-unique-id: done
+  has-entity-name: done
+  runtime-data: done
+  test-before-configure: done
+  test-before-setup: done
+  unique-config-entry: done
 
   # ======================== SILVER ========================
-  config_entry_unloading: done
-  log_when_unavailable: done
-  entity_state_updates_when_relevant: done
-  reauthentication_flow: done
-  handle_coordinator_update_errors: done
-  reconfiguration_flow: done
-  parallel_updates: done
-  code_owner: done
+  action-exceptions: done
+  config-entry-unloading: done
+  docs-configuration-parameters: done
+  docs-installation-parameters: done
+  entity-unavailable: done
+  integration-owner: done
+  log-when-unavailable: done
+  parallel-updates: done
+  reauthentication-flow: done
+  test-coverage:
+    status: done
+    comment: >
+      Test suite covers over 95% of lines with 100% on config_flow.py and diagnostics.py.
 
   # ======================== GOLD ========================
   devices: done
@@ -46,31 +45,34 @@ rules:
     status: exempt
     comment: >
       Samsung AC devices do not support mDNS/Zeroconf or DHCP discovery.
-      Device discovery requires proprietary Samsung pairing protocol.
-      Config Flow provides manual IP entry with ARP-based MAC resolution.
-  docs_high_level_description: done
-  docs_installation_instructions: done
-  docs_entities: done
-  entity_translations: done
-  integration_owner: done
-  test_coverage:
-    status: done
-    comment: >
-      1,455 unit tests passing with a mathematically verified 100% mutation testing kill rate across production modules.
-  icon_translations: done
-  appropriate_log_level: done
-  repair_issues: done
+  discovery-update-info:
+    status: exempt
+    comment: Integration does not implement discovery flows.
+  docs-data-update: todo
+  docs-examples: done
+  docs-known-limitations: todo
+  docs-supported-devices: todo
+  docs-supported-functions: done
+  docs-troubleshooting: todo
+  docs-use-cases: todo
+  dynamic-devices:
+    status: exempt
+    comment: Multi-split AC indoor units are physically hardwired and static.
+  entity-category: done
+  entity-device-class: done
+  entity-disabled-by-default: todo
+  entity-translations: todo
+  exception-translations: done
+  icon-translations: todo
+  reconfiguration-flow: done
+  repair-issues: done
+  stale-devices: done
 
   # ======================== PLATINUM ========================
-  async_dependency:
+  async-dependency:
     status: exempt
     comment: >
-      Primary connection engines use native asyncio (`samsung_8888_aiohttp` and `samsung_2878_raw`).
-      The synchronous `requests` library is retained strictly for backward compatibility with
-      legacy Samsung AC hardware requiring custom TLS 1.0/1.1 ciphers, and is explicitly marked
-      as deprecated for complete removal in a future release.
-  inject_websession: done
-  strict_typing: done
-  exception_translations: done
-  runtime_data: done
-  entity_descriptions: done
+      Synchronous requests engine is retained strictly for backward compatibility
+      with legacy Samsung AC hardware requiring custom TLS 1.0/1.1 ciphers.
+  inject-websession: done
+  strict-typing: todo

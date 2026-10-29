@@ -85,6 +85,24 @@ You will be prompted to choose the appropriate protocol for your Samsung AC:
 
 ### 3. Connection Parameters & Automated Token Pairing
 
+#### 📋 Installation Parameters Reference
+
+The following parameters are configured during initial setup or reconfiguration:
+
+| Parameter | Type | Required | Default | Description |
+| :--- | :--- | :---: | :--- | :--- |
+| `ip_address` | String | **Yes** | — | Local IPv4 address or hostname of your Samsung AC, central gateway, or controller (e.g., `192.168.1.50`). |
+| `port` | Integer | No | `8888` / `2878` | Communication port on device (`8888` for modern REST HTTPS, `2878` for legacy socket TCP XML). |
+| `mac` | String | No | Auto | Network MAC address used for unique entity IDs. Auto-resolved via ARP scan if left blank. |
+| `name` | String | No | Auto | Custom user-friendly display name for this air conditioning unit in Home Assistant. |
+| `token` | String | No | Auto | Authentication token. Leave blank to acquire automatically via the automated pairing workflow. |
+| `cert` | String | No | `ac14k_m.pem` | Path to SSL/TLS certificate file. Accepts bundled filename (`ac14k_m.pem`) or absolute path. |
+| `poll_interval` | String | No | `0:00:15` | State polling frequency in `HH:MM:SS` format (e.g. `0:00:15` for 15s; range: 5s to 21600s). |
+| `enable_polling` | Boolean | No | `true` | Enable periodic background status polling (`true`/`false`). |
+| `temp_native_current` | Select | No | `°C` | Native temperature unit reported by AC unit for current room temperature (`°C` or `°F`). |
+| `temp_native_target` | Select | No | `°C` | Native temperature unit expected by AC unit for target temperature setpoints (`°C` or `°F`). |
+| `device_id` | String | No | Auto | Unique internal sub-device ID (used for SmartThings and multi-device systems). |
+
 #### 🔹 Port 8888 (Modern REST HTTPS)
 1. **Host:** Enter your AC's local IP address (e.g., `192.168.1.50`).
 2. **MAC Address:** (Optional) If left empty, the integration auto-discovers the MAC via ARP/network scan.
@@ -113,6 +131,19 @@ For multi-split systems or Wi-Fi kits (e.g. MIM-H03), the integration automatica
 ---
 
 ### 5. Options Flow & Re-Authentication
+
+#### ⚙️ Configuration Parameters Reference (Options Flow)
+
+Click the **Configure** button on any active Climate IP config entry in Home Assistant to open the Options Flow and adjust settings dynamically:
+
+| Option Parameter | Type | Default | Choices / Range | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `connection_method` | Select | `Modern (aiohttp)` | `aiohttp`, `raw socket`, `requests` | Network communication engine: `Modern (aiohttp)` for standard REST, `Robust (raw socket)` for unstable Wi-Fi or non-compliant HTTP headers, `Legacy` for backward compatibility. |
+| `poll_interval` | String | `0:00:15` | `0:00:05` - `6:00:00` | Background update interval in `HH:MM:SS` format. Determines how frequently the device state is queried. |
+| `temp_native_current` | Select | `°C` | `°C`, `°F` | Native temperature unit used by the hardware sensor for current ambient room temperature. |
+| `temp_native_target` | Select | `°C` | `°C`, `°F` | Native temperature unit used by the hardware controller for target setpoint temperature. |
+| `enable_polling` | Boolean | `true` | `true`, `false` | Enable or disable periodic background status polling for this integration instance. |
+| `target_temperature_step` | Select | `0.5` | `0.1°`, `0.5°`, `1.0°` | Granularity for target temperature adjustments in Home Assistant climate entity UI controls. |
 
 #### ⚙️ Re-Configuration & Custom Settings
 Click the **Configure** button on the integration entry in Home Assistant to open the Options Flow:

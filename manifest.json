@@ -9,7 +9,7 @@
   "documentation": "https://github.com/ismaelrivas/samsungrac",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/ismaelrivas/samsungrac/issues",
-  "quality_scale": "bronze",
+  "quality_scale": "silver",
   "requirements": [
     "requests==2.34.2",
     "icmplib==3.0.4"
