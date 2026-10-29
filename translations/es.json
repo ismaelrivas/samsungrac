@@ -1,307 +1,369 @@
 {
-  "config": {
-    "step": {
-      "user": {
-        "title": "Seleccionar Tipo de Dispositivo",
-        "description": "Elige el modelo de tu dispositivo o el tipo de conexión que utiliza.",
-        "data": {
-          "device_type": "Tipo de Dispositivo"
-        }
-      },
-      "samsung_2878": {
-        "title": "Detalles del Dispositivo (Puerto 2878)",
-        "description": "Configuración para unidades de aire acondicionado Samsung antiguas. El dispositivo debe estar enchufado pero APAGADO (en modo espera) antes de comenzar.",
-        "data": {
-          "ip_address": "Dirección IP",
-          "port": "Puerto",
-          "mac": "Dirección MAC (Opcional)",
-          "name": "Nombre (Opcional)",
-          "token": "Token (Opcional)",
-          "cert": "Certificado (Opcional)",
-          "poll_interval": "Intervalo de sondeo (segundos)",
-          "temp_native_current": "Unidad Nativa Actual (AC -> HA)",
-          "temp_native_target": "Unidad Nativa Objetivo (HA -> AC)"
-        }
-      },
-      "samsung_8888": {
-        "title": "Detalles del Dispositivo (Puerto 8888)",
-        "description": "Introduce la información de tu aire acondicionado. Si no tienes el TOKEN, déjalo en blanco para iniciar el emparejamiento.",
-        "data": {
-          "ip_address": "Dirección IP",
-          "mac": "Dirección MAC (Opcional)",
-          "port": "Puerto",
-          "name": "Nombre (Opcional)",
-          "cert": "Certificado (Opcional)",
-          "token": "Token (Opcional)",
-          "poll_interval": "Intervalo de sondeo (segundos)"
-        }
-      },
-      "mim_h03": {
-        "title": "Detalles del Dispositivo (MIM-H03)",
-        "description": "Introduce la información de tu controlador MIM-H03. Si no tienes el TOKEN, déjalo en blanco para iniciar el emparejamiento.",
-        "data": {
-          "ip_address": "Dirección IP",
-          "mac": "Dirección MAC (Opcional)",
-          "port": "Puerto",
-          "name": "Nombre (Opcional)",
-          "cert": "Certificado (Opcional)",
-          "token": "Token (Opcional)",
-          "poll_interval": "Intervalo de sondeo (segundos)"
-        }
-      },
-      "rest_api": {
-        "title": "Detalles del Dispositivo (API REST)",
-        "description": "Introduce los detalles para tu dispositivo. El token y el ID del dispositivo deben obtenerse manualmente según la documentación de tu modelo.",
-        "data": {
-          "ip_address": "Dirección IP o Host",
-          "device_id": "ID del Dispositivo",
-          "token": "Token de la API",
-          "name": "Nombre (Opcional)",
-          "cert": "Certificado (Opcional)",
-          "poll_interval": "Intervalo de sondeo (segundos)"
-        }
-      },
-      "intesisbox": {
-        "title": "Configurar Pasarela IntesisBox (Puerto 3310)",
-        "description": "Configuración para pasarelas IntesisBox Wireless Multi-Protocol (WMP v1.9). Introduce la dirección IP para descubrir el dispositivo automáticamente.",
-        "data": {
-          "ip_address": "Dirección IP",
-          "mac": "Dirección MAC (Opcional)",
-          "poll_interval": "Intervalo de actualización (Segundos)"
-        }
-      },
-      "select_devices": {
-        "title": "Seleccionar Unidades Interiores",
-        "description": "Se han encontrado {device_count} unidades. Por favor selecciona las que quieres añadir a Home Assistant.",
-        "data": {
-          "selected_devices": "Unidades Interiores"
-        }
-      },
-      "reauth_confirm": {
-        "title": "Reautenticar Integración",
-        "description": "La autenticación de {device_name} ha fallado. ¿Deseas reiniciar el emparejamiento para conseguir un token nuevo?"
-      },
-      "reconfigure_confirm": {
-        "title": "Reconfigurar {device_name}",
-        "description": "Actualiza los ajustes de conectividad de **{device_name}** (actualmente en `{ip_address}`). Solo se actualizarán los campos que modifiques.",
-        "data": {
-          "ip_address": "Dirección IP",
-          "mac": "Dirección MAC (Opcional)",
-          "token": "Token (Opcional)",
-          "cert": "Ruta del certificado (Opcional)"
-        }
-      }
-    },
-    "progress": {
-      "initiating_pairing": "Iniciando emparejamiento... Por favor, espere.",
-      "initiating_pairing_8888": "Iniciando emparejamiento con el dispositivo en **{ip_address}**. Por favor, espere.",
-      "awaiting_button_press": "Esperando confirmación de emparejamiento...\n\nPor favor, enciende el dispositivo con el botón de **Encendido/Power** de tu mando a distancia (o unidad física) para el dispositivo en **{ip_address}** en los próximos 45 segundos.",
-      "acquire_8888": "Esperando al usuario... Por favor, presiona el botón de encendido en el AC en **{ip_address}** en los próximos 20 segundos.",
-      "testing_connection": "Comprobando conexión con el dispositivo..."
-    },
-    "error": {
-      "cannot_connect": "No se pudo conectar con el aire acondicionado. Verifica la dirección IP y asegúrate de que el dispositivo esté conectado a tu red Wi-Fi.",
-      "invalid_auth": "Autenticación fallida. El token proporcionado puede ser incorrecto, estar caducado o haber sido rechazado por el dispositivo.",
-      "unknown_error": "Ocurrió un error inesperado durante la comunicación.",
-      "mac_resolve_failed": "No se pudo autodescubrir la dirección MAC en la red local. Por favor, introdúcela manualmente.",
-      "invalid_poll_interval": "Formato de intervalo de actualización no válido. Usa HH:MM:SS (ej. 0:01:00 para 1 minuto).",
-      "cert_not_found": "No se encontró el archivo de certificado requerido. Asegúrate de colocarlo dentro de la carpeta `climate_ip` en custom_components.",
-      "token_acquisition_failed": "No se pudo obtener un token de autorización del dispositivo.",
-      "auth_failed_turned_off": "Emparejamiento rechazado. Asegúrate de que el aire acondicionado esté APAGADO (en modo espera) antes de iniciar el proceso.",
-      "no_devices_selected": "Debes seleccionar al menos un dispositivo para continuar con la configuración.",
-      "pairing_init_failed": "No se pudo poner el dispositivo en modo de emparejamiento. Reinicia el aire acondicionado e inténtalo de nuevo.",
-      "token_required_for_aiohttp": "El método de conexión 'Modern REST API' requiere un token extraído manualmente.",
-      "device_id_required": "Se requiere un ID de dispositivo único para completar este método de configuración.",
-      "port_in_use": "El puerto de escucha necesario (8888 u 8889) ya está siendo utilizado por otro complemento o integración.",
-      "timeout_8888": "Tiempo de espera agotado confirmando el emparejamiento. ¿Presionaste el botón físico en el aire acondicionado?",
-      "invalid_response": "El dispositivo devolvió una respuesta inesperada o malformada.",
-      "final_validation_failed": "La configuración falló. No se pudo verificar la conexión con las credenciales recién obtenidas."
-    },
-    "abort": {
-      "flow_state_lost": "La sesión de emparejamiento se ha perdido (p. ej. tras un reinicio). Por favor, inicie la configuración de nuevo.",
-      "already_configured": "Este dispositivo ya está configurado en Home Assistant.",
-      "not_implemented": "Este modelo o topología de dispositivo específico aún no es totalmente compatible.",
-      "no_mac_address_found": "No se pudo determinar un identificador de red único (MAC/UUID) para el dispositivo.",
-      "no_coordinator_uuid": "Se descubrió un controlador central (MIM-H03) pero falta su UUID único.",
-      "no_coordinator_found": "No se pudo localizar el controlador central (MIM-H03) en la red.",
-      "discovery_failed": "La autenticación fue exitosa, pero no se pudo recuperar la lista interna de dispositivos.",
-      "no_unique_id": "No se pudo asignar un identificador único a las unidades interiores descubiertas.",
-      "cannot_connect": "No se pudo establecer una conexión estable ni obtener el estado inicial del dispositivo.",
-      "pairing_connection_failed": "No se pudo conectar con el dispositivo en {ip_address}. Verifica que el aire acondicionado esté encendido, conectado al Wi-Fi y que la dirección IP sea correcta. \n\nDetalles: {error_details}",
-      "unknown_error": "Un error inesperado forzó el abandono del proceso de configuración.",
-      "reauth_successful": "Reautenticación completada con éxito. Tu dispositivo está listo para usarse.",
-      "reconfigure_successful": "Los ajustes de red y conectividad del dispositivo se han actualizado con éxito."
-    }
-  },
-  "options": {
-    "step": {
-      "init": {
-        "title": "Ajustar Opciones",
-        "description": "Modifica las opciones de la integración.",
-        "data": {
-          "connection_method": "Motor de Conexión",
-          "poll_interval": "Intervalo de sondeo (segundos o hh:mm:ss)",
-          "enable_polling": "Habilitar sondeo periódico",
-          "target_temperature_step": "Paso de Temperatura Objetivo",
-          "temp_native_current": "Unidad Nativa Actual (AC -> HA)",
-          "temp_native_target": "Unidad Nativa Objetivo (HA -> AC)"
-        }
-      }
-    },
-    "error": {
-      "token_required_for_aiohttp": "El método 'Moderno (aiohttp)' requiere un token válido.",
-      "invalid_poll_interval": "Intervalo de sondeo inválido. Introduce un número (segundos) o formato 'hh:mm:ss'."
-    }
-  },
-  "exceptions": {
-    "cannot_connect": {
-      "message": "Fallo al conectar con el dispositivo."
-    },
-    "invalid_response": {
-      "message": "El dispositivo devolvió una respuesta inesperada."
-    },
-    "invalid_auth": {
-      "message": "Error de autenticación. El token puede ser incorrecto o haber caducado."
-    },
-    "cert_not_found": {
-      "message": "No se encontró el archivo de certificado especificado."
-    },
-    "token_acquisition_failed": {
-      "message": "Fallo al obtener el token del dispositivo."
-    },
-    "auth_failed_turned_off": {
-      "message": "Error de autenticación. Asegúrate de que el aire acondicionado esté en modo espera (APAGADO) antes de iniciar el proceso de emparejamiento."
-    },
-    "property_set_failed": {
-      "message": "Error al establecer la propiedad {property}: {error}"
-    },
-    "controller_not_initialized": {
-      "message": "No se puede establecer la propiedad {property}: el controlador no está completamente inicializado."
-    },
-    "property_not_found": {
-      "message": "Error al establecer la propiedad {property}: propiedad no encontrada."
-    }
-  },
-  "issues": {
-    "connection_failed": {
-      "title": "{device_name} - desconectado ({ip_address})",
-      "description": "El dispositivo **{device_name}** en **{ip_address}** no está localizable. Verifica la alimentación y la conexión a tu red local."
-    },
-    "auto_healing_raw": {
-      "title": "Modo de conexión actualizado ({device_name})",
-      "fix_flow": {
+    "config": {
         "step": {
-          "confirm": {
-            "title": "Modo de conexión actualizado",
-            "description": "El modo de conexión para **{device_name}** se ha cambiado automáticamente a **'Robust (raw socket)'** para corregir las anomalías de protocolo del equipo.\n\nHaz clic en Enviar para confirmar y cerrar este aviso."
-          }
-        }
-      }
-    }
-  },
-  "selector": {
-    "device_type": {
-      "options": {
-        "samsung_2878": "Dispositivo Antiguo (Puerto 2878)",
-        "samsung_8888": "Dispositivo Moderno (Puerto 8888)",
-        "mim_h03": "Controlador MIM-H03",
-        "smartthings_hvac": "SmartThings HVAC (API REST)",
-        "smartthings_dhw": "SmartThings DHW (API REST)",
-        "intesisbox": "Pasarela IntesisBox WMP (Puerto 3310)"
-      }
-    },
-    "connection_method": {
-      "options": {
-        "requests": "Legacy (Obsoleto)",
-        "aiohttp": "Moderno (aiohttp)",
-        "raw": "Robusto (raw socket)"
-      }
-    }
-  },
-  "common": {
-    "deprecated_yaml_title": "Climate IP - Configuración YAML Obsoleta",
-    "deprecated_yaml_message": "La configuración de Climate IP a través de YAML está obsoleta y ha sido importada a la interfaz de usuario. Por favor, elimínala de tu archivo `configuration.yaml`."
-  },
-  "entity": {
-    "climate": {
-      "samsung_ac": {
-        "state_attributes": {
-          "preset_mode": {
-            "state": {
-              "wind_free": "Sin Viento"
+            "user": {
+                "title": "Seleccionar Tipo de Dispositivo",
+                "description": "Elige el modelo de tu dispositivo o el tipo de conexión que utiliza.",
+                "data": {
+                    "device_type": "Tipo de Dispositivo"
+                },
+                "data_description": {
+                    "device_type": "Select the device profile corresponding to your hardware."
+                }
+            },
+            "samsung_2878": {
+                "title": "Detalles del Dispositivo (Puerto 2878)",
+                "description": "Configuración para unidades de aire acondicionado Samsung antiguas. El dispositivo debe estar enchufado pero APAGADO (en modo espera) antes de comenzar.",
+                "data": {
+                    "ip_address": "Dirección IP",
+                    "port": "Puerto",
+                    "mac": "Dirección MAC (Opcional)",
+                    "name": "Nombre (Opcional)",
+                    "token": "Token (Opcional)",
+                    "cert": "Certificado (Opcional)",
+                    "poll_interval": "Intervalo de sondeo (segundos)",
+                    "temp_native_current": "Unidad Nativa Actual (AC -> HA)",
+                    "temp_native_target": "Unidad Nativa Objetivo (HA -> AC)"
+                },
+                "data_description": {
+                    "ip_address": "The local IPv4 address of the air conditioner (e.g. 192.168.1.100).",
+                    "port": "Communication port for legacy socket units (default: 2878).",
+                    "mac": "Hardware MAC address for unique device registry tracking.",
+                    "name": "Custom display name for this unit.",
+                    "token": "Leave blank to acquire token automatically via physical power button.",
+                    "cert": "Certificate file path (default: ac14k_m.pem).",
+                    "poll_interval": "Update polling frequency in HH:MM:SS format.",
+                    "temp_native_current": "Temperature unit reported by the unit's indoor sensor.",
+                    "temp_native_target": "Temperature unit used for setting target cooling or heating."
+                }
+            },
+            "samsung_8888": {
+                "title": "Detalles del Dispositivo (Puerto 8888)",
+                "description": "Introduce la información de tu aire acondicionado. Si no tienes el TOKEN, déjalo en blanco para iniciar el emparejamiento.",
+                "data": {
+                    "ip_address": "Dirección IP",
+                    "mac": "Dirección MAC (Opcional)",
+                    "port": "Puerto",
+                    "name": "Nombre (Opcional)",
+                    "cert": "Certificado (Opcional)",
+                    "token": "Token (Opcional)",
+                    "poll_interval": "Intervalo de sondeo (segundos)"
+                },
+                "data_description": {
+                    "ip_address": "The local IPv4 address of the modern Samsung air conditioner.",
+                    "port": "HTTPS REST API port (default: 8888).",
+                    "mac": "Hardware MAC address for unique device registry tracking.",
+                    "name": "Custom display name for this unit.",
+                    "cert": "Certificate file path (default: ac14k_m.pem).",
+                    "token": "Leave blank to acquire token automatically via local listener.",
+                    "poll_interval": "Update polling frequency in HH:MM:SS format."
+                }
+            },
+            "mim_h03": {
+                "title": "Detalles del Dispositivo (MIM-H03)",
+                "description": "Introduce la información de tu controlador MIM-H03. Si no tienes el TOKEN, déjalo en blanco para iniciar el emparejamiento.",
+                "data": {
+                    "ip_address": "Dirección IP",
+                    "mac": "Dirección MAC (Opcional)",
+                    "port": "Puerto",
+                    "name": "Nombre (Opcional)",
+                    "cert": "Certificado (Opcional)",
+                    "token": "Token (Opcional)",
+                    "poll_interval": "Intervalo de sondeo (segundos)"
+                },
+                "data_description": {
+                    "ip_address": "The local IPv4 address of the MIM-H03 heatpump controller.",
+                    "port": "HTTPS REST API port (default: 8888).",
+                    "mac": "Hardware MAC address of the MIM-H03 controller.",
+                    "name": "Custom display name for the controller.",
+                    "cert": "Certificate file path (default: ac14k_m.pem).",
+                    "token": "Leave blank to acquire token automatically.",
+                    "poll_interval": "Update polling frequency in HH:MM:SS format."
+                }
+            },
+            "rest_api": {
+                "title": "Detalles del Dispositivo (API REST)",
+                "description": "Introduce los detalles para tu dispositivo. El token y el ID del dispositivo deben obtenerse manualmente según la documentación de tu modelo.",
+                "data": {
+                    "ip_address": "Dirección IP o Host",
+                    "device_id": "ID del Dispositivo",
+                    "token": "Token de la API",
+                    "name": "Nombre (Opcional)",
+                    "cert": "Certificado (Opcional)",
+                    "poll_interval": "Intervalo de sondeo (segundos)"
+                },
+                "data_description": {
+                    "ip_address": "The local or cloud REST API host address.",
+                    "device_id": "Unique hardware device identifier.",
+                    "token": "Bearer access token for API authorization.",
+                    "name": "Custom display name for this unit.",
+                    "cert": "Certificate file path for TLS validation.",
+                    "poll_interval": "Update polling frequency in HH:MM:SS format."
+                }
+            },
+            "intesisbox": {
+                "title": "Configurar Pasarela IntesisBox (Puerto 3310)",
+                "description": "Configuración para pasarelas IntesisBox Wireless Multi-Protocol (WMP v1.9). Introduce la dirección IP para descubrir el dispositivo automáticamente.",
+                "data": {
+                    "ip_address": "Dirección IP",
+                    "mac": "Dirección MAC (Opcional)",
+                    "poll_interval": "Intervalo de actualización (Segundos)"
+                },
+                "data_description": {
+                    "ip_address": "The local IPv4 address of the IntesisBox WMP gateway.",
+                    "mac": "Hardware MAC address of the gateway.",
+                    "poll_interval": "Update polling frequency in seconds."
+                }
+            },
+            "select_devices": {
+                "title": "Seleccionar Unidades Interiores",
+                "description": "Se han encontrado {device_count} unidades. Por favor selecciona las que quieres añadir a Home Assistant.",
+                "data": {
+                    "selected_devices": "Unidades Interiores"
+                },
+                "data_description": {
+                    "selected_devices": "Choose the indoor AC units you want to integrate into Home Assistant."
+                }
+            },
+            "reauth_confirm": {
+                "title": "Reautenticar Integración",
+                "description": "La autenticación de {device_name} ha fallado. ¿Deseas reiniciar el emparejamiento para conseguir un token nuevo?"
+            },
+            "reconfigure_confirm": {
+                "title": "Reconfigurar {device_name}",
+                "description": "Actualiza los ajustes de conectividad de **{device_name}** (actualmente en `{ip_address}`). Solo se actualizarán los campos que modifiques.",
+                "data": {
+                    "ip_address": "Dirección IP",
+                    "mac": "Dirección MAC (Opcional)",
+                    "token": "Token (Opcional)",
+                    "cert": "Ruta del certificado (Opcional)"
+                },
+                "data_description": {
+                    "ip_address": "Updated local IPv4 address of the device.",
+                    "mac": "Updated MAC address for the device.",
+                    "token": "Updated authentication token.",
+                    "cert": "Updated certificate file path."
+                }
             }
-          }
+        },
+        "progress": {
+            "initiating_pairing": "Iniciando emparejamiento... Por favor, espere.",
+            "initiating_pairing_8888": "Iniciando emparejamiento con el dispositivo en **{ip_address}**. Por favor, espere.",
+            "awaiting_button_press": "Esperando confirmación de emparejamiento...\n\nPor favor, enciende el dispositivo con el botón de **Encendido/Power** de tu mando a distancia (o unidad física) para el dispositivo en **{ip_address}** en los próximos 45 segundos.",
+            "acquire_8888": "Esperando al usuario... Por favor, presiona el botón de encendido en el AC en **{ip_address}** en los próximos 20 segundos.",
+            "testing_connection": "Comprobando conexión con el dispositivo..."
+        },
+        "error": {
+            "cannot_connect": "No se pudo conectar con el aire acondicionado. Verifica la dirección IP y asegúrate de que el dispositivo esté conectado a tu red Wi-Fi.",
+            "invalid_auth": "Autenticación fallida. El token proporcionado puede ser incorrecto, estar caducado o haber sido rechazado por el dispositivo.",
+            "unknown_error": "Ocurrió un error inesperado durante la comunicación.",
+            "mac_resolve_failed": "No se pudo autodescubrir la dirección MAC en la red local. Por favor, introdúcela manualmente.",
+            "invalid_poll_interval": "Formato de intervalo de actualización no válido. Usa HH:MM:SS (ej. 0:01:00 para 1 minuto).",
+            "cert_not_found": "No se encontró el archivo de certificado requerido. Asegúrate de colocarlo dentro de la carpeta `climate_ip` en custom_components.",
+            "token_acquisition_failed": "No se pudo obtener un token de autorización del dispositivo.",
+            "auth_failed_turned_off": "Emparejamiento rechazado. Asegúrate de que el aire acondicionado esté APAGADO (en modo espera) antes de iniciar el proceso.",
+            "no_devices_selected": "Debes seleccionar al menos un dispositivo para continuar con la configuración.",
+            "pairing_init_failed": "No se pudo poner el dispositivo en modo de emparejamiento. Reinicia el aire acondicionado e inténtalo de nuevo.",
+            "token_required_for_aiohttp": "El método de conexión 'Modern REST API' requiere un token extraído manualmente.",
+            "device_id_required": "Se requiere un ID de dispositivo único para completar este método de configuración.",
+            "port_in_use": "El puerto de escucha necesario (8888 u 8889) ya está siendo utilizado por otro complemento o integración.",
+            "timeout_8888": "Tiempo de espera agotado confirmando el emparejamiento. ¿Presionaste el botón físico en el aire acondicionado?",
+            "invalid_response": "El dispositivo devolvió una respuesta inesperada o malformada.",
+            "final_validation_failed": "La configuración falló. No se pudo verificar la conexión con las credenciales recién obtenidas."
+        },
+        "abort": {
+            "flow_state_lost": "La sesión de emparejamiento se ha perdido (p. ej. tras un reinicio). Por favor, inicie la configuración de nuevo.",
+            "already_configured": "Este dispositivo ya está configurado en Home Assistant.",
+            "not_implemented": "Este modelo o topología de dispositivo específico aún no es totalmente compatible.",
+            "no_mac_address_found": "No se pudo determinar un identificador de red único (MAC/UUID) para el dispositivo.",
+            "no_coordinator_uuid": "Se descubrió un controlador central (MIM-H03) pero falta su UUID único.",
+            "no_coordinator_found": "No se pudo localizar el controlador central (MIM-H03) en la red.",
+            "discovery_failed": "La autenticación fue exitosa, pero no se pudo recuperar la lista interna de dispositivos.",
+            "no_unique_id": "No se pudo asignar un identificador único a las unidades interiores descubiertas.",
+            "cannot_connect": "No se pudo establecer una conexión estable ni obtener el estado inicial del dispositivo.",
+            "pairing_connection_failed": "No se pudo conectar con el dispositivo en {ip_address}. Verifica que el aire acondicionado esté encendido, conectado al Wi-Fi y que la dirección IP sea correcta. \n\nDetalles: {error_details}",
+            "unknown_error": "Un error inesperado forzó el abandono del proceso de configuración.",
+            "reauth_successful": "Reautenticación completada con éxito. Tu dispositivo está listo para usarse.",
+            "reconfigure_successful": "Los ajustes de red y conectividad del dispositivo se han actualizado con éxito."
         }
-      }
     },
-    "sensor": {
-      "sleep_timer": {
-        "name": "Temporizador Sleep"
-      },
-      "outdoor_temperature": {
-        "name": "Temperatura Exterior"
-      },
-      "filter_clean_alarm": {
-        "name": "Alarma Filtro Limpio"
-      },
-      "filter_time": {
-        "name": "Tiempo Filtro"
-      },
-      "filter_alarm_time": {
-        "name": "Tiempo Alarma Filtro"
-      },
-      "auto_clean": {
-        "name": "Limpieza Automática"
-      },
-      "purify": {
-        "name": "Purificar"
-      },
-      "used_power": {
-        "name": "Consumo Eléctrico"
-      },
-      "used_time": {
-        "name": "Tiempo de Uso"
-      },
-      "filter_use_time": {
-        "name": "Tiempo de Uso del Filtro"
-      },
-      "wifi_connection_status": {
-        "name": "Estado Conexión Wi-Fi"
-      },
-      "internet_connection_status": {
-        "name": "Estado Conexión Internet"
-      },
-      "split_version": {
-        "name": "Versión Unidad Interior"
-      },
-      "external_unit_version": {
-        "name": "Versión Unidad Exterior"
-      },
-      "error_status": {
-        "name": "Estado de Error"
-      },
-      "error_code": {
-        "name": "Código de Error"
-      },
-      "vane_horizontal": {
-        "name": "Deflector Horizontal"
-      }
+    "options": {
+        "step": {
+            "init": {
+                "title": "Ajustar Opciones",
+                "description": "Modifica las opciones de la integración.",
+                "data": {
+                    "connection_method": "Motor de Conexión",
+                    "poll_interval": "Intervalo de sondeo (segundos o hh:mm:ss)",
+                    "enable_polling": "Habilitar sondeo periódico",
+                    "target_temperature_step": "Paso de Temperatura Objetivo",
+                    "temp_native_current": "Unidad Nativa Actual (AC -> HA)",
+                    "temp_native_target": "Unidad Nativa Objetivo (HA -> AC)"
+                },
+                "data_description": {
+                    "connection_method": "Communication engine: aiohttp (modern), raw socket (unstable Wi-Fi), or requests (legacy).",
+                    "poll_interval": "Update polling frequency in HH:MM:SS format.",
+                    "enable_polling": "Enable periodic background polling of the device state.",
+                    "target_temperature_step": "Temperature adjustment granularity for UI controls.",
+                    "temp_native_current": "Temperature unit reported by the AC unit sensor.",
+                    "temp_native_target": "Temperature unit expected by the AC unit for setpoints."
+                }
+            }
+        },
+        "error": {
+            "token_required_for_aiohttp": "El método 'Moderno (aiohttp)' requiere un token válido.",
+            "invalid_poll_interval": "Intervalo de sondeo inválido. Introduce un número (segundos) o formato 'hh:mm:ss'."
+        }
     },
-    "binary_sensor": {
-      "connectivity": {
-        "name": "Conectividad"
-      }
+    "exceptions": {
+        "cannot_connect": {
+            "message": "Fallo al conectar con el dispositivo."
+        },
+        "invalid_response": {
+            "message": "El dispositivo devolvió una respuesta inesperada."
+        },
+        "invalid_auth": {
+            "message": "Error de autenticación. El token puede ser incorrecto o haber caducado."
+        },
+        "cert_not_found": {
+            "message": "No se encontró el archivo de certificado especificado."
+        },
+        "token_acquisition_failed": {
+            "message": "Fallo al obtener el token del dispositivo."
+        },
+        "auth_failed_turned_off": {
+            "message": "Error de autenticación. Asegúrate de que el aire acondicionado esté en modo espera (APAGADO) antes de iniciar el proceso de emparejamiento."
+        },
+        "property_set_failed": {
+            "message": "Error al establecer la propiedad {property}: {error}"
+        },
+        "controller_not_initialized": {
+            "message": "No se puede establecer la propiedad {property}: el controlador no está completamente inicializado."
+        },
+        "property_not_found": {
+            "message": "Error al establecer la propiedad {property}: propiedad no encontrada."
+        }
     },
-    "switch": {
-      "purify": {
-        "name": "Purificar"
-      },
-      "auto_clean": {
-        "name": "Limpieza Automática"
-      },
-      "beep": {
-        "name": "Pitido"
-      }
+    "issues": {
+        "connection_failed": {
+            "title": "{device_name} - desconectado ({ip_address})",
+            "description": "El dispositivo **{device_name}** en **{ip_address}** no está localizable. Verifica la alimentación y la conexión a tu red local."
+        },
+        "auto_healing_raw": {
+            "title": "Modo de conexión actualizado ({device_name})",
+            "fix_flow": {
+                "step": {
+                    "confirm": {
+                        "title": "Modo de conexión actualizado",
+                        "description": "El modo de conexión para **{device_name}** se ha cambiado automáticamente a **'Robust (raw socket)'** para corregir las anomalías de protocolo del equipo.\n\nHaz clic en Enviar para confirmar y cerrar este aviso."
+                    }
+                }
+            }
+        }
+    },
+    "selector": {
+        "device_type": {
+            "options": {
+                "samsung_2878": "Dispositivo Antiguo (Puerto 2878)",
+                "samsung_8888": "Dispositivo Moderno (Puerto 8888)",
+                "mim_h03": "Controlador MIM-H03",
+                "smartthings_hvac": "SmartThings HVAC (API REST)",
+                "smartthings_dhw": "SmartThings DHW (API REST)",
+                "intesisbox": "Pasarela IntesisBox WMP (Puerto 3310)"
+            }
+        },
+        "connection_method": {
+            "options": {
+                "requests": "Legacy (Obsoleto)",
+                "aiohttp": "Moderno (aiohttp)",
+                "raw": "Robusto (raw socket)"
+            }
+        }
+    },
+    "common": {
+        "deprecated_yaml_title": "Climate IP - Configuración YAML Obsoleta",
+        "deprecated_yaml_message": "La configuración de Climate IP a través de YAML está obsoleta y ha sido importada a la interfaz de usuario. Por favor, elimínala de tu archivo `configuration.yaml`."
+    },
+    "entity": {
+        "climate": {
+            "samsung_ac": {
+                "state_attributes": {
+                    "preset_mode": {
+                        "state": {
+                            "wind_free": "Sin Viento"
+                        }
+                    }
+                }
+            }
+        },
+        "sensor": {
+            "sleep_timer": {
+                "name": "Temporizador Sleep"
+            },
+            "outdoor_temperature": {
+                "name": "Temperatura Exterior"
+            },
+            "filter_clean_alarm": {
+                "name": "Alarma Filtro Limpio"
+            },
+            "filter_time": {
+                "name": "Tiempo Filtro"
+            },
+            "filter_alarm_time": {
+                "name": "Tiempo Alarma Filtro"
+            },
+            "auto_clean": {
+                "name": "Limpieza Automática"
+            },
+            "purify": {
+                "name": "Purificar"
+            },
+            "used_power": {
+                "name": "Consumo Eléctrico"
+            },
+            "used_time": {
+                "name": "Tiempo de Uso"
+            },
+            "filter_use_time": {
+                "name": "Tiempo de Uso del Filtro"
+            },
+            "wifi_connection_status": {
+                "name": "Estado Conexión Wi-Fi"
+            },
+            "internet_connection_status": {
+                "name": "Estado Conexión Internet"
+            },
+            "split_version": {
+                "name": "Versión Unidad Interior"
+            },
+            "external_unit_version": {
+                "name": "Versión Unidad Exterior"
+            },
+            "error_status": {
+                "name": "Estado de Error"
+            },
+            "error_code": {
+                "name": "Código de Error"
+            },
+            "vane_horizontal": {
+                "name": "Deflector Horizontal"
+            }
+        },
+        "binary_sensor": {
+            "connectivity": {
+                "name": "Conectividad"
+            }
+        },
+        "switch": {
+            "purify": {
+                "name": "Purificar"
+            },
+            "auto_clean": {
+                "name": "Limpieza Automática"
+            },
+            "beep": {
+                "name": "Pitido"
+            }
+        }
     }
-  }
 }

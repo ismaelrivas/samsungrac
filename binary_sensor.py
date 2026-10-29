@@ -13,11 +13,11 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import ClimateIPConfigEntry
 from .const import DOMAIN
 from .coordinator import SamsungClimateCoordinator
+from .entity import SamsungClimateEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ async def async_setup_entry(
 
 
 class ClimateIPConnectivitySensor(
-    CoordinatorEntity[SamsungClimateCoordinator], BinarySensorEntity
+    SamsungClimateEntity, BinarySensorEntity
 ):
     """Representation of a Climate IP connectivity diagnostic binary sensor."""
 

@@ -6,6 +6,9 @@
                 "description": "Choose the type of Samsung Air Conditioner to configure.",
                 "data": {
                     "device_type": "Device Type"
+                },
+                "data_description": {
+                    "device_type": "Select the device profile corresponding to your hardware."
                 }
             },
             "samsung_2878": {
@@ -21,6 +24,17 @@
                     "poll_interval": "Update Interval (HH:MM:SS format)",
                     "temp_native_current": "Native Current Temp Unit",
                     "temp_native_target": "Native Target Temp Unit"
+                },
+                "data_description": {
+                    "ip_address": "The local IPv4 address of the air conditioner (e.g. 192.168.1.100).",
+                    "port": "Communication port for legacy socket units (default: 2878).",
+                    "mac": "Hardware MAC address for unique device registry tracking.",
+                    "name": "Custom display name for this unit.",
+                    "token": "Leave blank to acquire token automatically via physical power button.",
+                    "cert": "Certificate file path (default: ac14k_m.pem).",
+                    "poll_interval": "Update polling frequency in HH:MM:SS format.",
+                    "temp_native_current": "Temperature unit reported by the unit's indoor sensor.",
+                    "temp_native_target": "Temperature unit used for setting target cooling or heating."
                 }
             },
             "samsung_8888": {
@@ -34,6 +48,15 @@
                     "cert": "Certificate path (Optional)",
                     "token": "Token (Optional)",
                     "poll_interval": "Update Interval (HH:MM:SS format)"
+                },
+                "data_description": {
+                    "ip_address": "The local IPv4 address of the modern Samsung air conditioner.",
+                    "port": "HTTPS REST API port (default: 8888).",
+                    "mac": "Hardware MAC address for unique device registry tracking.",
+                    "name": "Custom display name for this unit.",
+                    "cert": "Certificate file path (default: ac14k_m.pem).",
+                    "token": "Leave blank to acquire token automatically via local listener.",
+                    "poll_interval": "Update polling frequency in HH:MM:SS format."
                 }
             },
             "mim_h03": {
@@ -47,6 +70,15 @@
                     "cert": "Certificate path (Optional)",
                     "token": "Token (Optional)",
                     "poll_interval": "Update Interval (HH:MM:SS format)"
+                },
+                "data_description": {
+                    "ip_address": "The local IPv4 address of the MIM-H03 heatpump controller.",
+                    "port": "HTTPS REST API port (default: 8888).",
+                    "mac": "Hardware MAC address of the MIM-H03 controller.",
+                    "name": "Custom display name for the controller.",
+                    "cert": "Certificate file path (default: ac14k_m.pem).",
+                    "token": "Leave blank to acquire token automatically.",
+                    "poll_interval": "Update polling frequency in HH:MM:SS format."
                 }
             },
             "rest_api": {
@@ -59,6 +91,14 @@
                     "name": "Name (Optional)",
                     "cert": "Certificate path (Optional)",
                     "poll_interval": "Update Interval (HH:MM:SS format)"
+                },
+                "data_description": {
+                    "ip_address": "The local or cloud REST API host address.",
+                    "device_id": "Unique hardware device identifier.",
+                    "token": "Bearer access token for API authorization.",
+                    "name": "Custom display name for this unit.",
+                    "cert": "Certificate file path for TLS validation.",
+                    "poll_interval": "Update polling frequency in HH:MM:SS format."
                 }
             },
             "intesisbox": {
@@ -68,6 +108,11 @@
                     "ip_address": "IP Address",
                     "mac": "MAC Address (Optional)",
                     "poll_interval": "Update Interval (Seconds)"
+                },
+                "data_description": {
+                    "ip_address": "The local IPv4 address of the IntesisBox WMP gateway.",
+                    "mac": "Hardware MAC address of the gateway.",
+                    "poll_interval": "Update polling frequency in seconds."
                 }
             },
             "select_devices": {
@@ -75,6 +120,9 @@
                 "description": "Found {device_count} indoor units. Please select which ones you want to add to Home Assistant.",
                 "data": {
                     "selected_devices": "Indoor Units"
+                },
+                "data_description": {
+                    "selected_devices": "Choose the indoor AC units you want to integrate into Home Assistant."
                 }
             },
             "reauth_confirm": {
@@ -89,6 +137,12 @@
                     "mac": "MAC Address (Optional)",
                     "token": "Token (Optional)",
                     "cert": "Certificate path (Optional)"
+                },
+                "data_description": {
+                    "ip_address": "Updated local IPv4 address of the device.",
+                    "mac": "Updated MAC address for the device.",
+                    "token": "Updated authentication token.",
+                    "cert": "Updated certificate file path."
                 }
             }
         },
@@ -145,6 +199,14 @@
                     "target_temperature_step": "Target Temperature Step",
                     "temp_native_current": "Native Current Temp Unit",
                     "temp_native_target": "Native Target Temp Unit"
+                },
+                "data_description": {
+                    "connection_method": "Communication engine: aiohttp (modern), raw socket (unstable Wi-Fi), or requests (legacy).",
+                    "poll_interval": "Update polling frequency in HH:MM:SS format.",
+                    "enable_polling": "Enable periodic background polling of the device state.",
+                    "target_temperature_step": "Temperature adjustment granularity for UI controls.",
+                    "temp_native_current": "Temperature unit reported by the AC unit sensor.",
+                    "temp_native_target": "Temperature unit expected by the AC unit for setpoints."
                 }
             }
         },

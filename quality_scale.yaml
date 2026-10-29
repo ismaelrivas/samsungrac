@@ -1,15 +1,33 @@
 rules:
   # ======================== BRONZE ========================
+  action_setup: done
+  appropriate_polling:
+    status: done
+    comment: >
+      Polling interval defaults to 15 seconds with strict bounds [5s, 21600s].
+      Hardware profiles and socket engines handle real-time push where supported.
+  brands: done
+  common_modules: done
   config_flow: done
-  test_coverage_setup_integration: done
-  unique_config_entry_per_device: done
   config_flow_test_coverage: done
-  appropriate_polling: done
-  entity_unavailability: done
-  action_exceptions: done
+  dependency_transparency: done
+  docs_actions: done
+  docs_conditions:
+    status: exempt
+    comment: Integration does not implement custom automation conditions.
+  docs_high_level_description: done
+  docs_installation_instructions: done
+  docs_removal_instructions: done
+  docs_triggers:
+    status: exempt
+    comment: Integration does not implement custom automation triggers.
+  entity_event_setup: done
   entity_unique_id: done
   has_entity_name: done
-  dependency_transparency: done
+  runtime_data: done
+  test_before_configure: done
+  test_before_setup: done
+  unique_config_entry: done
 
   # ======================== SILVER ========================
   config_entry_unloading: done

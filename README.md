@@ -6,7 +6,7 @@
 ![Quality Scale](https://img.shields.io/badge/Quality%20Scale-Gold%20Master-gold?style=for-the-badge)
 ![HACS](https://img.shields.io/badge/HACS-Custom%20Repository-orange?style=for-the-badge)
 
-A highly resilient, mathematically verified, and asynchronously optimized custom component for Home Assistant to control Samsung Air Conditioners, Heat Pumps (MIM-H03), SmartThings EHS HVAC controllers, and IntesisBox WMP gateways via IP.
+A highly resilient, mathematically verified, and asynchronously optimized custom component for Home Assistant to control [Samsung](https://www.samsung.com) Air Conditioners, Heat Pumps (MIM-H03), SmartThings EHS HVAC controllers, and [Intesis](https://www.intesisbox.com) WMP gateways via IP.
 
 ---
 

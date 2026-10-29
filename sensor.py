@@ -12,10 +12,10 @@ from homeassistant.components.sensor import SensorEntity, SensorEntityDescriptio
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import ClimateIPConfigEntry
 from .coordinator import SamsungClimateCoordinator
+from .entity import SamsungClimateEntity
 from .helpers import parse_entity_category
 from .properties import DeviceProperty, UniqueIdProperty
 
@@ -86,7 +86,7 @@ async def async_setup_entry(
         async_add_entities(entities_to_add)
 
 
-class ClimateIpSensor(CoordinatorEntity[SamsungClimateCoordinator], SensorEntity):
+class ClimateIpSensor(SamsungClimateEntity, SensorEntity):
     """Representation of a Climate IP sensor defined by YAML."""
 
     _attr_native_value: str | float | None

@@ -1,307 +1,369 @@
 {
-  "config": {
-    "step": {
-      "user": {
-        "title": "Select Device Type",
-        "description": "Choose the type of Samsung Air Conditioner to configure.",
-        "data": {
-          "device_type": "Device Type"
-        }
-      },
-      "samsung_2878": {
-        "title": "Configure Samsung AC (Port 2878)",
-        "description": "Configuration for older Samsung AC units. Please note that the device should be plugged in but POWERED OFF (standby) before starting.",
-        "data": {
-          "ip_address": "IP Address",
-          "port": "Port",
-          "mac": "MAC Address (Optional)",
-          "name": "Name (Optional)",
-          "token": "Token (Optional)",
-          "cert": "Certificate path (Optional)",
-          "poll_interval": "Update Interval (HH:MM:SS format)",
-          "temp_native_current": "Native Current Temp Unit",
-          "temp_native_target": "Native Target Temp Unit"
-        }
-      },
-      "samsung_8888": {
-        "title": "Configure Samsung AC (Port 8888)",
-        "description": "Configuration for modern Samsung AC units.",
-        "data": {
-          "ip_address": "IP Address",
-          "port": "Port",
-          "mac": "MAC Address (Optional)",
-          "name": "Name (Optional)",
-          "cert": "Certificate path (Optional)",
-          "token": "Token (Optional)",
-          "poll_interval": "Update Interval (HH:MM:SS format)"
-        }
-      },
-      "mim_h03": {
-        "title": "Configure Samsung MIM-H03",
-        "description": "Configuration for MIM-H03 heatpump controller.",
-        "data": {
-          "ip_address": "IP Address",
-          "port": "Port",
-          "mac": "MAC Address (Optional)",
-          "name": "Name (Optional)",
-          "cert": "Certificate path (Optional)",
-          "token": "Token (Optional)",
-          "poll_interval": "Update Interval (HH:MM:SS format)"
-        }
-      },
-      "rest_api": {
-        "title": "Configure REST API Device",
-        "description": "Provide details for the REST API connection.",
-        "data": {
-          "ip_address": "API Host/IP Address",
-          "device_id": "Device ID",
-          "token": "Access Token",
-          "name": "Name (Optional)",
-          "cert": "Certificate path (Optional)",
-          "poll_interval": "Update Interval (HH:MM:SS format)"
-        }
-      },
-      "intesisbox": {
-        "title": "Configure IntesisBox Gateway (Port 3310)",
-        "description": "Configuration for IntesisBox Wireless Multi-Protocol (WMP v1.9) gateways. Enter the IP address to discover device details automatically.",
-        "data": {
-          "ip_address": "IP Address",
-          "mac": "MAC Address (Optional)",
-          "poll_interval": "Update Interval (Seconds)"
-        }
-      },
-      "select_devices": {
-        "title": "Select Indoor Units",
-        "description": "Found {device_count} indoor units. Please select which ones you want to add to Home Assistant.",
-        "data": {
-          "selected_devices": "Indoor Units"
-        }
-      },
-      "reauth_confirm": {
-        "title": "Reauthenticate Integration",
-        "description": "The authentication for {device_name} failed. Would you like to restart the pairing process to acquire a new token?"
-      },
-      "reconfigure_confirm": {
-        "title": "Reconfigure {device_name}",
-        "description": "Update the connectivity settings for **{device_name}** (currently at `{ip_address}`). Only fields you change will be updated.",
-        "data": {
-          "ip_address": "IP Address",
-          "mac": "MAC Address (Optional)",
-          "token": "Token (Optional)",
-          "cert": "Certificate path (Optional)"
-        }
-      }
-    },
-    "progress": {
-      "initiating_pairing": "Initiating pairing with the device. Please wait...",
-      "initiating_pairing_8888": "Initiating pairing with the device at **{ip_address}**. Please wait...",
-      "awaiting_button_press": "Waiting for pairing confirmation...\n\nPlease turn the device ON using the **Power** button on your remote (or physical unit) for the device at **{ip_address}** within the next 45 seconds.",
-      "acquire_8888": "Waiting for button press... \n\nPlease press the **Power** button on the AC at **{ip_address}** within the next 20 seconds.",
-      "testing_connection": "Testing connection to the device..."
-    },
-    "error": {
-      "cannot_connect": "Failed to connect to the AC. Please verify the IP address and ensure the device is connected to your Wi-Fi network.",
-      "invalid_auth": "Authentication failed. The provided token might be incorrect, expired, or rejected by the device.",
-      "unknown_error": "An unexpected error occurred during communication.",
-      "mac_resolve_failed": "Could not auto-discover the MAC address on the local network. Please enter it manually.",
-      "invalid_poll_interval": "Invalid update interval format. Please use HH:MM:SS (e.g., 0:01:00 for 1 minute).",
-      "cert_not_found": "The required certificate file was not found. Please ensure it is placed inside the `climate_ip` custom_components folder.",
-      "token_acquisition_failed": "Failed to acquire an authorization token from the device.",
-      "auth_failed_turned_off": "Pairing rejected. Please ensure the AC is turned OFF (in standby mode) before starting the pairing process.",
-      "no_devices_selected": "You must select at least one device to continue the setup.",
-      "pairing_init_failed": "Could not put the device into pairing mode. Please restart the AC and try again.",
-      "token_required_for_aiohttp": "The 'Modern REST API' connection method requires a manually extracted token.",
-      "device_id_required": "A unique Device ID is required to complete this setup method.",
-      "port_in_use": "The necessary listening port (8888 or 8889) is already in use by another addon or integration.",
-      "timeout_8888": "Timed out waiting for the pairing confirmation. Did you press the physical button on the AC?",
-      "invalid_response": "The device returned an unexpected or malformed response.",
-      "final_validation_failed": "Configuration failed. Could not verify the connection using the newly acquired credentials."
-    },
-    "abort": {
-      "flow_state_lost": "The pairing session was lost (e.g. after a restart). Please start the setup process again.",
-      "already_configured": "This device is already configured in Home Assistant.",
-      "not_implemented": "This specific device model or topology is not yet fully supported.",
-      "no_mac_address_found": "Could not determine a unique network identifier (MAC/UUID) for the device.",
-      "no_coordinator_uuid": "Discovered a central controller (MIM-H03) but its unique UUID is missing.",
-      "no_coordinator_found": "Could not locate the central controller (MIM-H03) on the network.",
-      "discovery_failed": "Authentication was successful, but failed to retrieve the internal device list.",
-      "no_unique_id": "Failed to assign a unique identifier to the discovered indoor units.",
-      "cannot_connect": "Failed to establish a stable connection or fetch the initial status from the device.",
-      "pairing_connection_failed": "Could not connect to device at {ip_address}. Verify that the AC is powered on, connected to Wi-Fi, and that the IP address is correct. \n\nDetails: {error_details}",
-      "unknown_error": "An unexpected error forced the setup process to abort.",
-      "reauth_successful": "Re-authentication was successful. Your device is ready to use.",
-      "reconfigure_successful": "The device network and connectivity settings have been successfully updated."
-    }
-  },
-  "options": {
-    "step": {
-      "init": {
-        "title": "Device Options",
-        "description": "Configure the behavior of the Samsung AC integration.",
-        "data": {
-          "connection_method": "Connection Engine",
-          "poll_interval": "Update Interval (HH:MM:SS format)",
-          "enable_polling": "Enable Periodic Polling",
-          "target_temperature_step": "Target Temperature Step",
-          "temp_native_current": "Native Current Temp Unit",
-          "temp_native_target": "Native Target Temp Unit"
-        }
-      }
-    },
-    "error": {
-      "token_required_for_aiohttp": "The 'Modern (aiohttp)' connection method requires a valid token. Please re-authenticate the device.",
-      "invalid_poll_interval": "Invalid update interval format. Please use HH:MM:SS (e.g., 0:01:00 for 1 minute)."
-    }
-  },
-  "exceptions": {
-    "cannot_connect": {
-      "message": "Failed to connect to the device."
-    },
-    "invalid_response": {
-      "message": "Device returned an unexpected response."
-    },
-    "invalid_auth": {
-      "message": "Authentication failed. The token might be incorrect or expired."
-    },
-    "cert_not_found": {
-      "message": "The specified certificate file was not found."
-    },
-    "token_acquisition_failed": {
-      "message": "Failed to acquire token from the device."
-    },
-    "auth_failed_turned_off": {
-      "message": "Authentication failed. Please ensure the AC is in standby (OFF) before starting the pairing process."
-    },
-    "property_set_failed": {
-      "message": "Failed to set property {property}: {error}"
-    },
-    "controller_not_initialized": {
-      "message": "Cannot set property {property}: controller is not fully initialized."
-    },
-    "property_not_found": {
-      "message": "Failed to set property {property}: property not found."
-    }
-  },
-  "issues": {
-    "connection_failed": {
-      "title": "{device_name} - Disconnected ({ip_address})",
-      "description": "The device **{device_name}** at **{ip_address}** is persistently unreachable. Please verify power and network connection."
-    },
-    "auto_healing_raw": {
-      "title": "Connection mode updated ({device_name})",
-      "fix_flow": {
+    "config": {
         "step": {
-          "confirm": {
-            "title": "Connection mode updated",
-            "description": "The connection mode for **{device_name}** was automatically switched to **'Robust (raw socket)'** to resolve protocol anomalies.\n\nClick Submit to confirm and dismiss this notice."
-          }
-        }
-      }
-    }
-  },
-  "selector": {
-    "device_type": {
-      "options": {
-        "samsung_2878": "Older Samsung AC (Port 2878)",
-        "samsung_8888": "Modern Samsung AC (Port 8888)",
-        "mim_h03": "Samsung MIM-H03 Heatpump",
-        "smartthings_hvac": "SmartThings HVAC (REST API)",
-        "smartthings_dhw": "SmartThings DHW (REST API)",
-        "intesisbox": "IntesisBox WMP Gateway (Port 3310)"
-      }
-    },
-    "connection_method": {
-      "options": {
-        "requests": "Legacy (Obsolete - Will be removed)",
-        "aiohttp": "Modern (aiohttp - Recommended)",
-        "raw": "Robust (raw socket - For unstable Wi-Fi)"
-      }
-    }
-  },
-  "common": {
-    "deprecated_yaml_title": "Climate IP - YAML Configuration Deprecated",
-    "deprecated_yaml_message": "Climate IP configuration via YAML is deprecated and has been imported. Please remove it from configuration.yaml."
-  },
-  "entity": {
-    "climate": {
-      "samsung_ac": {
-        "state_attributes": {
-          "preset_mode": {
-            "state": {
-              "wind_free": "WindFree"
+            "user": {
+                "title": "Select Device Type",
+                "description": "Choose the type of Samsung Air Conditioner to configure.",
+                "data": {
+                    "device_type": "Device Type"
+                },
+                "data_description": {
+                    "device_type": "Select the device profile corresponding to your hardware."
+                }
+            },
+            "samsung_2878": {
+                "title": "Configure Samsung AC (Port 2878)",
+                "description": "Configuration for older Samsung AC units. Please note that the device should be plugged in but POWERED OFF (standby) before starting.",
+                "data": {
+                    "ip_address": "IP Address",
+                    "port": "Port",
+                    "mac": "MAC Address (Optional)",
+                    "name": "Name (Optional)",
+                    "token": "Token (Optional)",
+                    "cert": "Certificate path (Optional)",
+                    "poll_interval": "Update Interval (HH:MM:SS format)",
+                    "temp_native_current": "Native Current Temp Unit",
+                    "temp_native_target": "Native Target Temp Unit"
+                },
+                "data_description": {
+                    "ip_address": "The local IPv4 address of the air conditioner (e.g. 192.168.1.100).",
+                    "port": "Communication port for legacy socket units (default: 2878).",
+                    "mac": "Hardware MAC address for unique device registry tracking.",
+                    "name": "Custom display name for this unit.",
+                    "token": "Leave blank to acquire token automatically via physical power button.",
+                    "cert": "Certificate file path (default: ac14k_m.pem).",
+                    "poll_interval": "Update polling frequency in HH:MM:SS format.",
+                    "temp_native_current": "Temperature unit reported by the unit's indoor sensor.",
+                    "temp_native_target": "Temperature unit used for setting target cooling or heating."
+                }
+            },
+            "samsung_8888": {
+                "title": "Configure Samsung AC (Port 8888)",
+                "description": "Configuration for modern Samsung AC units.",
+                "data": {
+                    "ip_address": "IP Address",
+                    "port": "Port",
+                    "mac": "MAC Address (Optional)",
+                    "name": "Name (Optional)",
+                    "cert": "Certificate path (Optional)",
+                    "token": "Token (Optional)",
+                    "poll_interval": "Update Interval (HH:MM:SS format)"
+                },
+                "data_description": {
+                    "ip_address": "The local IPv4 address of the modern Samsung air conditioner.",
+                    "port": "HTTPS REST API port (default: 8888).",
+                    "mac": "Hardware MAC address for unique device registry tracking.",
+                    "name": "Custom display name for this unit.",
+                    "cert": "Certificate file path (default: ac14k_m.pem).",
+                    "token": "Leave blank to acquire token automatically via local listener.",
+                    "poll_interval": "Update polling frequency in HH:MM:SS format."
+                }
+            },
+            "mim_h03": {
+                "title": "Configure Samsung MIM-H03",
+                "description": "Configuration for MIM-H03 heatpump controller.",
+                "data": {
+                    "ip_address": "IP Address",
+                    "port": "Port",
+                    "mac": "MAC Address (Optional)",
+                    "name": "Name (Optional)",
+                    "cert": "Certificate path (Optional)",
+                    "token": "Token (Optional)",
+                    "poll_interval": "Update Interval (HH:MM:SS format)"
+                },
+                "data_description": {
+                    "ip_address": "The local IPv4 address of the MIM-H03 heatpump controller.",
+                    "port": "HTTPS REST API port (default: 8888).",
+                    "mac": "Hardware MAC address of the MIM-H03 controller.",
+                    "name": "Custom display name for the controller.",
+                    "cert": "Certificate file path (default: ac14k_m.pem).",
+                    "token": "Leave blank to acquire token automatically.",
+                    "poll_interval": "Update polling frequency in HH:MM:SS format."
+                }
+            },
+            "rest_api": {
+                "title": "Configure REST API Device",
+                "description": "Provide details for the REST API connection.",
+                "data": {
+                    "ip_address": "API Host/IP Address",
+                    "device_id": "Device ID",
+                    "token": "Access Token",
+                    "name": "Name (Optional)",
+                    "cert": "Certificate path (Optional)",
+                    "poll_interval": "Update Interval (HH:MM:SS format)"
+                },
+                "data_description": {
+                    "ip_address": "The local or cloud REST API host address.",
+                    "device_id": "Unique hardware device identifier.",
+                    "token": "Bearer access token for API authorization.",
+                    "name": "Custom display name for this unit.",
+                    "cert": "Certificate file path for TLS validation.",
+                    "poll_interval": "Update polling frequency in HH:MM:SS format."
+                }
+            },
+            "intesisbox": {
+                "title": "Configure IntesisBox Gateway (Port 3310)",
+                "description": "Configuration for IntesisBox Wireless Multi-Protocol (WMP v1.9) gateways. Enter the IP address to discover device details automatically.",
+                "data": {
+                    "ip_address": "IP Address",
+                    "mac": "MAC Address (Optional)",
+                    "poll_interval": "Update Interval (Seconds)"
+                },
+                "data_description": {
+                    "ip_address": "The local IPv4 address of the IntesisBox WMP gateway.",
+                    "mac": "Hardware MAC address of the gateway.",
+                    "poll_interval": "Update polling frequency in seconds."
+                }
+            },
+            "select_devices": {
+                "title": "Select Indoor Units",
+                "description": "Found {device_count} indoor units. Please select which ones you want to add to Home Assistant.",
+                "data": {
+                    "selected_devices": "Indoor Units"
+                },
+                "data_description": {
+                    "selected_devices": "Choose the indoor AC units you want to integrate into Home Assistant."
+                }
+            },
+            "reauth_confirm": {
+                "title": "Reauthenticate Integration",
+                "description": "The authentication for {device_name} failed. Would you like to restart the pairing process to acquire a new token?"
+            },
+            "reconfigure_confirm": {
+                "title": "Reconfigure {device_name}",
+                "description": "Update the connectivity settings for **{device_name}** (currently at `{ip_address}`). Only fields you change will be updated.",
+                "data": {
+                    "ip_address": "IP Address",
+                    "mac": "MAC Address (Optional)",
+                    "token": "Token (Optional)",
+                    "cert": "Certificate path (Optional)"
+                },
+                "data_description": {
+                    "ip_address": "Updated local IPv4 address of the device.",
+                    "mac": "Updated MAC address for the device.",
+                    "token": "Updated authentication token.",
+                    "cert": "Updated certificate file path."
+                }
             }
-          }
+        },
+        "progress": {
+            "initiating_pairing": "Initiating pairing with the device. Please wait...",
+            "initiating_pairing_8888": "Initiating pairing with the device at **{ip_address}**. Please wait...",
+            "awaiting_button_press": "Waiting for pairing confirmation...\n\nPlease turn the device ON using the **Power** button on your remote (or physical unit) for the device at **{ip_address}** within the next 45 seconds.",
+            "acquire_8888": "Waiting for button press... \n\nPlease press the **Power** button on the AC at **{ip_address}** within the next 20 seconds.",
+            "testing_connection": "Testing connection to the device..."
+        },
+        "error": {
+            "cannot_connect": "Failed to connect to the AC. Please verify the IP address and ensure the device is connected to your Wi-Fi network.",
+            "invalid_auth": "Authentication failed. The provided token might be incorrect, expired, or rejected by the device.",
+            "unknown_error": "An unexpected error occurred during communication.",
+            "mac_resolve_failed": "Could not auto-discover the MAC address on the local network. Please enter it manually.",
+            "invalid_poll_interval": "Invalid update interval format. Please use HH:MM:SS (e.g., 0:01:00 for 1 minute).",
+            "cert_not_found": "The required certificate file was not found. Please ensure it is placed inside the `climate_ip` custom_components folder.",
+            "token_acquisition_failed": "Failed to acquire an authorization token from the device.",
+            "auth_failed_turned_off": "Pairing rejected. Please ensure the AC is turned OFF (in standby mode) before starting the pairing process.",
+            "no_devices_selected": "You must select at least one device to continue the setup.",
+            "pairing_init_failed": "Could not put the device into pairing mode. Please restart the AC and try again.",
+            "token_required_for_aiohttp": "The 'Modern REST API' connection method requires a manually extracted token.",
+            "device_id_required": "A unique Device ID is required to complete this setup method.",
+            "port_in_use": "The necessary listening port (8888 or 8889) is already in use by another addon or integration.",
+            "timeout_8888": "Timed out waiting for the pairing confirmation. Did you press the physical button on the AC?",
+            "invalid_response": "The device returned an unexpected or malformed response.",
+            "final_validation_failed": "Configuration failed. Could not verify the connection using the newly acquired credentials."
+        },
+        "abort": {
+            "flow_state_lost": "The pairing session was lost (e.g. after a restart). Please start the setup process again.",
+            "already_configured": "This device is already configured in Home Assistant.",
+            "not_implemented": "This specific device model or topology is not yet fully supported.",
+            "no_mac_address_found": "Could not determine a unique network identifier (MAC/UUID) for the device.",
+            "no_coordinator_uuid": "Discovered a central controller (MIM-H03) but its unique UUID is missing.",
+            "no_coordinator_found": "Could not locate the central controller (MIM-H03) on the network.",
+            "discovery_failed": "Authentication was successful, but failed to retrieve the internal device list.",
+            "no_unique_id": "Failed to assign a unique identifier to the discovered indoor units.",
+            "cannot_connect": "Failed to establish a stable connection or fetch the initial status from the device.",
+            "pairing_connection_failed": "Could not connect to device at {ip_address}. Verify that the AC is powered on, connected to Wi-Fi, and that the IP address is correct. \n\nDetails: {error_details}",
+            "unknown_error": "An unexpected error forced the setup process to abort.",
+            "reauth_successful": "Re-authentication was successful. Your device is ready to use.",
+            "reconfigure_successful": "The device network and connectivity settings have been successfully updated."
         }
-      }
     },
-    "sensor": {
-      "sleep_timer": {
-        "name": "Sleep Timer"
-      },
-      "outdoor_temperature": {
-        "name": "Outdoor Temperature"
-      },
-      "filter_clean_alarm": {
-        "name": "Filter Clean Alarm"
-      },
-      "filter_time": {
-        "name": "Filter Time"
-      },
-      "filter_alarm_time": {
-        "name": "Filter Alarm Time"
-      },
-      "auto_clean": {
-        "name": "Auto Clean"
-      },
-      "purify": {
-        "name": "Purify"
-      },
-      "used_power": {
-        "name": "Electrical Consumption"
-      },
-      "used_time": {
-        "name": "Usage Time"
-      },
-      "filter_use_time": {
-        "name": "Filter Usage Time"
-      },
-      "wifi_connection_status": {
-        "name": "Wi-Fi Connection Status"
-      },
-      "internet_connection_status": {
-        "name": "Internet Connection Status"
-      },
-      "split_version": {
-        "name": "Split Version"
-      },
-      "external_unit_version": {
-        "name": "External Unit Version"
-      },
-      "error_status": {
-        "name": "Error Status"
-      },
-      "error_code": {
-        "name": "Error Code"
-      },
-      "vane_horizontal": {
-        "name": "Horizontal Vane"
-      }
+    "options": {
+        "step": {
+            "init": {
+                "title": "Device Options",
+                "description": "Configure the behavior of the Samsung AC integration.",
+                "data": {
+                    "connection_method": "Connection Engine",
+                    "poll_interval": "Update Interval (HH:MM:SS format)",
+                    "enable_polling": "Enable Periodic Polling",
+                    "target_temperature_step": "Target Temperature Step",
+                    "temp_native_current": "Native Current Temp Unit",
+                    "temp_native_target": "Native Target Temp Unit"
+                },
+                "data_description": {
+                    "connection_method": "Communication engine: aiohttp (modern), raw socket (unstable Wi-Fi), or requests (legacy).",
+                    "poll_interval": "Update polling frequency in HH:MM:SS format.",
+                    "enable_polling": "Enable periodic background polling of the device state.",
+                    "target_temperature_step": "Temperature adjustment granularity for UI controls.",
+                    "temp_native_current": "Temperature unit reported by the AC unit sensor.",
+                    "temp_native_target": "Temperature unit expected by the AC unit for setpoints."
+                }
+            }
+        },
+        "error": {
+            "token_required_for_aiohttp": "The 'Modern (aiohttp)' connection method requires a valid token. Please re-authenticate the device.",
+            "invalid_poll_interval": "Invalid update interval format. Please use HH:MM:SS (e.g., 0:01:00 for 1 minute)."
+        }
     },
-    "binary_sensor": {
-      "connectivity": {
-        "name": "Connectivity"
-      }
+    "exceptions": {
+        "cannot_connect": {
+            "message": "Failed to connect to the device."
+        },
+        "invalid_response": {
+            "message": "Device returned an unexpected response."
+        },
+        "invalid_auth": {
+            "message": "Authentication failed. The token might be incorrect or expired."
+        },
+        "cert_not_found": {
+            "message": "The specified certificate file was not found."
+        },
+        "token_acquisition_failed": {
+            "message": "Failed to acquire token from the device."
+        },
+        "auth_failed_turned_off": {
+            "message": "Authentication failed. Please ensure the AC is in standby (OFF) before starting the pairing process."
+        },
+        "property_set_failed": {
+            "message": "Failed to set property {property}: {error}"
+        },
+        "controller_not_initialized": {
+            "message": "Cannot set property {property}: controller is not fully initialized."
+        },
+        "property_not_found": {
+            "message": "Failed to set property {property}: property not found."
+        }
     },
-    "switch": {
-      "purify": {
-        "name": "Purify"
-      },
-      "auto_clean": {
-        "name": "Auto Clean"
-      },
-      "beep": {
-        "name": "Beep"
-      }
+    "issues": {
+        "connection_failed": {
+            "title": "{device_name} - Disconnected ({ip_address})",
+            "description": "The device **{device_name}** at **{ip_address}** is persistently unreachable. Please verify power and network connection."
+        },
+        "auto_healing_raw": {
+            "title": "Connection mode updated ({device_name})",
+            "fix_flow": {
+                "step": {
+                    "confirm": {
+                        "title": "Connection mode updated",
+                        "description": "The connection mode for **{device_name}** was automatically switched to **'Robust (raw socket)'** to resolve protocol anomalies.\n\nClick Submit to confirm and dismiss this notice."
+                    }
+                }
+            }
+        }
+    },
+    "selector": {
+        "device_type": {
+            "options": {
+                "samsung_2878": "Older Samsung AC (Port 2878)",
+                "samsung_8888": "Modern Samsung AC (Port 8888)",
+                "mim_h03": "Samsung MIM-H03 Heatpump",
+                "smartthings_hvac": "SmartThings HVAC (REST API)",
+                "smartthings_dhw": "SmartThings DHW (REST API)",
+                "intesisbox": "IntesisBox WMP Gateway (Port 3310)"
+            }
+        },
+        "connection_method": {
+            "options": {
+                "requests": "Legacy (Obsolete - Will be removed)",
+                "aiohttp": "Modern (aiohttp - Recommended)",
+                "raw": "Robust (raw socket - For unstable Wi-Fi)"
+            }
+        }
+    },
+    "common": {
+        "deprecated_yaml_title": "Climate IP - YAML Configuration Deprecated",
+        "deprecated_yaml_message": "Climate IP configuration via YAML is deprecated and has been imported. Please remove it from configuration.yaml."
+    },
+    "entity": {
+        "climate": {
+            "samsung_ac": {
+                "state_attributes": {
+                    "preset_mode": {
+                        "state": {
+                            "wind_free": "WindFree"
+                        }
+                    }
+                }
+            }
+        },
+        "sensor": {
+            "sleep_timer": {
+                "name": "Sleep Timer"
+            },
+            "outdoor_temperature": {
+                "name": "Outdoor Temperature"
+            },
+            "filter_clean_alarm": {
+                "name": "Filter Clean Alarm"
+            },
+            "filter_time": {
+                "name": "Filter Time"
+            },
+            "filter_alarm_time": {
+                "name": "Filter Alarm Time"
+            },
+            "auto_clean": {
+                "name": "Auto Clean"
+            },
+            "purify": {
+                "name": "Purify"
+            },
+            "used_power": {
+                "name": "Electrical Consumption"
+            },
+            "used_time": {
+                "name": "Usage Time"
+            },
+            "filter_use_time": {
+                "name": "Filter Usage Time"
+            },
+            "wifi_connection_status": {
+                "name": "Wi-Fi Connection Status"
+            },
+            "internet_connection_status": {
+                "name": "Internet Connection Status"
+            },
+            "split_version": {
+                "name": "Split Version"
+            },
+            "external_unit_version": {
+                "name": "External Unit Version"
+            },
+            "error_status": {
+                "name": "Error Status"
+            },
+            "error_code": {
+                "name": "Error Code"
+            },
+            "vane_horizontal": {
+                "name": "Horizontal Vane"
+            }
+        },
+        "binary_sensor": {
+            "connectivity": {
+                "name": "Connectivity"
+            }
+        },
+        "switch": {
+            "purify": {
+                "name": "Purify"
+            },
+            "auto_clean": {
+                "name": "Auto Clean"
+            },
+            "beep": {
+                "name": "Beep"
+            }
+        }
     }
-  }
 }

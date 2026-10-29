@@ -32,7 +32,6 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 if TYPE_CHECKING:
     from . import ClimateIPConfigEntry
@@ -45,6 +44,7 @@ from .const import (
     DEFAULT_TARGET_TEMP_STEP,
 )
 from .coordinator import SamsungClimateCoordinator
+from .entity import SamsungClimateEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -90,7 +90,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class ClimateIP(CoordinatorEntity[SamsungClimateCoordinator], ClimateEntity):
+class ClimateIP(SamsungClimateEntity, ClimateEntity):
     """Representation of a climate_ip climate device using a coordinator."""
 
     entity_description: ClimateEntityDescription

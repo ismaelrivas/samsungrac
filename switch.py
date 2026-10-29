@@ -11,10 +11,10 @@ from typing import Any
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import ClimateIPConfigEntry
 from .coordinator import SamsungClimateCoordinator
+from .entity import SamsungClimateEntity
 from .helpers import parse_entity_category
 from .properties import PROPERTY_TYPE_SWITCH, DeviceProperty
 
@@ -99,7 +99,7 @@ async def async_setup_entry(  # pylint: disable=import-outside-toplevel,too-many
         async_add_entities(entities)
 
 
-class SamsungClimateSwitch(CoordinatorEntity[SamsungClimateCoordinator], SwitchEntity):
+class SamsungClimateSwitch(SamsungClimateEntity, SwitchEntity):
     """Representation of a Samsung Climate IP Switch."""
 
     # pylint: disable=import-outside-toplevel,abstract-method
