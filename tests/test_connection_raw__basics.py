@@ -874,6 +874,19 @@ async def test_async_execute_mutants_coverage(
             # Uses _host (1.1.1.1) and fallback to connection config token (CONN_TOKEN)
             assert url == "/x/1.1.1.1/CONN_TOKEN"
 
+        # Test 2b: Public controller.config dict takes priority when token is None and _config is empty (kills L250 mutant 26)
+        mock_controller.config = {CONF_TOKEN: "PUBLIC_CTRL_CFG_TOKEN"}
+        mock_controller._config = {}
+        with patch.object(conn, "async_get_client", return_value=mock_client):
+            mock_client.request.reset_mock()
+            await conn.async_execute(
+                "POST", "/x/__CLIMATE_IP_HOST__/__CLIMATE_IP_TOKEN__", None, None
+            )
+            mock_client.request.assert_called_once()
+            _, url_pub, _, _ = mock_client.request.call_args[0]
+            assert url_pub == "/x/1.1.1.1/PUBLIC_CTRL_CFG_TOKEN"
+        del mock_controller.config
+
         # Test 3: Test fallback to empty string when neither _host nor _config IP is set
         conn._host = None
         conn._config = {"token": "SOME_TOKEN"}
@@ -937,23 +950,23 @@ async def test_async_execute_embedded_and_path(
                 "PUT",
                 "/main/__CLIMATE_IP_HOST__",
                 None,
-                None,
+                {"X-Parent": "1"},
                 device_state={"state": "on"},
             )
-            mock_template.async_render.assert_called_once()
+            mock_template.async_render.assert_called_once_with(parse_result=False)
 
             # embedded command should execute with method POST, and fallback url "/main/1.1.1.1"
             conn._embedded_command.async_execute.assert_called_once()
             emb_kwargs = conn._embedded_command.async_execute.call_args[1]
             assert emb_kwargs["method"] == "POST"
             assert emb_kwargs["url"] == "/main/__CLIMATE_IP_HOST__"
+            assert emb_kwargs["headers"] == {"X-Parent": "1"}
+            assert emb_kwargs["device_state"] == {"state": "on"}
 
-        # Test embedded params replacement (second pass)
+        # Test embedded params replacement and method/headers fallback when omitted in template (kills L287, L300, L302, L306)
         # DO NOT delete async_render, just reconfigure the return value
         mock_template.async_render = MagicMock(
-            return_value=(
-                '{"url": "/emb/__DEVICE_ID__/__CLIMATE_IP_HOST__", "method": "GET"}'
-            )
+            return_value='{"url": "/emb/__DEVICE_ID__/__CLIMATE_IP_HOST__"}'
         )
         conn._embedded_command.connection_template = mock_template
         conn._embedded_command._connection_template = mock_template
@@ -961,13 +974,19 @@ async def test_async_execute_embedded_and_path(
 
         with patch.object(conn, "async_get_client", return_value=mock_client):
             await conn.async_execute(
-                "PUT", "/main", None, None, device_state={"state": "on"}
+                "PUT",
+                "/main",
+                None,
+                {"X-Parent": "2"},
+                device_state={"state": "on"},
             )
-            mock_template.async_render.assert_called_once()
+            mock_template.async_render.assert_called_once_with(parse_result=False)
             conn._embedded_command.async_execute.assert_called_once()
             emb_kwargs = conn._embedded_command.async_execute.call_args[1]
-            assert emb_kwargs["method"] == "GET"
+            assert emb_kwargs["method"] == "PUT"
             assert emb_kwargs["url"] == "/emb/DEV456/1.1.1.1"
+            assert emb_kwargs["headers"] == {"X-Parent": "2"}
+            assert emb_kwargs["device_state"] == {"state": "on"}
 
         # Test url=None path fallback (Kills mutant 129)
         conn._embedded_command = None

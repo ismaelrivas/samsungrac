@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -19,6 +19,7 @@ from custom_components.climate_ip import (
     PLATFORMS,
     async_migrate_entry,
     async_remove_config_entry_device,
+    async_setup,
     async_setup_entry,
     async_unload_entry,
     async_update_listener,
@@ -1669,3 +1670,73 @@ async def test_async_setup_single_device_strict_initialization_and_args(
         assert dev_id_refused == "dev_target9"
         assert res_coord_refused is None
         ctrl_refused.async_shutdown.assert_awaited_once()
+
+
+async def test_async_setup_and_reload_service(hass: HomeAssistant) -> None:
+    """Test async_setup registers reload service and reloads all domain entries."""
+    entry1 = MagicMock(entry_id="climate_ip_1")
+    entry2 = MagicMock(entry_id="climate_ip_2")
+    other_entry = MagicMock(entry_id="other_entry_3")
+
+    def mock_entries(domain=None):
+        if domain == DOMAIN:
+            return [entry1, entry2]
+        if domain is None:
+            return [entry1, entry2, other_entry]
+        return []
+
+    hass.config_entries.async_entries = MagicMock(side_effect=mock_entries)
+    hass.config_entries.async_reload = AsyncMock(return_value=True)
+
+    with patch("custom_components.climate_ip.clear_yaml_cache") as mock_clear:
+        result = await async_setup(hass, {})
+
+        assert result is True
+        assert result is not False
+        assert type(result) is bool
+
+        hass.services.async_register.assert_called_once()
+        reg_args, _ = hass.services.async_register.call_args
+        assert len(reg_args) == 3
+        assert reg_args[0] == DOMAIN
+        assert reg_args[1] == "reload"
+        handler = reg_args[2]
+        assert callable(handler)
+
+        # Call the reload handler
+        await handler(MagicMock())
+
+        mock_clear.assert_called_once_with()
+        hass.config_entries.async_entries.assert_called_once_with(DOMAIN)
+        assert hass.config_entries.async_reload.await_count == 2
+        hass.config_entries.async_reload.assert_has_awaits(
+            [call("climate_ip_1"), call("climate_ip_2")],
+            any_order=True,
+        )
+        assert not any(
+            c == call("other_entry_3")
+            for c in hass.config_entries.async_reload.await_args_list
+        )
+        assert not any(
+            c == call(None)
+            for c in hass.config_entries.async_reload.await_args_list
+        )
+
+
+async def test_async_setup_reload_service_no_entries(hass: HomeAssistant) -> None:
+    """Test reload service when no entries exist for DOMAIN."""
+    hass.config_entries.async_entries = MagicMock(return_value=[])
+    hass.config_entries.async_reload = AsyncMock(return_value=True)
+
+    with patch("custom_components.climate_ip.clear_yaml_cache") as mock_clear:
+        result = await async_setup(hass, {})
+        assert result is True
+
+        _, _, handler = hass.services.async_register.call_args[0]
+        await handler(MagicMock())
+
+        mock_clear.assert_called_once_with()
+        hass.config_entries.async_entries.assert_called_once_with(DOMAIN)
+        hass.config_entries.async_reload.assert_not_awaited()
+
+

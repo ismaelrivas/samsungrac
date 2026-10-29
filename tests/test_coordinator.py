@@ -2084,3 +2084,103 @@ async def test_sniper_debouncer_handle_delayed_failure_strict_prop() -> None:
         ["target_temperature"]
     )
     mock_coordinator.async_request_refresh.assert_awaited_once()
+
+
+def _build_delayed_debouncer_harness() -> tuple[MagicMock, list[tuple[object, str]]]:
+    """Build a mocked coordinator whose background-task factory requires a keyword `name`."""
+    mock_coordinator = MagicMock()
+    mock_coordinator.hass.loop.time.return_value = 100.0
+    mock_coordinator.safe_unique_id = "uid_abc"
+    mock_coordinator.controller.async_clear_pending_updates = AsyncMock()
+    mock_coordinator.async_request_refresh = AsyncMock()
+
+    created: list[tuple[object, str]] = []
+
+    def fake_create_task(hass, coro, *, name):
+        created.append((coro, name))
+
+    mock_coordinator.config_entry.async_create_background_task.side_effect = (
+        fake_create_task
+    )
+    return mock_coordinator, created
+
+
+@pytest.mark.asyncio
+async def test_sniper_debouncer_delayed_false_result_strict() -> None:
+    """Kill delayed-execution survivors in PropertyDebouncer.async_execute (L218-L276).
+
+    - L218: timer for the exact property must be popped once the callback fires.
+    - L219: a second (orphan) fire without payload must be a silent no-op (no KeyError).
+    - L245: positional args must be forwarded to the queued coroutine.
+    - L246/L251: a falsy result must revert state for the exact property name.
+    - L273: the background task must be created with the canonical `name` kwarg.
+    """
+    from custom_components.climate_ip.const import DOMAIN
+
+    mock_coordinator, created = _build_delayed_debouncer_harness()
+    received: list[tuple[float, str]] = []
+
+    async def strict_cmd(value, *, unit):
+        received.append((value, unit))
+        return False
+
+    with patch(
+        "custom_components.climate_ip.coordinator.async_call_later"
+    ) as mock_later:
+        mock_later.return_value = MagicMock()
+        debouncer = PropertyDebouncer(mock_coordinator, delay=3.0)
+        debouncer._last_activities["target_temp"] = 100.0
+
+        res = await debouncer.async_execute(
+            "target_temp", strict_cmd, 22.5, unit="C", val=22.5
+        )
+        assert res is True  # DEBOUNCE_QUEUED
+        fire = mock_later.call_args[0][2]
+
+    assert "target_temp" in debouncer._timers
+    assert "target_temp" in debouncer._pending_payloads
+
+    fire()
+
+    assert "target_temp" not in debouncer._timers
+    assert "target_temp" not in debouncer._pending_payloads
+    assert len(created) == 1
+    coro, name = created[0]
+    assert name == f"{DOMAIN}_uid_abc_debouncer_target_temp"
+
+    await coro
+
+    assert received == [(22.5, "C")]
+    mock_coordinator.controller.async_clear_pending_updates.assert_awaited_once_with(
+        ["target_temp"]
+    )
+    mock_coordinator.async_request_refresh.assert_awaited_once()
+
+    # Orphan fire: payload and timer already consumed -> must not raise nor spawn tasks.
+    fire()
+    assert len(created) == 1
+
+
+@pytest.mark.asyncio
+async def test_sniper_debouncer_delayed_true_result_no_revert() -> None:
+    """A truthy delayed result must NOT trigger the optimistic-state revert (kills L246 flip)."""
+    mock_coordinator, created = _build_delayed_debouncer_harness()
+
+    async def ok_cmd(value):
+        return True
+
+    with patch(
+        "custom_components.climate_ip.coordinator.async_call_later"
+    ) as mock_later:
+        mock_later.return_value = MagicMock()
+        debouncer = PropertyDebouncer(mock_coordinator, delay=3.0)
+        debouncer._last_activities["fan_mode"] = 100.0
+        await debouncer.async_execute("fan_mode", ok_cmd, "auto", val="auto")
+        fire = mock_later.call_args[0][2]
+
+    fire()
+    assert len(created) == 1
+    await created[0][0]
+
+    mock_coordinator.controller.async_clear_pending_updates.assert_not_awaited()
+    mock_coordinator.async_request_refresh.assert_not_awaited()

@@ -660,7 +660,11 @@ async def test_async_check_network_reachability(mock_ping, mock_can_use):
     from icmplib import SocketPermissionError
 
     mock_ping.reset_mock()
-    mock_ping.side_effect = SocketPermissionError(privileged=False)
+    try:
+        perm_err = SocketPermissionError(privileged=False)
+    except TypeError:
+        perm_err = SocketPermissionError()
+    mock_ping.side_effect = perm_err
     assert await async_check_network_reachability("192.168.1.100") is True
     assert mock_ping.call_args.kwargs == {
         "address": "192.168.1.100",
@@ -1306,13 +1310,19 @@ async def test_async_get_network_diagnostics_permission_bypassed(mock_ping, mock
     """Test async_get_network_diagnostics on SocketPermissionError and OSError."""
     from icmplib import SocketPermissionError
 
-    mock_ping.side_effect = SocketPermissionError(privileged=False)
+    try:
+        perm_err = SocketPermissionError(privileged=False)
+    except TypeError:
+        perm_err = SocketPermissionError()
+    mock_ping.side_effect = perm_err
     diag = await async_get_network_diagnostics("192.168.1.102")
+    assert diag is not None
     assert diag["is_reachable"] is True
     assert diag["status"] == "permission_bypassed"
 
     mock_ping.side_effect = OSError("Permission denied")
     diag_os = await async_get_network_diagnostics("192.168.1.102")
+    assert diag_os is not None
     assert diag_os["is_reachable"] is True
     assert diag_os["status"] == "permission_bypassed"
 

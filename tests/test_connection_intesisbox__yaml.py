@@ -1933,15 +1933,23 @@ async def test_intesisbox_async_execute_all_branches() -> None:
     resp2, _ = await conn.async_execute(None, None, data="", headers=None)
     assert json.loads(resp2).get("ONOFF") == "ON"
 
-    # 2. Test L559: Polling with error in _send_raw
+    # 2. Test L559 & L565: Polling with error in _send_raw logs exact debug message
+    err_poll = OSError("Poll send failed")
+
     async def failing_send(payload: str) -> None:
-        raise OSError("Poll send failed")
+        raise err_poll
 
     conn._send_raw = failing_send
-    resp_poll, _ = await conn.async_execute(None, None, data=None, headers=None, _is_poll=True)
+    with patch.object(conn.logger, "debug") as mock_debug:
+        resp_poll, _ = await conn.async_execute(
+            None, None, data=None, headers=None, _is_poll=True
+        )
+        mock_debug.assert_called_once_with(
+            "%s Poll status query error: %s", conn.log_prefix, err_poll
+        )
     assert json.loads(resp_poll).get("ONOFF") == "ON"
 
-    # 3. Test L569, L572-573, L584-587: Sequential execution with ACK & cache update
+    # 3. Test L569, L572-573, L578, L584-587, L591, L593: Sequential execution with ACK & cache update
     async def ack_send(payload: str) -> None:
         sent_cmds.append(payload)
         # Simulate background ACK response from reader loop
@@ -1949,14 +1957,21 @@ async def test_intesisbox_async_execute_all_branches() -> None:
             conn._pending_ack.set_result(True)
 
     conn._send_raw = ack_send
-    # Multi-line with blank lines (tests L569 stripping)
-    cmd_data = "\n\nSET,1:FANSP,AUTO\nSET,1:MODE,COOL\n\n"
-    resp_ack, _ = await conn.async_execute(None, None, data=cmd_data, headers=None)
+    # Multi-line with blank lines (tests L569 stripping) and extra ':' / ',' (kills L591/L593 maxsplit=1 mutants)
+    cmd_data = "\n\nSET,1:FANSP,AUTO\nSET,1:MODE,COOL\nSET,1:SUB:NODE,VAL1,VAL2\n\n"
+    with patch.object(conn.logger, "debug") as mock_tx_debug:
+        resp_ack, _ = await conn.async_execute(None, None, data=cmd_data, headers=None)
+        mock_tx_debug.assert_any_call("%s TX: '%s'", conn.log_prefix, "SET,1:FANSP,AUTO")
+        mock_tx_debug.assert_any_call(
+            "%s TX: '%s'", conn.log_prefix, "SET,1:SUB:NODE,VAL1,VAL2"
+        )
     assert "SET,1:FANSP,AUTO\r\n" in sent_cmds
     assert "SET,1:MODE,COOL\r\n" in sent_cmds
+    assert "SET,1:SUB:NODE,VAL1,VAL2\r\n" in sent_cmds
     status = json.loads(resp_ack)
     assert status.get("FANSP") == "AUTO"
     assert status.get("MODE") == "COOL"
+    assert status.get("SUB:NODE") == "VAL1,VAL2"
 
     # 4. Test L577-578: Command rejected with ERR
     async def err_send(payload: str) -> None:
@@ -2050,6 +2065,14 @@ async def test_intesisbox_async_execute_loop_break_direct() -> None:
     conn._limits["FANSP"] = ""
     await conn._async_execute_loop_break("FANSP", "1", "AUTO", rule)
     assert sent_cmds == ["SET,1:FANSP,AUTO\r\n"]
+
+    # 5. Rule missing 'prune_values' key -> defaults to [] without raising TypeError (kills L493 mutants 10, 12)
+    sent_cmds.clear()
+    conn._device_status.pop("FANSP", None)
+    rule_no_prune_key = {"fallback_command": "SET,1:FANSP,AUTO"}
+    await conn._async_execute_loop_break("FANSP", "1", "AUTO", rule_no_prune_key)
+    assert sent_cmds == ["SET,1:FANSP,AUTO\r\n"]
+    assert conn._device_status["FANSP"] == "AUTO"
 
 
 @pytest.mark.asyncio

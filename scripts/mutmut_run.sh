@@ -69,36 +69,18 @@ echo "🎯 Objetivo para mutmut (--source): ${TARGET_FILE}"
 # ── 7. Limpiar estado anterior ────────────────────────────────────────────────
 echo ""
 echo "🧹 Limpiando artefactos anteriores..."
-rm -rf mutants/ .mutmut-cache .coverage custom_components/climate_ip/.coverage \
-       mutmut_processed.txt survived_latest.log mutantes.txt mutantes_filtrados.txt \
+rm -rf mutants/ mutmut_processed.txt survived_latest.log mutantes.txt mutantes_filtrados.txt \
        mutant_analysis.md
 mkdir -p mutants/custom_components/climate_ip/tests
-PYTHONPATH=. "${PYTHON_BIN}" -m mutmut reset
 echo "✅ Limpieza completa"
 
-# ── 8. Proteger el .git anidado ───────────────────────────────────────────────
-GIT_BACKUP="${WORKSPACE_ROOT}/.climate_ip_git_backup"
-if [[ -d "custom_components/climate_ip/.git" ]]; then
-    rm -rf "${GIT_BACKUP}"
-    mv custom_components/climate_ip/.git "${GIT_BACKUP}"
-    echo "✅ .git anidado protegido en ${GIT_BACKUP}"
-fi
-
-restore_git() {
-    trap '' INT TERM
-    if [[ -d "${GIT_BACKUP}" ]]; then
-        mv "${GIT_BACKUP}" custom_components/climate_ip/.git 2>/dev/null || true
-        echo "✅ .git anidado restaurado"
-    fi
-}
+# ── 8. Manejo de señales de interrupción ─────────────────────────────────────
 cleanup_on_interrupt() {
     trap '' INT TERM EXIT ERR
     echo -e "\n\n 🛑 \033[31m[!] Abortado (SIGINT capturado en Bash).\033[0m"
-    restore_git
     pkill -KILL -P $$ 2>/dev/null || true
     exit 130
 }
-trap restore_git EXIT ERR
 trap cleanup_on_interrupt INT TERM
 
 # ── 9. Ejecutar mutmut ────────────────────────────────────────────────────────

@@ -8,10 +8,12 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_NAME, Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.device_registry import DeviceEntry
+from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .const import (
@@ -42,6 +44,21 @@ PLATFORMS: list[Platform] = [
     Platform.SWITCH,
     Platform.BINARY_SENSOR,
 ]
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+
+async def async_setup(hass: HomeAssistant, _config: ConfigType) -> bool:
+    """Set up the Climate IP component."""
+
+    async def async_handle_reload(_call: ServiceCall) -> None:
+        """Reload YAML cache and active entries."""
+        clear_yaml_cache()
+        for entry in hass.config_entries.async_entries(DOMAIN):
+            await hass.config_entries.async_reload(entry.entry_id)
+
+    hass.services.async_register(DOMAIN, "reload", async_handle_reload)
+    return True
 
 
 def _get_config_value(entry: ConfigEntry, key: str, default: Any = None) -> Any:

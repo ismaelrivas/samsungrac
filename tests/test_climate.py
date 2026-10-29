@@ -662,6 +662,47 @@ def test_climate_supported_features_bitwise_strict_accumulation(
     assert entity.supported_features == expected_features
 
 
+def test_climate_supported_features_power_adds_turn_on_off_strict(
+    base_climate_entity: ClimateIP,
+) -> None:
+    """Kill L118 mutants (features |= TURN_ON | TURN_OFF -> &= / & / ^ variants)."""
+    from homeassistant.components.climate.const import ClimateEntityFeature
+
+    base_climate_entity.coordinator.controller.operations = [
+        ATTR_POWER,
+        ATTR_PRESET_MODE,
+    ]
+
+    entity = ClimateIP(
+        base_climate_entity.coordinator,
+        base_climate_entity.entity_description,
+    )
+
+    assert entity.supported_features == (
+        ClimateEntityFeature.PRESET_MODE
+        | ClimateEntityFeature.TURN_ON
+        | ClimateEntityFeature.TURN_OFF
+    )
+    assert entity.supported_features & ClimateEntityFeature.TURN_ON
+    assert entity.supported_features & ClimateEntityFeature.TURN_OFF
+
+
+def test_climate_supported_features_without_power_lacks_turn_on_off(
+    base_climate_entity: ClimateIP,
+) -> None:
+    """Without ATTR_POWER, TURN_ON/TURN_OFF must never be advertised."""
+    from homeassistant.components.climate.const import ClimateEntityFeature
+
+    base_climate_entity.coordinator.controller.operations = [ATTR_PRESET_MODE]
+
+    entity = ClimateIP(
+        base_climate_entity.coordinator,
+        base_climate_entity.entity_description,
+    )
+
+    assert entity.supported_features == ClimateEntityFeature.PRESET_MODE
+
+
 # --- extra_state_attributes property (2 mutants: lines 411, 419) ---
 
 
