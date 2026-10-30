@@ -1,17 +1,15 @@
 # pylint: disable=protected-access, redefined-outer-name
 """Tests for SamsungClimateSwitch entity."""
 
-from __future__ import annotations
-
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.components.switch import SwitchEntityDescription
-from homeassistant.const import EntityCategory
 import pytest
 
 from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 from custom_components.climate_ip.properties import PROPERTY_TYPE_SWITCH
 from custom_components.climate_ip.switch import SamsungClimateSwitch, async_setup_entry
+from homeassistant.components.switch import SwitchEntityDescription
+from homeassistant.const import EntityCategory
 
 
 @pytest.fixture
@@ -92,8 +90,7 @@ class DummySwitchPropFallback:
 
 
 def test_switch_initialization(base_switch_entity: SamsungClimateSwitch) -> None:
-    """
-    Aniquila Mutantes 1, 4, 5, 6, 7 y 8 en __init__.
+    """Aniquila Mutantes 1, 4, 5, 6, 7 y 8 en __init__.
     Asserts estrictamente las asignaciones estructurales iniciales.
     """
     # Mutant 1: super().__init__(None) -> fails because coordinator would not be assigned.
@@ -124,8 +121,7 @@ def test_switch_initialization(base_switch_entity: SamsungClimateSwitch) -> None
 def test_update_state_value_extraction(
     base_switch_entity: SamsungClimateSwitch,
 ) -> None:
-    """
-    Annihilates Mutant 1 (value = None in initial extraction).
+    """Annihilates Mutant 1 (value = None in initial extraction).
     If it extracts None, it will ignore the real value and state will end up as None instead of True.
     """
     base_switch_entity._operation.value = "on"
@@ -137,8 +133,7 @@ def test_update_state_value_extraction(
 def test_update_state_on_matrix(
     base_switch_entity: SamsungClimateSwitch, input_value
 ) -> None:
-    """
-    Aniquila Mutantes 2 al 10.
+    """Aniquila Mutantes 2 al 10.
     Garantiza que cualquier alteración en la lista ["on", "On", True],
     su operador 'in', o la asignación final 'self._attr_is_on = True' falle matemáticamente.
     """
@@ -153,8 +148,7 @@ def test_update_state_on_matrix(
 def test_update_state_off_matrix(
     base_switch_entity: SamsungClimateSwitch, input_value
 ) -> None:
-    """
-    Aniquila Mutantes 11 al 19.
+    """Aniquila Mutantes 11 al 19.
     Garantiza que cualquier alteración en la lista ["off", "Off", False],
     su operador lógico, o la asignación final 'self._attr_is_on = False' falle.
     """
@@ -168,8 +162,7 @@ def test_update_state_off_matrix(
 def test_update_state_unknown_fallback(
     base_switch_entity: SamsungClimateSwitch,
 ) -> None:
-    """
-    Annihilates Mutant 20.
+    """Annihilates Mutant 20.
     Guarantees the 'else' branch strictly assigns None, not an empty string or other value.
     """
     base_switch_entity._operation.value = "garbage_unrecognized_data"
@@ -495,3 +488,19 @@ async def test_async_setup_entry_get_property_object_success(
         "Valid string operation did not instantiate entity. "
         "Mutant 11 inverted the 'is not None' check."
     )
+
+
+def test_switch_available_and_coordinator_update(
+    base_switch_entity: SamsungClimateSwitch,
+) -> None:
+    """Test switch.available and _handle_coordinator_update callback."""
+    # Available delegates to super().available
+    base_switch_entity.coordinator.last_update_success = True
+    assert base_switch_entity.available is True
+
+    # _handle_coordinator_update calls _update_state and super()._handle_coordinator_update()
+    base_switch_entity._operation.value = "on"
+    with patch.object(base_switch_entity, "async_write_ha_state") as mock_write:
+        base_switch_entity._handle_coordinator_update()
+        assert base_switch_entity.is_on is True
+        mock_write.assert_called_once()

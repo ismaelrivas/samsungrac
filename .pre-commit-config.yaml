@@ -1,15 +1,16 @@
+default_language_version:
+  python: python3.14
+
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.5.0
+    rev: v0.15.10
     hooks:
-      - id: ruff
-        args: [--fix, --exclude, tests]
+      - id: ruff-check
+        args: [--fix, --target-version, py314, --config, "lint.isort.known-first-party=['homeassistant']"]
+        exclude: ^(tests|archive)/
       - id: ruff-format
-
-  - repo: https://github.com/psf/black
-    rev: 24.4.2
-    hooks:
-      - id: black
+        args: [--target-version, py314]
+        exclude: ^(tests|archive)/
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

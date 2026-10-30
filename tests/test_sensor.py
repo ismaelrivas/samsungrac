@@ -1,17 +1,16 @@
+# pylint: disable=protected-access,redefined-outer-name,unused-import,reimported,wrong-import-order,missing-function-docstring
 """Tests for the ClimateIP sensor entity."""
-
-from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from homeassistant.components.sensor import SensorEntityDescription
-from homeassistant.const import STATE_UNKNOWN
-from homeassistant.core import HomeAssistant
 import pytest
 
 from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 from custom_components.climate_ip.properties import DeviceProperty, UniqueIdProperty
 from custom_components.climate_ip.sensor import ClimateIpSensor, async_setup_entry
+from homeassistant.components.sensor import SensorEntityDescription
+from homeassistant.const import STATE_UNKNOWN
+from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture
@@ -51,8 +50,7 @@ def base_sensor_entity(hass: HomeAssistant) -> ClimateIpSensor:
 
 
 def test_sensor_initialization(base_sensor_entity: ClimateIpSensor) -> None:
-    """
-    Verify mutant kill 6 en __init__.
+    """Verify mutant kill 6 en __init__.
     Al estar parcheado _sync_data_from_coordinator, podemos asertar
     el valor literal exacto asignado en el constructor.
     """
@@ -69,8 +67,7 @@ def test_sensor_initialization(base_sensor_entity: ClimateIpSensor) -> None:
 def test_update_state_strict_get_property_call(
     base_sensor_entity: ClimateIpSensor,
 ) -> None:
-    """
-    Verify mutant kill 2.
+    """Verify mutant kill 2.
     Asegura que get_property reciba exactamente description.key.
     """
     base_sensor_entity._update_state()
@@ -83,8 +80,7 @@ def test_update_state_strict_get_property_call(
 def test_update_state_unknown_no_exception_path(
     mock_logger_warning, base_sensor_entity: ClimateIpSensor
 ) -> None:
-    """
-    Verify mutant kill 3 (cambio de `or` por `and` en validación de STATE_UNKNOWN).
+    """Verify mutant kill 3 (cambio de `or` por `and` en validación de STATE_UNKNOWN).
     If mutant vive, la ejecución pasará a intentar hacer float(STATE_UNKNOWN),
     detonando un ValueError interno y llamando al logger.
     """
@@ -118,8 +114,7 @@ def test_update_state_unique_id_property(base_sensor_entity: ClimateIpSensor) ->
 
 
 def test_update_state_valid_float(base_sensor_entity: ClimateIpSensor) -> None:
-    """
-    Kills mutants 10 y 11.
+    """Kills mutants 10 y 11.
     Evalúa estrictamente la rama del try donde la conversión a float debe ser exitosa.
     """
     base_sensor_entity.coordinator.controller.get_property.return_value = "23.7"
@@ -192,8 +187,7 @@ class DummyPropFallback:
 async def test_async_setup_entry_strict_mapping(
     mock_parse_category, mock_desc_class, mock_sensor_class
 ) -> None:
-    """
-    Kills mutants 8-23 y 40-67.
+    """Kills mutants 8-23 y 40-67.
     Asserts the firma exacta de extracción (getattr) e inyección de SensorEntityDescription.
     """
     hass = MagicMock()
@@ -287,8 +281,7 @@ async def test_async_setup_entry_fallback_and_logic(
 async def test_async_setup_entry_icon_logical_operator_inverse(
     mock_parse_category, mock_desc_class
 ) -> None:
-    """
-    Annihilates Mutant 32 (changing 'and' to 'or' in icon assignment).
+    """Annihilates Mutant 32 (changing 'and' to 'or' in icon assignment).
     Evaluamos el caso inverso: No hay icono, pero SÍ hay device_class.
     En el código original ('and'): No se asigna 'mdi:eye' porque hay device_class.
     En el código mutado ('or'): Se asignaría 'mdi:eye' de forma errónea.
@@ -370,7 +363,7 @@ def test_sensor_handle_coordinator_update_invalid_state():
 
 
 @pytest.mark.asyncio
-async def test_sensor_setup_entry_name_mapping(hass):
+async def test_sensor_setup_entry_name_mapping(hass: HomeAssistant) -> None:
     """Kills mutants modifying the 'name' kwarg in SensorEntityDescription."""
     from custom_components.climate_ip.sensor import async_setup_entry
 
@@ -409,3 +402,31 @@ async def test_sensor_setup_entry_name_mapping(hass):
     assert sensor.entity_description.name == "My Custom Sensor Name", (
         "Mutant survived! The sensor name did not match the YAML property name."
     )
+
+
+def test_sensor_handle_coordinator_update_valid_and_log_prefix(
+    base_sensor_entity: ClimateIpSensor,
+) -> None:
+    """Test sensor _handle_coordinator_update when property is valid and base log_prefix."""
+    base_sensor_entity.coordinator.log_prefix = "[SENSOR_TEST]"
+    assert base_sensor_entity.log_prefix == "[SENSOR_TEST]"
+
+    base_sensor_entity._property.is_valid.return_value = True
+    base_sensor_entity.coordinator.controller.get_property.return_value = 23.5
+    with patch.object(base_sensor_entity, "async_write_ha_state") as mock_write:
+        base_sensor_entity._handle_coordinator_update()
+        assert base_sensor_entity.native_value == "23.5"
+        mock_write.assert_called_once()
+
+
+def test_samsung_climate_base_entity_properties() -> None:
+    """Test SamsungClimateEntity base properties."""
+    from custom_components.climate_ip.entity import SamsungClimateEntity
+
+    mock_coord = MagicMock(spec=SamsungClimateCoordinator)
+    mock_coord.log_prefix = "[BASE_TEST]"
+    mock_coord.device_info = {"identifiers": {("climate_ip", "123")}}
+    base_ent = SamsungClimateEntity(mock_coord)
+    assert base_ent.has_entity_name is True
+    assert base_ent.log_prefix == "[BASE_TEST]"
+    assert base_ent.device_info == {"identifiers": {("climate_ip", "123")}}

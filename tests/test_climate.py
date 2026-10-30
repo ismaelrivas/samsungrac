@@ -1,10 +1,18 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
 """Tests for the ClimateIP climate entity."""
 
-from __future__ import annotations
-
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
+from custom_components.climate_ip.climate import (
+    ATTR_PRESET_MODE,
+    ATTR_SWING_MODE,
+    ClimateIP,
+    async_setup_entry,
+)
+from custom_components.climate_ip.const import ATTR_POWER, CONF_TARGET_TEMP_STEP
+from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 from homeassistant.components.climate import ClimateEntityDescription
 from homeassistant.components.climate.const import (
     ATTR_FAN_MODE,
@@ -18,16 +26,6 @@ from homeassistant.const import (
     STATE_ON,
 )
 from homeassistant.core import HomeAssistant
-import pytest
-
-from custom_components.climate_ip.climate import (
-    ATTR_PRESET_MODE,
-    ATTR_SWING_MODE,
-    ClimateIP,
-    async_setup_entry,
-)
-from custom_components.climate_ip.const import ATTR_POWER, CONF_TARGET_TEMP_STEP
-from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 
 
 @pytest.fixture
@@ -635,12 +633,11 @@ def test_climate_supported_features_bitwise_strict_accumulation(
     base_climate_entity: ClimateIP,
 ) -> None:
     """Kill mutants in __init__ (features |= feature)."""
+    from custom_components.climate_ip.climate import ClimateIP
     from homeassistant.components.climate.const import (
         ATTR_PRESET_MODE,
         ClimateEntityFeature,
     )
-
-    from custom_components.climate_ip.climate import ClimateIP
 
     # 1. Set exactly two features that map through the dynamic loop
     base_climate_entity.coordinator.controller.operations = [
@@ -881,4 +878,58 @@ async def test_modern_async_setup_entry_empty() -> None:
     async_add_entities.assert_not_called()
     mock_logger.assert_called_once_with(
         "No valid entities could be initialized from the provided coordinators."
+    )
+
+
+def test_climate_edge_cases_precision_and_boundary(hass: HomeAssistant) -> None:
+    """Test precision tenths and invalid boundary float parsing."""
+    from homeassistant.const import PRECISION_TENTHS
+
+    mock_coord = MagicMock(spec=SamsungClimateCoordinator)
+    mock_coord.unique_id = "test_step_id"
+    mock_coord.device_info = MagicMock()
+    mock_coord.entry = MagicMock(options={CONF_TARGET_TEMP_STEP: 0.1})
+    mock_coord.controller = MagicMock()
+    mock_coord.controller.operations = []
+    mock_coord.controller.state_attributes = {}
+
+    # Mock invalid boundary value to trigger ValueError/TypeError in _extract_float_boundary
+    mock_prop = MagicMock()
+    mock_prop.value = "not_a_number"
+    mock_coord.controller.get_property_object.return_value = mock_prop
+
+    desc = ClimateEntityDescription(key="samsung_ac", translation_key="samsung_ac")
+    entity = ClimateIP(coordinator=mock_coord, description=desc)
+    entity.hass = hass
+
+    # Verify L147 precision tenths
+    assert entity.precision == PRECISION_TENTHS
+    # Verify L167-168 fallback default min temp
+    assert entity.min_temp == 8.0
+
+    # Test L132: configured_step is None -> fallback to DEFAULT_TARGET_TEMP_STEP (1)
+    mock_coord.entry.options = {}
+    mock_coord.entry.data = {}
+    entity_default_step = ClimateIP(coordinator=mock_coord, description=desc)
+    assert entity_default_step.target_temperature_step == 1
+
+
+def test_climate_hvac_modes_append_off_and_temp_unit(
+    base_climate_entity: ClimateIP,
+) -> None:
+    """Test HVACMode.OFF appended when missing and temperature_unit property."""
+    from homeassistant.components.climate import ClimateEntityFeature
+
+    # Configure coordinator data without HVACMode.OFF
+    base_climate_entity.coordinator.data.hvac_modes = [HVACMode.COOL, HVACMode.HEAT]
+    base_climate_entity._attr_supported_features = ClimateEntityFeature.TURN_OFF
+
+    modes = base_climate_entity.hvac_modes
+    assert HVACMode.OFF in modes
+    assert modes == [HVACMode.COOL, HVACMode.HEAT, HVACMode.OFF]
+
+    # Verify temperature_unit L281
+    assert (
+        base_climate_entity.temperature_unit
+        == base_climate_entity.hass.config.units.temperature_unit
     )

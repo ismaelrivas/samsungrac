@@ -1,8 +1,6 @@
 # pylint: disable=protected-access,no-member,redefined-outer-name,too-few-public-methods,line-too-long,missing-class-docstring,missing-function-docstring,unused-argument,arguments-differ,import-outside-toplevel,too-many-public-methods,trailing-newlines
 """Tests for the base ClimateController and create_controller factory."""
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 from unittest.mock import MagicMock
@@ -124,7 +122,7 @@ class DummyController(ClimateController):
 
 
 @pytest.mark.parametrize(
-    "unique_id, expected_prefix",
+    ("unique_id", "expected_prefix"),
     [
         (
             "12345",
@@ -352,3 +350,19 @@ def test_controller_log_prefix_coverage(
     """Achieves 100% branch coverage on ClimateController.log_prefix (kills Mutant 34)."""
     controller = PristineDummyController(uid, name)
     assert controller.log_prefix == expected_prefix
+
+
+def test_controller_base_getters_coverage() -> None:
+    """Test ClimateController base getters for 100% coverage."""
+    cfg = {"host": "192.168.1.50"}
+    ctrl = DummyController(cfg, logging.getLogger("test_getters"))
+    ctrl._connection = "mock_conn"
+    ctrl._token = "test_token_123"
+
+    assert ctrl.connection == "mock_conn"
+    assert ctrl.config == cfg
+    assert ctrl.raw_state is None
+    assert ctrl.last_poll_data is None
+    assert ctrl.connection_diagnostics == {}
+    assert ctrl.get_diagnostics() == {}
+    assert ctrl.token == "test_token_123"

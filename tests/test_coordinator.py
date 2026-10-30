@@ -2,14 +2,9 @@
 """Test DataUpdateCoordinator and state polling behaviors."""
 # pylint: disable=redefined-outer-name,protected-access,import-outside-toplevel
 
-from __future__ import annotations
-
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.update_coordinator import UpdateFailed
 import pytest
 
 from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
@@ -18,6 +13,9 @@ from custom_components.climate_ip.coordinator import (
     SamsungClimateCoordinator,
 )
 from custom_components.climate_ip.exceptions import AuthError
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 _original_sleep = asyncio.sleep
 
@@ -38,8 +36,7 @@ def prevent_asyncio_sleep_timeouts():
 
 @pytest.fixture(autouse=True)
 def bypass_sleeps():
-    """
-    Evita el Event Loop Starvation y los cuelgues saltándose los sleeps.
+    """Evita el Event Loop Starvation y los cuelgues saltándose los sleeps.
     new_callable=AsyncMock garantiza que 'await asyncio.sleep()' funcione
     perfectamente sin lanzar TypeError ni causar recursión.
     """
@@ -587,7 +584,7 @@ async def test_save_new_token_async_flow(hass: HomeAssistant) -> None:
                 await asyncio.sleep(0.001)
                 task_executed = True
                 coordinator.controller.on_token_refreshed("new_token_async")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 task_error = e
 
         # Emits the event asynchronously by scheduling it natively as an asyncio task
@@ -866,10 +863,9 @@ async def test_coordinator_standalone_device_info(hass: HomeAssistant) -> None:
     mock_controller.async_clear_pending_updates = AsyncMock(return_value=None)
     mock_controller.unique_id = "standalone_ac_123"
 
+    from custom_components.climate_ip.const import CONF_NAME, DOMAIN
     from homeassistant.const import CONF_MAC
     import homeassistant.helpers.device_registry as dr
-
-    from custom_components.climate_ip.const import CONF_NAME, DOMAIN
 
     mock_entry = MagicMock()
     mock_entry.options = {}
@@ -930,11 +926,10 @@ async def test_fallback_to_raw_engine_on_http_header_error(hass: HomeAssistant) 
     """Verify async_update_entry is called before raising UpdateFailed on header errors."""
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from homeassistant.helpers.update_coordinator import UpdateFailed
-
     from custom_components.climate_ip.const import CONF_CONN_METHOD, CONN_METHOD_RAW
     from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
     from custom_components.climate_ip.exceptions import InvalidHeaderError
+    from homeassistant.helpers.update_coordinator import UpdateFailed
 
     mock_controller = MagicMock()
     mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
@@ -1237,9 +1232,8 @@ async def test_coordinator_unwraps_hvac_enum_before_sending(
     """Verify that Enums are unwrapped to their primitive values before dispatching."""
     from unittest.mock import AsyncMock, MagicMock
 
-    from homeassistant.components.climate.const import HVACMode
-
     from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
+    from homeassistant.components.climate.const import HVACMode
 
     mock_controller = MagicMock()
     mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
@@ -1320,14 +1314,12 @@ async def test_coordinator_success_path_no_refresh(hass: HomeAssistant) -> None:
 async def test_coordinator_auto_healing_fails_when_already_raw(
     hass: HomeAssistant,
 ) -> None:
-    """
-    Annihilates mutant line 307 (if current_method == CONN_METHOD_RAW)
+    """Annihilates mutant line 307 (if current_method == CONN_METHOD_RAW)
     and covers the Untested persistent failure block (Lines 320-324).
     """
-    from homeassistant.helpers.update_coordinator import UpdateFailed
-
     from custom_components.climate_ip.const import CONF_CONN_METHOD, CONN_METHOD_RAW
     from custom_components.climate_ip.exceptions import InvalidHeaderError
+    from homeassistant.helpers.update_coordinator import UpdateFailed
 
     mock_controller = MagicMock()
     mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
@@ -1368,7 +1360,7 @@ async def test_coordinator_auto_healing_fails_when_already_raw(
 
 
 @pytest.mark.parametrize(
-    "exception_instance, expected_match",
+    ("exception_instance", "expected_match"),
     [
         (ValueError("Bad JSON mapping"), "Data parsing error: Bad JSON mapping"),
         (TypeError("Invalid object type"), "Data parsing error: Invalid object type"),
@@ -1379,8 +1371,7 @@ async def test_coordinator_auto_healing_fails_when_already_raw(
 async def test_coordinator_clears_cache_on_critical_errors(
     hass: HomeAssistant, exception_instance, expected_match
 ) -> None:
-    """
-    Aniquila los mutantes "Untested" y condicionales (or) de las líneas 355-367.
+    """Aniquila los mutantes "Untested" y condicionales (or) de las líneas 355-367.
     Garantiza que ValueError, TypeError y Exception limpien el caché del poller.
     """
     from homeassistant.helpers.update_coordinator import UpdateFailed
@@ -2035,9 +2026,8 @@ async def test_sniper_push_update_auth_failed_no_config_entry(
     hass: HomeAssistant,
 ) -> None:
     """Test push update handles ConfigEntryAuthFailed safely when self.config_entry is None."""
-    from homeassistant.exceptions import ConfigEntryAuthFailed
-
     from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
+    from homeassistant.exceptions import ConfigEntryAuthFailed
 
     with patch(
         "custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__",
@@ -2184,3 +2174,79 @@ async def test_sniper_debouncer_delayed_true_result_no_revert() -> None:
 
     mock_coordinator.controller.async_clear_pending_updates.assert_not_awaited()
     mock_coordinator.async_request_refresh.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_coordinator_safe_unique_id_fallbacks(hass: HomeAssistant) -> None:
+    """Test safe_unique_id fallback to entry unique_id and entry_id."""
+    mock_controller = MagicMock()
+    mock_controller.unique_id = None
+    mock_entry = MagicMock()
+    mock_entry.options = {}
+    mock_entry.data = {}
+    mock_entry.unique_id = "entry_uid_123"
+    mock_entry.entry_id = "entry_id_456"
+
+    coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+    assert coordinator.safe_unique_id == "entry_uid_123"
+
+    mock_entry.unique_id = None
+    assert coordinator.safe_unique_id == "entry_id_456"
+    assert coordinator.auto_healing_issue_id == "auto_healing_raw_entry_id_456"
+
+
+@pytest.mark.asyncio
+async def test_coordinator_async_set_property_cancelled_error(
+    hass: HomeAssistant,
+) -> None:
+    """Test async_set_property handles asyncio.CancelledError and executes cleanup."""
+    mock_controller = MagicMock()
+    mock_controller.async_predict_and_correct_state = AsyncMock(return_value=(None, {}))
+    mock_controller.async_set_property = AsyncMock(side_effect=asyncio.CancelledError)
+    mock_entry = MagicMock()
+    mock_entry.options = {}
+    mock_entry.data = {}
+
+    coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+    with patch.object(
+        coordinator, "_async_handle_set_property_failure", new_callable=AsyncMock
+    ) as mock_handle_fail:
+        with pytest.raises(asyncio.CancelledError):
+            await coordinator.async_set_property("target_temp", 24.0)
+
+        mock_handle_fail.assert_awaited_once_with({"target_temp": 24.0})
+
+
+@pytest.mark.asyncio
+async def test_coordinator_async_shutdown_branches(hass: HomeAssistant) -> None:
+    """Test coordinator async_shutdown normal, tolerated, cancelled, and error branches."""
+    from custom_components.climate_ip.exceptions import CannotConnect
+
+    mock_controller = MagicMock()
+    mock_controller.async_shutdown = AsyncMock()
+    mock_entry = MagicMock()
+    mock_entry.options = {}
+    mock_entry.data = {}
+
+    coordinator = SamsungClimateCoordinator(hass, mock_controller, mock_entry)
+
+    # 1. Normal shutdown
+    await coordinator.async_shutdown()
+    mock_controller.async_shutdown.assert_awaited_once()
+
+    # 2. Tolerated network exception
+    mock_controller.async_shutdown = AsyncMock(
+        side_effect=CannotConnect("Device unreachable")
+    )
+    await coordinator.async_shutdown()
+
+    # 3. CancelledError
+    mock_controller.async_shutdown = AsyncMock(side_effect=asyncio.CancelledError)
+    with pytest.raises(asyncio.CancelledError):
+        await coordinator.async_shutdown()
+
+    # 4. Broad exception caught and logged
+    mock_controller.async_shutdown = AsyncMock(
+        side_effect=RuntimeError("Unexpected boom")
+    )
+    await coordinator.async_shutdown()

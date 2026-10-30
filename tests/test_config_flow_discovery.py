@@ -1,13 +1,8 @@
 # pylint: disable=protected-access,line-too-long,trailing-newlines,too-many-lines
 """Tests for ConfigFlowDiscoveryMixin in config_flow_discovery.py."""
 
-from __future__ import annotations
-
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.config_entries import SOURCE_RECONFIGURE, SOURCE_USER
-from homeassistant.const import CONF_MAC
-from homeassistant.data_entry_flow import FlowResultType
 import pytest
 
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
@@ -27,6 +22,9 @@ from custom_components.climate_ip.const import (
     DEVICE_TYPE_TO_CONFIG_FILE,
 )
 from custom_components.climate_ip.exceptions import InvalidHeaderError
+from homeassistant.config_entries import SOURCE_RECONFIGURE, SOURCE_USER
+from homeassistant.const import CONF_MAC
+from homeassistant.data_entry_flow import AbortFlow, FlowResultType
 
 # ============================================================================
 # Group 1: _async_init_discovery_controller
@@ -597,7 +595,7 @@ async def test_mim_h03_discovery_abort_no_coordinator_uuid():
 
 
 @pytest.mark.asyncio
-async def test_mim_h03_discovery_reconfigure_and_reauth_skip_abort():
+async def test_mim_h03_discovery_reconfigure_and_reauth_skip_abort() -> None:
     """Test MIM-H03 discovery does not check _abort_if_unique_id_configured during reconfigure or reauth."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
@@ -1001,32 +999,34 @@ async def test_async_step_discover_uuid_invalid_header_shutdown_and_fallback():
     mock_ctrl.discovered_devices = [{"id": "0", "name": "Coordinator"}]
     mock_ctrl.async_shutdown = AsyncMock()
 
-    with patch.object(
-        flow,
-        "_async_init_discovery_controller",
-        new_callable=AsyncMock,
-        return_value=mock_ctrl,
-    ):
-        with patch.object(
+    with (
+        patch.object(
+            flow,
+            "_async_init_discovery_controller",
+            new_callable=AsyncMock,
+            return_value=mock_ctrl,
+        ),
+        patch.object(
             flow,
             "_async_process_mim_h03",
             side_effect=InvalidHeaderError("Malformed header"),
-        ):
-            with patch.object(
-                flow, "_async_fallback_raw_discovery", new_callable=AsyncMock
-            ) as mock_fallback:
+        ),
+        patch.object(
+            flow, "_async_fallback_raw_discovery", new_callable=AsyncMock
+        ) as mock_fallback,
+    ):
 
-                async def verify_shutdown_before_fallback(_cfg):
-                    mock_ctrl.async_shutdown.assert_called_once()
-                    return {"type": FlowResultType.CREATE_ENTRY}
+        async def verify_shutdown_before_fallback(_cfg):
+            mock_ctrl.async_shutdown.assert_called_once()
+            return {"type": FlowResultType.CREATE_ENTRY}
 
-                mock_fallback.side_effect = verify_shutdown_before_fallback
+        mock_fallback.side_effect = verify_shutdown_before_fallback
 
-                res = await flow.async_step_discover_uuid()
+        res = await flow.async_step_discover_uuid()
 
-                assert res["type"] == FlowResultType.CREATE_ENTRY
-                mock_ctrl.async_shutdown.assert_called_once()
-                mock_fallback.assert_called_once()
+        assert res["type"] == FlowResultType.CREATE_ENTRY
+        mock_ctrl.async_shutdown.assert_called_once()
+        mock_fallback.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -1140,22 +1140,57 @@ async def test_async_step_discover_uuid_generic_exception():
     mock_ctrl.discovered_devices = [{"id": "0", "name": "Coordinator"}]
     mock_ctrl.async_shutdown = AsyncMock()
 
-    with patch.object(
-        flow,
-        "_async_init_discovery_controller",
-        new_callable=AsyncMock,
-        return_value=mock_ctrl,
-    ):
-        with patch.object(
+    with (
+        patch.object(
+            flow,
+            "_async_init_discovery_controller",
+            new_callable=AsyncMock,
+            return_value=mock_ctrl,
+        ),
+        patch.object(
             flow,
             "_async_process_mim_h03",
             side_effect=RuntimeError("unexpected discovery crash"),
-        ):
-            res = await flow.async_step_discover_uuid()
+        ),
+    ):
+        res = await flow.async_step_discover_uuid()
 
-            assert res["type"] == FlowResultType.ABORT
-            assert res["reason"] == "unknown_error"
-            mock_ctrl.async_shutdown.assert_called()
+        assert res["type"] == FlowResultType.ABORT
+        assert res["reason"] == "unknown_error"
+        mock_ctrl.async_shutdown.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_async_step_discover_uuid_reraises_abort_flow():
+    """Test async_step_discover_uuid re-raises AbortFlow without converting to unknown_error."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = MagicMock()
+    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03}
+    flow.reauth_entry = None
+    flow.context = {"source": SOURCE_USER}
+
+    mock_ctrl = MagicMock()
+    mock_ctrl.discovered_devices = [{"id": "0", "name": "Coordinator"}]
+    mock_ctrl.async_shutdown = AsyncMock()
+
+    with (
+        patch.object(
+            flow,
+            "_async_init_discovery_controller",
+            new_callable=AsyncMock,
+            return_value=mock_ctrl,
+        ),
+        patch.object(
+            flow,
+            "_async_process_mim_h03",
+            side_effect=AbortFlow("already_configured"),
+        ),
+    ):
+        with pytest.raises(AbortFlow) as exc_info:
+            await flow.async_step_discover_uuid()
+
+        assert exc_info.value.reason == "already_configured"
+        mock_ctrl.async_shutdown.assert_called()
 
 
 # ============================================================================

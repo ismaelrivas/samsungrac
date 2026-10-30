@@ -1,14 +1,11 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,too-many-lines,too-many-locals,use-implicit-booleaness-not-comparison,missing-function-docstring,too-many-arguments,too-many-positional-arguments,too-few-public-methods,missing-class-docstring
 """Tests for ConnectionAiohttp8888."""
 
-from __future__ import annotations
-
 import logging
 import ssl
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
-from homeassistant.const import CONF_TOKEN
 import pytest
 
 from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
@@ -18,6 +15,7 @@ from custom_components.climate_ip.exceptions import (
     CannotConnect,
     InvalidHeaderError,
 )
+from homeassistant.const import CONF_TOKEN
 
 
 class StubHass:
@@ -1640,7 +1638,7 @@ async def test_embedded_command_strict_fallbacks_to_main(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "is_poll,keep_alive,should_close",
+    ("is_poll", "keep_alive", "should_close"),
     [
         (True, False, True),  # CASE 1: is poll and no keep_alive -> MUST close
         (True, True, False),  # CASE 2: is poll but keep_alive=True -> does NOT close
@@ -1774,7 +1772,7 @@ async def test_try_connection_strict_http_mode(mock_logger, mock_hass):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "major,minor,start_forced,expected_forced",
+    ("major", "minor", "start_forced", "expected_forced"),
     [
         (1, 1, True, False),  # HTTP/1.1 -> Re-enables Keep-Alive (force_close=False)
         (1, 0, False, True),  # HTTP/1.0 -> Activates force_close
@@ -2261,7 +2259,7 @@ async def test_try_connection_absolute_url_probe(mock_logger, mock_hass, mock_se
 
     assert result == '{"probe": "ok"}'
     mock_session.request.assert_called_once()
-    args, kwargs = mock_session.request.call_args
+    args, _ = mock_session.request.call_args
     assert args[0] == "GET"
     assert args[1] == "http://192.168.1.100:8888/custom_devices"
 
@@ -2510,3 +2508,95 @@ async def test_async_execute_periodic_reset_close_error(
         res, _ = await conn.async_execute("GET", "/test", None, {}, _is_poll=True)
         assert res == "{}"
         local_session.close.assert_called_once()
+
+
+def test_probe_url_path_explicit_probe_url(mock_logger, mock_hass, mock_session):
+    """Test _probe_url_path returns probe_url when present in params."""
+    conn = ConnectionAiohttp8888(
+        config={CONF_TOKEN: "valid_token"},
+        logger=mock_logger,
+        hass=mock_hass,
+        session=mock_session,
+        ip_address="1.1.1.1",
+    )
+    conn._params = {"probe_url": "/api/custom_probe"}
+    assert conn._probe_url_path == "/api/custom_probe"
+
+
+def test_connection_template_setter(mock_logger, mock_hass, mock_session):
+    """Test connection_template property setter."""
+    conn = ConnectionAiohttp8888(
+        config={CONF_TOKEN: "valid_token"},
+        logger=mock_logger,
+        hass=mock_hass,
+        session=mock_session,
+        ip_address="1.1.1.1",
+    )
+    tmpl = MagicMock()
+    conn.connection_template = tmpl
+    assert conn.connection_template is tmpl
+
+
+def test_get_url_host_with_port(mock_logger, mock_hass, mock_session):
+    """Test _build_full_url formats correctly when host already contains port."""
+    from custom_components.climate_ip.const import CONF_USE_HTTP
+
+    conn = ConnectionAiohttp8888(
+        config={CONF_TOKEN: "valid_token", CONF_USE_HTTP: True},
+        logger=mock_logger,
+        hass=mock_hass,
+        session=mock_session,
+        ip_address="1.1.1.1:9999",
+    )
+    url = conn._build_full_url("/api/status")
+    assert url == "http://1.1.1.1:9999/api/status"
+
+
+@pytest.mark.asyncio
+async def test_create_ssl_context_failure_raises_cannot_connect(
+    mock_logger, mock_hass, mock_session
+):
+    """Test _create_ssl_context raises CannotConnect when SSL context creation fails."""
+    conn = ConnectionAiohttp8888(
+        config={CONF_TOKEN: "valid_token"},
+        logger=mock_logger,
+        hass=mock_hass,
+        session=mock_session,
+        ip_address="192.168.1.100",
+    )
+    with patch(
+        "custom_components.climate_ip.connection_aiohttp.async_create_samsung_ssl_context",
+        side_effect=ssl.SSLError("Invalid cert"),
+    ):
+        with pytest.raises(CannotConnect, match="SSL context creation failed"):
+            await conn._create_ssl_context()
+
+
+@pytest.mark.asyncio
+async def test_async_probe_ssl_version_attribute_error(
+    mock_logger, mock_hass, mock_session
+) -> None:
+    """Test _try_connection catches AttributeError when inspecting negotiated SSL version."""
+    conn = ConnectionAiohttp8888(
+        config={CONF_TOKEN: "valid_token"},
+        logger=mock_logger,
+        hass=mock_hass,
+        session=mock_session,
+        ip_address="1.1.1.1",
+    )
+    conn._shared_state.ssl_context = MagicMock()
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.text = AsyncMock(return_value="OK")
+    mock_transport = MagicMock()
+    mock_ssl = MagicMock()
+    del mock_ssl.version
+    mock_transport.get_extra_info.return_value = mock_ssl
+    mock_response.connection.transport = mock_transport
+    mock_context = AsyncMock()
+    mock_context.__aenter__.return_value = mock_response
+    mock_session.request.return_value = mock_context
+
+    with patch.object(conn, "_get_session", AsyncMock(return_value=mock_session)):
+        res = await conn._try_connection()
+    assert res == "OK"

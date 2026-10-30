@@ -2,14 +2,11 @@
 """Tests for the tolerant_header_parsing context manager (H-12) and find_key_in_data."""
 # pylint: disable=broad-exception-caught,import-outside-toplevel
 
-from __future__ import annotations
-
 import asyncio
 import ssl
 import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.const import EntityCategory
 import pytest
 
 from custom_components.climate_ip.helpers import (
@@ -31,6 +28,7 @@ from custom_components.climate_ip.helpers import (
     stream_wrapper,
     tolerant_header_parsing,
 )
+from homeassistant.const import EntityCategory
 
 
 class TestTolerantHeaderParsing:
@@ -116,7 +114,7 @@ class TestTolerantHeaderParsing:
                     import time
 
                     time.sleep(0.01)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 errors.append(e)
 
         threads = [threading.Thread(target=worker) for _ in range(5)]
@@ -612,7 +610,9 @@ def test_mask_sensitive_data_strings():
 
 # --- async_check_network_reachability (Updated) ---
 @pytest.mark.asyncio
-@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False)
+@patch(
+    "custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False
+)
 @patch("custom_components.climate_ip.helpers.async_ping")
 async def test_async_check_network_reachability(mock_ping, mock_can_use):
     mock_host = MagicMock()
@@ -708,9 +708,13 @@ async def test_async_check_network_reachability_no_library():
 
 
 @pytest.mark.asyncio
-@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=True)
+@patch(
+    "custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=True
+)
 @patch("custom_components.climate_ip.helpers.async_ping")
-async def test_async_check_network_reachability_privileged_true(mock_ping, mock_can_use):
+async def test_async_check_network_reachability_privileged_true(
+    mock_ping, mock_can_use
+):
     """Verify that when _can_use_icmp_privileged returns True, async_ping receives privileged=True."""
     mock_host = MagicMock()
     mock_host.is_alive = True
@@ -722,9 +726,13 @@ async def test_async_check_network_reachability_privileged_true(mock_ping, mock_
 
 
 @pytest.mark.asyncio
-@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False)
+@patch(
+    "custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False
+)
 @patch("custom_components.climate_ip.helpers.async_ping")
-async def test_async_check_network_reachability_privileged_false(mock_ping, mock_can_use):
+async def test_async_check_network_reachability_privileged_false(
+    mock_ping, mock_can_use
+):
     """Verify that when _can_use_icmp_privileged returns False, async_ping receives privileged=False."""
     mock_host = MagicMock()
     mock_host.is_alive = True
@@ -780,7 +788,7 @@ def test_safe_xml_to_dict_case_insensitive_doctype():
     with patch("custom_components.climate_ip.helpers._LOGGER.error") as mock_log:
         assert safe_xml_to_dict(malicious_payload) == {}
         mock_log.assert_called_once_with(
-            "XML Payload rejected: DOCTYPE injection attempt detected."
+            "XML Payload rejected: DOCTYPE injection attempt detected"
         )
 
 
@@ -1142,7 +1150,9 @@ async def test_async_get_mac_address_token_filtering_and_loop_resilience(mock_ex
         ("https://[2001:db8::3]:443/status", "2001:db8::3", False),
     ],
 )
-@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False)
+@patch(
+    "custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False
+)
 @patch("custom_components.climate_ip.helpers.async_ping")
 async def test_x_async_check_network_reachability_matrix(
     mock_ping, mock_priv, input_host, expected_ip, is_bypass
@@ -1172,9 +1182,13 @@ async def test_x_async_check_network_reachability_matrix(
 
 
 @pytest.mark.asyncio
-@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False)
+@patch(
+    "custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False
+)
 @patch("custom_components.climate_ip.helpers.async_ping")
-async def test_async_check_network_reachability_string_slicing_survivors(mock_ping, mock_priv):
+async def test_async_check_network_reachability_string_slicing_survivors(
+    mock_ping, mock_priv
+):
     """Kills any remaining mutants on lines 546, 553, 554 in async_check_network_reachability."""
     mock_host = MagicMock()
     mock_host.is_alive = True
@@ -1266,7 +1280,9 @@ async def test_async_check_network_reachability_string_slicing_survivors(mock_pi
 
 
 @pytest.mark.asyncio
-@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False)
+@patch(
+    "custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False
+)
 @patch("custom_components.climate_ip.helpers.async_ping")
 async def test_async_get_network_diagnostics_success(mock_ping, mock_priv):
     """Test async_get_network_diagnostics when host is alive."""
@@ -1289,7 +1305,9 @@ async def test_async_get_network_diagnostics_success(mock_ping, mock_priv):
 
 
 @pytest.mark.asyncio
-@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False)
+@patch(
+    "custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False
+)
 @patch("custom_components.climate_ip.helpers.async_ping")
 async def test_async_get_network_diagnostics_unreachable(mock_ping, mock_priv):
     """Test async_get_network_diagnostics when ping times out."""
@@ -1304,7 +1322,9 @@ async def test_async_get_network_diagnostics_unreachable(mock_ping, mock_priv):
 
 
 @pytest.mark.asyncio
-@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False)
+@patch(
+    "custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False
+)
 @patch("custom_components.climate_ip.helpers.async_ping")
 async def test_async_get_network_diagnostics_permission_bypassed(mock_ping, mock_priv):
     """Test async_get_network_diagnostics on SocketPermissionError and OSError."""
@@ -1328,7 +1348,9 @@ async def test_async_get_network_diagnostics_permission_bypassed(mock_ping, mock
 
 
 @pytest.mark.asyncio
-@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False)
+@patch(
+    "custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False
+)
 @patch("custom_components.climate_ip.helpers.async_ping")
 async def test_async_get_network_diagnostics_errors(mock_ping, mock_priv):
     """Test async_get_network_diagnostics on DNS and socket errors."""
@@ -1421,7 +1443,9 @@ async def test_get_last_network_diagnostic_parsing_and_types():
 
 
 @pytest.mark.asyncio
-@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=True)
+@patch(
+    "custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=True
+)
 @patch("custom_components.climate_ip.helpers.async_ping")
 async def test_async_get_network_diagnostics_strict_args_and_clean_host(
     mock_ping, mock_priv
@@ -1448,7 +1472,9 @@ async def test_async_get_network_diagnostics_strict_args_and_clean_host(
     assert diag["privileged_mode"] is True
 
     # 2. Test URL with scheme, port, and path cleaning (kills L715, L717, L722-723)
-    await async_get_network_diagnostics("http://192.168.1.101:8080/status", ping_timeout=1.0)
+    await async_get_network_diagnostics(
+        "http://192.168.1.101:8080/status", ping_timeout=1.0
+    )
     mock_ping.assert_called_with(
         address="192.168.1.101",
         count=1,
@@ -1528,7 +1554,9 @@ async def test_async_get_network_diagnostics_strict_args_and_clean_host(
 
 
 @pytest.mark.asyncio
-@patch("custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False)
+@patch(
+    "custom_components.climate_ip.helpers._can_use_icmp_privileged", return_value=False
+)
 @patch("custom_components.climate_ip.helpers.async_ping")
 async def test_async_check_network_reachability_strict_diagnostics_recording(
     mock_ping, mock_priv
@@ -1558,3 +1586,82 @@ async def test_async_check_network_reachability_strict_diagnostics_recording(
     assert rec_fail["is_reachable"] is False
     assert rec_fail["status"] == "socket_error"
 
+
+def test_path_navigation_string_split():
+    """Test get_value_by_path and set_value_by_path with dot-separated string paths."""
+    from custom_components.climate_ip.helpers import set_value_by_path
+
+    data = {"Devices": {"0": {"Temperatures": 23.5}}}
+    assert get_value_by_path(data, "Devices.0.Temperatures") == 23.5
+    assert get_value_by_path(data, "Devices.0.Humidity") is None
+
+    target = {"Devices": {"0": {"Temperatures": 20.0}}}
+    set_value_by_path(target, "Devices.0.Temperatures", 25.0)
+    assert target["Devices"]["0"]["Temperatures"] == 25.0
+
+
+def test_secure_tree_builder_doctype_and_safe_xml():
+    """Test SecureTreeBuilder doctype block and safe_xml_to_dict error handling."""
+    from custom_components.climate_ip.helpers import SecureTreeBuilder
+
+    builder = SecureTreeBuilder()
+    with pytest.raises(ValueError, match="DOCTYPE declarations strictly prohibited"):
+        builder.doctype("foo", None, None)
+
+    with patch(
+        "xml.etree.ElementTree.fromstring", side_effect=ValueError("Security violation")
+    ):
+        assert safe_xml_to_dict("<root>test</root>") == {}
+
+
+def test_create_samsung_ssl_context_version_error_branches():
+    """Test create_samsung_ssl_context catches version setting errors gracefully."""
+    mock_ctx = MagicMock()
+    type(mock_ctx).maximum_version = property(
+        fget=lambda self: ssl.TLSVersion.TLSv1_2,
+        fset=MagicMock(side_effect=AttributeError("Max version unsupported")),
+    )
+    type(mock_ctx).minimum_version = property(
+        fget=lambda self: ssl.TLSVersion.TLSv1,
+        fset=MagicMock(side_effect=AttributeError("Min version unsupported")),
+    )
+    with patch("ssl.SSLContext", return_value=mock_ctx):
+        ctx = create_samsung_ssl_context()
+        assert ctx is mock_ctx
+
+
+@pytest.mark.asyncio
+async def test_async_get_mac_address_arp_errors():
+    """Test async_get_mac_address handling FileNotFoundError and OSError in ARP command."""
+    with patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError):
+        assert await async_get_mac_address("192.168.1.99") is None
+
+    with patch("asyncio.create_subprocess_exec", side_effect=OSError("arp failed")):
+        assert await async_get_mac_address("192.168.1.99") is None
+
+
+def test_tolerant_header_parsing_deep_execution():
+    """Test _patched_parse_headers inside tolerant_header_parsing handles spaces, long lines, and overflows."""
+    import http.client
+    import io
+
+    with tolerant_header_parsing():
+        raw_headers = io.BytesIO(
+            b"Content-Type : application/json\r\nHost: example.com\r\n\r\n"
+        )
+        parsed = http.client.parse_headers(raw_headers)
+        assert parsed.get("Content-Type") == "application/json"
+
+    with tolerant_header_parsing():
+        long_line = io.BytesIO(b"A" * 70000 + b"\r\n\r\n")
+        with pytest.raises(http.client.LineTooLong):
+            http.client.parse_headers(long_line)
+
+    with tolerant_header_parsing():
+        many_headers = io.BytesIO(
+            b"".join(f"H{i}: 1\r\n".encode() for i in range(105)) + b"\r\n"
+        )
+        with pytest.raises(
+            http.client.HTTPException, match="got more than 100 headers"
+        ):
+            http.client.parse_headers(many_headers)

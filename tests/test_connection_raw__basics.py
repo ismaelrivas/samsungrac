@@ -1,20 +1,16 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,too-many-locals,too-many-statements,unidiomatic-typecheck
 """Tests for ConnectionRaw8888."""
 
-from __future__ import annotations
-
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
 import pytest
 
 from custom_components.climate_ip.connection_raw import _HOST_CLIENTS, ConnectionRaw8888
 from custom_components.climate_ip.const import CONF_CERT
 from custom_components.climate_ip.exceptions import CannotConnect
-from custom_components.climate_ip.protocol_8888 import (
-    CannotConnect as LibConnError,
-)
+from custom_components.climate_ip.protocol_8888 import CannotConnect as LibConnError
+from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
 
 
 @pytest.fixture(autouse=True)
@@ -852,7 +848,7 @@ async def test_async_execute_mutants_coverage(
             )
 
             mock_client.request.assert_called_once()
-            method, url, data, headers = mock_client.request.call_args[0]
+            method, url, data, _headers = mock_client.request.call_args[0]
             assert method == "POST"
             # Fallback to config IP (2.2.2.2) and controller config token (CTRL_CONFIG_TOKEN)
             assert url == "/x/2.2.2.2/CTRL_CONFIG_TOKEN"
@@ -870,7 +866,7 @@ async def test_async_execute_mutants_coverage(
             )
 
             mock_client.request.assert_called_once()
-            method, url, data, headers = mock_client.request.call_args[0]
+            _method, url, _data, _headers = mock_client.request.call_args[0]
             # Uses _host (1.1.1.1) and fallback to connection config token (CONN_TOKEN)
             assert url == "/x/1.1.1.1/CONN_TOKEN"
 
@@ -894,7 +890,7 @@ async def test_async_execute_mutants_coverage(
             mock_client.request.reset_mock()
             await conn.async_execute("POST", "/x/__CLIMATE_IP_HOST__", None, None)
             mock_client.request.assert_called_once()
-            method, url, data, headers = mock_client.request.call_args[0]
+            _method, url, _data, _headers = mock_client.request.call_args[0]
             assert url == "/x/"  # Replaced with empty string
 
         # Test embedded command raising Exception
@@ -994,14 +990,13 @@ async def test_async_execute_embedded_and_path(
             mock_client.request.reset_mock()
             await conn.async_execute("PUT", None, None, None)
             mock_client.request.assert_called_once()
-            method, path, data, headers = mock_client.request.call_args[0]
+            _method, path, _data, _headers = mock_client.request.call_args[0]
             assert path == ""
 
 
 @pytest.mark.asyncio
 async def test_async_execute_defaults(mock_logger):
-    """
-    Test the default parameters of async_execute (_is_poll=False, _is_probe=False).
+    """Test the default parameters of async_execute (_is_poll=False, _is_probe=False).
     By verifying the side-effects that SHOULD happen when they are true,
     and ensuring they DO NOT happen when not provided.
     """
@@ -1119,3 +1114,133 @@ async def test_embedded_command_no_params_no_template_logs_warning(
 
         # Embedded should NOT have been called (no params to send)
         embedded.async_execute.assert_not_called()
+
+
+def test_clear_raw_clients_pool():
+    """Test clear_raw_clients_pool flushes client cache."""
+    from custom_components.climate_ip.connection_raw import (
+        _HOST_CLIENTS,
+        clear_raw_clients_pool,
+    )
+
+    _HOST_CLIENTS[("1.1.1.1", 8888)] = MagicMock()
+    assert len(_HOST_CLIENTS) > 0
+    clear_raw_clients_pool()
+    assert len(_HOST_CLIENTS) == 0
+
+
+def test_create_updated_copies_controller_ref(
+    connection_config, mock_logger, mock_hass
+):
+    """Test create_updated preserves controller reference."""
+    from custom_components.climate_ip.connection_raw import ConnectionRaw8888
+
+    conn = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
+    mock_controller = MagicMock()
+    conn.set_controller_ref(mock_controller)
+    updated = conn.create_updated({})
+    assert updated._controller is mock_controller
+
+
+def test_is_available_and_connection_template_setter(
+    connection_config, mock_logger, mock_hass
+):
+    """Test is_available property and connection_template setter."""
+    from custom_components.climate_ip.connection_raw import ConnectionRaw8888
+
+    conn = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
+    assert conn.is_available is False
+    conn._is_connected = True
+    assert conn.is_available is True
+
+    tmpl = MagicMock()
+    conn.connection_template = tmpl
+    assert conn.connection_template is tmpl
+
+
+@pytest.mark.asyncio
+async def test_async_execute_api_error_and_auth_error(
+    connection_config, mock_logger, mock_hass
+):
+    """Test async_execute raises CannotConnect on API error and AuthError on missing token."""
+    from custom_components.climate_ip.connection_raw import ConnectionRaw8888
+    from custom_components.climate_ip.exceptions import AuthError, CannotConnect
+
+    conn = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
+    mock_client = AsyncMock()
+    mock_client.request.return_value = (None, "Bad Gateway")
+
+    with patch.object(conn, "async_get_client", return_value=mock_client):
+        with pytest.raises(CannotConnect, match="API Error: Bad Gateway"):
+            await conn.async_execute("GET", "/test", None, None)
+
+    # Missing token raises AuthError
+    conn._config = {}
+    with pytest.raises(AuthError, match="Token not configured for the raw engine"):
+        await conn.async_execute("GET", "/test", None, None)
+
+
+@pytest.mark.asyncio
+async def test_async_reset_client_close_error(
+    connection_config, mock_logger, mock_hass
+):
+    """Test _handle_periodic_reset ignores OSError during client close."""
+    from custom_components.climate_ip.connection_raw import ConnectionRaw8888
+
+    conn = ConnectionRaw8888(
+        connection_config, mock_logger, mock_hass, None, "192.168.1.100"
+    )
+    conn._keep_alive = False
+    mock_client = AsyncMock()
+    mock_client.close.side_effect = OSError("Socket close error")
+    conn._client = mock_client
+    await conn._handle_periodic_reset(is_poll=True)
+    assert conn._client is None
+
+
+@pytest.mark.asyncio
+async def test_async_execute_debug_logging(
+    connection_config, mock_logger, mock_hass
+) -> None:
+    """Test async_execute records elapsed time when debug logging enabled."""
+    from custom_components.climate_ip.connection_raw import ConnectionRaw8888
+
+    conn = ConnectionRaw8888(
+        connection_config, mock_logger, mock_hass, None, "192.168.1.100"
+    )
+    mock_client = AsyncMock()
+    mock_client.request.return_value = ('{"status": "ok"}', None)
+
+    with (
+        patch.object(conn, "async_get_client", return_value=mock_client),
+        patch(
+            "custom_components.climate_ip.connection_raw._LOGGER.isEnabledFor",
+            return_value=True,
+        ),
+    ):
+        resp, err = await conn.async_execute("GET", "/test", None, None)
+        assert resp == '{"status": "ok"}'
+        assert err is None
+
+
+@pytest.mark.asyncio
+async def test_async_execute_request_auth_error_wraps_invalid_token(
+    connection_config, mock_logger, mock_hass
+) -> None:
+    """Test _async_execute_request re-raises AuthError as 'Invalid token'."""
+    from custom_components.climate_ip.connection_raw import ConnectionRaw8888
+    from custom_components.climate_ip.exceptions import AuthError
+
+    conn = ConnectionRaw8888(
+        connection_config, mock_logger, mock_hass, None, "192.168.1.100"
+    )
+    mock_client = AsyncMock()
+    mock_client.request.side_effect = AuthError("Socket auth failure")
+
+    with (
+        patch.object(conn, "async_get_client", return_value=mock_client),
+        pytest.raises(AuthError, match="Invalid token"),
+    ):
+        await conn._async_execute_request(
+            "GET", "/test", None, None, ("token", "GET", None, "/test"), False
+        )

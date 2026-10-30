@@ -1,16 +1,10 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,missing-class-docstring,too-few-public-methods,too-many-lines,too-many-locals
 """Test the Climate IP setup and actions."""
 
-from __future__ import annotations
-
 import asyncio
 import logging
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
-from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
-from homeassistant.helpers.update_coordinator import UpdateFailed
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -24,13 +18,13 @@ from custom_components.climate_ip import (
     async_unload_entry,
     async_update_listener,
 )
-from custom_components.climate_ip.const import (
-    CONF_DEVICE_TYPE,
-    CONF_DEVICES,
-    DOMAIN,
-)
+from custom_components.climate_ip.const import CONF_DEVICE_TYPE, CONF_DEVICES, DOMAIN
 from custom_components.climate_ip.controller_yaml import YamlController
 from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 
 async def test_unload_entry(hass: HomeAssistant) -> None:
@@ -876,10 +870,7 @@ def test_build_device_setup_tasks_cardinality_and_payload(
     hass: HomeAssistant,
 ) -> None:
     """Test _build_device_setup_tasks cardinality, distinct payloads, and boundary sanitization (kills M5)."""
-    from custom_components.climate_ip import (
-        DEFAULT_UNKNOWN,
-        _build_device_setup_tasks,
-    )
+    from custom_components.climate_ip import DEFAULT_UNKNOWN, _build_device_setup_tasks
     from custom_components.climate_ip.const import MAIN_DEVICE_ID
 
     entry = MagicMock()
@@ -1184,10 +1175,7 @@ async def test_async_setup_single_device_boundary_args_and_fallbacks(
 ) -> None:
     """Target 2: Verify _async_setup_single_device parent_unique_id, device_info and error paths."""
     from custom_components.climate_ip import _async_setup_single_device
-    from custom_components.climate_ip.const import (
-        CONF_DEVICES,
-        MAIN_DEVICE_ID,
-    )
+    from custom_components.climate_ip.const import CONF_DEVICES, MAIN_DEVICE_ID
 
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -1302,8 +1290,8 @@ async def test_build_device_setup_tasks_strict_validation(hass: HomeAssistant) -
     entry = MockConfigEntry(domain=DOMAIN, data={}, unique_id="TEST_UID")
 
     # Non list/tuple -> returns []
-    assert _build_device_setup_tasks(hass, entry, None, None) == []
-    assert _build_device_setup_tasks(hass, entry, "string_config", None) == []
+    assert not _build_device_setup_tasks(hass, entry, None, None)
+    assert not _build_device_setup_tasks(hass, entry, "string_config", None)
 
     # Filtered list: invalid dicts, missing subdevice_id, empty string id, and wifi kit 0
     devices = [
@@ -1718,8 +1706,7 @@ async def test_async_setup_and_reload_service(hass: HomeAssistant) -> None:
             for c in hass.config_entries.async_reload.await_args_list
         )
         assert not any(
-            c == call(None)
-            for c in hass.config_entries.async_reload.await_args_list
+            c == call(None) for c in hass.config_entries.async_reload.await_args_list
         )
 
 
@@ -1740,3 +1727,169 @@ async def test_async_setup_reload_service_no_entries(hass: HomeAssistant) -> Non
         hass.config_entries.async_reload.assert_not_awaited()
 
 
+async def test_async_setup_entry_device_setup_task_deferred(
+    hass: HomeAssistant,
+) -> None:
+    """Test device setup task raising ConfigEntryNotReady hits deferral warning and rollback."""
+    mock_entry = MagicMock()
+    mock_entry.unique_id = "test_deferral"
+    mock_entry.title = "Deferred AC"
+    mock_entry.data = {
+        "ip_address": "192.168.1.100",
+        CONF_DEVICES: [
+            {"id": "1", "name": "Zone OK"},
+            {"id": "2", "name": "Zone Not Ready"},
+        ],
+    }
+    mock_entry.options = {}
+
+    with (
+        patch("custom_components.climate_ip.YamlController") as mock_yaml_class,
+        patch(
+            "custom_components.climate_ip.SamsungClimateCoordinator"
+        ) as mock_coord_class,
+        patch("custom_components.climate_ip.async_get_clientsession"),
+    ):
+        ctrl1 = MagicMock()
+        ctrl1.initialize = AsyncMock(return_value=True)
+        ctrl1.async_shutdown = AsyncMock()
+        ctrl1.log_prefix = "[Z1]"
+
+        ctrl2 = MagicMock()
+        ctrl2.initialize = AsyncMock(return_value=True)
+        ctrl2.async_shutdown = AsyncMock()
+        ctrl2.log_prefix = "[Z2]"
+
+        mock_yaml_class.side_effect = [ctrl1, ctrl2]
+
+        coord1 = MagicMock()
+        coord1.async_config_entry_first_refresh = AsyncMock()
+        coord1.async_shutdown = AsyncMock()
+
+        coord2 = MagicMock()
+        coord2.async_config_entry_first_refresh = AsyncMock(
+            side_effect=ConfigEntryNotReady("Transient timeout")
+        )
+        coord2.async_shutdown = AsyncMock()
+
+        mock_coord_class.side_effect = [coord1, coord2]
+
+        with pytest.raises(ConfigEntryNotReady):
+            await async_setup_entry(hass, mock_entry)
+
+        coord1.async_shutdown.assert_awaited()
+
+
+async def test_async_setup_entry_rollback_shutdown_exception(
+    hass: HomeAssistant,
+) -> None:
+    """Test exception during rollback coordinator shutdown is caught and logged."""
+    mock_entry = MagicMock()
+    mock_entry.unique_id = "test_rollback_exc"
+    mock_entry.title = "Rollback Exc AC"
+    mock_entry.data = {
+        "ip_address": "192.168.1.100",
+        CONF_DEVICES: [
+            {"id": "1", "name": "Zone OK"},
+            {"id": "2", "name": "Zone Fail"},
+        ],
+    }
+    mock_entry.options = {}
+
+    coord1 = MagicMock()
+    coord1.async_config_entry_first_refresh = AsyncMock()
+
+    coord2 = MagicMock()
+    coord2.async_config_entry_first_refresh = AsyncMock(
+        side_effect=ConfigEntryAuthFailed("Auth error")
+    )
+
+    async def side_effect_shutdown(target):
+        if target is coord1:
+            raise RuntimeError("Rollback crash")
+
+    with (
+        patch("custom_components.climate_ip.YamlController") as mock_yaml_class,
+        patch(
+            "custom_components.climate_ip.SamsungClimateCoordinator"
+        ) as mock_coord_class,
+        patch("custom_components.climate_ip.async_get_clientsession"),
+        patch(
+            "custom_components.climate_ip._async_safe_shutdown",
+            side_effect=side_effect_shutdown,
+        ),
+    ):
+        ctrl1 = MagicMock()
+        ctrl1.initialize = AsyncMock(return_value=True)
+        ctrl1.log_prefix = "[Z1]"
+
+        ctrl2 = MagicMock()
+        ctrl2.initialize = AsyncMock(return_value=True)
+        ctrl2.log_prefix = "[Z2]"
+
+        mock_yaml_class.side_effect = [ctrl1, ctrl2]
+        mock_coord_class.side_effect = [coord1, coord2]
+
+        with pytest.raises(ConfigEntryAuthFailed):
+            await async_setup_entry(hass, mock_entry)
+
+
+async def test_async_unload_entry_shutdown_exception(hass: HomeAssistant) -> None:
+    """Test exception during coordinator shutdown in unload is caught and logged."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "ip_address": "192.168.1.100",
+            "device_type": "samsung_2878",
+            "token": "dummy_token",
+        },
+        unique_id="test_unload_shutdown_exc",
+    )
+    if not hasattr(entry, "async_on_unload"):
+        entry.async_on_unload = MagicMock()
+    if not hasattr(entry, "add_update_listener"):
+        entry.add_update_listener = MagicMock()
+    entry.add_to_hass(hass)
+
+    coord = MagicMock()
+    entry.runtime_data = {"dev1": coord}
+
+    hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+
+    with patch(
+        "custom_components.climate_ip._async_safe_shutdown",
+        side_effect=RuntimeError("Shutdown failure"),
+    ):
+        result = await async_unload_entry(hass, entry)
+        assert result is True
+        assert len(entry.runtime_data) == 0
+
+
+async def test_async_unload_entry_platform_unload_failed(hass: HomeAssistant) -> None:
+    """Test when platform unload fails, teardown is aborted and warning logged."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "ip_address": "192.168.1.100",
+            "device_type": "samsung_2878",
+            "token": "dummy_token",
+        },
+        unique_id="test_unload_platform_fails",
+    )
+    if not hasattr(entry, "async_on_unload"):
+        entry.async_on_unload = MagicMock()
+    if not hasattr(entry, "add_update_listener"):
+        entry.add_update_listener = MagicMock()
+    entry.add_to_hass(hass)
+
+    coord = MagicMock()
+    coord.async_shutdown = AsyncMock()
+    entry.runtime_data = {"dev1": coord}
+
+    hass.config_entries.async_unload_platforms = AsyncMock(return_value=False)
+
+    result = await async_unload_entry(hass, entry)
+    assert result is False
+    # Verify teardown aborted: coordinator was NOT shut down and runtime_data was NOT cleared
+    coord.async_shutdown.assert_not_awaited()
+    assert "dev1" in entry.runtime_data

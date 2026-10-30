@@ -172,7 +172,7 @@ class SamsungTokenAcquirer8888:
             writer.close()
             try:
                 await writer.wait_closed()
-            except (TimeoutError, OSError, ConnectionError):
+            except TimeoutError, OSError, ConnectionError:
                 pass
 
     async def _start_listener_server(self) -> bool:

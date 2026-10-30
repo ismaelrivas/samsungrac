@@ -1,6 +1,5 @@
 # pylint: disable=import-outside-toplevel,line-too-long
-"""
-Helper utilities for the climate_ip integration.
+"""Helper utilities for the climate_ip integration.
 
 Provides:
 - A scoped urllib3 monkey-patch (tolerant_header_parsing) for Samsung devices
@@ -10,8 +9,6 @@ Provides:
 - Sensitive data masking (mask_sensitive_data) for safe logging.
 - Native ICMP network reachability check (async_check_network_reachability).
 """
-
-from __future__ import annotations
 
 import asyncio
 from collections.abc import Generator, Sequence
@@ -25,17 +22,16 @@ import platform
 import re
 import ssl
 import threading
-from typing import TYPE_CHECKING, Any
+from typing import Any
 import warnings
 import xml.etree.ElementTree as ET
 
-if TYPE_CHECKING:
-    from homeassistant.core import HomeAssistant
+from probatio import Invalid
 
 from homeassistant.const import EntityCategory
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
-from voluptuous.error import Invalid
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -74,12 +70,10 @@ def parse_entity_category(raw: str | None) -> EntityCategory | None:
 
 
 class SecureTreeBuilder(ET.TreeBuilder):
-    """Native Interceptor: Destroys parsing immediately if the engine
-
-    attempts to process a DOCTYPE, neutralizing XXE and Billion Laughs at the root.
-    """
+    """Native Interceptor: Destroys parsing immediately if the engine attempts to process a DOCTYPE."""
 
     def doctype(self, name: str, pubid: str | None, system: str | None) -> None:
+        """Reject DOCTYPE declarations."""
         raise ValueError(
             "Security Violation: DOCTYPE declarations strictly prohibited."
         )  # pragma: no mutate
@@ -96,7 +90,7 @@ def safe_xml_to_dict(xml_string: str) -> dict[str, Any]:
     # Layer 1: Fast-Fail Substring Firewall
     if "<!doctype" in xml_string.lower():
         _LOGGER.error(
-            "XML Payload rejected: DOCTYPE injection attempt detected."
+            "XML Payload rejected: DOCTYPE injection attempt detected"
         )  # pragma: no mutate
         return {}
 
@@ -125,8 +119,8 @@ def safe_xml_to_dict(xml_string: str) -> dict[str, Any]:
 
     try:
         # Layer 2: Strict Parsing with Native Interceptor
-        parser = ET.XMLParser(target=SecureTreeBuilder())  # pragma: no mutate
-        root = ET.fromstring(xml_string.strip(), parser=parser)  # pragma: no mutate
+        parser = ET.XMLParser(target=SecureTreeBuilder())  # noqa: S314 # pragma: no mutate
+        root = ET.fromstring(xml_string.strip(), parser=parser)  # noqa: S314 # pragma: no mutate
         return {root.tag: _element_to_dict(root)}
     except (ET.ParseError, AttributeError, TypeError) as exc:
         _LOGGER.debug(
@@ -152,11 +146,9 @@ def tolerant_header_parsing() -> Generator[None]:
     global _HEADER_PATCH_REFCOUNT, _HEADER_PATCH_ORIGINAL_RESPONSE  # noqa: PLW0603
     global _HEADER_PATCH_ORIGINAL_CONNECTION, _HEADER_PATCH_ORIGINAL_PARSE_HEADERS  # noqa: PLW0603
 
-    import urllib3.connection as connection_mod  # pylint: disable=import-outside-toplevel
-    from urllib3.exceptions import (
-        HeaderParsingError,
-    )
-    import urllib3.util.response as response_util  # pylint: disable=import-outside-toplevel
+    import urllib3.connection as connection_mod  # noqa: PLC0415 # pylint: disable=import-outside-toplevel
+    from urllib3.exceptions import HeaderParsingError  # noqa: PLC0415
+    import urllib3.util.response as response_util  # noqa: PLC0415 # pylint: disable=import-outside-toplevel
 
     def _tolerant_assert(headers: Any) -> None:
         try:
@@ -199,12 +191,12 @@ def tolerant_header_parsing() -> Generator[None]:
     with _header_patch_lock:
         if _HEADER_PATCH_REFCOUNT == 0:
             _HEADER_PATCH_ORIGINAL_RESPONSE = response_util.assert_header_parsing
-            _HEADER_PATCH_ORIGINAL_CONNECTION = connection_mod.assert_header_parsing  # type: ignore[attr-defined]
+            _HEADER_PATCH_ORIGINAL_CONNECTION = connection_mod.assert_header_parsing
             _HEADER_PATCH_ORIGINAL_PARSE_HEADERS = (
                 http.client.parse_headers
             )  # pragma: no mutate
             response_util.assert_header_parsing = _tolerant_assert
-            connection_mod.assert_header_parsing = _tolerant_assert  # type: ignore[attr-defined]
+            connection_mod.assert_header_parsing = _tolerant_assert
             http.client.parse_headers = _patched_parse_headers
         _HEADER_PATCH_REFCOUNT += 1
     try:
@@ -216,7 +208,7 @@ def tolerant_header_parsing() -> Generator[None]:
                 response_util.assert_header_parsing = (
                     _HEADER_PATCH_ORIGINAL_RESPONSE  # pragma: no mutate
                 )
-                connection_mod.assert_header_parsing = (  # type: ignore[attr-defined]
+                connection_mod.assert_header_parsing = (
                     _HEADER_PATCH_ORIGINAL_CONNECTION  # pragma: no mutate
                 )
                 http.client.parse_headers = (
@@ -232,7 +224,7 @@ def find_key_in_data(data: Any, key: str) -> Any | None:
     if isinstance(data, dict):
         if key in data:
             return data[key]
-        for _k, v in data.items():
+        for v in data.values():
             item = find_key_in_data(v, key)
             if item is not None:
                 return item
@@ -273,6 +265,7 @@ def get_value_by_path(
     return current
 
 
+# pylint: disable=too-many-branches
 def set_value_by_path(
     target: dict[str, Any] | list[Any],
     path: Sequence[str | int] | str | None,
@@ -309,7 +302,7 @@ def set_value_by_path(
             return
 
     # Assign final value at the terminal node
-    last_key = path[-1]
+    last_key = path_seq[-1]
     if isinstance(current, dict) and isinstance(last_key, str):
         current[last_key] = value
     elif isinstance(current, list) and isinstance(last_key, int):
@@ -393,9 +386,10 @@ def get_tls_version_name(version_code: int | ssl.TLSVersion) -> str:
         return "Unknown"  # pragma: no mutate
     try:
         tls_ver = ssl.TLSVersion(version_code)
-        return tls_ver.name
-    except (ValueError, AttributeError):
+    except ValueError, AttributeError:
         return str(version_code)
+    else:
+        return tls_ver.name
 
 
 def create_samsung_ssl_context(
@@ -436,7 +430,7 @@ def create_samsung_ssl_context(
                 category=DeprecationWarning,  # pragma: no mutate
             )  # pragma: no mutate
             context.minimum_version = ssl.TLSVersion.TLSv1  # pragma: no mutate
-    except (AttributeError, TypeError, ssl.SSLError, ValueError):
+    except AttributeError, TypeError, ssl.SSLError, ValueError:
         pass
 
     if cert_path:
@@ -509,10 +503,9 @@ def mask_sensitive_data(data: Any) -> Any:
             masked = ("***" + val[-6:]) if len(val) > 6 else "***"
             return f"{m.group(1)}{masked}{m.group(3)}"
 
-        data = re.sub(
+        return re.sub(
             r'(DUID=")([^"]+)(")', _mask_duid_match, data, flags=re.IGNORECASE
         )  # pragma: no mutate
-        return data
     return data
 
 
@@ -545,14 +538,15 @@ def _can_use_icmp_privileged() -> bool:
     if not _ICMPLIB_AVAILABLE:
         return False
     try:
-        from icmplib import (
+        from icmplib import (  # noqa: PLC0415
             ping as icmp_ping_sync,  # pylint: disable=import-outside-toplevel
         )
 
         icmp_ping_sync("127.0.0.1", count=0, timeout=0, privileged=True)
-        return True
-    except Exception:
+    except Exception:  # noqa: BLE001 # pylint: disable=broad-exception-caught
         return False
+    else:
+        return True
 
 
 _LAST_NETWORK_DIAGNOSTICS: dict[str, dict[str, Any]] = {}
@@ -562,7 +556,7 @@ def get_last_network_diagnostic(host: str | None) -> dict[str, Any] | None:
     """Return the last recorded ICMP network diagnostic for the host."""
     if not host or not isinstance(host, str):
         return None
-    clean_host = host.rsplit("://")[-1].split("/")[0]  # noqa: PLC0207
+    clean_host = host.rsplit("://")[-1].split("/")[0]
     if (
         ":" in clean_host
         and not clean_host.startswith("[")
@@ -570,7 +564,9 @@ def get_last_network_diagnostic(host: str | None) -> dict[str, Any] | None:
     ):
         clean_host = clean_host.split(":")[0]
     elif clean_host.startswith("[") and "]" in clean_host:
-        clean_host = clean_host[1 : clean_host.index("]")]  # pragma: no mutate  # Equivalent: valid IPv6 has single ']'
+        clean_host = clean_host[
+            1 : clean_host.index("]")
+        ]  # pragma: no mutate  # Equivalent: valid IPv6 has single ']'
     return _LAST_NETWORK_DIAGNOSTICS.get(clean_host)
 
 
@@ -581,7 +577,7 @@ async def async_check_network_reachability(
     """Check if the device is reachable on the network using native icmplib."""
     if not _ICMPLIB_AVAILABLE or async_ping is None:
         _LOGGER.debug(
-            "%s icmplib not available, skipping ICMP reachability check.", log_prefix
+            "%s icmplib not available, skipping ICMP reachability check", log_prefix
         )  # pragma: no mutate
         return True
 
@@ -624,7 +620,7 @@ async def async_check_network_reachability(
 
         _LOGGER.debug(  # pragma: no mutate
             "%s Network diagnostic: Host %s is NOT reachable (UDP ping failed/timed out). "  # pragma: no mutate
-            "Check that the device is powered on and connected to your Wi-Fi.",  # pragma: no mutate
+            "Check that the device is powered on and connected to your Wi-Fi",  # pragma: no mutate
             log_prefix,  # pragma: no mutate
             host,  # pragma: no mutate
         )  # pragma: no mutate
@@ -635,12 +631,12 @@ async def async_check_network_reachability(
             "privileged_mode": use_privileged,
             "timestamp": dt_util.utcnow().isoformat(),
         }
-        return False
+        return False  # noqa: TRY300
 
     except SocketPermissionError as perm_err:
         _LOGGER.debug(  # pragma: no mutate
             "%s Network diagnostic permission error (ping_group_range restriction): %s. "  # pragma: no mutate
-            "Bypassing ping check to protect AC firmware.",  # pragma: no mutate
+            "Bypassing ping check to protect AC firmware",  # pragma: no mutate
             log_prefix,  # pragma: no mutate
             perm_err,  # pragma: no mutate
         )  # pragma: no mutate
@@ -670,7 +666,7 @@ async def async_check_network_reachability(
     except OSError as e:
         _LOGGER.debug(  # pragma: no mutate
             "%s Network diagnostic OS error (likely ping_group_range restriction): %s. "  # pragma: no mutate
-            "Bypassing ping check to protect AC firmware.",  # pragma: no mutate
+            "Bypassing ping check to protect AC firmware",  # pragma: no mutate
             log_prefix,  # pragma: no mutate
             e,  # pragma: no mutate
         )  # pragma: no mutate
@@ -701,7 +697,7 @@ async def async_get_network_diagnostics(
 
     if not _ICMPLIB_AVAILABLE or async_ping is None:
         _LOGGER.debug(
-            "%s icmplib not available, skipping ICMP reachability check.", log_prefix
+            "%s icmplib not available, skipping ICMP reachability check", log_prefix
         )
         return {
             "is_reachable": True,
@@ -711,7 +707,7 @@ async def async_get_network_diagnostics(
             "timestamp": now_iso,
         }
 
-    clean_host = host.rsplit("://")[-1].split("/")[0]  # noqa: PLC0207
+    clean_host = host.rsplit("://", maxsplit=1)[-1].split("/", maxsplit=1)[0]
     if (
         ":" in clean_host
         and not clean_host.startswith("[")
@@ -719,7 +715,9 @@ async def async_get_network_diagnostics(
     ):
         clean_host = clean_host.split(":")[0]
     elif clean_host.startswith("[") and "]" in clean_host:
-        clean_host = clean_host[1 : clean_host.index("]")]  # pragma: no mutate  # Equivalent: valid IPv6 has single ']'
+        clean_host = clean_host[
+            1 : clean_host.index("]")
+        ]  # pragma: no mutate  # Equivalent: valid IPv6 has single ']'
 
     if clean_host in ("localhost", "127.0.0.1", "::1"):
         return {
@@ -746,80 +744,90 @@ async def async_get_network_diagnostics(
         )
 
         if host_obj.is_alive:
-            return _record_and_return({
-                "is_reachable": True,
-                "avg_rtt_ms": getattr(host_obj, "avg_rtt", None),
-                "status": "alive",
-                "privileged_mode": use_privileged,
-                "timestamp": now_iso,
-            })
+            return _record_and_return(
+                {
+                    "is_reachable": True,
+                    "avg_rtt_ms": getattr(host_obj, "avg_rtt", None),
+                    "status": "alive",
+                    "privileged_mode": use_privileged,
+                    "timestamp": now_iso,
+                }
+            )
 
         _LOGGER.debug(
-            "%s Network diagnostic: Host %s is NOT reachable (UDP ping failed/timed out).",
+            "%s Network diagnostic: Host %s is NOT reachable (UDP ping failed/timed out)",
             log_prefix,
             host,
         )
-        return _record_and_return({
-            "is_reachable": False,
-            "avg_rtt_ms": None,
-            "status": "unreachable_timeout",
-            "privileged_mode": use_privileged,
-            "timestamp": now_iso,
-        })
+        return _record_and_return(
+            {
+                "is_reachable": False,
+                "avg_rtt_ms": None,
+                "status": "unreachable_timeout",
+                "privileged_mode": use_privileged,
+                "timestamp": now_iso,
+            }
+        )
 
     except SocketPermissionError as perm_err:
         _LOGGER.debug(
             "%s Network diagnostic permission error (ping_group_range restriction): %s. "
-            "Bypassing ping check to protect AC firmware.",
+            "Bypassing ping check to protect AC firmware",
             log_prefix,
             perm_err,
         )
-        return _record_and_return({
-            "is_reachable": True,
-            "avg_rtt_ms": None,
-            "status": "permission_bypassed",
-            "privileged_mode": use_privileged,
-            "timestamp": now_iso,
-        })
-    except (IcmpNameLookupError, ICMPSocketError) as err:
-        _LOGGER.debug(
-            "%s Network diagnostic error for %s: %s", log_prefix, host, err
+        return _record_and_return(
+            {
+                "is_reachable": True,
+                "avg_rtt_ms": None,
+                "status": "permission_bypassed",
+                "privileged_mode": use_privileged,
+                "timestamp": now_iso,
+            }
         )
+    except (IcmpNameLookupError, ICMPSocketError) as err:
+        _LOGGER.debug("%s Network diagnostic error for %s: %s", log_prefix, host, err)
         status_name = (
             "dns_error" if isinstance(err, IcmpNameLookupError) else "socket_error"
         )
-        return _record_and_return({
-            "is_reachable": False,
-            "avg_rtt_ms": None,
-            "status": status_name,
-            "privileged_mode": use_privileged,
-            "timestamp": now_iso,
-        })
+        return _record_and_return(
+            {
+                "is_reachable": False,
+                "avg_rtt_ms": None,
+                "status": status_name,
+                "privileged_mode": use_privileged,
+                "timestamp": now_iso,
+            }
+        )
     except OSError as e:
         _LOGGER.debug(
             "%s Network diagnostic OS error (likely ping_group_range restriction): %s. "
-            "Bypassing ping check to protect AC firmware.",
+            "Bypassing ping check to protect AC firmware",
             log_prefix,
             e,
         )
-        return _record_and_return({
-            "is_reachable": True,
-            "avg_rtt_ms": None,
-            "status": "permission_bypassed",
-            "privileged_mode": use_privileged,
-            "timestamp": now_iso,
-        })
-    except Exception as err:
+        return _record_and_return(
+            {
+                "is_reachable": True,
+                "avg_rtt_ms": None,
+                "status": "permission_bypassed",
+                "privileged_mode": use_privileged,
+                "timestamp": now_iso,
+            }
+        )
+    except Exception as err:  # noqa: BLE001 # pylint: disable=broad-exception-caught
         _LOGGER.debug(
             "%s Unexpected network diagnostic error for %s: %s", log_prefix, host, err
         )
-        return _record_and_return({
-            "is_reachable": False,
-            "avg_rtt_ms": None,
-            "status": f"error_{type(err).__name__}",
-            "privileged_mode": use_privileged,
-            "timestamp": now_iso,
-        })
+        return _record_and_return(
+            {
+                "is_reachable": False,
+                "avg_rtt_ms": None,
+                "status": f"error_{type(err).__name__}",
+                "privileged_mode": use_privileged,
+                "timestamp": now_iso,
+            }
+        )
 
 
 async def async_get_mac_address(ip_address: str) -> str | None:
@@ -848,7 +856,7 @@ async def async_get_mac_address(ip_address: str) -> str | None:
             with contextlib.suppress(OSError):
                 proc.kill()
             _LOGGER.debug(
-                "ARP command timed out for %s. Process killed.", ip_address
+                "ARP command timed out for %s. Process killed", ip_address
             )  # pragma: no mutate
             return None
 
@@ -880,7 +888,7 @@ async def async_get_mac_address(ip_address: str) -> str | None:
 
     except FileNotFoundError:
         _LOGGER.debug(
-            "ARP command not found. Cannot resolve MAC for %s.", ip_address
+            "ARP command not found. Cannot resolve MAC for %s", ip_address
         )  # pragma: no mutate
     except OSError as e:
         _LOGGER.debug(
@@ -892,7 +900,7 @@ async def async_get_mac_address(ip_address: str) -> str | None:
 
 def validate_poll_interval(val: Any) -> int:
     """Validate and convert poll interval to seconds."""
-    from .const import MAX_POLL_INTERVAL, MIN_POLL_INTERVAL
+    from .const import MAX_POLL_INTERVAL, MIN_POLL_INTERVAL  # noqa: PLC0415
 
     try:
         if isinstance(val, int | float):

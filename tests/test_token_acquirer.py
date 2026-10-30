@@ -1,8 +1,6 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
 """Tests for SamsungTokenAcquirer (2878 pairing)."""
 
-from __future__ import annotations
-
 import ssl
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
@@ -66,14 +64,16 @@ async def test_init_state_propagates_to_connect(mock_hass):
     mock_reader = AsyncMock()
     mock_writer = AsyncMock()
 
-    with patch(
-        "asyncio.open_connection", return_value=(mock_reader, mock_writer)
-    ) as mock_open:
-        with patch(
+    with (
+        patch(
+            "asyncio.open_connection", return_value=(mock_reader, mock_writer)
+        ) as mock_open,
+        patch(
             "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
             return_value=MagicMock(),
-        ):
-            config = await acquirer._connect()
+        ),
+    ):
+        config = await acquirer._connect()
 
     # If self._ip_address was mutated to "", this assertion fails
     mock_open.assert_called_with(
@@ -199,13 +199,15 @@ async def test_connect_fallback_success_on_second_attempt(acquirer):
             raise FileNotFoundError("missing cert")
         return mock_ssl_context
 
-    with patch(
-        "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
-        side_effect=mock_create_ssl,
+    with (
+        patch(
+            "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
+            side_effect=mock_create_ssl,
+        ),
+        patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)),
     ):
-        with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
-            with patch("asyncio.sleep", new_callable=AsyncMock):
-                config = await acquirer._connect()
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            config = await acquirer._connect()
 
     # Verify that it succeeded (config is not None)
     assert config is not None
@@ -518,30 +520,30 @@ async def test_connect_user_cert(acquirer):
     mock_writer = AsyncMock()
 
     # Return successfully on the first strategy
-    with patch(
-        "asyncio.open_connection", return_value=(mock_reader, mock_writer)
-    ) as mock_open:
-        with patch(
+    with (
+        patch(
+            "asyncio.open_connection", return_value=(mock_reader, mock_writer)
+        ) as mock_open,
+        patch(
             "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
             return_value=MagicMock(),
-        ) as mock_ssl:
-            config = await acquirer._connect()
+        ) as mock_ssl,
+    ):
+        config = await acquirer._connect()
 
-            # Assert correct arguments were passed to open_connection and ssl context
-            mock_open.assert_called_with(
-                "192.168.1.100", 2878, ssl=mock_ssl.return_value
-            )
-            # Verify cert_path kwarg was NOT mutated to None
-            first_call_kwargs = mock_ssl.call_args_list[0].kwargs
-            assert first_call_kwargs["cert_path"] == "/tmp/user_cert.pem"
-            assert first_call_kwargs["ciphers"] == "HIGH:!DH:!aNULL:@SECLEVEL=0"
-            assert first_call_kwargs["verify_mode"] == ssl.CERT_REQUIRED
+        # Assert correct arguments were passed to open_connection and ssl context
+        mock_open.assert_called_with("192.168.1.100", 2878, ssl=mock_ssl.return_value)
+        # Verify cert_path kwarg was NOT mutated to None
+        first_call_kwargs = mock_ssl.call_args_list[0].kwargs
+        assert first_call_kwargs["cert_path"] == "/tmp/user_cert.pem"
+        assert first_call_kwargs["ciphers"] == "HIGH:!DH:!aNULL:@SECLEVEL=0"
+        assert first_call_kwargs["verify_mode"] == ssl.CERT_REQUIRED
 
-            assert config == {
-                "cert": "/tmp/user_cert.pem",
-                "verify_mode": ssl.CERT_REQUIRED,
-            }
-            assert config["cert"] is not None
+        assert config == {
+            "cert": "/tmp/user_cert.pem",
+            "verify_mode": ssl.CERT_REQUIRED,
+        }
+        assert config["cert"] is not None
 
 
 async def test_connect_default_cert_fallback(acquirer):
@@ -556,25 +558,27 @@ async def test_connect_default_cert_fallback(acquirer):
     mock_reader = AsyncMock()
     mock_writer = AsyncMock()
 
-    with patch(
-        "asyncio.open_connection", return_value=(mock_reader, mock_writer)
-    ) as mock_open:
-        with patch(
+    with (
+        patch(
+            "asyncio.open_connection", return_value=(mock_reader, mock_writer)
+        ) as mock_open,
+        patch(
             "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
             side_effect=mock_create_ssl,
-        ):
-            config = await acquirer._connect()
+        ),
+    ):
+        config = await acquirer._connect()
 
-            # Should have called open_connection successfully on the second attempt
-            assert mock_open.call_count == 1
-            # IP and Port must remain intact in fallback attempts
-            mock_open.assert_called_with(
-                "192.168.1.100", 2878, ssl=mock_open.call_args.kwargs["ssl"]
-            )
+        # Should have called open_connection successfully on the second attempt
+        assert mock_open.call_count == 1
+        # IP and Port must remain intact in fallback attempts
+        mock_open.assert_called_with(
+            "192.168.1.100", 2878, ssl=mock_open.call_args.kwargs["ssl"]
+        )
 
-            assert config is not None
-            assert config.get("cert") == "ac14k_m.pem"
-            assert config.get("verify_mode") == ssl.CERT_NONE
+        assert config is not None
+        assert config.get("cert") == "ac14k_m.pem"
+        assert config.get("verify_mode") == ssl.CERT_NONE
 
 
 async def test_connect_cipher_fallback(acquirer):
@@ -592,20 +596,22 @@ async def test_connect_cipher_fallback(acquirer):
     mock_reader = AsyncMock()
     mock_writer = AsyncMock()
 
-    with patch(
-        "asyncio.open_connection", return_value=(mock_reader, mock_writer)
-    ) as mock_open:
-        with patch(
+    with (
+        patch(
+            "asyncio.open_connection", return_value=(mock_reader, mock_writer)
+        ) as mock_open,
+        patch(
             "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
             side_effect=mock_create_ssl,
-        ):
-            config = await acquirer._connect()
-            assert config is not None
-            # Assert correct arguments were passed to open_connection
-            mock_open.assert_called_with(
-                "192.168.1.100", 2878, ssl=mock_open.call_args.kwargs["ssl"]
-            )
-            assert call_count == 2
+        ),
+    ):
+        config = await acquirer._connect()
+        assert config is not None
+        # Assert correct arguments were passed to open_connection
+        mock_open.assert_called_with(
+            "192.168.1.100", 2878, ssl=mock_open.call_args.kwargs["ssl"]
+        )
+        assert call_count == 2
 
 
 async def test_connect_timeout_handshake(acquirer):
@@ -627,3 +633,33 @@ async def test_connect_timeout_handshake(acquirer):
             assert config.get("verify_mode") == ssl.CERT_NONE
             # Assert read was called
             mock_reader.read.assert_called_once()
+
+
+async def test_connect_logs_negotiated_tls_version(acquirer):
+    """Test that _connect logs the negotiated TLS version when ssl_object is present."""
+    mock_reader = AsyncMock()
+    mock_reader.read.return_value = b'<?xml version="1.0" encoding="utf-8" ?><Response Type="AuthToken" Status="Ready"/>'
+    mock_writer = MagicMock()
+    mock_writer.drain = AsyncMock()
+    mock_writer.close = MagicMock()
+    mock_writer.wait_closed = AsyncMock()
+    mock_ssl_obj = MagicMock()
+    mock_ssl_obj.version.return_value = "TLSv1.0"
+    mock_writer.get_extra_info.return_value = mock_ssl_obj
+
+    with (
+        patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)),
+        patch(
+            "custom_components.climate_ip.helpers.async_create_samsung_ssl_context",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "custom_components.climate_ip.token_acquirer._LOGGER.debug"
+        ) as mock_debug,
+    ):
+        config = await acquirer._connect()
+        assert config is not None
+        mock_debug.assert_any_call(
+            "[SamsungTokenAcquirer] Negotiated TLS Version: %s",
+            "TLSv1.0",
+        )

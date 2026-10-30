@@ -5,8 +5,6 @@ This script packages exclusively production integration files and excludes
 all development artifacts, test suites, and internal scripts.
 """
 
-from __future__ import annotations
-
 import argparse
 import os
 from pathlib import Path
@@ -18,6 +16,7 @@ ALLOWED_EXTENSIONS = {".py", ".json", ".yaml", ".pem"}
 
 # Directories excluded from release distribution
 EXCLUDED_DIRS = {
+    "archive",
     "tests",
     "scripts",
     "__pycache__",
@@ -61,7 +60,9 @@ def build_release_zip(output_path: Path | None = None) -> Path:
     # Verify repository root integrity
     for mandatory in MANDATORY_FILES:
         if not (repo_root / mandatory).exists():
-            raise FileNotFoundError(f"Mandatory file missing in {repo_root}: {mandatory}")
+            raise FileNotFoundError(
+                f"Mandatory file missing in {repo_root}: {mandatory}"
+            )
 
     if output_path is None:
         output_path = repo_root / "climate_ip.zip"
