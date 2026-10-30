@@ -4,7 +4,7 @@ rules:
   appropriate-polling:
     status: done
     comment: >
-      Polling interval defaults to 15 seconds with strict bounds [5s, 21600s].
+      Polling interval defaults to 60 seconds with strict bounds [5s, 21600s].
       Hardware profiles and socket engines handle real-time push where supported.
   brands: done
   common-modules: done

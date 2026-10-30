@@ -30,12 +30,12 @@ This integration supports multiple hardware generations of Samsung Air Condition
 | :--- | :---: | :--- | :--- |
 | **Legacy Sockets (`samsung_2878`)** | `2878` | Raw XML over TLS / TCP | Samsung Smart RAC units (2012–2015): **Jungfrau**, **Maldives**, **Vivace**, **Monte Carlo**, **AR-HSS** series. Requires bundled `ac14k_m.pem` certificate. |
 | **Modern REST (`samsung_8888`)** | `8888` | JSON over HTTPS (mTLS) | Samsung RAC Air Conditioners (2016–2019): **Wind-Free Gen 1**, **AR07/09/12/18/24 (K/M/N series)**, **Elite**, **Triangle** models with **TP6X**, **RAC_16K**, and **RAC_17K** firmwares. |
-| **SmartThings / EHS (`smartthings_hvac`)** | `9888` / `9889` | HTTP/1.1 REST API + Bearer Token | Samsung **EHS Mono & Split** Heat Pumps, Hydro Units & SmartThings local API controllers. |
+| **SmartThings REST (`smartthings_hvac` / `smartthings_dhw`)** | `443` (Cloud) / Local | HTTPS REST API + Bearer Token | Samsung ACs & **EHS Mono/Split** Heat Pumps connected via SmartThings REST API (`api.smartthings.com`). |
 | **MIM-H03 / MIM-H04 (`mim_h03`)** | `8888` / `2878` | Multi-Device Discovery | Samsung Centralized Controllers and Multi-Split VRF Systems with sub-device indoor unit mapping. |
 | **IntesisBox Gateway (`intesisbox`)** | `3310` | Plain ASCII over TCP | IntesisBox Wireless Multi-Protocol (**WMP v1.9**) ASCII gateways (e.g. INWMPDAI001I000, INWMPMIT001I000, INWMPPAN001I000). |
 
-> [!NOTE]
-> Samsung AC units manufactured from 2020 onward that only support SmartThings Cloud (without opening local port 2878 or 8888) cannot be controlled via local IP. For those units, please use the official Home Assistant SmartThings cloud integration.
+> [!TIP]
+> **SmartThings Devices & EHS Heat Pumps**: For newer Samsung ACs or heat pumps that communicate via SmartThings, this integration provides dedicated **SmartThings HVAC** and **SmartThings DHW** REST profiles. The integration connects to the SmartThings Cloud API (`api.smartthings.com`) using an access token, which is automatically retrieved if the official Home Assistant SmartThings integration is installed.
 
 ---
 
@@ -100,7 +100,7 @@ The following parameters are configured during initial setup or reconfiguration:
 | `name` | String | No | Auto | Custom user-friendly display name for this air conditioning unit in Home Assistant. |
 | `token` | String | No | Auto | Authentication token. Leave blank to acquire automatically via the automated pairing workflow. |
 | `cert` | String | No | `ac14k_m.pem` | Path to SSL/TLS certificate file. Accepts bundled filename (`ac14k_m.pem`) or absolute path. |
-| `poll_interval` | String | No | `0:00:15` | State polling frequency in `HH:MM:SS` format (e.g. `0:00:15` for 15s; range: 5s to 21600s). |
+| `poll_interval` | String | No | `0:01:00` | State polling frequency in `HH:MM:SS` format (e.g. `0:01:00` for 60s; range: 5s to 21600s). |
 | `enable_polling` | Boolean | No | `true` | Enable periodic background status polling (`true`/`false`). |
 | `temp_native_current` | Select | No | `°C` | Native temperature unit reported by AC unit for current room temperature (`°C` or `°F`). |
 | `temp_native_target` | Select | No | `°C` | Native temperature unit expected by AC unit for target temperature setpoints (`°C` or `°F`). |
@@ -142,7 +142,7 @@ Click the **Configure** button on any active Climate IP config entry in Home Ass
 | Option Parameter | Type | Default | Choices / Range | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `connection_method` | Select | `Modern (aiohttp)` | `aiohttp`, `raw socket`, `requests` | Network communication engine: `Modern (aiohttp)` for standard REST, `Robust (raw socket)` for unstable Wi-Fi or non-compliant HTTP headers, `Legacy` for backward compatibility. |
-| `poll_interval` | String | `0:00:15` | `0:00:05` - `6:00:00` | Background update interval in `HH:MM:SS` format. Determines how frequently the device state is queried. |
+| `poll_interval` | String | `0:01:00` | `0:00:05` - `6:00:00` | Background update interval in `HH:MM:SS` format. Determines how frequently the device state is queried. |
 | `temp_native_current` | Select | `°C` | `°C`, `°F` | Native temperature unit used by the hardware sensor for current ambient room temperature. |
 | `temp_native_target` | Select | `°C` | `°C`, `°F` | Native temperature unit used by the hardware controller for target setpoint temperature. |
 | `enable_polling` | Boolean | `true` | `true`, `false` | Enable or disable periodic background status polling for this integration instance. |
@@ -150,7 +150,7 @@ Click the **Configure** button on any active Climate IP config entry in Home Ass
 
 #### ⚙️ Re-Configuration & Custom Settings
 Click the **Configure** button on the integration entry in Home Assistant to open the Options Flow:
-* **Poll Interval:** Customize the polling interval (default: `15 seconds`; min: `5s`, max: `21600s`).
+* **Poll Interval:** Customize the polling interval (default: `60 seconds / 0:01:00`; min: `5s`, max: `21600s`).
 * **Certificate Override:** Specify custom `.pem` certificates (packaged default: `ac14k_m.pem`). Both absolute user paths and packaged integration filenames are supported.
 * **Keep-Alive & Timeout Control:** Adjust socket timeout and backoff parameters for unstable networks.
 
@@ -163,15 +163,14 @@ If the device token changes or becomes invalid:
 
 ## 🔄 Data Update Mechanism
 
-The integration operates on a high-efficiency **hybrid push/polling architecture** engineered to deliver immediate UI feedback while maintaining zero-drift background telemetry synchronization:
+The integration uses protocol-tailored update mechanisms depending on the hardware engine:
 
-* ⚡ **Real-Time Push Event Streaming:**
-  * **Port 2878 (Socket Push):** Maintains an open, persistent TCP TLS XML socket. The physical AC unit broadcasts immediate state events (power toggles, ambient temperature shifts, mode changes) directly over the socket stream, which are parsed and updated in Home Assistant instantaneously with zero polling lag.
-  * **Port 8888 (Event Listener):** Maintains an active notification listener for real-time status updates broadcast by modern REST firmware.
-* ⏱️ **Periodic Coordinator Polling Fallback:**
-  * A central `DataUpdateCoordinator` executes a periodic state fetch (default: **15 seconds**; configurable between **5 seconds** and **6 hours** in the Options Flow).
-  * Polling guarantees that cumulative energy meters, filter run-time counters, outdoor temperatures, and device reachability remain accurate even during transient Wi-Fi drops or socket reconnections.
-  * Polling automatically backs off exponentially if the unit is unreachable, preventing log spam or network congestion.
+* ⚡ **Real-Time Push Stream (Port 2878 - Socket):**
+  Maintains a persistent, long-lived TCP TLS socket connection (`samsung_2878.py`). The physical AC unit pushes immediate asynchronous XML state change notifications (power, temperature, mode changes) directly over the socket, which are dispatched to Home Assistant immediately without waiting for a poll.
+* ⏱️ **Periodic Coordinator Polling (Port 8888 REST & SmartThings):**
+  Modern REST (Port 8888) and SmartThings API devices are updated via periodic polling handled by Home Assistant's `DataUpdateCoordinator` (default: **60 seconds** / `0:01:00`; configurable between **5 seconds** and **6 hours** in the Options Flow).
+  * Polling also serves as a resilience fallback for Port 2878, ensuring that cumulative energy meters, filter run-time counters, and connectivity states remain synchronized if transient Wi-Fi drops occur.
+  * If a device becomes unreachable, polling intervals automatically back off exponentially to prevent network spam.
 
 ---
 
@@ -333,8 +332,8 @@ This component is built strictly adhering to the **"Fail-Fast"** and **"Zero Tru
   Authentication tokens persist indefinitely across AC reboots and network power outages. However, performing a physical factory reset on the AC unit clears its internal token table. If this occurs, simply use the **Re-authenticate** option in the integration's 3-dot menu.
 * 🛡️ **Legacy TLS 1.0 / Diffie-Hellman Ciphers:**
   Older Samsung AC units (2012–2015) rely on TLS 1.0 with 1024-bit Diffie-Hellman keys. The integration packages the required `ac14k_m.pem` certificate and configures custom SSL contexts to ensure compatibility on modern Linux hosts.
-* ☁️ **No Support for Cloud-Only SmartThings Models:**
-  Newer Samsung AC models (2020+) that do not open local port 2878 or 8888 cannot be controlled via local IP. For these units, please install the official Home Assistant SmartThings integration.
+* ☁️ **Cloud Connectivity for Post-2020 SmartThings Models:**
+  Samsung AC units manufactured from 2020 onward that do not expose local socket ports (2878 or 8888) communicate via the SmartThings Cloud API. They can be integrated into Climate IP by selecting the **SmartThings HVAC** or **SmartThings DHW** profile and supplying a SmartThings Personal Access Token (or letting the integration auto-detect it from the official Home Assistant SmartThings integration).
 
 ---
 
