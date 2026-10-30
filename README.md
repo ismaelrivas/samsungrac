@@ -22,17 +22,20 @@ This release delivers automatic fallback resilience for non-standard HTTP header
 
 ---
 
-## 🔌 Supported Protocols & Hardware
+## 📱 Supported Devices & Hardware Protocols
 
-This integration dynamically supports multiple generations of climate devices and gateways:
+This integration supports multiple hardware generations of Samsung Air Conditioners, centralized heat pump gateways, and Intesis controllers:
 
-| Protocol / Profile | Port | Communication Method | Target Devices |
-| :--- | :--- | :--- | :--- |
-| **Legacy Sockets (`samsung_2878`)** | `2878` | Raw XML over TLS / TCP | Older Samsung RAC units (e.g. `ac14k_m.pem` cert) |
-| **Modern REST (`samsung_8888`)** | `8888` | JSON over HTTPS (mTLS) | Samsung RAC Air Conditioners (TP6X, RAC_16K, etc.) |
-| **SmartThings / EHS (`smartthings_hvac`)** | `9888` / `9889` | HTTP/1.1 REST API + Bearer Token | EHS Heat Pumps, Hydro Units & SmartThings Gateways |
-| **MIM-H03 WiFi Kit (`mim_h03`)** | `8888` / `2878` | Multi-Device Discovery | Samsung Centralized Controllers & Multi-Split Systems |
-| **IntesisBox Gateway (`intesisbox`)** | `3310` | Plain ASCII over TCP | IntesisBox Wireless Multi-Protocol (WMP v1.9) Gateways |
+| Protocol / Profile | Port | Communication Method | Compatible Hardware & Model Series |
+| :--- | :---: | :--- | :--- |
+| **Legacy Sockets (`samsung_2878`)** | `2878` | Raw XML over TLS / TCP | Samsung Smart RAC units (2012–2015): **Jungfrau**, **Maldives**, **Vivace**, **Monte Carlo**, **AR-HSS** series. Requires bundled `ac14k_m.pem` certificate. |
+| **Modern REST (`samsung_8888`)** | `8888` | JSON over HTTPS (mTLS) | Samsung RAC Air Conditioners (2016–2019): **Wind-Free Gen 1**, **AR07/09/12/18/24 (K/M/N series)**, **Elite**, **Triangle** models with **TP6X**, **RAC_16K**, and **RAC_17K** firmwares. |
+| **SmartThings / EHS (`smartthings_hvac`)** | `9888` / `9889` | HTTP/1.1 REST API + Bearer Token | Samsung **EHS Mono & Split** Heat Pumps, Hydro Units & SmartThings local API controllers. |
+| **MIM-H03 / MIM-H04 (`mim_h03`)** | `8888` / `2878` | Multi-Device Discovery | Samsung Centralized Controllers and Multi-Split VRF Systems with sub-device indoor unit mapping. |
+| **IntesisBox Gateway (`intesisbox`)** | `3310` | Plain ASCII over TCP | IntesisBox Wireless Multi-Protocol (**WMP v1.9**) ASCII gateways (e.g. INWMPDAI001I000, INWMPMIT001I000, INWMPPAN001I000). |
+
+> [!NOTE]
+> Samsung AC units manufactured from 2020 onward that only support SmartThings Cloud (without opening local port 2878 or 8888) cannot be controlled via local IP. For those units, please use the official Home Assistant SmartThings cloud integration.
 
 ---
 
@@ -158,6 +161,20 @@ If the device token changes or becomes invalid:
 
 ---
 
+## 🔄 Data Update Mechanism
+
+The integration operates on a high-efficiency **hybrid push/polling architecture** engineered to deliver immediate UI feedback while maintaining zero-drift background telemetry synchronization:
+
+* ⚡ **Real-Time Push Event Streaming:**
+  * **Port 2878 (Socket Push):** Maintains an open, persistent TCP TLS XML socket. The physical AC unit broadcasts immediate state events (power toggles, ambient temperature shifts, mode changes) directly over the socket stream, which are parsed and updated in Home Assistant instantaneously with zero polling lag.
+  * **Port 8888 (Event Listener):** Maintains an active notification listener for real-time status updates broadcast by modern REST firmware.
+* ⏱️ **Periodic Coordinator Polling Fallback:**
+  * A central `DataUpdateCoordinator` executes a periodic state fetch (default: **15 seconds**; configurable between **5 seconds** and **6 hours** in the Options Flow).
+  * Polling guarantees that cumulative energy meters, filter run-time counters, outdoor temperatures, and device reachability remain accurate even during transient Wi-Fi drops or socket reconnections.
+  * Polling automatically backs off exponentially if the unit is unreachable, preventing log spam or network congestion.
+
+---
+
 ## 🎛️ Exposed Entities & Controls
 
 ### 🌡️ Climate Entity (`climate.samsung_ac_<id>`)
@@ -263,6 +280,19 @@ action:
 
 ---
 
+## 💡 Practical Use Cases & Automations
+
+* 🚶 **Presence-Based Automated Climate Control:**
+  Automatically power down the AC or switch into an eco-friendly standby setpoint when all family members leave the home zone, and pre-cool the house when someone is heading home.
+* 🌙 **Bedtime WindFree Sleep Comfort:**
+  Automate switching from active high-power cooling to Samsung's draft-free `WindFree` preset at bedtime. This eliminates cold air blowing directly on occupants while maintaining a quiet, comfortable sleep temperature throughout the night.
+* 🍃 **Indoor Air Quality Purification:**
+  Automatically engage the built-in air purifier (`switch.<device>_purify`) and scheduled clean (`switch.<device>_auto_clean`) whenever indoor particulate (PM2.5) or VOC sensors detect elevated pollution levels.
+* ☀️ **Photovoltaic Surplus Pre-Cooling:**
+  Dynamically lower the target cooling setpoint during midday solar production peaks when net grid export exceeds household threshold, storing solar energy as thermal comfort.
+
+---
+
 ## 🗑️ Removal & Uninstallation
 
 To cleanly and deterministically remove the `climate_ip` integration from your Home Assistant instance:
@@ -293,17 +323,25 @@ This component is built strictly adhering to the **"Fail-Fast"** and **"Zero Tru
 
 ---
 
-## 🛠️ Diagnostics & Debugging
+## ⚠️ Known Limitations & Hardware Constraints
 
-If you encounter network anomalies or device issues, this integration provides full support for Home Assistant's native **Diagnostics**:
+* 🔒 **Single Concurrent Connection Limit (Port 2878):**
+  Samsung Generation 1 AC firmware (Port 2878) accepts only **one** simultaneous TCP socket connection. If an official Samsung smartphone app or other client is connected, Home Assistant cannot establish a connection until the existing socket is closed.
+* 💤 **Standby State Required for Port 2878 Pairing:**
+  Legacy 2878 units only accept initial token pairing when the air conditioner is plugged into mains power but in **standby mode (powered OFF)**. Attempting to pair while the unit is running will result in pairing rejection.
+* 🔑 **Token Persistence & Hardware Factory Reset:**
+  Authentication tokens persist indefinitely across AC reboots and network power outages. However, performing a physical factory reset on the AC unit clears its internal token table. If this occurs, simply use the **Re-authenticate** option in the integration's 3-dot menu.
+* 🛡️ **Legacy TLS 1.0 / Diffie-Hellman Ciphers:**
+  Older Samsung AC units (2012–2015) rely on TLS 1.0 with 1024-bit Diffie-Hellman keys. The integration packages the required `ac14k_m.pem` certificate and configures custom SSL contexts to ensure compatibility on modern Linux hosts.
+* ☁️ **No Support for Cloud-Only SmartThings Models:**
+  Newer Samsung AC models (2020+) that do not open local port 2878 or 8888 cannot be controlled via local IP. For these units, please install the official Home Assistant SmartThings integration.
 
-1. Go to **Settings** -> **Devices & Services**.
-2. Click on **Samsung AC / Climate IP**.
-3. Click **Download Diagnostics**.
-4. *Privacy Guaranteed:* All sensitive parameters (**Tokens, MAC Addresses, IP Addresses, Device Serial/UUIDs**) are automatically sanitized and redacted (`***REDACTED***`) before export.
+---
 
-### Enabling Debug Logging
-Add the following snippet to your `configuration.yaml`:
+## 🩺 Troubleshooting & Diagnostics
+
+### 1. Enabling Debug Logging
+If you encounter communication issues or wish to inspect raw protocol frames, add the following to `configuration.yaml` and restart Home Assistant:
 
 ```yaml
 logger:
@@ -311,6 +349,32 @@ logger:
   logs:
     custom_components.climate_ip: debug
 ```
+
+### 2. Common Symptoms & Diagnostic Steps
+
+* **Device Unreachable / Timeout:**
+  * Ensure your Samsung AC is connected to a 2.4 GHz Wi-Fi network and assigned a static DHCP lease.
+  * Verify local IP reachability using ping or by checking port availability (`Test-NetConnection <IP> -Port 8888` on Windows, or `nc -zv <IP> 8888` on Linux).
+  * Check that client isolation (AP isolation) is disabled in your router settings.
+* **Token Acquisition Fails on Port 2878:**
+  * Ensure the unit is plugged into mains power but **powered OFF (standby)** before clicking Submit.
+  * When prompted in the UI, press the physical **Power** button on the original Samsung remote control within 30 seconds.
+* **Token Acquisition Fails on Port 8888:**
+  * Ensure port `8889` is not blocked by local host firewall rules.
+  * Press the physical **Power** button on the indoor wall unit (not remote) when prompted.
+* **Auto-Healing & Protocol Repair Issue:**
+  * Certain Samsung AC firmwares (e.g. `TP6X_RAC_17K`) return non-standard HTTP header formats (RFC 7230 violation).
+  * The integration automatically creates a Home Assistant Repair Issue and switches the communication engine to `Robust (raw socket)`. Simply open **Settings** -> **Repairs** to confirm and dismiss the notice.
+* **Reconfiguration & Re-Authentication:**
+  * If the device IP changes or credentials expire, navigate to **Settings** -> **Devices & Services** -> **Samsung AC / Climate IP** -> Click the three dots (`⋮`) -> Select **Reconfigure** or **Reauthenticate**.
+
+### 3. Native Diagnostics Export
+This integration provides full support for Home Assistant's native **Diagnostics**:
+
+1. Go to **Settings** -> **Devices & Services**.
+2. Click on **Samsung AC / Climate IP**.
+3. Click **Download Diagnostics**.
+4. *Privacy Guaranteed:* All sensitive parameters (**Tokens, MAC Addresses, IP Addresses, Device Serial/UUIDs**) are automatically sanitized and redacted (`***REDACTED***`) before export.
 
 ---
 

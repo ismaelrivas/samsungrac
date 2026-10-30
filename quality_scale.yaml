@@ -36,7 +36,7 @@ rules:
   test-coverage:
     status: done
     comment: >
-      Test suite covers over 95% of lines with 100% on config_flow.py and diagnostics.py.
+      Test suite covers over 96% of lines with 100% on config_flow.py and diagnostics.py.
 
   # ======================== GOLD ========================
   devices: done
@@ -48,25 +48,33 @@ rules:
   discovery-update-info:
     status: exempt
     comment: Integration does not implement discovery flows.
-  docs-data-update: todo
+  docs-data-update: done
   docs-examples: done
-  docs-known-limitations: todo
-  docs-supported-devices: todo
+  docs-known-limitations: done
+  docs-supported-devices: done
   docs-supported-functions: done
-  docs-troubleshooting: todo
-  docs-use-cases: todo
+  docs-troubleshooting: done
+  docs-use-cases: done
   dynamic-devices:
     status: exempt
     comment: Multi-split AC indoor units are physically hardwired and static.
   entity-category: done
   entity-device-class: done
-  entity-disabled-by-default: todo
-  entity-translations: todo
+  entity-disabled-by-default:
+    status: exempt
+    comment: >
+      All entities exposed by default represent primary HVAC controls, standard
+      environmental sensors, or actionable hardware alerts; none are noisy or low-value.
+  entity-translations: done
   exception-translations: done
-  icon-translations: todo
+  icon-translations: done
   reconfiguration-flow: done
   repair-issues: done
-  stale-devices: done
+  stale-devices:
+    status: done
+    comment: >
+      Each config entry represents a single physical device or gateway;
+      stale devices are automatically removed upon config entry removal.
 
   # ======================== PLATINUM ========================
   async-dependency:

@@ -4,25 +4,77 @@
       "samsung_ac": {
         "default": "mdi:air-conditioner",
         "state": {
-          "off":      "mdi:air-conditioner",
-          "cool":     "mdi:snowflake",
-          "heat":     "mdi:fire",
-          "dry":      "mdi:water-percent",
+          "cool": "mdi:snowflake",
+          "heat": "mdi:fire",
+          "dry": "mdi:water-percent",
           "fan_only": "mdi:fan",
-          "auto":     "mdi:thermostat-auto",
-          "heat_cool":"mdi:sun-snowflake-variant"
+          "auto": "mdi:thermostat-auto",
+          "heat_cool": "mdi:sun-snowflake-variant"
         }
       }
     },
+    "binary_sensor": {
+      "connectivity": {
+        "default": "mdi:network-outline"
+      }
+    },
     "sensor": {
-      "outdoor_temp": {
+      "sleep_timer": {
+        "default": "mdi:timer-outline"
+      },
+      "outdoor_temperature": {
         "default": "mdi:thermometer"
       },
-      "indoor_temp": {
-        "default": "mdi:home-thermometer"
+      "filter_clean_alarm": {
+        "default": "mdi:air-filter"
       },
-      "power_usage": {
+      "filter_time": {
+        "default": "mdi:clock-outline"
+      },
+      "filter_alarm_time": {
+        "default": "mdi:alarm"
+      },
+      "auto_clean": {
+        "default": "mdi:spray-bottle"
+      },
+      "purify": {
+        "default": "mdi:air-purifier"
+      },
+      "used_power": {
         "default": "mdi:lightning-bolt"
+      },
+      "power_meter": {
+        "default": "mdi:lightning-bolt"
+      },
+      "energy_meter": {
+        "default": "mdi:counter"
+      },
+      "used_time": {
+        "default": "mdi:timer-sand"
+      },
+      "filter_use_time": {
+        "default": "mdi:progress-clock"
+      },
+      "wifi_connection_status": {
+        "default": "mdi:wifi"
+      },
+      "internet_connection_status": {
+        "default": "mdi:web"
+      },
+      "split_version": {
+        "default": "mdi:information-outline"
+      },
+      "external_unit_version": {
+        "default": "mdi:information-outline"
+      },
+      "error_status": {
+        "default": "mdi:alert-circle-outline"
+      },
+      "error_code": {
+        "default": "mdi:alert-octagon-outline"
+      },
+      "vane_horizontal": {
+        "default": "mdi:arrow-split-vertical"
       }
     },
     "switch": {
@@ -34,6 +86,9 @@
       },
       "purify": {
         "default": "mdi:air-purifier"
+      },
+      "beep": {
+        "default": "mdi:volume-high"
       }
     }
   }

@@ -346,6 +346,12 @@
             "used_power": {
                 "name": "Electrical Consumption"
             },
+            "power_meter": {
+                "name": "Instant Power"
+            },
+            "energy_meter": {
+                "name": "Total Energy"
+            },
             "used_time": {
                 "name": "Usage Time"
             },
