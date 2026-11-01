@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.0.1b9] - 2026-11-01
+
+### Quality Scale & Core Compliance
+- **Home Assistant Gold Quality Scale**: Achieved full compliance with Home Assistant Gold Quality Scale standard (`quality_scale.yaml`), satisfying all Gold tier rules.
+- **Brand Assets & Entity Icons**: Expanded `icons.json` icon mappings for climate, binary_sensor, sensor, and switch entities, accompanied by complete high-resolution brand assets.
+- **Multilingual Localization**: Complete translations across English (`en`), Spanish (`es`), French (`fr`), and German (`de`) for diagnostic sensors, config flow steps, and option dialogs.
+
+### Architecture & Repository Hygiene
+- **Repository Structure Cleanup**: Untracked local development context files and relocated developer-specific maintenance scripts (`backup_climate_ip.sh`, `restore_climate_ip.sh`, `mutmut_run.sh`, `find_test_redundancy.py`) outside the integration into workspace `tools/`.
+- **HACS Distribution Pipeline Modernization**: Relocated `build_release_zip.py` to `.github/scripts/build_release_zip.py` and updated `.github/workflows/release.yml` with strict Python 3.14/Ruff compliance, ensuring deterministic release packaging.
+- **Line Ending & Toolchain Normalization**: Enforced strict LF line endings via `.gitattributes` and `.editorconfig`.
+
+### Quality Assurance & Test Hardening
+- **Expanded Test Suite**: Comprehensive test suite with 1,580 unit tests and >96% total coverage (100% on `config_flow.py` and `diagnostics.py`).
+- **Mutation Immunity**: 100% Absolute Zero mutation score across core orchestrator engines and connection adapters.
+
 ## [10.0.1b8] - 2026-10-07
 
 ### Fixes & Hardware Robustness

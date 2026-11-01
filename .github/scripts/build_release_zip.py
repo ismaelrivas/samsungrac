@@ -19,6 +19,7 @@ EXCLUDED_DIRS = {
     "archive",
     "tests",
     "scripts",
+    "tools",
     "__pycache__",
     ".git",
     ".github",
@@ -55,7 +56,7 @@ MANDATORY_FILES = [
 
 def build_release_zip(output_path: Path | None = None) -> Path:
     """Package clean integration files into a ZIP archive for HACS."""
-    repo_root = Path(__file__).resolve().parent.parent
+    repo_root = Path(__file__).resolve().parents[2]
 
     # Verify repository root integrity
     for mandatory in MANDATORY_FILES:
@@ -95,8 +96,8 @@ def build_release_zip(output_path: Path | None = None) -> Path:
                     packaged_files.append(archive_name)
 
     size_kb = output_path.stat().st_size / 1024
-    print(f"Successfully packaged {len(packaged_files)} production files into:")
-    print(f"  -> {output_path} ({size_kb:.1f} KB)")
+    print(f"Successfully packaged {len(packaged_files)} production files into:")  # noqa: T201
+    print(f"  -> {output_path} ({size_kb:.1f} KB)")  # noqa: T201
 
     return output_path
 
@@ -115,8 +116,8 @@ def main() -> None:
 
     try:
         build_release_zip(args.output)
-    except Exception as exc:
-        print(f"Error building release zip: {exc}", file=sys.stderr)
+    except (OSError, zipfile.BadZipFile, FileNotFoundError) as exc:
+        print(f"Error building release zip: {exc}", file=sys.stderr)  # noqa: T201
         sys.exit(1)
 
 

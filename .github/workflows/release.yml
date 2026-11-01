@@ -22,7 +22,7 @@ jobs:
           python-version: "3.12"
 
       - name: Build clean distribution package
-        run: python3 scripts/build_release_zip.py
+        run: python3 .github/scripts/build_release_zip.py
 
       - name: Upload zip asset to release
         uses: softprops/action-gh-release@v2

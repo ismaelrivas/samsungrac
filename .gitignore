@@ -25,3 +25,6 @@ mutantes*.txt
 **/graph.db.zst
 *.zip
 climate_ip.zip
+GEMINI.md
+/scripts/
+/tools/

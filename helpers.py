@@ -707,7 +707,7 @@ async def async_get_network_diagnostics(
             "timestamp": now_iso,
         }
 
-    clean_host = host.rsplit("://", maxsplit=1)[-1].split("/", maxsplit=1)[0]
+    clean_host = host.rsplit("://")[-1].split("/")[0]  # noqa: PLC0207
     if (
         ":" in clean_host
         and not clean_host.startswith("[")

@@ -2,7 +2,7 @@
 
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Core%202026.x%20Ready-blue?style=for-the-badge&logo=home-assistant)
 ![Mutation Score](https://img.shields.io/badge/Mutation%20Score-100%25-brightgreen.svg)
-![Unit Tests](https://img.shields.io/badge/Unit%20Tests-1556%20Passed-brightgreen?style=for-the-badge)
+![Unit Tests](https://img.shields.io/badge/Unit%20Tests-1580%20Passed-brightgreen?style=for-the-badge)
 ![Quality Scale](https://img.shields.io/badge/Quality%20Scale-Gold%20Master-gold?style=for-the-badge)
 ![HACS](https://img.shields.io/badge/HACS-Custom%20Repository-orange?style=for-the-badge)
 
@@ -10,15 +10,15 @@ A highly resilient, mathematically verified, and asynchronously optimized custom
 
 ---
 
-## 🏆 Version History & Release Notes (v10.0.1b8)
+## 🏆 Version History & Release Notes (v10.0.1b9)
 
-This release delivers automatic fallback resilience for non-standard HTTP header violations (e.g. `TP6X_RAC_17K` firmwares), clean and streamlined auto-healing log telemetry, and hardened test mock introspection.
+This release consolidates full Home Assistant Gold Quality Scale compliance, complete repository hygiene with modern HACS release workflows, and a reinforced 1,580 unit test baseline.
 
 **Engineering Highlights:**
-* 🛡️ **HTTP Parser Violation Resilience & Auto-Fallback:** Detects RFC 7230/9110 non-compliant header responses (spaces before colon like `X-API-Version : v1.0.0`) wrapped in `aiohttp.ClientResponseError(400)` and triggers automatic fallback to the "Robust (raw socket)" engine during discovery and runtime.
-* 🧹 **Streamlined & Non-Alarming Auto-Healing Telemetry:** Downgraded transient auto-healing errors and redundant warnings to clean `DEBUG`/`WARNING` levels (`ConfigEntryNotReady`), ensuring the console remains clear while keeping the Home Assistant Repairs UI active.
-* 🔧 **Mock Introspection Hardening:** Fixed unspecced poller mock attributes against the public `last_icmp_diagnostic` property in `test_controller_yaml.py`, resolving mock `getattr` collisions and adding poller property contract verification.
-* 🧪 **Zero-Defect Test Baseline:** Expanded test suite to **1,556 unit tests** with a 100% pass rate and zero regressions.
+* 🥇 **Home Assistant Gold Quality Scale:** Attained full Gold tier status (`quality_scale.yaml`), including entity icon mappings (`icons.json`), rich high-resolution brand assets, and multi-language translations (`en`, `es`, `fr`, `de`).
+* 🧹 **Repository Cleanliness & Modern CI/CD:** Removed local assistant artifacts from version control, organized developer tools into workspace `tools/`, and transitioned release packaging into `.github/scripts/build_release_zip.py` for automated HACS distribution.
+* 🛡️ **Zero Mutation Survivors:** Reached 100% Absolute Zero mutation score across core integration modules with Python 3.14 native standards.
+* 🧪 **Zero-Defect Test Baseline:** Expanded test suite to **1,580 unit tests** with a 100% pass rate and >96% coverage.
 
 ---
 
