@@ -1,15 +1,11 @@
 # pylint: disable=protected-access,too-many-locals,line-too-long,too-many-statements,too-many-arguments,redefined-outer-name
 """Tests for ConfigFlowHelpersMixin in config_flow_helpers.py."""
 
-from __future__ import annotations
-
+import asyncio
 import os
 import ssl
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
-from homeassistant.config_entries import SOURCE_RECONFIGURE
-from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
-from homeassistant.data_entry_flow import AbortFlow
 import pytest
 
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
@@ -29,13 +25,15 @@ from custom_components.climate_ip.exceptions import (
     CannotConnect,
     TokenAcquisitionError,
 )
+from homeassistant.config_entries import SOURCE_RECONFIGURE
+from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
+from homeassistant.data_entry_flow import AbortFlow
 
 
 @pytest.fixture
 def hass_mock():
     """Mock Home Assistant object."""
-    hass = MagicMock()
-    return hass
+    return MagicMock()
 
 
 # -----------------------------------------------------------------------------
@@ -53,11 +51,14 @@ async def test_async_force_arp_update_success(hass_mock):
     mock_writer.close = MagicMock()
     mock_writer.wait_closed = AsyncMock()
 
-    with patch(
-        "asyncio.open_connection",
-        new_callable=AsyncMock,
-        return_value=(MagicMock(), mock_writer),
-    ) as mock_open:
+    with (
+        patch(
+            "asyncio.open_connection",
+            new_callable=AsyncMock,
+            return_value=(MagicMock(), mock_writer),
+        ) as mock_open,
+        patch("asyncio.wait_for", wraps=asyncio.wait_for) as mock_wait_for,
+    ):
         await flow._async_force_arp_update("1.2.3.4")
 
         assert mock_open.call_count == 2
@@ -70,6 +71,11 @@ async def test_async_force_arp_update_success(hass_mock):
 
         assert mock_writer.close.call_count == 2
         assert mock_writer.wait_closed.call_count == 2
+
+        assert mock_wait_for.call_count == 2
+        for call in mock_wait_for.call_args_list:
+            assert len(call.args) == 1
+            assert call.kwargs.get("timeout") == 0.5
 
 
 @pytest.mark.asyncio
@@ -703,14 +709,23 @@ async def test_test_connection_safe_2878_state_none_and_init_false(hass_mock):
 
 
 @pytest.mark.asyncio
-async def test_test_connection_safe_unknown_device_type(hass_mock):
+@pytest.mark.parametrize(
+    "flow_data",
+    [
+        {CONF_DEVICE_TYPE: "unknown_future_device"},
+        {CONF_DEVICE_TYPE: "nonexistent_type", CONF_IP_ADDRESS: "1.1.1.1"},
+    ],
+)
+async def test_test_connection_safe_unknown_device_type(hass_mock, flow_data):
     """Test _test_connection_safe returns error on unknown device type."""
     flow = ClimateIpConfigFlow()
     flow.hass = hass_mock
-    flow.flow_data = {CONF_DEVICE_TYPE: "unknown_future_device"}
+    flow.flow_data = flow_data
 
     res = await flow._test_connection_safe()
     assert res == {"ok": False, "error": "cannot_connect"}
+    assert res["ok"] is False
+    assert res["error"] == "cannot_connect"
 
 
 @pytest.mark.asyncio

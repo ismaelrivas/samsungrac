@@ -2,8 +2,6 @@
 """Smoke test for samsung_2878.py."""
 # pylint: disable=protected-access,redefined-outer-name,import-outside-toplevel,reimported,broad-exception-caught,unnecessary-pass,line-too-long
 
-from __future__ import annotations
-
 import pytest
 
 from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878
@@ -66,9 +64,8 @@ def test_2878_auth_token_format():
     """Test that __CLIMATE_IP_TOKEN__ placeholder is properly replaced with the real token."""
     from unittest.mock import MagicMock
 
-    from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
-
     from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
 
     # 1. Simulate the config dictionary coming from Home Assistant
     hass_config = {
@@ -132,7 +129,7 @@ async def test_native_shield_billion_laughs_rejection():
 
 
 def test_connection_config_mutants():
-    """Kill mutants in ConnectionConfig."""
+    """Kill mutants in ConnectionConfig and verify strict attribute initialization."""
     from custom_components.climate_ip.samsung_2878 import ConnectionConfig
 
     cfg = ConnectionConfig(
@@ -143,13 +140,11 @@ def test_connection_config_mutants():
         duid="my_duid",
     )
 
+    # Strict integrity in allocated memory and mutant kill
     assert cfg.host == "192.168.1.100"
-    # Kill mutmut 2: self.port = None
     assert cfg.port == 2878
     assert cfg.token == "my_token"
-    # Kill mutmut 4: self.duid = None
     assert cfg.duid == "my_duid"
-    # Kill mutmut 5: self.cert = None
     assert cfg.cert == "my_cert.pem"
 
 
@@ -256,9 +251,8 @@ def test_malformed_or_missing_mac_fails_yaml_load(invalid_mac: str | None):
     """Test que asegura que si la MAC está ausente o vacía, la carga de YAML falla (devuelve False)."""
     from unittest.mock import MagicMock
 
-    from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
-
     from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 
     hass_config = {
         CONF_IP_ADDRESS: "192.168.1.100",
@@ -285,9 +279,8 @@ def test_mac_formatting_and_sanitization():
     """Test que verifica que los separadores de la MAC (: y -) se limpian correctamente al generar el DUID."""
     from unittest.mock import MagicMock
 
-    from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
-
     from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 
     # MAC con formato estándar de red con dos puntos
     hass_config = {

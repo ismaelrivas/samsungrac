@@ -56,7 +56,7 @@ def anyio_backend():
     return "asyncio"
 
 
-async def test_initialization(connection_config, mock_logger, mock_hass):
+async def test_raw_initialization(connection_config, mock_logger, mock_hass):
     """Test connection initialization."""
     with patch("os.path.exists", return_value=True):
         import os
@@ -68,6 +68,8 @@ async def test_initialization(connection_config, mock_logger, mock_hass):
         assert conn._logger is mock_logger
         assert conn._hass is mock_hass
         assert conn._host == "192.168.1.100"
+        assert ConnectionRaw8888.match_type("samsung_8888_raw") is True
+        assert ConnectionRaw8888.match_type("invalid_type") is False
         assert conn._cert == os.path.join(
             os.path.dirname(connection_raw.__file__), "cert.pem"
         )
@@ -103,7 +105,7 @@ async def test_initialization(connection_config, mock_logger, mock_hass):
         assert conn_empty_cert._cert is None
 
 
-async def test_create_updated(connection_config, mock_logger, mock_hass):
+async def test_raw_create_updated(connection_config, mock_logger, mock_hass):
     """Test create_updated method."""
     with patch("os.path.exists", return_value=True):
         conn = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
@@ -195,13 +197,7 @@ async def test_load_from_yaml_keep_alive(connection_config, mock_logger, mock_ha
             conn.load_from_yaml({"params": None}, None)
 
 
-async def test_match_type():
-    """Test match_type."""
-    assert ConnectionRaw8888.match_type("samsung_8888_raw") is True
-    assert ConnectionRaw8888.match_type("other_type") is False
-
-
-async def test_get_diagnostics(connection_config, mock_logger, mock_hass):
+async def test_raw_get_diagnostics(connection_config, mock_logger, mock_hass):
     """Test get_diagnostics."""
     with patch("os.path.exists", return_value=True):
         conn = ConnectionRaw8888(connection_config, mock_logger, mock_hass, None, None)
@@ -995,7 +991,7 @@ async def test_async_execute_embedded_and_path(
 
 
 @pytest.mark.asyncio
-async def test_async_execute_defaults(mock_logger):
+async def test_raw_async_execute_defaults(mock_logger):
     """Test the default parameters of async_execute (_is_poll=False, _is_probe=False).
     By verifying the side-effects that SHOULD happen when they are true,
     and ensuring they DO NOT happen when not provided.

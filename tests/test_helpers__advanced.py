@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.climate_ip.const import MAX_POLL_INTERVAL, MIN_POLL_INTERVAL
 from custom_components.climate_ip.helpers import (
     ICMPSocketError,
     _can_use_icmp_privileged,
@@ -300,6 +301,7 @@ class TestValidatePollInterval:
         from custom_components.climate_ip.helpers import validate_poll_interval
 
         assert validate_poll_interval(60) == 60
+        assert validate_poll_interval(120) == 120
 
     def test_validate_poll_interval_float(self):
         from custom_components.climate_ip.helpers import validate_poll_interval
@@ -312,8 +314,6 @@ class TestValidatePollInterval:
         assert validate_poll_interval("00:01:00") == 60
 
     def test_validate_poll_interval_invalid_str(self):
-        import pytest
-
         from custom_components.climate_ip.helpers import validate_poll_interval
 
         with pytest.raises(ValueError, match="Invalid time format"):
@@ -329,16 +329,16 @@ class TestValidatePollInterval:
         assert validate_poll_interval(MIN_POLL_INTERVAL) == MIN_POLL_INTERVAL
         assert validate_poll_interval(MAX_POLL_INTERVAL) == MAX_POLL_INTERVAL
 
-    def test_validate_poll_interval_out_of_range(self):
-        import pytest
-
+    @pytest.mark.parametrize(
+        "bad_val",
+        [1, 4, MIN_POLL_INTERVAL - 1, MAX_POLL_INTERVAL + 1, 21601],
+    )
+    def test_validate_poll_interval_out_of_range(self, bad_val):
         from custom_components.climate_ip.helpers import validate_poll_interval
 
-        with pytest.raises(ValueError, match="Interval must be between"):
-            validate_poll_interval(4)
-
-        with pytest.raises(ValueError, match="Interval must be between"):
-            validate_poll_interval(21601)
+        with pytest.raises(ValueError, match="Interval must be between") as exc:
+            validate_poll_interval(bad_val)
+        assert "Interval must be between" in str(exc.value)
 
 
 def test_token_sanitization() -> None:
@@ -482,6 +482,16 @@ def test_stream_wrapper():
     assert (
         result == "Token:my_token, Host:192.168.1.10, Mac:00:11:22:33:44:55, ID:dev_123"
     )
+
+    # Test URL formatting with placeholders
+    url_data = "http://__CLIMATE_IP_HOST__/test?token=__CLIMATE_IP_TOKEN__&mac=__CLIMATE_IP_MAC__&id=__DEVICE_ID__"
+    url_result = stream_wrapper(url_data, "my_token", "1.1.1.1", "dev123", "AA:BB")
+    assert "1.1.1.1" in url_result
+    assert "my_token" in url_result
+    assert "dev123" in url_result
+    assert "AA:BB" in url_result
+    assert "__CLIMATE_IP_HOST__" not in url_result
+    assert url_result == "http://1.1.1.1/test?token=my_token&mac=AA:BB&id=dev123"
 
     # Test partial replacements
     partial = stream_wrapper("Token:__CLIMATE_IP_TOKEN__", None, None, None)

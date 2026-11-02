@@ -1,8 +1,6 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,abstract-method,missing-function-docstring,missing-class-docstring,too-few-public-methods,use-implicit-booleaness-not-comparison
 """Tests for base Connection class and registry in connection.py."""
 
-from __future__ import annotations
-
 import asyncio
 import dataclasses
 import inspect
@@ -18,14 +16,16 @@ from custom_components.climate_ip.connection import (
     Connection,
     register_connection,
 )
+from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
+from custom_components.climate_ip.connection_intesisbox import ConnectionIntesisBox
+from custom_components.climate_ip.connection_raw import ConnectionRaw8888
 from custom_components.climate_ip.exceptions import CannotConnect
+from custom_components.climate_ip.samsung_2878 import ConnectionSamsung2878
 
 
 # Define a mock exception directly for tests to match the one imported dynamically
 class RetryNextAttempt(Exception):
     """Mock exception to simulate RetryNextAttempt."""
-
-    pass
 
 
 class DummyConnection(Connection):
@@ -290,9 +290,16 @@ def test_check_execute_condition_default_logger():
     assert conn.check_execute_condition(None) is True
 
 
-def test_connection_async_execute_signature_defaults():
+@pytest.mark.parametrize(
+    "conn_cls",
+    [
+        Connection,
+        ConnectionSamsung2878,
+    ],
+)
+def test_connection_async_execute_signature_defaults(conn_cls):
     """Sniper test: kills boolean flip mutants on async_execute default arguments via inspection."""
-    sig = inspect.signature(Connection.async_execute)
+    sig = inspect.signature(conn_cls.async_execute)
     assert sig.parameters["_is_probe"].default is False
     assert sig.parameters["_is_poll"].default is False
 
@@ -496,3 +503,19 @@ def test_check_execute_condition_sync_render_and_whitespace():
 
     mock_sync_tmpl.render.return_value = "true"
     assert conn.check_execute_condition({"test": "ok"}) is False
+
+
+@pytest.mark.parametrize(
+    ("conn_cls", "matching_type", "unmatched_type"),
+    [
+        (ConnectionAiohttp8888, "samsung_8888_aiohttp", "samsung_8888_raw"),
+        (ConnectionRaw8888, "samsung_8888_raw", "samsung_8888_aiohttp"),
+        (ConnectionSamsung2878, "samsung_2878", "samsung_8888_aiohttp"),
+        (ConnectionIntesisBox, "intesisbox", "samsung_8888_aiohttp"),
+    ],
+)
+def test_all_registered_connections_match_type(conn_cls, matching_type, unmatched_type):
+    """Test match_type contract across registered connection classes."""
+    assert conn_cls.match_type(matching_type) is True
+    assert conn_cls.match_type(unmatched_type) is False
+    assert conn_cls.match_type("unknown_nonexistent_type") is False

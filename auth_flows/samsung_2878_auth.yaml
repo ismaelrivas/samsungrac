@@ -5,7 +5,7 @@ auth_flow:
   mode: "stream"
   buffer_size: 4096
   reconnect_delay: 1.5
-  
+
   tls_config:
     default_cert: "ac14k_m.pem"
     ciphers:
@@ -19,7 +19,7 @@ auth_flow:
       - { cert: "__default_cert__", verify_mode: "CERT_NONE" }
 
   request_pairing:
-    method: "tcp"
+    method: "tls"
     port: 2878
     payload: "<Request Type=\"GetToken\" />\r\n"
     success_template:
@@ -28,7 +28,7 @@ auth_flow:
 
   wait_token:
     timeout_seconds: 45
-    
+
   extract_template:
     regex: 'Token="([a-fA-F0-9-]{36})"'
   error_template:

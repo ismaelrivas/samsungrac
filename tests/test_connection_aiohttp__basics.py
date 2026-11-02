@@ -69,7 +69,9 @@ def connection_config():
     return {CONF_TOKEN: "test_token", CONF_CERT: "cert.pem"}
 
 
-async def test_initialization(connection_config, mock_logger, mock_hass, mock_session):
+async def test_aiohttp_initialization(
+    connection_config, mock_logger, mock_hass, mock_session
+):
     """Test connection initialization."""
     with patch("os.path.exists", return_value=True):
         conn = ConnectionAiohttp8888(
@@ -79,6 +81,8 @@ async def test_initialization(connection_config, mock_logger, mock_hass, mock_se
         assert conn._token == "test_token"
         assert conn._shared_state.initialized is False
         assert conn.async_lock is not None  # Verify parent created lock
+        assert ConnectionAiohttp8888.match_type("samsung_8888_aiohttp") is True
+        assert ConnectionAiohttp8888.match_type("invalid_type") is False
 
 
 async def test_execute_request_success(
@@ -195,7 +199,9 @@ async def test_execute_request_connection_error(
             await conn.async_execute("GET", "/test", None, None)
 
 
-async def test_create_updated(connection_config, mock_logger, mock_hass, mock_session):
+async def test_aiohttp_create_updated(
+    connection_config, mock_logger, mock_hass, mock_session
+):
     """Test create_updated method thoroughly across all branches."""
     with patch("os.path.exists", return_value=True):
         conn = ConnectionAiohttp8888(
@@ -473,7 +479,7 @@ async def test_create_ssl_context_strict():
         )
 
 
-def test_create_updated_strict():
+def test_aiohttp_create_updated_strict():
     """Validates strict cloning and condition templates."""
     import logging
     from unittest.mock import MagicMock
@@ -2141,12 +2147,6 @@ async def test_async_execute_optimization_with_params_url(
 # ====================================================================================
 
 
-def test_match_type_annihilation():
-    """Kill mutant 1 in match_type (type_str == CONNECTION_TYPE_AIOHTTP_8888)."""
-    assert ConnectionAiohttp8888.match_type("samsung_8888_aiohttp") is True
-    assert ConnectionAiohttp8888.match_type("other_connection_type") is False
-
-
 def test_load_from_yaml_annihilation(mock_logger, mock_hass, mock_session):
     """Kill mutants 1, 2, 3, 4, 5 in load_from_yaml."""
     conn = ConnectionAiohttp8888(
@@ -2234,34 +2234,6 @@ def test_is_async_native_and_is_push_supported(mock_logger, mock_hass, mock_sess
     )
     assert conn.is_async_native is True
     assert conn.is_push_supported is False
-
-
-@pytest.mark.asyncio
-async def test_try_connection_absolute_url_probe(mock_logger, mock_hass, mock_session):
-    """Kill mutants at lines 272 and 274 in _try_connection for absolute URL probe."""
-    conn = ConnectionAiohttp8888(
-        {CONF_TOKEN: "tok", "use_http": True},
-        mock_logger,
-        mock_hass,
-        mock_session,
-        "192.168.1.100",
-    )
-    conn._params = {"url": "http://192.168.1.100:8888/custom_devices"}
-
-    mock_response = AsyncMock()
-    mock_response.status = 200
-    mock_response.text.return_value = '{"probe": "ok"}'
-    mock_context = AsyncMock()
-    mock_context.__aenter__.return_value = mock_response
-    mock_session.request.return_value = mock_context
-
-    result = await conn._try_connection()
-
-    assert result == '{"probe": "ok"}'
-    mock_session.request.assert_called_once()
-    args, _ = mock_session.request.call_args
-    assert args[0] == "GET"
-    assert args[1] == "http://192.168.1.100:8888/custom_devices"
 
 
 @pytest.mark.asyncio

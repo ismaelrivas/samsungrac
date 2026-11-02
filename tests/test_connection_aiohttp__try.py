@@ -1,18 +1,15 @@
 # pylint: disable=protected-access,redefined-outer-name,duplicate-code,import-outside-toplevel,missing-docstring,line-too-long
-from __future__ import annotations
 
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
-from homeassistant.const import CONF_TOKEN
 import pytest
 
-from custom_components.climate_ip.connection_aiohttp import (
-    ConnectionAiohttp8888,
-)
+from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
 from custom_components.climate_ip.const import CONF_CERT
 from custom_components.climate_ip.exceptions import CannotConnect, InvalidHeaderError
+from homeassistant.const import CONF_TOKEN
 
 
 class StubHass:
@@ -449,7 +446,7 @@ def test_resolve_cert_path_delegates(
 async def test_try_connection_http_probe_passes_ssl_false(
     mock_logger, mock_hass, mock_session
 ):
-    """Test _try_connection passes ssl=False when probe url starts with http://."""
+    """Test _try_connection passes ssl=False and preserves absolute URL when probe url starts with http://."""
     conn = ConnectionAiohttp8888(
         {"token": "tok", "use_http": True},
         mock_logger,
@@ -457,18 +454,20 @@ async def test_try_connection_http_probe_passes_ssl_false(
         mock_session,
         "192.168.1.100",
     )
-    conn._params = {"url": "http://192.168.1.100:8888/test"}
+    conn._params = {"url": "http://192.168.1.100:8888/custom_devices"}
 
     mock_response = AsyncMock(status=200)
-    mock_response.text.return_value = "{}"
+    mock_response.text.return_value = '{"probe": "ok"}'
     mock_context = AsyncMock()
     mock_context.__aenter__.return_value = mock_response
     mock_session.request.return_value = mock_context
 
     res = await conn._try_connection()
-    assert res == "{}"
+    assert res == '{"probe": "ok"}'
     mock_session.request.assert_called_once()
-    _, kwargs = mock_session.request.call_args
+    args, kwargs = mock_session.request.call_args
+    assert args[0] == "GET"
+    assert args[1] == "http://192.168.1.100:8888/custom_devices"
     assert kwargs["ssl"] is False
 
 

@@ -1,16 +1,14 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,not-callable,invalid-sequence-index,unsubscriptable-object
-from __future__ import annotations
-
 import copy
 import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.helpers.update_coordinator import UpdateFailed
 import pytest
 
 from custom_components.climate_ip.const import DEVICE_TYPE_MIM_H03
 from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 from custom_components.climate_ip.exceptions import CannotConnect
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 
 # =====================================================================
@@ -117,7 +115,7 @@ def _helper_calculate_structured_state(self, full_device_state=None):
             try:
                 val = prop.calculate_value_from_state(full_device_state)
                 kwargs[prop_id] = val
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
     try:
         from dataclasses import fields
@@ -130,7 +128,7 @@ def _helper_calculate_structured_state(self, full_device_state=None):
 
         filtered_kwargs = {k: v for k, v in kwargs.items() if k in valid_keys}
         return ClimateIPDeviceState(**filtered_kwargs)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return ClimateIPDeviceState()
 
 
@@ -304,13 +302,12 @@ def test_device_key_from_template_regex():
     assert poller._get_device_key_from_template("device_state[123]") == "123"
 
 
-@patch("custom_components.climate_ip.controller_yaml_polling.dt_util.now")
-def test_rebuild_attributes_exact_strings(mock_now):
+def test_rebuild_attributes_exact_strings(freezer):
     """Asserts el formato exacto de fecha y las claves del diccionario de atributos."""
     import datetime
 
     fake_time = datetime.datetime(2026, 6, 7, 15, 30, 0)
-    mock_now.return_value = fake_time
+    freezer.move_to(fake_time)
 
     mock_controller = MagicMock()
     mock_controller.name = "TestAC"
@@ -382,7 +379,7 @@ def test_get_state_node_from_prop_and_register():
     assert res_node == "power" or res_node is None
 
 
-def test_mask_sensitive_data():
+def test_controller_mask_sensitive_data():
     """Test recursive masking of sensitive data."""
     mock_controller = MagicMock()
     poller = YamlStatePoller(mock_controller)

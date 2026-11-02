@@ -2,12 +2,10 @@
 """Tests for ConnectionRequest."""
 
 # pylint: disable=import-outside-toplevel,protected-access,redefined-outer-name
-from __future__ import annotations
 
 import logging
 from unittest.mock import MagicMock, patch
 
-from homeassistant.const import CONF_TOKEN
 import pytest
 import requests  # type: ignore[import-untyped]
 
@@ -17,6 +15,7 @@ from custom_components.climate_ip.connection_request_tls_auto import (
 )
 from custom_components.climate_ip.const import CONF_CERT
 from custom_components.climate_ip.exceptions import AuthError, RetryNextAttempt
+from homeassistant.const import CONF_TOKEN
 
 
 @pytest.fixture
@@ -43,7 +42,7 @@ def mock_response():
     return mock
 
 
-def test_initialization(connection_config, mock_logger):
+def test_request_initialization(connection_config, mock_logger):
     """Test connection initialization — also asserts the deprecation notice is emitted."""
     with patch("os.path.exists", return_value=True):
         with pytest.warns(
@@ -55,7 +54,7 @@ def test_initialization(connection_config, mock_logger):
         assert conn._session is not None
 
 
-def test_execute_success(connection_config, mock_logger, mock_response):
+def test_request_execute_success(connection_config, mock_logger, mock_response):
     """Test successful request execution."""
     with patch("os.path.exists", return_value=True):
         # Patch session BEFORE instantiation
@@ -141,9 +140,8 @@ def _make_request_connection(cls):
     """
     from unittest.mock import MagicMock, patch
 
-    from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
-
     from custom_components.climate_ip.const import CONF_CERT
+    from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
 
     config = {
         CONF_IP_ADDRESS: "192.168.1.100",
@@ -151,7 +149,7 @@ def _make_request_connection(cls):
         CONF_TOKEN: "mock_token",
     }
     with patch("os.path.exists", return_value=True):
-        with pytest.warns(DeprecationWarning):
+        with pytest.warns(DeprecationWarning, match="connection method is deprecated"):
             conn = cls(config, MagicMock(), MagicMock())
     return conn
 

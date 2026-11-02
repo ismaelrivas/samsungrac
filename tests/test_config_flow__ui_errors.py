@@ -1,16 +1,10 @@
 """Test config flow UI error steps to kill mutants."""
 
-from __future__ import annotations
-
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.config_entries import SOURCE_RECONFIGURE
-from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
-from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import AbortFlow, FlowResultType
+import probatio as vol
 import pytest
-import voluptuous as vol
 
 from custom_components.climate_ip.config_flow import (
     ClimateIpConfigFlow,
@@ -35,6 +29,10 @@ from custom_components.climate_ip.exceptions import (
     CannotConnect,
     TokenAcquisitionError,
 )
+from homeassistant.config_entries import SOURCE_RECONFIGURE
+from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import AbortFlow, FlowResultType
 
 # Import schema validator helper
 from .test_config_flow__schemas import get_schema_marker
@@ -292,9 +290,8 @@ async def test_handle_error_req_mac_is_false_not_none():
 
 def test_options_schema_temp_target_from_options():
     """Kills mutants 71, 72: opt_targ = options.get(CONF_TEMP_NATIVE_TARGET)."""
-    from homeassistant.const import UnitOfTemperature
-
     from custom_components.climate_ip.const import CONF_TEMP_NATIVE_TARGET
+    from homeassistant.const import UnitOfTemperature
 
     mock_entry = MagicMock()
     mock_entry.data = {CONF_DEVICE_TYPE: "smartthings_hvac"}
@@ -380,7 +377,7 @@ async def test_rest_api_aborts_if_already_configured_normal_flow(hass):
             "_abort_if_unique_id_configured",
             side_effect=AbortFlow("already_configured"),
         ):
-            try:
+            with pytest.raises(AbortFlow) as exc_info:
                 await flow.async_step_rest_api(
                     {
                         CONF_IP_ADDRESS: "1.1.1.1",
@@ -388,11 +385,7 @@ async def test_rest_api_aborts_if_already_configured_normal_flow(hass):
                         CONF_DEVICE_ID: "existing_dev_123",
                     }
                 )
-                pytest.fail(
-                    "Mutant 92 survives: _abort_if_unique_id_configured was not called"
-                )
-            except AbortFlow as e:
-                assert e.reason == "already_configured"
+            assert exc_info.value.reason == "already_configured"
 
 
 # ===========================================================================
@@ -718,19 +711,3 @@ async def test_test_connection_safe_abortflow_propagates(hass):
 
         with pytest.raises(AbortFlow):
             await flow._test_connection_safe()
-
-
-@pytest.mark.asyncio
-async def test_test_connection_safe_unknown_device_type_key(hass):
-    """Unknown device_type → ok=False, error == 'cannot_connect'."""
-    flow = ClimateIpConfigFlow()
-    flow.hass = hass
-    flow.flow_data = {
-        CONF_DEVICE_TYPE: "nonexistent_type",
-        CONF_IP_ADDRESS: "1.1.1.1",
-    }
-
-    result = await flow._test_connection_safe()
-
-    assert result["ok"] is False
-    assert result["error"] == "cannot_connect"
