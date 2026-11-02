@@ -1,14 +1,13 @@
 # pylint: disable=protected-access,redefined-outer-name,duplicate-code,import-outside-toplevel,missing-docstring,line-too-long
-from __future__ import annotations
 
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.const import CONF_TOKEN
 import pytest
 
 from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
 from custom_components.climate_ip.const import CONF_CERT
+from homeassistant.const import CONF_TOKEN
 
 
 class StubHass:
@@ -57,7 +56,7 @@ def mock_hass():
     return StubHass()
 
 
-async def test_get_diagnostics(connection_config, mock_logger, mock_hass):
+async def test_aiohttp_get_diagnostics(connection_config, mock_logger, mock_hass):
     with patch("os.path.exists", return_value=True):
         conn = ConnectionAiohttp8888(
             connection_config, mock_logger, mock_hass, None, "192.168.1.100"

@@ -2,19 +2,20 @@
 """Unit tests for samsung_2878.py logic."""
 # pylint: disable=protected-access,redefined-outer-name,import-outside-toplevel,line-too-long
 
-from __future__ import annotations
-
 import asyncio
+import contextlib
 import inspect
 import os
 import socket
 import ssl
 import tempfile
+import time
 from unittest.mock import ANY, AsyncMock, MagicMock, call, patch
 
 import pytest
 
 from custom_components.climate_ip.const import (
+    CONF_CERT,
     PROTOCOL_2878_DPLUG,
     PROTOCOL_2878_POWER_ID,
     PROTOCOL_2878_VALUE_ON,
@@ -30,6 +31,7 @@ from custom_components.climate_ip.samsung_2878 import (
     RECONNECT_FACTOR,
     ConnectionSamsung2878,
 )
+from homeassistant.const import CONF_MAC
 
 
 @pytest.fixture
@@ -309,6 +311,26 @@ def test_samsung_2878_get_diagnostics(connection):
     assert diag2["is_connected"] is True
     assert diag2["last_successful_config"]["cert_filename"] == "cert_file_secret.pem"
     assert diag2["last_successful_config"]["cipher_name"] == "AES-256-CBC"
+
+
+def test_get_diagnostics_network_reachability_strict(connection):
+    """Kill mutants in ConnectionSamsung2878.get_diagnostics for network_reachability."""
+    # 1. When _last_icmp_diagnostic is None: must return default dict, not None
+    connection._last_icmp_diagnostic = None
+    diag1 = connection.get_diagnostics()
+    assert "network_reachability" in diag1
+    assert diag1["network_reachability"] == {
+        "is_reachable": None,
+        "status": "not_checked_yet",
+    }
+    assert diag1["network_reachability"] is not None
+
+    # 2. When _last_icmp_diagnostic is populated: must be preserved exactly
+    custom_diag = {"is_reachable": True, "avg_rtt_ms": 1.23, "status": "alive"}
+    connection._last_icmp_diagnostic = custom_diag
+    diag2 = connection.get_diagnostics()
+    assert diag2["network_reachability"] == custom_diag
+    assert diag2["network_reachability"] is not None
 
 
 def test_samsung_2878_update_configuration_from_hass_and_yaml():
@@ -808,7 +830,7 @@ async def test_async_execute_timeout_and_success(connection):
 
     # Simulate another process resolves future instantly upon queuing command
     async def mock_queue_put(item):
-        cmd, future = item
+        _, future = item
         future.set_result(True)
 
     connection._cmd_queue = MagicMock()
@@ -925,7 +947,7 @@ async def test_async_execute_future_timeout(connection):
     connection._cmd_queue = MagicMock()
 
     async def mock_queue_put(item):
-        cmd, future = item
+        _, future = item
         # Save reference as manager would
         connection._pending_future = future
 
@@ -1008,9 +1030,9 @@ async def test_post_connect_status_request_strict(connection):
     asyncio.Future()
 
     async def mock_put_timeout(item):
-        cmd, fut = item
+        _, fut = item
         connection._pending_future = fut
-        raise TimeoutError()  # Simulamos que el async with timeout corta la espera
+        raise TimeoutError  # Simulamos que el async with timeout corta la espera
 
     connection._cmd_queue.put = AsyncMock(side_effect=mock_put_timeout)
     await connection._post_connect_status_request()
@@ -1034,7 +1056,7 @@ async def test_parse_state_multiple_docs(connection):
     # Two XML blocks adjacent. First useless, second valid Update.
     # On 'break', skips second. On 'continue', processes it.
     xml = '<?xml version="1.0"?><Fake/><?xml version="1.0"?><Update Type="Status"><Status DUID="1"><Attr ID="AC_FUN_POWER" Value="Off"/></Status></Update>'
-    is_res, is_upd, parsed = await connection._parse_and_update_state(xml)
+    _, is_upd, parsed = await connection._parse_and_update_state(xml)
 
     assert is_upd is True
     assert parsed["AC_FUN_POWER"] == "Off"
@@ -1149,7 +1171,7 @@ async def test_connection_manager_full_coverage(connection):
 
 
 @pytest.mark.asyncio
-async def test_async_execute_defaults(connection):
+async def test_2878_async_execute_defaults(connection):
     """Verify mutant kill de parámetros booleanos por defecto (_is_probe, _is_poll)."""
     connection._ensure_callback_linked = MagicMock()
     connection.start_listening = MagicMock()
@@ -1163,6 +1185,32 @@ async def test_async_execute_defaults(connection):
     res1, res2 = await connection.async_execute(None, None, None, None)
     assert res1 is None
     assert res2 is None
+
+
+@pytest.mark.asyncio
+async def test_async_execute_fast_fail_backoff(connection):
+    """Kills Logic Condition Flip: 'if not self._is_ready.is_set()' vs 'if self._is_ready.is_set()'."""
+    # Dummy task so async_execute doesn't call start() and leave a lingering task
+    connection._manager_task = asyncio.create_task(asyncio.sleep(999))
+
+    # Critical state: not ready and already attempted reconnection (backoff active)
+    connection._is_ready = MagicMock()
+    connection._is_ready.is_set.return_value = False
+    connection._reconnect_retries = 1
+
+    # Make _is_ready.wait() non-blocking if it gets executed.
+    connection._is_ready.wait = AsyncMock()
+    connection._cmd_queue = MagicMock()
+    connection._cmd_queue.put = AsyncMock()
+
+    try:
+        with patch("custom_components.climate_ip.samsung_2878.COMMAND_TIMEOUT", 0.01):
+            with pytest.raises(CannotConnect, match="Client not ready"):
+                await connection.async_execute(
+                    method="GET", url="test_url", data="<data>", headers={}
+                )
+    finally:
+        connection._manager_task.cancel()
 
 
 @pytest.mark.asyncio
@@ -1188,13 +1236,6 @@ async def test_handle_reconnection_success_path(connection):
 # =====================================================================
 # FASE 5 (MISIL FINAL): LIMPIEZAS EXTREMAS, FIRMAS Y EXCEPTIONS RARAS
 # =====================================================================
-
-
-def test_async_execute_signature(connection):
-    """Kills mutants que alteran los defaults booleanos de async_execute usando introspección."""
-    sig = inspect.signature(connection.async_execute)
-    assert sig.parameters["_is_probe"].default is False
-    assert sig.parameters["_is_poll"].default is False
 
 
 @pytest.mark.asyncio
@@ -1584,7 +1625,7 @@ async def test_connection_manager_missing_reader_continue_strict(connection):
 # =====================================================================
 
 
-def test_create_updated_strict(connection):
+def test_raw_2878_create_updated_strict(connection):
     """Verify mutant kill que altera los argumentos de create_updated y load_from_yaml."""
     with patch.object(connection, "load_from_yaml") as mock_load:
         fake_node = {"test": 1}
@@ -1618,6 +1659,18 @@ def test_update_configuration_from_hass_strict(connection):
     assert "fake.pem" in cert_path
     assert "/" in cert_path or "\\" in cert_path
     assert connection._last_successful_config["cipher_name"] == "AES"
+
+
+def test_update_configuration_cert_file_strict_path(connection):
+    """Kills mutants de rutas nulas (None Fallback) en la carga del certificado."""
+    hass_config = {CONF_MAC: "00:11:22:33:44:55", CONF_CERT: "local_cert.pem"}
+
+    connection.update_configuration_from_hass(hass_config)
+
+    import custom_components.climate_ip.samsung_2878 as s2878
+
+    expected_cert_path = os.path.join(os.path.dirname(s2878.__file__), "local_cert.pem")
+    assert connection._cfg.cert == expected_cert_path
 
 
 @pytest.mark.asyncio
@@ -1790,9 +1843,7 @@ async def test_parse_state_strict_dicts_and_logic(connection):
     xml_missing_state = '<?xml version="1.0"?><Response Type="Fake"></Response>'
     # If mutant injects None, chained ".get('Device')" will raise AttributeError
     # By not catching it, Pytest will report test failure and MUTANT ANNIHILATED.
-    is_resp, is_upd, parsed = await connection._parse_and_update_state(
-        xml_missing_state
-    )
+    is_resp, _, parsed = await connection._parse_and_update_state(xml_missing_state)
     assert is_resp is True
     assert parsed == {}
 
@@ -1800,13 +1851,13 @@ async def test_parse_state_strict_dicts_and_logic(connection):
     # Provide dict with fake key to avoid entering "if not device_data"
     xml_missing_attr = '<?xml version="1.0"?><Response><DeviceState><Device><Dummy>1</Dummy></Device></DeviceState></Response>'
     # If [] mutates, 'for attr in attrs' raises TypeError
-    is_resp, is_upd, parsed = await connection._parse_and_update_state(xml_missing_attr)
+    _, _, parsed = await connection._parse_and_update_state(xml_missing_attr)
     assert parsed == {}
 
     # 3. Logical AND to OR mutant in attribute extraction
     xml_bad_attr = '<?xml version="1.0"?><Update Type="Status"><Status><Attr ID="OnlyID" /></Status></Update>'
     # If mutmut changes to "ID in attr OR VALUE in attr", attempts extracting missing value and raises KeyError
-    is_resp, is_upd, parsed = await connection._parse_and_update_state(xml_bad_attr)
+    _, _, parsed = await connection._parse_and_update_state(xml_bad_attr)
     assert parsed == {}
 
 
@@ -1960,12 +2011,12 @@ async def test_parse_and_update_state_xml_strict_dicts(connection):
 
     # 2. Matar .get(PROTOCOL_2878_DEVICE_STATE, {}) -> Si cambia a None, .get("Device") explota.
     xml_no_dev_state = '<?xml version="1.0"?><Response Status="Okay"></Response>'
-    is_resp, is_upd, parsed = await connection._parse_and_update_state(xml_no_dev_state)
+    _, _, parsed = await connection._parse_and_update_state(xml_no_dev_state)
     assert parsed == {}
 
     # 3. Kill .get(PROTOCOL_2878_ATTR, []) -> If changes to None, 'for attr in attrs' iterator explodes.
     xml_no_attr = '<?xml version="1.0"?><Response Status="Okay"><DeviceState><Device DUID="123"></Device></DeviceState></Response>'
-    is_resp, is_upd, parsed = await connection._parse_and_update_state(xml_no_attr)
+    _, _, parsed = await connection._parse_and_update_state(xml_no_attr)
     assert parsed == {}
 
 
@@ -2357,6 +2408,116 @@ async def test_read_full_response_unified_assault(connection):
 
 
 @pytest.mark.asyncio
+async def test_read_full_response_reader_none(connection):
+    """Verify mutant kill `if not self._reader and self._reader.at_eof():`"""
+    connection._reader = None
+    res = await connection._read_full_response()
+    assert res is None
+
+
+@pytest.mark.asyncio
+async def test_read_full_response_success_and_timeout_args(connection):
+    """Kills timeout mutants and gives coverage to successful read using real behavior."""
+    connection._reader = MagicMock()
+    connection._reader.at_eof.return_value = False
+    connection._close_connection = AsyncMock()  # Prevents crash on exception handling
+
+    # 1. Explicit timeout test WITHOUT MOCKing asyncio.timeout
+    # If mutated to async with asyncio.timeout(None), this will hang 0.5s instead of failing fast.
+    async def slow_read(*args, **kwargs):
+        await asyncio.sleep(0.5)
+        return b""
+
+    connection._reader.read = AsyncMock(side_effect=slow_read)
+
+    start = time.time()
+    res = await connection._read_full_response(timeout_sec=0.01)
+    duration = time.time() - start
+
+    assert res is None
+    assert duration < 0.2, "The mutant async with asyncio.timeout(None) survived"
+
+    # 2. Successful read test
+    connection._reader.read = AsyncMock(side_effect=[b"<Response>OK</Response>", b""])
+    res2 = await connection._read_full_response(timeout_sec=10.0)
+    assert res2 == "<Response>OK</Response>"
+
+    # 3. Test to kill 'if not chunk:' -> 'if chunk:'
+    connection._reader.read = AsyncMock(side_effect=[b"<Response>OK</Response>", b""])
+    connection._close_connection = AsyncMock()
+    res3 = await connection._read_full_response(timeout_sec=10.0)
+    assert res3 == "<Response>OK</Response>"
+
+
+@pytest.mark.asyncio
+async def test_read_full_response_timeout_exception(connection):
+    """Covers except TimeoutError block in _read_full_response."""
+    connection._reader = MagicMock()
+    connection._reader.at_eof.return_value = False
+    connection._close_connection = AsyncMock()
+    # Simulate reading something (buffer) and then raising IncompleteReadError
+    connection._reader.read = AsyncMock(
+        side_effect=[b"Part1", asyncio.IncompleteReadError(b"Part1", None)]
+    )
+
+    res = await connection._read_full_response()
+    # Enters except and decodes buffer ("Part1")
+    assert res == "Part1"
+
+
+@pytest.mark.asyncio
+async def test_read_full_response_logic_and_concat(connection):
+    """Kills Logic Condition Flips and mutations in buffer.decode / concat."""
+    connection._reader = MagicMock()
+    connection._reader.at_eof.return_value = False
+    connection._close_connection = AsyncMock()
+
+    # 1. Test for </Response>
+    connection._reader.read = AsyncMock(
+        side_effect=[b"Part1</Response>", b"ExtraChunk", b""]
+    )
+    res = await connection._read_full_response()
+    assert res == "Part1</Response>"
+
+    # 2. Test for </Update>
+    connection._reader.read = AsyncMock(
+        side_effect=[b"Part1</Update>", b"ExtraChunk", b""]
+    )
+    res = await connection._read_full_response()
+    assert res == "Part1</Update>"
+
+
+@pytest.mark.asyncio
+async def test_read_full_response_logic_dplug_only(connection):
+    """Verify mutant kill: `or PROTOCOL_2878_DPLUG in ... and ...endswith("/>")` and flip `not in`."""
+    connection._reader = MagicMock()
+    connection._reader.at_eof.return_value = False
+    connection._close_connection = AsyncMock()
+
+    dplug_bytes = PROTOCOL_2878_DPLUG.encode("utf-8")
+
+    connection._reader.read = AsyncMock(
+        side_effect=[dplug_bytes + b" NO_END", b"ExtraChunk", b""]
+    )
+    res = await connection._read_full_response()
+
+    assert PROTOCOL_2878_DPLUG in res
+    assert "ExtraChunk" not in res
+
+    # Test Update
+    connection._reader.read.side_effect = [b"<Update>data</Update>", b""]
+    assert await connection._read_full_response() == "<Update>data</Update>"
+
+    # Test DPLUG
+    connection._reader.read.side_effect = [PROTOCOL_2878_DPLUG.encode(), b""]
+    assert PROTOCOL_2878_DPLUG in await connection._read_full_response()
+
+    # Test endswith("/>")
+    connection._reader.read.side_effect = [b"<tag/>", b""]
+    assert await connection._read_full_response() == "<tag/>"
+
+
+@pytest.mark.asyncio
 async def test_connection_manager_read_task_in_done_strict(connection):
     """Sniper: Kills mutant 'if self._read_task in done:' -> 'if self._read_task not in done:'."""
     connection._writer = MagicMock()
@@ -2369,7 +2530,7 @@ async def test_connection_manager_read_task_in_done_strict(connection):
     connection._pending_future = MagicMock()
 
     async def fake_process_read(buf):
-        raise asyncio.CancelledError()
+        raise asyncio.CancelledError
 
     def mock_wait_side_effect(tasks, **kwargs):
         return {connection._read_task}, set()
@@ -2384,13 +2545,54 @@ async def test_connection_manager_read_task_in_done_strict(connection):
             new_callable=AsyncMock,
         ),
     ):
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await asyncio.wait_for(connection._connection_manager(), timeout=1.0)
-        except asyncio.CancelledError:
-            pass
 
         mock_process_read.assert_awaited_once()
         assert mock_wait.call_args.kwargs.get("return_when") == asyncio.FIRST_COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_connection_manager_critical_survivors(connection):
+    """Verify mutant kill in _connection_manager related to read_task and read_buffer."""
+    connection._reader = MagicMock()
+    connection._reader.read = AsyncMock(return_value=b"<Response>OK</Response>")
+
+    mock_process = AsyncMock(return_value=b"")
+    connection._process_read_queue = mock_process
+
+    original_process = connection._process_read_queue
+
+    async def fake_process(*args, **kwargs):
+        await original_process(*args, **kwargs)
+        raise asyncio.CancelledError
+
+    connection._process_read_queue = AsyncMock(side_effect=fake_process)
+
+    with (
+        patch("custom_components.climate_ip.samsung_2878.asyncio.sleep", AsyncMock()),
+        patch.object(
+            connection, "handle_reconnection", new_callable=AsyncMock
+        ) as mock_recon,
+    ):
+
+        class KillMutant(BaseException):
+            pass
+
+        mock_recon.side_effect = [
+            True,
+            KillMutant("The 'continue' mutant has survived!"),
+        ]
+        try:
+            await asyncio.wait_for(connection._connection_manager(), timeout=1.0)
+        except TimeoutError:
+            pytest.fail(
+                "_connection_manager deadlocked! Mutant broke read/queue task lifecycle."
+            )
+        except asyncio.CancelledError:
+            pass
+
+    assert connection._process_read_queue.call_count >= 1
 
 
 @pytest.mark.asyncio
@@ -2455,4 +2657,3 @@ async def test_establish_connection_preferred_fallback_to_others(connection):
         assert await connection._establish_connection_and_handshake() is True
         # Verified fallback occurred: open_connection was called at least twice
         assert call_count >= 2
-

@@ -2,12 +2,10 @@
 """Tests for ConnectionRequestTlsAuto."""
 
 # pylint: disable=import-outside-toplevel,protected-access,redefined-outer-name
-from __future__ import annotations
 
 import logging
 from unittest.mock import ANY, MagicMock, patch
 
-from homeassistant.const import CONF_TOKEN
 import pytest
 
 from custom_components.climate_ip.connection_request_tls_auto import (
@@ -15,6 +13,7 @@ from custom_components.climate_ip.connection_request_tls_auto import (
     SamsungHTTPAdapter,
 )
 from custom_components.climate_ip.const import CONF_CERT
+from homeassistant.const import CONF_TOKEN
 
 
 @pytest.fixture
@@ -29,7 +28,7 @@ def connection_config():
     return {CONF_TOKEN: "test_token", CONF_CERT: "cert.pem"}
 
 
-def test_initialization(connection_config, mock_logger):
+def test_request_tls_auto_initialization(connection_config, mock_logger):
     """Test connection initialization — also asserts the deprecation notice is emitted."""
     with patch("os.path.exists", return_value=True):
         with pytest.warns(
@@ -53,7 +52,7 @@ def test_samsung_http_adapter_init():
         assert mock_context.check_hostname is False
 
 
-def test_execute_success(connection_config, mock_logger):
+def test_request_tls_auto_execute_success(connection_config, mock_logger):
     """Test successful request execution."""
     with patch("os.path.exists", return_value=True):
         with pytest.warns(

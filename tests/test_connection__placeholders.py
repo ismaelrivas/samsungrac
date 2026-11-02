@@ -2,26 +2,9 @@
 """Tests for placeholder rendering routines."""
 
 # pylint: disable=import-outside-toplevel
-from __future__ import annotations
-
 import pytest
 
-from custom_components.climate_ip.helpers import (
-    format_placeholders,
-    stream_wrapper,
-)
-
-
-def test_stream_wrapper():
-    """Test string substitution."""
-    data = "http://__CLIMATE_IP_HOST__/test?token=__CLIMATE_IP_TOKEN__&mac=__CLIMATE_IP_MAC__&id=__DEVICE_ID__"
-    result = stream_wrapper(data, "my_token", "1.1.1.1", "dev123", "AA:BB")
-
-    assert "1.1.1.1" in result
-    assert "my_token" in result
-    assert "dev123" in result
-    assert "AA:BB" in result
-    assert "__CLIMATE_IP_HOST__" not in result
+from custom_components.climate_ip.helpers import format_placeholders
 
 
 def test_format_placeholders_recursive():
@@ -49,9 +32,7 @@ async def test_integration_minimal():
     """Minimal integration test for connection engines to ensure they call the logic."""
     from unittest.mock import MagicMock
 
-    from custom_components.climate_ip.connection_aiohttp import (
-        ConnectionAiohttp8888,
-    )
+    from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
     from custom_components.climate_ip.connection_raw import ConnectionRaw8888
 
     # Aiohttp

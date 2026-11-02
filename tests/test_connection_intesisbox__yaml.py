@@ -1,7 +1,5 @@
 """Unit and integration tests for IntesisBox WMP v1.9 support in climate_ip."""
 
-from __future__ import annotations
-
 import asyncio
 import json
 import logging
@@ -10,18 +8,10 @@ import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
-from homeassistant.components.climate import HVACMode
-from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_NAME, CONF_PORT
-from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.update_coordinator import UpdateFailed
-from homeassistant.util.yaml import load_yaml
 import pytest
 from pytest_homeassistant_custom_component.plugins import HASocketBlockedError
 import pytest_socket
 
-from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 from custom_components.climate_ip.connection_intesisbox import ConnectionIntesisBox
 from custom_components.climate_ip.const import (
     CONF_CONFIG_FILE,
@@ -34,6 +24,12 @@ from custom_components.climate_ip.controller_yaml import YamlController
 from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 from custom_components.climate_ip.exceptions import CannotConnect
 from custom_components.climate_ip.token_acquirer_yaml import GenericYamlTokenAcquirer
+from homeassistant.components.climate import HVACMode
+from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_NAME, CONF_PORT
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.update_coordinator import UpdateFailed
+from homeassistant.util.yaml import load_yaml
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -204,10 +200,13 @@ def test_connection_intesisbox_initialization() -> None:
 
     # Test load_from_yaml
     assert conn.load_from_yaml(None, None) is False
-    assert conn.load_from_yaml(
-        {"params": {"host": "192.168.1.55", "port": 3311}, "keep_alive": True},
-        None,
-    ) is True
+    assert (
+        conn.load_from_yaml(
+            {"params": {"host": "192.168.1.55", "port": 3311}, "keep_alive": True},
+            None,
+        )
+        is True
+    )
     assert conn._host == "192.168.1.55"
     assert conn._port == 3311
 
@@ -324,7 +323,9 @@ async def test_connection_intesisbox_mocked_execution() -> None:
 # 3. Live Integration Tests against Local Emulator (Port 3310)
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_live_emulator_connection_and_commands(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_live_emulator_connection_and_commands(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test ConnectionIntesisBox live against running emulator on 127.0.0.1:3310."""
     pytest_socket.enable_socket()
     HASocketBlockedError.instances.clear()
@@ -376,7 +377,9 @@ async def test_live_emulator_connection_and_commands(monkeypatch: pytest.MonkeyP
 
 
 @pytest.mark.asyncio
-async def test_live_emulator_token_acquirer_plain_tcp(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_live_emulator_token_acquirer_plain_tcp(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test GenericYamlTokenAcquirer against live emulator using intesisbox_auth.yaml."""
     pytest_socket.enable_socket()
     HASocketBlockedError.instances.clear()
@@ -409,49 +412,12 @@ async def test_live_emulator_token_acquirer_plain_tcp(monkeypatch: pytest.Monkey
 
 
 # ---------------------------------------------------------------------------
-# 4. Config Flow Step Integration Tests
+# 4. Offline Error Handling & Repair Issue Tests
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_config_flow_intesisbox_step(hass: HomeAssistant) -> None:
-    """Test full configuration flow for IntesisBox."""
-    flow = ClimateIpConfigFlow()
-    flow.hass = hass
-    flow.context = {"source": "user"}
-
-    # 1. Step user: select intesisbox
-    result = await flow.async_step_user({CONF_DEVICE_TYPE: DEVICE_TYPE_INTESISBOX})
-    assert result["type"] == FlowResultType.FORM
-    assert result["step_id"] == "intesisbox"
-
-    # 2. Step intesisbox: submit IP address
-    # Mock open_connection to simulate device answering ID query
-    mock_reader = AsyncMock()
-    mock_reader.read.return_value = (
-        b"ID:IS-IR-WMP-1,001DC9A2C911,192.168.1.100,1.9,-44\r\n"
-    )
-    mock_writer = MagicMock()
-    mock_writer.drain = AsyncMock()
-    mock_writer.wait_closed = AsyncMock()
-
-    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
-        create_result = await flow.async_step_intesisbox(
-            {CONF_IP_ADDRESS: "192.168.1.100"}
-        )
-
-    assert create_result["type"] == FlowResultType.CREATE_ENTRY
-    assert create_result["title"] == "IntesisBox (192.168.1.100)"
-    data = create_result["data"]
-    assert data[CONF_DEVICE_TYPE] == DEVICE_TYPE_INTESISBOX
-    assert data[CONF_CONFIG_FILE] == "intesisbox.yaml"
-    assert data[CONF_MAC] == "001DC9A2C911"
-    assert data[CONF_TOKEN] == "001DC9A2C911"
-
-
-# ---------------------------------------------------------------------------
-# 5. Offline Error Handling & Repair Issue Tests
-# ---------------------------------------------------------------------------
-@pytest.mark.asyncio
-async def test_intesisbox_offline_error_and_repair_lifecycle(hass: HomeAssistant) -> None:
+async def test_intesisbox_offline_error_and_repair_lifecycle(
+    hass: HomeAssistant,
+) -> None:
     """Test clean HomeAssistantError on command failure and poller repair issue lifecycle."""
     hass.data = {}
     hass.config.units.temperature_unit = "°C"
@@ -479,7 +445,9 @@ async def test_intesisbox_offline_error_and_repair_lifecycle(hass: HomeAssistant
 
     # 1. Verify clean, elegant error handling on service call without raw tracebacks
     with patch.object(
-        controller.connection, "async_execute", side_effect=CannotConnect("Connect call failed")
+        controller.connection,
+        "async_execute",
+        side_effect=CannotConnect("Connect call failed"),
     ):
         with pytest.raises(HomeAssistantError) as exc_info:
             await coordinator.async_set_property("hvac_mode", HVACMode.COOL)
@@ -491,11 +459,14 @@ async def test_intesisbox_offline_error_and_repair_lifecycle(hass: HomeAssistant
     poller._cached_device_state = {"ONOFF": "ON"}
     poller._consecutive_connection_errors = 0
 
-    with patch.object(
-        YamlController, "available", new_callable=PropertyMock, return_value=True
-    ), patch(
-        "custom_components.climate_ip.controller_yaml_polling.async_create_issue"
-    ) as mock_create_issue:
+    with (
+        patch.object(
+            YamlController, "available", new_callable=PropertyMock, return_value=True
+        ),
+        patch(
+            "custom_components.climate_ip.controller_yaml_polling.async_create_issue"
+        ) as mock_create_issue,
+    ):
         # Simulate connection errors during polling
         with patch.object(
             ConnectionIntesisBox, "async_execute", side_effect=CannotConnect("Offline")
@@ -518,9 +489,13 @@ async def test_intesisbox_offline_error_and_repair_lifecycle(hass: HomeAssistant
 
             assert mock_create_issue.called
             assert mock_create_issue.call_args[0][2] == "device_offline_001DC9A2C911"
-            assert mock_create_issue.call_args[1]["translation_key"] == "connection_failed"
             assert (
-                mock_create_issue.call_args[1]["translation_placeholders"]["device_name"]
+                mock_create_issue.call_args[1]["translation_key"] == "connection_failed"
+            )
+            assert (
+                mock_create_issue.call_args[1]["translation_placeholders"][
+                    "device_name"
+                ]
                 == "IntesisBox (192.168.1.195)"
             )
 
@@ -530,7 +505,9 @@ async def test_intesisbox_offline_error_and_repair_lifecycle(hass: HomeAssistant
     ) as mock_delete_issue:
         mock_data = {"ONOFF": "ON", "MODE": "COOL", "SETPTEMP": 220, "AMBTEMP": 240}
         with patch.object(
-            ConnectionIntesisBox, "async_execute", return_value=(json.dumps(mock_data), {})
+            ConnectionIntesisBox,
+            "async_execute",
+            return_value=(json.dumps(mock_data), {}),
         ):
             state = await poller.async_get_status()
             assert state is not None
@@ -580,7 +557,9 @@ async def test_intesisbox_sensor_platform_setup(hass: HomeAssistant) -> None:
         "ERRCODE": "12",
         "VANELR": "SWING",
     }
-    await controller.poller.async_update_properties_from_state(wmp_state, force_update=True)
+    await controller.poller.async_update_properties_from_state(
+        wmp_state, force_update=True
+    )
 
     for entity in added_entities:
         entity._update_state()
@@ -612,7 +591,9 @@ def test_connection_intesisbox_create_updated_reuses_instance() -> None:
 
 
 @pytest.mark.asyncio
-async def test_emulator_shared_state_and_broadcasting(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_emulator_shared_state_and_broadcasting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test that Emulator maintains shared state across multiple clients and broadcasts updates."""
     from custom_components.climate_ip_tools.emulator_intesisbox import Emulator
 
@@ -749,7 +730,9 @@ async def test_emulator_delayed_response_and_queued_commands(
 
 
 @pytest.mark.asyncio
-async def test_emulator_start_helper_with_delay(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_emulator_start_helper_with_delay(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test start() helper with delay parameter and clean task teardown on disconnect."""
     from custom_components.climate_ip_tools.emulator_intesisbox import Emulator, start
 
@@ -787,8 +770,10 @@ async def test_connection_semicolon_status_parsing():
         ip_address="127.0.0.1",
     )
     push_updates = []
+
     async def _on_push(data):
         push_updates.append(data)
+
     conn.set_update_callback(_on_push)
 
     raw_status = (
@@ -847,7 +832,9 @@ async def test_intesisbox_yaml_temperature_sentinel_and_idempotence(
     controller.poller._pure_network_state = dict(fan_state)
     if controller.loader.state_getter:
         controller.loader.state_getter._value = fan_state
-    await controller.poller.async_update_properties_from_state(fan_state, force_update=True)
+    await controller.poller.async_update_properties_from_state(
+        fan_state, force_update=True
+    )
 
     assert controller.get_property("temperature") is None
     assert controller.get_property("current_temperature") == 28.0
@@ -862,7 +849,9 @@ async def test_intesisbox_yaml_temperature_sentinel_and_idempotence(
     controller.poller._pure_network_state = dict(dry_state)
     if controller.loader.state_getter:
         controller.loader.state_getter._value = dry_state
-    await controller.poller.async_update_properties_from_state(dry_state, force_update=True)
+    await controller.poller.async_update_properties_from_state(
+        dry_state, force_update=True
+    )
 
     assert controller.get_property("temperature") == 26.0
     assert controller.get_property("current_temperature") == 28.0
@@ -877,14 +866,18 @@ async def test_intesisbox_yaml_temperature_sentinel_and_idempotence(
     controller.poller._pure_network_state = dict(already_converted_state)
     if controller.loader.state_getter:
         controller.loader.state_getter._value = already_converted_state
-    await controller.poller.async_update_properties_from_state(already_converted_state, force_update=True)
+    await controller.poller.async_update_properties_from_state(
+        already_converted_state, force_update=True
+    )
 
     assert controller.get_property("temperature") == 26.0
     assert controller.get_property("current_temperature") == 28.0
 
 
 @pytest.mark.asyncio
-async def test_intesisbox_dry_mode_fan_coercion_and_validation(hass: HomeAssistant) -> None:
+async def test_intesisbox_dry_mode_fan_coercion_and_validation(
+    hass: HomeAssistant,
+) -> None:
     """Test that switching to DRY mode forces FANSP AUTO and restricts fan modes to auto."""
     hass.data = {}
     hass.config.units.temperature_unit = "°C"
@@ -912,7 +905,9 @@ async def test_intesisbox_dry_mode_fan_coercion_and_validation(hass: HomeAssista
     controller.poller._pure_network_state = dict(cool_state)
     if controller.loader.state_getter:
         controller.loader.state_getter._value = cool_state
-    await controller.poller.async_update_properties_from_state(cool_state, force_update=True)
+    await controller.poller.async_update_properties_from_state(
+        cool_state, force_update=True
+    )
 
     # In COOL mode with [AUTO,2,3,4], quiet (1) is excluded
     fan_op = controller.loader.operations["fan_mode"]
@@ -930,7 +925,9 @@ async def test_intesisbox_dry_mode_fan_coercion_and_validation(hass: HomeAssista
     controller.poller._pure_network_state = dict(cool_state_with_quiet)
     if controller.loader.state_getter:
         controller.loader.state_getter._value = cool_state_with_quiet
-    await controller.poller.async_update_properties_from_state(cool_state_with_quiet, force_update=True)
+    await controller.poller.async_update_properties_from_state(
+        cool_state_with_quiet, force_update=True
+    )
     valid_with_quiet = fan_op.values
     assert "quiet" in valid_with_quiet
     assert "low" in valid_with_quiet
@@ -938,7 +935,9 @@ async def test_intesisbox_dry_mode_fan_coercion_and_validation(hass: HomeAssista
     assert "high" in valid_with_quiet
 
     # 2. When switching to DRY mode, verify command template emits SET,1:FANSP,AUTO then SET,1:MODE,DRY
-    with patch.object(ConnectionIntesisBox, "async_execute", new_callable=AsyncMock) as mock_exec:
+    with patch.object(
+        ConnectionIntesisBox, "async_execute", new_callable=AsyncMock
+    ) as mock_exec:
         mock_exec.return_value = ("{}", {})
         res = await controller.async_set_property("hvac_mode", "dry")
         assert res is True
@@ -960,7 +959,9 @@ async def test_intesisbox_dry_mode_fan_coercion_and_validation(hass: HomeAssista
     controller.poller._pure_network_state = dict(dry_state)
     if controller.loader.state_getter:
         controller.loader.state_getter._value = dry_state
-    await controller.poller.async_update_properties_from_state(dry_state, force_update=True)
+    await controller.poller.async_update_properties_from_state(
+        dry_state, force_update=True
+    )
 
     dry_fan_modes = fan_op.values
     assert dry_fan_modes == ["auto"]
@@ -977,11 +978,15 @@ async def test_intesisbox_dry_mode_fan_coercion_and_validation(hass: HomeAssista
     controller.poller._pure_network_state = dict(inconsistent_dry_state)
     if controller.loader.state_getter:
         controller.loader.state_getter._value = inconsistent_dry_state
-    await controller.poller.async_update_properties_from_state(inconsistent_dry_state, force_update=True)
+    await controller.poller.async_update_properties_from_state(
+        inconsistent_dry_state, force_update=True
+    )
     assert controller.get_property("fan_mode") == "auto"
 
     # 5. Setting fan_mode to low while in DRY mode produces empty command (no-op)
-    with patch.object(ConnectionIntesisBox, "async_execute", new_callable=AsyncMock) as mock_exec:
+    with patch.object(
+        ConnectionIntesisBox, "async_execute", new_callable=AsyncMock
+    ) as mock_exec:
         mock_exec.return_value = ("{}", {})
         await controller.async_set_property("fan_mode", "low")
         if mock_exec.called:
@@ -1157,10 +1162,7 @@ async def test_emulator_ducted_ac_direct_socket_loop_and_exit_on_auto(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify that ducted AC emulator oscillates until an explicit AUTO command is sent."""
-    from custom_components.climate_ip_tools.emulator_intesisbox import (
-        Emulator,
-        start,
-    )
+    from custom_components.climate_ip_tools.emulator_intesisbox import Emulator, start
 
     pytest_socket.enable_socket()
     HASocketBlockedError.instances.clear()
@@ -1354,7 +1356,13 @@ async def test_intesisbox_swing_mode_dynamic_limits(hass: HomeAssistant) -> None
 
     climate_state = controller.climate_state
     # swing_modes must include off, vertical, horizontal, both, pulse, and EXCLUDE 1..5
-    assert set(climate_state.swing_modes) == {"off", "vertical", "horizontal", "both", "pulse"}
+    assert set(climate_state.swing_modes) == {
+        "off",
+        "vertical",
+        "horizontal",
+        "both",
+        "pulse",
+    }
     assert "1" not in climate_state.swing_modes
     assert "2" not in climate_state.swing_modes
     assert climate_state.swing_mode == "off"
@@ -1426,7 +1434,15 @@ async def test_intesisbox_swing_mode_dynamic_limits(hass: HomeAssistant) -> None
     )
 
     climate_state2 = controller.climate_state
-    assert set(climate_state2.swing_modes) == {"off", "vertical", "1", "2", "3", "4", "5"}
+    assert set(climate_state2.swing_modes) == {
+        "off",
+        "vertical",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+    }
     assert "horizontal" not in climate_state2.swing_modes
     assert "both" not in climate_state2.swing_modes
     assert "pulse" not in climate_state2.swing_modes
@@ -1543,10 +1559,12 @@ async def test_intesisbox_process_line_awaitable_object_and_hass_fallback(
     - L398: If self._hass is not None but lacks async_create_task, fall back to asyncio.create_task.
     - L403: Callback raising exception is caught and logged as error.
     """
+
     class CustomAwaitable:
         def __await__(self):
             async def _dummy():
                 return None
+
             return _dummy().__await__()
 
     conn = ConnectionIntesisBox(config={CONF_IP_ADDRESS: "127.0.0.1"}, logger=_LOGGER)
@@ -1645,7 +1663,9 @@ async def test_intesisbox_loop_breaker_state_node_and_custom_rule_attributes(
 
 
 @pytest.mark.asyncio
-async def test_intesisbox_loop_breaker_window_purging_and_alternation_boundary() -> None:
+async def test_intesisbox_loop_breaker_window_purging_and_alternation_boundary() -> (
+    None
+):
     """Kill L429, L433, and L451 mutants in _evaluate_oscillation_rule.
 
     - L429: Expired history entries outside window_seconds must be pruned.
@@ -1848,10 +1868,12 @@ async def test_intesisbox_async_connect_handshake_failure_and_timeout(
     conn2._handshake_timeout = 0.01
 
     mock_reader2 = AsyncMock()
+
     # Keep readline waiting
     async def hanging_read() -> bytes:
         await asyncio.sleep(999)
         return b""
+
     mock_reader2.readline = AsyncMock(side_effect=hanging_read)
 
     with patch("asyncio.open_connection", return_value=(mock_reader2, mock_writer)):
@@ -1961,7 +1983,9 @@ async def test_intesisbox_async_execute_all_branches() -> None:
     cmd_data = "\n\nSET,1:FANSP,AUTO\nSET,1:MODE,COOL\nSET,1:SUB:NODE,VAL1,VAL2\n\n"
     with patch.object(conn.logger, "debug") as mock_tx_debug:
         resp_ack, _ = await conn.async_execute(None, None, data=cmd_data, headers=None)
-        mock_tx_debug.assert_any_call("%s TX: '%s'", conn.log_prefix, "SET,1:FANSP,AUTO")
+        mock_tx_debug.assert_any_call(
+            "%s TX: '%s'", conn.log_prefix, "SET,1:FANSP,AUTO"
+        )
         mock_tx_debug.assert_any_call(
             "%s TX: '%s'", conn.log_prefix, "SET,1:SUB:NODE,VAL1,VAL2"
         )
@@ -2024,8 +2048,10 @@ async def test_intesisbox_async_execute_loop_break_direct() -> None:
 
         def __await__(self):
             self.done = True
+
             async def _d():
                 return None
+
             return _d().__await__()
 
     custom_cb = CustomAwaitable()
@@ -2352,16 +2378,3 @@ async def test_intesisbox_loop_breaker_hass_attribute_fallback() -> None:
     with patch("asyncio.create_task") as mock_task:
         await conn._async_execute_loop_break("FANSP", "MANUAL", "AUTO", rule)
         mock_task.assert_called_once()
-
-
-
-
-
-
-
-
-
-
-
-
-

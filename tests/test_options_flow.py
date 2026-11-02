@@ -1,15 +1,11 @@
 # pylint: disable=protected-access,too-many-locals,line-too-long
 """Tests for OptionsFlowHandler in options_flow.py."""
 
-from __future__ import annotations
-
 import datetime
 
-from homeassistant.const import UnitOfTemperature
-from homeassistant.helpers.selector import SelectSelectorMode, TextSelectorType
+import probatio as vol
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-import voluptuous as vol
 
 from custom_components.climate_ip.config_flow import OptionsFlowHandler
 from custom_components.climate_ip.const import (
@@ -27,9 +23,15 @@ from custom_components.climate_ip.const import (
     DEFAULT_ENABLE_POLLING,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_TARGET_TEMP_STEP,
+    DEVICE_TYPE_SAMSUNG_2878,
+    DEVICE_TYPE_SAMSUNG_8888,
     DEVICE_TYPE_SMARTTHINGS_HVAC,
     DOMAIN,
+    MAX_POLL_INTERVAL,
+    MIN_POLL_INTERVAL,
 )
+from homeassistant.const import UnitOfTemperature
+from homeassistant.helpers.selector import SelectSelectorMode, TextSelectorType
 
 
 def get_schema_marker(schema: vol.Schema, key_name: str):
@@ -162,16 +164,20 @@ async def test_options_schema_target_temp_fallback_empty():
 
 
 @pytest.mark.asyncio
-async def test_options_flow_invalid_poll_interval():
+async def test_options_flow_invalid_poll_interval(hass):
     """Test options flow handles invalid poll interval input and returns correct form schema."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC},
         options={},
     )
+    entry.add_to_hass(hass)
 
     flow = OptionsFlowHandler(entry)
+    flow.hass = hass
+    flow.DEBUG_ME = True
 
+    # 1. Non-numeric / invalid time format
     result = await flow.async_step_init({CONF_POLL_INTERVAL: "invalid_value"})
     assert result["type"] == "form"
     assert result["step_id"] == "init"
@@ -179,6 +185,17 @@ async def test_options_flow_invalid_poll_interval():
     assert isinstance(result.get("data_schema"), vol.Schema)
     assert result["errors"] == {CONF_POLL_INTERVAL: "invalid_poll_interval"}
     assert result["errors"][CONF_POLL_INTERVAL] == "invalid_poll_interval"
+
+    # 2. Below minimum boundary (< 10)
+    result_below_min = await flow.async_step_init(
+        user_input={CONF_POLL_INTERVAL: "1"}  # invalid, min is 10
+    )
+    assert result_below_min["type"] == "form"
+    assert result_below_min["errors"][CONF_POLL_INTERVAL] == "invalid_poll_interval"
+
+    # 3. Empty user_input creates entry with defaults
+    result_empty = await flow.async_step_init({})
+    assert result_empty["type"] == "create_entry"
 
 
 @pytest.mark.asyncio
@@ -261,3 +278,214 @@ async def test_options_flow_invalid_target_temp_step_fallback():
     )
     assert result_type_error["type"] == "create_entry"
     assert result_type_error["data"][CONF_TARGET_TEMP_STEP] == DEFAULT_TARGET_TEMP_STEP
+
+
+@pytest.mark.asyncio
+async def test_options_flow_validation_and_submission(hass):
+    """Kill mutants in OptionsFlowHandler validation boundaries."""
+    entry = MockConfigEntry(
+        domain=DOMAIN, data={CONF_DEVICE_TYPE: "some_legacy_device"}
+    )
+    entry.add_to_hass(hass)
+    flow = OptionsFlowHandler(entry)
+    flow.hass = hass
+    flow.DEBUG_ME = True
+
+    # Kill mutmut testing boundaries (< vs <=) (Kills mutants 8, 9, 11, 12, 14, 15, 17, 18)
+    res_min = await flow.async_step_init({CONF_POLL_INTERVAL: MIN_POLL_INTERVAL - 1})
+    assert res_min["type"] == "form"
+    assert res_min["errors"][CONF_POLL_INTERVAL] == "invalid_poll_interval"
+
+    res_max = await flow.async_step_init({CONF_POLL_INTERVAL: MAX_POLL_INTERVAL + 1})
+    assert res_max["errors"][CONF_POLL_INTERVAL] == "invalid_poll_interval"
+
+    res_min_exact = await flow.async_step_init(
+        {CONF_POLL_INTERVAL: MIN_POLL_INTERVAL, CONF_TARGET_TEMP_STEP: "0.5"}
+    )
+    assert res_min_exact["type"] == "create_entry"
+    assert res_min_exact["data"][CONF_POLL_INTERVAL] == MIN_POLL_INTERVAL
+
+    res_max_exact = await flow.async_step_init(
+        {CONF_POLL_INTERVAL: MAX_POLL_INTERVAL, CONF_TARGET_TEMP_STEP: "0.5"}
+    )
+    assert res_max_exact["type"] == "create_entry"
+    assert res_max_exact["data"][CONF_POLL_INTERVAL] == MAX_POLL_INTERVAL
+
+    # Kill mutmut ValueError/TypeError branches and time_period_str mutations (Kills mutants 6, 7)
+    res_err = await flow.async_step_init({CONF_POLL_INTERVAL: "invalid_time_string"})
+    assert res_err["errors"][CONF_POLL_INTERVAL] == "invalid_poll_interval"
+
+    res_str_valid = await flow.async_step_init(
+        {CONF_POLL_INTERVAL: "00:05:00", CONF_TARGET_TEMP_STEP: "0.5"}
+    )
+    assert res_str_valid["type"] == "create_entry"
+    assert res_str_valid["data"][CONF_POLL_INTERVAL] == 300
+
+    # Kill mutmut testing correct type casting
+    res_success = await flow.async_step_init(
+        {
+            CONF_POLL_INTERVAL: 120,
+            CONF_TARGET_TEMP_STEP: "0.5",  # Passed as string from UI UI
+        }
+    )
+    assert res_success["type"] == "create_entry"
+    assert res_success["data"][CONF_POLL_INTERVAL] == 120
+    assert (
+        res_success["data"][CONF_TARGET_TEMP_STEP] == 0.5
+    )  # Assert strict float conversion
+
+    # Kill target_temp_step TypeError fallback
+    res_fallback = await flow.async_step_init(
+        {CONF_POLL_INTERVAL: 120, CONF_TARGET_TEMP_STEP: "invalid_float"}
+    )
+    assert res_fallback["data"][CONF_TARGET_TEMP_STEP] == DEFAULT_TARGET_TEMP_STEP
+
+
+@pytest.mark.asyncio
+async def test_options_flow_schema_and_defaults(hass):
+    """Kill mutants in OptionsFlowHandler._get_options_schema and init."""
+    # Test 1: Supported device (8888) with existing options to verify PRECEDENCE
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888,
+            CONF_POLL_INTERVAL: 10,  # Options should override data
+            CONF_TARGET_TEMP_STEP: 1.0,
+        },
+        options={
+            CONF_CONN_METHOD: CONN_METHOD_RAW,
+            CONF_POLL_INTERVAL: 20,
+            CONF_ENABLE_POLLING: False,
+            CONF_TARGET_TEMP_STEP: 0.5,
+            CONF_TEMP_NATIVE_CURRENT: UnitOfTemperature.FAHRENHEIT,
+            CONF_TEMP_NATIVE_TARGET: UnitOfTemperature.CELSIUS,
+        },
+    )
+    entry.add_to_hass(hass)
+
+    flow = OptionsFlowHandler(entry)
+    flow.hass = hass
+    flow.DEBUG_ME = True
+
+    result = await flow.async_step_init()
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "init"
+
+    # Kill mutants changing default fetches (options preferred over data)
+    schema = result["data_schema"]
+    evaluated = schema({})
+    assert evaluated[CONF_CONN_METHOD] == CONN_METHOD_RAW
+    assert evaluated[CONF_POLL_INTERVAL] == "0:00:20"
+    assert evaluated[CONF_ENABLE_POLLING] is False
+    assert evaluated[CONF_TARGET_TEMP_STEP] == "0.5"
+    assert evaluated[CONF_TEMP_NATIVE_CURRENT] == UnitOfTemperature.FAHRENHEIT
+    assert evaluated[CONF_TEMP_NATIVE_TARGET] == UnitOfTemperature.CELSIUS
+
+    # Kill mutmut_21, 22: Assert selector properties for CONN_METHOD
+    conn_method_key = next(
+        k for k in schema.schema if getattr(k, "schema", None) == CONF_CONN_METHOD
+    )
+    conn_selector = schema.schema[conn_method_key]
+    assert conn_selector.config["translation_key"] == "connection_method"
+    assert conn_selector.config["mode"] == SelectSelectorMode.DROPDOWN
+    conn_options = conn_selector.config["options"]
+    assert {"value": CONN_METHOD_AIOHTTP, "label": "Modern (aiohttp)"} in conn_options
+    assert {"value": "requests", "label": "Legacy (Obsolete)"} in conn_options
+    assert {"value": CONN_METHOD_RAW, "label": "Robust (raw socket)"} in conn_options
+
+    temp_step_key = next(
+        k for k in schema.schema if getattr(k, "schema", None) == CONF_TARGET_TEMP_STEP
+    )
+    temp_step_options = schema.schema[temp_step_key].config["options"]
+    assert {"value": "0.1", "label": "0.1°"} in temp_step_options
+    assert {"value": "0.5", "label": "0.5°"} in temp_step_options
+    assert {"value": "1.0", "label": "1.0°"} in temp_step_options
+
+    native_current_key = next(
+        k
+        for k in schema.schema
+        if getattr(k, "schema", None) == CONF_TEMP_NATIVE_CURRENT
+    )
+    native_current_options = schema.schema[native_current_key].config["options"]
+    assert UnitOfTemperature.CELSIUS in native_current_options
+    assert UnitOfTemperature.FAHRENHEIT in native_current_options
+
+    poll_key = next(
+        k for k in schema.schema if getattr(k, "schema", None) == CONF_POLL_INTERVAL
+    )
+    poll_selector = schema.schema[poll_key]
+    assert poll_selector.config["type"] == TextSelectorType.TEXT
+
+    # Test 1.5: Missing options/data and invalid poll interval string (Kills mutants 7, 10, 24, 27, 32)
+    entry_empty = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888,
+            CONF_CONN_METHOD: CONN_METHOD_RAW,
+            CONF_POLL_INTERVAL: "invalid",
+        },
+        options={},
+    )
+    entry_empty.add_to_hass(hass)
+    flow_empty = OptionsFlowHandler(entry_empty)
+    flow_empty.hass = hass
+    result_empty = await flow_empty.async_step_init()
+    schema_empty = result_empty["data_schema"]
+    evaluated_empty = schema_empty({})
+    # Kill 7, 10: CONN_METHOD_RAW is in data
+    assert evaluated_empty[CONF_CONN_METHOD] == CONN_METHOD_RAW
+    # Kill 24, 27, 32, 33: Invalid poll interval falls into except TypeError/ValueError and returns raw str
+    assert evaluated_empty[CONF_POLL_INTERVAL] == "invalid"
+
+    # Kill 45, 49, 54, 69: Assert defaults when completely missing from options and data
+    assert evaluated_empty[CONF_TEMP_NATIVE_TARGET] == DEFAULT_CONF_TEMP_UNIT
+    assert evaluated_empty[CONF_ENABLE_POLLING] == DEFAULT_ENABLE_POLLING
+    assert evaluated_empty[CONF_TARGET_TEMP_STEP] == str(DEFAULT_TARGET_TEMP_STEP)
+
+    # Kill mutmut_39, 79: Assert exact selector config properties for temp native and step
+    temp_curr_key = next(
+        k
+        for k in schema_empty.schema
+        if getattr(k, "schema", None) == CONF_TEMP_NATIVE_CURRENT
+    )
+    temp_selector = schema_empty.schema[temp_curr_key]
+    assert temp_selector.config["mode"] == SelectSelectorMode.DROPDOWN
+
+    step_key = next(
+        k
+        for k in schema_empty.schema
+        if getattr(k, "schema", None) == CONF_TARGET_TEMP_STEP
+    )
+    step_selector = schema_empty.schema[step_key]
+    assert step_selector.config["mode"] == SelectSelectorMode.DROPDOWN
+
+    # Test 2: Legacy unsupported device (AIOHTTP selector MUST NOT APPEAR)
+    entry_legacy = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878
+        },  # 2878 is definitely not in DEVICE_TYPE_AIOHTTP_SUPPORTED
+    )
+    entry_legacy.add_to_hass(hass)
+    flow_legacy = OptionsFlowHandler(entry_legacy)
+    flow_legacy.hass = hass
+
+    result_legacy = await flow_legacy.async_step_init()
+    schema_legacy = result_legacy["data_schema"]
+    evaluated_legacy = schema_legacy({})
+    assert CONF_CONN_METHOD not in evaluated_legacy
+
+
+@pytest.mark.asyncio
+async def test_options_flow_empty_title_and_fallback(hass):
+    """Kill mutants setting title to None or testing empty target temps."""
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_DEVICE_TYPE: "some_device"})
+    entry.add_to_hass(hass)
+    flow = OptionsFlowHandler(entry)
+    flow.hass = hass
+    flow.DEBUG_ME = True
+
+    res = await flow.async_step_init({CONF_POLL_INTERVAL: 120})
+    # Categorically ensure generated title is an empty string
+    assert res["title"] == ""
