@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 from pathlib import Path
 import time
@@ -45,6 +46,13 @@ HEADER_VALUE_JSON = "application/json"
 _HOST_CLIENTS: dict[tuple[str, int], Samsung8888Client] = {}
 
 
+@dataclass
+class RawSharedState:
+    """State shared by a raw connection and the copies made by create_updated."""
+
+    connected: bool = False
+
+
 def clear_raw_clients_pool() -> None:
     """Clear all shared raw clients (for reload/testing isolation)."""
     _HOST_CLIENTS.clear()
@@ -83,6 +91,8 @@ class ConnectionRaw8888(Connection):
         if self._controller:  # pragma: no mutate
             new_conn.set_controller_ref(self._controller)  # pragma: no mutate
         new_conn._params = self._params.copy()
+        # Requests run on the copies, availability is read on the base connection
+        new_conn._shared_state = self._shared_state
 
         if not yaml_node:
             return new_conn
@@ -150,7 +160,16 @@ class ConnectionRaw8888(Connection):
         self._embedded_command: ConnectionRaw8888 | None = None
         self._keep_alive = config.get(CONF_KEEP_ALIVE, True)
 
-        self._is_connected: bool = False
+        self._shared_state = RawSharedState()
+
+    @property
+    def _is_connected(self) -> bool:
+        """Return True once a request succeeded on this connection or its copies."""
+        return self._shared_state.connected
+
+    @_is_connected.setter
+    def _is_connected(self, value: bool) -> None:
+        self._shared_state.connected = value
 
     @staticmethod
     def _resolve_cert_path(cert_file: Any) -> str | None:
@@ -453,6 +472,10 @@ class ConnectionRaw8888(Connection):
             if err:
                 raise CannotConnect(f"API Error: {err}")  # pragma: no mutate
 
+            # Like the aiohttp engine: available once a request succeeded, so the
+            # poller can ride out transient errors with the cached state.
+            self._is_connected = True
+
             if debug_enabled:
                 elapsed = time.perf_counter() - start_time  # pragma: no mutate
                 _LOGGER.debug(
@@ -479,6 +502,7 @@ class ConnectionRaw8888(Connection):
 
     async def close(self) -> None:
         """Close the connection and release resources safely."""
+        self._is_connected = False
         if self._embedded_command:
             try:
                 res = self._embedded_command.close()
