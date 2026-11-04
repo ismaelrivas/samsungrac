@@ -10,12 +10,14 @@ from pathlib import Path
 import ssl
 from typing import Any
 
+import aiohttp
 from homeassistant.config_entries import SOURCE_RECONFIGURE
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 from homeassistant.data_entry_flow import AbortFlow
 from homeassistant.helpers import aiohttp_client, device_registry as dr
 
 from . import controller_yaml, helpers
+from .connection_aiohttp import ConnectionAiohttp8888
 from .const import (
     CONF_CERT,
     CONF_CONFIG_FILE,
@@ -33,6 +35,7 @@ from .exceptions import (
     CannotConnect,
     TokenAcquisitionError,
 )
+from .protocol_8888 import Samsung8888Client
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -212,22 +215,56 @@ class ConfigFlowHelpersMixin:
             return {"ok": False, "error": "unknown_error"}
 
     @staticmethod
-    def _build_ssl_context(cert_path: str) -> ssl.SSLContext:
-        """Build an SSL context, loading certificate if provided (sync, executor-safe)."""
-        ssl_context = ssl.create_default_context()
-        if cert_path:
-            # Protect os.path.dirname from receiving a None value
-            full_path = helpers.resolve_cert_path(
-                cert_path, os.path.dirname(__file__)
-            )  # pragma: no mutate
-            if full_path is not None and os.path.exists(full_path):
-                # Protect the underlying SSL C library from receiving a None value
-                ssl_context.load_verify_locations(cafile=full_path)  # pragma: no mutate
-        else:
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
+    def _resolve_cert_file(cert_path: str) -> str | None:
+        """Resolve a certificate name or path to an existing file (sync, executor-safe)."""
+        if not cert_path:
+            return None
+        # Protect os.path.dirname from receiving a None value
+        full_path = helpers.resolve_cert_path(
+            cert_path, os.path.dirname(__file__)
+        )  # pragma: no mutate
+        if full_path is not None and os.path.exists(full_path):
+            return full_path
+        return None
 
-        return ssl_context
+    @classmethod
+    def _build_ssl_context(cls, cert_path: str) -> ssl.SSLContext:
+        """Build the same SSL context used at runtime (sync, executor-safe).
+
+        Legacy port 8888 units only complete the handshake with TLSv1, weak
+        ciphers and the .pem presented as client certificate (mTLS).
+        """
+        return helpers.create_samsung_ssl_context(
+            cert_path=cls._resolve_cert_file(cert_path)
+        )
+
+    async def _test_connection_8888_raw(
+        self, ip_address: str, headers: dict[str, str], cert_path: str
+    ) -> dict[str, Any]:
+        """Repeat the 8888 connection test with the raw socket engine.
+
+        Mirrors the runtime fallback for firmwares sending malformed headers
+        (e.g. "X-API-Version : v1.0.0") that aiohttp rejects.
+        """
+        cert_file = await self.hass.async_add_executor_job(
+            self._resolve_cert_file, cert_path
+        )
+        client = Samsung8888Client(ip_address, PORT_SAMSUNG_8888, cert_file)
+        try:
+            _, error = await client.request("GET", "/devices", headers=headers)
+        finally:
+            await client.close()
+
+        if error is None:
+            _LOGGER.debug(
+                "Lightweight 8888 connection test successful (raw socket)."
+            )  # pragma: no mutate
+            return {"ok": True}
+
+        # fmt: off
+        _LOGGER.warning('8888 raw connection test failed: %s', error)  # pragma: no mutate
+        # fmt: on
+        return {"ok": False, "error": "cannot_connect"}
 
     async def _test_connection_safe(self) -> dict[str, Any]:
         """Safe and lightweight wrapper for testing the connection."""
@@ -254,22 +291,37 @@ class ConfigFlowHelpersMixin:
                     self._build_ssl_context, cert_path
                 )
 
-                async with session.get(
-                    url,
-                    headers=headers,
-                    ssl=ssl_context,
-                    timeout=GLOBAL_HTTP_TIMEOUT,  # type: ignore[arg-type] # pragma: no mutate
-                ) as response:
-                    if response.status == 200:
-                        _LOGGER.debug(
-                            "Lightweight 8888 connection test successful."
-                        )  # pragma: no mutate
-                        return {"ok": True}
+                try:
+                    async with session.get(
+                        url,
+                        headers=headers,
+                        ssl=ssl_context,
+                        timeout=GLOBAL_HTTP_TIMEOUT,  # type: ignore[arg-type] # pragma: no mutate
+                    ) as response:
+                        if response.status == 200:
+                            _LOGGER.debug(
+                                "Lightweight 8888 connection test successful."
+                            )  # pragma: no mutate
+                            return {"ok": True}
 
-                    # fmt: off
-                    _LOGGER.warning('8888 connection test failed with status: %s', response.status)  # pragma: no mutate
-                    # fmt: on
-                    return {"ok": False, "error": "cannot_connect"}
+                        # fmt: off
+                        _LOGGER.warning('8888 connection test failed with status: %s', response.status)  # pragma: no mutate
+                        # fmt: on
+                        return {"ok": False, "error": "cannot_connect"}
+                except (
+                    aiohttp.ClientResponseError,
+                    aiohttp.http_exceptions.BadHttpMessage,
+                ) as err:
+                    # pylint: disable-next=protected-access
+                    if not ConnectionAiohttp8888._is_http_protocol_violation(err):
+                        raise
+                    _LOGGER.debug(
+                        "Malformed HTTP headers during 8888 connection test, retrying with raw socket: %s",
+                        err,
+                    )  # pragma: no mutate
+                    return await self._test_connection_8888_raw(
+                        ip_address, headers, cert_path
+                    )
 
             elif device_type == DEVICE_TYPE_SAMSUNG_2878:
                 config_data = self.flow_data.copy()

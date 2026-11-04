@@ -29,17 +29,9 @@ async def test_connection_safe_ssl_mutant(hass):
         CONF_IP_ADDRESS: "192.168.1.100",
     }
 
-    with (
-        patch(
-            "custom_components.climate_ip.config_flow_helpers.ssl.create_default_context"
-        ) as mock_ssl,
-        patch(
-            "homeassistant.helpers.aiohttp_client.async_get_clientsession"
-        ) as mock_session,
-    ):
-        mock_context = MagicMock()
-        mock_ssl.return_value = mock_context
-
+    with patch(
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession"
+    ) as mock_session:
         mock_get = AsyncMock()
         mock_get.__aenter__.return_value.status = 200
         mock_session.return_value.get.return_value = mock_get
@@ -50,8 +42,9 @@ async def test_connection_safe_ssl_mutant(hass):
         except TimeoutError:  # pragma: no cover
             pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
 
-        assert mock_context.check_hostname is False
-        assert mock_context.verify_mode == ssl.CERT_NONE
+        ssl_context = mock_session.return_value.get.call_args.kwargs["ssl"]
+        assert ssl_context.check_hostname is False
+        assert ssl_context.verify_mode == ssl.CERT_NONE
 
 
 @pytest.mark.asyncio
