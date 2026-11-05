@@ -461,6 +461,8 @@ async def test_mim_h03_empty_list(hass: HomeAssistant) -> None:
 
     await flow.async_step_user()
     result = await flow.async_step_user({CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03})
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "mim_h03"
 
     with (
         patch(
@@ -3294,7 +3296,7 @@ async def test_async_step_select_devices_comprehensive(hass: HomeAssistant) -> N
 
     # Round 1: No user input -> Must show initial form
     with patch(
-        "custom_components.climate_ip.config_flow_discovery.cv.multi_select"
+        "custom_components.climate_ip.config_flow_schemas.cv.multi_select"
     ) as mock_multi:
         mock_multi.return_value = str
         res1 = await flow.async_step_select_devices()

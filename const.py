@@ -1,10 +1,8 @@
 """Constants for the Climate IP integration."""
 
-from __future__ import annotations
-
 from typing import Final
 
-from homeassistant.components.climate.const import (
+from homeassistant.components.climate import (
     ATTR_FAN_MODE,
     ATTR_HVAC_MODE,
     ATTR_PRESET_MODE,
@@ -135,11 +133,21 @@ DEVICE_TYPE_SMARTTHINGS_HVAC = "smartthings_hvac"
 DEVICE_TYPE_SMARTTHINGS_DHW = "smartthings_dhw"
 DEVICE_TYPE_INTESISBOX = "intesisbox"
 
+DEVICE_TYPES = [
+    DEVICE_TYPE_SAMSUNG_2878,
+    DEVICE_TYPE_SAMSUNG_8888,
+    DEVICE_TYPE_MIM_H03,
+    DEVICE_TYPE_INTESISBOX,
+    DEVICE_TYPE_SMARTTHINGS_HVAC,
+    DEVICE_TYPE_SMARTTHINGS_DHW,
+]
+
 # Group for modern devices that will get the new engine option
 DEVICE_TYPE_8888_GROUP = [DEVICE_TYPE_SAMSUNG_8888, DEVICE_TYPE_MIM_H03]
 
 # Group for all devices that support the aiohttp engine (Modern + SmartThings)
-DEVICE_TYPE_AIOHTTP_SUPPORTED = DEVICE_TYPE_8888_GROUP + [
+DEVICE_TYPE_AIOHTTP_SUPPORTED = [
+    *DEVICE_TYPE_8888_GROUP,
     DEVICE_TYPE_SMARTTHINGS_HVAC,
     DEVICE_TYPE_SMARTTHINGS_DHW,
 ]
