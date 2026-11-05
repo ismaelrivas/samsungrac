@@ -1,4 +1,4 @@
-# pylint: disable=duplicate-code,no-else-return,line-too-long,abstract-method,too-many-lines,comparison-with-callable
+# pylint: disable=duplicate-code,no-else-return,line-too-long,abstract-method,comparison-with-callable
 """Asynchronous connection engine for modern Samsung devices (port 8888) using aiohttp.
 
 This engine implements HTTP Keep-Alive for low latency and correct mTLS.
@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 import ssl
 import sys
-from typing import TYPE_CHECKING, Any, Self, cast
+from typing import TYPE_CHECKING, Any, Self
 
 import aiohttp
 from aiohttp.hdrs import AUTHORIZATION, CONNECTION, CONTENT_TYPE
@@ -47,7 +47,6 @@ from .exceptions import AuthError, CannotConnect, InvalidHeaderError
 from .helpers import (
     async_create_samsung_ssl_context,
     format_placeholders,
-    mask_sensitive_data,
     resolve_cert_path,
 )
 
@@ -68,39 +67,41 @@ class AiohttpSharedState:
 
 _LOGGER = logging.getLogger(__name__)
 
-CONNECTION_TYPE_AIOHTTP_8888 = "samsung_8888_aiohttp"
+CONNECTION_TYPE_AIOHTTP_8888 = "samsung_8888_aiohttp"  # pragma: no mutate
 
-DEFAULT_PORT = 8888
-DEFAULT_SSL_CIPHERS = "ALL:@SECLEVEL=0"
-HEADER_VALUE_JSON = "application/json"
-HEADER_VALUE_CLOSE = "close"
-KEEPALIVE_TIMEOUT = 75
+DEFAULT_PORT = 8888  # pragma: no mutate
+DEFAULT_SSL_CIPHERS = "ALL:@SECLEVEL=0"  # pragma: no mutate
+HEADER_VALUE_JSON = "application/json"  # pragma: no mutate
+HEADER_VALUE_CLOSE = "close"  # pragma: no mutate
+KEEPALIVE_TIMEOUT = 75  # pragma: no mutate
 
-# Lower-cased message fragments emitted by aiohttp's HTTP parser on malformed headers
-# (e.g. "Invalid header token: b'X-API-Version : v1.0.0'").
-_HEADER_VIOLATION_MARKERS = ("invalid header", "header token")
-# Upper bound when walking __cause__/__context__ chains (guards against cycles).
-_MAX_EXC_CHAIN_DEPTH = 5
+_HEADER_VIOLATION_MARKERS = ("invalid header", "header token")  # pragma: no mutate
+_LOCAL_HOST_MARKERS = (
+    "localhost",
+    "127.0.0.1",
+    "::1",
+    "192.168.",
+    "10.",
+    "172.",
+    ".local",
+)  # pragma: no mutate
+_MAX_EXC_CHAIN_DEPTH = 5  # pragma: no mutate
 
-_KEY_PROBE_URL = "probe_url"
-_KEY_URL = "url"
-_KEY_JSON = "json"
-_KEY_METHOD = "method"
-_KEY_HEADERS = "headers"
+_KEY_PROBE_URL = "probe_url"  # pragma: no mutate
+_KEY_URL = "url"  # pragma: no mutate
+_KEY_JSON = "json"  # pragma: no mutate
+_KEY_METHOD = "method"  # pragma: no mutate
+_KEY_HEADERS = "headers"  # pragma: no mutate
 
-AUTH_BEARER_PREFIX = "Bearer {}"
-DEFAULT_HTTP_METHOD = "GET"
+AUTH_BEARER_PREFIX = "Bearer {}"  # pragma: no mutate
+DEFAULT_HTTP_METHOD = "GET"  # pragma: no mutate
 
 
 @register_connection
 class ConnectionAiohttp8888(Connection):
-    """An asynchronous connection handler for Samsung devices on port 8888.
+    """Asynchronous connection handler for Samsung devices on port 8888."""
 
-    It uses aiohttp's ClientSession for persistent connections (Keep-Alive)
-    and implements the correct mTLS (mutual-TLS) authentication.
-    """
-
-    # pylint: disable=too-many-arguments
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
     def __init__(
         self,
         config: dict[str, Any],
@@ -110,35 +111,20 @@ class ConnectionAiohttp8888(Connection):
         ip_address: str | None = None,
     ) -> None:
         """Initialize the aiohttp connection."""
-        super().__init__(config, logger, hass=hass)
-        self._hass = hass
-        self._controller: YamlController | None = (
-            None  # Initialize controller reference
+        super().__init__(
+            config, logger, hass=hass, session=session, ip_address=ip_address
         )
-        self._session = session
-        self._ip_address = ip_address
         self._token: str | None = config.get(CONF_TOKEN)
         self._raw_cert_path: str | None = config.get(CONF_CERT)
         self._cert_path: str | None = None
-
-        # Strict object to share initialization state across all copies.
-        # The Lock prevents race conditions during the first initialization.
-        # We also store 'local_session' here so it is shared across copies (commands).
         self._shared_state = AiohttpSharedState()
-
-        # This will hold the Jinja2 template for this specific connection instance.
-        self._connection_template: Template | None = None
-
-        self.condition_template: Template | None = None
         self._embedded_command: ConnectionAiohttp8888 | None = None
-
         self._keep_alive: bool = config.get(CONF_KEEP_ALIVE, True)
 
-        if self._token is None or len(self._token.strip()) == 0:
-            err_msg = (
+        if not self._token or not self._token.strip():
+            _LOGGER.error(  # pylint: disable=hass-logger-period
                 "[aiohttp_init] aiohttp engine started without a token. This will fail."
             )
-            _LOGGER.error(err_msg)
             raise AuthError("[aiohttp_init] aiohttp engine started without a token.")
 
     @property
@@ -154,14 +140,9 @@ class ConnectionAiohttp8888(Connection):
     @property
     def log_prefix(self) -> str:
         """Generate a consistent log prefix."""
-        if self._controller is not None and self._controller.unique_id is not None:
-            return self._controller.log_prefix
-        ip = (
-            self._ip_address
-            if self._ip_address is not None and len(self._ip_address.strip()) > 0
-            else "NO_IP"
-        )
-        return f"[{ip}]"
+        if self._controller and self._controller.unique_id:
+            return self._controller.log_prefix  # type: ignore[no-any-return]
+        return f"[{(self._ip_address or '').strip() or 'NO_IP'}]"
 
     @property
     def _ssl_context(self) -> ssl.SSLContext | None:
@@ -171,45 +152,32 @@ class ConnectionAiohttp8888(Connection):
     @property
     def _resolved_target(self) -> tuple[str, str]:
         """Strictly and centrally resolve the Host and MAC address."""
-        host = self._ip_address if self._ip_address is not None else ""
         raw_mac = self._params.get(CONF_MAC)
-        mac = str(raw_mac) if raw_mac is not None else ""  # pragma: no mutate
-        return host, mac
+        return self._ip_address or "", (
+            str(raw_mac) if raw_mac is not None else ""
+        )  # pragma: no mutate
 
     @property
     def _auth_context(self) -> tuple[str | None, str | None]:
         """Centralized resolution of active token and device_id."""
-        token = self._token
-        dev_id = None
-        if self._controller is not None:
-            token = self._controller.config.get(CONF_TOKEN, self._token)
-            cfg_dev_id = self._controller.config.get(CONF_DEVICE_ID)
-            ctrl_dev_id = self._controller.device_id
-            dev_id = (
-                cfg_dev_id
-                if (cfg_dev_id and cfg_dev_id != MAIN_DEVICE_ID)
-                else (ctrl_dev_id or cfg_dev_id)
-            )
-        return token, dev_id
+        if not self._controller:
+            return self._token, None
+        cfg = self._controller.config
+        cfg_dev_id = cfg.get(CONF_DEVICE_ID)
+        dev_id = (
+            cfg_dev_id
+            if (cfg_dev_id and cfg_dev_id != MAIN_DEVICE_ID)
+            else (self._controller.device_id or cfg_dev_id)
+        )
+        return cfg.get(CONF_TOKEN, self._token), dev_id
 
     @property
     def _probe_url_path(self) -> str:
         """Centrally resolve the probe or standard URL path from params."""
-        if len(self._params) > 0:
-            probe_url = self._params.get(_KEY_PROBE_URL)
-            if probe_url is not None:
-                return cast(str, probe_url)
-            url = self._params.get(_KEY_URL)
-            if url is not None:
-                return cast(str, url)
-        return ""
+        return str(self._params.get(_KEY_PROBE_URL) or self._params.get(_KEY_URL) or "")
 
     def set_controller_ref(self, controller: YamlController) -> None:
-        """Allows the property to set a reference to the main controller."""
-        debug_msg = (
-            "%s [set_controller_ref] Setting controller reference for connection object"
-        )
-        _LOGGER.debug(debug_msg, self.log_prefix)
+        """Set a reference to the main controller."""
         self._controller = controller
         if self._embedded_command is not None:
             self._embedded_command.set_controller_ref(controller)
@@ -220,88 +188,46 @@ class ConnectionAiohttp8888(Connection):
 
     def _resolve_and_verify_cert(self, raw_path: str | None) -> str | None:
         """Synchronously resolve and verify certificate path."""
-        if raw_path is None or len(raw_path.strip()) == 0:
+        if not raw_path or not raw_path.strip():
             return None
         path = self._resolve_cert_path(raw_path)
-        if path is None or len(path.strip()) == 0 or not os.path.exists(path):
-            return None
-        return path
+        return path if path and os.path.exists(path) else None
 
     async def _create_ssl_context(self) -> ssl.SSLContext | None:
-        """Creates the correct SSL context.
-
-        - If cert is present, sets up mTLS (Strict/Verify=None but loads cert).
-        - If cert is missing:
-             - If insecure_ssl=True (Emulator/SmartThings), sets up lenient context (Weak Ciphers, Verify=None).
-             - If insecure_ssl=False (Cloud default), returns None (aiohttp default strict).
-        """
-        # Read insecure_ssl. It comes from 'config' passed to __init__.
-        insecure_ssl = self._config.get(CONF_INSECURE_SSL, False)
-
-        # Detect if target is local/private (e.g. localhost, 127.0.0.1, or local subnet)
+        """Create the SSL context for mTLS, local targets, or insecure SSL."""
         host, _ = self._resolved_target
-        is_local_target = False
-        if host:
-            clean_host = host.split("://")[-1].split("/")[0].split(":")[0].strip("[]")
-            if (
-                clean_host in ("localhost", "127.0.0.1", "::1")
-                or clean_host.startswith(("192.168.", "10.", "172."))
-                or clean_host.endswith(".local")
-            ):
-                is_local_target = True
+        is_local = any(loc in host.lower() for loc in _LOCAL_HOST_MARKERS)
 
-        # Consolidated executor call
-        if (
-            self._cert_path is None
-            and self._raw_cert_path is not None
-            and self._hass is not None
-        ):
-            resolved = await self._hass.async_add_executor_job(
-                self._resolve_and_verify_cert, self._raw_cert_path
+        if self._cert_path is None and self._raw_cert_path and self._hass:
+            self._cert_path = (
+                await self._hass.async_add_executor_job(
+                    self._resolve_and_verify_cert, self._raw_cert_path
+                )
+                or ""
             )
-            self._cert_path = resolved if resolved is not None else ""
 
-        has_cert = self._cert_path is not None and len(self._cert_path.strip()) > 0
-
-        if not has_cert and not insecure_ssl and not is_local_target:
-            # Standard Secure Cloud Connection
-            debug_msg = "%s [aiohttp] No cert and insecure_ssl=False. Using default aiohttp SSL context (Strict)"
-            _LOGGER.debug(debug_msg, self.log_prefix)
+        has_cert = bool(self._cert_path and self._cert_path.strip())
+        if not (has_cert or self._config.get(CONF_INSECURE_SSL) or is_local):
             return None
 
         try:
-            debug_msg = "%s [aiohttp] Creating custom SSL context. Cert: %s, Insecure: %s, Local: %s"
-            _LOGGER.debug(
-                debug_msg, self.log_prefix, has_cert, insecure_ssl, is_local_target
-            )
-
             return await async_create_samsung_ssl_context(
                 cert_path=self._cert_path if has_cert else None,
                 ciphers=DEFAULT_SSL_CIPHERS,
                 verify_mode=ssl.CERT_NONE,
             )
         except (ssl.SSLError, OSError, ValueError) as e:
-            err_msg = "%s [aiohttp] Failed to create SSL context: %s"
-            _LOGGER.error(err_msg, self.log_prefix, e)
             raise CannotConnect(f"SSL context creation failed: {e}") from e
 
     @staticmethod
     def _is_wrapped_parser_violation(exc: aiohttp.ClientResponseError) -> bool:
-        """Detect HTTP parser violations wrapped by aiohttp into ClientResponseError.
-
-        aiohttp's client protocol re-raises low-level parser failures (e.g. an illegal
-        space before the colon in ``X-API-Version : v1.0.0``) as
-        ``ClientResponseError(status=400)`` chained from ``HttpProcessingError``.
-        Genuine HTTP error replies raised by ``raise_for_status()`` carry neither the
-        parser message markers nor a parser exception in their cause chain.
-        """
+        """Detect HTTP parser violations wrapped by aiohttp into ClientResponseError."""
         message = exc.message if isinstance(exc.message, str) else ""
         if exc.status == HTTPStatus.BAD_REQUEST and any(
             marker in message.lower() for marker in _HEADER_VIOLATION_MARKERS
         ):
             return True
 
-        # HttpProcessingError is the base of BadHttpMessage, InvalidHeader and LineTooLong.
         cause: BaseException | None = exc.__cause__ or exc.__context__
         depth = 0
         while cause is not None and depth < _MAX_EXC_CHAIN_DEPTH:  # pragma: no mutate
@@ -337,16 +263,12 @@ class ConnectionAiohttp8888(Connection):
     def build_8888_ssl_context(cert_path: str) -> ssl.SSLContext:
         """Build SSL context for Samsung 8888 devices in executor thread."""
         cf_helpers = sys.modules.get("custom_components.climate_ip.config_flow_helpers")
-        if cf_helpers is not None and hasattr(cf_helpers, "ssl"):
-            ssl_context = cf_helpers.ssl.create_default_context()
-        else:
-            ssl_context = ssl.create_default_context()
+        ssl_mod = getattr(cf_helpers, "ssl", ssl)
+        ssl_context: ssl.SSLContext = ssl_mod.create_default_context()
 
         if cert_path:
-            resolved_cert = (
-                helpers.resolve_cert_path(cert_path, os.path.dirname(__file__))
-                if cert_path
-                else None
+            resolved_cert = helpers.resolve_cert_path(
+                cert_path, os.path.dirname(__file__)
             )
             if resolved_cert and os.path.exists(resolved_cert):
                 with contextlib.suppress(Exception):
@@ -354,7 +276,7 @@ class ConnectionAiohttp8888(Connection):
         else:
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
-        return cast(ssl.SSLContext, ssl_context)
+        return ssl_context
 
     @classmethod
     async def async_test_8888_connection(
@@ -366,7 +288,6 @@ class ConnectionAiohttp8888(Connection):
     ) -> bool:
         """Probe Samsung 8888 HTTPS endpoint during config flow validation."""
         session = aiohttp_client.async_get_clientsession(hass)
-        url = f"https://{ip_address}:{PORT_SAMSUNG_8888}/devices"
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
@@ -375,7 +296,7 @@ class ConnectionAiohttp8888(Connection):
             cls.build_8888_ssl_context, cert_path
         )
         async with session.get(
-            url,
+            f"https://{ip_address}:{PORT_SAMSUNG_8888}/devices",
             headers=headers,
             ssl=ssl_context,
             timeout=GLOBAL_HTTP_TIMEOUT,  # type: ignore[arg-type] # pragma: no mutate
@@ -392,55 +313,35 @@ class ConnectionAiohttp8888(Connection):
         fetch_device_id: bool = False,
     ) -> str | None:
         """Validate REST API connectivity and optionally extract the first SmartThings deviceId."""
-        _LOGGER.debug("Testing lightweight REST API connection")  # pragma: no mutate
         ip_addr = ip_address.strip()
-        if ip_addr.count(":") > 1 and not ip_addr.startswith("["):
-            host_str = f"[{ip_addr}]"
-        else:
-            host_str = ip_addr
-        url = f"https://{host_str}/v1/devices"
-        headers = {"Authorization": f"Bearer {token}"}  # pragma: no mutate
-
+        host_str = (
+            f"[{ip_addr}]"
+            if ip_addr.count(":") > 1 and not ip_addr.startswith("[")
+            else ip_addr
+        )
         req_kwargs: dict[str, Any] = {
-            "headers": headers,
+            "headers": {"Authorization": f"Bearer {token}"},  # pragma: no mutate
             "timeout": GLOBAL_HTTP_TIMEOUT,  # pragma: no mutate
         }
-        if any(
-            loc in host_str.lower()
-            for loc in (
-                "localhost",
-                "127.0.0.1",
-                "::1",
-                "192.168.",
-                "10.",
-                "172.",
-                ".local",
-            )
-        ):
+        if any(loc in host_str.lower() for loc in _LOCAL_HOST_MARKERS):
             req_kwargs["ssl"] = False
 
         try:
             session = aiohttp_client.async_get_clientsession(hass)
-            async with session.get(url, **req_kwargs) as response:  # pragma: no mutate
+            async with session.get(
+                f"https://{host_str}/v1/devices", **req_kwargs
+            ) as response:  # pragma: no mutate
                 if response.status != HTTPStatus.OK:
-                    _LOGGER.warning(
-                        "REST API connection test failed"
-                    )  # pragma: no mutate
                     raise CannotConnect("HTTP Status Error")
 
                 if fetch_device_id:
-                    try:
+                    with contextlib.suppress(
+                        ValueError, TypeError, KeyError, aiohttp.ClientPayloadError
+                    ):
                         resp_json = await response.json()
                         items = resp_json.get("items", [])  # pragma: no mutate
                         if items and isinstance(items, list) and "deviceId" in items[0]:
                             return str(items[0]["deviceId"])
-                    except (
-                        ValueError,
-                        TypeError,
-                        KeyError,
-                        aiohttp.ClientPayloadError,
-                    ):
-                        pass
         except (TimeoutError, aiohttp.ClientError) as err:
             raise CannotConnect(f"REST API connection error: {err}") from err
 
@@ -451,68 +352,57 @@ class ConnectionAiohttp8888(Connection):
     ) -> bool:
         """Load configuration from yaml node dictionary."""
         if connection_base is not None and hasattr(connection_base, "_params"):
-            self._params.update(connection_base._params.copy())  # noqa: SLF001
+            self._params.update(connection_base._params)  # noqa: SLF001
 
         if node is not None:
-            keep_alive = node.get(CONF_KEEP_ALIVE)
-            if keep_alive is not None:
+            if (keep_alive := node.get(CONF_KEEP_ALIVE)) is not None:
                 self._keep_alive = keep_alive
-            if CONFIG_DEVICE_CONNECTION_PARAMS in node:
-                node_params = node.get(CONFIG_DEVICE_CONNECTION_PARAMS)
-                if isinstance(node_params, dict):
-                    self._params.update(node_params)
+            if isinstance(
+                node_params := node.get(CONFIG_DEVICE_CONNECTION_PARAMS), dict
+            ):
+                self._params.update(node_params)
         return True
 
     def create_updated(self, yaml_node: dict[str, Any] | None) -> Self:
-        """Creates a new connection instance with updated parameters from YAML."""
+        """Create a new connection instance with updated parameters from YAML."""
         # pylint: disable=protected-access
-        new_connection = ConnectionAiohttp8888(  # pragma: no mutate
+        new_conn = ConnectionAiohttp8888(  # pragma: no mutate
             config=self._config,
             logger=self._logger,
             hass=self._hass,
             session=self._session,
             ip_address=self._ip_address,
         )
-        new_connection._params = dict(self._params)
-        new_connection._controller = self._controller
-        new_connection._shared_state = self._shared_state
-        new_connection._cert_path = self._cert_path
+        new_conn._controller = self._controller
+        new_conn._shared_state = self._shared_state
+        new_conn._cert_path = self._cert_path
+        new_conn.load_from_yaml(yaml_node, self)
 
         if yaml_node is not None:
-            keep_alive = yaml_node.get(CONF_KEEP_ALIVE)
-            if keep_alive is not None:
-                new_connection._keep_alive = keep_alive
-
-            connection_template = yaml_node.get(CONFIG_DEVICE_CONNECTION_TEMPLATE)
-            if connection_template is not None:
-                new_connection._connection_template = Template(
-                    connection_template,
-                    cast(HomeAssistant, self._hass),
+            if (
+                conn_tmpl := yaml_node.get(CONFIG_DEVICE_CONNECTION_TEMPLATE)
+            ) is not None:
+                new_conn._connection_template = Template(
+                    conn_tmpl,
+                    self._hass,  # type: ignore[arg-type]
                 )
-            if CONFIG_DEVICE_CONNECTION_PARAMS in yaml_node:
-                node_params = yaml_node.get(CONFIG_DEVICE_CONNECTION_PARAMS)
-                if isinstance(node_params, dict):
-                    new_connection._params.update(node_params)
 
-            embedded_node = yaml_node.get(CONFIG_DEVICE_CONNECTION)
-            if embedded_node is not None:
-                new_connection._embedded_command = new_connection.create_updated(
-                    embedded_node
-                )
-                condition_str = embedded_node.get(CONFIG_DEVICE_CONDITION_TEMPLATE)
-                if condition_str is not None:
-                    if new_connection._embedded_command is not None:
-                        new_connection._embedded_command.condition_template = Template(
-                            condition_str,
-                            cast(HomeAssistant, self._hass),
-                        )
+            if (embedded_node := yaml_node.get(CONFIG_DEVICE_CONNECTION)) is not None:
+                new_conn._embedded_command = new_conn.create_updated(embedded_node)
+                if (
+                    cond_str := embedded_node.get(CONFIG_DEVICE_CONDITION_TEMPLATE)
+                ) is not None:
+                    new_conn._embedded_command.condition_template = Template(
+                        cond_str,
+                        self._hass,  # type: ignore[arg-type]
+                    )
         # pylint: enable=protected-access
 
-        return cast(Self, new_connection)
+        return new_conn  # type: ignore[return-value]
 
     @property
     def is_async_native(self) -> bool:
-        """Indicates if the connection is native asynchronous (aiohttp)."""
+        """Indicate if the connection is native asynchronous (aiohttp)."""
         return True
 
     @property
@@ -524,16 +414,6 @@ class ConnectionAiohttp8888(Connection):
     def is_push_supported(self) -> bool:
         """Return True indicating this connection type supports push updates."""
         return False
-
-    @property
-    def connection_template(self) -> Template | None:
-        """Return the embedded connection template."""
-        return self._connection_template
-
-    @connection_template.setter
-    def connection_template(self, value: Template | None) -> None:
-        """Set the embedded connection template."""
-        self._connection_template = value
 
     @property
     def params(self) -> dict[str, Any]:
@@ -550,11 +430,7 @@ class ConnectionAiohttp8888(Connection):
         return f"Cannot connect to {host}:{port} ({reason})"
 
     async def _try_connection(self) -> str | None:
-        """Probes the connection (HTTPS mTLS ONLY) and memorizes it for future use.
-
-        Returns response text if successful, None otherwise.
-        """
-        # Use Lock for safe, one-time initialization
+        """Probe the connection (HTTPS mTLS ONLY) and memorize it for future use."""
         if self._shared_state.initialized:
             return None
 
@@ -562,34 +438,20 @@ class ConnectionAiohttp8888(Connection):
             self._shared_state.lock = asyncio.Lock()
 
         async with self._shared_state.lock:
-            # Double-check in case another task initialized it while we were waiting for the lock.
             if self._shared_state.initialized:
                 return None  # type: ignore[unreachable]
 
             current_token, _ = self._auth_context
             probe_headers = {AUTHORIZATION: AUTH_BEARER_PREFIX.format(current_token)}
 
-            # Use the shared state's SSL context, skip for plain HTTP test mode
-            if not self._config.get(CONF_USE_HTTP, False):
-                if self._shared_state.ssl_context is None:
-                    self._shared_state.ssl_context = await self._create_ssl_context()
+            if (
+                not self._config.get(CONF_USE_HTTP)
+                and self._shared_state.ssl_context is None
+            ):
+                self._shared_state.ssl_context = await self._create_ssl_context()
 
             try:
-                debug_msg = "%s [aiohttp_probe] Probing connection"
-                _LOGGER.debug(debug_msg, self.log_prefix)
-
-                # Generalize Probe URL
-                url_path = self._probe_url_path
-
-                if url_path is not None and url_path.startswith("http"):
-                    debug_msg = "%s [aiohttp_probe] Detected absolute URL, probing: %s"
-                    _LOGGER.debug(debug_msg, self.log_prefix, url_path)
-
-                probe_url = self._build_full_url(url_path)
-
-                # CRITICAL FIX: Do NOT access self._session directly — it may be None
-                # when keep_alive=False. Always go through _get_session() which handles
-                # both a HA-shared session and a locally-created one.
+                probe_url = self._build_full_url(self._probe_url_path)
                 test_ssl_ctx: ssl.SSLContext | bool = (
                     False
                     if probe_url.startswith("http://")
@@ -605,56 +467,45 @@ class ConnectionAiohttp8888(Connection):
                         total=GLOBAL_HTTP_TIMEOUT, sock_read=GLOBAL_HTTP_TIMEOUT // 2
                     ),
                 ) as response:
-                    if response.status in (
+                    if response.status not in (
                         HTTPStatus.OK,
                         HTTPStatus.UNAUTHORIZED,
                         HTTPStatus.FORBIDDEN,
                         HTTPStatus.NOT_FOUND,
                         HTTPStatus.METHOD_NOT_ALLOWED,
-                    ):  # Added 404 and 405 for Not Found / Method Not Allowed
-                        # Attempt to log the negotiated TLS version
-                        transport = (
-                            response.connection.transport
-                            if response.connection is not None
-                            else None
-                        )
-                        ssl_obj = (
-                            transport.get_extra_info("ssl_object")
-                            if transport is not None
-                            else None
-                        )
-                        negotiated_tls = "Unknown"
-                        if ssl_obj is not None and not asyncio.iscoroutine(ssl_obj):
-                            with contextlib.suppress(AttributeError):
-                                negotiated_tls = ssl_obj.version()
-                        info_msg = "%s [aiohttp] Connection successful. Status: %s. Negotiated TLS: %s"
-                        _LOGGER.info(
-                            info_msg,
-                            self.log_prefix,
-                            response.status,
-                            negotiated_tls,
+                    ):
+                        raise CannotConnect(
+                            f"Unexpected probe response: {response.status}"
                         )
 
-                        self._shared_state.initialized = True
+                    transport = getattr(response.connection, "transport", None)
+                    ssl_obj = (
+                        transport.get_extra_info("ssl_object") if transport else None
+                    )
+                    negotiated_tls = (
+                        getattr(ssl_obj, "version", lambda: "Unknown")()
+                        if not asyncio.iscoroutine(ssl_obj)
+                        else "Unknown"
+                    )
+                    _LOGGER.info(
+                        "%s [aiohttp] Connection successful. Status: %s. Negotiated TLS: %s",
+                        self.log_prefix,
+                        response.status,
+                        negotiated_tls,
+                    )
 
-                        # Optimization - Return text for reuse in initial poll
-                        if response.status == HTTPStatus.OK:
-                            debug_msg = "%s [aiohttp_probe] Reading response body"
-                            _LOGGER.debug(debug_msg, self.log_prefix)
-                            return await response.text()
-                        return None
-                    exc_msg = f"Unexpected probe response: {response.status}"
-                    raise CannotConnect(exc_msg)
+                    self._shared_state.initialized = True
+                    return (
+                        await response.text()
+                        if response.status == HTTPStatus.OK
+                        else None
+                    )
 
             except aiohttp.ClientConnectorError as e:
-                # Log as warning (not error) because it's expected when AC is offline.
-                # Build a clean, readable message from the structured attributes of the exception.
-                clean_msg = self._format_connector_error(e)
-                warn_msg = "%s [aiohttp_probe] Device is unreachable (offline): %s"
-                _LOGGER.warning(warn_msg, self.log_prefix, clean_msg)
-                self._shared_state.ssl_context = None  # Reset to try again later
-                exc_msg = f"Device unreachable: {clean_msg}"
-                raise CannotConnect(exc_msg) from e
+                self._shared_state.ssl_context = None
+                raise CannotConnect(
+                    f"Device unreachable: {self._format_connector_error(e)}"
+                ) from e
 
             except (
                 aiohttp.ClientError,
@@ -663,107 +514,71 @@ class ConnectionAiohttp8888(Connection):
                 ValueError,
             ) as e:
                 if self._is_http_protocol_violation(e):
-                    _LOGGER.debug(
-                        "%s [aiohttp_probe] Device HTTP protocol/header violation detected: %s. "
-                        "Switching to 'Robust (raw socket)' engine",
-                        self.log_prefix,
-                        e,
-                    )
                     raise InvalidHeaderError(
                         f"Protocol violation during probe: {e}"
                     ) from e
-                warn_msg = (
-                    "%s [aiohttp_probe] Initial probe with HTTPS (mTLS) failed: %s."
+                _LOGGER.warning(  # pylint: disable=hass-logger-period
+                    "%s [aiohttp_probe] Initial probe with HTTPS (mTLS) failed: %s.",
+                    self.log_prefix,
+                    e,
+                    exc_info=True,
                 )
-                _LOGGER.warning(warn_msg, self.log_prefix, e, exc_info=True)
-                self._shared_state.ssl_context = (
-                    None  # Clear on failure to allow retries
-                )
-                err_msg = "%s [aiohttp_probe] HTTPS (mTLS) connection probe failed: %s"
-                _LOGGER.debug(err_msg, self.log_prefix, e)
+                self._shared_state.ssl_context = None
                 raise CannotConnect(
                     f"Connection initialization failed (HTTPS): {e}"
                 ) from e
 
     async def _get_session(self) -> aiohttp.ClientSession:
-        """Returns the appropriate aiohttp session.
+        """Return the shared HA session (if keep_alive) or a dedicated local session."""
+        if self._keep_alive and self._session is not None:
+            return self._session  # type: ignore[no-any-return]
 
-        If keep_alive is True, returns the shared HA session.
-        If keep_alive is False (or shared session is None), returns a dedicated local session.
-        """
-        # 1. Shared session logic (Keep-Alive)
-        if self._keep_alive:
-            if self._session is not None:
-                return cast(aiohttp.ClientSession, self._session)
-            # If we reach here, keep_alive is True but there is no session.
-            warn_msg = "%s [aiohttp] keep_alive=True but shared session is None. Falling back to a temporary local session. Ensure hass and session are passed to YamlController explicitly"
-            _LOGGER.warning(warn_msg, self.log_prefix)
-
-        # 2. Local session logic
         local_session = self._shared_state.local_session
-
-        # Evaluate condition directly without intermediate variable allocation
         if local_session is None or local_session.closed:
-            # Retrieve the shared SSL context (should be initialized by _try_connection)
             ssl_context = self._shared_state.ssl_context
-
-            # For plain HTTP test mode, use a simple connector with no SSL
-            if self._config.get(CONF_USE_HTTP):
-                connector = aiohttp.TCPConnector(
-                    keepalive_timeout=KEEPALIVE_TIMEOUT, limit=1
-                )
-            else:
-                connector = aiohttp.TCPConnector(
-                    keepalive_timeout=KEEPALIVE_TIMEOUT,
-                    ssl=ssl_context if ssl_context is not None else True,
-                    limit=1,  # pragma: no mutate
-                )
-
+            conn_kwargs: dict[str, Any] = {
+                "keepalive_timeout": KEEPALIVE_TIMEOUT,
+                "limit": 1,  # pragma: no mutate
+            }
+            if not self._config.get(CONF_USE_HTTP):
+                conn_kwargs["ssl"] = ssl_context if ssl_context is not None else True
+            connector = aiohttp.TCPConnector(**conn_kwargs)
             timeout = aiohttp.ClientTimeout(
                 total=NETWORK_POLL_TIMEOUT, connect=GLOBAL_HTTP_TIMEOUT
             )  # pragma: no mutate
             local_session = aiohttp.ClientSession(connector=connector, timeout=timeout)
             self._shared_state.local_session = local_session
 
-            debug_msg = "%s [aiohttp] Created new local session (ID: %s) with connector (ID: %s)"
-            _LOGGER.debug(debug_msg, self.log_prefix, id(local_session), id(connector))
-
         return local_session
 
     def _build_full_url(self, url_path: str | None) -> str:
-        """Constructs the full URL, handling absolute URLs and standard relative paths."""
-        if url_path is not None and url_path.startswith("http"):
-            full_url = url_path
-            if self._config.get(CONF_USE_HTTP, False) and full_url.startswith(
-                "https://"
-            ):
-                full_url = full_url.replace(
-                    "https://", "http://", 1
-                )  # pragma: no mutate
+        """Construct the full URL, handling absolute URLs and standard relative paths."""
+        use_http = bool(self._config.get(CONF_USE_HTTP))
+        if url_path and url_path.startswith("http"):
+            full_url = (
+                url_path.replace("https://", "http://", 1)  # pragma: no mutate
+                if use_http and url_path.startswith("https://")
+                else url_path
+            )
         else:
             host, _ = self._resolved_target
-            port = self._config.get(CONF_PORT, DEFAULT_PORT)
-            protocol = "http" if self._config.get(CONF_USE_HTTP, False) else "https"
-            path = url_path if url_path is not None else ""
-            if ":" in host and not (host.startswith("[") and host.endswith("]")):
-                full_url = f"{protocol}://{host}{path}"
-            else:
-                full_url = f"{protocol}://{host}:{port}{path}"
+            protocol = "http" if use_http else "https"
+            path = url_path or ""
+            has_port = ":" in host and not host.endswith("]")
+            full_url = (
+                f"{protocol}://{host}{path}"
+                if has_port
+                else f"{protocol}://{host}:{DEFAULT_PORT}{path}"
+            )
 
         return self._format_url(full_url)
 
     def _format_url(self, url: str) -> str:
-        """Replaces placeholders and mutates URL scheme/port safely."""
+        """Replace placeholders and mutate URL scheme/port safely."""
         host, mac = self._resolved_target
         token, dev_id = self._auth_context
+        parsed_url = yarl.URL(format_placeholders(url, token, host, dev_id, mac))
 
-        # 1. Resolve placeholders first
-        url = format_placeholders(url, token, host, dev_id, mac)
-
-        # 2. Parse URL safely
-        parsed_url = yarl.URL(url)
-
-        # 3. Mutate port if host did not specify a custom port and port matches default
         if ":" not in host and parsed_url.port == DEFAULT_PORT:
             parsed_url = parsed_url.with_port(
                 int(self._config.get(CONF_PORT, DEFAULT_PORT))
@@ -780,54 +595,25 @@ class ConnectionAiohttp8888(Connection):
         mac: str,
     ) -> dict[str, str]:
         """Prepare and format headers for a request."""
-        req_headers = headers.copy() if headers is not None else {}
-        req_headers = format_placeholders(req_headers, current_token, host, dev_id, mac)
+        if not current_token or not current_token.strip():
+            raise AuthError("Token not configured for the aiohttp engine")
 
-        if current_token is None or len(current_token.strip()) == 0:
-            err_msg = "%s [aiohttp] No token available! The request will fail"
-            _LOGGER.error(err_msg, self.log_prefix)
-            exc_msg = "Token not configured for the aiohttp engine"
-            raise AuthError(exc_msg)
-
-        if AUTHORIZATION not in req_headers:
-            req_headers[AUTHORIZATION] = AUTH_BEARER_PREFIX.format(current_token)
-        if CONTENT_TYPE not in req_headers:
-            req_headers[CONTENT_TYPE] = HEADER_VALUE_JSON
-
-        # Adaptive Keep-Alive Logic: If we previously detected stability issues, force Connection: close
+        req_headers: dict[str, str] = format_placeholders(
+            headers.copy() if headers else {}, current_token, host, dev_id, mac
+        )
+        req_headers.setdefault(AUTHORIZATION, AUTH_BEARER_PREFIX.format(current_token))
+        req_headers.setdefault(CONTENT_TYPE, HEADER_VALUE_JSON)
         if self._force_close_connection:
             req_headers[CONNECTION] = HEADER_VALUE_CLOSE
 
-        return cast(dict[str, str], req_headers)
+        return req_headers
 
     def _handle_http_version_fallback(self, response: aiohttp.ClientResponse) -> None:
         """Adjust Keep-Alive strategy based on the server's HTTP version."""
-        if (
-            response.version is not None
-            and response.version.major == 1
-            and response.version.minor >= 1
-        ):
-            if self._force_close_connection:
-                debug_msg = (
-                    "%s [aiohttp] Server speaks HTTP/%s.%s. Re-enabling Keep-Alive"
-                )
-                _LOGGER.debug(
-                    debug_msg,
-                    self.log_prefix,
-                    response.version.major,
-                    response.version.minor,
-                )
-            self._force_close_connection = False
-        else:
-            if not self._force_close_connection and response.version is not None:
-                debug_msg = "%s [aiohttp] Server speaks HTTP/%s.%s. Enforcing 'Connection: close'"
-                _LOGGER.debug(
-                    debug_msg,
-                    self.log_prefix,
-                    response.version.major,
-                    response.version.minor,
-                )
-            self._force_close_connection = True
+        ver = response.version
+        self._force_close_connection = not (
+            ver is not None and ver.major == 1 and ver.minor >= 1
+        )
 
     async def _async_execute_request(
         self,
@@ -836,10 +622,7 @@ class ConnectionAiohttp8888(Connection):
         data: str | None,
         headers: dict[str, str] | None,
     ) -> tuple[str, dict[str, str] | None]:
-        """Executes a command asynchronously using aiohttp.
-
-        It uses the "memorized" connection logic (HTTPS only).
-        """
+        """Execute a command asynchronously using aiohttp."""
         current_token, dev_id = self._auth_context
         host, mac = self._resolved_target
 
@@ -848,37 +631,15 @@ class ConnectionAiohttp8888(Connection):
         )
 
         ssl_context: ssl.SSLContext | bool | None = self._shared_state.ssl_context
-
-        # Detect if the path is actually an absolute URL (for SmartThings).
         if full_url.startswith("https://") and ssl_context is None:
             ssl_context = await self._create_ssl_context()
-
-        # If the final URL is plain HTTP (e.g. test mode), don't use SSL
-        if full_url.startswith("http://"):
+        elif full_url.startswith("http://"):
             ssl_context = False
 
         try:
-            # Strict Serialization with Lock: ensures that requests are executed one by one
-            # to prevent multiple concurrent connections and force reuse.
             async with self.async_lock:
-                if _LOGGER.isEnabledFor(logging.DEBUG):
-                    debug_msg = "%s [aiohttp] Sending request -> Method: %s, URL: %s, Payload: %s, Close Mode: %s"
-                    _LOGGER.debug(
-                        debug_msg,
-                        self.log_prefix,
-                        method,
-                        full_url,
-                        mask_sensitive_data(data),
-                        self._force_close_connection,
-                    )
-
                 session = await self._get_session()
-
-                method = (
-                    method.strip()
-                    if (method is not None and method.strip() != "")
-                    else DEFAULT_HTTP_METHOD
-                )
+                method = (method or "").strip() or DEFAULT_HTTP_METHOD
 
                 async with session.request(
                     method,
@@ -890,7 +651,6 @@ class ConnectionAiohttp8888(Connection):
                 ) as response:
                     response_text = await response.text()
 
-                # HTTP Version Detection to adjust Keep-Alive
                 self._handle_http_version_fallback(response)
 
                 if response.status != HTTPStatus.OK:
@@ -898,22 +658,9 @@ class ConnectionAiohttp8888(Connection):
                         HTTPStatus.UNAUTHORIZED,
                         HTTPStatus.FORBIDDEN,
                     ):
-                        err_msg = (
-                            "%s [aiohttp] Authentication error (status %d). Token: %s"
+                        raise AuthError(
+                            "Device returned 401 Unauthorized during active command execution."
                         )
-                        _LOGGER.error(
-                            err_msg,
-                            self.log_prefix,
-                            response.status,
-                            mask_sensitive_data(current_token),
-                        )
-                        exc_msg = "Device returned 401 Unauthorized during active command execution."
-                        raise AuthError(exc_msg)
-
-                    err_msg = "%s [aiohttp] HTTP Error %s: %s"
-                    _LOGGER.error(
-                        err_msg, self.log_prefix, response.status, response_text
-                    )
                     response.raise_for_status()
 
                 return response_text, dict(response.headers)
@@ -925,33 +672,13 @@ class ConnectionAiohttp8888(Connection):
             aiohttp.http_exceptions.BadHttpMessage,
         ) as e:
             if self._is_http_protocol_violation(e):
-                err_msg = (
-                    "%s [aiohttp] Device HTTP protocol/header violation detected: %s. "
-                    "Switching to 'Robust (raw socket)' engine"
-                )
-                _LOGGER.debug(err_msg, self.log_prefix, e)
                 raise InvalidHeaderError(
                     f"HTTP header/protocol error on aiohttp: {e}"
                 ) from e
 
-            # Adaptive recovery on timeout/connection drop
-            if isinstance(e, aiohttp.ClientConnectorError):
-                clean_e = self._format_connector_error(e)
-            else:
-                clean_e = str(e)
-
-            # If we timed out and haven't forced close yet, it's highly likely the "missing Content-Length" issue.
             if not self._force_close_connection:
-                warn_msg = "%s [aiohttp] Timeout/Error detected (%s). The device likely violates HTTP protocol (missing Content-Length). Switching to 'Connection: close' mode for resilience"
-                _LOGGER.warning(warn_msg, self.log_prefix, clean_e)
-
-                # CRITICAL FIX: Persist the state so we don't repeat this penalty
                 self._force_close_connection = True
                 req_headers[CONNECTION] = HEADER_VALUE_CLOSE
-
-                # Retry immediately with the new header
-                debug_msg = "%s [aiohttp] Retrying request with 'Connection: close'"
-                _LOGGER.debug(debug_msg, self.log_prefix)
                 try:
                     session = await self._get_session()
                     async with session.request(
@@ -972,32 +699,20 @@ class ConnectionAiohttp8888(Connection):
                     OSError,
                 ) as retry_exc:
                     if self._is_http_protocol_violation(retry_exc):
-                        err_msg = (
-                            "%s [aiohttp] Device HTTP protocol/header violation during retry: %s. "
-                            "Switching to 'Robust (raw socket)' engine"
-                        )
-                        _LOGGER.debug(
-                            err_msg, self.log_prefix, retry_exc
-                        )  # pragma: no mutate
                         raise InvalidHeaderError(
                             f"HTTP header/protocol error during retry on aiohttp: {retry_exc}"
                         ) from retry_exc
+                    raise CannotConnect(
+                        f"Target device returned an unexpected error response during retry: {retry_exc}"
+                    ) from retry_exc
 
-                    err_msg = (
-                        "%s [aiohttp] Retry failed even with 'Connection: close': %s"
-                    )
-                    _LOGGER.debug(err_msg, self.log_prefix, retry_exc)
-                    error_msg = f"Target device returned an unexpected error response during retry: {retry_exc}"
-                    raise CannotConnect(error_msg) from retry_exc
-
-            # If we were already forcing close, then it's a real network issue.
-            err_msg = "%s [aiohttp] Connection failed: %s"
-            _LOGGER.debug(err_msg, self.log_prefix, clean_e)
-            exc_msg = f"Connection error: {clean_e}"
-            raise CannotConnect(exc_msg) from e
+            clean_e = (
+                self._format_connector_error(e)
+                if isinstance(e, aiohttp.ClientConnectorError)
+                else str(e)
+            )
+            raise CannotConnect(f"Connection error: {clean_e}") from e
         except (ValueError, KeyError, UnicodeDecodeError) as e:
-            err_msg = "%s [aiohttp] Unexpected data parsing error: %s"
-            _LOGGER.debug(err_msg, self.log_prefix, e, exc_info=True)
             raise CannotConnect(f"Unexpected data parsing error: {e}") from e
 
     async def _execute_embedded_command(
@@ -1006,97 +721,58 @@ class ConnectionAiohttp8888(Connection):
         url: str | None,
         method: str,
         headers: dict[str, str] | None,
-        token: str | None,
-        host: str,
-        dev_id: str | None,
-        mac: str,
     ) -> None:
-        """Evaluates and executes an embedded command if conditions are met."""
+        """Evaluate and execute an embedded command if conditions are met."""
         if self._embedded_command is None:
             return
 
-        debug_msg = "%s [async_execute] Found embedded command"
-        _LOGGER.debug(debug_msg, self.log_prefix)
-        try:
-            if device_state is None:
-                warn_msg = "%s [async_execute] Embedded command found, but cannot check its condition (device_state is missing). Skipping."
-                _LOGGER.warning(warn_msg, self.log_prefix)
-            else:
-                embedded_cond_result = self._embedded_command.check_execute_condition(
-                    device_state
-                )
-                if not embedded_cond_result:
-                    debug_msg = "%s [async_execute] Embedded command condition not met. Skipping execution"
-                    _LOGGER.debug(debug_msg, self.log_prefix)
-                    return
-
-                debug_msg = "%s [async_execute] Embedded command condition met. Executing it before the main command"
-                _LOGGER.debug(debug_msg, self.log_prefix)
-
-                embedded_template = self._embedded_command.connection_template
-
-                if embedded_template is not None:
-                    embedded_params_str = embedded_template.async_render(
-                        parse_result=False
-                    )
-                    embedded_params = json_loads(embedded_params_str)
-                elif len(self._embedded_command.params) > 0:
-                    debug_msg = "%s [async_execute] Embedded command has no connection_template, using _params directly"
-                    _LOGGER.debug(debug_msg, self.log_prefix)
-                    embedded_params = self._embedded_command.params.copy()
-                else:
-                    warn_msg = "%s [async_execute] Embedded command found but it has no connection_template or params"
-                    _LOGGER.warning(warn_msg, self.log_prefix)
-                    embedded_params = None
-
-                if embedded_params is not None:
-                    # CRITICAL FIX: Replace placeholders early for robust logging and execution
-                    embedded_params = format_placeholders(
-                        embedded_params, token, host, dev_id, mac
-                    )
-
-                    json_payload = embedded_params.get(_KEY_JSON)
-                    embedded_data = (
-                        json_dumps(json_payload) if json_payload is not None else None
-                    )
-                    embedded_url = embedded_params.get(_KEY_URL, url)
-                    embedded_method = embedded_params.get(_KEY_METHOD, method)
-
-                    if _LOGGER.isEnabledFor(logging.DEBUG):
-                        debug_msg = "%s [async_execute] Executing embedded command with params: %s"
-                        _LOGGER.debug(
-                            debug_msg,
-                            self.log_prefix,
-                            mask_sensitive_data(embedded_params),
-                        )
-
-                    await self._embedded_command.async_execute(
-                        method=embedded_method,
-                        url=embedded_url,
-                        data=embedded_data,
-                        headers=embedded_params.get(
-                            _KEY_HEADERS, headers
-                        ),  # pragma: no mutate
-                        device_state=device_state,
-                    )
-
-        except (CannotConnect, AuthError) as e:
-            warn_msg = (
-                "%s [async_execute] Embedded command failed due to connection error: %s"
+        if device_state is None:
+            _LOGGER.warning(  # pylint: disable=hass-logger-period
+                "%s [async_execute] Embedded command found, but cannot check its condition (device_state is missing). Skipping.",
+                self.log_prefix,
             )
-            _LOGGER.warning(warn_msg, self.log_prefix, e)
+            return
+
+        try:
+            if not self._embedded_command.check_execute_condition(device_state):
+                return
+
+            embedded_template = self._embedded_command.connection_template
+            if embedded_template is not None:
+                embedded_params = json_loads(
+                    embedded_template.async_render(parse_result=False)
+                )
+            elif self._embedded_command.params:
+                embedded_params = self._embedded_command.params.copy()
+            else:
+                return
+
+            if embedded_params:
+                host, mac = self._resolved_target
+                token, dev_id = self._auth_context
+                embedded_params = format_placeholders(
+                    embedded_params, token, host, dev_id, mac
+                )
+                json_payload = embedded_params.get(_KEY_JSON)
+                await self._embedded_command.async_execute(
+                    method=embedded_params.get(_KEY_METHOD, method),
+                    url=embedded_params.get(_KEY_URL, url),
+                    data=json_dumps(json_payload) if json_payload is not None else None,
+                    headers=embedded_params.get(
+                        _KEY_HEADERS, headers
+                    ),  # pragma: no mutate
+                    device_state=device_state,
+                )
+        except (CannotConnect, AuthError) as e:
+            _LOGGER.warning(
+                "%s [async_execute] Embedded command failed due to connection error: %s",
+                self.log_prefix,
+                e,
+            )
             raise
-        except (
-            aiohttp.ClientError,
-            TimeoutError,
-            OSError,
-        ) as e:
-            err_msg = "%s [async_execute] Embedded command failed: %s"
-            _LOGGER.error(err_msg, self.log_prefix, e, exc_info=True)  # noqa: G201
+        except (aiohttp.ClientError, TimeoutError, OSError) as e:
             raise CannotConnect(f"Embedded command network error: {e}") from e
         except (ValueError, KeyError, UnicodeDecodeError) as e:
-            err_msg = "%s [async_execute] Embedded command payload parsing error: %s"
-            _LOGGER.error(err_msg, self.log_prefix, e, exc_info=True)  # noqa: G201
             raise CannotConnect(f"Embedded command parsing error: {e}") from e
 
     async def async_execute(
@@ -1104,107 +780,68 @@ class ConnectionAiohttp8888(Connection):
         method: str,
         url: str | None,
         data: Any,
-        headers: dict[str, str] | None,  # Main command's headers
-        device_state: dict[str, Any] | None = None,  # Pass device state for conditions
-        _is_probe: bool = False,
+        headers: dict[str, str] | None,
+        device_state: dict[str, Any] | None = None,
+        _is_probe: bool = False,  # pragma: no mutate
         _is_poll: bool = False,
     ) -> tuple[str | None, dict[str, Any] | None]:
-        """Orchestrates the execution of commands, including embedded ones."""
-        # Resolve variables for placeholder replacement early for embedded logging
-        host, mac = self._resolved_target
-        token, dev_id = self._auth_context
-
-        # Ensure initialization before any execution
+        """Orchestrate the execution of commands, including embedded ones."""
         probe_response_text = await self._try_connection()
         full_url = self._build_full_url(url)
 
-        await self._execute_embedded_command(
-            device_state=device_state,
-            url=url,
-            method=method,
-            headers=headers,
-            token=token,
-            host=host,
-            dev_id=dev_id,
-            mac=mac,
-        )
+        await self._execute_embedded_command(device_state, url, method, headers)
 
-        # Execute the main command
         if not self.check_execute_condition(device_state):
-            debug_msg = "%s [async_execute] Condition not met. Skipping execution"
-            _LOGGER.debug(debug_msg, self.log_prefix)
             return "{}", {}
 
-        # Periodic Reset Logic: For local sessions not preserving keep_alive, explicitly close and reopen
         if _is_poll and not self._keep_alive:
             local_session = self._shared_state.local_session
             if local_session is not None:
                 self._shared_state.local_session = None
                 if not local_session.closed:
-                    debug_msg = (
-                        "%s [Periodic Reset] Closing local session (ID: %s) before poll"
-                    )
-                    _LOGGER.debug(debug_msg, self.log_prefix, id(local_session))
-                    # Ensure the session close process is awaited
-                    try:
+                    with contextlib.suppress(
+                        aiohttp.ClientError, TimeoutError, OSError
+                    ):
                         await local_session.close()
-                    except (aiohttp.ClientError, TimeoutError, OSError) as e:
-                        debug_msg = (
-                            "%s [Periodic Reset] Error closing local session: %s"
-                        )
-                        _LOGGER.debug(debug_msg, self.log_prefix, e)
 
-        # Optimization: Reuse the probe response directly for the initial poll to eliminate duplicate requests
         if (
             probe_response_text is not None
             and method == DEFAULT_HTTP_METHOD
             and full_url == self._build_full_url(self._probe_url_path)
         ):
-            debug_msg = "%s [async_execute] OPTIMIZATION: Reusing probe response for initial poll"
-            _LOGGER.debug(debug_msg, self.log_prefix)
             return probe_response_text, None
 
         return await self._async_execute_request(method, full_url, data, headers)
 
     def get_diagnostics(self) -> dict[str, Any]:
         """Return diagnostic information about the aiohttp connection."""
-        diag = {
+        return {
             "is_connected": self._shared_state.initialized,
             "force_close_connection": self._force_close_connection,
             "keep_alive_enabled": self._keep_alive,
+            "has_ssl_context": self._shared_state.ssl_context is not None,
         }
 
-        diag["has_ssl_context"] = self._shared_state.ssl_context is not None
-
-        return diag
-
     async def close(self) -> None:
-        """Close the connection and release resources.
-
-        This is called when the integration is unloaded or the connection method changes.
-        """
-        debug_msg = "%s [aiohttp] Closing connection resources"
-        _LOGGER.debug(debug_msg, self.log_prefix)
-
-        # 1. Close internal embedded command (if any)
+        """Close the connection and release resources."""
         if self._embedded_command is not None:
             await self._embedded_command.close()
 
-        # 2. Close the local session and reset shared state under lock
         try:
             if self._shared_state.lock is None:
                 self._shared_state.lock = asyncio.Lock()
             async with self._shared_state.lock:
                 local_session = self._shared_state.local_session
                 if local_session is not None:
-                    debug_msg = "%s [aiohttp] Closing local session (ID: %s)"
-                    _LOGGER.debug(debug_msg, self.log_prefix, id(local_session))
                     try:
                         if not local_session.closed:
                             await local_session.close()
                     except (aiohttp.ClientError, TimeoutError, OSError) as e:
-                        err_msg = "%s [aiohttp] Error closing local session: %s"
-                        _LOGGER.error(err_msg, self.log_prefix, e)
+                        _LOGGER.error(
+                            "%s [aiohttp] Error closing local session: %s",
+                            self.log_prefix,
+                            e,
+                        )
                     finally:
                         self._shared_state.local_session = None
 
@@ -1212,7 +849,8 @@ class ConnectionAiohttp8888(Connection):
                 self._shared_state.ssl_context = None
                 self._shared_state.force_close_connection = False
         except RuntimeError as e:  # pragma: no mutate
-            err_msg = (
-                "%s [aiohttp] Error locking/resetting shared state during close: %s"
+            _LOGGER.error(
+                "%s [aiohttp] Error locking/resetting shared state during close: %s",
+                self.log_prefix,
+                e,
             )
-            _LOGGER.error(err_msg, self.log_prefix, e)
