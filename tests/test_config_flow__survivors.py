@@ -2,14 +2,13 @@
 """Tests designed to kill mutmut Ultra survivors in config_flow.py."""
 
 import asyncio
+import contextlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.config_entries import SOURCE_RECONFIGURE
-from homeassistant.const import CONF_DEVICE_ID, CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
-from homeassistant.core import HomeAssistant
 import pytest
 
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+from custom_components.climate_ip.config_flow_helpers import _AUTH_FLOW_CACHE
 from custom_components.climate_ip.const import (
     CONF_DEVICE_TYPE,
     DEVICE_TYPE_MIM_H03,
@@ -18,23 +17,30 @@ from custom_components.climate_ip.const import (
     DEVICE_TYPE_SMARTTHINGS_DHW,
     DEVICE_TYPE_SMARTTHINGS_HVAC,
 )
+from homeassistant.config_entries import SOURCE_RECONFIGURE
+from homeassistant.const import CONF_DEVICE_ID, CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
 
 
 async def test_kill_auth_file_not_found(hass):
     """Kill ValueError(None) and get("device", None) mutants."""
+    _AUTH_FLOW_CACHE.clear()
     flow = ClimateIpConfigFlow()
     flow.hass = hass
 
     # 1. Test missing "auth_flow_file" key in "device"
     with patch(
-        "custom_components.climate_ip.config_flow.load_yaml",
+        "custom_components.climate_ip.config_flow_helpers.load_yaml",
         return_value={"device": {}},
     ):
         with pytest.raises(ValueError, match="No 'auth_flow_file' found in"):
             await flow._load_auth_flow_config(DEVICE_TYPE_SAMSUNG_2878)
 
     # 2. Test missing "device" key entirely
-    with patch("custom_components.climate_ip.config_flow.load_yaml", return_value={}):
+    with patch(
+        "custom_components.climate_ip.config_flow_helpers.load_yaml", return_value={}
+    ):
         with pytest.raises(ValueError, match="No 'auth_flow_file' found in"):
             await flow._load_auth_flow_config(DEVICE_TYPE_SAMSUNG_2878)
 
@@ -174,18 +180,17 @@ async def test_kill_acquirer_auth_flow_dict_reconfigure_confirm(hass):
             "custom_components.climate_ip.config_flow.GenericYamlTokenAcquirer"
         ) as mock_acquirer,
     ):
-        try:
+        with contextlib.suppress(Exception):
             await flow.async_step_reconfigure_confirm(
                 {CONF_IP_ADDRESS: "192.168.1.100"}
             )
-        except Exception:
-            pass
 
         mock_acquirer.assert_called_with(hass, "192.168.1.100", auth_dict, None)
 
 
 async def test_kill_auth_flow_dict_extraction(hass):
     """Kill get('auth_flow', {}) mutants in _load_auth_flow_config."""
+    _AUTH_FLOW_CACHE.clear()
     flow = ClimateIpConfigFlow()
     flow.hass = hass
 
@@ -194,7 +199,7 @@ async def test_kill_auth_flow_dict_extraction(hass):
     mock_yaml_auth = {"auth_flow": {"expected_key": "expected_val"}, "other": "ignored"}
 
     with patch(
-        "custom_components.climate_ip.config_flow.load_yaml",
+        "custom_components.climate_ip.config_flow_helpers.load_yaml",
         side_effect=[mock_yaml_main, mock_yaml_auth],
     ):
         res = await flow._load_auth_flow_config(DEVICE_TYPE_SAMSUNG_2878)
@@ -202,9 +207,10 @@ async def test_kill_auth_flow_dict_extraction(hass):
         assert res.get("expected_key") == "expected_val"
 
     # 2. Validar que el fallback {} actúa si 'auth_flow' no existe
+    _AUTH_FLOW_CACHE.clear()
     mock_yaml_no_auth = {"other_section": 123}
     with patch(
-        "custom_components.climate_ip.config_flow.load_yaml",
+        "custom_components.climate_ip.config_flow_helpers.load_yaml",
         side_effect=[mock_yaml_main, mock_yaml_no_auth],
     ):
         res_empty = await flow._load_auth_flow_config(DEVICE_TYPE_SAMSUNG_2878)
@@ -927,3 +933,35 @@ async def test_rest_api_smartthings_token_exact_8_chars_suffix(
 
             assert result["type"] == "create_entry"
             mock_set_uid.assert_awaited_once_with("smartthings_hvac_12345678")
+
+
+@pytest.mark.asyncio
+async def test_kill_user_step_mim_h03_routing(hass: HomeAssistant) -> None:
+    """Kill mutant 12: case const.DEVICE_TYPE_MIM_H03 in async_step_user."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.context = {}
+    result = await flow.async_step_user({CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03})
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "mim_h03"
+
+
+@pytest.mark.asyncio
+async def test_kill_rest_api_empty_errors_dict(hass: HomeAssistant) -> None:
+    """Kill mutants 4 & 7 in async_step_rest_api mutating or omitting errors={}."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass
+    flow.context = {}
+    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC}
+
+    with patch.object(
+        flow, "async_show_form", wraps=flow.async_show_form
+    ) as spy_show_form:
+        result = await flow.async_step_rest_api(None)
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "rest_api"
+        assert result["errors"] == {}
+        assert result["errors"] is not None
+        assert "errors" in spy_show_form.call_args.kwargs
+        assert spy_show_form.call_args.kwargs["errors"] == {}
+        assert spy_show_form.call_args.kwargs["errors"] is not None

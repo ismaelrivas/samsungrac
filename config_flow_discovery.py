@@ -1,16 +1,13 @@
 # custom_components/climate_ip/config_flow_discovery.py
 """Discovery routines and indoor unit selection for Climate IP config flow."""
 
-from __future__ import annotations
-
 import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import SOURCE_RECONFIGURE, ConfigFlowResult
 from homeassistant.const import CONF_MAC
 from homeassistant.data_entry_flow import AbortFlow
-from homeassistant.helpers import aiohttp_client, config_validation as cv
-import voluptuous as vol
+from homeassistant.helpers import aiohttp_client
 
 from . import controller_yaml
 from .const import (
@@ -44,6 +41,7 @@ class ConfigFlowDiscoveryMixin(_FlowMixinBase):
 
     flow_data: dict[str, Any]
     reauth_entry: Any | None
+    _get_select_devices_schema: Any
 
     async def _create_entry(self) -> ConfigFlowResult:
         """Stub for type checker, implemented in main config flow."""
@@ -74,12 +72,10 @@ class ConfigFlowDiscoveryMixin(_FlowMixinBase):
 
             if not initialized or not status_ok:  # pragma: no mutate
                 _LOGGER.error(
-                    "Failed to initialize or get status during discovery."
+                    "Failed to initialize or get status during discovery"
                 )  # pragma: no mutate
                 await controller.async_shutdown()
                 return None
-
-            return controller
 
         except InvalidHeaderError:
             # CRITICAL: Shutdown before propagating the fallback signal
@@ -90,6 +86,9 @@ class ConfigFlowDiscoveryMixin(_FlowMixinBase):
             # Failsafe shutdown on any other unforeseen error
             await controller.async_shutdown()
             raise
+
+        else:
+            return controller
 
     async def _async_process_mim_h03(
         self, discovered_devices: list[Any]
@@ -200,7 +199,7 @@ class ConfigFlowDiscoveryMixin(_FlowMixinBase):
         """Helper to handle the fallback to raw socket connection if HTTP fails."""
         _LOGGER.warning(
             "[%s] Malformed HTTP headers detected during discovery. "
-            "Automatically retrying with 'Robust (raw socket)' engine.",  # pragma: no mutate
+            "Automatically retrying with 'Robust (raw socket)' engine",  # pragma: no mutate
             getattr(self, "unique_id", None) or "?",
         )  # pragma: no mutate
         self.flow_data[CONF_CONN_METHOD] = CONN_METHOD_RAW
@@ -222,15 +221,13 @@ class ConfigFlowDiscoveryMixin(_FlowMixinBase):
 
             if not init_fb or not status_fb:
                 _LOGGER.error(
-                    "Failed to initialize with raw engine during discovery fallback."
+                    "Failed to initialize with raw engine during discovery fallback"
                 )  # pragma: no mutate
                 return self.async_abort(reason="cannot_connect")
 
             return await self._create_entry()
-        except Exception as raw_exc:  # pylint: disable=broad-exception-caught
-            _LOGGER.exception(
-                "Raw-engine fallback also failed: %s", raw_exc
-            )  # pragma: no mutate
+        except Exception:  # pylint: disable=broad-exception-caught
+            _LOGGER.exception("Raw-engine fallback also failed")  # pragma: no mutate
             return self.async_abort(reason="cannot_connect")
         finally:
             if controller is not None:
@@ -263,7 +260,7 @@ class ConfigFlowDiscoveryMixin(_FlowMixinBase):
             # Scenario A: Blind device (no sub-devices)
             if not discovered_devices:
                 _LOGGER.warning(
-                    "Could not discover indoor units. Creating a single entry."
+                    "Could not discover indoor units. Creating a single entry"
                 )  # pragma: no mutate
                 if controller.unique_id:
                     await self.async_set_unique_id(
@@ -304,8 +301,8 @@ class ConfigFlowDiscoveryMixin(_FlowMixinBase):
 
         except AbortFlow:
             raise  # Let Home Assistant handle its own flow control
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            _LOGGER.exception("Discovery failed: %s", e)  # pragma: no mutate
+        except Exception:  # pylint: disable=broad-exception-caught
+            _LOGGER.exception("Discovery failed")  # pragma: no mutate
             return self.async_abort(reason="unknown_error")
         finally:
             if controller is not None:
@@ -321,15 +318,6 @@ class ConfigFlowDiscoveryMixin(_FlowMixinBase):
             for device in discovered_devices
         }
 
-        def _build_select_schema() -> vol.Schema:
-            def_keys = list(device_options.keys())
-            req_key = vol.Required(
-                CONF_SELECTED_DEVICES, default=def_keys
-            )  # pragma: no mutate
-            return vol.Schema(
-                {req_key: cv.multi_select(device_options)}
-            )  # pragma: no mutate
-
         desc_placeholders: dict[str, Any] = {"device_count": len(discovered_devices)}
 
         if user_input:
@@ -339,7 +327,7 @@ class ConfigFlowDiscoveryMixin(_FlowMixinBase):
             if not selected_devices_ids:
                 return self.async_show_form(
                     step_id="select_devices",
-                    data_schema=_build_select_schema(),
+                    data_schema=self._get_select_devices_schema(device_options),
                     errors={"base": "no_devices_selected"},  # pragma: no mutate
                     description_placeholders=desc_placeholders,
                 )
@@ -368,6 +356,6 @@ class ConfigFlowDiscoveryMixin(_FlowMixinBase):
 
         return self.async_show_form(
             step_id="select_devices",
-            data_schema=_build_select_schema(),
+            data_schema=self._get_select_devices_schema(device_options),
             description_placeholders=desc_placeholders,
         )

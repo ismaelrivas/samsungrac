@@ -1,8 +1,10 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,too-many-lines,too-many-locals,use-implicit-booleaness-not-comparison,missing-function-docstring,too-many-arguments,too-many-positional-arguments,too-few-public-methods,missing-class-docstring
 """Tests for ConnectionAiohttp8888."""
 
+from http import HTTPStatus
 import logging
 import ssl
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
@@ -2572,3 +2574,424 @@ async def test_async_probe_ssl_version_attribute_error(
     with patch.object(conn, "_get_session", AsyncMock(return_value=mock_session)):
         res = await conn._try_connection()
     assert res == "OK"
+
+
+def test_build_8888_ssl_context_empty_cert():
+    """Test build_8888_ssl_context with empty cert_path disables verification."""
+    with patch.dict(
+        sys.modules, {"custom_components.climate_ip.config_flow_helpers": None}
+    ):
+        with patch("ssl.create_default_context") as mock_create_ctx:
+            mock_ctx = MagicMock(spec=ssl.SSLContext)
+            mock_create_ctx.return_value = mock_ctx
+            res = ConnectionAiohttp8888.build_8888_ssl_context("")
+            mock_create_ctx.assert_called_once()
+            assert res is mock_ctx
+            assert mock_ctx.check_hostname is False
+            assert mock_ctx.verify_mode == ssl.CERT_NONE
+
+
+def test_build_8888_ssl_context_with_config_flow_helpers():
+    """Test build_8888_ssl_context uses cf_helpers.ssl when available in sys.modules."""
+    mock_cf_helpers = MagicMock()
+    mock_ctx = MagicMock(spec=ssl.SSLContext)
+    mock_cf_helpers.ssl.create_default_context.return_value = mock_ctx
+    with patch.dict(
+        sys.modules,
+        {"custom_components.climate_ip.config_flow_helpers": mock_cf_helpers},
+    ):
+        res = ConnectionAiohttp8888.build_8888_ssl_context("")
+        mock_cf_helpers.ssl.create_default_context.assert_called_once()
+        assert res is mock_ctx
+        assert mock_ctx.check_hostname is False
+        assert mock_ctx.verify_mode == ssl.CERT_NONE
+
+
+def test_build_8888_ssl_context_with_cert_file_exists():
+    """Test build_8888_ssl_context with valid cert_path loads verify locations."""
+    import os
+
+    import custom_components.climate_ip.connection_aiohttp as conn_mod
+
+    expected_dir = os.path.dirname(conn_mod.__file__)
+
+    with patch.dict(
+        sys.modules, {"custom_components.climate_ip.config_flow_helpers": None}
+    ):
+        with patch(
+            "custom_components.climate_ip.helpers.resolve_cert_path",
+            return_value="/resolved/ca.pem",
+        ) as mock_resolve:
+            with patch("os.path.exists", return_value=True):
+                with patch("ssl.create_default_context") as mock_create_ctx:
+                    mock_ctx = MagicMock(spec=ssl.SSLContext)
+                    mock_create_ctx.return_value = mock_ctx
+                    res = ConnectionAiohttp8888.build_8888_ssl_context("ca.pem")
+                    mock_resolve.assert_called_once_with("ca.pem", expected_dir)
+                    mock_ctx.load_verify_locations.assert_called_once_with(
+                        cafile="/resolved/ca.pem"
+                    )
+                    assert res is mock_ctx
+
+
+def test_build_8888_ssl_context_with_cert_load_exception():
+    """Test build_8888_ssl_context suppresses exceptions during load_verify_locations."""
+    import os
+
+    import custom_components.climate_ip.connection_aiohttp as conn_mod
+
+    expected_dir = os.path.dirname(conn_mod.__file__)
+
+    with patch.dict(
+        sys.modules, {"custom_components.climate_ip.config_flow_helpers": None}
+    ):
+        with patch(
+            "custom_components.climate_ip.helpers.resolve_cert_path",
+            return_value="/resolved/ca.pem",
+        ) as mock_resolve:
+            with patch("os.path.exists", return_value=True):
+                with patch("ssl.create_default_context") as mock_create_ctx:
+                    mock_ctx = MagicMock(spec=ssl.SSLContext)
+                    mock_ctx.load_verify_locations.side_effect = ssl.SSLError(
+                        "Failed to load CA"
+                    )
+                    mock_create_ctx.return_value = mock_ctx
+                    res = ConnectionAiohttp8888.build_8888_ssl_context("ca.pem")
+                    mock_resolve.assert_called_once_with("ca.pem", expected_dir)
+                    mock_ctx.load_verify_locations.assert_called_once_with(
+                        cafile="/resolved/ca.pem"
+                    )
+                    assert res is mock_ctx
+
+
+def test_build_8888_ssl_context_with_nonexistent_cert():
+    """Test build_8888_ssl_context when cert file does not exist."""
+    import os
+
+    import custom_components.climate_ip.connection_aiohttp as conn_mod
+
+    expected_dir = os.path.dirname(conn_mod.__file__)
+
+    with patch.dict(
+        sys.modules, {"custom_components.climate_ip.config_flow_helpers": None}
+    ):
+        with patch(
+            "custom_components.climate_ip.helpers.resolve_cert_path",
+            return_value="/nonexistent/ca.pem",
+        ) as mock_resolve:
+            with patch("os.path.exists", return_value=False):
+                with patch("ssl.create_default_context") as mock_create_ctx:
+                    mock_ctx = MagicMock(spec=ssl.SSLContext)
+                    mock_ctx.check_hostname = True
+                    mock_ctx.verify_mode = ssl.CERT_REQUIRED
+                    mock_create_ctx.return_value = mock_ctx
+                    res = ConnectionAiohttp8888.build_8888_ssl_context("ca.pem")
+                    mock_resolve.assert_called_once_with("ca.pem", expected_dir)
+                    assert not mock_ctx.load_verify_locations.called
+                    assert mock_ctx.check_hostname is True
+                    assert mock_ctx.verify_mode == ssl.CERT_REQUIRED
+                    assert res is mock_ctx
+
+
+@pytest.mark.asyncio
+async def test_async_test_8888_connection_statuses():
+    """Test async_test_8888_connection for 200, 401, and 201 statuses."""
+    mock_hass = MagicMock()
+    mock_ssl = MagicMock()
+    mock_hass.async_add_executor_job = AsyncMock(return_value=mock_ssl)
+    mock_session = MagicMock()
+
+    # 1. 200 OK -> True
+    mock_resp_200 = AsyncMock()
+    mock_resp_200.status = 200
+    cm_200 = AsyncMock()
+    cm_200.__aenter__.return_value = mock_resp_200
+    mock_session.get.return_value = cm_200
+
+    with patch(
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+        return_value=mock_session,
+    ):
+        res_200 = await ConnectionAiohttp8888.async_test_8888_connection(
+            mock_hass, "192.168.1.100", "valid_tok", "cert.pem"
+        )
+        assert res_200 is True
+        mock_hass.async_add_executor_job.assert_called_once_with(
+            ConnectionAiohttp8888.build_8888_ssl_context, "cert.pem"
+        )
+        mock_session.get.assert_called_once_with(
+            "https://192.168.1.100:8888/devices",
+            headers={
+                "Authorization": "Bearer valid_tok",
+                "Content-Type": "application/json",
+            },
+            ssl=mock_ssl,
+            timeout=10,
+        )
+
+    # 2. 401 Unauthorized -> False
+    mock_resp_401 = AsyncMock()
+    mock_resp_401.status = 401
+    cm_401 = AsyncMock()
+    cm_401.__aenter__.return_value = mock_resp_401
+    mock_session.get.return_value = cm_401
+
+    with patch(
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+        return_value=mock_session,
+    ):
+        res_401 = await ConnectionAiohttp8888.async_test_8888_connection(
+            mock_hass, "192.168.1.100", "invalid_tok", "cert.pem"
+        )
+        assert res_401 is False
+
+    # 3. 201 Created -> False (only 200 returns True)
+    mock_resp_201 = AsyncMock()
+    mock_resp_201.status = 201
+    cm_201 = AsyncMock()
+    cm_201.__aenter__.return_value = mock_resp_201
+    mock_session.get.return_value = cm_201
+
+    with patch(
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+        return_value=mock_session,
+    ):
+        res_201 = await ConnectionAiohttp8888.async_test_8888_connection(
+            mock_hass, "192.168.1.100", "tok", "cert.pem"
+        )
+        assert res_201 is False
+
+
+@pytest.mark.asyncio
+async def test_async_validate_rest_device_hosts_and_ssl():
+    """Test async_validate_rest_device host formatting and ssl=False detection."""
+    mock_hass = MagicMock()
+    mock_session = MagicMock()
+
+    mock_resp = AsyncMock()
+    mock_resp.status = HTTPStatus.OK
+    cm = AsyncMock()
+    cm.__aenter__.return_value = mock_resp
+    mock_session.get.return_value = cm
+
+    with patch(
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+        return_value=mock_session,
+    ):
+        # 1. Remote host (e.g. api.smartthings.com) -> ssl not in kwargs
+        await ConnectionAiohttp8888.async_validate_rest_device(
+            mock_hass, "api.smartthings.com", "remote_tok"
+        )
+        call_url, call_kwargs = (
+            mock_session.get.call_args[0][0],
+            mock_session.get.call_args[1],
+        )
+        assert call_url == "https://api.smartthings.com/v1/devices"
+        assert "ssl" not in call_kwargs
+        assert call_kwargs["headers"] == {"Authorization": "Bearer remote_tok"}
+
+        # 2. IPv6 unbracketed
+        await ConnectionAiohttp8888.async_validate_rest_device(
+            mock_hass, "fe80::1::2", "tok"
+        )
+        call_url = mock_session.get.call_args[0][0]
+        assert call_url == "https://[fe80::1::2]/v1/devices"
+
+        # 3. IPv6 bracketed [::1] -> wraps once, ssl=False
+        await ConnectionAiohttp8888.async_validate_rest_device(
+            mock_hass, "[::1]", "tok"
+        )
+        call_url, call_kwargs = (
+            mock_session.get.call_args[0][0],
+            mock_session.get.call_args[1],
+        )
+        assert call_url == "https://[::1]/v1/devices"
+        assert call_kwargs.get("ssl") is False
+
+        # 4. Local patterns: localhost, 127.0.0.1, 192.168., 10., 172., .local
+        for local_host in [
+            "localhost",
+            "127.0.0.1",
+            "192.168.1.25",
+            "10.0.0.5",
+            "172.16.0.2",
+            "mydevice.local",
+        ]:
+            await ConnectionAiohttp8888.async_validate_rest_device(
+                mock_hass, local_host, "tok"
+            )
+            assert mock_session.get.call_args[1].get("ssl") is False
+
+
+@pytest.mark.asyncio
+async def test_async_validate_rest_device_status_error():
+    """Test async_validate_rest_device raises CannotConnect on non-200 HTTP status."""
+    mock_hass = MagicMock()
+    mock_session = MagicMock()
+
+    mock_resp = AsyncMock()
+    mock_resp.status = HTTPStatus.BAD_REQUEST
+    cm = AsyncMock()
+    cm.__aenter__.return_value = mock_resp
+    mock_session.get.return_value = cm
+
+    with patch(
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+        return_value=mock_session,
+    ):
+        with pytest.raises(CannotConnect, match="HTTP Status Error"):
+            await ConnectionAiohttp8888.async_validate_rest_device(
+                mock_hass, "192.168.1.5", "tok"
+            )
+
+
+@pytest.mark.asyncio
+async def test_async_validate_rest_device_fetch_device_id():
+    """Test fetch_device_id branches: extraction, empty items, malformed JSON, and exceptions."""
+    mock_hass = MagicMock()
+    mock_session = MagicMock()
+
+    # 1. Successful extraction
+    mock_resp = AsyncMock()
+    mock_resp.status = HTTPStatus.OK
+    mock_resp.json = AsyncMock(return_value={"items": [{"deviceId": "dev-uuid-12345"}]})
+    cm = AsyncMock()
+    cm.__aenter__.return_value = mock_resp
+    mock_session.get.return_value = cm
+
+    with patch(
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+        return_value=mock_session,
+    ):
+        # fetch_device_id=True returns device ID
+        dev_id = await ConnectionAiohttp8888.async_validate_rest_device(
+            mock_hass, "192.168.1.5", "tok", fetch_device_id=True
+        )
+        assert dev_id == "dev-uuid-12345"
+
+        # fetch_device_id=False returns None
+        dev_id_none = await ConnectionAiohttp8888.async_validate_rest_device(
+            mock_hass, "192.168.1.5", "tok", fetch_device_id=False
+        )
+        assert dev_id_none is None
+
+        # 2. Empty items list
+        mock_resp.json = AsyncMock(return_value={"items": []})
+        assert (
+            await ConnectionAiohttp8888.async_validate_rest_device(
+                mock_hass, "192.168.1.5", "tok", fetch_device_id=True
+            )
+            is None
+        )
+
+        # 3. Items without deviceId key
+        mock_resp.json = AsyncMock(return_value={"items": [{"otherKey": "value"}]})
+        assert (
+            await ConnectionAiohttp8888.async_validate_rest_device(
+                mock_hass, "192.168.1.5", "tok", fetch_device_id=True
+            )
+            is None
+        )
+
+        # 4. Items not a list
+        mock_resp.json = AsyncMock(return_value={"items": "not_a_list"})
+        assert (
+            await ConnectionAiohttp8888.async_validate_rest_device(
+                mock_hass, "192.168.1.5", "tok", fetch_device_id=True
+            )
+            is None
+        )
+
+        # 5. json() raises ValueError
+        mock_resp.json = AsyncMock(side_effect=ValueError("Invalid JSON"))
+        assert (
+            await ConnectionAiohttp8888.async_validate_rest_device(
+                mock_hass, "192.168.1.5", "tok", fetch_device_id=True
+            )
+            is None
+        )
+
+        # 6. json() raises TypeError
+        mock_resp.json = AsyncMock(side_effect=TypeError("Type error"))
+        assert (
+            await ConnectionAiohttp8888.async_validate_rest_device(
+                mock_hass, "192.168.1.5", "tok", fetch_device_id=True
+            )
+            is None
+        )
+
+        # 7. json() raises KeyError
+        mock_resp.json = AsyncMock(side_effect=KeyError("Missing key"))
+        assert (
+            await ConnectionAiohttp8888.async_validate_rest_device(
+                mock_hass, "192.168.1.5", "tok", fetch_device_id=True
+            )
+            is None
+        )
+
+        # 8. json() raises ClientPayloadError
+        mock_resp.json = AsyncMock(
+            side_effect=aiohttp.ClientPayloadError("Payload corrupted")
+        )
+        assert (
+            await ConnectionAiohttp8888.async_validate_rest_device(
+                mock_hass, "192.168.1.5", "tok", fetch_device_id=True
+            )
+            is None
+        )
+
+
+@pytest.mark.asyncio
+async def test_async_validate_rest_device_connection_exceptions():
+    """Test async_validate_rest_device handles TimeoutError and ClientError."""
+    mock_hass = MagicMock()
+    mock_session = MagicMock()
+
+    # 1. TimeoutError
+    mock_session.get.side_effect = TimeoutError("Request timed out")
+    with patch(
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+        return_value=mock_session,
+    ):
+        with pytest.raises(CannotConnect, match="REST API connection error"):
+            await ConnectionAiohttp8888.async_validate_rest_device(
+                mock_hass, "192.168.1.5", "tok"
+            )
+
+    # 2. ClientError
+    mock_session.get.side_effect = aiohttp.ClientError("Failed network")
+    with patch(
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+        return_value=mock_session,
+    ):
+        with pytest.raises(CannotConnect, match="REST API connection error"):
+            await ConnectionAiohttp8888.async_validate_rest_device(
+                mock_hass, "192.168.1.5", "tok"
+            )
+
+
+def test_connection_aiohttp_log_prefix_branches(mock_logger, mock_hass, mock_session):
+    """Test log_prefix branches with controller unique_id, ip_address, and fallback."""
+    conn = ConnectionAiohttp8888(
+        {CONF_TOKEN: "tok"}, mock_logger, mock_hass, mock_session, "192.168.1.100"
+    )
+    # 1. No controller -> uses ip_address
+    assert conn.log_prefix == "[192.168.1.100]"
+
+    # 2. Controller with unique_id -> delegates to controller.log_prefix
+    mock_ctrl = MagicMock()
+    mock_ctrl.unique_id = "ac_test_123"
+    mock_ctrl.log_prefix = "[ac_test_123] "
+    conn.set_controller_ref(mock_ctrl)
+    assert conn.log_prefix == "[ac_test_123] "
+
+    # 3. Controller with unique_id is None -> falls back to ip_address
+    mock_ctrl.unique_id = None
+    assert conn.log_prefix == "[192.168.1.100]"
+
+    # 4. No IP or empty IP -> falls back to [NO_IP]
+    conn._ip_address = ""
+    conn._controller = None
+    assert conn.log_prefix == "[NO_IP]"
+    conn._ip_address = None
+    assert conn.log_prefix == "[NO_IP]"

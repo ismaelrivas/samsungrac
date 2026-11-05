@@ -9,17 +9,24 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.climate_ip.const import MAX_POLL_INTERVAL, MIN_POLL_INTERVAL
+from custom_components.climate_ip.const import (
+    MAX_POLL_INTERVAL,
+    MIN_POLL_INTERVAL,
+    PORT_SAMSUNG_2878,
+    PORT_SAMSUNG_8888,
+)
 from custom_components.climate_ip.helpers import (
     ICMPSocketError,
     _can_use_icmp_privileged,
     async_check_network_reachability,
     async_create_samsung_ssl_context,
+    async_force_arp_update,
     async_get_mac_address,
     async_get_network_diagnostics,
     create_samsung_ssl_context,
     find_key_in_data,
     format_placeholders,
+    format_poll_interval,
     get_last_network_diagnostic,
     get_tls_version_name,
     get_value_by_path,
@@ -1675,3 +1682,89 @@ def test_tolerant_header_parsing_deep_execution():
             http.client.HTTPException, match="got more than 100 headers"
         ):
             http.client.parse_headers(many_headers)
+
+
+@pytest.mark.asyncio
+async def test_async_force_arp_update_success():
+    """Verify async_force_arp_update connects to both 2878 and 8888 and closes writers cleanly."""
+    mock_writer_2878 = MagicMock()
+    mock_writer_2878.close = MagicMock()
+    mock_writer_2878.wait_closed = AsyncMock()
+
+    mock_writer_8888 = MagicMock()
+    mock_writer_8888.close = MagicMock()
+    mock_writer_8888.wait_closed = AsyncMock()
+
+    async def mock_open_conn(ip, port):
+        if port == PORT_SAMSUNG_2878:
+            return MagicMock(), mock_writer_2878
+        if port == PORT_SAMSUNG_8888:
+            return MagicMock(), mock_writer_8888
+        raise ValueError(f"Unexpected port: {port}")
+
+    with patch("asyncio.open_connection", side_effect=mock_open_conn) as mock_conn:
+        await async_force_arp_update("192.168.1.50")
+        assert mock_conn.call_count == 2
+        mock_conn.assert_any_call("192.168.1.50", PORT_SAMSUNG_2878)
+        mock_conn.assert_any_call("192.168.1.50", PORT_SAMSUNG_8888)
+        mock_writer_2878.close.assert_called_once()
+        mock_writer_2878.wait_closed.assert_awaited_once()
+        mock_writer_8888.close.assert_called_once()
+        mock_writer_8888.wait_closed.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_async_force_arp_update_exceptions_suppressed():
+    """Verify TimeoutError and OSError from asyncio.open_connection are suppressed."""
+
+    async def mock_open_conn_err(ip, port):
+        if port == PORT_SAMSUNG_2878:
+            raise TimeoutError("Simulated connection timeout")
+        if port == PORT_SAMSUNG_8888:
+            raise OSError("Host unreachable")
+        return MagicMock(), MagicMock()
+
+    with patch("asyncio.open_connection", side_effect=mock_open_conn_err):
+        await async_force_arp_update("10.0.0.99")
+
+    # Also test mixed: one succeeds and writer is closed, one raises OSError
+    mock_writer = MagicMock()
+    mock_writer.close = MagicMock()
+    mock_writer.wait_closed = AsyncMock()
+
+    async def mock_mixed(ip, port):
+        if port == PORT_SAMSUNG_2878:
+            return MagicMock(), mock_writer
+        raise OSError("Port 8888 failed")
+
+    with patch("asyncio.open_connection", side_effect=mock_mixed):
+        await async_force_arp_update("10.0.0.99")
+        mock_writer.close.assert_called_once()
+        mock_writer.wait_closed.assert_awaited_once()
+
+
+def test_format_poll_interval_cases():
+    """Test format_poll_interval with integer, string, None, and invalid inputs."""
+    # Integer input and string of int
+    assert format_poll_interval(90) == "0:01:30"
+    assert format_poll_interval("120") == "0:02:00"
+    assert format_poll_interval(0) == "0:00:00"
+    assert format_poll_interval(3600) == "1:00:00"
+
+    # Non-integer string passthrough
+    assert format_poll_interval("0:05:00") == "0:05:00"
+    assert format_poll_interval("custom_str") == "custom_str"
+
+    # None falling back to default_seconds
+    assert format_poll_interval(None, 300) == "0:05:00"
+    assert format_poll_interval(None) == "0:01:00"
+    assert format_poll_interval(None, default_seconds=60) == "0:01:00"
+
+    # Invalid raw_val falling back to default_seconds
+    assert format_poll_interval(object(), 45) == "0:00:45"
+    assert format_poll_interval([], 120) == "0:02:00"
+
+    # Invalid raw_val and invalid default_seconds returns ""
+    assert format_poll_interval(None, "not_an_int") == ""
+    assert format_poll_interval(object(), "invalid") == ""
+    assert format_poll_interval(object(), None) == ""

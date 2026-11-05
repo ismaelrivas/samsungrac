@@ -1,10 +1,9 @@
 # custom_components/climate_ip/options_flow.py
 """Options flow handler for Climate IP."""
 
-from __future__ import annotations
-
-import datetime
 from typing import Any
+
+import probatio
 
 from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsFlow
 from homeassistant.const import UnitOfTemperature
@@ -17,7 +16,6 @@ from homeassistant.helpers.selector import (
     TextSelectorConfig,
     TextSelectorType,
 )
-import voluptuous as vol
 
 from .const import (
     CONF_CONN_METHOD,
@@ -36,15 +34,25 @@ from .const import (
     DEFAULT_TARGET_TEMP_STEP,
     DEVICE_TYPE_AIOHTTP_SUPPORTED,
 )
-from .helpers import validate_poll_interval
+from .helpers import format_poll_interval, validate_poll_interval
 
 
 class OptionsFlowHandler(OptionsFlow):
     """Handle options flow for Climate IP."""
 
-    def __init__(self, config_entry: ConfigEntry) -> None:
+    _config_entry: ConfigEntry | None = None
+
+    def __init__(self, config_entry: ConfigEntry | None = None) -> None:
         """Initialize the options flow."""
-        self._config_entry = config_entry
+        if config_entry is not None:
+            self._config_entry = config_entry
+
+    @property
+    def _entry(self) -> ConfigEntry:
+        """Return the config entry, supporting both manual injection and HA runner."""
+        if self._config_entry is not None:
+            return self._config_entry
+        return self.config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -75,25 +83,26 @@ class OptionsFlowHandler(OptionsFlow):
                     payload[CONF_TARGET_TEMP_STEP] = float(
                         payload[CONF_TARGET_TEMP_STEP]
                     )
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     payload[CONF_TARGET_TEMP_STEP] = DEFAULT_TARGET_TEMP_STEP
 
             return self.async_create_entry(title="", data=payload)
 
         return self.async_show_form(step_id="init", data_schema=schema)
 
-    def _get_options_schema(self) -> vol.Schema:
+    def _get_options_schema(self) -> probatio.Schema:
         """Return the schema for the options flow."""
-        schema_dict: dict[vol.Marker, Any] = {}
-        data = self._config_entry.data
-        options = self._config_entry.options
+        schema_dict: dict[probatio.Marker, Any] = {}
+        entry = self._entry
+        data = entry.data
+        options = entry.options
 
         if data.get(CONF_DEVICE_TYPE) in DEVICE_TYPE_AIOHTTP_SUPPORTED:
             opt_conn = options.get(
                 CONF_CONN_METHOD, data.get(CONF_CONN_METHOD, CONN_METHOD_AIOHTTP)
             )  # pragma: no mutate
 
-            schema_dict[vol.Required(CONF_CONN_METHOD, default=opt_conn)] = (
+            schema_dict[probatio.Required(CONF_CONN_METHOD, default=opt_conn)] = (
                 SelectSelector(
                     SelectSelectorConfig(
                         options=[
@@ -120,10 +129,7 @@ class OptionsFlowHandler(OptionsFlow):
             CONF_POLL_INTERVAL, data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
         )  # pragma: no mutate
 
-        try:
-            current_str = str(datetime.timedelta(seconds=int(opt_poll)))
-        except (ValueError, TypeError):
-            current_str = str(opt_poll)
+        current_str = format_poll_interval(opt_poll, DEFAULT_POLL_INTERVAL)
 
         temp_selector = SelectSelector(
             SelectSelectorConfig(
@@ -152,13 +158,17 @@ class OptionsFlowHandler(OptionsFlow):
         )  # pragma: no mutate
 
         schema_dict |= {
-            vol.Required(CONF_POLL_INTERVAL, default=current_str): TextSelector(
+            probatio.Required(CONF_POLL_INTERVAL, default=current_str): TextSelector(
                 TextSelectorConfig(type=TextSelectorType.TEXT)
             ),
-            vol.Required(CONF_TEMP_NATIVE_CURRENT, default=opt_curr): temp_selector,
-            vol.Required(CONF_TEMP_NATIVE_TARGET, default=opt_targ): temp_selector,
-            vol.Optional(CONF_ENABLE_POLLING, default=bool(opt_polling)): bool,
-            vol.Optional(CONF_TARGET_TEMP_STEP, default=str(opt_step)): SelectSelector(
+            probatio.Required(
+                CONF_TEMP_NATIVE_CURRENT, default=opt_curr
+            ): temp_selector,
+            probatio.Required(CONF_TEMP_NATIVE_TARGET, default=opt_targ): temp_selector,
+            probatio.Optional(CONF_ENABLE_POLLING, default=bool(opt_polling)): bool,
+            probatio.Optional(
+                CONF_TARGET_TEMP_STEP, default=str(opt_step)
+            ): SelectSelector(
                 SelectSelectorConfig(
                     options=[
                         SelectOptionDict(value="0.1", label="0.1°"),
@@ -170,4 +180,4 @@ class OptionsFlowHandler(OptionsFlow):
             ),
         }
 
-        return vol.Schema(schema_dict)
+        return probatio.Schema(schema_dict)

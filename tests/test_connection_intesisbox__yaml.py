@@ -2378,3 +2378,142 @@ async def test_intesisbox_loop_breaker_hass_attribute_fallback() -> None:
     with patch("asyncio.create_task") as mock_task:
         await conn._async_execute_loop_break("FANSP", "MANUAL", "AUTO", rule)
         mock_task.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_intesisbox_async_probe_success_variations() -> None:
+    """Test async_probe with 12-char hex, colon-separated, and hyphen-separated MAC addresses."""
+    # 1. 12-char uppercase hex
+    mock_reader = AsyncMock()
+    mock_reader.read = AsyncMock(
+        return_value=b"ID:IS-IR-WIFI-1,AABBCCDDEEFF,192.168.1.50,ASCII,v1.0.0\r\n"
+    )
+    mock_writer = MagicMock()
+    mock_writer.drain = AsyncMock()
+    mock_writer.close = MagicMock()
+    mock_writer.wait_closed = AsyncMock()
+
+    with patch(
+        "asyncio.open_connection", return_value=(mock_reader, mock_writer)
+    ) as mock_open:
+        mac = await ConnectionIntesisBox.async_probe("192.168.1.50")
+        assert mac == "aabbccddeeff"
+        mock_open.assert_called_once_with("192.168.1.50", 3310)
+        mock_writer.write.assert_called_once_with(b"ID\r\n")
+        mock_writer.drain.assert_awaited_once()
+        mock_reader.read.assert_awaited_once_with(1024)
+        mock_writer.close.assert_called_once()
+        mock_writer.wait_closed.assert_awaited_once()
+
+    # 2. Colon-separated MAC
+    mock_reader.read = AsyncMock(
+        return_value=b"ID:IS-IR-WIFI-1,AA:BB:CC:DD:EE:FF,192.168.1.50\r\n"
+    )
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        mac_colon = await ConnectionIntesisBox.async_probe(
+            "192.168.1.50", port=3311, probe_timeout=2.0
+        )
+        assert mac_colon == "aabbccddeeff"
+
+    # 3. Hyphen-separated MAC
+    mock_reader.read = AsyncMock(
+        return_value=b"ID:IS-IR-WIFI-1,AA-BB-CC-DD-EE-FF,192.168.1.50\r\n"
+    )
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        mac_hyphen = await ConnectionIntesisBox.async_probe("192.168.1.50")
+        assert mac_hyphen == "aabbccddeeff"
+
+    # 4. Non-matching ID response
+    mock_reader.read = AsyncMock(return_value=b"ID:INVALID_RESPONSE\r\n")
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        assert await ConnectionIntesisBox.async_probe("192.168.1.50") is None
+
+    # 5. Non-ID response (e.g. ERR)
+    mock_reader.read = AsyncMock(return_value=b"ERR\r\n")
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        assert await ConnectionIntesisBox.async_probe("192.168.1.50") is None
+
+
+@pytest.mark.asyncio
+async def test_intesisbox_async_probe_exceptions() -> None:
+    """Test async_probe raises CannotConnect when connection or reading fails."""
+    # 1. Connection failed (OSError)
+    with patch("asyncio.open_connection", side_effect=OSError("Network unreachable")):
+        with pytest.raises(
+            CannotConnect, match="Could not connect to IntesisBox at 192.168.1.50:3310"
+        ):
+            await ConnectionIntesisBox.async_probe("192.168.1.50")
+
+    # 2. Read timeout (TimeoutError)
+    mock_reader = AsyncMock()
+    mock_reader.read = AsyncMock(side_effect=TimeoutError("Probe read timeout"))
+    mock_writer = MagicMock()
+    mock_writer.drain = AsyncMock()
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with pytest.raises(CannotConnect, match="Could not connect to IntesisBox"):
+            await ConnectionIntesisBox.async_probe("192.168.1.50")
+
+
+@pytest.mark.asyncio
+async def test_intesisbox_async_connect_lifecycle_branches() -> None:
+    """Test async_connect early returns, reconnects on closing writer, and sets flags."""
+    conn = ConnectionIntesisBox(
+        config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},
+        logger=_LOGGER,
+    )
+    conn._connect_timeout = 1.0
+    conn._handshake_timeout = 0.01
+
+    # 1. Early return when already connected and writer is NOT closing
+    conn._is_connected = True
+    conn._writer = MagicMock()
+    conn._writer.is_closing.return_value = False
+    with patch("asyncio.open_connection") as mock_open:
+        await conn.async_connect()
+        mock_open.assert_not_called()
+
+    # 2. Proceeds to connect when writer.is_closing() is True
+    conn._writer.is_closing.return_value = True
+
+    async def hanging_read() -> bytes:
+        await asyncio.sleep(9999)
+        return b""
+
+    mock_reader = AsyncMock()
+    mock_reader.readline = AsyncMock(side_effect=hanging_read)
+    mock_writer = MagicMock()
+    mock_writer.is_closing.return_value = False
+    mock_writer.drain = AsyncMock()
+    mock_writer.write = MagicMock()
+
+    sent_cmds = []
+
+    async def mock_send(cmd: str) -> None:
+        sent_cmds.append(cmd)
+
+    conn._send_raw = mock_send
+
+    with patch(
+        "asyncio.open_connection", return_value=(mock_reader, mock_writer)
+    ) as mock_open:
+        await conn.async_connect()
+        mock_open.assert_called_once_with("127.0.0.1", 3310)
+        assert conn._closing is False
+        assert conn._is_connected is True
+        assert conn._reader_task is not None
+        assert "ID\r\n" in sent_cmds
+        assert "STATUS,1\r\n" in sent_cmds
+
+    await conn.close()
+
+    # 3. Connection failure sets _is_connected to False and raises CannotConnect
+    conn_fail = ConnectionIntesisBox(
+        config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},
+        logger=_LOGGER,
+    )
+    with patch("asyncio.open_connection", side_effect=OSError("Refused")):
+        with pytest.raises(
+            CannotConnect, match="Failed to connect to IntesisBox at 127.0.0.1:3310"
+        ):
+            await conn_fail.async_connect()
+        assert conn_fail._is_connected is False

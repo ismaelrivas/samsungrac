@@ -489,3 +489,17 @@ async def test_options_flow_empty_title_and_fallback(hass):
     res = await flow.async_step_init({CONF_POLL_INTERVAL: 120})
     # Categorically ensure generated title is an empty string
     assert res["title"] == ""
+
+
+@pytest.mark.asyncio
+async def test_options_flow_handler_zero_arg(hass):
+    """Test OptionsFlowHandler zero-arg initialization and fallback to self.config_entry."""
+    flow = OptionsFlowHandler()
+    assert flow._config_entry is None
+
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_DEVICE_TYPE: "some_device"})
+    hass.config_entries.async_get_known_entry.return_value = entry
+    flow.hass = hass
+    flow.handler = entry.entry_id
+
+    assert flow._entry == entry
