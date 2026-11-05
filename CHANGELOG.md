@@ -1,5 +1,18 @@
 # Changelog
 
+## [10.0.1b10] - 2026-11-05
+
+### Architecture & Config Flow Modularization
+- **Skinny Orchestrator (`config_flow.py`)**: Compacted orchestrator from over 1,000 lines down to 271 lines, delegating domain logic cleanly to mixins with zero raw network I/O and zero `probatio` imports.
+- **Centralized Schema Architecture (`config_flow_schemas.py`)**: Extracted all form schemas, field selectors, and dynamic schema generators into a dedicated schemas mixin.
+- **Robust Flow Helpers (`config_flow_helpers.py`)**: Centralized pairing, background task management, safe exception mapping, and credential storage.
+- **Core 2026.10 Lifecycle Compliance**: Updated `OptionsFlowHandler` to support zero-argument instantiation while maintaining backward-compatible config entry binding. Eliminated all 7 anti-patterns (AP-1 through AP-7).
+
+### Quality Assurance & Ultra Mutation Immunity
+- **Absolute Zero Mutation Immunity (100.0%)**: All 27 integration files achieved 100.0% Ultra Mutation score with 0 Survivors, 0 Untested, and 0 Invalid mutants across 10,330 evaluated mutations.
+- **Test Hardening & Suite Expansion**: Expanded unit test suite to **1,657 passed unit tests** (>96.6% total coverage, 100% on `config_flow.py` and `diagnostics.py`).
+- **Deterministic Toolchain Execution**: Hardened `mutmut_run.sh` to enforce the Python 3.14 container environment and resolved FastFork worker watchdog thresholds.
+
 ## [10.0.1b9] - 2026-11-01
 
 ### Quality Scale & Core Compliance
