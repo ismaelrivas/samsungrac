@@ -1061,6 +1061,18 @@ async def test_parse_state_multiple_docs(connection):
     assert is_upd is True
     assert parsed["AC_FUN_POWER"] == "Off"
 
+    # Three documents: data, empty Update (no device data), data.
+    # 'rfind' instead of 'find' drops the first document; 'break' instead of
+    # 'continue' on missing device data drops the last one.
+    status_doc = '<?xml version="1.0"?><Update Type="Status"><Status DUID="1"><Attr ID="{}" Value="{}"/></Status></Update>'
+    xml = (
+        status_doc.format("A", "1")
+        + '<?xml version="1.0"?><Update Type="Status"></Update>'
+        + status_doc.format("B", "2")
+    )
+    _, _, parsed = await connection._parse_and_update_state(xml)
+    assert parsed == {"A": "1", "B": "2"}
+
 
 @pytest.mark.asyncio
 async def test_process_read_queue_cancelled(connection):
