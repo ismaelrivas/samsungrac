@@ -1,0 +1,95 @@
+{
+  "quarantined": {
+    "test_config_flow__bronze_coverage.py": {
+      "original_path": "tests/test_config_flow__bronze_coverage.py",
+      "quarantined_at": "2026-11-06T09:00:00Z",
+      "reason": "Redundant tests after config_flow helpers refactor; 0 mutant kills and 100% duplicate with test_config_flow__helpers.py",
+      "sha256": "43924734dae7a4962cb1b09b0b46cb6bb7ca14e365020c02a7b1b369ba6bb36c",
+      "test_count": 4
+    },
+    "test_config_flow__schemas.py": {
+      "original_path": "tests/test_config_flow__schemas.py",
+      "quarantined_at": "2026-11-06T09:00:00Z",
+      "reason": "Tests targets moved to config_flow_schemas.py; 0 mutant kills on config_flow.py",
+      "sha256": "80ee117498c6913e9a11dfba1f5ceebfcf1e2b58c73491eaeb4e34e2a875a5cb",
+      "test_count": 3
+    },
+    "test_token_acquirer.py": {
+      "original_path": "tests/test_token_acquirer.py",
+      "quarantined_at": "2026-10-31T12:00:00Z",
+      "reason": "Legacy token acquirer tests replaced by test_token_acquirer_yaml.py",
+      "sha256": "manual_archive",
+      "test_count": 5
+    },
+    "test_token_acquirer_8888.py": {
+      "original_path": "tests/test_token_acquirer_8888.py",
+      "quarantined_at": "2026-10-31T12:00:00Z",
+      "reason": "Legacy token acquirer 8888 tests replaced by test_token_acquirer_yaml.py",
+      "sha256": "manual_archive",
+      "test_count": 6
+    },
+    "test_config_flow__beasts.py": {
+      "original_path": "config/custom_components/climate_ip/tests/test_config_flow__beasts.py",
+      "quarantined_at": "2026-11-06T18:55:39.558773+00:00",
+      "reason": "100% shadowed in mutmut usage map; zero unique kills",
+      "sha256": "ad79a84c730d56abe351925d5d30c3f6048a2a2a28e93789e4ec55495b948cb8",
+      "test_count": 23
+    },
+    "test_config_flow__survivors.py": {
+      "original_path": "config/custom_components/climate_ip/tests/test_config_flow__survivors.py",
+      "quarantined_at": "2026-11-06T19:06:10.800818+00:00",
+      "reason": "Orchestrator tests consolidated into test_config_flow__orchestrator.py",
+      "sha256": "885c0891141063fe528488f1030772c9087b6d5ea9f5b339dc0c8d5d75906192",
+      "test_count": 27
+    },
+    "test_samsung_2878__00_strict.py": {
+      "original_path": "config/custom_components/climate_ip/tests/test_samsung_2878__00_strict.py",
+      "quarantined_at": "2026-11-07T07:10:55.136136+00:00",
+      "reason": "Consolidated non-shadowed tests into canonical test_samsung_2878.py; pruned 53+ shadowed duplicates",
+      "sha256": "29209dedf6b9c2951728b04f1fbd92ee392182fd87a2be42b22d1143d5fd17b9",
+      "test_count": 10
+    },
+    "test_samsung_2878__logic.py": {
+      "original_path": "config/custom_components/climate_ip/tests/test_samsung_2878__logic.py",
+      "quarantined_at": "2026-11-07T07:10:55.136136+00:00",
+      "reason": "Consolidated non-shadowed tests into canonical test_samsung_2878.py; pruned 53+ shadowed duplicates",
+      "sha256": "47fefa3ebc03e6302ead753041beecd376e46b79a02ff5e79004ef7082d968e7",
+      "test_count": 83
+    },
+    "test_connection_intesisbox__obsolete.py": {
+      "original_path": "config/custom_components/climate_ip/tests/test_connection_intesisbox__yaml.py",
+      "quarantined_at": "2026-11-07T12:54:00Z",
+      "reason": "100% shadowed tests (missing_host, device_type_registration, async_probe_exceptions, loop_breaker_else_branch, loop_breaker_window_purging, live_emulator_connection) consolidated into canonical test_connection_intesisbox__yaml.py",
+      "sha256": "pruned_shadowed_subset",
+      "test_count": 6
+    },
+    "test_controller_yaml_polling__obsolete.py": {
+      "original_path": "tests/test_controller_yaml_polling__*.py",
+      "quarantined_at": "2026-11-07T13:49:01.849824+00:00",
+      "reason": "94 completely shadowed tests in mutmut usage map with 0 unique mutant kills and 0 unique line coverage",
+      "sha256": "10b3377ef11dda0334c3c770df212cc02d38f7922419f3258f023c2e1df3ead8",
+      "test_count": 94
+    },
+    "test_coordinator__push_isolation.py": {
+      "original_path": "config/custom_components/climate_ip/tests/test_coordinator__push_isolation.py",
+      "quarantined_at": "2026-11-07T15:22:55.491388+00:00",
+      "reason": "Consolidated into orthogonal test_coordinator.py",
+      "sha256": "37e6478c3bf9a57e5a1289097ab115812f1a579554d331320150bdb9c02bfadf",
+      "test_count": 2
+    },
+    "test_properties__backoff.py": {
+      "original_path": "config/custom_components/climate_ip/tests/test_properties__backoff.py",
+      "quarantined_at": "2026-11-07T18:33:18.450954+00:00",
+      "reason": "Satellite tests samsung_2878, not properties.py",
+      "sha256": "e1a380f908c21c637aacf43d8e2ea0993704c6b25e2d1499eaa4b109a7f838cb",
+      "test_count": 1
+    },
+    "test_properties__obsolete.py": {
+      "original_path": "config/custom_components/climate_ip/tests/test_properties.py",
+      "quarantined_at": "2026-11-07T18:50:00Z",
+      "reason": "25 completely shadowed tests in mutmut usage map with 0 unique mutant kills and 0 unique line coverage",
+      "sha256": "67626f81516288c297627834260aa8fcfb2d9279851dc4160d1eaa58e896473e",
+      "test_count": 25
+    }
+  }
+}

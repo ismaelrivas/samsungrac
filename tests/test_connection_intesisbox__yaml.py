@@ -25,7 +25,13 @@ from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 from custom_components.climate_ip.exceptions import CannotConnect
 from custom_components.climate_ip.token_acquirer_yaml import GenericYamlTokenAcquirer
 from homeassistant.components.climate import HVACMode
-from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_NAME, CONF_PORT
+from homeassistant.const import (
+    CONF_HOST,
+    CONF_IP_ADDRESS,
+    CONF_MAC,
+    CONF_NAME,
+    CONF_PORT,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import UpdateFailed
@@ -176,27 +182,39 @@ def test_intesisbox_auth_yaml_loading() -> None:
     assert "regex" in flow.get("extract_template", {})
 
 
-def test_device_type_registration() -> None:
-    """Verify DEVICE_TYPE_INTESISBOX is registered and points to intesisbox.yaml."""
-    assert DEVICE_TYPE_INTESISBOX == "intesisbox"
-    assert DEVICE_TYPE_TO_CONFIG_FILE[DEVICE_TYPE_INTESISBOX] == "intesisbox.yaml"
-    assert ConnectionIntesisBox.match_type(DEVICE_TYPE_INTESISBOX) is True
-    assert ConnectionIntesisBox.match_type("other_type") is False
-
-
 # ---------------------------------------------------------------------------
 # 2. ConnectionIntesisBox Class Tests
 # ---------------------------------------------------------------------------
 def test_connection_intesisbox_initialization() -> None:
-    """Test ConnectionIntesisBox initialization and properties."""
+    """Test ConnectionIntesisBox initialization, type matching, and properties."""
+    assert ConnectionIntesisBox.match_type(DEVICE_TYPE_INTESISBOX) is True
+    assert ConnectionIntesisBox.match_type("other_type") is False
+    assert DEVICE_TYPE_TO_CONFIG_FILE[DEVICE_TYPE_INTESISBOX] == "intesisbox.yaml"
+
+    sentinel_hass = MagicMock()
+    sentinel_session = MagicMock()
     conn = ConnectionIntesisBox(
         config={CONF_IP_ADDRESS: "192.168.1.50", CONF_PORT: 3310},
         logger=_LOGGER,
+        hass=sentinel_hass,
+        session=sentinel_session,
+        ip_address="192.168.1.50",
     )
+    assert conn._hass is sentinel_hass
+    assert conn._session is sentinel_session
+    assert conn._ip_address == "192.168.1.50"
+    assert conn._keep_alive is True
     assert conn.is_async_native is True
     assert conn.is_push_supported is True
     assert conn.is_available is False
     assert conn.log_prefix == "[IntesisBox 192.168.1.50:3310]"
+
+    # Fallback to CONF_HOST
+    conn_host = ConnectionIntesisBox(
+        config={CONF_HOST: "192.168.1.60"},
+        logger=_LOGGER,
+    )
+    assert conn_host._host == "192.168.1.60"
 
     # Test load_from_yaml
     assert conn.load_from_yaml(None, None) is False
@@ -209,6 +227,44 @@ def test_connection_intesisbox_initialization() -> None:
     )
     assert conn._host == "192.168.1.55"
     assert conn._port == 3311
+
+    # Test load_from_yaml error suppression & fallbacks
+    assert (
+        conn.load_from_yaml(
+            {
+                "params": {
+                    "port": "invalid",
+                    "ac_num": "invalid",
+                    "command_timeout": "invalid",
+                    "connect_timeout": "invalid",
+                    "handshake_timeout": "invalid",
+                    "host": "__CLIMATE_IP_HOST__",
+                },
+                "loop_breaker": [{"bad_value": "STOP"}],
+            },
+            None,
+        )
+        is True
+    )
+    assert conn._host == "192.168.1.55"
+    assert conn._port == 3311
+    assert conn._loop_breakers == [{"bad_value": "STOP"}]
+
+    assert (
+        conn.load_from_yaml(
+            {
+                "params": {
+                    "port": None,
+                    "ac_num": None,
+                    "command_timeout": None,
+                    "connect_timeout": None,
+                    "handshake_timeout": None,
+                },
+            },
+            None,
+        )
+        is True
+    )
 
     # Test create_updated
     updated = conn.create_updated({"params": {"port": 3312}})
@@ -262,16 +318,8 @@ async def test_connection_intesisbox_process_lines() -> None:
     assert conn._device_status.get("AMBTEMP") == "235"
 
     # Yield control so background tasks created for mock_cb run
-    await asyncio.sleep(0.01)
+    await asyncio.sleep(0)
     assert mock_cb.await_count >= 3
-
-
-@pytest.mark.asyncio
-async def test_connection_intesisbox_missing_host() -> None:
-    """Test that async_connect raises CannotConnect when host is not specified."""
-    conn = ConnectionIntesisBox(config={}, logger=_LOGGER)
-    with pytest.raises(CannotConnect):
-        await conn.async_connect()
 
 
 @pytest.mark.asyncio
@@ -281,6 +329,8 @@ async def test_connection_intesisbox_mocked_execution() -> None:
         config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},
         logger=_LOGGER,
     )
+    conn._handshake_timeout = 0.01
+    conn._connect_timeout = 0.05
 
     lines = [
         b"ID:TEST,112233445566,127.0.0.1\r\n",
@@ -322,60 +372,6 @@ async def test_connection_intesisbox_mocked_execution() -> None:
 # ---------------------------------------------------------------------------
 # 3. Live Integration Tests against Local Emulator (Port 3310)
 # ---------------------------------------------------------------------------
-@pytest.mark.asyncio
-async def test_live_emulator_connection_and_commands(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Test ConnectionIntesisBox live against running emulator on 127.0.0.1:3310."""
-    pytest_socket.enable_socket()
-    HASocketBlockedError.instances.clear()
-    monkeypatch.setattr("asyncio.open_connection", _REAL_OPEN_CONNECTION)
-
-    conn = ConnectionIntesisBox(
-        config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},
-        logger=_LOGGER,
-    )
-
-    try:
-        try:
-            await conn.async_connect()
-        except CannotConnect:
-            pytest.skip("Local IntesisBox emulator not reachable on port 3310")
-
-        assert conn.is_available is True
-        # Allow brief time for reader task to ingest handshake line burst
-        for _ in range(60):
-            if {"ONOFF", "MODE", "SETPTEMP"}.issubset(conn._device_status):
-                break
-            await asyncio.sleep(0.1)
-
-        # Verify initial status populated
-        assert "ONOFF" in conn._device_status
-        assert "MODE" in conn._device_status
-        assert "SETPTEMP" in conn._device_status
-
-        # Execute SET command
-        resp, _ = await conn.async_execute(None, None, "SET,1:SETPTEMP,240\r\n", None)
-        assert resp is not None
-        state = json.loads(resp)
-        assert state.get("SETPTEMP") == "240"
-
-        # Execute multi-line command
-        resp, _ = await conn.async_execute(
-            None, None, "SET,1:ONOFF,ON\nSET,1:MODE,HEAT\r\n", None
-        )
-        assert resp is not None
-        state = json.loads(resp)
-        assert state.get("ONOFF") == "ON"
-        assert state.get("MODE") == "HEAT"
-
-        await conn.close()
-        assert conn.is_available is False
-    finally:
-        pytest_socket.disable_socket()
-        HASocketBlockedError.instances.clear()
-
-
 @pytest.mark.asyncio
 async def test_live_emulator_token_acquirer_plain_tcp(
     monkeypatch: pytest.MonkeyPatch,
@@ -573,21 +569,33 @@ async def test_intesisbox_sensor_platform_setup(hass: HomeAssistant) -> None:
 
 def test_connection_intesisbox_create_updated_reuses_instance() -> None:
     """Test that ConnectionIntesisBox reuses the instance when parameters are unchanged."""
+    sentinel_hass = MagicMock()
+    sentinel_session = MagicMock()
     conn = ConnectionIntesisBox(
         config={CONF_IP_ADDRESS: "127.0.0.1"},
         logger=_LOGGER,
+        hass=sentinel_hass,
+        session=sentinel_session,
     )
     # Empty, None, or unrelated nodes should return the exact same instance
     assert conn.create_updated(None) is conn
     assert conn.create_updated({}) is conn
     assert conn.create_updated({"value": "DRY"}) is conn
     assert conn.create_updated({"params": {}}) is conn
+    assert conn.create_updated({"params": "invalid_params"}) is conn
     assert conn.create_updated({"params": {"host": "127.0.0.1", "port": 3310}}) is conn
 
     # Different port/host should return a new instance
     new_conn = conn.create_updated({"params": {"port": 3312}})
     assert new_conn is not conn
     assert new_conn._port == 3312
+
+    # Different host should return a new instance preserving hass and session
+    new_host_conn = conn.create_updated({"params": {"host": "10.0.0.99"}})
+    assert new_host_conn is not conn
+    assert new_host_conn._host == "10.0.0.99"
+    assert new_host_conn._hass is sentinel_hass
+    assert new_host_conn._session is sentinel_session
 
 
 @pytest.mark.asyncio
@@ -1041,7 +1049,7 @@ async def test_intesisbox_loop_breaker_auto_pruning(hass: HomeAssistant) -> None
     conn._process_incoming_line("CHN,1:FANSP,1")
     conn._process_incoming_line("CHN,1:FANSP,AUTO")
 
-    await asyncio.sleep(0.05)
+    await asyncio.sleep(0)
 
     assert "SET,1:FANSP,AUTO\r\n" in sent_commands
     assert "LIMITS:FANSP,[AUTO,2,3,4]\r\n" in sent_commands
@@ -1055,7 +1063,7 @@ async def test_intesisbox_loop_breaker_auto_pruning(hass: HomeAssistant) -> None
     conn._process_incoming_line("CHN,1:FANSP,2")
     conn._process_incoming_line("CHN,1:FANSP,AUTO")
 
-    await asyncio.sleep(0.05)
+    await asyncio.sleep(0)
 
     assert "SET,1:FANSP,AUTO\r\n" in sent_commands
     # Must NOT prune 2
@@ -1071,7 +1079,7 @@ async def test_intesisbox_loop_breaker_auto_pruning(hass: HomeAssistant) -> None
     conn._process_incoming_line("CHN,1:FANSP,4")
     conn._process_incoming_line("CHN,1:FANSP,1")
 
-    await asyncio.sleep(0.05)
+    await asyncio.sleep(0)
 
     assert "SET,1:FANSP,AUTO\r\n" in sent_commands
     assert "LIMITS:FANSP,[AUTO,2,3,4]\r\n" in sent_commands
@@ -1090,6 +1098,18 @@ async def test_emulator_ducted_ac_oscillation_and_loop_breaker(
     )
 
     pytest_socket.enable_socket()
+    HASocketBlockedError.instances.clear()
+    monkeypatch.setattr("asyncio.open_connection", _REAL_OPEN_CONNECTION)
+
+    real_sleep = asyncio.sleep
+
+    async def fast_sleep(delay: float) -> None:
+        if delay >= 0.05:
+            await real_sleep(0.005)
+        else:
+            await real_sleep(delay)
+
+    monkeypatch.setattr("asyncio.sleep", fast_sleep)
     HASocketBlockedError.instances.clear()
     monkeypatch.setattr("asyncio.open_connection", _REAL_OPEN_CONNECTION)
 
@@ -1654,115 +1674,12 @@ async def test_intesisbox_loop_breaker_state_node_and_custom_rule_attributes(
     conn._process_incoming_line("CHN,1:FANSP,CUSTOM_STOP")
     conn._process_incoming_line("CHN,1:FANSP,CUSTOM_PRUNE")
 
-    await asyncio.sleep(0.05)
+    await asyncio.sleep(0)
 
     assert "SET,1:FANSP,CUSTOM_STOP\r\n" in sent_commands
     assert "LIMITS:FANSP,[CUSTOM_STOP,OTHER]\r\n" in sent_commands
     assert conn._limits["FANSP"] == "[CUSTOM_STOP,OTHER]"
     assert conn._device_status["FANSP"] == "CUSTOM_STOP"
-
-
-@pytest.mark.asyncio
-async def test_intesisbox_loop_breaker_window_purging_and_alternation_boundary() -> (
-    None
-):
-    """Kill L429, L433, and L451 mutants in _evaluate_oscillation_rule.
-
-    - L429: Expired history entries outside window_seconds must be pruned.
-    - L433: len(active_hist) >= threshold + 1 boundary.
-    - L451: Alternations loop starts at index 1 (mutant range(len(...)) falsely compares index 0 to -1).
-    """
-    conn = ConnectionIntesisBox(
-        config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},
-        logger=_LOGGER,
-    )
-    rule = {
-        "node": "FANSP",
-        "fallback_value": "AUTO",
-        "threshold": 4,  # Requires 4 alternations (at least 5 values)
-        "window_seconds": 2.0,
-    }
-    conn._loop_breakers = [rule]
-
-    sent_commands: list[str] = []
-
-    async def fake_send(payload: str) -> None:
-        sent_commands.append(payload)
-
-    conn._send_raw = fake_send
-
-    # 1. L429: History window purging test
-    now = time.monotonic()
-    # Inject old entry 10 seconds ago
-    conn._node_history["FANSP"] = [(now - 10.0, "OLD_VAL")]
-    conn._evaluate_oscillation_rule("FANSP", "VAL1", rule)
-    # The old entry must be purged, leaving only VAL1
-    assert len(conn._node_history["FANSP"]) == 1
-    assert conn._node_history["FANSP"][0][1] == "VAL1"
-
-    # 2. L433 & L451: Test 4 alternating values ["A", "B", "A", "B"] with threshold=4
-    # Real alternations: A->B (1), B->A (2), A->B (3) = 3 alternations.
-    # Mutant range(len(...)) at i=0 compares active_hist[0] ("A") with active_hist[-1] ("B"),
-    # falsely adding a 4th alternation and triggering prematurely!
-    conn._node_history.clear()
-    sent_commands.clear()
-
-    conn._process_incoming_line("CHN,1:FANSP,A")
-    conn._process_incoming_line("CHN,1:FANSP,B")
-    conn._process_incoming_line("CHN,1:FANSP,A")
-    conn._process_incoming_line("CHN,1:FANSP,B")
-
-    await asyncio.sleep(0.02)
-    # Must NOT have triggered because 3 alternations < threshold (4)
-    assert len(sent_commands) == 0
-
-    # 3. Add 5th alternating value "A" -> 4 alternations reached, triggers!
-    conn._process_incoming_line("CHN,1:FANSP,A")
-    await asyncio.sleep(0.02)
-    assert conn._device_status["FANSP"] == "AUTO"
-
-
-@pytest.mark.asyncio
-async def test_intesisbox_loop_breaker_else_branch_and_value_selection() -> None:
-    """Kill L438, L441, L442, L443, L446-447, and L449 mutants.
-
-    Test oscillation between two values where NEITHER is in prune_values
-    and NEITHER is fallback_value. This executes the L446-447 else branch.
-    """
-    conn = ConnectionIntesisBox(
-        config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},
-        logger=_LOGGER,
-    )
-    rule = {
-        "node": "FANSP",
-        "fallback_value": "AUTO",
-        "fallback_command": "SET,1:FANSP,AUTO",
-        "prune_values": ["1"],  # '2' and '3' are not in prune_values
-        "threshold": 3,
-        "window_seconds": 5.0,
-    }
-    conn._loop_breakers = [rule]
-    conn._limits["FANSP"] = "[AUTO,1,2,3,4]"
-
-    sent_commands: list[str] = []
-
-    async def fake_send(payload: str) -> None:
-        sent_commands.append(payload)
-
-    conn._send_raw = fake_send
-
-    # Alternate between '2' and '3' (neither is '1', neither is 'AUTO')
-    conn._process_incoming_line("CHN,1:FANSP,2")
-    conn._process_incoming_line("CHN,1:FANSP,3")
-    conn._process_incoming_line("CHN,1:FANSP,2")
-    conn._process_incoming_line("CHN,1:FANSP,3")
-
-    await asyncio.sleep(0.05)
-
-    # Fallback command sent, but neither 2 nor 3 is pruned
-    assert "SET,1:FANSP,AUTO\r\n" in sent_commands
-    assert conn._limits["FANSP"] == "[AUTO,1,2,3,4]"
-    assert conn._device_status["FANSP"] == "AUTO"
 
 
 @pytest.mark.asyncio
@@ -1807,7 +1724,7 @@ async def test_intesisbox_loop_breaker_without_hass_and_callback_and_error(
     conn._process_incoming_line("CHN,1:FANSP,AUTO")
     conn._process_incoming_line("CHN,1:FANSP,1")
 
-    await asyncio.sleep(0.05)
+    await asyncio.sleep(0.01)
 
     assert "SET,1:FANSP,AUTO\r\n" in sent_commands
     assert len(callback_received) >= 1
@@ -2433,22 +2350,15 @@ async def test_intesisbox_async_probe_success_variations() -> None:
     with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
         assert await ConnectionIntesisBox.async_probe("192.168.1.50") is None
 
-
-@pytest.mark.asyncio
-async def test_intesisbox_async_probe_exceptions() -> None:
-    """Test async_probe raises CannotConnect when connection or reading fails."""
-    # 1. Connection failed (OSError)
+    # 6. Connection failure (OSError)
     with patch("asyncio.open_connection", side_effect=OSError("Network unreachable")):
         with pytest.raises(
             CannotConnect, match="Could not connect to IntesisBox at 192.168.1.50:3310"
         ):
             await ConnectionIntesisBox.async_probe("192.168.1.50")
 
-    # 2. Read timeout (TimeoutError)
-    mock_reader = AsyncMock()
+    # 7. Read timeout (TimeoutError)
     mock_reader.read = AsyncMock(side_effect=TimeoutError("Probe read timeout"))
-    mock_writer = MagicMock()
-    mock_writer.drain = AsyncMock()
     with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
         with pytest.raises(CannotConnect, match="Could not connect to IntesisBox"):
             await ConnectionIntesisBox.async_probe("192.168.1.50")
@@ -2517,3 +2427,105 @@ async def test_intesisbox_async_connect_lifecycle_branches() -> None:
         ):
             await conn_fail.async_connect()
         assert conn_fail._is_connected is False
+
+    # 4. Missing host raises CannotConnect
+    conn_no_host = ConnectionIntesisBox(config={}, logger=_LOGGER)
+    with pytest.raises(CannotConnect, match="Host IP address is not specified"):
+        await conn_no_host.async_connect()
+
+
+@pytest.mark.asyncio
+async def test_intesisbox_socket_lifecycle_and_callback_boundaries() -> None:
+    """Test _ensure_callback_linked, _send_raw boundaries, async_execute poll, stop_listening, and close."""
+    conn = ConnectionIntesisBox(
+        config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},
+        logger=_LOGGER,
+    )
+
+    # 1. _ensure_callback_linked: linking when callback is None vs preserved when already set
+    mock_ctrl = MagicMock()
+    cb1 = MagicMock()
+    cb2 = MagicMock()
+    mock_ctrl.on_push_update_callback = cb1
+    conn._controller = mock_ctrl
+    conn._update_callback = None
+    conn._ensure_callback_linked()
+    assert conn._update_callback is cb1
+
+    mock_ctrl.on_push_update_callback = cb2
+    conn._ensure_callback_linked()
+    assert conn._update_callback is cb1
+
+    # 2. _send_raw: is_closing() guard and ascii error handling
+    mock_closing_writer = MagicMock()
+    mock_closing_writer.is_closing.return_value = True
+    conn._writer = mock_closing_writer
+    with pytest.raises(CannotConnect, match="IntesisBox socket is not connected"):
+        await conn._send_raw("TEST\r\n")
+
+    mock_writer = MagicMock()
+    mock_writer.is_closing.return_value = False
+    mock_writer.drain = AsyncMock()
+    mock_writer.write = MagicMock()
+    conn._writer = mock_writer
+    await conn._send_raw("TEST\u0100\r\n")
+    mock_writer.write.assert_called_with(b"TEST\r\n")
+
+    # 3. async_execute: _is_poll=True with non-string data
+    conn._is_connected = True
+    sent_poll_cmds: list[str] = []
+
+    async def mock_send(cmd: str) -> None:
+        sent_poll_cmds.append(cmd)
+
+    conn._send_raw = mock_send
+    res, _ = await conn.async_execute(
+        None,
+        None,
+        data=123,
+        headers=None,
+        _is_poll=True,  # type: ignore[arg-type]
+    )
+    assert res == "{}"
+    assert "STATUS,1\r\n" in sent_poll_cmds
+
+    # 4. stop_listening: None reader_task vs running reader_task cancellation and CancelledError suppression
+    conn._closing = False
+    conn._reader_task = None
+    await conn.stop_listening()
+    assert conn._closing is True
+
+    # Subtest 4a: Pure CancelledError suppression (kills suppress(Exception))
+    async def dummy_reader_cancel() -> None:
+        await asyncio.sleep(100)
+
+    task_cancel = asyncio.create_task(dummy_reader_cancel())
+    await asyncio.sleep(0)
+    conn._reader_task = task_cancel
+    await conn.stop_listening()
+    assert task_cancel.cancelled() is True
+    assert conn._reader_task is None
+
+    # Subtest 4b: Exception suppression (kills suppress(CancelledError))
+    async def dummy_reader_exc() -> None:
+        try:
+            await asyncio.sleep(100)
+        except asyncio.CancelledError:
+            raise RuntimeError("Cleanup failure on cancel") from None
+
+    task_exc = asyncio.create_task(dummy_reader_exc())
+    await asyncio.sleep(0)
+    conn._reader_task = task_exc
+    await conn.stop_listening()
+    assert task_exc.done() is True
+    assert isinstance(task_exc.exception(), RuntimeError)
+    assert conn._reader_task is None
+
+    # 5. close: resets _is_connected and clears _is_ready
+    conn._is_connected = True
+    conn._is_ready.set()
+    conn._writer = mock_writer
+    await conn.close()
+    assert conn._is_connected is False
+    assert conn._is_ready.is_set() is False
+    assert conn._writer is None

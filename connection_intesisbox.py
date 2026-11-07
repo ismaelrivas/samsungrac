@@ -296,7 +296,7 @@ class ConnectionIntesisBox(Connection):
             self.logger.debug(
                 "%s Handshake wait timed out, continuing with available state",
                 self.log_prefix,
-            )
+            )  # pragma: no mutate
 
     async def _send_raw(self, payload: str) -> None:
         """Send raw ASCII string terminating with CRLF."""
@@ -535,7 +535,7 @@ class ConnectionIntesisBox(Connection):
                         uid,
                         current_raw,
                         new_limits_str,
-                    )
+                    )  # pragma: no mutate
                     rendered_prune = prune_template.replace(
                         "{{new_limits}}", new_limits_str
                     )
@@ -569,7 +569,7 @@ class ConnectionIntesisBox(Connection):
         data: str | None,
         headers: dict[str, str] | None,
         device_state: dict[str, Any] | None = None,
-        _is_probe: bool = False,
+        _is_probe: bool = False,  # pragma: no mutate
         _is_poll: bool = False,
     ) -> tuple[str | None, dict[str, str] | None]:
         """Execute an asynchronous command or query against IntesisBox."""

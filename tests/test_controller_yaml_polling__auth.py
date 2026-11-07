@@ -1,12 +1,10 @@
-from __future__ import annotations
-
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.helpers.update_coordinator import UpdateFailed
 import pytest
 
 from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
 from custom_components.climate_ip.exceptions import AuthError
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 
 async def test_async_update_state_auth_refresh_flow():
@@ -72,11 +70,13 @@ async def test_async_update_state_auth_refresh_flow():
         AuthError("401"),
         {"status": "ok"},
     ]
-    with patch.object(
-        poller, "_refresh_smartthings_token", return_value="NEW_TOKEN_999"
+    with (
+        patch.object(
+            poller, "_refresh_smartthings_token", return_value="NEW_TOKEN_999"
+        ),
+        patch.object(poller, "_update_all_connections_token"),
     ):
-        with patch.object(poller, "_update_all_connections_token"):
-            await poller.async_update_state()
+        await poller.async_update_state()
 
 
 @patch(

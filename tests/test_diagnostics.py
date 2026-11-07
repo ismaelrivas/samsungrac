@@ -1,12 +1,9 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
 """Tests for the diagnostics support in climate_ip."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from unittest.mock import MagicMock
 
-from homeassistant.const import CONF_MAC
 import pytest
 
 from custom_components.climate_ip.const import DOMAIN
@@ -19,6 +16,7 @@ from custom_components.climate_ip.diagnostics import (
     _get_mac_threat_patterns,
     async_get_config_entry_diagnostics,
 )
+from homeassistant.const import CONF_MAC
 
 
 @dataclass
@@ -508,9 +506,8 @@ async def test_diagnostics_multi_coordinator_bootstrapping_math(mock_hass, mock_
 
 async def test_get_mac_threat_patterns_conf_mac_vs_string(mock_hass):
     """Kill mutants 3, 4, 6, 7 in _get_mac_threat_patterns by isolating CONF_MAC vs 'mac' fallback key."""
-    from homeassistant.const import CONF_MAC
-
     from custom_components.climate_ip.diagnostics import _get_mac_threat_patterns
+    from homeassistant.const import CONF_MAC
 
     # Case 1: CONF_MAC present, "mac" missing
     entry1 = MagicMock()
@@ -1061,4 +1058,3 @@ async def test_diagnostics_target_host_resolution_hierarchy(mock_hass, mock_entr
             "is_reachable": None,
             "status": "no_host_configured",
         }
-

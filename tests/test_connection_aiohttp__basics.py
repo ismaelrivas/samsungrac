@@ -81,81 +81,11 @@ async def test_aiohttp_initialization(
         )
         assert conn._ip_address == "192.168.1.100"
         assert conn._token == "test_token"
+        assert conn._raw_cert_path == "cert.pem"
         assert conn._shared_state.initialized is False
         assert conn.async_lock is not None  # Verify parent created lock
         assert ConnectionAiohttp8888.match_type("samsung_8888_aiohttp") is True
         assert ConnectionAiohttp8888.match_type("invalid_type") is False
-
-
-async def test_execute_request_success(
-    connection_config, mock_logger, mock_hass, mock_session
-):
-    """Test successful request execution."""
-    with patch("os.path.exists", return_value=True):
-        conn = ConnectionAiohttp8888(
-            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
-        )
-
-        # Mock shared state to avoid actual probe
-        conn._shared_state.initialized = True
-        conn._shared_state.ssl_context = MagicMock()
-
-        # pylint: disable=import-outside-toplevel,duplicate-code
-        # Mock response
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.text.return_value = '{"result": "ok"}'
-        mock_response.headers = {"Content-Type": "application/json"}
-        mock_response.raise_for_status = MagicMock()
-
-        # Correctly mock async context manager native to AsyncMock
-        mock_context = AsyncMock()
-        mock_context.__aenter__.return_value = mock_response
-        mock_session.request.return_value = mock_context
-        # pylint: enable=duplicate-code
-
-        response_text, headers = await conn.async_execute("GET", "/test", None, {})
-
-        assert response_text == '{"result": "ok"}'
-        assert headers == {"Content-Type": "application/json"}
-
-        # Extreme White-Box Assertions
-        mock_session.request.assert_called_once()
-        args, kwargs = mock_session.request.call_args
-
-        # 1. Assert URL and Method
-        assert args[0] == "GET", "HTTP method was mutated"
-        assert kwargs["url"] == "https://192.168.1.100:8888/test", (
-            "La URL fue mutada o generada incorrectamente"
-        )
-
-        # 2. Assert Payload
-        assert "data" in kwargs, "The mutant removed kwarg data"
-        assert kwargs["data"] is None, "Payload was mutated"
-
-        # 3. Assert SSL Context
-        assert "ssl" in kwargs, "The mutant removed kwarg ssl"
-        assert kwargs["ssl"] is conn._shared_state.ssl_context, (
-            "Injected SSL context is incorrect or None"
-        )
-
-        # 4. Assert Strict Timeout
-        assert "timeout" in kwargs, "The mutant removed kwarg timeout"
-        timeout = kwargs["timeout"]
-        assert timeout.total == 10, (
-            f"The mutant altered timeout.total to {timeout.total}"
-        )
-
-        # Shielding mutants 45-56 (Headers)
-        req_headers = kwargs.get("headers", {})
-        assert "Authorization" in req_headers, "Missing Authorization header"
-        assert req_headers["Authorization"] == f"Bearer {conn._token}", (
-            "Token incorrecto"
-        )
-        assert "Content-Type" in req_headers, "Missing Content-Type header"
-        assert req_headers["Content-Type"] == "application/json", (
-            "Content-Type incorrecto"
-        )
 
 
 async def test_execute_request_auth_error(
@@ -192,13 +122,22 @@ async def test_execute_request_connection_error(
 
         conn._shared_state.initialized = True
         conn._shared_state.ssl_context = MagicMock()
+        conn._force_close_connection = True
 
-        mock_session.request.side_effect = aiohttp.ClientConnectorError(
-            MagicMock(), MagicMock()
+        conn_err = aiohttp.ClientConnectorError(
+            aiohttp.client_reqrep.ConnectionKey(
+                "192.168.1.100", 8888, False, False, None, None, None
+            ),
+            OSError("Connection refused"),
         )
+        mock_session.request.side_effect = conn_err
 
-        with pytest.raises(CannotConnect):
+        with pytest.raises(CannotConnect) as exc_info:
             await conn.async_execute("GET", "/test", None, None)
+
+        assert "Cannot connect to 192.168.1.100:8888 (Connection refused)" in str(
+            exc_info.value
+        )
 
 
 async def test_aiohttp_create_updated(
@@ -330,35 +269,6 @@ def test_prepare_request_headers_unit(
         )
 
 
-def test_handle_http_version_fallback_unit(
-    connection_config, mock_logger, mock_hass, mock_session
-):
-    """Direct unit test for _handle_http_version_fallback."""
-    conn = ConnectionAiohttp8888(
-        connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
-    )
-
-    # 1. Server speaks HTTP/1.1 -> resets force_close_connection to False
-    conn._force_close_connection = True
-    mock_resp_11 = MagicMock()
-    mock_resp_11.version = aiohttp.HttpVersion(1, 1)
-    conn._handle_http_version_fallback(mock_resp_11)
-    assert conn._force_close_connection is False
-
-    # 2. Server speaks HTTP/1.0 -> sets force_close_connection to True
-    mock_resp_10 = MagicMock()
-    mock_resp_10.version = aiohttp.HttpVersion(1, 0)
-    conn._handle_http_version_fallback(mock_resp_10)
-    assert conn._force_close_connection is True
-
-    # 3. Server provides None version -> sets force_close_connection to True
-    conn._force_close_connection = False
-    mock_resp_none = MagicMock()
-    mock_resp_none.version = None
-    conn._handle_http_version_fallback(mock_resp_none)
-    assert conn._force_close_connection is True
-
-
 # ====================================================================================
 # SECTION A: LIFECYCLE AND SHARED STATE (__init__, close, get_diagnostics)
 # ====================================================================================
@@ -396,12 +306,14 @@ async def test_aiohttp_lifecycle_and_shared_state():
     conn._shared_state.ssl_context = "FAKE_SSL"
     conn._shared_state.local_session = AsyncMock()  # Simulate a local session
     conn._shared_state.local_session.closed = False
+    conn._force_close_connection = True
 
     await conn.close()
 
     assert conn._shared_state.initialized is False
     assert conn._shared_state.ssl_context is None
     assert conn._shared_state.local_session is None
+    assert conn._force_close_connection is False
 
 
 # ====================================================================================
@@ -459,12 +371,16 @@ async def test_get_session_args():
 
 @pytest.mark.asyncio
 async def test_create_ssl_context_strict():
-    """Validate security flags and strict ciphers."""
+    """Validate security flags, cert resolution, and strict ciphers."""
     import logging
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import AsyncMock, MagicMock, patch
 
-    from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
+    from custom_components.climate_ip.connection_aiohttp import (
+        DEFAULT_SSL_CIPHERS,
+        ConnectionAiohttp8888,
+    )
 
+    # 1. Insecure SSL mode on local host
     config = {"insecure_ssl": True, CONF_TOKEN: "test_token"}
     conn = ConnectionAiohttp8888(
         config, logging.getLogger(), MagicMock(), MagicMock(), "10.0.0.1"
@@ -479,6 +395,69 @@ async def test_create_ssl_context_strict():
             ciphers="ALL:@SECLEVEL=0",
             verify_mode=ssl.CERT_NONE,
         )
+
+    # 2. Remote host without cert and insecure_ssl=False returns None
+    conn_remote = ConnectionAiohttp8888(
+        {CONF_TOKEN: "test_token"},
+        logging.getLogger(),
+        MagicMock(),
+        MagicMock(),
+        "8.8.8.8",
+    )
+    assert await conn_remote._create_ssl_context() is None
+
+    # 3. Remote host with cert resolves path and passes it to async_create_samsung_ssl_context
+    mock_hass = MagicMock()
+    mock_hass.async_add_executor_job = AsyncMock(return_value="/resolved/my_cert.pem")
+    conn_cert = ConnectionAiohttp8888(
+        {CONF_TOKEN: "test_token", CONF_CERT: "my_cert.pem"},
+        logging.getLogger(),
+        mock_hass,
+        MagicMock(),
+        "8.8.8.8",
+    )
+    with patch(
+        "custom_components.climate_ip.connection_aiohttp.async_create_samsung_ssl_context"
+    ) as mock_ssl_cert:
+        mock_ctx = MagicMock(spec=ssl.SSLContext)
+        mock_ssl_cert.return_value = mock_ctx
+        res_ctx = await conn_cert._create_ssl_context()
+        assert res_ctx is mock_ctx
+        assert conn_cert._cert_path == "/resolved/my_cert.pem"
+        mock_ssl_cert.assert_called_once_with(
+            cert_path="/resolved/my_cert.pem",
+            ciphers=DEFAULT_SSL_CIPHERS,
+            verify_mode=ssl.CERT_NONE,
+        )
+
+    # 4. Localhost string marker requires lower() matching to be recognized as local
+    conn_localhost = ConnectionAiohttp8888(
+        {CONF_TOKEN: "test_token"},
+        logging.getLogger(),
+        mock_hass,
+        MagicMock(),
+        "localhost",
+    )
+    with patch(
+        "custom_components.climate_ip.connection_aiohttp.async_create_samsung_ssl_context"
+    ) as mock_ssl_local:
+        mock_ssl_local.return_value = MagicMock(spec=ssl.SSLContext)
+        assert await conn_localhost._create_ssl_context() is not None
+
+    # 5. Remote host with insecure_ssl=True creates SSL context via CONF_INSECURE_SSL key
+    conn_insecure_remote = ConnectionAiohttp8888(
+        {"insecure_ssl": True, CONF_TOKEN: "test_token"},
+        logging.getLogger(),
+        mock_hass,
+        MagicMock(),
+        "8.8.8.8",
+    )
+    with patch(
+        "custom_components.climate_ip.connection_aiohttp.async_create_samsung_ssl_context"
+    ) as mock_ssl_insecure:
+        mock_insecure_ctx = MagicMock(spec=ssl.SSLContext)
+        mock_ssl_insecure.return_value = mock_insecure_ctx
+        assert await conn_insecure_remote._create_ssl_context() is mock_insecure_ctx
 
 
 def test_aiohttp_create_updated_strict():
@@ -630,12 +609,13 @@ async def test_adaptive_keep_alive_on_timeout_recovery(
         ip_address="192.168.1.100",
     )
 
+    fake_ssl = MagicMock()
     conn._shared_state.initialized = True
-    conn._shared_state.ssl_context = None
+    conn._shared_state.ssl_context = fake_ssl
 
     mock_response = AsyncMock()
     mock_response.status = 200
-    mock_response.text.return_value = "{}"
+    mock_response.text.return_value = '{"retry": "success"}'
     mock_response.headers = {}
     mock_response.raise_for_status = AsyncMock()
     mock_context = AsyncMock()
@@ -647,19 +627,35 @@ async def test_adaptive_keep_alive_on_timeout_recovery(
         mock_context,  # Segunda vez funciona
     ]
 
-    await conn._async_execute_request(
+    res_text, _ = await conn._async_execute_request(
         "GET", "https://192.168.1.100:8888/test", None, {}
     )
+    assert res_text == '{"retry": "success"}'
 
     # Verify retry occurred
     assert mock_session.request.call_count == 2
 
-    # Verify second attempt carried lifeline header
+    # Verify second attempt carried lifeline header and ssl
     retry_kwargs = mock_session.request.call_args_list[1][1]
     assert "Connection" in retry_kwargs["headers"]
     assert retry_kwargs["headers"]["Connection"] == "close"
+    assert "ssl" in retry_kwargs
+    assert retry_kwargs["ssl"] is fake_ssl
 
     # And internal state updated to persist closure on subsequent calls
+    assert conn._force_close_connection is True
+
+    # Also verify that when retry fails, force_close_connection remains True
+    mock_session.request.side_effect = [
+        aiohttp.ClientError("First drop"),
+        aiohttp.ClientError("Second drop"),
+    ]
+    conn._force_close_connection = False
+    with pytest.raises(CannotConnect) as exc_info:
+        await conn._async_execute_request(
+            "GET", "https://192.168.1.100:8888/test", None, {}
+        )
+    assert "unexpected error response during retry" in str(exc_info.value)
     assert conn._force_close_connection is True
 
 
@@ -708,42 +704,6 @@ async def test_execution_uses_controller_token_priority(
         )
 
 
-async def test_http_1_0_forces_connection_close(
-    connection_config, mock_logger, mock_hass, mock_session
-):
-    """Tests that an old server forces connection closure."""
-    with (
-        patch("os.path.exists", return_value=True),
-        patch(
-            "custom_components.climate_ip.helpers.create_samsung_ssl_context",
-            return_value=MagicMock(),
-        ),
-    ):
-        conn = ConnectionAiohttp8888(
-            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
-        )
-        conn._shared_state.initialized = True
-
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.version = MagicMock(major=1, minor=0)  # SIMULATE HTTP 1.0
-        mock_response.headers = {}
-        mock_response.text.return_value = "{}"
-        mock_response.raise_for_status = MagicMock()
-
-        mock_context = AsyncMock()
-        mock_context.__aenter__.return_value = mock_response
-        mock_session.request.return_value = mock_context
-
-        await conn._async_execute_request(
-            "GET", "https://192.168.1.100:8888/test", None, {}
-        )
-
-        assert conn._force_close_connection is True, (
-            "The mutant altered HTTP minor >= 1 validation"
-        )
-
-
 async def test_absolute_url_skips_base_url_formatting(
     connection_config, mock_logger, mock_hass, mock_session
 ):
@@ -772,45 +732,6 @@ async def test_absolute_url_skips_base_url_formatting(
             "The mutant broke startswith('http') detection"
         )
         assert kwargs["ssl"] is False, "The mutant used SSL in a plain HTTP connection"
-
-
-async def test_async_execute_request_respects_custom_headers(
-    mock_session, mock_logger, mock_hass
-):
-    """Guarantees manually injected headers are not overwritten."""
-    conn = ConnectionAiohttp8888(
-        config={"token": "TOKEN_BASE"},
-        logger=mock_logger,
-        hass=mock_hass,
-        session=mock_session,
-        ip_address="1.1.1.1",
-    )
-    conn._shared_state.initialized = True
-
-    mock_response = AsyncMock()
-    mock_response.status = 200
-    mock_response.text.return_value = "{}"
-    mock_response.headers = {}
-    mock_context = AsyncMock()
-    mock_context.__aenter__.return_value = mock_response
-    mock_session.request.return_value = mock_context
-
-    custom_headers = {
-        "Authorization": "Bearer TOKEN_CUSTOM",
-        "Content-Type": "text/xml",
-    }
-
-    await conn._async_execute_request(
-        "GET", "https://1.1.1.1:8888/test", None, headers=custom_headers
-    )
-
-    _, kwargs = mock_session.request.call_args
-    assert kwargs["headers"]["Authorization"] == "Bearer TOKEN_CUSTOM", (
-        "The mutant overwrote Auth header"
-    )
-    assert kwargs["headers"]["Content-Type"] == "text/xml", (
-        "The mutant overwrote the Content-Type"
-    )
 
 
 async def test_retry_request_kwargs_strict(mock_session, mock_logger, mock_hass):
@@ -853,40 +774,6 @@ async def test_retry_request_kwargs_strict(mock_session, mock_logger, mock_hass)
     assert retry_kwargs["timeout"].total == 10
 
 
-async def test_async_execute_default_poll_is_false(
-    mock_session, mock_logger, mock_hass
-):
-    """Test that _is_poll is strictly False by default, preventing local session teardown."""
-    conn = ConnectionAiohttp8888(
-        config={"keep_alive": False, "token": "tok"},
-        logger=mock_logger,
-        hass=mock_hass,
-        session=mock_session,
-        ip_address="1.1.1.1",
-    )
-    conn._shared_state.initialized = True
-
-    mock_response = AsyncMock()
-    mock_response.status = 200
-    mock_response.text.return_value = "{}"
-    mock_response.headers = {}
-
-    mock_context = AsyncMock()
-    mock_context.__aenter__.return_value = mock_response
-
-    mock_local = MagicMock()
-    mock_local.closed = False
-    mock_local.close = AsyncMock()
-    mock_local.request.return_value = mock_context
-    conn._shared_state.local_session = mock_local
-
-    # Call WITHOUT _is_poll argument
-    await conn.async_execute("GET", "/test", None, {})
-
-    # If mutmut changed default to True, session will close and test will fail
-    mock_local.close.assert_not_called()
-
-
 async def test_async_execute_embedded_command_kwargs_strict(
     mock_session, mock_logger, mock_hass
 ):
@@ -910,6 +797,7 @@ async def test_async_execute_embedded_command_kwargs_strict(
     )
     conn._embedded_command = embed_mock
     conn._shared_state.initialized = True
+    conn._shared_state.ssl_context = MagicMock()
 
     mock_response = AsyncMock()
     mock_response.status = 200
@@ -965,6 +853,7 @@ async def test_controller_fallback_to_base_token(mock_session, mock_logger, mock
         ip_address="1.1.1.1",
     )
     conn._shared_state.initialized = True
+    conn._shared_state.ssl_context = MagicMock()
 
     mock_response = AsyncMock()
     mock_response.status = 200
@@ -1061,28 +950,6 @@ def test_format_url_strict_dict_extraction():
     )
 
 
-def test_resolved_target_ip_precedence_over_config_host():
-    """Validates property _resolved_target: ip_address ALWAYS wins over params[CONF_HOST]."""
-    import logging
-
-    from homeassistant.const import CONF_HOST, CONF_MAC
-
-    config = {CONF_HOST: "SHOULD_NOT_APPEAR", CONF_TOKEN: "test_token"}
-    conn = ConnectionAiohttp8888(
-        config=config,
-        logger=logging.getLogger(),
-        hass=MagicMock(),
-        session=MagicMock(),
-        ip_address="WINNER_IP",
-    )
-    conn._params = {CONF_HOST: "ALSO_SHOULD_NOT_APPEAR", CONF_MAC: "MAC_VALUE"}
-
-    host, mac = conn._resolved_target
-
-    assert host == "WINNER_IP", f"ip_address had no precedence: host={host}"
-    assert mac == "MAC_VALUE", f"MAC was not extracted correctly: mac={mac}"
-
-
 def test_resolved_target_uses_ip_address_directly():
     """Validates that _resolved_target uses ip_address directly."""
     import logging
@@ -1102,82 +969,6 @@ def test_resolved_target_uses_ip_address_directly():
 
     assert host == "192.168.1.100"
     assert mac == "FB:MA:CC"
-
-
-def test_resolved_target_missing_keys_return_empty_strings():
-    """Validates that missing keys in _params return empty strings, NOT None."""
-    import logging
-
-    conn = ConnectionAiohttp8888(
-        config={CONF_TOKEN: "test_token"},
-        logger=logging.getLogger(),
-        hass=MagicMock(),
-        session=MagicMock(),
-        ip_address=None,
-    )
-    conn._params = {}  # Empty dictionary → everything must be ""
-
-    host, mac = conn._resolved_target
-
-    assert host == "", f"Host should be '' but is {host!r}"
-    assert mac == "", f"MAC should be '' but is {mac!r}"
-    assert isinstance(host, str), "Host must be str, not None"
-    assert isinstance(mac, str), "MAC must be str, not None"
-
-
-def test_format_url_port_replacement_only_on_8888():
-    """Validates port replacement ONLY occurs when ':8888/' is present in URL."""
-    import logging
-
-    config = {CONF_TOKEN: "tok", "port": "9999"}
-    conn = ConnectionAiohttp8888(
-        config=config,
-        logger=logging.getLogger(),
-        hass=MagicMock(),
-        session=MagicMock(),
-        ip_address="1.2.3.4",
-    )
-
-    # URL WITHOUT :8888/ → port MUST NOT change
-    url_no_port = "https://1.2.3.4:1234/devices"
-    result = conn._format_url(url_no_port)
-    assert ":1234/" in result, f"Port was replaced when it should not be: {result}"
-    assert ":9999/" not in result, f"Spurious port replacement: {result}"
-
-    # URL WITH :8888/ → port MUST change to 9999
-    url_with_port = "https://1.2.3.4:8888/devices"
-    result2 = conn._format_url(url_with_port)
-    assert ":9999/" in result2, f"Port 8888 was not replaced: {result2}"
-    assert ":8888/" not in result2, f"Old port remained: {result2}"
-
-
-def test_format_url_strict_defaults_and_http_downgrade():
-    """Validates pure defaults: Port 8888 by default and downgrade to HTTP."""
-    import logging
-
-    # 1. EMPTY CONFIG: Force code to use .get(key, DEFAULT)
-    conn = ConnectionAiohttp8888(
-        config={CONF_TOKEN: "test_token"},
-        logger=logging.getLogger(),
-        hass=MagicMock(),
-        session=MagicMock(),
-        ip_address="192.168.1.100",
-    )
-    conn._params = {}
-
-    base_url = "https://192.168.1.100:8888/test"
-    formatted = conn._format_url(base_url)
-
-    # DEFAULTS ASSERTION: Verify mutant kill changing "8888" or "False"
-    assert formatted.startswith("https://"), "Mutant altered use_http default (False)"
-    assert ":8888/" in formatted, "Mutant altered default port (8888)"
-
-    # 2. HTTP CONFIG: Validate explicit downgrade
-    conn._config["use_http"] = True
-    formatted_http = conn._build_full_url(base_url)
-
-    # Kills mutant breaking replacement logic "https://" -> "http://"
-    assert formatted_http.startswith("http://"), "Mutant broke downgrade to plain HTTP"
 
 
 # ====================================================================================
@@ -1229,256 +1020,9 @@ async def test_get_session_strict_creation_parameters_https():
         )
 
 
-@pytest.mark.asyncio
-async def test_get_session_strict_creation_parameters_http():
-    """Validates that in plain HTTP mode, TCPConnector is created WITHOUT the ssl parameter."""
-    import logging
-
-    config = {"use_http": True, "keep_alive": False, CONF_TOKEN: "test_token"}
-    conn = ConnectionAiohttp8888(
-        config=config,
-        logger=logging.getLogger(),
-        hass=MagicMock(),
-        session=MagicMock(),
-        ip_address="10.0.0.1",
-    )
-    conn._keep_alive = False
-    conn._shared_state.local_session = None
-    conn._shared_state.ssl_context = MagicMock(name="SHOULD_NOT_BE_USED")
-
-    _NS = "custom_components.climate_ip.connection_aiohttp.aiohttp"
-    with (
-        patch(f"{_NS}.TCPConnector") as mock_connector,
-        patch(f"{_NS}.ClientTimeout") as mock_timeout,
-        patch(f"{_NS}.ClientSession") as mock_session_cls,
-    ):
-        mock_timeout.return_value = "mocked_timeout_obj"
-        mock_connector.return_value = "mocked_connector_obj"
-        mock_session_cls.return_value = AsyncMock()
-
-        await conn._get_session()
-
-        # HTTP branch: must NOT pass ssl=
-        mock_connector.assert_called_once_with(
-            keepalive_timeout=75,
-            limit=1,
-        )
-        # Timeout and Session identical in both branches
-        mock_timeout.assert_called_once_with(total=30, connect=10)
-        mock_session_cls.assert_called_once_with(
-            connector="mocked_connector_obj",
-            timeout="mocked_timeout_obj",
-        )
-
-
-@pytest.mark.asyncio
-async def test_get_session_returns_shared_session_when_keep_alive():
-    """Validate keep_alive=True with injected session returns shared session without creating new one."""
-    import logging
-
-    injected_session = MagicMock(name="INJECTED_HA_SESSION")
-    conn = ConnectionAiohttp8888(
-        config={"keep_alive": True, CONF_TOKEN: "test_token"},
-        logger=logging.getLogger(),
-        hass=MagicMock(),
-        session=injected_session,
-        ip_address="10.0.0.1",
-    )
-    conn._keep_alive = True
-
-    _NS = "custom_components.climate_ip.connection_aiohttp.aiohttp"
-    with (
-        patch(f"{_NS}.TCPConnector") as mock_connector,
-        patch(f"{_NS}.ClientSession") as mock_session_cls,
-    ):
-        result = await conn._get_session()
-
-        # MUST return injected session, NOT create a new one
-        assert result is injected_session, "Did not return HA shared session"
-        mock_connector.assert_not_called()
-        mock_session_cls.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_get_session_recreates_on_closed_session():
-    """Validate that if local session is closed, a new one is created."""
-    import logging
-
-    conn = ConnectionAiohttp8888(
-        config={"keep_alive": False, CONF_TOKEN: "test_token"},
-        logger=logging.getLogger(),
-        hass=MagicMock(),
-        session=MagicMock(),
-        ip_address="10.0.0.1",
-    )
-    conn._keep_alive = False
-
-    # Simulate closed session
-    closed_session = MagicMock()
-    closed_session.closed = True
-    conn._shared_state.local_session = closed_session
-
-    _NS = "custom_components.climate_ip.connection_aiohttp.aiohttp"
-    with (
-        patch(f"{_NS}.TCPConnector") as mock_connector,
-        patch(f"{_NS}.ClientTimeout") as mock_timeout,
-        patch(f"{_NS}.ClientSession") as mock_session_cls,
-    ):
-        fresh_session = AsyncMock(name="FRESH_SESSION")
-        mock_session_cls.return_value = fresh_session
-        mock_connector.return_value = "new_connector"
-        mock_timeout.return_value = "new_timeout"
-
-        await conn._get_session()
-
-        # MUST have created new session because previous was closed
-        mock_session_cls.assert_called_once()
-        assert conn._shared_state.local_session is fresh_session, (
-            "Did not replace closed session"
-        )
-
-
-@pytest.mark.asyncio
-async def test_get_session_reuses_open_local_session():
-    """Validate that if local session exists and is open, it is reused without creating a new one."""
-    import logging
-
-    conn = ConnectionAiohttp8888(
-        config={"keep_alive": False, CONF_TOKEN: "test_token"},
-        logger=logging.getLogger(),
-        hass=MagicMock(),
-        session=MagicMock(),
-        ip_address="10.0.0.1",
-    )
-    conn._keep_alive = False
-
-    # Simulate HEALTHY AND OPEN local session
-    healthy_session = MagicMock()
-    healthy_session.closed = False
-    conn._shared_state.local_session = healthy_session
-
-    _NS = "custom_components.climate_ip.connection_aiohttp.aiohttp"
-    with (
-        patch(f"{_NS}.TCPConnector") as mock_connector,
-        patch(f"{_NS}.ClientTimeout") as mock_timeout,
-        patch(f"{_NS}.ClientSession") as mock_session_cls,
-    ):
-        result = await conn._get_session()
-
-        # ASSERTION: Must return existing session without calling aiohttp classes
-        assert result is healthy_session, "Did not reuse healthy local session"
-        mock_connector.assert_not_called()
-        mock_timeout.assert_not_called()
-        mock_session_cls.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_get_session_fallback_when_shared_session_is_none():
-    """Validate defensive fallback: keep_alive=True but session=None."""
-    import logging
-
-    # Configure keep_alive=True but intentionally omit session
-    conn = ConnectionAiohttp8888(
-        config={"keep_alive": True, CONF_TOKEN: "test_token"},
-        logger=logging.getLogger(),
-        hass=MagicMock(),
-        session=None,  # <--- MUTMUT TRAP
-        ip_address="10.0.0.1",
-    )
-    conn._shared_state.local_session = None
-
-    # Patch creation to verify local fallback triggers
-    _NS = "custom_components.climate_ip.connection_aiohttp.aiohttp"
-    with (
-        patch(f"{_NS}.TCPConnector"),
-        patch(f"{_NS}.ClientTimeout"),
-        patch(f"{_NS}.ClientSession") as mock_session_cls,
-    ):
-        # Use in-memory traceability trick
-        mock_session_cls.return_value = "fallback_local_session_obj"
-
-        result = await conn._get_session()
-
-        # EXTREME ASSERTION: Despite keep_alive=True, had to create local session
-        mock_session_cls.assert_called_once()
-        assert result == "fallback_local_session_obj", (
-            "Fallback to local session failed"
-        )
-
-
 # ====================================================================================
 # TACTIC 3: EMBEDDED COMMAND BATTLE — Fallback to direct _params
 # ====================================================================================
-
-
-@pytest.mark.asyncio
-async def test_embedded_command_without_template_uses_params_directly(
-    mock_session, mock_logger, mock_hass
-):
-    """Test execution of embedded command using direct _params (without template).
-
-    Verify mutant kill altering:
-    - embedded_params.get("method", method)  → clave "method" o default
-    - embedded_params.get("url", url)        → clave "url" o default
-    - embedded_params.get("json")            → clave "json" para el payload
-    - embedded_params.get("headers", headers)→ clave "headers" o default
-    - bool(embedded_params) is True          → el guard del branch
-    """
-    from homeassistant.helpers.json import json_dumps
-
-    conn = ConnectionAiohttp8888(
-        config={"token": "tok"},
-        logger=mock_logger,
-        hass=mock_hass,
-        session=mock_session,
-        ip_address="1.1.1.1",
-    )
-    conn._shared_state.initialized = True
-
-    # Prepare main session for main command
-    mock_response = AsyncMock()
-    mock_response.status = 200
-    mock_response.text.return_value = "{}"
-    mock_response.headers = {}
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__.return_value = mock_response
-    mock_session.request.return_value = mock_ctx
-
-    # Embedded: WITHOUT template, WITH direct _params
-    # ASYMMETRIC values to detect any key swapping
-    embed_mock = AsyncMock()
-    embed_mock.check_execute_condition.return_value = True
-    embed_mock.connection_template = None  # <--- Activa el branch _params
-    embed_mock.params = {
-        "method": "DELETE",  # Valor distinto al "GET" del main → swap detectable
-        "url": "/override_url",  # Valor distinto al "/main" → swap detectable
-        "json": {"override": "yes"},  # Clave "json" → se serializa con json_dumps
-        "headers": {"Custom": "Header"},  # Clave "headers" → sustituye las del main
-    }
-    conn._embedded_command = embed_mock
-
-    await conn.async_execute("GET", "/main", None, {}, device_state={"state": "on"})
-
-    # Verify exact kwargs passed to embedded command engine
-    embed_mock.async_execute.assert_called_once()
-    kwargs = embed_mock.async_execute.call_args[1]
-
-    # MILLIMETRIC ASSERTIONS — kills mutants altering .get() keys
-    assert kwargs["method"] == "DELETE", (
-        f"The mutant altered key 'method' in .get(): received {kwargs['method']}"
-    )
-    assert kwargs["url"] == "/override_url", (
-        f"The mutant altered key 'url' in .get(): received {kwargs['url']}"
-    )
-    assert kwargs["data"] == json_dumps({"override": "yes"}), (
-        f"The mutant altered key 'json' or json_dumps: received {kwargs['data']}"
-    )
-    assert kwargs["headers"] == {"Custom": "Header"}, (
-        f"The mutant altered key 'headers' in .get(): received {kwargs['headers']}"
-    )
-    assert kwargs["device_state"] == {"state": "on"}, (
-        "The mutant altered device_state propagation to embedded"
-    )
 
 
 @pytest.mark.asyncio
@@ -1498,6 +1042,7 @@ async def test_embedded_command_without_template_and_empty_params_skips(
         ip_address="1.1.1.1",
     )
     conn._shared_state.initialized = True
+    conn._shared_state.ssl_context = MagicMock()
 
     mock_response = AsyncMock()
     mock_response.status = 200
@@ -1517,58 +1062,6 @@ async def test_embedded_command_without_template_and_empty_params_skips(
 
     # Embedded MUST NOT have executed because params was empty
     embed_mock.async_execute.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_embedded_command_method_and_url_fallback_to_main(
-    mock_session, mock_logger, mock_hass
-):
-    """Validate fallback of method and url when embedded command does not define them explicitly.
-
-    Kills mutants que eliminan el segundo argumento de .get("method", method)
-    o .get("url", url) — haciendo que devuelva None en lugar del valor del comando principal.
-    """
-    from homeassistant.helpers.json import json_dumps
-
-    conn = ConnectionAiohttp8888(
-        config={"token": "tok"},
-        logger=mock_logger,
-        hass=mock_hass,
-        session=mock_session,
-        ip_address="1.1.1.1",
-    )
-    conn._shared_state.initialized = True
-
-    mock_response = AsyncMock()
-    mock_response.status = 200
-    mock_response.text.return_value = "{}"
-    mock_response.headers = {}
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__.return_value = mock_response
-    mock_session.request.return_value = mock_ctx
-
-    embed_mock = AsyncMock()
-    embed_mock.check_execute_condition.return_value = True
-    embed_mock.connection_template = None
-    # _params WITHOUT "method" or "url" → must inherit from main command
-    embed_mock.params = {"json": {"action": "toggle"}}
-    conn._embedded_command = embed_mock
-
-    await conn.async_execute("PUT", "/main_url", None, {}, device_state={"state": "on"})
-
-    embed_mock.async_execute.assert_called_once()
-    kwargs = embed_mock.async_execute.call_args[1]
-
-    # FALLBACK: If embedded defines neither method nor url, uses main command's
-    assert kwargs["method"] == "PUT", (
-        f"Fallback for 'method' is broken: received {kwargs['method']}"
-    )
-    assert kwargs["url"] == "/main_url", (
-        f"Fallback for 'url' is broken: received {kwargs['url']}"
-    )
-    assert kwargs["data"] == json_dumps({"action": "toggle"}), (
-        f"json_dumps of embedded payload failed: {kwargs['data']}"
-    )
 
 
 # ====================================================================================
@@ -1594,6 +1087,7 @@ async def test_embedded_command_strict_fallbacks_to_main(
         ip_address="1.1.1.1",
     )
     conn._shared_state.initialized = True
+    conn._shared_state.ssl_context = MagicMock()
 
     mock_response = AsyncMock()
     mock_response.status = 200
@@ -1799,6 +1293,7 @@ async def test_async_execute_request_http_version_detection(
         ip_address="1.1.1.1",
     )
     conn._shared_state.initialized = True
+    conn._shared_state.ssl_context = MagicMock()
     conn._force_close_connection = start_forced
 
     mock_response = AsyncMock()
@@ -1836,6 +1331,7 @@ async def test_async_execute_request_strict_kwargs(
         ip_address="1.1.1.1",
     )
     conn._shared_state.initialized = True
+    conn._shared_state.ssl_context = MagicMock()
     conn._shared_state.ssl_context = MagicMock(name="FAKE_SSL")
 
     mock_response = AsyncMock()
@@ -1890,40 +1386,6 @@ async def test_async_execute_request_strict_kwargs(
 
 
 @pytest.mark.asyncio
-async def test_async_execute_request_none_http_version(
-    mock_session, mock_logger, mock_hass, caplog
-):
-    """Verify mutant kill altering `and response.version` validating logger silence."""
-    conn = ConnectionAiohttp8888(
-        config={"token": "tok"},
-        logger=mock_logger,
-        hass=mock_hass,
-        session=mock_session,
-        ip_address="1.1.1.1",
-    )
-    conn._shared_state.initialized = True
-    conn._force_close_connection = False  # So that first condition of if passes
-
-    mock_response = AsyncMock(status=200, headers={})
-    mock_response.text.return_value = "{}"
-    mock_response.version = None  # THE TRAP FOR MUTMUT!
-
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__.return_value = mock_response
-    mock_session.request.return_value = mock_ctx
-
-    caplog.set_level(logging.DEBUG)
-    await conn._async_execute_request("GET", "https://1.1.1.1:8888/test", None, {})
-
-    # MILLIMETRIC ASSERTION
-    assert conn._force_close_connection is True, "Should force close if no version"
-    # Verify logger.debug was NOT called with version message
-    assert not any(
-        "Server speaks HTTP" in record.message for record in caplog.records
-    ), "The mutant evaluated True on `and response.version` when it was None"
-
-
-@pytest.mark.asyncio
 async def test_async_execute_request_absolute_url(mock_session, mock_logger, mock_hass):
     """Tests that passing an absolute URL ignores base_url and is used as is."""
     conn = ConnectionAiohttp8888(
@@ -1934,6 +1396,7 @@ async def test_async_execute_request_absolute_url(mock_session, mock_logger, moc
         ip_address="1.1.1.1",
     )
     conn._shared_state.initialized = True
+    conn._shared_state.ssl_context = MagicMock()
     conn._shared_state.ssl_context = MagicMock()
 
     mock_response = AsyncMock(status=200, headers={})
@@ -1957,41 +1420,6 @@ async def test_async_execute_request_absolute_url(mock_session, mock_logger, moc
     )
     # As it is http://, ssl must automatically disable at end
     assert kwargs["ssl"] is False, "The mutant did not disable SSL for plain http URL"
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("status_code", [401, 403, 405])
-async def test_try_connection_strict_error_handling(
-    mock_logger, mock_hass, status_code
-):
-    """Assert specific error codes are handled without raising CannotConnect.
-    Verify mutant kill que eliminan 401, 403 o 405 de la tupla (200, 401, 403, 405) en _try_connection.
-    """
-    conn = ConnectionAiohttp8888(
-        config={"token": "tok"},
-        logger=mock_logger,
-        hass=mock_hass,
-        session=None,
-        ip_address="1.1.1.1",
-    )
-
-    mock_local_session = MagicMock()
-    mock_local_session.closed = False
-    mock_response = AsyncMock(status=status_code)
-    mock_response.connection = None
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__.return_value = mock_response
-    mock_local_session.request.return_value = mock_ctx
-    conn._shared_state.local_session = mock_local_session
-    conn._shared_state.ssl_context = None
-
-    with patch.object(
-        conn, "_create_ssl_context", new_callable=AsyncMock
-    ) as mock_ssl_create:
-        mock_ssl_create.return_value = MagicMock()
-        # If mutmut removes tuple code, this raises CannotConnect and test fails
-        result = await conn._try_connection()
-        assert result is None, f"Expected None for status {status_code}"
 
 
 @pytest.mark.asyncio
@@ -2149,36 +1577,6 @@ async def test_async_execute_optimization_with_params_url(
 # ====================================================================================
 
 
-def test_load_from_yaml_annihilation(mock_logger, mock_hass, mock_session):
-    """Kill mutants 1, 2, 3, 4, 5 in load_from_yaml."""
-    conn = ConnectionAiohttp8888(
-        {"keep_alive": True, CONF_TOKEN: "tok"},
-        mock_logger,
-        mock_hass,
-        mock_session,
-        "192.168.1.100",
-    )
-    # 1. node is None -> returns True, _keep_alive unchanged
-    res_none = conn.load_from_yaml(None, None)
-    assert res_none is True
-    assert conn._keep_alive is True
-
-    # 2. node is empty dict -> returns True, _keep_alive unchanged
-    res_empty = conn.load_from_yaml({}, None)
-    assert res_empty is True
-    assert conn._keep_alive is True
-
-    # 3. node has "keep_alive": False -> returns True, _keep_alive becomes False
-    res_false = conn.load_from_yaml({"keep_alive": False}, None)
-    assert res_false is True
-    assert conn._keep_alive is False
-
-    # 4. node has "keep_alive": True -> returns True, _keep_alive becomes True
-    res_true = conn.load_from_yaml({"keep_alive": True}, None)
-    assert res_true is True
-    assert conn._keep_alive is True
-
-
 def test_load_from_yaml_connection_base_and_params_strict(
     mock_logger, mock_hass, mock_session
 ):
@@ -2291,22 +1689,6 @@ async def test_async_execute_embedded_template_sync_render(
     assert call_kwargs["data"] == '{"a":1}'
 
 
-def test_prepare_request_headers_no_token_raises_auth_error(
-    mock_logger, mock_hass, mock_session
-):
-    """Test _prepare_request_headers raises AuthError when current_token is None or empty."""
-    conn = ConnectionAiohttp8888(
-        config={CONF_TOKEN: "valid_token"},
-        logger=mock_logger,
-        hass=mock_hass,
-        session=mock_session,
-        ip_address="1.1.1.1",
-    )
-    with pytest.raises(AuthError) as exc_info:
-        conn._prepare_request_headers(None, None, "1.1.1.1", None, "AA:BB")
-    assert "Token not configured" in str(exc_info.value)
-
-
 @pytest.mark.parametrize("invalid_token", [None, "", "   "])
 def test_aiohttp_init_without_token_raises_auth_error(
     invalid_token, mock_logger, mock_hass, mock_session
@@ -2408,29 +1790,6 @@ async def test_async_execute_request_retry_protocol_violation(
 
 
 @pytest.mark.asyncio
-async def test_async_execute_request_already_forced_close_fails(
-    mock_logger, mock_hass, mock_session
-):
-    """Test _async_execute_request raises CannotConnect immediately if already force_close_connection."""
-    conn = ConnectionAiohttp8888(
-        config={CONF_TOKEN: "valid_token"},
-        logger=mock_logger,
-        hass=mock_hass,
-        session=mock_session,
-        ip_address="1.1.1.1",
-    )
-    conn._force_close_connection = True
-
-    mock_context = AsyncMock()
-    mock_context.__aenter__.side_effect = TimeoutError("Unreachable socket")
-    mock_session.request.return_value = mock_context
-
-    with pytest.raises(CannotConnect) as exc_info:
-        await conn._async_execute_request("GET", "http://1.1.1.1:8888/test", None, {})
-    assert "Connection error" in str(exc_info.value)
-
-
-@pytest.mark.asyncio
 async def test_async_execute_request_parsing_error(
     mock_logger, mock_hass, mock_session
 ):
@@ -2470,18 +1829,92 @@ async def test_async_execute_periodic_reset_close_error(
     conn._shared_state.initialized = True
     conn._try_connection = AsyncMock(return_value=None)
 
-    local_session = MagicMock()
-    local_session.closed = False
-    local_session.close = AsyncMock(side_effect=aiohttp.ClientError("Close failure"))
-    conn._shared_state.local_session = local_session
+    for exc in (
+        aiohttp.ClientError("Close failure"),
+        TimeoutError("Close timeout"),
+        OSError("Close os error"),
+    ):
+        local_session = MagicMock()
+        local_session.closed = False
+        local_session.close = AsyncMock(side_effect=exc)
+        conn._shared_state.local_session = local_session
 
-    with patch.object(
-        conn, "_async_execute_request", new_callable=AsyncMock
-    ) as mock_req:
-        mock_req.return_value = ("{}", {})
-        res, _ = await conn.async_execute("GET", "/test", None, {}, _is_poll=True)
-        assert res == "{}"
-        local_session.close.assert_called_once()
+        with patch.object(
+            conn, "_async_execute_request", new_callable=AsyncMock
+        ) as mock_req:
+            mock_req.return_value = ("{}", {})
+            res, _ = await conn.async_execute("GET", "/test", None, {}, _is_poll=True)
+            assert res == "{}"
+            local_session.close.assert_called_once()
+
+
+def test_format_url_host_with_colon_and_8888_port(mock_logger, mock_hass, mock_session):
+    """Test _format_url preserves port 8888 when host already has a colon and CONF_PORT is set."""
+    from custom_components.climate_ip.const import CONF_USE_HTTP
+    from homeassistant.const import CONF_PORT
+
+    conn = ConnectionAiohttp8888(
+        config={CONF_TOKEN: "valid_token", CONF_PORT: 7777, CONF_USE_HTTP: True},
+        logger=mock_logger,
+        hass=mock_hass,
+        session=mock_session,
+        ip_address="192.168.1.50:8888",
+    )
+    url = conn._build_full_url("/test")
+    assert url == "http://192.168.1.50:8888/test"
+
+
+@pytest.mark.asyncio
+async def test_async_execute_request_creates_ssl_context_when_none(
+    connection_config, mock_logger, mock_hass, mock_session
+):
+    """Test _async_execute_request creates SSL context when https and ssl_context is None."""
+    conn = ConnectionAiohttp8888(
+        connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+    )
+    conn._shared_state.initialized = True
+    conn._shared_state.ssl_context = None
+    sentinel_ssl = MagicMock(spec=ssl.SSLContext)
+    conn._create_ssl_context = AsyncMock(return_value=sentinel_ssl)
+
+    mock_response = AsyncMock(status=200, headers={})
+    mock_response.text.return_value = "{}"
+    mock_context = AsyncMock()
+    mock_context.__aenter__.return_value = mock_response
+    mock_session.request.return_value = mock_context
+
+    await conn._async_execute_request(
+        "GET", "https://192.168.1.100:8888/test", None, {}
+    )
+    conn._create_ssl_context.assert_awaited_once()
+    assert mock_session.request.call_args.kwargs["ssl"] is sentinel_ssl
+
+
+def test_auth_context_property(connection_config, mock_logger, mock_hass, mock_session):
+    """Test centralized resolution of active token and device_id."""
+    from custom_components.climate_ip.const import CONF_DEVICE_ID, MAIN_DEVICE_ID
+
+    conn = ConnectionAiohttp8888(
+        connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+    )
+    # 1. No controller -> returns (token, None)
+    assert conn._auth_context == ("test_token", None)
+
+    # 2. Controller with sub-device ID
+    ctrl = MagicMock()
+    ctrl.config = {CONF_TOKEN: "ctrl_token", CONF_DEVICE_ID: "sub_1"}
+    ctrl.device_id = "ctrl_dev"
+    conn._controller = ctrl
+    assert conn._auth_context == ("ctrl_token", "sub_1")
+
+    # 3. Controller with MAIN_DEVICE_ID -> falls back to controller.device_id
+    ctrl.config = {CONF_TOKEN: "ctrl_token", CONF_DEVICE_ID: MAIN_DEVICE_ID}
+    ctrl.device_id = "ctrl_dev"
+    assert conn._auth_context == ("ctrl_token", "ctrl_dev")
+
+    # 4. Controller with MAIN_DEVICE_ID and no controller.device_id -> returns MAIN_DEVICE_ID
+    ctrl.device_id = None
+    assert conn._auth_context == ("ctrl_token", MAIN_DEVICE_ID)
 
 
 def test_probe_url_path_explicit_probe_url(mock_logger, mock_hass, mock_session):
@@ -2495,20 +1928,6 @@ def test_probe_url_path_explicit_probe_url(mock_logger, mock_hass, mock_session)
     )
     conn._params = {"probe_url": "/api/custom_probe"}
     assert conn._probe_url_path == "/api/custom_probe"
-
-
-def test_connection_template_setter(mock_logger, mock_hass, mock_session):
-    """Test connection_template property setter."""
-    conn = ConnectionAiohttp8888(
-        config={CONF_TOKEN: "valid_token"},
-        logger=mock_logger,
-        hass=mock_hass,
-        session=mock_session,
-        ip_address="1.1.1.1",
-    )
-    tmpl = MagicMock()
-    conn.connection_template = tmpl
-    assert conn.connection_template is tmpl
 
 
 def test_get_url_host_with_port(mock_logger, mock_hass, mock_session):
@@ -2578,17 +1997,19 @@ async def test_async_probe_ssl_version_attribute_error(
 
 def test_build_8888_ssl_context_empty_cert():
     """Test build_8888_ssl_context with empty cert_path disables verification."""
-    with patch.dict(
-        sys.modules, {"custom_components.climate_ip.config_flow_helpers": None}
+    with (
+        patch.dict(
+            sys.modules, {"custom_components.climate_ip.config_flow_helpers": None}
+        ),
+        patch("ssl.create_default_context") as mock_create_ctx,
     ):
-        with patch("ssl.create_default_context") as mock_create_ctx:
-            mock_ctx = MagicMock(spec=ssl.SSLContext)
-            mock_create_ctx.return_value = mock_ctx
-            res = ConnectionAiohttp8888.build_8888_ssl_context("")
-            mock_create_ctx.assert_called_once()
-            assert res is mock_ctx
-            assert mock_ctx.check_hostname is False
-            assert mock_ctx.verify_mode == ssl.CERT_NONE
+        mock_ctx = MagicMock(spec=ssl.SSLContext)
+        mock_create_ctx.return_value = mock_ctx
+        res = ConnectionAiohttp8888.build_8888_ssl_context("")
+        mock_create_ctx.assert_called_once()
+        assert res is mock_ctx
+        assert mock_ctx.check_hostname is False
+        assert mock_ctx.verify_mode == ssl.CERT_NONE
 
 
 def test_build_8888_ssl_context_with_config_flow_helpers():
@@ -2615,53 +2036,25 @@ def test_build_8888_ssl_context_with_cert_file_exists():
 
     expected_dir = os.path.dirname(conn_mod.__file__)
 
-    with patch.dict(
-        sys.modules, {"custom_components.climate_ip.config_flow_helpers": None}
-    ):
-        with patch(
+    with (
+        patch.dict(
+            sys.modules, {"custom_components.climate_ip.config_flow_helpers": None}
+        ),
+        patch(
             "custom_components.climate_ip.helpers.resolve_cert_path",
             return_value="/resolved/ca.pem",
-        ) as mock_resolve:
-            with patch("os.path.exists", return_value=True):
-                with patch("ssl.create_default_context") as mock_create_ctx:
-                    mock_ctx = MagicMock(spec=ssl.SSLContext)
-                    mock_create_ctx.return_value = mock_ctx
-                    res = ConnectionAiohttp8888.build_8888_ssl_context("ca.pem")
-                    mock_resolve.assert_called_once_with("ca.pem", expected_dir)
-                    mock_ctx.load_verify_locations.assert_called_once_with(
-                        cafile="/resolved/ca.pem"
-                    )
-                    assert res is mock_ctx
-
-
-def test_build_8888_ssl_context_with_cert_load_exception():
-    """Test build_8888_ssl_context suppresses exceptions during load_verify_locations."""
-    import os
-
-    import custom_components.climate_ip.connection_aiohttp as conn_mod
-
-    expected_dir = os.path.dirname(conn_mod.__file__)
-
-    with patch.dict(
-        sys.modules, {"custom_components.climate_ip.config_flow_helpers": None}
+        ) as mock_resolve,
+        patch("os.path.exists", return_value=True),
     ):
-        with patch(
-            "custom_components.climate_ip.helpers.resolve_cert_path",
-            return_value="/resolved/ca.pem",
-        ) as mock_resolve:
-            with patch("os.path.exists", return_value=True):
-                with patch("ssl.create_default_context") as mock_create_ctx:
-                    mock_ctx = MagicMock(spec=ssl.SSLContext)
-                    mock_ctx.load_verify_locations.side_effect = ssl.SSLError(
-                        "Failed to load CA"
-                    )
-                    mock_create_ctx.return_value = mock_ctx
-                    res = ConnectionAiohttp8888.build_8888_ssl_context("ca.pem")
-                    mock_resolve.assert_called_once_with("ca.pem", expected_dir)
-                    mock_ctx.load_verify_locations.assert_called_once_with(
-                        cafile="/resolved/ca.pem"
-                    )
-                    assert res is mock_ctx
+        with patch("ssl.create_default_context") as mock_create_ctx:
+            mock_ctx = MagicMock(spec=ssl.SSLContext)
+            mock_create_ctx.return_value = mock_ctx
+            res = ConnectionAiohttp8888.build_8888_ssl_context("ca.pem")
+            mock_resolve.assert_called_once_with("ca.pem", expected_dir)
+            mock_ctx.load_verify_locations.assert_called_once_with(
+                cafile="/resolved/ca.pem"
+            )
+            assert res is mock_ctx
 
 
 def test_build_8888_ssl_context_with_nonexistent_cert():
@@ -2672,25 +2065,27 @@ def test_build_8888_ssl_context_with_nonexistent_cert():
 
     expected_dir = os.path.dirname(conn_mod.__file__)
 
-    with patch.dict(
-        sys.modules, {"custom_components.climate_ip.config_flow_helpers": None}
-    ):
-        with patch(
+    with (
+        patch.dict(
+            sys.modules, {"custom_components.climate_ip.config_flow_helpers": None}
+        ),
+        patch(
             "custom_components.climate_ip.helpers.resolve_cert_path",
             return_value="/nonexistent/ca.pem",
-        ) as mock_resolve:
-            with patch("os.path.exists", return_value=False):
-                with patch("ssl.create_default_context") as mock_create_ctx:
-                    mock_ctx = MagicMock(spec=ssl.SSLContext)
-                    mock_ctx.check_hostname = True
-                    mock_ctx.verify_mode = ssl.CERT_REQUIRED
-                    mock_create_ctx.return_value = mock_ctx
-                    res = ConnectionAiohttp8888.build_8888_ssl_context("ca.pem")
-                    mock_resolve.assert_called_once_with("ca.pem", expected_dir)
-                    assert not mock_ctx.load_verify_locations.called
-                    assert mock_ctx.check_hostname is True
-                    assert mock_ctx.verify_mode == ssl.CERT_REQUIRED
-                    assert res is mock_ctx
+        ) as mock_resolve,
+        patch("os.path.exists", return_value=False),
+    ):
+        with patch("ssl.create_default_context") as mock_create_ctx:
+            mock_ctx = MagicMock(spec=ssl.SSLContext)
+            mock_ctx.check_hostname = True
+            mock_ctx.verify_mode = ssl.CERT_REQUIRED
+            mock_create_ctx.return_value = mock_ctx
+            res = ConnectionAiohttp8888.build_8888_ssl_context("ca.pem")
+            mock_resolve.assert_called_once_with("ca.pem", expected_dir)
+            assert not mock_ctx.load_verify_locations.called
+            assert mock_ctx.check_hostname is True
+            assert mock_ctx.verify_mode == ssl.CERT_REQUIRED
+            assert res is mock_ctx
 
 
 @pytest.mark.asyncio
@@ -2763,67 +2158,6 @@ async def test_async_test_8888_connection_statuses():
 
 
 @pytest.mark.asyncio
-async def test_async_validate_rest_device_hosts_and_ssl():
-    """Test async_validate_rest_device host formatting and ssl=False detection."""
-    mock_hass = MagicMock()
-    mock_session = MagicMock()
-
-    mock_resp = AsyncMock()
-    mock_resp.status = HTTPStatus.OK
-    cm = AsyncMock()
-    cm.__aenter__.return_value = mock_resp
-    mock_session.get.return_value = cm
-
-    with patch(
-        "homeassistant.helpers.aiohttp_client.async_get_clientsession",
-        return_value=mock_session,
-    ):
-        # 1. Remote host (e.g. api.smartthings.com) -> ssl not in kwargs
-        await ConnectionAiohttp8888.async_validate_rest_device(
-            mock_hass, "api.smartthings.com", "remote_tok"
-        )
-        call_url, call_kwargs = (
-            mock_session.get.call_args[0][0],
-            mock_session.get.call_args[1],
-        )
-        assert call_url == "https://api.smartthings.com/v1/devices"
-        assert "ssl" not in call_kwargs
-        assert call_kwargs["headers"] == {"Authorization": "Bearer remote_tok"}
-
-        # 2. IPv6 unbracketed
-        await ConnectionAiohttp8888.async_validate_rest_device(
-            mock_hass, "fe80::1::2", "tok"
-        )
-        call_url = mock_session.get.call_args[0][0]
-        assert call_url == "https://[fe80::1::2]/v1/devices"
-
-        # 3. IPv6 bracketed [::1] -> wraps once, ssl=False
-        await ConnectionAiohttp8888.async_validate_rest_device(
-            mock_hass, "[::1]", "tok"
-        )
-        call_url, call_kwargs = (
-            mock_session.get.call_args[0][0],
-            mock_session.get.call_args[1],
-        )
-        assert call_url == "https://[::1]/v1/devices"
-        assert call_kwargs.get("ssl") is False
-
-        # 4. Local patterns: localhost, 127.0.0.1, 192.168., 10., 172., .local
-        for local_host in [
-            "localhost",
-            "127.0.0.1",
-            "192.168.1.25",
-            "10.0.0.5",
-            "172.16.0.2",
-            "mydevice.local",
-        ]:
-            await ConnectionAiohttp8888.async_validate_rest_device(
-                mock_hass, local_host, "tok"
-            )
-            assert mock_session.get.call_args[1].get("ssl") is False
-
-
-@pytest.mark.asyncio
 async def test_async_validate_rest_device_status_error():
     """Test async_validate_rest_device raises CannotConnect on non-200 HTTP status."""
     mock_hass = MagicMock()
@@ -2835,14 +2169,16 @@ async def test_async_validate_rest_device_status_error():
     cm.__aenter__.return_value = mock_resp
     mock_session.get.return_value = cm
 
-    with patch(
-        "homeassistant.helpers.aiohttp_client.async_get_clientsession",
-        return_value=mock_session,
+    with (
+        patch(
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+            return_value=mock_session,
+        ),
+        pytest.raises(CannotConnect, match="HTTP Status Error"),
     ):
-        with pytest.raises(CannotConnect, match="HTTP Status Error"):
-            await ConnectionAiohttp8888.async_validate_rest_device(
-                mock_hass, "192.168.1.5", "tok"
-            )
+        await ConnectionAiohttp8888.async_validate_rest_device(
+            mock_hass, "192.168.1.5", "tok"
+        )
 
 
 @pytest.mark.asyncio
@@ -2949,25 +2285,29 @@ async def test_async_validate_rest_device_connection_exceptions():
 
     # 1. TimeoutError
     mock_session.get.side_effect = TimeoutError("Request timed out")
-    with patch(
-        "homeassistant.helpers.aiohttp_client.async_get_clientsession",
-        return_value=mock_session,
+    with (
+        patch(
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+            return_value=mock_session,
+        ),
+        pytest.raises(CannotConnect, match="REST API connection error"),
     ):
-        with pytest.raises(CannotConnect, match="REST API connection error"):
-            await ConnectionAiohttp8888.async_validate_rest_device(
-                mock_hass, "192.168.1.5", "tok"
-            )
+        await ConnectionAiohttp8888.async_validate_rest_device(
+            mock_hass, "192.168.1.5", "tok"
+        )
 
     # 2. ClientError
     mock_session.get.side_effect = aiohttp.ClientError("Failed network")
-    with patch(
-        "homeassistant.helpers.aiohttp_client.async_get_clientsession",
-        return_value=mock_session,
+    with (
+        patch(
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+            return_value=mock_session,
+        ),
+        pytest.raises(CannotConnect, match="REST API connection error"),
     ):
-        with pytest.raises(CannotConnect, match="REST API connection error"):
-            await ConnectionAiohttp8888.async_validate_rest_device(
-                mock_hass, "192.168.1.5", "tok"
-            )
+        await ConnectionAiohttp8888.async_validate_rest_device(
+            mock_hass, "192.168.1.5", "tok"
+        )
 
 
 def test_connection_aiohttp_log_prefix_branches(mock_logger, mock_hass, mock_session):

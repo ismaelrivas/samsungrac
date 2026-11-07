@@ -100,6 +100,7 @@ async def test_close_connection(connection_config, mock_logger, mock_hass):
         local_session_mock = AsyncMock()
         local_session_mock.closed = False
         conn._shared_state.local_session = local_session_mock
+        conn._force_close_connection = True
 
         await conn.close()
 
@@ -108,6 +109,7 @@ async def test_close_connection(connection_config, mock_logger, mock_hass):
         assert conn._shared_state.initialized is False
         assert conn._shared_state.ssl_context is None
         assert conn._shared_state.local_session is None
+        assert conn._force_close_connection is False
 
 
 def test_is_available_property(connection_config, mock_logger, mock_hass):

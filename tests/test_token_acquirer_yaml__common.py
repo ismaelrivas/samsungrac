@@ -1,4 +1,4 @@
-# ruff: noqa: F811, F401, F841
+# ruff: noqa: F401
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,missing-function-docstring,too-few-public-methods
 """Common initialization and shared fixtures for GenericYamlTokenAcquirer."""
 
@@ -7,7 +7,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.climate_ip.token_acquirer_yaml import GenericYamlTokenAcquirer
+from custom_components.climate_ip.token_acquirer_yaml import (
+    GenericYamlTokenAcquirer,
+    _extract_token,
+)
 
 
 @pytest.fixture
@@ -192,3 +195,18 @@ async def test_close_swallows_errors(mock_hass, stream_config):
     await acq.async_close()
     assert acq._server is None
     assert acq._writer is None
+
+
+def test_extract_token_helper():
+    """Test pure protocol helper _extract_token."""
+    assert _extract_token("", r"Token: (\S+)") is None
+    assert _extract_token("text", None) is None
+    assert _extract_token("No match here", r"Token: (\S+)") is None
+
+    # Test default strip_quotes=False preserves surrounding quotes (kills strip_quotes=True mutant)
+    res = _extract_token('Token: "SECRET"', r"Token: (\S+)")
+    assert res == '"SECRET"'
+
+    # Test strip_quotes=True strips quotes
+    res_stripped = _extract_token('Token: "SECRET"', r"Token: (\S+)", strip_quotes=True)
+    assert res_stripped == "SECRET"

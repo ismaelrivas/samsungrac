@@ -1,34 +1,23 @@
 # pylint: disable=line-too-long,too-many-statements,too-many-locals,try-except-raise,trailing-whitespace
 """DataUpdateCoordinator for the Samsung Climate integration."""
 
-from __future__ import annotations
-
 import asyncio
 from collections.abc import Callable, Coroutine
 from datetime import timedelta
 from enum import Enum
 import functools
 import logging
-from typing import Any, Final, cast
+from typing import Any, Final
 
-from homeassistant.components.climate.const import ATTR_HVAC_MODE, HVACMode
+from homeassistant.components.climate import ATTR_HVAC_MODE, HVACMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_MAC, CONF_TOKEN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry as dr, issue_registry as ir
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_call_later
-from homeassistant.helpers.issue_registry import (
-    IssueSeverity,
-    async_create_issue,
-    async_delete_issue,
-    async_get as async_get_issue_registry,
-)
-from homeassistant.helpers.update_coordinator import (
-    DataUpdateCoordinator,
-    UpdateFailed,
-)
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
     ATTR_POWER,
@@ -148,7 +137,7 @@ class PropertyDebouncer:
     ) -> bool:
         """Execute a command with trailing debouncing per property."""
         now = self.hass.loop.time()
-        last_activity = self._last_activities.get(property_name, 0.0)
+        last_activity = self._last_activities.get(property_name)
 
         # Immediate execution for turn-off commands (aborts any pending debounced commands across all properties)
         if val is None:
@@ -162,18 +151,17 @@ class PropertyDebouncer:
         ) or (
             property_name == ATTR_POWER
             and (
-                effective_val is False
+                effective_val == 0
                 or (
                     isinstance(effective_val, str)
                     and effective_val.lower() in FALSY_STRINGS
                 )
-                or effective_val == 0
             )
         )
 
         if is_turn_off:
             _LOGGER.debug(
-                "[Debouncer] Immediate turn-off requested for '%s'. Aborting all pending commands.",
+                "[Debouncer] Immediate turn-off requested for '%s'. Aborting all pending commands",
                 property_name,
             )
             self.cancel_all()
@@ -181,9 +169,7 @@ class PropertyDebouncer:
             return await coroutine_func(*args, **kwargs)
 
         # Immediate execution if this specific property has not been modified within trailing window
-        if property_name not in self._last_activities or (
-            now - last_activity >= self.delay
-        ):
+        if last_activity is None or (now - last_activity >= self.delay):
             self._cancel_timer(property_name)
             self._pending_payloads.pop(property_name, None)
             self._last_activities[property_name] = now
@@ -245,7 +231,7 @@ class PropertyDebouncer:
                         success = await func(*p_args, **p_kwargs)
                         if not success:
                             _LOGGER.warning(
-                                "[Debouncer] Delayed command for '%s' returned failure. Reverting optimistic state.",
+                                "[Debouncer] Delayed command for '%s' returned failure. Reverting optimistic state",
                                 prop,
                             )
                             await self._async_handle_delayed_failure(prop)
@@ -257,20 +243,19 @@ class PropertyDebouncer:
                             exc_info=True,
                         )  # pragma: no mutate
                         await self._async_handle_delayed_failure(prop)
-                    except Exception as err:  # pylint: disable=broad-exception-caught
-                        _LOGGER.error(
-                            "[Debouncer] Unexpected error executing delayed command for '%s': %s",
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        _LOGGER.exception(
+                            "[Debouncer] Unexpected error executing delayed command for '%s'",
                             prop,
-                            err,
-                            exc_info=True,
                         )  # pragma: no mutate
                         await self._async_handle_delayed_failure(prop)
 
                 task_coro = _task_runner()
                 safe_uid = self.coordinator.safe_unique_id
                 task_name = f"{DOMAIN}_{safe_uid}_debouncer_{prop}"
-                if self.coordinator.config_entry is not None:
-                    self.coordinator.config_entry.async_create_background_task(
+                entry: ConfigEntry | None = self.coordinator.config_entry
+                if entry is not None:
+                    entry.async_create_background_task(
                         self.hass,
                         task_coro,
                         name=task_name,
@@ -278,7 +263,7 @@ class PropertyDebouncer:
                 else:
                     task_coro.close()
                     _LOGGER.error(
-                        "[Debouncer] config_entry is None during delayed execution for '%s'. Aborting task.",
+                        "[Debouncer] config_entry is None during delayed execution for '%s'. Aborting task",
                         prop,
                     )
 
@@ -310,7 +295,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         """Initialize the data coordinator."""
         self.controller = controller
         self.devices = {}
-        self.debouncer = PropertyDebouncer(self, delay=DEFAULT_DEBOUNCE_DELAY)
+        self.debouncer = PropertyDebouncer(self)
         self._global_network_lock = asyncio.Lock()
         self.config_entry = entry
 
@@ -342,7 +327,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             poll_interval_seconds = min(
                 max(int(raw_interval), MIN_POLL_INTERVAL), MAX_POLL_INTERVAL
             )
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             poll_interval_seconds = DEFAULT_POLL_INTERVAL
         update_interval = (
             timedelta(seconds=poll_interval_seconds)
@@ -382,7 +367,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
             # NOTE: For sub-devices, we DO NOT include 'connections' (MAC) to prevent
             # Home Assistant from merging multiple units behind the same gateway into one.
             if parent_unique_id:
-                self.device_info = DeviceInfo(
+                self.device_info = DeviceInfo(  # type: ignore[typeddict-unknown-key]
                     identifiers={(DOMAIN, safe_uid)},
                     name=final_name,
                     manufacturer=MANUFACTURER_SAMSUNG,
@@ -402,7 +387,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 if mac_str != "":
                     try:
                         conns.add((dr.CONNECTION_NETWORK_MAC, dr.format_mac(mac_str)))
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         _LOGGER.debug(
                             "%s Malformed MAC address '%s' discarded from DeviceInfo connections",
                             self.log_prefix,
@@ -446,10 +431,10 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     def _async_cleanup_auto_healing_issue_if_ignored(self) -> None:
         """Delete auto-healing issue from registry if it was ignored/dismissed by the user."""
         issue_id = self.auto_healing_issue_id
-        registry = async_get_issue_registry(self.hass)
+        registry = ir.async_get(self.hass)
         issue = registry.async_get_issue(DOMAIN, issue_id)
         if issue is not None and issue.dismissed_version is not None:
-            async_delete_issue(self.hass, DOMAIN, issue_id)
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
             _LOGGER.debug(
                 "%s Cleaned up ignored auto-healing repair issue '%s'",
                 self.log_prefix,
@@ -465,7 +450,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         new_data[CONF_TOKEN] = new_token
         self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
         _LOGGER.info(
-            "%s Persisted new network token to Config Entry.", self.log_prefix
+            "%s Persisted new network token to Config Entry", self.log_prefix
         )  # pragma: no mutate
 
     @callback
@@ -477,7 +462,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         new_data[CONF_SSL_CONFIG_KEY] = ssl_config
         self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
         _LOGGER.info(
-            "%s Persisted SSL config to ConfigEntry data.", self.log_prefix
+            "%s Persisted SSL config to ConfigEntry data", self.log_prefix
         )  # pragma: no mutate
 
     @callback
@@ -491,7 +476,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     def _async_handle_persistent_offline(self, reason: str) -> None:
         """Callback for the network layer to force UI unavailability immediately."""
         _LOGGER.debug(
-            "%s Network layer declared device offline. Forcing UpdateFailed.",
+            "%s Network layer declared device offline. Forcing UpdateFailed",
             self.log_prefix,
         )  # pragma: no mutate
         self.debouncer.cancel_all()
@@ -517,16 +502,16 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         _LOGGER.debug(
             "%s Auto-healing to RAW mode activated: The device sent non-standard HTTP responses "
             "(RFC 7230 violation). The connection engine has been automatically and permanently "
-            "migrated to 'Robust (raw socket)' to preserve full AC control without disconnections.",
+            "migrated to 'Robust (raw socket)' to preserve full AC control without disconnections",
             self.log_prefix,
         )
-        async_create_issue(
+        ir.async_create_issue(
             self.hass,
             DOMAIN,
             self.auto_healing_issue_id,
             is_fixable=True,
             is_persistent=False,
-            severity=IssueSeverity.WARNING,
+            severity=ir.IssueSeverity.WARNING,
             translation_key=ISSUE_AUTO_HEALING_RAW,
             translation_placeholders={
                 "device_name": device_name,
@@ -584,11 +569,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         except (ValueError, TypeError, KeyError) as err:
             self.controller.clear_state_cache()
 
-            _LOGGER.error(
-                "%s Data parsing error during update: %s",
+            _LOGGER.exception(
+                "%s Data parsing error during update",
                 self.log_prefix,
-                err,
-                exc_info=True,
             )  # pragma: no mutate
 
             raise UpdateFailed(
@@ -637,7 +620,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                         )  # pragma: no mutate
                 else:
                     _LOGGER.debug(
-                        "Push update discarded by controller (validation failed or junk data)."
+                        "Push update discarded by controller (validation failed or junk data)"
                     )  # pragma: no mutate
 
             else:
@@ -663,11 +646,9 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
         except Exception as err:  # pylint: disable=broad-exception-caught
             self.controller.clear_state_cache()
-            _LOGGER.error(
-                "%s Unexpected error during push update: %s",
+            _LOGGER.exception(
+                "%s Unexpected error during push update",
                 self.log_prefix,
-                err,
-                exc_info=True,
             )  # pragma: no mutate
             self.async_set_update_error(UpdateFailed(f"Push update failed: {err}"))
 
@@ -686,7 +667,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         async with self._global_network_lock:
             if self.debouncer.has_pending(prop):
                 _LOGGER.debug(
-                    "%s [Debouncer] Command for '%s' (val=%s) was superseded while waiting for lock. Dropping stale command.",
+                    "%s [Debouncer] Command for '%s' (val=%s) was superseded while waiting for lock. Dropping stale command",
                     self.log_prefix,
                     prop,
                     val,
@@ -695,7 +676,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
             if self.controller.is_property_superseded(prop, val):
                 _LOGGER.debug(
-                    "%s [Debouncer] Command for '%s' (val=%s) was superseded. Dropping stale command.",
+                    "%s [Debouncer] Command for '%s' (val=%s) was superseded. Dropping stale command",
                     self.log_prefix,
                     prop,
                     val,
@@ -756,15 +737,6 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                     )
                 )
 
-            if not all(results):
-                _LOGGER.debug(
-                    "%s Not all properties were set successfully. Requesting sync refresh to revert state.",
-                    self.log_prefix,
-                )  # pragma: no mutate
-                raise HomeAssistantError(
-                    f"Failed to set property {property_name} to {new_value}"
-                )
-
         except (CannotConnect, OSError) as err:
             await self._async_handle_set_property_failure(properties_to_set)
             _LOGGER.warning(
@@ -789,19 +761,13 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
         except (ValueError, TypeError, KeyError) as err:
             await self._async_handle_set_property_failure(properties_to_set)
-            _LOGGER.error(
-                "%s Data error setting properties: %s",
+            _LOGGER.exception(
+                "%s Data error setting properties",
                 self.log_prefix,
-                err,
-                exc_info=True,
             )  # pragma: no mutate
             raise HomeAssistantError(
                 f"Data error setting property {property_name}: {err}"
             ) from err  # pragma: no mutate
-
-        except HomeAssistantError:
-            await self._async_handle_set_property_failure(properties_to_set)
-            raise
 
         except asyncio.CancelledError:
             await self._async_handle_set_property_failure(properties_to_set)
@@ -809,12 +775,22 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
 
         except Exception as err:  # pylint: disable=broad-exception-caught
             await self._async_handle_set_property_failure(properties_to_set)
-            _LOGGER.error(
-                "%s Error setting properties: %s", self.log_prefix, err, exc_info=True
+            _LOGGER.exception(
+                "%s Error setting properties", self.log_prefix
             )  # pragma: no mutate
             raise HomeAssistantError(
                 f"Failed to set property {property_name}: {err}"
             ) from err  # pragma: no mutate
+
+        if not all(results):
+            await self._async_handle_set_property_failure(properties_to_set)
+            _LOGGER.debug(
+                "%s Not all properties were set successfully. Requesting sync refresh to revert state",
+                self.log_prefix,
+            )  # pragma: no mutate
+            raise HomeAssistantError(
+                f"Failed to set property {property_name} to {new_value}"
+            )
 
     async def _async_handle_set_property_failure(
         self, properties: dict[str, Any]
@@ -852,12 +828,10 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     @property
     def connection_method(self) -> str | None:
         """Return the configured connection method (options taking precedence over data)."""
-        return cast(
-            str | None,
-            self.config_entry.options.get(
-                CONF_CONN_METHOD, self.config_entry.data.get(CONF_CONN_METHOD)
-            ),
+        method: str | None = self.config_entry.options.get(
+            CONF_CONN_METHOD, self.config_entry.data.get(CONF_CONN_METHOD)
         )
+        return method
 
     async def async_shutdown(self) -> None:
         """Shut down the coordinator and its controller.
@@ -882,7 +856,7 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         except asyncio.CancelledError:
             _LOGGER.debug("%s Shutdown cancelled", self.log_prefix)
             raise
-        except Exception as err:  # pylint: disable=broad-exception-caught
+        except Exception as err:  # pylint: disable=broad-exception-caught  # noqa: BLE001
             _LOGGER.warning(
                 "%s Unexpected error during controller shutdown: %s",
                 self.log_prefix,

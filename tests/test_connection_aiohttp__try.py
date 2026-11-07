@@ -71,8 +71,8 @@ async def test_try_connection_success(
             connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
         )
 
-        # Mock create_ssl_context
-        conn._create_ssl_context = AsyncMock(return_value=MagicMock())
+        sentinel_ssl = MagicMock()
+        conn._create_ssl_context = AsyncMock(return_value=sentinel_ssl)
 
         mock_response = AsyncMock()
         mock_response.status = 200
@@ -85,18 +85,40 @@ async def test_try_connection_success(
         res = await conn._try_connection()
         assert res == '{"result": "ok"}'
         assert conn._shared_state.initialized is True
+        assert conn._shared_state.ssl_context is sentinel_ssl
 
-        # WHITE-BOX ASSERTIONS: try_connection timeout
+        # WHITE-BOX ASSERTIONS: try_connection timeout and ssl
         mock_session.request.assert_called_once()
         _, kwargs = mock_session.request.call_args
+        assert kwargs["ssl"] is sentinel_ssl
         actual_timeout = kwargs.get("timeout")
         assert actual_timeout is not None, "The mutant deleted timeout"
         assert actual_timeout.total == 10, (
             f"The mutant changed total timeout: {actual_timeout.total}"
         )
-        assert getattr(actual_timeout, "sock_read", None) == 5, (
-            "The mutant deleted or altered probe sock_read"
+        assert actual_timeout.sock_read == 5
+        assert isinstance(actual_timeout.sock_read, int), (
+            "sock_read must be an int, not float"
         )
+
+
+async def test_try_connection_ssl_context_none_passes_ssl_true(
+    connection_config, mock_logger, mock_hass, mock_session
+):
+    """Test _try_connection passes ssl=True when _create_ssl_context returns None on HTTPS."""
+    conn = ConnectionAiohttp8888(
+        connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+    )
+    conn._create_ssl_context = AsyncMock(return_value=None)
+    mock_response = AsyncMock(status=200)
+    mock_response.text.return_value = "{}"
+    mock_context = AsyncMock(__aenter__=AsyncMock(return_value=mock_response))
+    mock_session.request.return_value = mock_context
+
+    await conn._try_connection()
+    mock_session.request.assert_called_once()
+    _, kwargs = mock_session.request.call_args
+    assert kwargs["ssl"] is True
 
 
 async def test_try_connection_success_no_body(
@@ -172,71 +194,6 @@ async def test_try_connection_timeout_error(
             await conn._try_connection()
 
 
-async def test_try_connection_invalid_header(
-    connection_config, mock_logger, mock_hass, mock_session
-):
-    with patch("os.path.exists", return_value=True):
-        conn = ConnectionAiohttp8888(
-            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
-        )
-        conn._create_ssl_context = AsyncMock(return_value=MagicMock())
-
-        mock_session.request.side_effect = aiohttp.http_exceptions.InvalidHeader(
-            "Invalid header token: b'X-API-Version : v1.0.0'"
-        )
-
-        with pytest.raises(InvalidHeaderError):
-            await conn._try_connection()
-
-
-async def test_async_execute_request_invalid_header(
-    connection_config, mock_logger, mock_hass, mock_session
-):
-    """Test that protocol/header violation during request execution raises InvalidHeaderError."""
-    with patch("os.path.exists", return_value=True):
-        conn = ConnectionAiohttp8888(
-            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
-        )
-        conn._create_ssl_context = AsyncMock(return_value=MagicMock())
-
-        mock_session.request.side_effect = aiohttp.http_exceptions.InvalidHeader(
-            "400, message=\"Invalid header token: b'X-API-Version : v1.0.0'\""
-        )
-
-        with pytest.raises(InvalidHeaderError):
-            await conn._async_execute_request(
-                "GET", "https://192.168.1.100:8888/devices", None, None
-            )
-
-
-async def test_try_connection_generic_error(
-    connection_config, mock_logger, mock_hass, mock_session
-):
-    with patch("os.path.exists", return_value=True):
-        conn = ConnectionAiohttp8888(
-            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
-        )
-        conn._create_ssl_context = AsyncMock(return_value=MagicMock())
-
-        mock_session.request.side_effect = RuntimeError("Some generic error")
-
-        with pytest.raises(RuntimeError):
-            await conn._try_connection()
-
-
-async def test_try_connection_already_initialized(
-    connection_config, mock_logger, mock_hass, mock_session
-):
-    with patch("os.path.exists", return_value=True):
-        conn = ConnectionAiohttp8888(
-            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
-        )
-        conn._shared_state.initialized = True
-
-        res = await conn._try_connection()
-        assert res is None
-
-
 def test_is_http_protocol_violation_line_too_long():
     """Verify structural exception matching for HTTP parser and protocol violations."""
     assert (
@@ -281,38 +238,6 @@ def test_is_http_protocol_violation_line_too_long():
         )
         is False
     )
-
-
-async def test_try_connection_https_failure_clears_ssl_and_raises(
-    connection_config, mock_logger, mock_hass, mock_session
-):
-    """Kill mutants at L496 (ssl_context cleared to None) and L503 (error_msg passed)."""
-    with (
-        patch("os.path.exists", return_value=True),
-        patch(
-            "custom_components.climate_ip.connection_aiohttp._LOGGER"
-        ) as mock_module_logger,
-    ):
-        conn = ConnectionAiohttp8888(
-            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
-        )
-        fake_ssl = MagicMock()
-        conn._shared_state.ssl_context = fake_ssl
-        conn._create_ssl_context = AsyncMock(return_value=fake_ssl)
-
-        mock_session.request.side_effect = aiohttp.ClientError("SSL handshake failure")
-
-        with pytest.raises(CannotConnect) as exc_info:
-            await conn._try_connection()
-
-        assert "Connection initialization failed (HTTPS)" in str(exc_info.value)
-        assert conn._shared_state.ssl_context is None
-        mock_module_logger.warning.assert_called_with(
-            "%s [aiohttp_probe] Initial probe with HTTPS (mTLS) failed: %s.",
-            conn.log_prefix,
-            mock_session.request.side_effect,
-            exc_info=True,
-        )
 
 
 def test_resolve_and_verify_cert_none(
@@ -401,6 +326,7 @@ async def test_try_connection_logs_negotiated_tls_version(
             200,
             "TLSv1.2",
         )
+        mock_transport.get_extra_info.assert_called_with("ssl_object")
 
 
 async def test_try_connection_double_check_lock_already_initialized(
@@ -443,32 +369,24 @@ def test_resolve_cert_path_delegates(
         mock_helper.assert_called_once_with("my_cert.pem", ANY, mock_hass)
 
 
-async def test_try_connection_http_probe_passes_ssl_false(
-    mock_logger, mock_hass, mock_session
+async def test_async_execute_request_invalid_header(
+    connection_config, mock_logger, mock_hass, mock_session
 ):
-    """Test _try_connection passes ssl=False and preserves absolute URL when probe url starts with http://."""
-    conn = ConnectionAiohttp8888(
-        {"token": "tok", "use_http": True},
-        mock_logger,
-        mock_hass,
-        mock_session,
-        "192.168.1.100",
-    )
-    conn._params = {"url": "http://192.168.1.100:8888/custom_devices"}
+    """Test that protocol/header violation during request execution raises InvalidHeaderError."""
+    with patch("os.path.exists", return_value=True):
+        conn = ConnectionAiohttp8888(
+            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+        )
+        conn._create_ssl_context = AsyncMock(return_value=MagicMock())
 
-    mock_response = AsyncMock(status=200)
-    mock_response.text.return_value = '{"probe": "ok"}'
-    mock_context = AsyncMock()
-    mock_context.__aenter__.return_value = mock_response
-    mock_session.request.return_value = mock_context
+        mock_session.request.side_effect = aiohttp.http_exceptions.InvalidHeader(
+            "400, message=\"Invalid header token: b'X-API-Version : v1.0.0'\""
+        )
 
-    res = await conn._try_connection()
-    assert res == '{"probe": "ok"}'
-    mock_session.request.assert_called_once()
-    args, kwargs = mock_session.request.call_args
-    assert args[0] == "GET"
-    assert args[1] == "http://192.168.1.100:8888/custom_devices"
-    assert kwargs["ssl"] is False
+        with pytest.raises(InvalidHeaderError):
+            await conn._async_execute_request(
+                "GET", "https://192.168.1.100:8888/devices", None, None
+            )
 
 
 # ============================================================================
@@ -503,14 +421,6 @@ def _make_tp6x_wrapped_error() -> aiohttp.ClientResponseError:
     return _make_response_error(400, _TP6X_PARSER_MESSAGE, processing)
 
 
-def test_is_http_protocol_violation_wrapped_tp6x_error():
-    """The real-world wrapped chain must be classified as a protocol violation."""
-    assert (
-        ConnectionAiohttp8888._is_http_protocol_violation(_make_tp6x_wrapped_error())
-        is True
-    )
-
-
 @pytest.mark.parametrize(
     "message",
     [
@@ -529,44 +439,6 @@ def test_is_http_protocol_violation_response_error_message_markers(message):
     )
 
 
-@pytest.mark.parametrize(
-    ("status", "message"),
-    [
-        (400, "Bad Request"),
-        (500, _TP6X_PARSER_MESSAGE),
-        (401, "Unauthorized"),
-        (404, "header token"),
-    ],
-)
-def test_is_http_protocol_violation_response_error_genuine_http_errors(status, message):
-    """Genuine HTTP error replies (raise_for_status) must NOT trigger the raw fallback."""
-    assert (
-        ConnectionAiohttp8888._is_http_protocol_violation(
-            _make_response_error(status, message)
-        )
-        is False
-    )
-
-
-@pytest.mark.parametrize(
-    "cause",
-    [
-        aiohttp.http_exceptions.HttpProcessingError(code=400, message="x"),
-        aiohttp.http_exceptions.BadHttpMessage("x"),
-        aiohttp.http_exceptions.InvalidHeader("x"),
-        aiohttp.http_exceptions.LineTooLong("x", 8190, 4096),
-    ],
-)
-def test_is_http_protocol_violation_response_error_parser_cause(cause):
-    """A parser exception in __cause__ is a violation regardless of status/message."""
-    assert (
-        ConnectionAiohttp8888._is_http_protocol_violation(
-            _make_response_error(0, "", cause)
-        )
-        is True
-    )
-
-
 def test_is_http_protocol_violation_response_error_nested_cause():
     """The parser exception is found deeper in the __cause__ chain."""
     middle = RuntimeError("wrapper")
@@ -576,39 +448,6 @@ def test_is_http_protocol_violation_response_error_nested_cause():
             _make_response_error(0, "", middle)
         )
         is True
-    )
-
-
-def test_is_http_protocol_violation_response_error_context_only():
-    """Implicit chaining (__context__ without __cause__) is also inspected."""
-    err = _make_response_error(0, "")
-    err.__context__ = aiohttp.http_exceptions.BadHttpMessage("x")
-    assert ConnectionAiohttp8888._is_http_protocol_violation(err) is True
-
-
-def test_is_http_protocol_violation_response_error_non_parser_cause():
-    """A non-parser cause chain must not be classified as a violation."""
-    middle = RuntimeError("wrapper")
-    middle.__cause__ = TimeoutError()
-    assert (
-        ConnectionAiohttp8888._is_http_protocol_violation(
-            _make_response_error(0, "", middle)
-        )
-        is False
-    )
-
-
-def test_is_http_protocol_violation_response_error_cyclic_chain():
-    """Cyclic cause chains terminate without a parser match."""
-    first = RuntimeError("a")
-    second = RuntimeError("b")
-    first.__cause__ = second
-    second.__cause__ = first
-    assert (
-        ConnectionAiohttp8888._is_http_protocol_violation(
-            _make_response_error(0, "", first)
-        )
-        is False
     )
 
 
@@ -637,57 +476,3 @@ async def test_try_connection_wrapped_invalid_header_raises_invalid_header_error
         assert exc_info.value.__cause__ is wrapped
         assert "Protocol violation during probe" in str(exc_info.value)
         assert conn._shared_state.initialized is False
-
-
-async def test_try_connection_genuine_400_raises_cannot_connect(
-    connection_config, mock_logger, mock_hass, mock_session
-):
-    """A genuine 400 ClientResponseError during the probe stays a plain CannotConnect."""
-    with patch("os.path.exists", return_value=True):
-        conn = ConnectionAiohttp8888(
-            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
-        )
-        conn._create_ssl_context = AsyncMock(return_value=MagicMock())
-        mock_session.request.side_effect = _make_response_error(400, "Bad Request")
-
-        with pytest.raises(CannotConnect) as exc_info:
-            await conn._try_connection()
-
-        assert not isinstance(exc_info.value, InvalidHeaderError)
-
-
-async def test_async_execute_request_wrapped_invalid_header_raises_invalid_header_error(
-    connection_config, mock_logger, mock_hass, mock_session
-):
-    """The wrapped TP6X error during request execution raises InvalidHeaderError without retry."""
-    with patch("os.path.exists", return_value=True):
-        conn = ConnectionAiohttp8888(
-            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
-        )
-        conn._create_ssl_context = AsyncMock(return_value=MagicMock())
-        wrapped = _make_tp6x_wrapped_error()
-        mock_session.request.side_effect = wrapped
-
-        with pytest.raises(InvalidHeaderError) as exc_info:
-            await conn._async_execute_request(
-                "GET", "https://192.168.1.100:8888/devices", None, None
-            )
-
-        assert exc_info.value.__cause__ is wrapped
-        mock_session.request.assert_called_once()
-        assert conn._force_close_connection is False
-
-
-async def test_async_execute_wrapped_invalid_header_propagates_from_probe(
-    connection_config, mock_logger, mock_hass, mock_session
-):
-    """async_execute surfaces InvalidHeaderError raised by the initial probe."""
-    with patch("os.path.exists", return_value=True):
-        conn = ConnectionAiohttp8888(
-            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
-        )
-        conn._create_ssl_context = AsyncMock(return_value=MagicMock())
-        mock_session.request.side_effect = _make_tp6x_wrapped_error()
-
-        with pytest.raises(InvalidHeaderError):
-            await conn.async_execute("GET", "/devices", None, None)

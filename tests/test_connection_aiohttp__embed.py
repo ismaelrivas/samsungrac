@@ -1,15 +1,14 @@
 # pylint: disable=protected-access,redefined-outer-name,duplicate-code,import-outside-toplevel,missing-docstring,line-too-long
-from __future__ import annotations
 
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.const import CONF_TOKEN
 import pytest
 
 from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
 from custom_components.climate_ip.const import CONF_CERT
 from custom_components.climate_ip.exceptions import CannotConnect
+from homeassistant.const import CONF_TOKEN
 
 
 class StubHass:
@@ -67,43 +66,6 @@ def mock_hass():
 def mock_session():
 
     return StubSession()
-
-
-async def test_async_execute_with_embedded_command_condition_met(
-    connection_config, mock_logger, mock_hass, mock_session
-):
-    with patch("os.path.exists", return_value=True):
-        conn = ConnectionAiohttp8888(
-            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
-        )
-        conn._shared_state.initialized = True
-        conn._try_connection = AsyncMock()
-
-        # Mock main command execution
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.text.return_value = '{"result": "ok"}'
-        mock_response.headers = {"Content-Type": "application/json"}
-        mock_response.version = MagicMock(major=1, minor=1)
-
-        mock_context = AsyncMock()
-        mock_context.__aenter__.return_value = mock_response
-        mock_session.request.return_value = mock_context
-
-        # Setup embedded command
-        embedded_mock = AsyncMock()
-        embedded_mock.check_execute_condition = MagicMock(return_value=True)
-        embedded_mock.params = {"url": "/embedded", "method": "GET"}
-        embedded_mock.connection_template = None
-        embedded_mock.async_execute = AsyncMock()
-
-        conn._embedded_command = embedded_mock
-
-        await conn.async_execute(
-            "GET", "/main", data=None, headers={}, device_state={"some": "state"}
-        )
-
-        embedded_mock.async_execute.assert_called_once()
 
 
 async def test_async_execute_with_embedded_command_condition_not_met(
@@ -211,14 +173,29 @@ async def test_async_execute_embedded_command_strict(
         mock_context.__aenter__.return_value = mock_response
         mock_session.request.return_value = mock_context
 
+        # Controller to provide dev_id
+        mock_controller = MagicMock()
+        mock_controller.config = {
+            CONF_TOKEN: "test_token",
+            "device_id": "sub_device_id",
+        }
+        mock_controller.device_id = "sub_device_id"
+        conn._controller = mock_controller
+        conn._params = {"mac": "11:22:33:44:55:66"}
+
         # Create embedded command
         embed_conn = ConnectionAiohttp8888(
             connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
         )
         embed_conn._params = {
             "method": "POST",
-            "url": "/embedded_endpoint",
-            "json": {"action": "test"},
+            "url": "/embedded_endpoint/__CLIMATE_IP_HOST__",
+            "json": {
+                "action": "test",
+                "token": "__CLIMATE_IP_TOKEN__",
+                "device": "__DEVICE_ID__",
+                "mac": "__CLIMATE_IP_MAC__",
+            },
         }
         embed_conn.async_execute = AsyncMock(
             return_value=('{"result": "embedded"}', {})
@@ -232,11 +209,11 @@ async def test_async_execute_embedded_command_strict(
 
         await conn.async_execute("GET", "/main", None, {}, device_state={})
 
-        # Verify embedded async_execute was called with ITS exact parameters
+        # Verify embedded async_execute was called with ITS exact parameters and formatted placeholders
         embed_conn.async_execute.assert_called_once_with(
             method="POST",
-            url="/embedded_endpoint",
-            data='{"action":"test"}',
+            url="/embedded_endpoint/192.168.1.100",
+            data='{"action":"test","token":"test_token","device":"sub_device_id","mac":"11:22:33:44:55:66"}',
             headers={},
             device_state={},
         )

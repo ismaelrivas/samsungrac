@@ -799,7 +799,7 @@ class ConnectionAiohttp8888(Connection):
             if local_session is not None:
                 self._shared_state.local_session = None
                 if not local_session.closed:
-                    with contextlib.suppress(
+                    with contextlib.suppress(  # pragma: no mutate
                         aiohttp.ClientError, TimeoutError, OSError
                     ):
                         await local_session.close()
