@@ -12,7 +12,7 @@ import random
 import re
 import socket
 import ssl
-from typing import Any, cast
+from typing import Any
 
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_PORT, CONF_TOKEN
 from homeassistant.core import HomeAssistant
@@ -214,7 +214,8 @@ class ConnectionSamsung2878(Connection):
     def log_prefix(self) -> str:
         """Return the logging prefix for this connection."""
         if self._controller and self._controller.unique_id:
-            return cast(str, self._controller.log_prefix)
+            prefix: str = self._controller.log_prefix
+            return prefix
         if self._cfg and self._cfg.duid:
             return f"[{self._cfg.duid[-6:]}]"
         return "[NO_ID]"
@@ -351,10 +352,11 @@ class ConnectionSamsung2878(Connection):
             return False
 
         params_node = node.get(CONFIG_DEVICE_CONNECTION_PARAMS, {})
+        hass: Any = self._hass
         if CONFIG_DEVICE_CONNECTION_TEMPLATE in params_node:
             self._connection_init_template = Template(
                 params_node[CONFIG_DEVICE_CONNECTION_TEMPLATE],
-                cast(HomeAssistant, self._hass),
+                hass,
             )
         elif not connection_base:
             _LOGGER.error(
@@ -366,7 +368,7 @@ class ConnectionSamsung2878(Connection):
         if CONFIG_DEVICE_POWER_TEMPLATE in params_node:
             self._power_template = Template(
                 params_node[CONFIG_DEVICE_POWER_TEMPLATE],
-                cast(HomeAssistant, self._hass),
+                hass,
             )
 
         if not connection_base:
@@ -753,7 +755,7 @@ class ConnectionSamsung2878(Connection):
                         await self._close_connection()
                         break
                     buffer += chunk
-                    decoded = buffer.decode("utf-8", errors="ignore").strip()
+                    decoded = buffer.decode(errors="ignore").strip()
                     if decoded.endswith(TAG_SELF_CLOSE) or any(
                         marker in decoded for marker in RESPONSE_END_MARKERS
                     ):
@@ -771,7 +773,7 @@ class ConnectionSamsung2878(Connection):
             )  # pragma: no mutate
             await self._close_connection()
             return None
-        return buffer.decode("utf-8", errors="ignore") if buffer else None
+        return buffer.decode(errors="ignore") if buffer else None
 
     async def _write_data(self, data_str: str) -> bool:
         if not self._writer or self._writer.is_closing():
@@ -929,7 +931,7 @@ class ConnectionSamsung2878(Connection):
             end_index = buffer.find(end_tag) + len(end_tag)
             message = buffer[:end_index]
             buffer = buffer[end_index:]
-            await self._handle_message(message.decode("utf-8", errors="ignore"))
+            await self._handle_message(message.decode(errors="ignore"))
         return buffer
 
     async def _handle_message(self, xml_data: str) -> None:

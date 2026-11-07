@@ -102,10 +102,9 @@ async def test_user_step_mim_h03_routing(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.asyncio
-async def test_step_reauth_confirm_mim_h03_routing(hass: HomeAssistant) -> None:
+async def test_step_reauth_confirm_mim_h03_routing() -> None:
     """Test reauth confirm routing for MIM-H03."""
     flow = ClimateIpConfigFlow()
-    flow.hass = hass
     mock_entry = AsyncMock()
     mock_entry.data = {CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03}
     mock_entry.title = "MIM H03 Device"
@@ -124,10 +123,10 @@ async def test_step_reauth_confirm_mim_h03_routing(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.asyncio
-async def test_reauth_unknown_entry_abort(hass: HomeAssistant) -> None:
+async def test_reauth_unknown_entry_abort() -> None:
     """Kill reason=None mutant in async_step_reauth when entry is missing."""
     flow = ClimateIpConfigFlow()
-    flow.hass = hass
+    flow.hass = MagicMock()
     flow.context = {"entry_id": "ghost_entry"}
     flow.hass.config_entries.async_get_entry = MagicMock(return_value=None)
 
@@ -137,10 +136,9 @@ async def test_reauth_unknown_entry_abort(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.asyncio
-async def test_reauth_confirm_mutants_and_routing(hass: HomeAssistant) -> None:
+async def test_reauth_confirm_mutants_and_routing() -> None:
     """Kill mutants in async_step_reauth_confirm placeholders and device routing."""
     flow = ClimateIpConfigFlow()
-    flow.hass = hass
 
     # 1. user_input is None with reauth_entry -> show_form step_id="reauth_confirm", device_name placeholder
     mock_entry = MagicMock()
@@ -401,8 +399,7 @@ async def test_rest_api_empty_errors_dict(hass: HomeAssistant) -> None:
         assert spy_show_form.call_args.kwargs["errors"] is not None
 
 
-@pytest.mark.asyncio
-async def test_is_matching_ip_and_mac(hass: HomeAssistant) -> None:
+def test_is_matching_ip_and_mac() -> None:
     """Test is_matching method comparing IP and MAC addresses across flow_data and context."""
     flow1 = ClimateIpConfigFlow()
     flow1.flow_data = {CONF_IP_ADDRESS: "192.168.1.10", CONF_MAC: "AABBCCDDEEFF"}
@@ -415,12 +412,31 @@ async def test_is_matching_ip_and_mac(hass: HomeAssistant) -> None:
     flow3.flow_data = {CONF_IP_ADDRESS: "192.168.1.11", CONF_MAC: "aabbccddeeff"}
     assert flow1.is_matching(flow3) is True
 
-    # Test context vs flow_data matching
+    # Test pure IP matching (no MAC) across flow_data
+    flow_ip1 = ClimateIpConfigFlow()
+    flow_ip1.flow_data = {CONF_IP_ADDRESS: "192.168.1.50"}
+    flow_ip2 = ClimateIpConfigFlow()
+    flow_ip2.flow_data = {CONF_IP_ADDRESS: "192.168.1.50"}
+    assert flow_ip1.is_matching(flow_ip2) is True
+
+    flow_ip3 = ClimateIpConfigFlow()
+    flow_ip3.flow_data = {CONF_IP_ADDRESS: "192.168.1.51"}
+    assert flow_ip1.is_matching(flow_ip3) is False
+
+    # Test context vs flow_data matching (both directions)
     flow_ctx = ClimateIpConfigFlow()
     flow_ctx.context = {CONF_IP_ADDRESS: "10.0.0.5"}
     flow_data_match = ClimateIpConfigFlow()
     flow_data_match.flow_data = {CONF_IP_ADDRESS: "10.0.0.5"}
     assert flow_ctx.is_matching(flow_data_match) is True
+    assert flow_data_match.is_matching(flow_ctx) is True
+
+    flow_ctx_mac = ClimateIpConfigFlow()
+    flow_ctx_mac.context = {CONF_MAC: "AA:BB:CC:DD:EE:FF"}
+    flow_data_mac = ClimateIpConfigFlow()
+    flow_data_mac.flow_data = {CONF_MAC: "aa:bb:cc:dd:ee:ff"}
+    assert flow_ctx_mac.is_matching(flow_data_mac) is True
+    assert flow_data_mac.is_matching(flow_ctx_mac) is True
 
     # Test empty flows return False
     empty1 = ClimateIpConfigFlow()

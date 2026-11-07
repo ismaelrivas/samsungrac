@@ -1241,7 +1241,7 @@ async def test_async_step_handle_error_mutants(hass: HomeAssistant) -> None:
         assert res3["data_schema"] == "mocked_schema_2878"
 
 
-async def test_async_step_reauth_mutants(hass: HomeAssistant) -> None:
+async def test_async_step_reauth_mutants() -> None:
     """Kill mutants in async_step_reauth."""
     from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1269,9 +1269,9 @@ async def test_async_step_reauth_mutants(hass: HomeAssistant) -> None:
         )
 
 
-async def test_async_step_reauth_confirm_mutants(hass: HomeAssistant) -> None:
+async def test_async_step_reauth_confirm_mutants() -> None:
     """Kill mutants in async_step_reauth_confirm."""
-    from unittest.mock import AsyncMock, patch
+    from unittest.mock import AsyncMock, MagicMock, patch
 
     from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
     from custom_components.climate_ip.const import (
@@ -1281,7 +1281,6 @@ async def test_async_step_reauth_confirm_mutants(hass: HomeAssistant) -> None:
 
     # 1. Kill mutmut 11, 12, 13, 14, 16, 18, 21, 22 (reauth_entry=None logic)
     flow1 = ClimateIpConfigFlow()
-    flow1.hass = hass
     flow1.reauth_entry = None
 
     with patch.object(
@@ -1301,10 +1300,7 @@ async def test_async_step_reauth_confirm_mutants(hass: HomeAssistant) -> None:
         assert placeholders["device_name"] == "Unknown Device"
 
     # 2. Kill mutmut 6, 10 (user_input provided)
-    from unittest.mock import MagicMock
-
     flow2 = ClimateIpConfigFlow()
-    flow2.hass = hass
     flow2.reauth_entry = MagicMock()
     flow2.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
     # Notice CONF_TOKEN is absent, which kills mutmut 6 (pop(CONF_TOKEN) without default)
