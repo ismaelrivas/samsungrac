@@ -22,6 +22,7 @@ from homeassistant.components.climate.const import (
 from homeassistant.const import (
     ATTR_TEMPERATURE as HA_ATTR_TEMPERATURE,
     PRECISION_HALVES,
+    PRECISION_WHOLE,
     STATE_OFF,
     STATE_ON,
 )
@@ -58,6 +59,14 @@ def test_00_climate_defensive_init_properties(base_climate_entity: ClimateIP) ->
     with an AssertionError before hitting the event loop or async integrations.
     """
     assert base_climate_entity._attr_unique_id is not None, "unique_id MUST NOT be None"
+    assert base_climate_entity._attr_device_info is not None, (
+        "device_info MUST NOT be None"
+    )
+    assert (
+        base_climate_entity._attr_device_info
+        == base_climate_entity.coordinator.device_info
+    )
+    assert base_climate_entity._attr_precision == PRECISION_WHOLE
     assert base_climate_entity.min_temp is not None, "min_temp MUST NOT be None"
     assert base_climate_entity.max_temp is not None, "max_temp MUST NOT be None"
     assert base_climate_entity._attr_target_temperature_step is not None, (
@@ -164,6 +173,9 @@ def test_climate_translation_key_and_device_info(hass: HomeAssistant) -> None:
 
     # Test Device Info matches Coordinator (Parent linkage)
     assert climate.device_info == {"identifiers": {("climate_ip", "test_unique_id")}}
+    assert climate._attr_device_info == {
+        "identifiers": {("climate_ip", "test_unique_id")}
+    }
 
 
 async def test_climate_init_options_priority_and_halves(hass: HomeAssistant) -> None:
@@ -171,6 +183,7 @@ async def test_climate_init_options_priority_and_halves(hass: HomeAssistant) -> 
     mock_coordinator = MagicMock()
     # Inject options (Priority 1) with 0.5
     mock_coordinator.entry.options = {CONF_TARGET_TEMP_STEP: 0.5}
+    mock_coordinator.entry.data = {CONF_TARGET_TEMP_STEP: 1.0}
 
     # Inject config (Priority 2 and 3) with different values to verify they are ignored
     description = ClimateEntityDescription(key="samsung_ac")
@@ -184,6 +197,16 @@ async def test_climate_init_options_priority_and_halves(hass: HomeAssistant) -> 
     assert entity.precision == PRECISION_HALVES, (
         "Precision was not adjusted to half degrees"
     )
+
+    # Fallback to entry.data when entry.options is empty
+    mock_fallback_coord = MagicMock()
+    mock_fallback_coord.entry.options = {}
+    mock_fallback_coord.entry.data = {CONF_TARGET_TEMP_STEP: 0.5}
+    entity_fallback = ClimateIP(
+        coordinator=mock_fallback_coord, description=description
+    )
+    assert entity_fallback.target_temperature_step == 0.5
+    assert entity_fallback.precision == PRECISION_HALVES
 
 
 async def test_climate_unique_id(hass: HomeAssistant) -> None:
@@ -206,13 +229,13 @@ async def test_climate_sync_data_full(base_climate_entity: ClimateIP) -> None:
     base_climate_entity.coordinator.unique_id = "test_sync_full"
 
     mock_state = MagicMock()
-    mock_state.hvac_mode = HVACMode.HEAT
+    mock_state.hvac_mode = "heat"
     mock_state.target_temperature = 25.0
     mock_state.current_temperature = 22.0
     mock_state.fan_mode = "high"
     mock_state.swing_mode = "vertical"
     mock_state.preset_mode = "boost"
-    mock_state.hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
+    mock_state.hvac_modes = ["heat", "off"]
     mock_state.fan_modes = ["high", "low"]
     mock_state.swing_modes = ["vertical", "horizontal"]
     mock_state.preset_modes = ["boost", "eco"]
@@ -223,6 +246,8 @@ async def test_climate_sync_data_full(base_climate_entity: ClimateIP) -> None:
     assert base_climate_entity.hvac_mode == HVACMode.HEAT, (
         "hvac_mode was not synchronized"
     )
+    assert type(base_climate_entity.hvac_mode) is HVACMode
+    assert base_climate_entity.hvac_mode is HVACMode.HEAT
     assert base_climate_entity.target_temperature == 25.0, (
         "target_temperature was not synchronized"
     )
@@ -240,6 +265,7 @@ async def test_climate_sync_data_full(base_climate_entity: ClimateIP) -> None:
         HVACMode.HEAT,
         HVACMode.OFF,
     ], "hvac_modes was not synchronized"
+    assert all(type(m) is HVACMode for m in base_climate_entity.hvac_modes)
     assert base_climate_entity.fan_modes == [
         "high",
         "low",
@@ -294,19 +320,59 @@ async def test_hvac_action_dynamic_auto_heuristic(
     state.hvac_mode = HVACMode.AUTO
     base_climate_entity.coordinator.data = state
 
-    # Current < Target - 0.5 -> HEATING
+    # Current < Target - 0.5 -> HEATING (test 20.0 and 21.0 to kill target - 1.5 mutant)
     state.current_temperature = 20.0
     state.target_temperature = 22.0
     assert base_climate_entity.hvac_action == HVACAction.HEATING
+    state.current_temperature = 21.0
+    assert base_climate_entity.hvac_action == HVACAction.HEATING
 
-    # Current > Target + 0.5 -> COOLING
+    # Current > Target + 0.5 -> COOLING (test 24.0 and 23.0 to kill target + 1.5 mutant)
     state.current_temperature = 24.0
     state.target_temperature = 22.0
+    assert base_climate_entity.hvac_action == HVACAction.COOLING
+    state.current_temperature = 23.0
     assert base_climate_entity.hvac_action == HVACAction.COOLING
 
     # Within deadband (22.0 vs 22.0) -> IDLE
     state.current_temperature = 22.0
     state.target_temperature = 22.0
+    assert base_climate_entity.hvac_action == HVACAction.IDLE
+
+    # Deadband exact edges: current == target - 0.5 and current == target + 0.5 -> IDLE
+    state.current_temperature = 21.5
+    assert base_climate_entity.hvac_action == HVACAction.IDLE
+    state.current_temperature = 22.5
+    assert base_climate_entity.hvac_action == HVACAction.IDLE
+
+    # AUTO mode with None temperature values -> IDLE
+    state.current_temperature = None
+    state.target_temperature = 22.0
+    assert base_climate_entity.hvac_action == HVACAction.IDLE
+    state.current_temperature = 22.0
+    state.target_temperature = None
+    assert base_climate_entity.hvac_action == HVACAction.IDLE
+
+    # Repeat for HEAT_COOL mode
+    state.hvac_mode = HVACMode.HEAT_COOL
+    state.current_temperature = 20.0
+    state.target_temperature = 22.0
+    assert base_climate_entity.hvac_action == HVACAction.HEATING
+    state.current_temperature = 21.0
+    assert base_climate_entity.hvac_action == HVACAction.HEATING
+    state.current_temperature = 24.0
+    assert base_climate_entity.hvac_action == HVACAction.COOLING
+    state.current_temperature = 23.0
+    assert base_climate_entity.hvac_action == HVACAction.COOLING
+    state.current_temperature = 21.5
+    assert base_climate_entity.hvac_action == HVACAction.IDLE
+    state.current_temperature = 22.5
+    assert base_climate_entity.hvac_action == HVACAction.IDLE
+    state.current_temperature = None
+    state.target_temperature = 22.0
+    assert base_climate_entity.hvac_action == HVACAction.IDLE
+    state.current_temperature = 22.0
+    state.target_temperature = None
     assert base_climate_entity.hvac_action == HVACAction.IDLE
 
     # OFF mode -> OFF
@@ -318,16 +384,40 @@ async def test_hvac_action_dynamic_auto_heuristic(
     state.current_temperature = 25.0
     state.target_temperature = 22.0
     assert base_climate_entity.hvac_action == HVACAction.COOLING
+    # Current between target - 0.5 (21.5) and target + 0.5 (22.5) -> COOLING (kills target + 0.5 mutant)
+    state.current_temperature = 22.0
+    assert base_climate_entity.hvac_action == HVACAction.COOLING
     state.current_temperature = 21.0
     assert base_climate_entity.hvac_action == HVACAction.IDLE
+    # COOL boundary exact deadband edge (21.5 == 22.0 - 0.5) -> IDLE
+    state.current_temperature = 21.5
+    assert base_climate_entity.hvac_action == HVACAction.IDLE
+    # Target None in COOL mode -> COOLING
+    state.current_temperature = 25.0
+    state.target_temperature = None
+    assert base_climate_entity.hvac_action == HVACAction.COOLING
 
     # HEAT mode: active when current < target + 0.5, idle otherwise
     state.hvac_mode = HVACMode.HEAT
     state.current_temperature = 19.0
     state.target_temperature = 22.0
     assert base_climate_entity.hvac_action == HVACAction.HEATING
+    # Current between target - 0.5 (21.5) and target + 0.5 (22.5) -> HEATING (kills target - 0.5 mutant)
+    state.current_temperature = 22.0
+    assert base_climate_entity.hvac_action == HVACAction.HEATING
     state.current_temperature = 23.0
     assert base_climate_entity.hvac_action == HVACAction.IDLE
+    # HEAT boundary exact deadband edge (22.5 == 22.0 + 0.5) -> IDLE
+    state.current_temperature = 22.5
+    assert base_climate_entity.hvac_action == HVACAction.IDLE
+    # Current None in HEAT mode -> HEATING
+    state.current_temperature = None
+    state.target_temperature = 22.0
+    assert base_climate_entity.hvac_action == HVACAction.HEATING
+    # Target None in HEAT mode -> HEATING
+    state.current_temperature = 20.0
+    state.target_temperature = None
+    assert base_climate_entity.hvac_action == HVACAction.HEATING
 
     # DRY & FAN_ONLY modes
     state.hvac_mode = HVACMode.DRY
@@ -698,6 +788,11 @@ def test_climate_supported_features_without_power_lacks_turn_on_off(
     )
 
     assert entity.supported_features == ClimateEntityFeature.PRESET_MODE
+    # Verify that without TURN_OFF, HVACMode.OFF is NOT injected into hvac_modes
+    entity.coordinator.data = MagicMock()
+    entity.coordinator.data.hvac_modes = [HVACMode.COOL]
+    assert entity.hvac_modes == [HVACMode.COOL]
+    assert HVACMode.OFF not in entity.hvac_modes
 
 
 # --- extra_state_attributes property (2 mutants: lines 411, 419) ---
@@ -912,6 +1007,15 @@ def test_climate_edge_cases_precision_and_boundary(hass: HomeAssistant) -> None:
     mock_coord.entry.data = {}
     entity_default_step = ClimateIP(coordinator=mock_coord, description=desc)
     assert entity_default_step.target_temperature_step == 1
+    assert entity_default_step._attr_precision == PRECISION_WHOLE
+    assert entity_default_step.precision == PRECISION_WHOLE
+
+    # Test L125-127: configured_step fallback to entry.data when options is empty
+    mock_coord.entry.options = {}
+    mock_coord.entry.data = {CONF_TARGET_TEMP_STEP: 0.5}
+    entity_data_step = ClimateIP(coordinator=mock_coord, description=desc)
+    assert entity_data_step.target_temperature_step == 0.5
+    assert entity_data_step.precision == PRECISION_HALVES
 
 
 def test_climate_hvac_modes_append_off_and_temp_unit(
@@ -920,13 +1024,19 @@ def test_climate_hvac_modes_append_off_and_temp_unit(
     """Test HVACMode.OFF appended when missing and temperature_unit property."""
     from homeassistant.components.climate import ClimateEntityFeature
 
-    # Configure coordinator data without HVACMode.OFF
-    base_climate_entity.coordinator.data.hvac_modes = [HVACMode.COOL, HVACMode.HEAT]
+    # Configure coordinator data with raw strings to verify conversion to HVACMode enum
+    base_climate_entity.coordinator.data.hvac_modes = ["cool", "heat"]
     base_climate_entity._attr_supported_features = ClimateEntityFeature.TURN_OFF
 
     modes = base_climate_entity.hvac_modes
     assert HVACMode.OFF in modes
     assert modes == [HVACMode.COOL, HVACMode.HEAT, HVACMode.OFF]
+    assert all(type(m) is HVACMode for m in modes)
+
+    # Verify hvac_mode conversion when raw string is provided
+    base_climate_entity.coordinator.data.hvac_mode = "cool"
+    assert type(base_climate_entity.hvac_mode) is HVACMode
+    assert base_climate_entity.hvac_mode is HVACMode.COOL
 
     # Verify temperature_unit L281
     assert (
