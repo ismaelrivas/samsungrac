@@ -1,14 +1,11 @@
-from __future__ import annotations
-
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 
 from custom_components.climate_ip.samsung_2878 import (
     PROTOCOL_2878_DPLUG,
     ConnectionSamsung2878,
 )
+import pytest
 
 
 @pytest.fixture
@@ -203,8 +200,7 @@ async def test_00_connection_manager_read_task_creation(connection):
 
 @pytest.mark.asyncio
 async def test_async_execute_ready_but_with_past_retries(connection):
-    """
-    Kills the mutant at line 1360: 'if not self._is_ready.is_set() and...'
+    """Kills the mutant at line 1360: 'if not self._is_ready.is_set() and...'
     Tests that a valid command IS executed even if _reconnect_retries > 0,
     as long as the connection IS ready.
     """

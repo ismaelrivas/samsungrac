@@ -7,14 +7,13 @@ from pathlib import Path
 import ssl
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
-import pytest
-
 from custom_components.climate_ip.exceptions import (
     AuthTurnedOffError,
     CannotConnect,
     TokenAcquisitionError,
 )
 from custom_components.climate_ip.token_acquirer_yaml import GenericYamlTokenAcquirer
+import pytest
 
 from .test_token_acquirer_yaml__common import mock_hass, stream_config
 
@@ -601,7 +600,8 @@ async def test_stream_mode_defaults_when_config_empty(mock_hass):
     with pytest.raises(CannotConnect, match="All YAML TLS strategies failed"):
         await acq._connect_stream()
 
-    # 2. wait_for_token default timeout 45 and buffer size 4096 when error_template match empty string triggers AuthTurnedOffError
+    # 2. wait_for_token default timeout 45 and buffer size 4096 when error_template match triggers AuthTurnedOffError
+    acq.auth_config["error_template"] = {"match": "device response"}
     mock_reader = AsyncMock()
     mock_reader.read.return_value = b"Some device response"
     acq._reader = mock_reader
@@ -620,16 +620,19 @@ async def test_stream_mode_defaults_when_config_empty(mock_hass):
         mock_reader.read.assert_called_once_with(4096)
 
     # 3. wait_for_token with non-matching error_template and non-matching extract_template raises TokenAcquisitionError
+    acq._reader = mock_reader
     acq.auth_config["error_template"] = {"match": "NOT_PRESENT"}
     acq.auth_config["extract_template"] = {"regex": r"Token: (.*)"}
-    with patch(
-        "custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout",
-        return_value=make_mock_timeout_cm(),
-    ):
-        with pytest.raises(
+    with (
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout",
+            return_value=make_mock_timeout_cm(),
+        ),
+        pytest.raises(
             TokenAcquisitionError, match="Regex failed to extract token from stream."
-        ):
-            await acq.async_wait_for_token()
+        ),
+    ):
+        await acq.async_wait_for_token()
 
 
 async def test_initiate_pairing_stream_missing_payload(mock_hass, stream_config):
@@ -842,11 +845,9 @@ async def test_initiate_pairing_stream_match_not_found_no_fallback(
             "custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout",
             return_value=make_mock_timeout_cm(),
         ),
+        pytest.raises(TokenAcquisitionError, match="Device did not accept pairing."),
     ):
-        with pytest.raises(
-            TokenAcquisitionError, match="Device did not accept pairing."
-        ):
-            await acq.async_initiate_pairing()
+        await acq.async_initiate_pairing()
 
 
 async def test_initiate_pairing_stream_fallback_match_success(mock_hass, stream_config):
@@ -947,12 +948,16 @@ async def test_wait_for_token_stream_missing_extract_template(mock_hass, stream_
     )
     acq._reader = mock_reader
 
-    with patch(
-        "custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout",
-        return_value=make_mock_timeout_cm(),
+    with (
+        patch(
+            "custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout",
+            return_value=make_mock_timeout_cm(),
+        ),
+        pytest.raises(
+            TokenAcquisitionError, match="Regex failed to extract token from stream."
+        ),
     ):
-        with pytest.raises(TypeError):
-            await acq.async_wait_for_token()
+        await acq.async_wait_for_token()
 
 
 async def test_wait_for_token_stream_extracts_from_initial_stream_data(
@@ -963,15 +968,36 @@ async def test_wait_for_token_stream_extracts_from_initial_stream_data(
     acq = GenericYamlTokenAcquirer(
         mock_hass, "192.168.1.100", stream_config, cert_path=None
     )
-    acq._reader = AsyncMock()
+    mock_reader = AsyncMock()
+    acq._reader = mock_reader
     acq._initial_stream_data = "Banner hello DeviceToken: SECRET_TOKEN_1234 trailing"
 
     token = await acq.async_wait_for_token()
     assert token == "SECRET_TOKEN_1234"
-    acq._reader.read.assert_not_called()
+    mock_reader.read.assert_not_called()
 
 
-async def test_connect_stream_plain_tcp_explicit_enabled_false(mock_hass, stream_config):
+async def test_wait_for_token_stream_missing_error_template(mock_hass, stream_config):
+    """Verify wait_for_token works when error_template is missing (kills {} -> None mutant)."""
+    stream_config.pop("error_template", None)
+    stream_config["extract_template"] = {"regex": r"Token: (\d+)"}
+    acq = GenericYamlTokenAcquirer(
+        mock_hass, "192.168.1.100", stream_config, cert_path=None
+    )
+    mock_reader = AsyncMock()
+    mock_reader.read.return_value = b"Some device response with Token: 12345"
+    acq._reader = mock_reader
+    with patch(
+        "custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout",
+        return_value=make_mock_timeout_cm(),
+    ):
+        token = await acq.async_wait_for_token()
+        assert token == "12345"
+
+
+async def test_connect_stream_plain_tcp_explicit_enabled_false(
+    mock_hass, stream_config
+):
     """Kill mutants on L193, L196, L198, L199, L206, L207, L208, L212 for plain TCP stream."""
     stream_config["tls_config"] = {"enabled": False, "strategies": []}
     stream_config["request_pairing"] = {"port": 3310}
@@ -984,14 +1010,16 @@ async def test_connect_stream_plain_tcp_explicit_enabled_false(mock_hass, stream
     mock_writer = AsyncMock()
     mock_reader.read.return_value = b"BannerData"
 
-    with patch(
-        "asyncio.open_connection", return_value=(mock_reader, mock_writer)
-    ) as mock_open:
-        with patch(
+    with (
+        patch(
+            "asyncio.open_connection", return_value=(mock_reader, mock_writer)
+        ) as mock_open,
+        patch(
             "custom_components.climate_ip.token_acquirer_yaml.asyncio.timeout",
             side_effect=asyncio.timeout,
-        ) as mock_timeout:
-            res = await acq._connect_stream()
+        ) as mock_timeout,
+    ):
+        res = await acq._connect_stream()
 
     assert res == {"plain_tcp": True}
     assert res["plain_tcp"] is True
@@ -1024,7 +1052,9 @@ async def test_connect_stream_plain_tcp_method_tcp(mock_hass, stream_config):
     mock_open.assert_called_once_with("192.168.1.100", 2878, ssl=None)
 
 
-async def test_connect_stream_plain_tcp_banner_timeout_handled(mock_hass, stream_config):
+async def test_connect_stream_plain_tcp_banner_timeout_handled(
+    mock_hass, stream_config
+):
     """Kill mutant on L210: banner TimeoutError is ignored gracefully."""
     stream_config["tls_config"] = {"enabled": False}
     stream_config["request_pairing"] = {"port": 2878}
@@ -1058,8 +1088,9 @@ async def test_connect_stream_plain_tcp_connection_error_raises_cannot_connect(
         with pytest.raises(CannotConnect) as exc_info:
             await acq._connect_stream()
 
-    assert "Failed to connect via plain TCP to 192.168.1.100:2878: Network unreachable" in str(
-        exc_info.value
+    assert (
+        "Failed to connect via plain TCP to 192.168.1.100:2878: Network unreachable"
+        in str(exc_info.value)
     )
     assert acq._reader is None
     assert acq._writer is None
@@ -1102,4 +1133,3 @@ async def test_connect_stream_plain_tcp_missing_config_keys_use_defaults(
     mock_open.assert_called_once_with("192.168.1.100", 2878, ssl=None)
     # Kill L208: if buffer_size defaults to None, read(None) is wrong.
     mock_reader.read.assert_called_once_with(4096)
-

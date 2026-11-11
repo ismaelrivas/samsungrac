@@ -1,19 +1,15 @@
-from __future__ import annotations
-
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from custom_components.climate_ip.controller_yaml_config import (
     YamlConfigLoader,
     clear_yaml_cache,
 )
+import pytest
 
 
 class NakedObj:
     """Objeto estrictamente vacío para aniquilar duck-typing (hasattr/getattr)."""
 
-    pass
 
 
 @pytest.fixture
@@ -91,12 +87,11 @@ async def test_async_initialize_early_exits_bombardment(mock_controller_errors):
     with patch(
         "custom_components.climate_ip.controller_yaml_config.load_yaml",
         return_value={"device": {"connection": {"type": "mock"}}},
+    ), patch(
+        "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
+        [mock_conn_class],
     ):
-        with patch(
-            "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
-            [mock_conn_class],
-        ):
-            assert await loader.async_initialize() is False
+        assert await loader.async_initialize() is False
 
     # 7. Failure: Missing 'status' node in YAML (create_status_getter returns None)
     mock_conn_instance.load_from_yaml.return_value = True  # Connection now passes
@@ -106,16 +101,14 @@ async def test_async_initialize_early_exits_bombardment(mock_controller_errors):
     with patch(
         "custom_components.climate_ip.controller_yaml_config.load_yaml",
         return_value={"device": {"connection": {"type": "mock"}}},
+    ), patch(
+        "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
+        [mock_conn_class],
+    ), patch(
+        "custom_components.climate_ip.controller_yaml_config.create_status_getter",
+        return_value=None,
     ):
-        with patch(
-            "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
-            [mock_conn_class],
-        ):
-            with patch(
-                "custom_components.climate_ip.controller_yaml_config.create_status_getter",
-                return_value=None,
-            ):
-                assert await loader.async_initialize() is False
+        assert await loader.async_initialize() is False
 
     # 8. Failure: No matching connection class found (Targets 208, 209)
     mock_controller_errors.yaml_file = "/test_no_match.yaml"
@@ -194,10 +187,10 @@ async def test_async_finish_initialization_default_schema(mock_controller_errors
     """Annihilates the default cv.string mutant (Target 39)."""
     from unittest.mock import patch
 
-    import homeassistant.helpers.config_validation as cv
+    from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
     import voluptuous as vol
 
-    from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
+    import homeassistant.helpers.config_validation as cv
 
     loader = YamlConfigLoader(mock_controller_errors)
     loader._parsed_yaml_config = {"device": {"operations": {"test_op": {}}}}

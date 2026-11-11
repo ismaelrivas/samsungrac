@@ -1,15 +1,9 @@
 """Support for Samsung AC devices using climate_ip."""
 
-from __future__ import annotations
-
 import logging
 from typing import TYPE_CHECKING, Any, Final
 
 from homeassistant.components.climate import (
-    ClimateEntity,
-    ClimateEntityDescription,
-)
-from homeassistant.components.climate.const import (
     ATTR_CURRENT_TEMPERATURE,
     ATTR_FAN_MODE,
     ATTR_HVAC_MODE,
@@ -17,6 +11,8 @@ from homeassistant.components.climate.const import (
     ATTR_MIN_TEMP,
     ATTR_PRESET_MODE,
     ATTR_SWING_MODE,
+    ClimateEntity,
+    ClimateEntityDescription,
     ClimateEntityFeature,
     HVACAction,
     HVACMode,
@@ -84,7 +80,7 @@ async def async_setup_entry(
     ]
     if not entities:
         _LOGGER.error(
-            "No valid entities could be initialized from the provided coordinators."
+            "No valid entities could be initialized from the provided coordinators"
         )
         return
     async_add_entities(entities)
@@ -133,9 +129,9 @@ class ClimateIP(SamsungClimateEntity, ClimateEntity):
         else:
             try:
                 step = float(configured_step)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 _LOGGER.warning(
-                    "%s Invalid temp step configured (%s). Falling back to default.",
+                    "%s Invalid temp step configured (%s); falling back to default",
                     self.coordinator.log_prefix,
                     configured_step,
                 )
@@ -164,12 +160,13 @@ class ClimateIP(SamsungClimateEntity, ClimateEntity):
         if prop and prop.value is not None:
             try:
                 return float(prop.value)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 pass
         return float(default_val)
 
     @property
     def hvac_mode(self) -> HVACMode | None:
+        """Return current HVAC mode."""
         if not self.coordinator.data:
             return None
         mode = self.coordinator.data.hvac_mode or HVACMode.OFF
@@ -218,30 +215,36 @@ class ClimateIP(SamsungClimateEntity, ClimateEntity):
 
     @property
     def current_temperature(self) -> float | None:
+        """Return the current temperature."""
         return (
             self.coordinator.data.current_temperature if self.coordinator.data else None
         )
 
     @property
     def target_temperature(self) -> float | None:
+        """Return the target temperature."""
         return (
             self.coordinator.data.target_temperature if self.coordinator.data else None
         )
 
     @property
     def fan_mode(self) -> str | None:
+        """Return the current fan mode."""
         return self.coordinator.data.fan_mode if self.coordinator.data else None
 
     @property
     def swing_mode(self) -> str | None:
+        """Return the current swing mode."""
         return self.coordinator.data.swing_mode if self.coordinator.data else None
 
     @property
     def preset_mode(self) -> str | None:
+        """Return the current preset mode."""
         return self.coordinator.data.preset_mode if self.coordinator.data else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
+        """Return extra state attributes."""
         return {
             k: v
             for k, v in self.coordinator.controller.state_attributes.items()
@@ -250,6 +253,7 @@ class ClimateIP(SamsungClimateEntity, ClimateEntity):
 
     @property
     def hvac_modes(self) -> list[HVACMode]:
+        """Return the list of available HVAC modes."""
         if not self.coordinator.data:
             return []
         modes = [
@@ -265,14 +269,17 @@ class ClimateIP(SamsungClimateEntity, ClimateEntity):
 
     @property
     def fan_modes(self) -> list[str]:
+        """Return the list of available fan modes."""
         return list(self.coordinator.data.fan_modes) if self.coordinator.data else []
 
     @property
     def swing_modes(self) -> list[str]:
+        """Return the list of available swing modes."""
         return list(self.coordinator.data.swing_modes) if self.coordinator.data else []
 
     @property
     def preset_modes(self) -> list[str]:
+        """Return the list of available preset modes."""
         return list(self.coordinator.data.preset_modes) if self.coordinator.data else []
 
     @property

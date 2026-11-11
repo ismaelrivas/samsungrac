@@ -1,16 +1,14 @@
 """Dataclass for representing the immutable state of a climate device."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 
-from homeassistant.components.climate.const import HVACMode
+from homeassistant.components.climate import HVACMode
 
 
 @dataclass(frozen=True)
 class ClimateIPDeviceState:
-    """
-    Immutable and strictly typed dataclass representing climate device state.
+    """Immutable and strictly typed dataclass representing climate device state.
+
     Enforces Fail-Fast doctrine: invalid types or corrupt contracts raise exceptions immediately.
     """
 

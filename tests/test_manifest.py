@@ -1,8 +1,6 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test
 """Test the manifest.json file for correctness."""
 
-from __future__ import annotations
-
 import json
 import os
 from pathlib import Path
@@ -140,9 +138,10 @@ def test_manifest_keys_order_and_cleanliness():
 def test_translations_hassfest_rules():
     """Verify translations obey Home Assistant hassfest rules."""
     integration_root = Path(__file__).parent.parent
-    files_to_check = [integration_root / "strings.json"] + list(
-        (integration_root / "translations").glob("*.json")
-    )
+    files_to_check = [
+        integration_root / "strings.json",
+        *(integration_root / "translations").glob("*.json"),
+    ]
 
     placeholder_quote_regex = re.compile(r"'\{[a-zA-Z0-9_]+\}'")
     slug_regex = re.compile(r"^[a-z0-9-_]+$")

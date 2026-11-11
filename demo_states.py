@@ -1,4 +1,4 @@
-from __future__ import annotations
+"""Demo state fixtures and test functions for mutation testing."""
 
 import os
 from typing import Any
@@ -19,8 +19,9 @@ def legit_func(a: int, b: int) -> int:
 
 # 3. KILLED BY TIMEOUT (INFINITE LOOP)
 def timeout_func() -> int:
-    """
-    The test calls this function. Mutmut will mutate `x -= 1` to `x += 1`.
+    """The test calls this function.
+
+    Mutmut will mutate `x -= 1` to `x += 1`.
     Since x will never be <= 0 when adding instead of subtracting, an infinite loop occurs,
     triggering the KILLED_RUNTIME_TIMEOUT mechanism in Phase 1 / 2.5.
     """
@@ -32,8 +33,8 @@ def timeout_func() -> int:
 
 # 4. UNTESTED
 def untested_func() -> bool:
-    """
-    This function is NOT called by any test file.
+    """This function is NOT called by any test file.
+
     Mutmut will mutate True to False or False to True, but since no test executes it,
     the resulting status will be UNTESTED.
     """
@@ -110,7 +111,8 @@ def massive_kill() -> list[bool]:
 
 # 6. INVALID MUTANT (WORKER CRASH)
 def segfault_func() -> int:
-    """
+    """Simulate a worker crash during mutation.
+
     If Mutmut mutates x = 0 to x = 1 (or something making the condition true),
     Pytest will abruptly terminate via os._exit(3). The orchestrator detects the child
     process crash and classifies it as ERROR -> INVALID_MUTANT.
@@ -123,7 +125,8 @@ def segfault_func() -> int:
 
 # 7. KILLED BY RUNTIME EXCEPTION
 def exception_func(data: dict[str, Any]) -> int:
-    """
+    """Simulate a runtime exception during mutation.
+
     Mutmut will mutate the integer 0 (index) to 1, or mutate the string key "value".
     Since the input dict has a specific structure, incorrect access raises TypeError
     or KeyError during test execution—crashing the worker before any assert runs.
@@ -137,7 +140,8 @@ def exception_func(data: dict[str, Any]) -> int:
 
 # 8. SLOW KILLED (Performance boundary)
 def slow_boundary_func(n: int) -> int:
-    """
+    """Simulate a slow performance boundary during mutation.
+
     Under normal execution with n=5, runs 5 iterations (fast).
     Mutmut will mutate n * 2 to n ** 2 or n * 3, or mutate the `< limit`
     comparison. Some mutations cause the loop to run many more iterations

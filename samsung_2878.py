@@ -1,10 +1,10 @@
-# pylint: disable=broad-exception-caught,duplicate-code,import-outside-toplevel,line-too-long,no-else-return,too-few-public-methods,too-many-arguments,too-many-branches,too-many-instance-attributes,too-many-lines,too-many-locals,too-many-positional-arguments,too-many-statements
+# pylint: disable=broad-exception-caught,duplicate-code,import-outside-toplevel,line-too-long,no-else-return,too-few-public-methods,too-many-arguments,too-many-branches,too-many-instance-attributes,too-many-lines,too-many-locals,too-many-positional-arguments,too-many-statements,hass-logger-period
+# ruff: noqa: D102, D107, SLF001, SIM105, G201, TRY300, BLE001
 """Support for Samsung AC devices using port 2878."""
-
-from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Coroutine
+from dataclasses import dataclass
 import logging
 import os
 from pathlib import Path
@@ -12,7 +12,7 @@ import random
 import re
 import socket
 import ssl
-from typing import Any, cast
+from typing import Any
 
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_PORT, CONF_TOKEN
 from homeassistant.core import HomeAssistant
@@ -67,82 +67,142 @@ COMMAND_TIMEOUT = 20.0
 WRITE_TIMEOUT = 5.0  # pragma: no mutate
 MAX_RECONNECT_RETRIES = 5
 
+# --- Wire protocol framing ---
+TAG_XML_DECL = "<?xml"
+TAG_DEVICE = "Device"
+TAG_SELF_CLOSE = "/>"
+ERROR_CODE_301 = 'ErrorCode="301"'
+# Text markers that terminate a handshake/auth reply read by _read_full_response.
+RESPONSE_END_MARKERS = ("</Response>", "</Update>", PROTOCOL_2878_DPLUG)
+# Byte end tags used to frame the push stream, in priority order.
+STREAM_END_TAGS = (b"</Response>", b"</Update>", b"/>")
+# Valid starts of an XML fragment after splitting on '<?xml'.
+XML_FRAGMENT_STARTS = ('version="1.0"', "<")
+# Any of these in the greeting means the device accepted the TLS session.
+HANDSHAKE_MARKERS = (PROTOCOL_2878_DPLUG, PROTOCOL_2878_DRC, PROTOCOL_2878_INVALIDATE)
+ATTR_COMMAND_DEBUG = "_command_debug"
+OFFLINE_PANIC_MSG = "Host unreachable after multiple retry attempts."
 
+# --- Configuration / diagnostics keys ---
+KEY_DEVICE_ID = "device_id"
+KEY_SSL_CONFIG = "_ssl_config_2878"
+KEY_PREFERRED_CONNECTION = "preferred_connection"
+KEY_CERT = "cert"
+KEY_CERT_FILENAME = "cert_filename"
+KEY_CIPHER_NAME = "cipher_name"
+KEY_VERIFY_MODE = "verify_mode"
+KEY_IS_REACHABLE = "is_reachable"
+KEY_STATUS = "status"
+KEY_IS_CONNECTED = "is_connected"
+KEY_RECONNECT_RETRIES = "reconnect_retries"
+KEY_IS_AVAILABLE = "is_available"
+KEY_LAST_SUCCESSFUL_CONFIG = "last_successful_config"
+KEY_NETWORK_REACHABILITY = "network_reachability"
+STATUS_ALIVE = "alive"
+STATUS_UNREACHABLE = "unreachable_timeout"
+DEFAULT_NETWORK_DIAGNOSTIC = {KEY_IS_REACHABLE: None, KEY_STATUS: "not_checked_yet"}
+JITTER_RATIO = 0.2
+
+# --- SSL negotiation strategies ---
+SUITE_A = ("HIGH:!DH:!aNULL:@SECLEVEL=0", "Cipher Suite A (High Security No-DH)")
+SUITE_B = ("ALL:!DH:!aNULL:@SECLEVEL=0", "Cipher Suite B (Legacy RSA - No DH)")
+SUITE_C = ("ALL:!aNULL:@SECLEVEL=0", "Cipher Suite C (Legacy Allow Weak DH)")
+SUITE_D = ("ALL:@SECLEVEL=0", "Cipher Suite D (Anonymous / All Supported)")
+DEFAULT_CIPHERS = (SUITE_A, SUITE_B, SUITE_C, SUITE_D)
+# For No-Cert strategies, prioritize Suite D (allows Anonymous) because !aNULL (A/B/C) forces server auth.
+NO_CERT_CIPHERS = (SUITE_D, SUITE_A, SUITE_B, SUITE_C)
+DEFAULT_CERT_PATH = str(Path(__file__).parent / DEFAULT_CONF_CERT_FILE)
+USER_CERT = "<user_cert>"  # Placeholder replaced by the configured certificate.
+type SSLStrategy = tuple[str | None, ssl.VerifyMode, str]  # (cert, verify, name)
+type SSLAttempt = tuple[str | None, ssl.VerifyMode, tuple[str, str], str]
+USER_CERT_STRATEGIES: tuple[SSLStrategy, ...] = (
+    (USER_CERT, ssl.CERT_REQUIRED, "User Cert (Strict Verify)"),
+    (USER_CERT, ssl.CERT_NONE, "User Cert (No Verify)"),
+    (None, ssl.CERT_NONE, "No Certificate (Fallback)"),
+)
+DEFAULT_STRATEGIES: tuple[SSLStrategy, ...] = (
+    (None, ssl.CERT_NONE, "No Certificate (Default)"),
+    (DEFAULT_CERT_PATH, ssl.CERT_NONE, "Default Certificate (Fallback)"),
+)
+# TCP keep-alive: probe after 60s idle, 10s between probes, 3 failures = dead.
+TCP_KEEPALIVE_OPTS = (("TCP_KEEPIDLE", 60), ("TCP_KEEPINTVL", 10), ("TCP_KEEPCNT", 3))
+
+
+@dataclass
 class ConnectionConfig:
     """Configuration data for Samsung 2878 connection."""
 
-    def __init__(
-        self,
-        host: str | None,
-        port: int | None,
-        token: str | None,
-        cert: str | None,
-        duid: str | None,
-    ) -> None:
-        self.host = host
-        self.port = port
-        self.token = token
-        self.duid = duid
-        self.cert = cert
+    host: str | None = None
+    port: int | None = None
+    token: str | None = None
+    cert: str | None = None
+    duid: str | None = None
+
+
+def _resolve_cert_path(cert: str) -> str:
+    """Resolve a bare certificate filename relative to this integration folder."""
+    if cert and not os.path.dirname(cert):
+        _LOGGER.debug(
+            "Resolving relative certificate path for 2878 connection: %s", cert
+        )  # pragma: no mutate
+        return str(Path(os.path.dirname(__file__)) / cert)
+    return cert
+
+
+def _create_keepalive_socket() -> socket.socket:
+    """Create a non-blocking TCP socket with keep-alive probes enabled."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setblocking(False)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    for option, value in TCP_KEEPALIVE_OPTS:
+        if hasattr(socket, option):  # Platforms may vary
+            sock.setsockopt(socket.IPPROTO_TCP, getattr(socket, option), value)
+    return sock
 
 
 @register_connection
 class ConnectionSamsung2878(Connection):
     """Connection handler for Samsung devices on port 2878."""
 
+    # Per-instance state defaults (rebound on the instance when they change).
+    _connection_init_template: Template | None = None
+    _power_template: Template | None = None
+    _reader: asyncio.StreamReader | None = None
+    _writer: asyncio.StreamWriter | None = None
+    _read_task: asyncio.Task[bytes] | None = None
+    _manager_task: asyncio.Task[None] | None = None  # Manages the persistent link
+    _update_callback: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = (
+        None
+    )
+    _pending_future: asyncio.Future[bool] | None = None  # Command being processed
+    _reconnect_delay: float = INITIAL_RECONNECT_DELAY
+    _reconnect_retries = 0
+    _is_available = True  # Used for stateful logging of connection status changes
+    _initial_connection_done = False  # To prevent double poll at startup
+    _persistent_offline_err_logged = False
+    _last_successful_config: dict[str, Any] | None = None
+    _last_icmp_diagnostic: dict[str, Any] | None = None
+
     def __init__(
         self,
         hass_config: dict[str, Any],
         logger: logging.Logger,
-        hass: Any | None = None,
+        hass: HomeAssistant | None = None,
     ) -> None:
         super().__init__(hass_config, logger, hass=hass)
-        self._params: dict[str, Any] = {}
-        self._connection_template: Template | None = None
-        self._connection_init_template: Template | None = None
-        self._cfg = ConnectionConfig(None, None, None, None, None)
+        self._cfg = ConnectionConfig()
         self._device_status: dict[str, Any] = {}
-
         # Padding socket timeout as sockets tend to be slower to respond than HTTP.
         self._socket_timeout = float(GLOBAL_HTTP_TIMEOUT) + 10.0
-        self._controller: Any = None
-
-        self._reader: asyncio.StreamReader | None = None
-        self._writer: asyncio.StreamWriter | None = None
-        self._read_task: asyncio.Task[bytes] | None = (
-            None  # Task for reading from the socket
-        )
         self._close_lock = asyncio.Lock()  # To serialize _close_connection calls
         self._cmd_queue: asyncio.Queue[tuple[str, asyncio.Future[bool]]] = (
             asyncio.Queue()
         )
-        self._manager_task: asyncio.Task[None] | None = (
-            None  # Main task that manages the persistent connection
-        )
-        self._update_callback: (
-            Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None
-        ) = None
-        self._pending_future: asyncio.Future[bool] | None = (
-            None  # Future for the command currently being processed
-        )
-
-        self._reconnect_delay = INITIAL_RECONNECT_DELAY
-        self._reconnect_retries = 0
-        self._is_available = (
-            True  # Used for stateful logging to report connection status changes
-        )
         self._is_ready = asyncio.Event()  # Event to signal when connection is ready
-
-        self._last_successful_config: dict[str, Any] | None = None
         self._ssl_context_cache: dict[tuple[str | None, str, Any], ssl.SSLContext] = {}
-        self._initial_connection_done = False  # To prevent double poll at startup
-        self._background_tasks: set[asyncio.Task[Any]] = (
-            set()
-        )  # Track fire-and-forget tasks for clean shutdown
-        self._persistent_offline_err_logged = False
-
+        # Track fire-and-forget tasks for clean shutdown
+        self._background_tasks: set[asyncio.Task[Any]] = set()
         self.update_configuration_from_hass(hass_config)
-        self._power_template: Template | None = None
 
     def set_controller_ref(self, controller: Any) -> None:
         """Set the controller reference."""
@@ -154,7 +214,8 @@ class ConnectionSamsung2878(Connection):
     def log_prefix(self) -> str:
         """Return the logging prefix for this connection."""
         if self._controller and self._controller.unique_id:
-            return cast(str, self._controller.log_prefix)
+            prefix: str = self._controller.log_prefix
+            return prefix
         if self._cfg and self._cfg.duid:
             return f"[{self._cfg.duid[-6:]}]"
         return "[NO_ID]"
@@ -173,6 +234,11 @@ class ConnectionSamsung2878(Connection):
     def is_push_supported(self) -> bool:
         """Return True indicating this connection type supports push updates."""
         return True
+
+    @property
+    def _poll_command(self) -> str:
+        """Return the full device status request."""
+        return f'<Request Type="{PROTOCOL_2878_DEVICE_STATE}" DUID="{self._cfg.duid}"></Request>\n'
 
     def set_update_callback(
         self, callback: Callable[[dict[str, Any]], Coroutine[Any, Any, None]]
@@ -233,37 +299,17 @@ class ConnectionSamsung2878(Connection):
         if hass_config is not None:
             # Clear the SSL context cache if configuration changes, as cert path might have changed.
             self._ssl_context_cache.clear()
-
-            duid = mac.replace(":", "") if (mac := hass_config.get(CONF_MAC)) else None
-
-            if (cert_file := hass_config.get(CONF_CERT) or "") and not (
-                "/" in cert_file or "\\" in cert_file
-            ):
-                log_prefix = (
-                    f"[{duid[-6:]}]"
-                    if self.log_prefix == "[NO_ID]" and duid
-                    else self.log_prefix
-                )
-                _LOGGER.debug(
-                    "%s Resolving relative certificate path for 2878 connection: %s",
-                    log_prefix,
-                    cert_file,
-                )  # pragma: no mutate
-                cert_file = str(Path(__file__).parent / cert_file)
-
-            raw_token, raw_ip, device_id = (
-                hass_config.get(CONF_TOKEN),
-                hass_config.get(CONF_IP_ADDRESS),
-                hass_config.get("device_id"),
-            )
-            token = format_placeholders(raw_token, raw_token, raw_ip, device_id, mac)
-
+            mac = hass_config.get(CONF_MAC)
+            raw_token = hass_config.get(CONF_TOKEN)
+            raw_ip = hass_config.get(CONF_IP_ADDRESS)
             self._cfg = ConnectionConfig(
                 host=raw_ip,
                 port=hass_config.get(CONF_PORT, 2878),
-                token=token,
-                cert=cert_file,
-                duid=duid,
+                token=format_placeholders(
+                    raw_token, raw_token, raw_ip, hass_config.get(KEY_DEVICE_ID), mac
+                ),
+                cert=_resolve_cert_path(hass_config.get(CONF_CERT) or ""),
+                duid=mac.replace(":", "") if mac else None,
             )
             # Ensure DUID and token are available for templates.
             self._params.update(
@@ -274,33 +320,28 @@ class ConnectionSamsung2878(Connection):
                 }
             )
 
-        # Load the preferred connection settings if they were saved during pairing
         self._last_successful_config = None
-        self._last_icmp_diagnostic: dict[str, Any] | None = None
-
-        # Restore last successful SSL config from ConfigEntry data across restarts
-        stored = self._config.get("_ssl_config_2878")
-        if stored:
+        self._last_icmp_diagnostic = None
+        # Restore the last successful SSL config from ConfigEntry data across
+        # restarts, else the preferred connection saved during pairing.
+        if stored := self._config.get(KEY_SSL_CONFIG):
             self._last_successful_config = stored
             _LOGGER.debug(
                 "%s Restored last successful SSL config from ConfigEntry data in init: cert=%s, cipher=%s",
                 self.log_prefix,
-                stored.get("cert"),
-                stored.get("cipher_name"),
+                stored.get(KEY_CERT),
+                stored.get(KEY_CIPHER_NAME),
             )  # pragma: no mutate
+        elif hass_config and isinstance(
+            pref_conn := hass_config.get(KEY_PREFERRED_CONNECTION), dict
+        ):
+            self._last_successful_config = pref_conn.copy()
 
-        if not self._last_successful_config and hass_config:
-            pref_conn = hass_config.get("preferred_connection")
-            if isinstance(pref_conn, dict):
-                self._last_successful_config = pref_conn.copy()
-
-        if self._last_successful_config:
-            # Resolve relative path in preferred config if needed, to match the runtime behavior
-            pref_cert = self._last_successful_config.get("cert")
-            if pref_cert and not os.path.dirname(pref_cert):
-                self._last_successful_config["cert"] = str(
-                    Path(os.path.dirname(__file__)) / pref_cert
-                )
+        # Resolve a relative path in the preferred config to match runtime behavior.
+        if self._last_successful_config and (
+            pref_cert := self._last_successful_config.get(KEY_CERT)
+        ):
+            self._last_successful_config[KEY_CERT] = _resolve_cert_path(pref_cert)
 
     def load_from_yaml(self, node: dict[str, Any] | None, connection_base: Any) -> bool:
         if connection_base:
@@ -311,10 +352,11 @@ class ConnectionSamsung2878(Connection):
             return False
 
         params_node = node.get(CONFIG_DEVICE_CONNECTION_PARAMS, {})
+        hass: Any = self._hass
         if CONFIG_DEVICE_CONNECTION_TEMPLATE in params_node:
             self._connection_init_template = Template(
                 params_node[CONFIG_DEVICE_CONNECTION_TEMPLATE],
-                cast(HomeAssistant, self._hass),
+                hass,
             )
         elif not connection_base:
             _LOGGER.error(
@@ -326,7 +368,7 @@ class ConnectionSamsung2878(Connection):
         if CONFIG_DEVICE_POWER_TEMPLATE in params_node:
             self._power_template = Template(
                 params_node[CONFIG_DEVICE_POWER_TEMPLATE],
-                cast(HomeAssistant, self._hass),
+                hass,
             )
 
         if not connection_base:
@@ -367,34 +409,23 @@ class ConnectionSamsung2878(Connection):
 
     def get_diagnostics(self) -> dict[str, Any]:
         """Return diagnostic information about the 2878 connection."""
-        diag: dict[str, Any] = {
-            "is_connected": self._is_ready.is_set(),
-            "reconnect_retries": self._reconnect_retries,
-            "is_available": self._is_available,
-        }
-
-        if self._last_successful_config:
+        safe_config: dict[str, Any] | None = None
+        if last_config := self._last_successful_config:
             safe_config = {}
-            if (
-                "cert" in self._last_successful_config
-                and self._last_successful_config["cert"]
-            ):
+            if last_config.get(KEY_CERT):
                 # Expose only the filename, not the full path, for privacy/security
-                safe_config["cert_filename"] = Path(
-                    self._last_successful_config["cert"]
-                ).name
-            if "cipher_name" in self._last_successful_config:
-                safe_config["cipher_name"] = self._last_successful_config["cipher_name"]
-            diag["last_successful_config"] = safe_config
-        else:
-            diag["last_successful_config"] = None
+                safe_config[KEY_CERT_FILENAME] = Path(last_config[KEY_CERT]).name
+            if KEY_CIPHER_NAME in last_config:
+                safe_config[KEY_CIPHER_NAME] = last_config[KEY_CIPHER_NAME]
 
-        diag["network_reachability"] = self._last_icmp_diagnostic or {
-            "is_reachable": None,
-            "status": "not_checked_yet",
+        return {
+            KEY_IS_CONNECTED: self._is_ready.is_set(),
+            KEY_RECONNECT_RETRIES: self._reconnect_retries,
+            KEY_IS_AVAILABLE: self._is_available,
+            KEY_LAST_SUCCESSFUL_CONFIG: safe_config,
+            KEY_NETWORK_REACHABILITY: self._last_icmp_diagnostic
+            or dict(DEFAULT_NETWORK_DIAGNOSTIC),
         }
-
-        return diag
 
     def create_updated(self, yaml_node: dict[str, Any] | None) -> ConnectionSamsung2878:
         self.load_from_yaml(yaml_node, self)
@@ -405,14 +436,12 @@ class ConnectionSamsung2878(Connection):
         # Give the system a moment to be ready for a new command.
         try:
             await asyncio.sleep(1)
-
-            command = f'<Request Type="{PROTOCOL_2878_DEVICE_STATE}" DUID="{self._cfg.duid}"></Request>\n'
             _LOGGER.debug(
                 "%s Queuing post-reconnection status request", self.log_prefix
             )  # pragma: no mutate
 
             future = asyncio.get_running_loop().create_future()
-            await self._cmd_queue.put((command, future))
+            await self._cmd_queue.put((self._poll_command, future))
 
             # Wait for the command to be processed
             async with asyncio.timeout(COMMAND_TIMEOUT):
@@ -492,219 +521,126 @@ class ConnectionSamsung2878(Connection):
             self._writer = self._reader = None
 
     async def _establish_connection_and_handshake(self) -> bool:
+        """Open the TLS link, validate the greeting and authenticate."""
         await self._close_connection()
-        cfg = self._cfg
-        initial_msg = None  # pragma: no mutate
-
-        # Define the cipher suites.
-        # Note: We will reorder these dynamically based on the strategy.
-        suite_a = (
-            "HIGH:!DH:!aNULL:@SECLEVEL=0",
-            "Cipher Suite A (High Security No-DH)",
+        if not await self._connect_ssl():
+            return False
+        initial_msg = await self._read_full_response(
+            timeout_sec=self._socket_timeout
         )  # pragma: no mutate
-        suite_b = (
-            "ALL:!DH:!aNULL:@SECLEVEL=0",
-            "Cipher Suite B (Legacy RSA - No DH)",
-        )  # pragma: no mutate
-        suite_c = (
-            "ALL:!aNULL:@SECLEVEL=0",
-            "Cipher Suite C (Legacy Allow Weak DH)",
-        )  # pragma: no mutate
-        suite_d = (
-            "ALL:@SECLEVEL=0",
-            "Cipher Suite D (Anonymous / All Supported)",
-        )  # pragma: no mutate
+        await self._process_initial_message(initial_msg)
+        if not await self._authenticate():
+            return False  # Session collision: trigger retry logic
+        self._on_connection_ready()
+        return True
 
-        default_ciphers = [suite_a, suite_b, suite_c, suite_d]  # pragma: no mutate
-        # For No-Cert strategies, we prioritize Suite D (allows Anonymous) because !aNULL (A/B/C) forces server auth.
-        no_cert_ciphers = [suite_d, suite_a, suite_b, suite_c]  # pragma: no mutate
-
-        default_cert_path = str(Path(__file__).parent / DEFAULT_CONF_CERT_FILE)
-        strategies: list[dict[str, Any]] = (
-            [
-                {
-                    "cert": user_cert,
-                    "name": "User Cert (Strict Verify)",
-                    "verify_mode": ssl.CERT_REQUIRED,
-                },  # pragma: no mutate
-                {
-                    "cert": user_cert,
-                    "name": "User Cert (No Verify)",
-                    "verify_mode": ssl.CERT_NONE,
-                },  # pragma: no mutate
-                {
-                    "cert": None,
-                    "name": "No Certificate (Fallback)",
-                    "verify_mode": ssl.CERT_NONE,
-                },  # pragma: no mutate
-            ]
-            if (user_cert := cfg.cert)
-            else [
-                {
-                    "cert": None,
-                    "name": "No Certificate (Default)",
-                    "verify_mode": ssl.CERT_NONE,
-                },  # pragma: no mutate
-                {
-                    "cert": default_cert_path,
-                    "name": "Default Certificate (Fallback)",
-                    "verify_mode": ssl.CERT_NONE,
-                },  # pragma: no mutate
-            ]
-        )
-
-        all_attempts = [
-            {**strategy, "cipher_config": cipher_cfg, "strategy_name": strategy["name"]}
-            for strategy in strategies
-            for cipher_cfg in (
-                no_cert_ciphers if strategy["cert"] is None else default_ciphers
+    def _build_ssl_attempts(self) -> list[SSLAttempt]:
+        """Return every strategy/cipher combination, last successful one first."""
+        user_cert = self._cfg.cert
+        attempts: list[SSLAttempt] = [
+            (user_cert if cert == USER_CERT else cert, verify_mode, cipher_cfg, name)
+            for cert, verify_mode, name in (
+                USER_CERT_STRATEGIES if user_cert else DEFAULT_STRATEGIES
             )
+            for cipher_cfg in (NO_CERT_CIPHERS if cert is None else DEFAULT_CIPHERS)
         ]
-
-        if self._last_successful_config:
-            pref_cert = self._last_successful_config.get("cert")  # pragma: no mutate
-            pref_cipher = self._last_successful_config.get(
-                "cipher_name"
-            )  # pragma: no mutate
-            pref_verify = self._last_successful_config.get(
-                "verify_mode"
-            )  # pragma: no mutate
-
+        if pref := self._last_successful_config:
+            pref_cipher = pref.get(KEY_CIPHER_NAME)
             matching = [
                 a
-                for a in all_attempts
-                if a["cert"] == pref_cert
-                and a.get("verify_mode") == pref_verify
-                and (not pref_cipher or a["cipher_config"][1] == pref_cipher)
+                for a in attempts
+                if a[0] == pref.get(KEY_CERT)
+                and a[1] == pref.get(KEY_VERIFY_MODE)
+                and (not pref_cipher or a[2][1] == pref_cipher)
             ]
-            if matching:
-                fallback_attempts = [a for a in all_attempts if a not in matching]
-                all_attempts = matching + fallback_attempts
+            attempts = matching + [a for a in attempts if a not in matching]
+        return attempts
 
-        connection_successful = False  # pragma: no mutate
+    async def _connect_ssl(self) -> bool:
+        """Try each SSL attempt until one connects at the socket level."""
         last_error: Exception | None = None  # pragma: no mutate
-
-        for attempt in all_attempts:
-            cert_path = attempt["cert"]
-            ciphers, cipher_name = attempt["cipher_config"]
-            verify_mode = attempt["verify_mode"]
-            strategy_name = attempt["strategy_name"]
-
+        for (
+            cert_path,
+            verify_mode,
+            cipher_cfg,
+            strategy_name,
+        ) in self._build_ssl_attempts():
             try:
-                # --- SSL Context Caching Logic ---
-                cache_key = (
-                    cert_path,
-                    ciphers,
-                    verify_mode,
-                )  # The key must include all SSL parameters
-                ssl_context = self._ssl_context_cache.get(cache_key)
-
-                if not ssl_context:
-                    ssl_context = await async_create_samsung_ssl_context(
-                        cert_path=cert_path, ciphers=ciphers, verify_mode=verify_mode
-                    )
-                    self._ssl_context_cache[cache_key] = ssl_context
-
-                # Use raw socket with TCP KEEPALIVE
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.setblocking(False)
-
-                # Enable TCP Keep-Alive
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-
-                # Set Keep-Alive parameters (platforms may vary, these are for Linux/Windows common)
-                if hasattr(socket, "TCP_KEEPIDLE"):
-                    sock.setsockopt(
-                        socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 60
-                    )  # Send probe after 60s idle
-                if hasattr(socket, "TCP_KEEPINTVL"):
-                    sock.setsockopt(
-                        socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10
-                    )  # 10s between probes
-                if hasattr(socket, "TCP_KEEPCNT"):
-                    sock.setsockopt(
-                        socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3
-                    )  # 3 failures = dead
-
-                try:
-                    async with asyncio.timeout(self._socket_timeout):
-                        await asyncio.get_running_loop().sock_connect(
-                            sock, (cfg.host, cfg.port)
-                        )
-                except Exception as connect_exc:
-                    sock.close()
-                    raise connect_exc
-
-                # Wrap the socket with SSL
-                async with asyncio.timeout(self._socket_timeout):
-                    self._reader, self._writer = await asyncio.open_connection(
-                        sock=sock, ssl=ssl_context, server_hostname=cfg.host
-                    )
-
-                # Log connection details on success
-                ssl_object = self._writer.get_extra_info("ssl_object")
-                if ssl_object:
-                    cipher = ssl_object.cipher()
-                    negotiated_tls = ssl_object.version() or "Unknown"
-                    _LOGGER.debug(
-                        "%s SSL connection established. Protocol: %s, Cipher: %s, Verify: %s, Negotiated TLS: %s",
-                        self.log_prefix,
-                        cipher[1],
-                        cipher[0],
-                        verify_mode,
-                        negotiated_tls,
-                    )  # pragma: no mutate
-
-                # Memorize the successful configuration for future reconnections
-                self._last_successful_config = {
-                    "cert": cert_path,
-                    "cipher_name": cipher_name,
-                    "verify_mode": verify_mode,
-                }
-
-                # Persist to ConfigEntry data so it survives HA restarts
-                if self._controller and self._controller.on_ssl_config_updated:
-                    self._controller.on_ssl_config_updated(self._last_successful_config)
-
-                connection_successful = True
-                break  # Exit the loop on successful connection.
-
+                await self._open_ssl_connection(cert_path, verify_mode, cipher_cfg)
+                return True
             except (ConnectionRefusedError, TimeoutError, OSError, ssl.SSLError) as e:
-                # This is an expected failure when the device is offline or the port is wrong.
-                last_error = e
-                await self._close_connection()
-                continue
+                # Expected when the device is offline or the port is wrong.
+                last_error = e  # pragma: no mutate
             except Exception as e:
                 _LOGGER.warning(
                     "%s Connection with '%s' / '%s' failed unexpectedly: %s. Trying next.",
                     self.log_prefix,
                     strategy_name,
-                    cipher_name,
+                    cipher_cfg[1],
                     e,
                 )  # pragma: no mutate
-                last_error = e
-                await self._close_connection()
-                continue
+                last_error = e  # pragma: no mutate
+            await self._close_connection()
 
-        if not connection_successful:
+        _LOGGER.debug(
+            "%s Could not connect to device (likely offline): %s",
+            self.log_prefix,
+            last_error,
+        )  # pragma: no mutate
+        return False
+
+    async def _open_ssl_connection(
+        self,
+        cert_path: str | None,
+        verify_mode: ssl.VerifyMode,
+        cipher_cfg: tuple[str, str],
+    ) -> None:
+        """Open one TLS connection and memorize its configuration on success."""
+        ciphers, cipher_name = cipher_cfg
+        cache_key = (cert_path, ciphers, verify_mode)  # All SSL parameters
+        if not (ssl_context := self._ssl_context_cache.get(cache_key)):
+            ssl_context = await async_create_samsung_ssl_context(
+                cert_path=cert_path, ciphers=ciphers, verify_mode=verify_mode
+            )
+            self._ssl_context_cache[cache_key] = ssl_context
+
+        sock = _create_keepalive_socket()
+        try:
+            async with asyncio.timeout(self._socket_timeout):
+                await asyncio.get_running_loop().sock_connect(
+                    sock, (self._cfg.host, self._cfg.port)
+                )
+        except Exception:
+            sock.close()
+            raise
+
+        async with asyncio.timeout(self._socket_timeout):
+            self._reader, self._writer = await asyncio.open_connection(
+                sock=sock, ssl=ssl_context, server_hostname=self._cfg.host
+            )
+
+        if ssl_object := self._writer.get_extra_info("ssl_object"):
             _LOGGER.debug(
-                "%s Could not connect to device (likely offline): %s",
+                "%s SSL connection established. Cipher: %s, Verify: %s, Negotiated TLS: %s",
                 self.log_prefix,
-                last_error,
-            )  # pragma: no mutate
-            return False
-
-        # If we are here, one of the attempts was successful at the socket level
-        # Now, proceed with the application-level handshake
-        if (
-            not initial_msg
-        ):  # Read initial message if not already read during plain TCP check
-            initial_msg = await self._read_full_response(
-                timeout_sec=self._socket_timeout
+                ssl_object.cipher(),
+                verify_mode,
+                ssl_object.version(),
             )  # pragma: no mutate
 
+        # Memorize the successful configuration for future reconnections
+        self._last_successful_config = {
+            KEY_CERT: cert_path,
+            KEY_CIPHER_NAME: cipher_name,
+            KEY_VERIFY_MODE: verify_mode,
+        }
+        # Persist to ConfigEntry data so it survives HA restarts
+        if self._controller and self._controller.on_ssl_config_updated:
+            self._controller.on_ssl_config_updated(self._last_successful_config)
+
+    async def _process_initial_message(self, initial_msg: str | None) -> None:
+        """Apply state carried by the greeting and validate the handshake marker."""
         if initial_msg:
-            # Attempt to parse the initial message to see if it's an update or response
             _, is_update, parsed_data = await self._parse_and_update_state(initial_msg)
             if parsed_data:
                 self._device_status.update(parsed_data)
@@ -716,11 +652,7 @@ class ConnectionSamsung2878(Connection):
                     )  # pragma: no mutate
                     self._track_task(self._update_callback(parsed_data))
 
-        if not initial_msg or (
-            PROTOCOL_2878_DPLUG not in initial_msg
-            and PROTOCOL_2878_DRC not in initial_msg
-            and PROTOCOL_2878_INVALIDATE not in initial_msg
-        ):
+        if not initial_msg or not any(m in initial_msg for m in HANDSHAKE_MARKERS):
             _LOGGER.warning(
                 "%s Handshake failed: Did not receive expected initial message (DPLUG-1.6 or DRC-1.00 or InvalidateAccount). Got: %s",
                 self.log_prefix,
@@ -730,6 +662,8 @@ class ConnectionSamsung2878(Connection):
                 "Handshake failed: Did not receive expected initial message"
             )
 
+    async def _authenticate(self) -> bool:
+        """Send the auth command; return False on a session collision."""
         if not self._connection_init_template:
             _LOGGER.error(
                 "%s Handshake failed: Connection initialization template is missing.",
@@ -756,46 +690,37 @@ class ConnectionSamsung2878(Connection):
         await self._write_data(auth_command)
 
         auth_response = await self._read_full_response(timeout_sec=self._socket_timeout)
-        if not auth_response or PROTOCOL_2878_STATUS_OK not in auth_response:
-            # Only process the error response if it's not None
-            if auth_response:
-                # Handle InvalidateAccount (Session Collision) gracefully
-                if PROTOCOL_2878_INVALIDATE in auth_response:
-                    _LOGGER.info(
-                        "%s Device reported session collision (InvalidateAccount). Waiting for old session to timeout...",
-                        self.log_prefix,
-                    )  # pragma: no mutate
-                    return False  # Trigger retry logic
-
-                if 'ErrorCode="301"' in auth_response:
-                    _LOGGER.error(
-                        "%s Authentication failed (ErrorCode 301). The device was likely turned off. Please ensure the device is ON before pairing",
-                        self.log_prefix,
-                    )  # pragma: no mutate
-                    raise AuthError(
-                        "Authentication failed: Device was turned off (301)"
-                    )
-
-                error_code_match = ERROR_CODE_RE.search(auth_response)
-                error_code = (
-                    error_code_match.group(1) if error_code_match else "Unknown"
-                )
-                _LOGGER.error(
-                    "%s Authentication failed with ErrorCode %s. Got: %s",
-                    self.log_prefix,
-                    error_code,
-                    auth_response,
-                )  # pragma: no mutate
-                raise AuthError("Authentication failed")
+        if not auth_response:
             raise AuthError("Authentication failed: No response from device")
+        if PROTOCOL_2878_STATUS_OK in auth_response:
+            return True
+        # Handle InvalidateAccount (Session Collision) gracefully
+        if PROTOCOL_2878_INVALIDATE in auth_response:
+            _LOGGER.info(
+                "%s Device reported session collision (InvalidateAccount). Waiting for old session to timeout...",
+                self.log_prefix,
+            )  # pragma: no mutate
+            return False
+        if ERROR_CODE_301 in auth_response:
+            _LOGGER.error(
+                "%s Authentication failed (ErrorCode 301). The device was likely turned off. Please ensure the device is ON before pairing",
+                self.log_prefix,
+            )  # pragma: no mutate
+            raise AuthError("Authentication failed: Device was turned off (301)")
+        _LOGGER.error(
+            "%s Authentication failed with ErrorCode %s. Got: %s",
+            self.log_prefix,
+            m.group(1) if (m := ERROR_CODE_RE.search(auth_response)) else "Unknown",
+            auth_response,
+        )  # pragma: no mutate
+        raise AuthError("Authentication failed")
 
+    def _on_connection_ready(self) -> None:
+        """Reset backoff state and schedule post-reconnection refreshes."""
         _LOGGER.info("%s Connection ready", self.log_prefix)  # pragma: no mutate
         self._reconnect_delay = INITIAL_RECONNECT_DELAY
         self._reconnect_retries = 0
         self._is_ready.set()  # Signal that we are ready for commands
-        _LOGGER.debug(
-            "%s Connection is ready, _is_ready event set.", self.log_prefix
-        )  # pragma: no mutate
 
         # Stateful logging: Log when connection is re-established
         if not self._is_available:
@@ -818,46 +743,37 @@ class ConnectionSamsung2878(Connection):
 
         self._initial_connection_done = True
 
-        return True
-
     async def _read_full_response(self, timeout_sec: float = 10.0) -> str | None:
         if not self._reader or self._reader.at_eof():
             return None
+        buffer = b""  # pragma: no mutate
         try:
-            buffer = b""  # pragma: no mutate
             async with asyncio.timeout(timeout_sec):
                 while True:
                     chunk = await self._reader.read(4096)
                     if not chunk:
                         await self._close_connection()
-                        return (
-                            buffer.decode("utf-8", errors="ignore") if buffer else None
-                        )
-
+                        break
                     buffer += chunk
-                    decoded_buffer = buffer.decode("utf-8", errors="ignore").strip()
-                    if (
-                        "</Response>" in decoded_buffer
-                        or "</Update>" in decoded_buffer
-                        or PROTOCOL_2878_DPLUG in decoded_buffer
-                        or decoded_buffer.endswith("/>")
+                    decoded = buffer.decode(errors="ignore").strip()
+                    if decoded.endswith(TAG_SELF_CLOSE) or any(
+                        marker in decoded for marker in RESPONSE_END_MARKERS
                     ):
-                        return decoded_buffer
-
-        except (TimeoutError, asyncio.IncompleteReadError):
+                        return decoded
+        except TimeoutError, asyncio.IncompleteReadError:
             _LOGGER.debug(
                 "%s No full response received in %s seconds",
                 self.log_prefix,
                 timeout_sec,
                 exc_info=True,
             )  # pragma: no mutate
-            return buffer.decode("utf-8", errors="ignore") if buffer else None
         except OSError as e:
             _LOGGER.error(
                 "%s Error during read: %s", self.log_prefix, e, exc_info=True
             )  # pragma: no mutate
             await self._close_connection()
             return None
+        return buffer.decode(errors="ignore") if buffer else None
 
     async def _write_data(self, data_str: str) -> bool:
         if not self._writer or self._writer.is_closing():
@@ -877,6 +793,16 @@ class ConnectionSamsung2878(Connection):
             await self._close_connection()
             raise CannotConnect(f"Failed to write to connection: {e}") from e
 
+    def _is_redundant_power_on(self, attrs: list[dict[str, Any]]) -> bool:
+        """Return True for a lone 'Power On' push while the device is known to be on."""
+        return (
+            len(attrs) == 1
+            and attrs[0].get(PROTOCOL_2878_ATTR_ID) == PROTOCOL_2878_POWER_ID
+            and attrs[0].get(PROTOCOL_2878_ATTR_VALUE) == PROTOCOL_2878_VALUE_ON
+            and self._device_status.get(PROTOCOL_2878_POWER_ID)
+            == PROTOCOL_2878_VALUE_ON
+        )
+
     async def _parse_and_update_state(
         self, response_xml: str
     ) -> tuple[bool, bool, dict[str, Any] | None]:
@@ -888,51 +814,37 @@ class ConnectionSamsung2878(Connection):
                 "Home Assistant instance is required for parsing XML securely"  # pragma: no mutate
             )  # pragma: no mutate
 
-        is_update = False
-        is_response = False
-        parsed_data = {}
-
         # Discard any non-XML prefix like "DPLUG-1.6\n" or "DRC-1.00\n"
-        xml_start_index = response_xml.find("<?xml")
+        xml_start_index = response_xml.find(TAG_XML_DECL)
         if xml_start_index == -1:
             return False, False, None  # pragma: no mutate
 
-        xml_candidate_content = response_xml[xml_start_index:]
-
-        # Split by '<?xml' to handle multiple XML documents concatenated in the buffer.
-        doc_parts = xml_candidate_content.split("<?xml")
-
-        for doc_part in doc_parts:
-            if not doc_part.strip():
-                continue  # Skip empty parts.
-
-            # Reconstruct the full XML document string.
-            # A valid XML fragment after '<?xml' should start with 'version="1.0"' or a root element tag.
-            if doc_part.strip().startswith(
-                'version="1.0"'
-            ) or doc_part.strip().startswith("<"):
-                full_doc = "<?xml" + doc_part
-            else:
-                # This doc_part is not a valid XML fragment (e.g., "DPLUG-1.6" without "version="1.0"")
-                # Log it and skip, do not attempt to parse as XML.
+        is_update = False
+        is_response = False
+        parsed_data: dict[str, Any] = {}
+        # Split on '<?xml' to handle multiple XML documents concatenated in the buffer.
+        for doc_part in response_xml[xml_start_index:].split(TAG_XML_DECL):
+            if not (fragment := doc_part.strip()):
+                continue
+            if not fragment.startswith(XML_FRAGMENT_STARTS):
                 _LOGGER.debug(
                     "%s Skipping non-XML fragment after '<?xml': %s",
                     self.log_prefix,
-                    doc_part.strip(),
+                    fragment,
                 )  # pragma: no mutate
                 continue
+            full_doc = TAG_XML_DECL + doc_part
             try:
-                # Delegate SSL context creation to HA executor thread to prevent blocking event loop
+                # Parse in the HA executor thread to prevent blocking the event loop
                 data = await self._controller.hass.async_add_executor_job(
                     safe_xml_to_dict, full_doc
                 )
-
                 if PROTOCOL_2878_RESPONSE in data:
                     is_response = True
                     device_data = (
                         data[PROTOCOL_2878_RESPONSE]
                         .get(PROTOCOL_2878_DEVICE_STATE, {})
-                        .get("Device")
+                        .get(TAG_DEVICE)
                     )
                 elif PROTOCOL_2878_UPDATE in data:
                     is_update = True
@@ -946,23 +858,12 @@ class ConnectionSamsung2878(Connection):
                 if not isinstance(attrs, list):
                     attrs = [attrs]
 
-                # Ignore redundant 'Power On' push updates if the device was already known to be on.
-                # This reduces unnecessary state updates in Home Assistant.
-                if (
-                    is_update
-                    and len(attrs) == 1
-                    and attrs[0].get(PROTOCOL_2878_ATTR_ID) == PROTOCOL_2878_POWER_ID
-                    and attrs[0].get(PROTOCOL_2878_ATTR_VALUE) == PROTOCOL_2878_VALUE_ON
-                ):
-                    if (
-                        self._device_status.get(PROTOCOL_2878_POWER_ID)
-                        == PROTOCOL_2878_VALUE_ON
-                    ):
-                        _LOGGER.debug(
-                            "%s Ignoring redundant 'Power On' push update",
-                            self.log_prefix,
-                        )  # pragma: no mutate
-                        return False, False, None  # pragma: no mutate
+                if is_update and self._is_redundant_power_on(attrs):
+                    _LOGGER.debug(
+                        "%s Ignoring redundant 'Power On' push update",
+                        self.log_prefix,
+                    )  # pragma: no mutate
+                    return False, False, None  # pragma: no mutate
 
                 for attr in attrs:
                     if (
@@ -986,8 +887,8 @@ class ConnectionSamsung2878(Connection):
         """Process a command from the queue."""
         command, future = queue_task.result()
         self._pending_future = future
-        # Store the command string on the future for debugging purposes using setattr.
-        setattr(self._pending_future, "_command_debug", command)  # noqa: B010
+        # Store the command string on the future for debugging purposes.
+        setattr(self._pending_future, ATTR_COMMAND_DEBUG, command)
 
         try:
             await self._write_data(command)
@@ -1004,127 +905,85 @@ class ConnectionSamsung2878(Connection):
     async def _process_read_queue(self, buffer: bytes) -> bytes | None:
         """Process data received from the read task."""
         data = None
-        is_cancelled = False
         try:
             if self._read_task:
                 data = self._read_task.result()
         except asyncio.CancelledError:
             # Task was cancelled (likely by _close_connection), treat as connection closed
-            data = None
-            is_cancelled = True
+            pass
         except Exception as e:
             _LOGGER.warning(
                 "%s Read task failed: %s", self.log_prefix, e
             )  # pragma: no mutate
-            data = None
 
         if not data:
-            if not is_cancelled:
-                _LOGGER.debug(
-                    "%s Connection closed by device (EOF)", self.log_prefix
-                )  # pragma: no mutate
-            else:
-                _LOGGER.debug(
-                    "%s Read task was cancelled", self.log_prefix
-                )  # pragma: no mutate
-
+            _LOGGER.debug(
+                "%s Connection closed by device (EOF) or read task cancelled",
+                self.log_prefix,
+            )  # pragma: no mutate
             await self._close_connection()
             return None
 
         buffer += data
         # Process buffer to find full XML messages.
-        while (
-            b"</Response>" in buffer or b"</Update>" in buffer or b"/>" in buffer
-        ):  # pragma: no mutate
-            end_tag = (
-                b"</Response>"
-                if b"</Response>" in buffer
-                else (b"</Update>" if b"</Update>" in buffer else b"/>")
-            )
+        while any(tag in buffer for tag in STREAM_END_TAGS):  # pragma: no mutate
+            end_tag = next(tag for tag in STREAM_END_TAGS if tag in buffer)
             end_index = buffer.find(end_tag) + len(end_tag)
             message = buffer[:end_index]
             buffer = buffer[end_index:]
-
-            xml_data = message.decode("utf-8", errors="ignore")
-            _LOGGER.debug(
-                "%s Received message: %s",
-                self.log_prefix,
-                mask_sensitive_data(xml_data.strip()),
-            )  # pragma: no mutate
-            is_response, is_update, parsed_data = await self._parse_and_update_state(
-                xml_data
-            )
-
-            # Update internal state for redundant 'Power On' logic.
-            if parsed_data:
-                self._device_status.update(parsed_data)
-
-            # --- Command Resolution Logic ---
-            # A command is considered complete if we receive:
-            # 1. A direct 'DeviceControl Okay' response.
-            # 2. Any other response or update that contains actual state data.
-
-            is_control_okay = (
-                is_response
-                and PROTOCOL_2878_DEVICE_CONTROL in xml_data
-                and PROTOCOL_2878_STATUS_OK in xml_data
-            )
-            is_polling_response = is_response and PROTOCOL_2878_DEVICE_STATE in xml_data
-
-            # Initialize should_resolve to False to prevent UnboundLocalError
-            should_resolve = False
-
-            # If a pending command exists, check if this message resolves it.
-            if self._pending_future and not self._pending_future.done():
-                # If the pending command was a poll, only a DeviceState response can resolve it.
-                # If it was a control command, any data update or a specific 'Okay' can resolve it.
-                command_debug = getattr(self._pending_future, "_command_debug", "")
-                is_poll_command = PROTOCOL_2878_DEVICE_STATE in command_debug
-
-                should_resolve = bool(
-                    (is_poll_command and is_polling_response)
-                    or (
-                        not is_poll_command
-                        and (is_control_okay or (is_response and parsed_data))
-                    )
-                )
-
-            if should_resolve and self._pending_future:
-                if is_control_okay:
-                    _LOGGER.debug(
-                        "%s 'DeviceControl Okay' received, resolving pending command future",
-                        self.log_prefix,
-                    )  # pragma: no mutate
-                else:
-                    _LOGGER.debug(
-                        "%s Response/Update with data received, resolving pending command future",
-                        self.log_prefix,
-                    )  # pragma: no mutate
-                try:
-                    if not self._pending_future.done():
-                        self._pending_future.set_result(True)
-                    self._pending_future = None  # pragma: no mutate
-                except asyncio.InvalidStateError:
-                    pass  # Future was already resolved.
-
-            self._ensure_callback_linked()
-            if parsed_data and (is_response or is_update) and self._update_callback:
-                _LOGGER.debug(
-                    "%s Calling update callback with data: %s",
-                    self.log_prefix,
-                    parsed_data,
-                )  # pragma: no mutate
-                self._track_task(self._update_callback(parsed_data))
-            elif is_control_okay:
-                # This is just an acknowledgment. The device will send a separate <Update> push.
-                # We don't need to do anything here except acknowledge
-                # that the command was successful so the UI doesn't hang. The future is already resolved.
-                _LOGGER.debug(
-                    "%s 'DeviceControl Okay' ack received. Waiting for subsequent push update.",
-                    self.log_prefix,
-                )  # pragma: no mutate
-
+            await self._handle_message(message.decode(errors="ignore"))
         return buffer
+
+    async def _handle_message(self, xml_data: str) -> None:
+        """Parse one framed message, resolve the pending command and push updates."""
+        _LOGGER.debug(
+            "%s Received message: %s",
+            self.log_prefix,
+            mask_sensitive_data(xml_data.strip()),
+        )  # pragma: no mutate
+        is_response, is_update, parsed_data = await self._parse_and_update_state(
+            xml_data
+        )
+        # Update internal state for redundant 'Power On' logic.
+        if parsed_data:
+            self._device_status.update(parsed_data)
+
+        # A command completes on a 'DeviceControl Okay' response or on any other
+        # response carrying state data; a poll only completes on a DeviceState response.
+        is_control_okay = (
+            is_response
+            and PROTOCOL_2878_DEVICE_CONTROL in xml_data
+            and PROTOCOL_2878_STATUS_OK in xml_data
+        )
+        if self._pending_future and not self._pending_future.done():
+            command_debug = getattr(self._pending_future, ATTR_COMMAND_DEBUG, "")
+            if (
+                is_response and PROTOCOL_2878_DEVICE_STATE in xml_data
+                if PROTOCOL_2878_DEVICE_STATE in command_debug
+                else is_control_okay or (is_response and parsed_data)
+            ):
+                _LOGGER.debug(
+                    "%s Response received (control okay: %s), resolving pending command future",
+                    self.log_prefix,
+                    is_control_okay,
+                )  # pragma: no mutate
+                self._pending_future.set_result(True)
+                self._pending_future = None  # pragma: no mutate
+
+        self._ensure_callback_linked()
+        if parsed_data and (is_response or is_update) and self._update_callback:
+            _LOGGER.debug(
+                "%s Calling update callback with data: %s",
+                self.log_prefix,
+                parsed_data,
+            )  # pragma: no mutate
+            self._track_task(self._update_callback(parsed_data))
+        elif is_control_okay:
+            # Just an acknowledgment: the device sends a separate <Update> push.
+            _LOGGER.debug(
+                "%s 'DeviceControl Okay' ack received. Waiting for subsequent push update.",
+                self.log_prefix,
+            )  # pragma: no mutate
 
     def _force_unavailability_if_needed(
         self, offline_type: str = "Network"
@@ -1146,9 +1005,7 @@ class ConnectionSamsung2878(Connection):
                     )  # pragma: no mutate
                     # Trigger the panic button callback to notify the coordinator immediately
                     if self._controller and self._controller.on_offline_callback:
-                        self._controller.on_offline_callback(
-                            "Host unreachable after multiple retry attempts."
-                        )
+                        self._controller.on_offline_callback(OFFLINE_PANIC_MSG)
                 self._persistent_offline_err_logged = True
             else:
                 _LOGGER.debug(
@@ -1157,6 +1014,50 @@ class ConnectionSamsung2878(Connection):
 
             if self._controller and self._controller.on_connection_failed_callback:
                 self._controller.on_connection_failed_callback()
+
+    async def _check_network_reachability(self) -> bool:
+        """Ping the host and store the ICMP diagnostic to aid troubleshooting."""
+        network_reachable = True
+        try:
+            network_reachable = await async_check_network_reachability(
+                self._cfg.host or "", self.log_prefix
+            )
+            self._last_icmp_diagnostic = get_last_network_diagnostic(
+                self._cfg.host
+            ) or {
+                KEY_IS_REACHABLE: network_reachable,
+                KEY_STATUS: STATUS_ALIVE if network_reachable else STATUS_UNREACHABLE,
+            }
+        except Exception as diag_err:
+            _LOGGER.debug(
+                "%s Network diagnostic failed: %s", self.log_prefix, diag_err
+            )  # pragma: no mutate
+        return network_reachable
+
+    async def _backoff_after_failure(
+        self, offline_type: str | None = None, jitter: bool = True
+    ) -> bool:
+        """Count a failed attempt and sleep with exponential backoff."""
+        self._reconnect_retries += 1
+        if offline_type:
+            # After 2 consecutive failures, force unavailability in HA
+            self._force_unavailability_if_needed(offline_type)
+        delay = self._reconnect_delay
+        if jitter:
+            delay += random.uniform(0, self._reconnect_delay * JITTER_RATIO)
+        _LOGGER.debug(
+            "%s Reconnect failed (%s). Backing off for %.1f seconds...",
+            self.log_prefix,
+            offline_type or "Error",
+            delay,
+        )  # pragma: no mutate
+        self._ssl_context_cache.clear()  # Force fresh SSL context on retry
+        await self._close_connection()
+        await asyncio.sleep(delay)
+        self._reconnect_delay = min(
+            self._reconnect_delay * RECONNECT_FACTOR, MAX_RECONNECT_DELAY
+        )
+        return False
 
     async def handle_reconnection(self) -> bool:
         """Handle the reconnection process."""
@@ -1171,98 +1072,16 @@ class ConnectionSamsung2878(Connection):
                 "%s Connection is down. Attempting to reconnect...", self.log_prefix
             )  # pragma: no mutate
 
-        # Run network diagnostics on every reconnect attempt to aid troubleshooting.
         # Only attempt to open the TCP port if the ping succeeds to protect fragile ACs.
-        network_reachable = True
         try:
-            network_reachable = await async_check_network_reachability(
-                self._cfg.host or "", self.log_prefix
-            )
-            self._last_icmp_diagnostic = get_last_network_diagnostic(
-                self._cfg.host
-            ) or {
-                "is_reachable": network_reachable,
-                "status": "alive" if network_reachable else "unreachable_timeout",
-            }
-        except Exception as diag_err:
-            _LOGGER.debug(
-                "%s Network diagnostic failed: %s", self.log_prefix, diag_err
-            )  # pragma: no mutate
-
-        try:
-            # If the network is reachable, attempt handshake. Otherwise, skip to retry to protect device.
-            handshake_success = False  # pragma: no mutate
-            if network_reachable:
-                handshake_success = await self._establish_connection_and_handshake()
-            else:
-                _LOGGER.debug(
-                    "%s Skipping port connection attempt because ICMP ping failed.",
-                    self.log_prefix,
-                )  # pragma: no mutate
-
-            # --- DUAL-SPEED BACKOFF LOGIC ---
-            if not network_reachable:
-                # 1. Network is fully down (router off, device unplugged, no wifi)
-                # Wait a fixed 10 seconds. Do NOT increment exponential backoff to recover quickly.
-                _LOGGER.debug(
-                    "%s Host unreachable. Retrying ping in 10 seconds...",
-                    self.log_prefix,
-                )  # pragma: no mutate
-                self._reconnect_retries += 1
-
-                # If we've failed 2 times on the ping, force unavailability in HA
-                self._force_unavailability_if_needed("Network")  # pragma: no mutate
-
-                self._ssl_context_cache.clear()
-                await self._close_connection()
-
-                # Use current exponential backoff but without jitter for network down
-                delay_to_use = self._reconnect_delay
-                _LOGGER.debug(
-                    "%s Host unreachable. Retrying ping in %.1f seconds...",
-                    self.log_prefix,
-                    delay_to_use,
-                )  # pragma: no mutate
-                await asyncio.sleep(delay_to_use)
-
-                # Increment exponential backoff delay for the next attempt
-                self._reconnect_delay = min(
-                    self._reconnect_delay * RECONNECT_FACTOR, MAX_RECONNECT_DELAY
-                )
-                return False
-
-            # If the handshake fails with a connection error, it returns False.
-            if not handshake_success:
-                # 2. Network UP but Port 2878 closed/crashing.
-                _LOGGER.debug(
-                    "%s Handshake returned False (or skipped). Proceeding to backoff logic.",
-                    self.log_prefix,
-                )  # pragma: no mutate
-                self._reconnect_retries += 1
-
-                # If we've failed 2 times on the port, force unavailability in HA
-                self._force_unavailability_if_needed("Service")  # pragma: no mutate
-
-                jitter = random.uniform(0, self._reconnect_delay * 0.2)
-                delay_with_jitter = self._reconnect_delay + jitter
-                _LOGGER.debug(
-                    "%s Port connection failed. Backing off for %.1f seconds...",
-                    self.log_prefix,
-                    delay_with_jitter,
-                )  # pragma: no mutate
-                self._ssl_context_cache.clear()  # Force fresh SSL context on retry
-                await self._close_connection()
-                await asyncio.sleep(delay_with_jitter)
-                self._reconnect_delay = min(
-                    self._reconnect_delay * RECONNECT_FACTOR, MAX_RECONNECT_DELAY
-                )
-                return False
-
+            if not await self._check_network_reachability():
+                # Network fully down: retry without jitter to recover quickly.
+                return await self._backoff_after_failure("Network", jitter=False)
+            if not await self._establish_connection_and_handshake():
+                # Network UP but Port 2878 closed/crashing.
+                return await self._backoff_after_failure("Service")
         except (CannotConnect, AuthError) as e:
-            # 3. Network UP but an exception occurred during connection logic
-            self._reconnect_retries += 1
-
-            # If reconnection fails, fail any pending command
+            # Network UP but an exception occurred: fail any pending command.
             if self._pending_future and not self._pending_future.done():
                 self._pending_future.set_exception(
                     CannotConnect(
@@ -1270,22 +1089,7 @@ class ConnectionSamsung2878(Connection):
                     )  # pragma: no mutate
                 )
                 self._pending_future = None  # pragma: no mutate
-
-            jitter = random.uniform(0, self._reconnect_delay * 0.2)
-            delay_with_jitter = self._reconnect_delay + jitter
-            _LOGGER.debug(
-                "%s Port connection error. Backing off for %.1f seconds...",
-                self.log_prefix,
-                delay_with_jitter,
-            )  # pragma: no mutate
-            self._ssl_context_cache.clear()  # Force fresh SSL context on retry
-            await self._close_connection()
-            await asyncio.sleep(delay_with_jitter)
-            self._reconnect_delay = min(
-                self._reconnect_delay * RECONNECT_FACTOR, MAX_RECONNECT_DELAY
-            )
-            return False
-
+            return await self._backoff_after_failure()
         return True
 
     async def _connection_manager(self) -> None:
@@ -1325,24 +1129,20 @@ class ConnectionSamsung2878(Connection):
                     if queue_task:
                         tasks.append(queue_task)
 
-                    done, pending = await asyncio.wait(
+                    done, _ = await asyncio.wait(
                         tasks, return_when=asyncio.FIRST_COMPLETED
                     )
 
-                    # --- Process completed tasks ---
                     if queue_task and queue_task in done:
                         await self._process_command_queue(queue_task)
-                        queue_task = (
-                            None  # pragma: no mutate  # Reset to pick up next command
-                        )
+                        queue_task = None  # pragma: no mutate
 
                     if self._read_task in done:
                         read_buffer = await self._process_read_queue(buffer)
                         if read_buffer is None:  # Connection closed
-                            buffer = b""  # pragma: no mutate  # Reset buffer to prevent NoneType error on next iteration
-                            await asyncio.sleep(
-                                0.05
-                            )  # Yield to event loop to prevent starvation on rapid reconnect cycles
+                            buffer = b""  # pragma: no mutate
+                            # Yield to event loop to prevent starvation on rapid reconnect cycles
+                            await asyncio.sleep(0.05)
                             continue
                         buffer = read_buffer
 
@@ -1356,9 +1156,9 @@ class ConnectionSamsung2878(Connection):
                     if self._pending_future and not self._pending_future.done():
                         self._pending_future.set_exception(e)
                     self._pending_future = None  # pragma: no mutate
-                    buffer = b""  # pragma: no mutate  # CRITICAL: Reset buffer on error to ensure clean state for next iteration
+                    buffer = b""  # pragma: no mutate  # CRITICAL: clean state for next iteration
                     await self._close_connection()
-                    jitter = random.uniform(0, self._reconnect_delay * 0.2)
+                    jitter = random.uniform(0, self._reconnect_delay * JITTER_RATIO)
                     await asyncio.sleep(self._reconnect_delay + jitter)
                 except Exception as e:  # pylint: disable=broad-exception-caught
                     _LOGGER.error(
@@ -1367,9 +1167,8 @@ class ConnectionSamsung2878(Connection):
                         e,
                         exc_info=True,
                     )  # pragma: no mutate
-                    await asyncio.sleep(
-                        0.05
-                    )  # Yield to event loop to prevent starvation on unexpected errors
+                    # Yield to event loop to prevent starvation on unexpected errors
+                    await asyncio.sleep(0.05)
         finally:
             _LOGGER.debug(
                 "%s Connection manager exiting, cleaning up", self.log_prefix
@@ -1444,7 +1243,7 @@ class ConnectionSamsung2878(Connection):
         if data:
             command = data.strip() + "\n"
         elif _is_poll:
-            command = f'<Request Type="{PROTOCOL_2878_DEVICE_STATE}" DUID="{self._cfg.duid}"></Request>\n'
+            command = self._poll_command
 
         if not command:
             return None, None
@@ -1484,7 +1283,6 @@ class ConnectionSamsung2878(Connection):
 
                 # CRITICAL FIX: Always force connection close on timeout.
                 # If a command timed out (20s), the connection is effectively dead or hung.
-                # We remove the 'is_polling_request' check to ensure we always recover.
                 _LOGGER.debug(
                     "%s Command timed out. Forcing connection close to trigger reconnect.",
                     self.log_prefix,

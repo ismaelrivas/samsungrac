@@ -2,9 +2,8 @@
 """Tests for placeholder rendering routines."""
 
 # pylint: disable=import-outside-toplevel
-import pytest
-
 from custom_components.climate_ip.helpers import format_placeholders
+import pytest
 
 
 def test_format_placeholders_recursive():

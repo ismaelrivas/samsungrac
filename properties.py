@@ -1,13 +1,12 @@
 # pylint: disable=too-many-branches,too-many-instance-attributes
 """Device property classes for the climate_ip integration."""
 
-from __future__ import annotations
-
 import dataclasses
 import logging
+import math
 from typing import Any, Final, Protocol, cast, runtime_checkable
 
-from homeassistant.components.climate.const import (
+from homeassistant.components.climate import (
     ATTR_FAN_MODE,
     ATTR_FAN_MODES,
     ATTR_HVAC_MODE,
@@ -98,6 +97,7 @@ class ConnectionWithParams(Protocol):
     """Connection that supports parameter-based execution."""
 
     _params: dict[str, Any]
+    params: dict[str, Any]
     _connection_template: Template | None
     connection_template: Template | None
     config: dict[str, Any]
@@ -110,7 +110,8 @@ class ConnectionWithParams(Protocol):
         data: Any,
         headers: dict[str, Any] | None,
         **kwargs: Any,
-    ) -> tuple[str | None, dict[str, Any] | None]: ...
+    ) -> tuple[str | None, dict[str, Any] | None]:
+        """Execute network request asynchronously."""
 
     async def async_execute_with_retry(
         self,
@@ -118,9 +119,11 @@ class ConnectionWithParams(Protocol):
         value: Any,
         device_state: Any = None,
         device_id: str | None = None,
-    ) -> Any: ...
+    ) -> Any:
+        """Execute request with retries."""
 
-    def create_updated(self, yaml_node: dict[str, Any] | None) -> Any: ...
+    def create_updated(self, yaml_node: dict[str, Any] | None) -> Any:
+        """Create an updated connection instance from YAML node."""
 
 
 _WARNED_TEMPLATE_MESSAGES: set[str] = set()
@@ -255,7 +258,7 @@ class DeviceProperty:
         self._status_template_raw: Any = None
         self._connection_template_raw: Any = None
         self._validation_template_raw: Any = None
-        self._device_state: dict[str, Any] | None = None
+        self._device_state: Any = None
         self._state_node: str | None = None
         self._type: str | None = None
 
@@ -267,6 +270,24 @@ class DeviceProperty:
         self._feature_flag: ClimateEntityFeature | None = None
         self._icon: str | None = None
         self._config: dict[str, Any] = {}
+
+    @staticmethod
+    def _get_connection_params(conn: Any) -> dict[str, Any]:
+        """Safely retrieve connection parameters without triggering SLF001."""
+        params = getattr(conn, "params", None)
+        if isinstance(params, dict):
+            return params
+        p = getattr(conn, "_params", None)
+        return dict(p) if isinstance(p, dict) else {}
+
+    @staticmethod
+    def _get_connection_template(conn: Any) -> Any:
+        """Safely retrieve connection template without triggering SLF001."""
+        tmpl = getattr(conn, "connection_template", None)
+        if isinstance(tmpl, (Template, str)):
+            return tmpl
+        t = getattr(conn, "_connection_template", None)
+        return t if isinstance(t, (Template, str)) else None
 
     @staticmethod
     def match_type(prop_type: str) -> bool:
@@ -315,13 +336,15 @@ class DeviceProperty:
                 status_prop = self._controller.get_property(KEY_STATUS)
                 if status_prop is not None and isinstance(status_prop.value, dict):
                     return status_prop.value
-            except (KeyError, AttributeError, TypeError):
+            except KeyError, AttributeError, TypeError:
                 pass
 
         # 4. Raw device_state fallback (dataclass / dict)
         if isinstance(self._device_state, dict):
             return self._device_state
-        if dataclasses.is_dataclass(self._device_state):
+        if dataclasses.is_dataclass(self._device_state) and not isinstance(
+            self._device_state, type
+        ):
             return dataclasses.asdict(self._device_state)
         return None
 
@@ -427,12 +450,11 @@ class DeviceProperty:
         return self._feature_flag
 
     def set_device_state_for_values(self, device_state: dict[str, Any]) -> None:
-        """
-        Optional override hook.
+        """Optional override hook.
+
         Update internal state or values based on the current device state.
         Subclasses should override this method if they need to update dynamically.
         """
-        pass
 
     @property
     def unit_of_measurement(self) -> str | None:
@@ -576,7 +598,7 @@ class DeviceProperty:
         return dev_value
 
     def apply_optimistic_cascades(
-        self, state: dict[str, Any], value: Any, _dev_val: Any = None
+        self, state: Any, value: Any, _dev_val: Any = None
     ) -> None:
         """Optimistically cascade state changes based on YAML configuration."""
         if not isinstance(state, dict):
@@ -719,24 +741,21 @@ class GetJsonStatus(DeviceProperty):
             and self._connection.is_async_native
             and self._connection_template is None
         ):
-            conn_tmpl = getattr(
-                self._connection, "connection_template", None
-            ) or getattr(self._connection, "_connection_template", None)
+            conn_tmpl = self._get_connection_template(self._connection)
+            conn_params = self._get_connection_params(self._connection)
             if conn_tmpl is not None:
                 self._connection_template = conn_tmpl
-            elif isinstance(
-                getattr(self._connection, "_params", None), dict
-            ) and isinstance(self._connection._params.get("url"), str):
+            elif isinstance(conn_params.get("url"), str):
                 _LOGGER.debug(
-                    "%s [GetJsonStatus] Synthesizing connection_template from connection._params.",
+                    "%s [GetJsonStatus] Synthesizing connection_template from connection params",
                     self.log_prefix,
                 )
                 self._connection_template = Template(
-                    json_dumps(self._connection._params), self._controller.hass
+                    json_dumps(conn_params), self._controller.hass
                 )
             else:
                 _LOGGER.debug(
-                    "%s [GetJsonStatus] No connection_template found for aiohttp. Creating a default one.",
+                    "%s [GetJsonStatus] No connection_template found for aiohttp. Creating a default one",
                     self.log_prefix,
                 )  # pragma: no mutate
                 default_template_str = DEFAULT_JSON_STATUS_PAYLOAD
@@ -753,13 +772,6 @@ class GetJsonStatus(DeviceProperty):
         if self.status_template is not None:
             try:
                 v = render_template(self.status_template, device_state=device_state)
-                if isinstance(v, str):
-                    v = v.strip()
-                    try:
-                        return json_loads(v)
-                    except (*JSON_DECODE_EXCEPTIONS,):
-                        return v
-                return v
             except (TemplateError, TypeError, ValueError) as e:
                 _LOGGER.debug(
                     "%s [GetJsonStatus] Status template evaluation failed: %s",
@@ -769,6 +781,14 @@ class GetJsonStatus(DeviceProperty):
                 raise HomeAssistantError(
                     f"Template evaluation failed for {self.id}: {e}"
                 ) from e
+            else:
+                if isinstance(v, str):
+                    v = v.strip()
+                    try:
+                        return json_loads(v)
+                    except (*JSON_DECODE_EXCEPTIONS,):
+                        return v
+                return v
         return device_state
 
     async def async_update_state(
@@ -780,31 +800,30 @@ class GetJsonStatus(DeviceProperty):
 
         if connection is None:
             _LOGGER.error(
-                "%s [GetJsonStatus] Connection object is None! Cannot proceed.",
+                "%s [GetJsonStatus] Connection object is None! Cannot proceed",
                 self.log_prefix,
             )  # pragma: no mutate
             return None
 
         if connection.is_async_native:
+            conn_params = self._get_connection_params(connection)
             if self.connection_template is None:
-                if isinstance(
-                    getattr(connection, "_params", None), dict
-                ) and isinstance(connection._params.get("url"), str):
+                if isinstance(conn_params.get("url"), str):
                     _LOGGER.debug(
-                        "%s [GetJsonStatus] Synthesizing connection_template from connection._params.",
+                        "%s [GetJsonStatus] Synthesizing connection_template from connection params",
                         self.log_prefix,
                     )
                     self._connection_template = Template(
-                        json_dumps(connection._params), self._controller.hass
+                        json_dumps(conn_params), self._controller.hass
                     )
                 else:
                     _LOGGER.error(
-                        "%s [GetJsonStatus] Connection template is missing for async execution.",
+                        "%s [GetJsonStatus] Connection template is missing for async execution",
                         self.log_prefix,
                     )  # pragma: no mutate
                     return None
 
-            render_context: dict[str, Any] = dict(connection._params)
+            render_context: dict[str, Any] = dict(conn_params)
 
             cfg = connection.config if isinstance(connection.config, dict) else {}
             duid_from_cfg = cfg.get(KEY_DUID)
@@ -834,11 +853,11 @@ class GetJsonStatus(DeviceProperty):
                 try:
                     loaded = json_loads(params_str)
                     params = loaded if isinstance(loaded, dict) else None
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     params = None
 
             if isinstance(params, dict):
-                raw_params = connection._params
+                raw_params = self._get_connection_params(connection)
                 final_params = {**raw_params, **params}
                 response_text, _ = await connection.async_execute(
                     final_params.get(KEY_METHOD),
@@ -858,7 +877,7 @@ class GetJsonStatus(DeviceProperty):
 
             if response_text is None:
                 _LOGGER.debug(
-                    "%s [GetJsonStatus] No response text received.", self.log_prefix
+                    "%s [GetJsonStatus] No response text received", self.log_prefix
                 )  # pragma: no mutate
                 return None
 
@@ -913,7 +932,7 @@ class DeviceOperation(DeviceProperty):
             KEY_DUID: duid,
             TMPL_VAR_DEVICE_STATE: device_state if device_state is not None else {},
         }
-        conn_tmpl = connection._connection_template
+        conn_tmpl = self._get_connection_template(connection)
         template_to_use = (
             self.connection_template
             if self.connection_template is not None
@@ -930,26 +949,26 @@ class DeviceOperation(DeviceProperty):
                     operation_params = (
                         loaded_op if isinstance(loaded_op, dict) else None
                     )
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     operation_params = None
 
             if not isinstance(operation_params, dict):
                 return {KEY_RAW_PAYLOAD: rendered}
         else:
-            raw_p = connection._params
+            raw_p = self._get_connection_params(connection)
             operation_params = (
                 dict(raw_p) if raw_p is not None and len(raw_p) > 0 else None
             )
 
         if operation_params is None:
             _LOGGER.error(
-                "%s [_resolve_async_params] No params or template found.",
+                "%s [_resolve_async_params] No params or template found",
                 self.log_prefix,
             )  # pragma: no mutate
             return None
 
         base_params: dict[str, Any] = {}
-        base_template = connection._connection_template
+        base_template = self._get_connection_template(connection)
         if base_template is not None and base_template is not template_to_use:
             rendered_base = render_template(base_template, **render_ctx)
             if isinstance(rendered_base, dict):
@@ -967,12 +986,7 @@ class DeviceOperation(DeviceProperty):
                     )
                     base_params = {}
 
-            if not isinstance(base_params, dict):
-                base_params = {}
-
-        raw_params = connection._params
-        if not isinstance(raw_params, dict):
-            raw_params = {}
+        raw_params = self._get_connection_params(connection)
         fallback: dict[str, Any] = {**raw_params, **base_params}
 
         return {**fallback, **operation_params}
@@ -983,7 +997,7 @@ class DeviceOperation(DeviceProperty):
         # FRONTEND SANITIZATION: Validate payload before hitting the network
         try:
             dev_value = self.convert_hass_to_dev(v)
-        except ValueError as e:
+        except (ValueError, TypeError) as e:
             _LOGGER.warning(
                 "%s Command discarded for '%s': %s", self.log_prefix, self.id, e
             )  # pragma: no mutate
@@ -1019,14 +1033,14 @@ class DeviceOperation(DeviceProperty):
 
                 if params is None:
                     _LOGGER.error(
-                        "%s [async_set_value] Could not resolve command parameters.",
+                        "%s [async_set_value] Could not resolve command parameters",
                         self.log_prefix,
                     )  # pragma: no mutate
                     return False
 
                 if params.get(KEY_RAW_PAYLOAD) is not None:
                     _LOGGER.debug(
-                        "%s [async_set_value] Sending raw (non-JSON) payload.",
+                        "%s [async_set_value] Sending raw (non-JSON) payload",
                         self.log_prefix,
                     )  # pragma: no mutate
                     await connection.async_execute(
@@ -1078,11 +1092,9 @@ class DeviceOperation(DeviceProperty):
                         f"Strict routing failed: Missing method or url in YAML configuration for {self.id}"
                     )
 
+                conn_p = self._get_connection_params(connection)
                 req_headers = params.get(KEY_HEADERS) or (
-                    connection._params.get(KEY_HEADERS)
-                    if hasattr(connection, "_params")
-                    and isinstance(connection._params, dict)
-                    else {}
+                    conn_p.get(KEY_HEADERS) if isinstance(conn_p, dict) else {}
                 )
 
                 response, _ = await connection.async_execute(
@@ -1092,9 +1104,6 @@ class DeviceOperation(DeviceProperty):
                     req_headers or {},
                     device_state=current_full_state,
                 )
-                if response is not None:
-                    return True
-                return False
             except (CannotConnect, AuthError) as e:
                 raise HomeAssistantError(
                     f"Connection error: could not set value for {self.id}"
@@ -1103,16 +1112,19 @@ class DeviceOperation(DeviceProperty):
                 raise HomeAssistantError(
                     f"Unexpected error when setting {self.id}"
                 ) from e  # pragma: no mutate
+            else:
+                return response is not None
         else:
             try:
                 await connection.async_execute_with_retry(
                     self.connection_template, dev_value, current_full_state, device_id
                 )
-                return True
             except (CannotConnect, AuthError) as e:
                 raise HomeAssistantError(
                     f"Connection error: could not set value for {self.id}"
                 ) from e  # pragma: no mutate
+            else:
+                return True
 
     def match_value(self, value: Any) -> bool:
         """Check if value matches the operation. True if the value is correct."""
@@ -1159,8 +1171,7 @@ class BasicDeviceOperation(DeviceOperation):
                 if not isinstance(node_values, dict) or len(node_values) == 0:
                     return False
 
-                for ha_value in node_values.keys():
-                    node_value = node_values[ha_value]
+                for ha_value, node_value in node_values.items():
                     connection_node = node_value.get(
                         CONFIG_DEVICE_CONNECTION, node_value
                     )
@@ -1183,8 +1194,8 @@ class BasicDeviceOperation(DeviceOperation):
         return False
 
     def set_device_state_for_values(self, device_state: dict[str, Any] | None) -> None:
-        """
-        Optional override hook.
+        """Optional override hook.
+
         Update the operation's known device state and invalidate the valid values cache.
         """
         self._device_state = device_state
@@ -1423,7 +1434,7 @@ class BasicNumericOperation(DeviceOperation):
         super().__init__(name, connection, controller, status_getter)
         self._min: float | None = None
         self._max: float | None = None
-        self._value: float | None = None
+        self._value: Any = None
 
     @staticmethod
     def match_type(prop_type: str) -> bool:
@@ -1456,7 +1467,7 @@ class BasicNumericOperation(DeviceOperation):
         try:
             converted = float(self.convert_hass_to_dev(float(value)))
             return round(converted, 2) == round(float(value), 2)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return False
 
     def load_from_yaml(self, node: dict[str, Any] | None) -> bool:
@@ -1472,14 +1483,14 @@ class BasicNumericOperation(DeviceOperation):
     def convert_hass_to_dev(self, ha_value: Any) -> Any:
         """Convert HASS state value to the device's expected value, clamped to min/max."""
         if isinstance(ha_value, bool):
-            raise ValueError(f"Invalid numeric value: {ha_value}")
+            raise TypeError(f"Invalid numeric value: {ha_value}")
         try:
             v = float(ha_value)
         except (ValueError, TypeError) as err:
             raise ValueError(f"Invalid numeric value: {ha_value}") from err
 
-        min_bound = self._min if self._min is not None else float("-inf")
-        max_bound = self._max if self._max is not None else float("inf")
+        min_bound = self._min if self._min is not None else -math.inf
+        max_bound = self._max if self._max is not None else math.inf
         return max(min_bound, min(v, max_bound))
 
 
@@ -1610,13 +1621,12 @@ class TemperatureOperation(BasicNumericOperation):
         if dev_value is None or isinstance(dev_value, bool):
             return None
         try:
-            raw_converted = float(
+            return float(
                 TemperatureConverter.convert(
                     float(dev_value), device_unit, self._hass_unit
                 )
             )
-            return raw_converted
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return None
 
     def convert_dev_to_hass(self, dev_value: Any) -> float | None:
@@ -1626,7 +1636,7 @@ class TemperatureOperation(BasicNumericOperation):
     def convert_hass_to_dev(self, ha_value: Any) -> float:
         """Convert HASS temperature to device unit, clamped to min/max."""
         if isinstance(ha_value, bool):
-            raise ValueError(f"Invalid payload: Cannot set temperature to '{ha_value}'")
+            raise TypeError(f"Invalid payload: Cannot set temperature to '{ha_value}'")
         try:
             # Mandatory strict sanitization.
             v = float(ha_value)

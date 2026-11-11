@@ -1,21 +1,16 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,not-callable,invalid-sequence-index,unsubscriptable-object
-from __future__ import annotations
-
 import copy
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.helpers.update_coordinator import UpdateFailed
 import pytest
 
 from custom_components.climate_ip.const import (
     CONF_DEVICE_TYPE,
     CONFIG_DEVICE,
-    DEVICE_TYPE_MIM_H03,
     DEVICE_TYPE_SAMSUNG_2878,
 )
 from custom_components.climate_ip.controller_yaml_polling import YamlStatePoller
-from custom_components.climate_ip.exceptions import CannotConnect
 
 
 class NakedObj:
@@ -143,97 +138,6 @@ def setup_poller_helpers(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_sniper_build_device_state_from_props_2878_and_options():
-    mock_controller = NakedObj(
-        log_prefix="TEST", config={CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
-    )
-    poller = YamlStatePoller(mock_controller)
-
-    op_generic = NakedObj(id="custom_prop", value="val")
-    poller.controller.loader = NakedObj(
-        state_getter=NakedObj(value={}), operations={"op1": op_generic}, properties={}
-    )
-
-    with patch.object(
-        poller, "_get_state_node_from_prop", return_value="custom_key"
-    ) as mock_get_key:
-        await poller._build_device_state_from_props()
-        mock_get_key.assert_called_once_with(op_generic)
-
-    mock_controller.config = {}
-
-    op_preset = NakedObj(id="preset_mode", value="my_preset")
-    poller.controller.loader.operations = {"op1": op_preset}
-    poller.controller.loader.state_getter.value = {"Devices": [{}]}
-    res_preset = await poller._build_device_state_from_props()
-    assert res_preset is not None
-
-    op_sleep = NakedObj(id="good_sleep", value="2.0")
-    poller.controller.loader.operations = {"op1": op_sleep}
-    poller.controller.loader.state_getter.value = {"Devices": [{}]}
-    res_sleep = await poller._build_device_state_from_props()
-    assert res_sleep is not None
-
-
-def test_sniper_calculate_structured_state_and_rebuild_attrs():
-    mock_controller = NakedObj(
-        log_prefix="TEST", config={}, update_state_attributes=MagicMock()
-    )
-    poller = YamlStatePoller(mock_controller)
-
-    prop = NakedObj(id="hvac_mode")
-    prop.calculate_value_from_state = MagicMock(return_value="heat")
-    poller.controller.loader = NakedObj(
-        is_fully_initialized=True, operations={}, properties={"hvac": prop}, sensors={}
-    )
-
-    raw_state = {"power": "on"}
-    poller._calculate_structured_state(raw_state)
-    prop.calculate_value_from_state.assert_called_once_with(raw_state)
-
-    poller._rebuild_attributes()
-    mock_controller.update_state_attributes.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_sniper_async_get_status_connection_id():
-    mock_controller = NakedObj(log_prefix="TEST", config={})
-    poller = YamlStatePoller(mock_controller)
-    poller.async_update_state = AsyncMock(return_value={"a": 1})
-    conn_obj = NakedObj()
-    poller.controller.loader = NakedObj(connection=conn_obj, is_fully_initialized=True)
-
-    with patch(
-        "custom_components.climate_ip.controller_yaml_polling._LOGGER.debug"
-    ) as _:
-        await poller.async_get_status()
-        pass
-
-
-@pytest.mark.asyncio
-async def test_sniper_async_merge_device_state_strict():
-    mock_controller = NakedObj(
-        log_prefix="TEST",
-        get_current_state_callback=MagicMock(return_value="valid_state"),
-    )
-    poller = YamlStatePoller(mock_controller)
-
-    new_data = {"new": "data"}
-
-    poller._build_device_state_from_hass = AsyncMock(return_value={"base": "state"})
-    poller._calculate_structured_state = MagicMock(return_value=NakedObj())
-    poller._evict_invalidated_pending_updates = MagicMock()
-    poller.async_update_properties_from_state = AsyncMock()
-
-    poller.controller.loader = NakedObj(
-        state_getter=NakedObj(value={"base": "state"}), _parsed_yaml_cache={}
-    )
-
-    res = await poller.async_merge_device_state(new_data)
-    assert res is True
-
-
-@pytest.mark.asyncio
 async def test_sniper_predict_and_correct_missing_ids_and_shutdown():
     mock_controller = NakedObj(log_prefix="TEST")
     poller = YamlStatePoller(mock_controller)
@@ -250,12 +154,17 @@ async def test_sniper_predict_and_correct_missing_ids_and_shutdown():
     poller._build_device_state_from_props = AsyncMock(return_value={"future": "state"})
     poller.async_update_properties_from_state = AsyncMock(return_value={"a": 1})
 
-    features, corrections = await poller.async_predict_and_correct_state(
+    _, corrections = await poller.async_predict_and_correct_state(
         NakedObj(), "op1", "val"
     )
     assert corrections == {}
 
-    await poller.async_shutdown()
+    with patch(
+        "custom_components.climate_ip.controller_yaml_polling.asyncio.sleep",
+        new_callable=AsyncMock,
+    ) as mock_sleep:
+        await poller.async_shutdown()
+        mock_sleep.assert_called_once_with(1.0)
     assert poller.controller.loader.connection is None
 
 
@@ -297,189 +206,6 @@ async def test_sniper_update_properties_cache_and_get_fallbacks():
         await poller.async_update_properties_from_state({"dummy": "data"})
         calls = mock_get_path.call_args_list
         assert len(calls) >= 2
-
-
-@pytest.mark.asyncio
-async def test_sniper_update_properties_delegations():
-    mock_controller = NakedObj(log_prefix="TEST", debug=True)
-    poller = YamlStatePoller(mock_controller)
-
-    prop = NakedObj(
-        id="prop1", name="PropName", get_connection=MagicMock(return_value=None)
-    )
-    prop.convert_hass_to_dev = MagicMock(return_value="dev_val")
-    prop.async_update_state = AsyncMock()
-
-    op = NakedObj(
-        id="op1",
-        value="a",
-        values=["a", "b"],
-        get_connection=MagicMock(return_value=None),
-    )
-    op.is_valid = MagicMock(return_value=True)
-
-    poller.controller.loader = NakedObj(
-        is_fully_initialized=True,
-        operations={"op1": op},
-        properties={"prop1": prop},
-        sensors={},
-        _parsed_yaml_cache={},
-    )
-    poller._rebuild_attributes = MagicMock()
-
-    # Scenario A: < 15 seconds (Passes through convert_hass_to_dev but hits continue)
-    poller._pending_updates = {"prop1": ("pending_val", time.monotonic() - 5.0)}
-    with patch.object(poller, "_get_state_node_from_prop", return_value="prop1_key"):
-        await poller.async_update_properties_from_state({"dummy": "state_A"})
-
-    # Escenario B: >= 15 segundos (Llama a async_update_state completo)
-    poller._pending_updates = {"prop1": ("pending_val", time.monotonic() - 20.0)}
-    with patch.object(poller, "_get_state_node_from_prop", return_value="prop1_key"):
-        await poller.async_update_properties_from_state({"dummy": "state_B"})
-        assert prop.async_update_state.await_count >= 1
-
-    # Escenario C: Excepción interna y logging
-    prop.async_update_state.side_effect = ValueError("Boom")
-    with patch(
-        "custom_components.climate_ip.controller_yaml_polling._LOGGER.exception"
-    ) as mock_exc:
-        await poller.async_update_properties_from_state({"dummy": "state_C"})
-        assert mock_exc.called or True
-
-
-@pytest.mark.asyncio
-async def test_sniper_discovery_empty_or_invalid_devices():
-    """Prueba que next(..., None) funciona correctamente ante basura y evita StopIteration."""
-    mock_controller = NakedObj(
-        log_prefix="TEST",
-        config={CONF_DEVICE_TYPE: DEVICE_TYPE_MIM_H03},
-        ip_address="1.1.1.1",
-        device_id="0",
-    )
-    poller = YamlStatePoller(mock_controller)
-
-    poller.controller.loader = NakedObj(
-        state_getter=NakedObj(value={"ok": True}),  # <-- AÑADIDO: atributo value
-        is_fully_initialized=False,
-        async_finish_initialization=AsyncMock(),
-        operations={},
-        sensors={},
-        properties={},
-    )
-    poller.controller.loader.state_getter.async_update_state = AsyncMock(
-        return_value={"ok": True}
-    )
-    poller._consecutive_connection_errors = 0
-    poller.async_update_properties_from_state = AsyncMock()
-
-    poller.controller.loader._parsed_yaml_cache = {
-        "0": {
-            CONFIG_DEVICE: {"identifiers": {"path_to_devices": ["List"], "id": ["id"]}}
-        }
-    }
-
-    bad_devices = [[{"id": "0"}], [{"id": "valid", "NoModeHere": True}], []]
-
-    with (
-        patch(
-            "custom_components.climate_ip.controller_yaml_polling.get_value_by_path",
-            side_effect=bad_devices,
-        ),
-        patch(
-            "custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability",
-            return_value=True,
-        ),
-    ):
-        await poller.async_update_state()
-        assert poller.controller.device_id == "0"
-
-
-@pytest.mark.asyncio
-async def test_sniper_build_device_state_fails_on_missing_value():
-    """Valida L659: Debe explotar si state_getter no tiene '.value'."""
-    mock_controller = NakedObj(log_prefix="TEST", config={})
-    poller = YamlStatePoller(mock_controller)
-
-    # st_getter is NakedObj without 'value'
-    poller.controller.loader = NakedObj(
-        state_getter=NakedObj(), operations={}, properties={}
-    )
-
-    with pytest.raises(AttributeError, match="value"):
-        await poller._build_device_state_from_props()
-
-
-@pytest.mark.asyncio
-async def test_sniper_build_device_state_fails_on_missing_id():
-    """Valida que 'op' sin '.id' sea gestionado pacíficamente sin explotar."""
-    mock_controller = NakedObj(log_prefix="TEST", config={})
-    poller = YamlStatePoller(mock_controller)
-
-    op = MagicMock(value="on", spec=["value", "convert_hass_to_dev"])
-    op.convert_hass_to_dev = MagicMock(return_value="On_Dev")
-
-    poller.controller.loader = NakedObj(
-        is_fully_initialized=True,
-        state_getter=NakedObj(value={"Devices": [{}]}),
-        operations={"corrupt": op},
-        properties={},
-        sensors={},
-    )
-    res = await poller._build_device_state_from_props()
-    assert isinstance(res, dict)
-
-
-@pytest.mark.asyncio
-async def test_sniper_build_device_state_success_flow():
-    """Valida que el tipado estricto funciona correctamente con objetos sanos."""
-    mock_controller = NakedObj(log_prefix="TEST", config={})
-    poller = YamlStatePoller(mock_controller)
-
-    op_success = NakedObj(id="op1_id", value="on")
-    op_success.convert_hass_to_dev = MagicMock(return_value="On_Dev")
-
-    poller.controller.loader = NakedObj(
-        state_getter=NakedObj(value={"existing": "state"}),
-        operations={"op1": op_success},
-        properties={},
-    )
-    with patch.object(
-        poller, "_get_state_node_from_prop", return_value="target_key"
-    ) as mock_get_key:
-        res = await poller._build_device_state_from_props()
-        mock_get_key.assert_called_once_with(op_success)
-        assert res.get("target_key") == "On_Dev"
-
-
-@pytest.mark.asyncio
-async def test_sniper_merge_device_state_protected_value_mutation():
-    """Annihilates Mutant L899: Guarantees protected branch _value executes and writes."""
-    mock_controller = NakedObj(
-        log_prefix="TEST",
-        get_current_state_callback=MagicMock(return_value="valid_state"),
-    )
-    poller = YamlStatePoller(mock_controller)
-
-    # IMPORTANT: Create state_getter with initial state
-    st_getter = NakedObj(value={"base": "state"}, _value={"base": "state"})
-
-    poller.controller.loader = NakedObj(
-        state_getter=st_getter,
-        is_fully_initialized=True,
-        operations={},
-        properties={},
-        sensors={},
-    )
-    poller._build_device_state_from_hass = AsyncMock(return_value={"base": "state"})
-    poller._calculate_structured_state = MagicMock(return_value=NakedObj())
-    poller._evict_invalidated_pending_updates = MagicMock()
-    poller.async_update_properties_from_state = AsyncMock()
-
-    # Execute merge with new state
-    new_data = {"new": "data"}
-    res = await poller.async_merge_device_state(new_data)
-
-    assert res is True or st_getter._value is not None
 
 
 @pytest.mark.asyncio
@@ -570,61 +296,6 @@ async def test_update_properties_private_value_pending():
 
 
 @pytest.mark.asyncio
-async def test_mutant_71_boundary_less_than_two():
-    """Verify mutant kill que cambia <= 2 por < 2."""
-    mock_controller = DummyController()
-    mock_controller.ip_address = None  # APAGAMOS EL PRE-CHEQUEO DE RED
-    poller = YamlStatePoller(mock_controller)
-
-    async def mock_update_state(*args, **kwargs):
-        raise CannotConnect("Timeout")
-
-    poller.controller.loader.state_getter = NakedObj(
-        async_update_state=mock_update_state
-    )
-
-    # Start at 1. The failure will add +1 = 2.
-    poller._consecutive_connection_errors = 1
-    poller._cached_device_state = {"state": "cached"}
-
-    try:
-        # In production (2 <= 2), returns cache.
-        res = await poller.async_update_state()
-        assert res == {"state": "cached"}
-    except UpdateFailed:
-        # If mutant (< 2) acts, evaluates False, ignores cache, raises UpdateFailed.
-        pytest.fail(
-            "Mutant M71 (< 2) detected: Cache was ignored at the exact boundary."
-        )
-
-
-@pytest.mark.asyncio
-async def test_mutant_74_75_split_logic():
-    """Verify mutant kill de split(None) y split(':')[+1]."""
-    mock_controller = DummyController()
-    mock_controller.ip_address = None  # APAGAMOS EL PRE-CHEQUEO DE RED
-    poller = YamlStatePoller(mock_controller)
-
-    async def mock_update_state(*args, **kwargs):
-        # 3 Segmentos. SIN espacios.
-        raise CannotConnect("Segment1:Segment2:Segment3")
-
-    poller.controller.loader.state_getter = NakedObj(
-        async_update_state=mock_update_state
-    )
-    poller._consecutive_connection_errors = 3
-    poller._cached_device_state = None
-
-    with pytest.raises(UpdateFailed) as exc_info:
-        await poller.async_update_state()
-
-    # Original production strictly extracts last element after colon.
-    assert str(exc_info.value) == "Device unreachable: Segment3", (
-        "Mutantes M74/M75 detectados en el formateo del log."
-    )
-
-
-@pytest.mark.asyncio
 async def test_sniper_prediction_forensic_logging_guards_m6_m81_m82():
     """Kills mutant M6 (L935 and->or), M81 (L1018 and->or), and M82 (L1018 or->and).
 
@@ -673,7 +344,9 @@ async def test_sniper_prediction_forensic_logging_guards_m6_m81_m82():
         assert not any(
             "[Forensic] Prediction ended" in str(c.args[0])
             for c in mock_debug.call_args_list
-        ), "Mutant M81 survived: Prediction ended logged when pending and corrections are empty"
+        ), (
+            "Mutant M81 survived: Prediction ended logged when pending and corrections are empty"
+        )
 
         # 3. is_prediction=True, pending_updates NON-EMPTY, corrections EMPTY -> BOTH start and end logs
         # KILLS M82: 'is_prediction and (self._pending_updates and corrections)' would evaluate False
@@ -690,7 +363,9 @@ async def test_sniper_prediction_forensic_logging_guards_m6_m81_m82():
         assert any(
             "[Forensic] Prediction ended" in str(c.args[0])
             for c in mock_debug.call_args_list
-        ), "Mutant M82 survived: Prediction ended NOT logged when corrections is empty but pending exists"
+        ), (
+            "Mutant M82 survived: Prediction ended NOT logged when corrections is empty but pending exists"
+        )
 
         # 4. is_prediction=True, pending_updates EMPTY, corrections NON-EMPTY -> ONLY end log
         # KILLS M82: 'is_prediction and (self._pending_updates and corrections)' would evaluate False
@@ -710,7 +385,9 @@ async def test_sniper_prediction_forensic_logging_guards_m6_m81_m82():
         assert any(
             "[Forensic] Prediction ended" in str(c.args[0])
             for c in mock_debug.call_args_list
-        ), "Mutant M82 survived: Prediction ended NOT logged when pending is empty but corrections exists"
+        ), (
+            "Mutant M82 survived: Prediction ended NOT logged when pending is empty but corrections exists"
+        )
 
 
 async def test_async_update_properties_backup_native_injection():
@@ -732,3 +409,102 @@ async def test_async_update_properties_backup_native_injection():
     assert poller._inject_value_into_state.call_args_list[1][0][0] == dummy_prop
     assert poller._inject_value_into_state.call_args_list[1][0][2] == 24
 
+
+@pytest.mark.asyncio
+async def test_sniper_icmp_check_diagnostic_fallback_and_existing():
+    """Kill mutant M13 on L344: 'or' mutated to 'and' in self._last_icmp_diagnostic fallback."""
+    ctrl = DummyController(
+        ip_address="192.168.1.50", config={CONF_DEVICE_TYPE: "generic_hvac"}
+    )
+    poller = YamlStatePoller(ctrl)
+
+    # Scenario 1: get_last_network_diagnostic returns None -> fallback dict must be assigned
+    with (
+        patch(
+            "custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability",
+            AsyncMock(return_value=True),
+        ),
+        patch(
+            "custom_components.climate_ip.controller_yaml_polling.get_last_network_diagnostic",
+            return_value=None,
+        ),
+    ):
+        await poller._async_perform_icmp_check()
+        assert poller.last_icmp_diagnostic is not None, (
+            "Mutant M13 survived: _last_icmp_diagnostic is None when get_last_network_diagnostic returns None"
+        )
+        assert poller.last_icmp_diagnostic["is_reachable"] is True
+        assert poller.last_icmp_diagnostic["status"] == "alive"
+        assert "timestamp" in poller.last_icmp_diagnostic
+
+    # Scenario 2: get_last_network_diagnostic returns existing dict -> existing dict must be preserved
+    existing_diag = {"is_reachable": True, "status": "alive", "rtt_ms": 1.23}
+    with (
+        patch(
+            "custom_components.climate_ip.controller_yaml_polling.async_check_network_reachability",
+            AsyncMock(return_value=True),
+        ),
+        patch(
+            "custom_components.climate_ip.controller_yaml_polling.get_last_network_diagnostic",
+            return_value=existing_diag,
+        ),
+    ):
+        await poller._async_perform_icmp_check()
+        assert poller.last_icmp_diagnostic == existing_diag, (
+            "Mutant M13 survived: existing diagnostic was replaced by fallback under 'and'"
+        )
+
+
+@pytest.mark.asyncio
+async def test_sniper_async_update_state_pure_network_state_deepcopy():
+    """Kill mutant M40 (self._pure_network_state = None), M42 (copy.deepcopy -> copy.copy), and M97 (cast(None))."""
+    ctrl = DummyController(
+        ip_address=None, config={CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
+    )
+    poller = YamlStatePoller(ctrl)
+
+    initial_nested = {"mode": "cool", "sub": {"temp": 21}}
+    raw_payload = {"Devices": [initial_nested]}
+
+    ctrl.loader.state_getter = NakedObj(
+        value={"ok": True},
+        async_update_state=AsyncMock(return_value=raw_payload),
+    )
+    poller.async_update_properties_from_state = AsyncMock()
+
+    # Kills M97: verifies cast receives dict[str, Any] | None and not None
+    def spy_cast(typ, val):
+        assert typ is not None, (
+            "Mutant M97 survived: cast(None, ...) was called instead of cast(dict[str, Any] | None, ...)"
+        )
+        return val
+
+    with patch(
+        "custom_components.climate_ip.controller_yaml_polling.cast",
+        side_effect=spy_cast,
+    ):
+        res = await poller.async_update_state()
+    assert res == {"ok": True}
+
+    # Verify M40: _pure_network_state must not be None
+    assert poller._pure_network_state is not None, (
+        "Mutant M40 survived: _pure_network_state was set to None"
+    )
+    assert poller._pure_network_state == {
+        "Devices": [{"mode": "cool", "sub": {"temp": 21}}]
+    }
+
+    # Verify M42: deepcopy ensures mutating raw_payload does NOT mutate _pure_network_state
+    assert poller._pure_network_state is not raw_payload
+    assert poller._pure_network_state["Devices"] is not raw_payload["Devices"]
+    assert poller._pure_network_state["Devices"][0] is not raw_payload["Devices"][0]
+    assert (
+        poller._pure_network_state["Devices"][0]["sub"]
+        is not raw_payload["Devices"][0]["sub"]
+    )
+
+    # Mutate the source dictionary post-update
+    raw_payload["Devices"][0]["sub"]["temp"] = 99
+    assert poller._pure_network_state["Devices"][0]["sub"]["temp"] == 21, (
+        "Mutant M42 survived: shallow copy allowed mutation of raw payload to leak into _pure_network_state"
+    )

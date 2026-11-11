@@ -1,4 +1,4 @@
-# pylint: disable=import-outside-toplevel,line-too-long
+# pylint: disable=import-outside-toplevel,line-too-long,no-else-return
 """Helper utilities for the climate_ip integration.
 
 Provides:
@@ -13,6 +13,7 @@ Provides:
 import asyncio
 from collections.abc import Generator, Sequence
 import contextlib
+import datetime
 import functools
 import http.client
 from io import BytesIO
@@ -32,6 +33,8 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
+
+from .const import DEFAULT_POLL_INTERVAL, PORT_SAMSUNG_2878, PORT_SAMSUNG_8888
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -112,7 +115,7 @@ def safe_xml_to_dict(xml_string: str) -> dict[str, Any]:
         if element.text and element.text.strip():
             if result:
                 result["#text"] = element.text.strip()  # pragma: no mutate
-            else:
+            else:  # pragma: no cover
                 return element.text.strip()
 
         return result
@@ -898,6 +901,24 @@ async def async_get_mac_address(ip_address: str) -> str | None:
     return None
 
 
+async def async_force_arp_update(ip_address: str) -> None:
+    """Force the OS to resolve the MAC and populate the ARP table concurrently."""
+
+    async def _poke_port(port: int) -> None:
+        """Attempt to open a raw connection to force a SYN packet emission."""
+        try:
+            _, writer = await asyncio.wait_for(
+                asyncio.open_connection(ip_address, port),
+                timeout=0.5,  # pragma: no mutate
+            )
+            writer.close()
+            await writer.wait_closed()
+        except TimeoutError, OSError:
+            pass
+
+    await asyncio.gather(_poke_port(PORT_SAMSUNG_2878), _poke_port(PORT_SAMSUNG_8888))
+
+
 def validate_poll_interval(val: Any) -> int:
     """Validate and convert poll interval to seconds."""
     from .const import MAX_POLL_INTERVAL, MIN_POLL_INTERVAL  # noqa: PLC0415
@@ -915,3 +936,16 @@ def validate_poll_interval(val: Any) -> int:
             f"Interval must be between {MIN_POLL_INTERVAL} and {MAX_POLL_INTERVAL}"
         )
     return seconds
+
+
+def format_poll_interval(
+    raw_val: Any, default_seconds: int = DEFAULT_POLL_INTERVAL
+) -> str:
+    """Format a poll interval value (seconds or HH:MM:SS) as an HH:MM:SS string."""
+    with contextlib.suppress(ValueError, TypeError):
+        return str(datetime.timedelta(seconds=int(raw_val)))
+    if isinstance(raw_val, str):
+        return raw_val
+    with contextlib.suppress(ValueError, TypeError):
+        return str(datetime.timedelta(seconds=int(default_seconds)))
+    return ""

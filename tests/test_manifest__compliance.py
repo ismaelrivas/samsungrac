@@ -2,8 +2,6 @@
 """Tests for static integration specs and Phase 1 compliance rules."""
 # pylint: disable=redefined-builtin,too-few-public-methods,missing-class-docstring,import-outside-toplevel
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
 from typing import Any

@@ -1,6 +1,5 @@
 # custom_components/climate_ip/connection_request.py
-"""
-Synchronous connection engine using the requests library.
+"""Synchronous connection engine using the requests library.
 
 TARGET DEVICES:
 - Samsung AC (connection type: 'request')
@@ -10,8 +9,6 @@ This engine provides a robust implementation for devices that support
 persistent HTTP/1.1 connections with Keep-Alive. It handles automatic
 recovery for protocol violations and adaptive timeout management.
 """
-
-from __future__ import annotations
 
 import asyncio
 from collections.abc import Generator, Mapping
@@ -24,15 +21,16 @@ from typing import Any, Final, cast
 import warnings
 import weakref
 
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.json import json_dumps
-from homeassistant.helpers.template import Template
-from homeassistant.util.json import JSON_DECODE_EXCEPTIONS, json_loads
 import requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.exceptions import (  # pylint: disable=import-error
     InsecureRequestWarning,
 )
+
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.json import json_dumps
+from homeassistant.helpers.template import Template
+from homeassistant.util.json import JSON_DECODE_EXCEPTIONS, json_loads
 
 from .connection import _HOST_LOCKS, Connection, register_connection
 from .const import (
@@ -93,7 +91,7 @@ class SamsungHTTPAdapter(HTTPAdapter):
             target_maxsize,
             block,
         )
-        return super().init_poolmanager(
+        return super().init_poolmanager(  # type: ignore[no-untyped-call]
             target_connections, target_maxsize, block=block, **pool_kwargs
         )
 
@@ -116,9 +114,10 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         self,
         hass_config: dict[str, Any] | None,
         _logger: logging.Logger,
-        hass: Any | None = None,
+        hass: HomeAssistant | None = None,
         session: requests.Session | None = None,
     ) -> None:
+        """Initialize the base requests connection."""
         super().__init__(hass_config or {}, _logger, hass=hass)
         self._hass = hass
         self._params: dict[str, Any] = {"timeout": DEFAULT_REQUEST_TIMEOUT}
@@ -282,23 +281,27 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
 
         # Propagate to children
         for child in self._children:
-            child._update_session(session)  # pylint: disable=import-outside-toplevel,protected-access
+            child.update_session(session)
+
+    def update_session(self, session: requests.Session) -> None:
+        """Update connection session instance."""
+        self._update_session(session)
 
     def _update_session_from_reset(self, session: requests.Session) -> None:
         """Entry point for updates triggered by internal reset."""
         if self._parent:
             _LOGGER.debug(
-                "%s [Session Propagation] Delegating session update to parent.",
+                "%s [Session Propagation] Delegating session update to parent",
                 self.log_prefix,
             )
-            self._parent._update_session(session)  # pylint: disable=import-outside-toplevel,protected-access
+            self._parent.update_session(session)
         else:
-            self._update_session(session)
+            self.update_session(session)
 
     async def close(self) -> None:
         """Async wrapper for closing the connection resources."""
         _LOGGER.debug(
-            "%s [ConnectionRequest] Closing connection resources (Async)...",
+            "%s [ConnectionRequest] Closing connection resources (Async)",
             self.log_prefix,
         )
         # Modern Python 3.9+ syntax for offloading sync blocking tasks
@@ -310,15 +313,15 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         # Only the root connection (no parent) should close the shared session and emit logs.
         if not self._parent:
             _LOGGER.debug(
-                "%s [ConnectionRequest] _close_sync: Cleanup started.", self.log_prefix
+                "%s [ConnectionRequest] _close_sync: Cleanup started", self.log_prefix
             )
             if self._session:
                 try:
                     self._session.close()
                     _LOGGER.debug(
-                        "%s [ConnectionRequest] Session closed.", self.log_prefix
+                        "%s [ConnectionRequest] Session closed", self.log_prefix
                     )
-                except Exception as e:  # pylint: disable=import-outside-toplevel,broad-exception-caught
+                except Exception as e:  # noqa: BLE001  # pylint: disable=import-outside-toplevel,broad-exception-caught
                     _LOGGER.debug(
                         "%s [ConnectionRequest] Error closing session: %s",
                         self.log_prefix,
@@ -371,10 +374,13 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
             self._params[CONF_CERT] = cert_file
 
     def load_from_yaml(self, node: dict[str, Any] | None, connection_base: Any) -> bool:
-        # pylint: disable=import-outside-toplevel,protected-access
+        """Load configuration from YAML node and base connection."""
         if connection_base:
-            self._params.update(connection_base._params.copy())
-            self._condition_template = connection_base._condition_template
+            base_params = getattr(connection_base, "_params", {})
+            self._params.update(base_params.copy())
+            self._condition_template = getattr(
+                connection_base, "_condition_template", None
+            )
             self._keep_alive = getattr(connection_base, "_keep_alive", True)
             self._parent = connection_base
 
@@ -390,7 +396,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                 if self._embedded_command:
                     self._children.add(self._embedded_command)
                     _LOGGER.debug(
-                        "%s [Session Propagation] Registered child connection.",
+                        "%s [Session Propagation] Registered child connection",
                         self.log_prefix,
                     )
             if CONFIG_DEVICE_CONDITION_TEMPLATE in node:
@@ -412,7 +418,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         return False
 
     # pylint: disable=import-outside-toplevel,too-many-locals,too-many-branches,too-many-statements
-    def execute_internal(
+    def execute_internal(  # noqa: C901
         self,
         template: Template | None,
         value: Any,
@@ -459,7 +465,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                 for attempt in range(REQUEST_MAX_RETRIES):
                     if self._is_closing:
                         _LOGGER.debug(
-                            "%s [ConnectionRequest] Connection is closing, aborting request.",
+                            "%s [ConnectionRequest] Connection is closing, aborting request",
                             self.log_prefix,
                         )
                         raise ConnectionError("Connection is closing")
@@ -514,7 +520,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                             ):
                                 _LOGGER.debug(
                                     "%s [Optimization] Capping timeout to 10s for first "
-                                    "attempt to allow retry within window.",
+                                    "attempt to allow retry within window",
                                     self.log_prefix,
                                 )
                                 request_params["timeout"] = (
@@ -553,16 +559,16 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                             # due to a protocol violation (like missing Content-Length).
                             if not self._keep_alive_broken:
                                 _LOGGER.debug(
-                                    "%s [Optimization] Server speaks HTTP/1.1. "
-                                    "Re-enabling Keep-Alive.",
+                                    "%s [Optimization] Server speaks HTTP/1.1; "
+                                    "re-enabling Keep-Alive",
                                     self.log_prefix,
                                 )
                                 self._force_close_connection = False
                         elif getattr(resp.raw, "version", 0) == 10:
                             if not self._force_close_connection:
                                 _LOGGER.debug(
-                                    "%s [Compatibility] Server speaks HTTP/1.0. "
-                                    "Enforcing 'Connection: close'.",
+                                    "%s [Compatibility] Server speaks HTTP/1.0; "
+                                    "enforcing 'Connection: close'",
                                     self.log_prefix,
                                 )
                             self._force_close_connection = True
@@ -600,7 +606,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                         text_content = resp.text.strip() if resp.text else ""
                         if not text_content:
                             _LOGGER.debug(
-                                "%s Response was empty, returning None to trigger a poll.",
+                                "%s Response was empty, returning None to trigger a poll",
                                 self.log_prefix,
                             )
                             return (None, True, resp.status_code)
@@ -628,13 +634,11 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                                         "%s [Protocol Violation] Server returned JSON but "
                                         "omitted 'Content-Length' header. "
                                         "This causes socket hangs on Keep-Alive. "
-                                        "Forcing 'Connection: close' for all future requests.",
+                                        "Forcing 'Connection: close' for all future requests",
                                         self.log_prefix,
                                     )
                                     self._force_close_connection = True
                                     self._keep_alive_broken = True
-
-                            return (json_data, True, resp.status_code)
                         except (
                             requests.exceptions.JSONDecodeError,
                             *JSON_DECODE_EXCEPTIONS,
@@ -650,6 +654,8 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                                 resp.text.strip(),
                             )
                             return (None, True, resp.status_code)
+                        else:
+                            return (json_data, True, resp.status_code)
 
                     except (
                         *JSON_DECODE_EXCEPTIONS,
@@ -678,7 +684,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                             if self._is_closing:
                                 raise ConnectionError("Connection is closing") from e
                             _LOGGER.debug(
-                                "%s Server error (%s). Delegating retry to async loop.",
+                                "%s Server error (%s); delegating retry to async loop",
                                 self.log_prefix,
                                 status,
                             )
@@ -702,7 +708,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                                 "%s [Legacy] ReadTimeout detected (%s). "
                                 "The device likely violates HTTP protocol "
                                 "(missing Content-Length). "
-                                "Switching to 'Connection: close' mode for future attempts.",
+                                "Switching to 'Connection: close' mode for future attempts",
                                 self.log_prefix,
                                 str(e),
                             )
@@ -717,13 +723,13 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                             if self._is_closing:
                                 raise ConnectionError("Connection is closing") from e
                             _LOGGER.debug(
-                                "%s ReadTimeout error. Delegating retry to async loop.",
+                                "%s ReadTimeout error; delegating retry to async loop",
                                 self.log_prefix,
                             )
                             raise RetryNextAttempt("ReadTimeout error") from e
 
                         _LOGGER.warning(
-                            "%s Request timed out (ReadTimeout) after %s attempts.",
+                            "%s Request timed out (ReadTimeout) after %s attempts",
                             self.log_prefix,
                             REQUEST_MAX_RETRIES,
                         )
@@ -734,13 +740,13 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                             if self._is_closing:
                                 raise ConnectionError("Connection is closing") from e
                             _LOGGER.debug(
-                                "%s Request timed out. Delegating retry to async loop.",
+                                "%s Request timed out; delegating retry to async loop",
                                 self.log_prefix,
                             )
                             raise RetryNextAttempt("Timeout error") from e
 
                         _LOGGER.warning(
-                            "%s Request timed out after %s attempts.",
+                            "%s Request timed out after %s attempts",
                             self.log_prefix,
                             REQUEST_MAX_RETRIES,
                         )
@@ -751,7 +757,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                         if not self._force_close_connection:
                             _LOGGER.debug(
                                 "%s [Legacy] ConnectionError detected (%s). "
-                                "Switching to 'Connection: close' mode for future attempts.",
+                                "Switching to 'Connection: close' mode for future attempts",
                                 self.log_prefix,
                                 str(e),
                             )
@@ -766,7 +772,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                             if self._is_closing:
                                 raise ConnectionError("Connection is closing") from e
                             _LOGGER.debug(
-                                "%s Connection error. Delegating retry to async loop.",
+                                "%s Connection error; delegating retry to async loop",
                                 self.log_prefix,
                             )
                             raise RetryNextAttempt("Connection error") from e
@@ -774,7 +780,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                         if self._has_connection_refused(e):
                             _LOGGER.debug(
                                 "%s Connection refused after %s attempts. "
-                                "Device is likely offline or IP is incorrect.",
+                                "Device is likely offline or IP is incorrect",
                                 self.log_prefix,
                                 REQUEST_MAX_RETRIES,
                             )
@@ -791,11 +797,9 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                         raise CannotConnect("Failed to establish a connection") from e
 
                     except requests.exceptions.RequestException as e:
-                        _LOGGER.error(
-                            "%s Unhandled request exception: %s. Not retrying",
+                        _LOGGER.exception(
+                            "%s Unhandled request exception; not retrying",
                             self.log_prefix,
-                            e,
-                            exc_info=True,
                         )
                         raise CannotConnect(
                             f"An unexpected network error occurred: {e}"
@@ -822,7 +826,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         is_poll_request = value is None
 
         if is_poll_request:
-            _LOGGER.debug("%s Received poll request.", self.log_prefix)
+            _LOGGER.debug("%s Received poll request", self.log_prefix)
         else:
             _LOGGER.debug(
                 "%s Received command request with value: %s", self.log_prefix, value
@@ -831,7 +835,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         # Periodic Reset Logic (Legacy)
         if is_poll_request and not self._keep_alive:
             _LOGGER.debug(
-                "%s [Legacy|Periodic Reset] Closing persistent session before poll.",
+                "%s [Legacy|Periodic Reset] Closing persistent session before poll",
                 self.log_prefix,
             )
             self._close_sync()
@@ -854,11 +858,11 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
             self._update_session_from_reset(new_session)
 
             _LOGGER.debug(
-                "%s [Legacy|Periodic Reset] New session created.", self.log_prefix
+                "%s [Legacy|Periodic Reset] New session created", self.log_prefix
             )
 
         if self.embedded_command:
-            _LOGGER.debug("%s Executing embedded command...", self.log_prefix)
+            _LOGGER.debug("%s Executing embedded command", self.log_prefix)
 
             if hasattr(self.embedded_command, "set_controller_ref"):
                 self.embedded_command.set_controller_ref(self._controller)
@@ -893,7 +897,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         # post-command refresh logic (Smart Polling or Delay).
         if j is None:
             _LOGGER.debug(
-                "%s Command returned no data (or was a simple 'OK'). Returning empty dict.",
+                "%s Command returned no data (or was a simple 'OK'); returning empty dict",
                 self.log_prefix,
             )
             return {}
@@ -911,9 +915,10 @@ class ConnectionRequest(ConnectionRequestBase):  # pylint: disable=import-outsid
         return type_str == CONNECTION_TYPE_REQUEST
 
     def create_updated(self, yaml_node: dict[str, Any] | None) -> ConnectionRequest:
+        """Create a new child connection instance with updated YAML configuration."""
         c = ConnectionRequest(None, _LOGGER, session=self._session)
         c.load_from_yaml(yaml_node, self)
-        c._controller = self._controller
+        c.set_controller_ref(self._controller)
 
         # Register this new instance as a child so it receives session updates
         self._children.add(c)
@@ -933,6 +938,7 @@ class ConnectionRequestPrint(ConnectionRequestBase):  # pylint: disable=import-o
     def create_updated(
         self, yaml_node: dict[str, Any] | None
     ) -> ConnectionRequestPrint:
+        """Create a new dry-run connection instance with updated YAML configuration."""
         c = ConnectionRequestPrint(None, _LOGGER, session=self._session)
         c.load_from_yaml(yaml_node, self)
         return c
@@ -944,6 +950,7 @@ class ConnectionRequestPrint(ConnectionRequestBase):  # pylint: disable=import-o
         device_state: dict[str, Any] | None,
         device_id: str | None = None,
     ) -> dict[str, Any]:
+        """Execute mock dry-run command and return simulated device state."""
         _LOGGER.debug(
             "%s ConnectionRequestPrint (dry-run), execute with params: %s, device_id: %s",
             self.log_prefix,

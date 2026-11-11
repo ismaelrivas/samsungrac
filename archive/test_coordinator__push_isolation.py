@@ -2,8 +2,6 @@
 """Simplified tests for atomic push update isolation."""
 
 # pylint: disable=import-outside-toplevel
-from __future__ import annotations
-
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -30,9 +28,7 @@ async def test_valid_push_update_commits():
         "custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__",
         fake_init,
     ):
-        from custom_components.climate_ip.coordinator import (
-            SamsungClimateCoordinator,
-        )
+        from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 
         coordinator = SamsungClimateCoordinator(mock_hass, mock_controller, mock_entry)
         coordinator.last_update_success = True
@@ -66,9 +62,7 @@ async def test_junk_push_update_ignored():
         "custom_components.climate_ip.coordinator.DataUpdateCoordinator.__init__",
         fake_init,
     ):
-        from custom_components.climate_ip.coordinator import (
-            SamsungClimateCoordinator,
-        )
+        from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 
         coordinator = SamsungClimateCoordinator(mock_hass, mock_controller, mock_entry)
         coordinator.last_update_success = True

@@ -1,4 +1,4 @@
-# ruff: noqa: F811, F401, F841
+# ruff: noqa: F811, F401
 # pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,missing-function-docstring,too-few-public-methods
 """Tests for GenericYamlTokenAcquirer in listener mode (8888 pairing)."""
 
@@ -8,10 +8,12 @@ import re
 import ssl
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
-import pytest
-
 from custom_components.climate_ip.exceptions import CannotConnect, TokenAcquisitionError
-from custom_components.climate_ip.token_acquirer_yaml import GenericYamlTokenAcquirer
+from custom_components.climate_ip.token_acquirer_yaml import (
+    GenericYamlTokenAcquirer,
+    _extract_token,
+)
+import pytest
 
 from .test_token_acquirer_yaml__common import listener_config, mock_hass
 
@@ -507,6 +509,8 @@ async def test_initiate_pairing_raw_socket_write_exception(acquirer):
         )
         mock_start.assert_called_once()
         mock_close.assert_called_once()
+        assert mock_writer.closed is True
+        assert mock_writer.wait_closed_called is True
 
 
 async def test_initiate_pairing_raw_socket_timeout_custom_port(
@@ -679,7 +683,12 @@ async def test_handle_client_chunk_accumulation_and_regex(acquirer):
     mock_reader = MockStreamReader([chunk])
     mock_writer = MockStreamWriter()
 
-    await acquirer._handle_client(mock_reader, mock_writer)
+    with patch(
+        "custom_components.climate_ip.token_acquirer_yaml._extract_token",
+        wraps=_extract_token,
+    ) as mock_extract:
+        await acquirer._handle_client(mock_reader, mock_writer)
+        assert mock_extract.call_count == 1
 
     assert mock_reader.last_read_size == 4096
     assert acquirer._received_token == "chunked_token_123"

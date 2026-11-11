@@ -1,13 +1,5 @@
-from __future__ import annotations
-
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
-
-from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
-from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType
-import pytest
-import voluptuous as vol
 
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 from custom_components.climate_ip.const import (
@@ -23,6 +15,12 @@ from custom_components.climate_ip.const import (
     DEVICE_TYPE_TO_CONFIG_FILE,
     GLOBAL_HTTP_TIMEOUT,
 )
+import probatio
+import pytest
+
+from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
 
 
 @pytest.mark.asyncio
@@ -118,7 +116,7 @@ async def test_rest_api_unique_id_logic_mutants():
             ):
                 try:
                     await flow.async_step_rest_api({CONF_IP_ADDRESS: "1.1.1.1"})
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     if str(e) == "MataM91":
                         pytest.fail(
                             "Mutant 91 survived: Called _abort_if_unique_id_configured with active reauth"
@@ -126,7 +124,7 @@ async def test_rest_api_unique_id_logic_mutants():
 
 
 # Assuming you have this magnifying glass in your helper or schema test
-def get_schema_marker(schema: vol.Schema, key_name: str):
+def get_schema_marker(schema: probatio.Schema, key_name: str):
     for key, value_type in schema.schema.items():
         if key.schema == key_name:
             return key, value_type

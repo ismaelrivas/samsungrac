@@ -1,19 +1,14 @@
 # pylint: disable=import-outside-toplevel,line-too-long,protected-access,too-many-branches,too-many-instance-attributes,too-many-lines,too-many-locals,too-many-nested-blocks,too-many-statements
 """State management and polling for YAML-configured climate controllers."""
 
-from __future__ import annotations
-
 import asyncio
 import copy
 import logging
 import time
 from typing import Any, ClassVar, Protocol, cast, runtime_checkable
 
-from homeassistant.components.climate.const import ClimateEntityFeature
-from homeassistant.const import (
-    ATTR_NAME,
-    STATE_UNKNOWN,
-)
+from homeassistant.components.climate import ClimateEntityFeature
+from homeassistant.const import ATTR_NAME, STATE_UNKNOWN
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.issue_registry import (
@@ -53,21 +48,27 @@ class YamlPropertyProtocol(Protocol):
     id: str
     value: Any
 
-    def convert_hass_to_dev(self, value: Any) -> Any: ...
+    def convert_hass_to_dev(self, value: Any) -> Any:
+        """Convert HA value to device representation."""
 
-    def set_device_state_for_values(self, state: dict[str, Any]) -> None: ...
+    def set_device_state_for_values(self, state: dict[str, Any]) -> None:
+        """Set device state for property values."""
 
-    def calculate_value_from_state(self, state: dict[str, Any]) -> Any: ...
+    def calculate_value_from_state(self, state: dict[str, Any]) -> Any:
+        """Calculate property value from device state."""
 
-    def async_update_state(self, state: dict[str, Any], debug: bool) -> Any: ...
+    def async_update_state(self, state: dict[str, Any], debug: bool) -> Any:
+        """Update property state asynchronously."""
 
     def should_evict_all_locks(
         self, state: dict[str, Any], changed_keys: set[str]
-    ) -> bool: ...
+    ) -> bool:
+        """Check if optimistic locks should be evicted."""
 
     def apply_optimistic_cascades(
         self, state: dict[str, Any], value: Any, dev_val: Any
-    ) -> None: ...
+    ) -> None:
+        """Apply cascading updates to optimistic state."""
 
 
 class YamlStatePoller:
@@ -100,7 +101,8 @@ class YamlStatePoller:
         if hasattr(prop, "value"):
             prop.value = value
         elif hasattr(prop, "_value"):
-            prop._value = value
+            val_attr = "_value"
+            setattr(prop, val_attr, value)
 
     @staticmethod
     def _get_prop_value(prop: YamlPropertyProtocol | Any) -> Any:
@@ -135,6 +137,30 @@ class YamlStatePoller:
             self._pending_updates.pop(key, None)
 
     @property
+    def pending_updates(self) -> dict[str, tuple[Any, float]]:
+        """Return the dictionary of pending optimistic updates."""
+        return self._pending_updates
+
+    def is_property_superseded(self, prop: str, val: Any) -> bool:
+        """Return True if an outgoing command has been superseded by a newer target."""
+        if prop in self._pending_updates:
+            current_target = self._pending_updates[prop][0]
+            if current_target != val:
+                return True
+        return False
+
+    def inject_optimistic_state(
+        self, op: Any, new_value: Any, state_getter_val: dict[str, Any] | None
+    ) -> None:
+        """Inject optimistic value into internal pure network state and state getter."""
+        if self._pure_network_state is None and isinstance(state_getter_val, dict):
+            self._pure_network_state = copy.deepcopy(state_getter_val)
+        if isinstance(self._pure_network_state, dict):
+            self._inject_value_into_state(op, self._pure_network_state, new_value)
+        if isinstance(state_getter_val, dict):
+            self._inject_value_into_state(op, state_getter_val, new_value)
+
+    @property
     def last_icmp_diagnostic(self) -> dict[str, Any] | None:
         """Return the last ICMP network diagnostic result."""
         return self._last_icmp_diagnostic
@@ -163,7 +189,7 @@ class YamlStatePoller:
             entries = self.controller.hass.config_entries.async_entries("smartthings")
             if not entries:
                 _LOGGER.debug(
-                    "%s [Auth] No Official SmartThings config entries found.",
+                    "%s [Auth] No Official SmartThings config entries found",
                     self.controller.log_prefix,
                 )
                 return None
@@ -188,14 +214,15 @@ class YamlStatePoller:
                 self.controller.log_prefix,
                 masked,
             )
-            return token
-        except Exception as e:  # pylint: disable=broad-exception-caught
+        except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
             _LOGGER.error(
                 "%s [Auth] Error refreshing SmartThings token via OAuth2: %s",
                 self.controller.log_prefix,
                 e,
             )
             return None
+        else:
+            return token
 
     def _all_props(self) -> list[Any]:
         """Return all loaded properties (state getter + operations + sensors)."""
@@ -223,9 +250,7 @@ class YamlStatePoller:
         try:
             safe_device_id = self._device_identifier.replace(".", "_").replace(" ", "_")
             config_name = self.controller.config.get("name")
-            device_name = (
-                config_name if config_name else f"Samsung AC {self._device_identifier}"
-            )
+            device_name = config_name or f"Samsung AC {self._device_identifier}"
             async_create_issue(
                 self.controller.hass,
                 DOMAIN,
@@ -251,7 +276,7 @@ class YamlStatePoller:
                 self.controller.name or "Climate IP",
                 self.controller.ip_address or self.controller.host or "Unknown",
             )
-        except Exception as e:  # pylint: disable=broad-exception-caught
+        except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
             _LOGGER.debug(
                 "%s Failed to create repair issue: %s",
                 self.controller.log_prefix,
@@ -278,7 +303,7 @@ class YamlStatePoller:
                 self.controller.log_prefix,
                 issue_id,
             )
-        except Exception as e:  # pylint: disable=broad-exception-caught
+        except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
             _LOGGER.debug(
                 "%s Failed to clear repair issue: %s",
                 self.controller.log_prefix,
@@ -348,14 +373,14 @@ class YamlStatePoller:
                 "status": "alive" if network_reachable else "unreachable_timeout",
                 "timestamp": dt_util.utcnow().isoformat(),
             }
-        except Exception as diag_err:
+        except Exception as diag_err:  # noqa: BLE001
             _LOGGER.debug(
                 "%s ICMP check failed: %s", self.controller.log_prefix, diag_err
             )
             return
 
         if not network_reachable:
-            raise CannotConnect("Host unreachable (ICMP ping failed).")
+            raise CannotConnect("Host unreachable (ICMP ping failed)")
 
     async def async_update_state(self) -> dict[str, Any] | None:
         """Fetch the actual state from the device over the network."""
@@ -426,7 +451,7 @@ class YamlStatePoller:
                 self._try_create_repair_issue()
 
             self._clear_state_cache()
-            reason = str(e).split(":")[-1].strip()  # pragma: no mutate
+            reason = str(e).rsplit(":", maxsplit=1)[-1].strip()  # pragma: no mutate
             raise UpdateFailed(f"Device unreachable: {reason}") from e
 
         if full_device_state is None:
@@ -442,7 +467,7 @@ class YamlStatePoller:
 
         if self._consecutive_connection_errors > 0:
             _LOGGER.info(
-                "%s Connection recovered after %d failure(s).",
+                "%s Connection recovered after %d failure(s)",
                 self.controller.log_prefix,
                 self._consecutive_connection_errors,
             )
@@ -525,7 +550,7 @@ class YamlStatePoller:
             val2 = val2.value  # pragma: no mutate
         try:
             return float(val1) == float(val2)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return str(val1).strip().lower() == str(val2).strip().lower()
 
     def _get_state_node_from_prop(self, prop: Any) -> str | None:
@@ -541,8 +566,8 @@ class YamlStatePoller:
             prop, "_state_node", None
         )  # pragma: no mutate
         if state_node and isinstance(state_node, str):  # pragma: no mutate
-            self._prop_template_key_cache[prop_id] = state_node
-            return state_node
+            self._prop_template_key_cache[prop_id] = str(state_node)
+            return str(state_node)
 
         status_tmpl = getattr(prop, "status_template", None)  # pragma: no mutate
         if not status_tmpl:  # pragma: no mutate
@@ -610,7 +635,7 @@ class YamlStatePoller:
             return
 
     def _inject_value_into_state(
-        self, prop: YamlPropertyProtocol | Any, device_state: dict[str, Any], value: Any
+        self, prop: YamlPropertyProtocol | Any, device_state: Any, value: Any
     ) -> None:
         """Safely inject an optimistic value into the raw device state using state_node & native converters."""
         if not isinstance(device_state, dict):
@@ -620,7 +645,7 @@ class YamlStatePoller:
         if hasattr(prop, "convert_hass_to_dev"):
             try:
                 dev_val = prop.convert_hass_to_dev(value)
-            except Exception as e:  # pylint: disable=broad-exception-caught
+            except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
                 _LOGGER.debug(
                     "%s convert_hass_to_dev failed for %s: %s",
                     self.controller.log_prefix,
@@ -656,7 +681,7 @@ class YamlStatePoller:
                 ):
                     if payload["options"] and isinstance(payload["options"][0], str):
                         dev_val = payload["options"][0]
-            except (ValueError, TypeError, KeyError):
+            except ValueError, TypeError, KeyError:
                 pass
 
         state_node = self._get_state_node_from_prop(prop)
@@ -677,7 +702,7 @@ class YamlStatePoller:
         if hasattr(prop, "apply_optimistic_cascades"):
             try:
                 prop.apply_optimistic_cascades(device_state, value, dev_val)
-            except Exception as e:  # pylint: disable=broad-exception-caught
+            except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
                 _LOGGER.debug(
                     "%s [Prop %s] apply_optimistic_cascades failed: %s",
                     self.controller.log_prefix,
@@ -687,7 +712,7 @@ class YamlStatePoller:
         elif hasattr(prop, "set_device_state_for_values"):
             try:
                 prop.set_device_state_for_values(device_state)
-            except Exception as e:  # pylint: disable=broad-exception-caught
+            except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
                 _LOGGER.debug(
                     "%s set_device_state_for_values failed for %s: %s",
                     self.controller.log_prefix,
@@ -696,7 +721,7 @@ class YamlStatePoller:
                     exc_info=True,
                 )
 
-    def _find_device_node(self, raw_state: dict[str, Any]) -> dict[str, Any] | None:
+    def _find_device_node(self, raw_state: Any) -> dict[str, Any] | None:
         """Locate the target device dictionary in the raw network payload."""
         if not isinstance(raw_state, dict):
             return None
@@ -762,7 +787,7 @@ class YamlStatePoller:
             if isinstance(found_pure_device, dict):
                 pure_device_to_process = found_pure_device
 
-        except Exception as e:  # pylint: disable=broad-exception-caught
+        except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
             _LOGGER.debug(
                 "%s [Forensic] Failed to extract device node: %s",
                 self.controller.log_prefix,
@@ -795,7 +820,7 @@ class YamlStatePoller:
                         ):
                             self._pending_updates.clear()
                             return
-                    except Exception as e:  # pylint: disable=broad-exception-caught
+                    except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
                         _LOGGER.debug(
                             "%s Error evaluating global eviction for %s: %s",
                             self.controller.log_prefix,
@@ -835,7 +860,7 @@ class YamlStatePoller:
                     try:
                         # Evaluate lock AGAINST PURE NETWORK STATE
                         pure_val = op.calculate_value_from_state(pure_device_to_process)
-                    except Exception as e:  # pylint: disable=broad-exception-caught
+                    except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
                         _LOGGER.debug(
                             "%s calculate_value_from_state failed for %s: %s",
                             self.controller.log_prefix,
@@ -890,7 +915,7 @@ class YamlStatePoller:
                     del self._pending_updates[prop_id]
                 else:
                     _LOGGER.debug(
-                        "%s [Forensic] Lock enforced for %s.",
+                        "%s [Forensic] Lock enforced for %s",
                         self.controller.log_prefix,
                         prop_id,
                     )
@@ -1003,7 +1028,7 @@ class YamlStatePoller:
                     await prop.async_update_state(
                         device_to_process, getattr(self.controller, "debug", False)
                     )
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     _LOGGER.debug(
                         "%s async_update_state on property failed: %s",
                         self.controller.log_prefix,
@@ -1177,7 +1202,7 @@ class YamlStatePoller:
             async def _try(coro: Any) -> None:  # pylint: disable=invalid-name
                 try:
                     await coro
-                except Exception as e:  # pylint: disable=broad-exception-caught
+                except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
                     _LOGGER.debug(
                         "%s Failed cleanup task: %s",
                         self.controller.log_prefix,

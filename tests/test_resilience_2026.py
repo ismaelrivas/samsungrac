@@ -1,11 +1,5 @@
-from __future__ import annotations
-
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.components.climate.const import HVACMode
-from homeassistant.const import CONF_MAC
-from homeassistant.exceptions import ConfigEntryAuthFailed
-from homeassistant.helpers.update_coordinator import UpdateFailed
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -13,6 +7,10 @@ from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 from custom_components.climate_ip.exceptions import InvalidHeaderError
 from custom_components.climate_ip.state import ClimateIPDeviceState
+from homeassistant.components.climate import HVACMode
+from homeassistant.const import CONF_MAC
+from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 
 @pytest.fixture
@@ -31,8 +29,7 @@ def mock_controller():
 
 @pytest.fixture
 def coordinator(hass, mock_controller, mock_config_entry):
-    coord = SamsungClimateCoordinator(hass, mock_controller, mock_config_entry)
-    return coord
+    return SamsungClimateCoordinator(hass, mock_controller, mock_config_entry)
 
 
 #
@@ -103,20 +100,18 @@ async def test_switch_connection_engine_on_error(hass, coordinator):
         ),
         patch.object(hass.config_entries, "async_update_entry") as mock_update_entry,
     ):
-        try:
+        with pytest.raises(UpdateFailed) as exc_info:
             await coordinator._async_update_data()
-        except UpdateFailed as err:
-            for coro in bg_tasks:
-                await coro
-            assert "Switching" in str(err)
 
-            expected_options = dict(coordinator.config_entry.options)
-            expected_options[CONF_CONN_METHOD] = CONN_METHOD_RAW
-            mock_update_entry.assert_called_once_with(
-                coordinator.config_entry, options=expected_options
-            )
-            return
-        pytest.fail("UpdateFailed exception was not raised")
+        for coro in bg_tasks:
+            await coro
+        assert "Switching" in str(exc_info.value)
+
+        expected_options = dict(coordinator.config_entry.options)
+        expected_options[CONF_CONN_METHOD] = CONN_METHOD_RAW
+        mock_update_entry.assert_called_once_with(
+            coordinator.config_entry, options=expected_options
+        )
 
 
 #
@@ -136,10 +131,8 @@ async def test_predict_and_correct_reverts_state_on_failure(hass, coordinator):
         side_effect=Exception("API Error")
     )
 
-    try:
+    with pytest.raises(Exception, match="API Error"):
         await mock_climate_entity.async_set_hvac_mode(HVACMode.COOL)
-    except Exception:
-        pass
 
     assert mock_climate_entity.hvac_mode == HVACMode.OFF
 

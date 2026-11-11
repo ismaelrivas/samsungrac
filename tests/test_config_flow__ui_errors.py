@@ -34,13 +34,18 @@ from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import AbortFlow, FlowResultType
 
-# Import schema validator helper
-from .test_config_flow__schemas import get_schema_marker
+
+def get_schema_marker(schema: vol.Schema, key_name: str):
+    """Find a key in a vol.Schema and return the marker (Required/Optional) and its type."""
+    for key, value_type in schema.schema.items():
+        if key.schema == key_name:
+            return key, value_type
+    return None, None
 
 
 @pytest.mark.asyncio
 async def test_handle_error_mac_required_mutants():
-    """Kills mutants 25-31 y 38: Verifica el booleano req_mac_err y la regeneración del esquema."""
+    """Kill mutants 25-31 and 38: Verify req_mac_err boolean and schema regeneration."""
     flow = ClimateIpConfigFlow()
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
@@ -61,7 +66,7 @@ async def test_handle_error_mac_required_mutants():
 
 @pytest.mark.asyncio
 async def test_process_samsung_device_step_error_flags():
-    """Kills mutants 40, 48, 97, 98, 105: Banderas req_mac_err = False en errores intermedios."""
+    """Kill mutants 40, 48, 97, 98, 105: req_mac_err = False flags on intermediate errors."""
     flow = ClimateIpConfigFlow()
     flow.flow_data = {CONF_IP_ADDRESS: "1.1.1.1"}
 
@@ -103,7 +108,7 @@ async def test_select_devices_parsing_and_fallbacks():
         ],
     }
 
-    # 1. Name parsing mutants (M10-M12) y default schemas (M23, M35-M39)
+    # 1. Name parsing mutants (M10-M12) and default schemas (M23, M35-M39)
     result = await flow.async_step_select_devices()
     schema = result["data_schema"]
     sel_key, _ = get_schema_marker(schema, CONF_SELECTED_DEVICES)
@@ -142,7 +147,7 @@ async def test_select_devices_parsing_and_fallbacks():
 
 @pytest.mark.asyncio
 async def test_options_init_error_mutants(hass):
-    """Kills mutants 9, 10, 12, 13, 15, 16 en el flujo de opciones."""
+    """Kill mutants 9, 10, 12, 13, 15, 16 in the options flow."""
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     entry = MockConfigEntry(domain=DOMAIN, data={})
@@ -160,7 +165,7 @@ async def test_options_init_error_mutants(hass):
 @pytest.mark.asyncio
 async def test_initiate_pairing_and_discover_uuid_mutants():
     """Kills mutants 15, 39, 40, 62, 95, 97, 100, 101."""
-    # 1. Fallback de pairing (M95-M101 y M62)
+    # 1. Pairing fallback (M95-M101 and M62)
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
     flow.acquirer = MagicMock(async_close=AsyncMock())
@@ -203,7 +208,7 @@ async def test_initiate_pairing_and_discover_uuid_mutants():
 
         assert flow.flow_data[CONF_CERT] == "ac14k_m.pem"
 
-    # 3. Discover UUID (M39, M40, M62 de exception)
+    # 3. Discover UUID (M39, M40, M62 on exception)
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
     flow.hass.async_add_executor_job = mock_async_add_executor_job
@@ -275,7 +280,7 @@ async def test_discover_uuid_missing_discovered_devices_attr(
 
 @pytest.mark.asyncio
 async def test_handle_error_req_mac_is_false_not_none():
-    """Kills mutant 25: req_mac = False (no None) para errores distintos de mac_resolve_failed."""
+    """Kill mutant 25: req_mac = False (not None) for errors other than mac_resolve_failed."""
     flow = ClimateIpConfigFlow()
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878,
@@ -333,7 +338,7 @@ def test_options_schema_temp_step_from_data():
 
 @pytest.mark.asyncio
 async def test_mim_h03_device_id_str_fallback():
-    """Kills mutant 11: device_id = str(device.get('id') or '') — no str(None) ni 'XXXX'."""
+    """Kill mutant 11: device_id = str(device.get('id') or '') — neither str(None) nor 'XXXX'."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
 
@@ -488,7 +493,7 @@ async def test_initiate_pairing_safe_abortflow_propagates():
 
 @pytest.mark.asyncio
 async def test_initiate_pairing_safe_null_acquirer_key():
-    """acquirer is None → error == 'unknown_error'."""
+    """Acquirer is None → error == 'unknown_error'."""
     flow = ClimateIpConfigFlow()
     flow.flow_data = {}
     flow.acquirer = None
@@ -578,7 +583,7 @@ async def test_wait_token_safe_abortflow_propagates():
 
 @pytest.mark.asyncio
 async def test_wait_token_safe_null_acquirer_key():
-    """acquirer is None → error == 'unknown_error'."""
+    """Acquirer is None → error == 'unknown_error'."""
     flow = ClimateIpConfigFlow()
     flow.flow_data = {}
     flow.acquirer = None

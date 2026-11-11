@@ -1,8 +1,6 @@
 # pylint: disable=f-string-without-interpolation,line-too-long,too-many-branches,too-many-instance-attributes,too-many-locals,too-many-statements,unused-variable
 """Helper to acquire a token from modern Samsung AC units (port 8888) using asyncio."""
 
-from __future__ import annotations
-
 import asyncio
 import logging
 from pathlib import Path
@@ -219,8 +217,7 @@ class SamsungTokenAcquirer8888:
             return False
 
     async def async_initiate_pairing(self) -> None:
-        """
-        Phase 1: Starts the local server and sends the initial token request to the AC.
+        """Phase 1: Starts the local server and sends the initial token request to the AC.
         """
         if not await self._start_listener_server():
             raise TokenAcquisitionError(
@@ -324,8 +321,7 @@ class SamsungTokenAcquirer8888:
             ) from e  # pragma: no mutate
 
     async def async_wait_for_token(self) -> str:
-        """
-        Phase 2: Waits for the token to be received by the local server.
+        """Phase 2: Waits for the token to be received by the local server.
         """
         try:
             async with asyncio.timeout(60.0):

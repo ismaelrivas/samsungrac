@@ -2,8 +2,6 @@
 """Emulator fixtures for Climate IP integration integration tests."""
 
 # pylint: disable=import-outside-toplevel
-from __future__ import annotations
-
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import logging

@@ -1,12 +1,12 @@
 """Support for IntesisBox AC devices using WMP v1.9 protocol on TCP port 3310."""
 
-from __future__ import annotations
-
 import asyncio
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable
+import contextlib
 import logging
+import re
 import time
-from typing import Any
+from typing import Any, Self, cast
 
 from homeassistant.const import CONF_HOST, CONF_IP_ADDRESS, CONF_PORT
 from homeassistant.core import HomeAssistant
@@ -52,9 +52,7 @@ class ConnectionIntesisBox(Connection):
         self._loop_breakers: list[dict[str, Any]] = []
         self._node_history: dict[str, list[tuple[float, str]]] = {}
         self._device_info_raw: str | None = None
-        self._update_callback: (
-            Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None
-        ) = None
+        self._update_callback: Callable[[dict[str, Any]], Any] | None = None
         self._cmd_lock = asyncio.Lock()
         self._pending_ack: asyncio.Future[bool] | None = None
         self._keep_alive: bool = True
@@ -70,6 +68,41 @@ class ConnectionIntesisBox(Connection):
     def match_type(type_str: str) -> bool:
         """Return True if this connection handles the given type string."""
         return type_str == CONNECTION_TYPE_INTESISBOX
+
+    @classmethod
+    async def async_probe(
+        cls,
+        host: str,
+        port: int = DEFAULT_INTESISBOX_PORT,
+        probe_timeout: float = COMMAND_TIMEOUT,
+    ) -> str | None:
+        """Probe an IntesisBox gateway over TCP and extract its normalized MAC address."""
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, port), timeout=probe_timeout
+            )
+            writer.write(b"ID\r\n")
+            await writer.drain()
+            resp = await asyncio.wait_for(reader.read(1024), timeout=probe_timeout)
+            decoded = resp.decode("ascii", errors="ignore")
+            writer.close()
+            await writer.wait_closed()
+        except Exception as err:
+            _LOGGER.warning(
+                "Could not connect to IntesisBox at %s:%s: %s", host, port, err
+            )
+            raise CannotConnect(
+                f"Could not connect to IntesisBox at {host}:{port}: {err}"
+            ) from err
+
+        if "ID:" in decoded:
+            match = re.search(
+                r"ID:[^,]+,([0-9A-Fa-f]{12}|(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2})",
+                decoded,
+            )
+            if match:
+                return match.group(1).replace(":", "").replace("-", "").lower()
+        return None
 
     @property
     def is_async_native(self) -> bool:
@@ -91,9 +124,7 @@ class ConnectionIntesisBox(Connection):
         """Generate consistent log prefix."""
         return f"[IntesisBox {self._host}:{self._port}]"
 
-    def load_from_yaml(
-        self, node: dict[str, Any] | None, connection_base: Any
-    ) -> bool:
+    def load_from_yaml(self, node: dict[str, Any] | None, connection_base: Any) -> bool:
         """Load configuration from yaml node dictionary."""
         # pylint: disable=unused-argument
         if not node:
@@ -106,37 +137,27 @@ class ConnectionIntesisBox(Connection):
         self._params.update(params)
 
         if "port" in params:
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 self._port = int(params["port"])
-            except (ValueError, TypeError):
-                pass
 
         if "host" in params and params["host"] != "__CLIMATE_IP_HOST__":
             self._host = params["host"]
 
         if "ac_num" in params:
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 self._ac_num = int(params["ac_num"])
-            except (ValueError, TypeError):
-                pass
 
         if "command_timeout" in params:
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 self._command_timeout = float(params["command_timeout"])
-            except (ValueError, TypeError):
-                pass
 
         if "connect_timeout" in params:
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 self._connect_timeout = float(params["connect_timeout"])
-            except (ValueError, TypeError):
-                pass
 
         if "handshake_timeout" in params:
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 self._handshake_timeout = float(params["handshake_timeout"])
-            except (ValueError, TypeError):
-                pass
 
         if "limits_prefix" in params:
             self._limits_prefix = str(params["limits_prefix"])
@@ -169,9 +190,7 @@ class ConnectionIntesisBox(Connection):
             return self._handshake_commands
         return ["ID", "LIMITS:*", f"STATUS,{self._ac_num}", f"GET,{self._ac_num}:*"]
 
-    def create_updated(
-        self, yaml_node: dict[str, Any] | None
-    ) -> ConnectionIntesisBox:
+    def create_updated(self, yaml_node: dict[str, Any] | None) -> Self:
         """Create an updated copy of this connection instance, or return self if unchanged."""
         if not yaml_node:
             return self
@@ -204,12 +223,12 @@ class ConnectionIntesisBox(Connection):
             if self._handshake_commands is not None:
                 new_conn._handshake_commands = list(self._handshake_commands)
             new_conn.load_from_yaml(yaml_node, None)
-            return new_conn
+            return cast(Self, new_conn)
 
         return self
 
     def set_update_callback(
-        self, callback: Callable[[dict[str, Any]], Coroutine[Any, Any, None]]
+        self, callback: Callable[[dict[str, Any]], Any] | None
     ) -> None:
         """Register the push notification update callback."""
         self._update_callback = callback
@@ -235,7 +254,7 @@ class ConnectionIntesisBox(Connection):
 
         self._closing = False
         self.logger.debug(
-            "%s Connecting to TCP socket on port %s...", self.log_prefix, self._port
+            "%s Connecting to TCP socket on port %s", self.log_prefix, self._port
         )
 
         try:
@@ -243,7 +262,7 @@ class ConnectionIntesisBox(Connection):
                 self._reader, self._writer = await asyncio.open_connection(
                     self._host, self._port
                 )
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001
             self._is_connected = False
             self.logger.warning(
                 "%s Failed to connect to IntesisBox at %s:%s (device offline or unreachable): %s",
@@ -264,7 +283,7 @@ class ConnectionIntesisBox(Connection):
         try:
             for cmd in self._get_handshake_commands():
                 await self._send_raw(f"{cmd}\r\n")
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001
             self.logger.warning(
                 "%s Initial handshake send failed: %s", self.log_prefix, err
             )
@@ -277,7 +296,7 @@ class ConnectionIntesisBox(Connection):
             self.logger.debug(
                 "%s Handshake wait timed out, continuing with available state",
                 self.log_prefix,
-            )
+            )  # pragma: no mutate
 
     async def _send_raw(self, payload: str) -> None:
         """Send raw ASCII string terminating with CRLF."""
@@ -309,7 +328,7 @@ class ConnectionIntesisBox(Connection):
             self.logger.debug(
                 "%s Reader task cancelled gracefully", self.log_prefix
             )  # pragma: no mutate
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001
             if not self._closing:
                 self.logger.error(
                     "%s Unexpected error in reader loop: %s", self.log_prefix, err
@@ -343,23 +362,25 @@ class ConnectionIntesisBox(Connection):
         # 3. Handle LIMITS response
         if line.startswith("LIMITS"):
             # Syntax: LIMITS:FANSP,[AUTO,1,2,3,4] or LIMITS,1:FANSP,[AUTO,1,2,3,4]
-            if ":" in line:
-                _, payload = line.split(":", 1)
-                if "," in payload:
-                    fn, vals = payload.split(",", 1)
-                    clean_fn = fn.strip()
-                    clean_vals = vals.strip()
-                    self._limits[clean_fn] = clean_vals
-                    limits_key = f"{self._limits_prefix}{clean_fn}"
-                    self._device_status[limits_key] = clean_vals
-                    self._ensure_callback_linked()
-                    if self._update_callback:
-                        coro = self._update_callback({limits_key: clean_vals})
-                        if asyncio.iscoroutine(coro) or hasattr(coro, "__await__"):
-                            if self._hass:
-                                self._hass.async_create_task(coro)
-                            else:
-                                asyncio.create_task(coro)
+            if ":" not in line:
+                return
+            _, payload = line.split(":", 1)
+            if "," not in payload:
+                return
+            fn, vals = payload.split(",", 1)
+            clean_fn = fn.strip()
+            clean_vals = vals.strip()
+            self._limits[clean_fn] = clean_vals
+            limits_key = f"{self._limits_prefix}{clean_fn}"
+            self._device_status[limits_key] = clean_vals
+            self._ensure_callback_linked()
+            if self._update_callback:
+                coro = self._update_callback({limits_key: clean_vals})
+                if asyncio.iscoroutine(coro) or hasattr(coro, "__await__"):
+                    if self._hass:
+                        self._hass.async_create_task(coro)
+                    else:
+                        asyncio.create_task(coro)  # noqa: RUF006
             return
 
         # 4. Handle State / Push updates (STATUS, CHN, or <ac_num>:<uid>,<val>)
@@ -402,8 +423,8 @@ class ConnectionIntesisBox(Connection):
                         if self._hass and hasattr(self._hass, "async_create_task"):
                             self._hass.async_create_task(coro)
                         else:
-                            asyncio.create_task(coro)
-                except Exception as ex:
+                            asyncio.create_task(coro)  # noqa: RUF006
+                except Exception as ex:  # noqa: BLE001
                     self.logger.error(
                         "%s Failed dispatching push update: %s",
                         self.log_prefix,
@@ -434,8 +455,9 @@ class ConnectionIntesisBox(Connection):
         ]
         active_hist = self._node_history[uid]
 
-        if len(active_hist) >= threshold + 1:  # pragma: no mutate  # Guard: len >= threshold + 1 is required for alternations >= threshold
-            distinct_values = set(v for _, v in active_hist)
+        # Guard: len >= threshold + 1 is required for alternations >= threshold
+        if len(active_hist) >= threshold + 1:  # pragma: no mutate
+            distinct_values = {v for _, v in active_hist}
             if len(distinct_values) == 2:
                 bad_val = None
                 other_val = None
@@ -450,7 +472,8 @@ class ConnectionIntesisBox(Connection):
                     bad_val = active_hist[-1][1]
                     other_val = next(v for v in distinct_values if v != bad_val)
 
-                if bad_val and other_val:  # pragma: no mutate  # Equivalent: both values guaranteed non-empty from distinct_values
+                # Equivalent: both values guaranteed non-empty from distinct_values
+                if bad_val and other_val:  # pragma: no mutate
                     alternations = 0
                     for i in range(1, len(active_hist)):
                         if active_hist[i][1] != active_hist[i - 1][1]:
@@ -459,7 +482,7 @@ class ConnectionIntesisBox(Connection):
                     if alternations >= threshold:
                         self.logger.warning(
                             "%s Loop breaker triggered for node '%s': oscillation "
-                            "detected between '%s' and '%s'.",
+                            "detected between '%s' and '%s'",
                             self.log_prefix,
                             uid,
                             bad_val,
@@ -473,7 +496,7 @@ class ConnectionIntesisBox(Connection):
                                 )
                             )
                         else:
-                            asyncio.create_task(
+                            asyncio.create_task(  # noqa: RUF006
                                 self._async_execute_loop_break(
                                     uid, bad_val, fallback_val, rule
                                 )
@@ -512,7 +535,7 @@ class ConnectionIntesisBox(Connection):
                         uid,
                         current_raw,
                         new_limits_str,
-                    )
+                    )  # pragma: no mutate
                     rendered_prune = prune_template.replace(
                         "{{new_limits}}", new_limits_str
                     )
@@ -533,9 +556,11 @@ class ConnectionIntesisBox(Connection):
                     if self._hass and hasattr(self._hass, "async_create_task"):
                         self._hass.async_create_task(coro)
                     else:
-                        asyncio.create_task(coro)
-        except Exception as err:
-            self.logger.error("%s Error executing loop breaker: %s", self.log_prefix, err)
+                        asyncio.create_task(coro)  # noqa: RUF006
+        except Exception as err:  # noqa: BLE001
+            self.logger.error(
+                "%s Error executing loop breaker: %s", self.log_prefix, err
+            )
 
     async def async_execute(
         self,
@@ -544,7 +569,7 @@ class ConnectionIntesisBox(Connection):
         data: str | None,
         headers: dict[str, str] | None,
         device_state: dict[str, Any] | None = None,
-        _is_probe: bool = False,
+        _is_probe: bool = False,  # pragma: no mutate
         _is_poll: bool = False,
     ) -> tuple[str | None, dict[str, str] | None]:
         """Execute an asynchronous command or query against IntesisBox."""
@@ -561,7 +586,7 @@ class ConnectionIntesisBox(Connection):
             )
             try:
                 await self._send_raw(f"{poll_cmd}\r\n")
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001
                 self.logger.debug(
                     "%s Poll status query error: %s", self.log_prefix, err
                 )
@@ -618,10 +643,8 @@ class ConnectionIntesisBox(Connection):
         self._closing = True
         if self._reader_task and not self._reader_task.done():
             self._reader_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._reader_task
-            except (asyncio.CancelledError, Exception):
-                pass
             self._reader_task = None
 
     async def close(self) -> None:
@@ -631,7 +654,7 @@ class ConnectionIntesisBox(Connection):
             try:
                 self._writer.close()
                 await self._writer.wait_closed()
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
             self._writer = None
         self._reader = None

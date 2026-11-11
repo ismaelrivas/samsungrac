@@ -1,6 +1,4 @@
-"""
-Tests for demo_states.py
-"""
+"""Tests for demo_states.py"""
 
 from custom_components.climate_ip.demo_states import (
     exception_func,

@@ -150,7 +150,7 @@ device:
       max: 30
       state_node: 'AC_FUN_TEMPSET'
       status_template: '{{ device_state.AC_FUN_TEMPSET | float if "AC_FUN_TEMPSET" in device_state else "" }}'
-      connection_template: '<Request Type="DeviceControl"><Control CommandID="AC_FUN_TEMPSET" DUID="{{duid}}"><Attr ID="AC_FUN_TEMPSET" Value="{{value | float}}" /></Control></Request>'
+      connection_template: '<Request Type="DeviceControl"><Control CommandID="AC_FUN_TEMPSET" DUID="{{duid}}"><Attr ID="AC_FUN_TEMPSET" Value="{{value | round | int}}" /></Control></Request>'
       validation_template: '{% if "AC_FUN_TEMPSET" in device_state %}valid{% endif %}'
   attributes:
     sleep_timer:

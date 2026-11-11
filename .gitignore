@@ -16,6 +16,7 @@ mutants/
 .cache/
 *.pkl
 *.json
+!archive/quarantine_manifest.json
 *.log
 
 

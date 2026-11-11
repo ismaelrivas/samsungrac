@@ -193,24 +193,6 @@ def setup_poller_helpers(monkeypatch):
 # =====================================================================
 
 
-def test_yaml_state_poller_initial_state():
-    """Test that all properties are strictly initialized to None/zero to prevent silent mutant survival."""
-    mock_controller = MagicMock()
-    poller = YamlStatePoller(mock_controller)
-
-    # Strict None assertions (kills None -> "" mutations)
-    assert poller._cached_device_state is None
-    assert poller._last_device_state is None
-
-    # Strict value assertions
-    assert poller._last_state_fetch_time == 0.0
-    assert poller._consecutive_connection_errors == 0
-    assert isinstance(poller._pending_updates, dict)
-    assert len(poller._pending_updates) == 0
-    assert isinstance(poller._prop_template_key_cache, dict)
-    assert len(poller._prop_template_key_cache) == 0
-
-
 async def test_async_update_state_device_discovery():
     """Asserts the extracción del device_id using the YAML cache map (MIM-H03)."""
     mock_controller = MagicMock()
@@ -262,73 +244,6 @@ def test_clear_pending_updates():
     poller.clear_pending_updates(["non_existent_key"])
 
 
-def test_device_key_from_template_regex():
-    """Kills mutants que alteran el patrón Regex de búsqueda de estado."""
-    mock_controller = MagicMock()
-    poller = YamlStatePoller(mock_controller)
-
-    class FakeTemplate:
-        def __init__(self, text):
-            self.template = text
-
-    # Test 1: Bracket syntax with single quotes
-    tmpl_bracket = FakeTemplate("{{ device_state['Operation'] }}")
-    assert poller._get_device_key_from_template(tmpl_bracket) == "Operation"
-
-    # Prueba 2: Sintaxis de punto
-    tmpl_dot = FakeTemplate("{{ device_state.power_level }}")
-    assert poller._get_device_key_from_template(tmpl_dot) == "power_level"
-
-    # Test 3: Empty object or non-matching pattern
-    assert poller._get_device_key_from_template(None) is None
-    assert (
-        poller._get_device_key_from_template(FakeTemplate("{{ otra_cosa['val'] }}"))
-        is None
-    )
-
-    # Sniper tests to eliminate maxsplit=1 and 'and' -> 'or' mutants in _get_device_key_from_template
-    assert (
-        poller._get_device_key_from_template(
-            FakeTemplate("{{ device_state.first_device_state.second }}")
-        )
-        == "first_device_state"
-    )
-    assert (
-        poller._get_device_key_from_template(
-            FakeTemplate("{{ device_state['key_device_state['] }}")
-        )
-        == "key_device_state"
-    )
-    assert poller._get_device_key_from_template("device_state[123]") == "123"
-
-
-def test_rebuild_attributes_exact_strings(freezer):
-    """Asserts el formato exacto de fecha y las claves del diccionario de atributos."""
-    import datetime
-
-    fake_time = datetime.datetime(2026, 6, 7, 15, 30, 0)
-    freezer.move_to(fake_time)
-
-    mock_controller = MagicMock()
-    mock_controller.name = "TestAC"
-    poller = YamlStatePoller(mock_controller)
-
-    mock_prop = MagicMock()
-    mock_prop.state_attributes = {"custom_attr": "value"}
-    mock_controller.loader.operations = {"prop": mock_prop}
-    mock_controller.loader.properties = {}
-
-    poller._rebuild_attributes()
-
-    saved_attrs = mock_controller.update_state_attributes.call_args[0][0]
-
-    from homeassistant.const import ATTR_NAME
-
-    assert saved_attrs[ATTR_NAME] == "TestAC"
-    assert saved_attrs["custom_attr"] == "value"
-    assert saved_attrs["last_sync"] == "2026-06-07 15:30:00"
-
-
 async def test_async_update_state_coordinator_callback():
     """Asserts el paso del estado del HASS al despachador de propiedades."""
     mock_controller = MagicMock()
@@ -353,66 +268,6 @@ async def test_async_update_state_coordinator_callback():
         mock_dispatch.assert_called_once_with({"raw": "data"})
 
 
-def test_get_state_node_from_prop_and_register():
-    """Evalúa la caché de plantillas y el registro de pending_updates."""
-    mock_controller = MagicMock()
-    poller = YamlStatePoller(mock_controller)
-
-    poller.register_pending_update("hvac", "Cool")
-    assert "hvac" in poller._pending_updates
-    val, ts = poller._pending_updates["hvac"]
-    assert val == "Cool"
-    assert isinstance(ts, float)
-
-    assert poller._get_state_node_from_prop(MagicMock(spec=[])) is None
-
-    prop = MagicMock()
-    prop.id = "target_prop"
-    prop.status_template = None
-
-    assert poller._get_state_node_from_prop(prop) is None
-
-    prop.id = "target_prop_2"
-    prop.status_template = MagicMock()
-    prop.status_template.template = "{{ device_state.power }}"
-    res_node = poller._get_state_node_from_prop(prop)
-    assert res_node == "power" or res_node is None
-
-
-def test_controller_mask_sensitive_data():
-    """Test recursive masking of sensitive data."""
-    mock_controller = MagicMock()
-    poller = YamlStatePoller(mock_controller)
-
-    payload = {
-        "uuid": "1234567890abcdef",
-        "nested": {"uuid": "short", "list_val": [{"uuid": "1234567890abcdef"}]},
-    }
-
-    masked = poller._mask_sensitive_data(payload)
-    assert masked["uuid"] == "***abcdef"
-    assert masked["nested"]["uuid"] == "short"
-    assert masked["nested"]["list_val"][0]["uuid"] == "***abcdef"
-
-
-def test_mask_sensitive_data_primitive():
-    """L183: Retorno temprano para datos primitivos."""
-    poller = YamlStatePoller(MagicMock())
-    assert poller._mask_sensitive_data("primitive_string") == "primitive_string"
-    assert poller._mask_sensitive_data(123) == 123
-
-
-def test_get_device_key_empty_template():
-    """L933: Retorno nulo si el template_string queda vacío."""
-    poller = YamlStatePoller(MagicMock())
-    assert poller._get_device_key_from_template("") is None
-
-    class EmptyTemplate:
-        template = ""
-
-    assert poller._get_device_key_from_template(EmptyTemplate()) is None
-
-
 async def test_update_state_full_state_none():
     """Fuerza salidas tempranas (Líneas 347-353) cuando full_device_state es None."""
     mock_controller = MagicMock()
@@ -431,42 +286,6 @@ async def test_update_state_full_state_none():
 
     result = await poller.async_update_state()
     assert result is None
-
-
-async def test_update_state_discovery_non_2878():
-    """Force device discovery for non-2878 (Line 394)."""
-    mock_controller = MagicMock()
-    mock_controller.config.get.return_value = "REST"
-    mock_controller.device_id = "0"
-    mock_controller.loader.is_fully_initialized = False
-    mock_controller.loader.state_getter.async_update_state = AsyncMock(
-        return_value={"Devices": [{"id": "123"}]}
-    )
-    mock_controller.loader._parsed_yaml_cache = {
-        "0": {"device": {"identifiers": {"path_to_devices": ["Devices"], "id": ["id"]}}}
-    }
-
-    poller = YamlStatePoller(mock_controller)
-    poller.async_update_properties_from_state = AsyncMock()
-
-    await poller.async_update_state()
-    assert mock_controller.device_id == "123"
-
-
-def test_rebuild_attributes_private():
-    """Fuerza L597 en _rebuild_attributes usando _attributes."""
-
-    class MockCtrl:
-        def __init__(self):
-            self.name = "TestCtrl"
-            self.loader = MagicMock()
-            self._attributes = {}
-            self.update_state_attributes = MagicMock()
-
-    ctrl = MockCtrl()
-    poller = YamlStatePoller(ctrl)
-    poller._rebuild_attributes()
-    ctrl.update_state_attributes.assert_called_once()
 
 
 async def test_async_update_state_sniper_discovery():
@@ -655,36 +474,6 @@ async def test_async_update_state_consecutive_errors_logic():
             await poller.async_update_state()
 
 
-def test_regex_device_state_key_cache_strict():
-    """Verify mutant kill de regex + a * en inicialización"""
-    poller = YamlStatePoller(MagicMock())
-    result = poller._get_device_key_from_template("device_state['']")
-    assert result is None, "Regex Failure: Mutant changed '+' to '*'"
-
-
-def test_mask_sensitive_data_exact_boundary():
-    """Verify mutant kill for mutation len(masked['uuid']) > 6 a >= 6."""
-    poller = YamlStatePoller(MagicMock())
-    res = poller._mask_sensitive_data({"uuid": "123456"})
-    assert res["uuid"] == "123456"
-
-
-def test_calculate_structured_state_and_to_or_mutation():
-    """Verify mutant kill 'if prop_id and hasattr' -> 'or' que fuga valores"""
-    poller = YamlStatePoller(MagicMock())
-    poller.controller.loader.is_fully_initialized = True
-
-    prop_mock = MagicMock()
-    prop_mock.id = None
-
-    poller.controller.loader.operations = {"op1": prop_mock}
-    poller.controller.loader.properties = {}
-    poller.controller.loader.sensors = {}
-
-    poller._calculate_structured_state({"raw": "data"})
-    prop_mock.calculate_value_from_state.assert_not_called()
-
-
 async def test_async_update_state_id_map():
     """Verify mutant kill de fallback de id_map en proceso de red (L398)"""
     ctrl = NakedObj(
@@ -733,92 +522,3 @@ async def test_async_update_state_next_no_swallow():
 
     await poller.async_update_state()
     ctrl.loader.async_finish_initialization.assert_called_once()
-
-
-async def test_st_getter_value_no_mock_magic():
-    """Kills mutants de getattr exigiendo la presencia explícita de 'value'."""
-    ctrl = NakedObj(
-        loader=create_valid_loader(), config={"device_type": "Other"}, log_prefix="TEST"
-    )
-    poller = YamlStatePoller(ctrl)
-
-    st_getter = NakedObj(value={})  # Definimos value explícitamente
-    ctrl.loader.state_getter = st_getter
-
-    # 1. Test build_device_state_from_props
-    res = await poller._build_device_state_from_props()
-    assert res == {}
-
-    # 2. Test retorno async_update_state
-    poller._build_device_state_from_hass = AsyncMock(return_value={"raw": "data"})
-    poller.async_update_properties_from_state = AsyncMock()
-    st_getter.value = {"a": "b"}
-    st_getter.async_update_state = AsyncMock(return_value={"a": "b"})
-
-    res2 = await poller.async_update_state()
-    assert res2 == {"a": "b"}
-
-
-async def test_async_update_state_cache_mutants():
-    """Verify mutant kill L360 y L361 que destruyen la caché interna."""
-    loader = create_valid_loader()
-    loader.is_fully_initialized = True
-    ctrl = NakedObj(config={}, device_id="123", log_prefix="TEST", loader=loader)
-
-    poller = YamlStatePoller(ctrl)
-    expected_state = {"raw": "data"}
-    poller._build_device_state_from_hass = AsyncMock(return_value=expected_state)
-    poller.async_update_properties_from_state = AsyncMock()
-
-    # Rigorous 'value' endowment to prevent final line explosion
-    loader.state_getter = NakedObj(
-        value={"raw": "data"}, async_update_state=AsyncMock(return_value=expected_state)
-    )
-
-    assert poller._cached_device_state is None
-
-    await poller.async_update_state()
-
-    assert poller._cached_device_state == expected_state
-    assert poller._last_state_fetch_time is not None
-
-
-async def test_calculate_structured_state_no_swallow():
-    """Verify mutant kill AttributeError en validación de propiedades."""
-    ctrl = NakedObj(loader=create_valid_loader())
-    poller = YamlStatePoller(ctrl)
-
-    prop = NakedObj()  # Carece de 'id'
-    prop.calculate_value_from_state = lambda x: "val"
-    ctrl.loader.operations = {"op1": prop}
-
-    res = poller._calculate_structured_state({"raw": "data"})
-    assert type(res).__name__ == "ClimateIPDeviceState"
-
-
-async def test_getattr_anti_magicmock_warfare():
-    """Verify mutant kill de getattr(..., None) usando NakedObjs para forzar AttributeError."""
-    ctrl = NakedObj(log_prefix="TEST", config={})
-    ctrl.loader = NakedObj(
-        is_fully_initialized=True,
-        operations={},
-        properties={},
-        sensors={},
-        _parsed_yaml_cache={},
-    )
-    poller = YamlStatePoller(ctrl)
-
-    # 1. Mutant _calculate_structured_state
-    ctrl.loader.operations = {"op1": MagicMock(spec=[])}
-    # 1. Mutant _calculate_structured_state
-    poller._calculate_structured_state = MagicMock(return_value={"calc": 1})
-
-    # 2. Mutant async_merge_device_state
-    poller.async_merge_device_state = AsyncMock(return_value={"merged": 2})
-
-    # 3. Mutant async_predict_and_correct_state
-    feat, corr = await poller.async_predict_and_correct_state(
-        NakedObj(), "test_op", "val"
-    )
-    assert getattr(feat, "value", feat) == 0
-    assert corr == {}

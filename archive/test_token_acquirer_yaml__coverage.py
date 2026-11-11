@@ -1,13 +1,12 @@
-# ruff: noqa: F811, F401, F841
+# ruff: noqa: F811, F401
 # pylint: disable=protected-access,redefined-outer-name,unused-import
 """Coverage tests for GenericYamlTokenAcquirer."""
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from custom_components.climate_ip.exceptions import TokenAcquisitionError
 from custom_components.climate_ip.token_acquirer_yaml import GenericYamlTokenAcquirer
+import pytest
 
 from .test_token_acquirer_yaml__common import listener_config, mock_hass, stream_config
 
@@ -33,7 +32,23 @@ async def test_stream_mode_no_connection(mock_hass, stream_config):
     """Cover line 321: _writer or _reader is None in stream mode."""
     acq = GenericYamlTokenAcquirer(mock_hass, "1.2.3.4", stream_config)
     with patch.object(acq, "_connect_stream", return_value={"ok": True}):
-        # Do not set _reader or _writer, simulating connection failure or early exit
+        # Both None
+        with pytest.raises(
+            TokenAcquisitionError, match="Connection stream not established"
+        ):
+            await acq.async_initiate_pairing()
+
+        # writer is set, reader is None (kills 'or' -> 'and' mutant)
+        acq._writer = AsyncMock()
+        acq._reader = None
+        with pytest.raises(
+            TokenAcquisitionError, match="Connection stream not established"
+        ):
+            await acq.async_initiate_pairing()
+
+        # writer is None, reader is set (kills 'or' -> 'and' mutant)
+        acq._writer = None
+        acq._reader = AsyncMock()
         with pytest.raises(
             TokenAcquisitionError, match="Connection stream not established"
         ):
@@ -67,8 +82,8 @@ async def test_listener_wait_token_is_none(mock_hass, listener_config):
 async def test_unsupported_mode_wait(mock_hass):
     """Cover line 402: unsupported mode in async_wait_for_token."""
     acq = GenericYamlTokenAcquirer(mock_hass, "1.2.3.4", {"mode": "invalid"})
-    with patch.object(acq, "async_close", new_callable=AsyncMock):
-        with pytest.raises(
-            TokenAcquisitionError, match="Unsupported authentication mode"
-        ):
-            await acq.async_wait_for_token()
+    with (
+        patch.object(acq, "async_close", new_callable=AsyncMock),
+        pytest.raises(TokenAcquisitionError, match="Unsupported authentication mode"),
+    ):
+        await acq.async_wait_for_token()

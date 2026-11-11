@@ -1,13 +1,9 @@
 """Test config flow isolated steps to kill mutants."""
 
-from __future__ import annotations
-
 import asyncio
 import ssl
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.const import CONF_IP_ADDRESS
-from homeassistant.data_entry_flow import FlowResultType
 import pytest
 
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
@@ -17,6 +13,8 @@ from custom_components.climate_ip.const import (
     DEVICE_TYPE_SAMSUNG_2878,
     DEVICE_TYPE_SAMSUNG_8888,
 )
+from homeassistant.const import CONF_IP_ADDRESS
+from homeassistant.data_entry_flow import FlowResultType
 
 
 @pytest.mark.asyncio
@@ -169,7 +167,7 @@ async def test_connection_safe_unique_id_empty_fallback():
                 await flow._test_connection_safe()
         except TimeoutError:  # pragma: no cover
             pytest.fail("MUTANT KILLED: Asynchronous deadlock detected in flow step.")
-        args, kwargs = mock_yaml.call_args
+        _, kwargs = mock_yaml.call_args
         assert kwargs["config"]["unique_id"] == ""
 
         from custom_components.climate_ip.const import (

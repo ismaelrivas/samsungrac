@@ -14,5 +14,5 @@
     "requests==2.34.2",
     "icmplib==3.0.4"
   ],
-  "version": "10.0.1b9"
+  "version": "10.0.1b10"
 }
