@@ -4,14 +4,13 @@
 import ssl
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
-import pytest
-
 from custom_components.climate_ip.exceptions import (
     AuthTurnedOffError,
     CannotConnect,
     TokenAcquisitionError,
 )
 from custom_components.climate_ip.token_acquirer import SamsungTokenAcquirer
+import pytest
 
 
 @pytest.fixture

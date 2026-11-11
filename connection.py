@@ -1,8 +1,6 @@
 # pylint: disable=line-too-long,import-outside-toplevel,invalid-name,redefined-outer-name,reimported,not-callable,too-many-branches,wrong-import-position,unused-import
 """Base connection class and registry for climate_ip connections."""
 
-from __future__ import annotations
-
 from abc import abstractmethod
 import asyncio
 import dataclasses
@@ -11,6 +9,8 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.template import Template
+
+from .exceptions import CannotConnect, RetryNextAttempt
 
 CLIMATE_IP_CONNECTIONS: list[type[Connection]] = []
 
@@ -50,6 +50,11 @@ class Connection:
         self._controller: Any | None = None
         self._condition_template: Template | None = None
         self._connection_template: Template | None = None
+
+    @property
+    def params(self) -> dict[str, Any]:
+        """Return the connection parameters."""
+        return self._params
 
     @property
     def condition_template(self) -> Template | None:
@@ -132,10 +137,6 @@ class Connection:
         device_id: str | None = None,
     ) -> Any:
         """Asynchronously execute synchronous command with non-blocking exponential backoff."""
-        import asyncio
-
-        from .exceptions import CannotConnect, RetryNextAttempt
-
         MAX_SYNC_RETRIES = 5  # pragma: no mutate
         MAX_RETRY_DELAY_SEC = 15.0  # pragma: no mutate
 
@@ -175,7 +176,7 @@ class Connection:
 
         raise CannotConnect(
             "Max retries exhausted."
-        )  # Fallback safety, should not be reached
+        )  # pragma: no cover - Fallback safety, should not be reached
 
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     async def async_execute(
@@ -205,9 +206,9 @@ class Connection:
     @abstractmethod
     def is_push_supported(self) -> bool:
         """Return True if this connection type supports push updates."""
-        raise NotImplementedError()
+        raise NotImplementedError
 
-    def check_execute_condition(self, device_state: dict[str, Any] | None) -> bool:
+    def check_execute_condition(self, device_state: Any = None) -> bool:
         """Return True if the command should be executed for the given device state."""
         _log = self._logger or logging.getLogger(__name__)
 
@@ -244,7 +245,9 @@ class Connection:
 
             # 3. Fallback to dictionary conversion of the dataclass
             if not isinstance(raw_state, dict):
-                if dataclasses.is_dataclass(device_state):
+                if dataclasses.is_dataclass(device_state) and not isinstance(
+                    device_state, type
+                ):
                     raw_state = dataclasses.asdict(device_state)
                 elif hasattr(device_state, "__dict__"):
                     raw_state = vars(device_state)
@@ -271,7 +274,7 @@ class Connection:
                 rendered,
             )
             return str(rendered).strip() == "1"
-        except Exception as e:  # pylint: disable=broad-except
+        except Exception as e:  # noqa: BLE001 # pylint: disable=broad-except
             _log.error(
                 "%s Error evaluating execute condition, skipping command. Error: %s",
                 self.log_prefix,

@@ -3,8 +3,6 @@
 import asyncio
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 from custom_components.climate_ip.config_flow_helpers import _AUTH_FLOW_CACHE
 from custom_components.climate_ip.exceptions import (
@@ -12,6 +10,8 @@ from custom_components.climate_ip.exceptions import (
     CannotConnect,
     TokenAcquisitionError,
 )
+import pytest
+
 from homeassistant.const import CONF_IP_ADDRESS
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import AbortFlow
@@ -31,9 +31,8 @@ async def test_load_auth_flow_config_errors(hass: HomeAssistant) -> None:
     with patch(
         "custom_components.climate_ip.config_flow_helpers.load_yaml",
         return_value="not_dict",
-    ):
-        with pytest.raises(ValueError, match="Invalid YAML configuration loaded from"):
-            await flow._load_auth_flow_config("samsung_2878")
+    ), pytest.raises(ValueError, match="Invalid YAML configuration loaded from"):
+        await flow._load_auth_flow_config("samsung_2878")
 
     # 3. Auth YAML is not a dict
     def fake_load_yaml(path: str):
@@ -44,9 +43,8 @@ async def test_load_auth_flow_config_errors(hass: HomeAssistant) -> None:
     with patch(
         "custom_components.climate_ip.config_flow_helpers.load_yaml",
         side_effect=fake_load_yaml,
-    ):
-        with pytest.raises(ValueError, match="Invalid YAML configuration loaded from"):
-            await flow._load_auth_flow_config("samsung_2878")
+    ), pytest.raises(ValueError, match="Invalid YAML configuration loaded from"):
+        await flow._load_auth_flow_config("samsung_2878")
 
 
 async def test_cancelled_tasks_in_steps(hass: HomeAssistant) -> None:

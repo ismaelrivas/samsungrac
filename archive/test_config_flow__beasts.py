@@ -1,9 +1,6 @@
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import probatio
-import pytest
-
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 from custom_components.climate_ip.const import (
     CONF_CERT,
@@ -18,6 +15,9 @@ from custom_components.climate_ip.const import (
     DEVICE_TYPE_TO_CONFIG_FILE,
     GLOBAL_HTTP_TIMEOUT,
 )
+import probatio
+import pytest
+
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType

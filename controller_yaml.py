@@ -1,11 +1,11 @@
-from __future__ import annotations
+"""YAML-based controller implementation for Climate IP integration."""
 
 import logging
 import math
 import types
 from typing import TYPE_CHECKING, Any, cast
 
-from homeassistant.components.climate.const import (
+from homeassistant.components.climate import (
     ATTR_CURRENT_TEMPERATURE,
     ATTR_FAN_MODE,
     ATTR_HVAC_MODE,
@@ -117,10 +117,14 @@ class YamlController(ClimateController):
         )
 
         # Base immutable data from entry creation selectively merged with runtime options
-        extracted: dict[str, Any] = dict(config_entry.data)
-        for key, value in config_entry.options.items():
-            if key not in IMMUTABLE_CONFIG_KEYS:
-                extracted[key] = value
+        extracted: dict[str, Any] = {
+            **config_entry.data,
+            **{
+                k: v
+                for k, v in config_entry.options.items()
+                if k not in IMMUTABLE_CONFIG_KEYS
+            },
+        }
 
         extracted[CONF_ENTRY_ID] = config_entry.entry_id
         extracted[CONF_UNIQUE_ID] = resolved_unique_id
@@ -154,6 +158,7 @@ class YamlController(ClimateController):
         session: Any | None = None,
         **kwargs: Any,
     ) -> None:
+        """Initialize the YAML climate controller."""
         if config is None and config_entry is not None:
             config = self._extract_config_from_entry(config_entry, device_id)
         elif isinstance(config, (dict, types.MappingProxyType)):
@@ -342,17 +347,17 @@ class YamlController(ClimateController):
         if config_name is not None:
             return str(config_name)
 
-        loader_name = self.loader.name
-        if loader_name is not None:
-            if not isinstance(loader_name, str):
-                raise TypeError(
-                    f"Expected str for loader name, got {type(loader_name).__name__}"
-                )
-            if len(loader_name.strip()) == 0:
-                raise ValueError("Loader name cannot be empty")
-            return loader_name
+        loader_name = getattr(self.loader, "name", None)
+        if loader_name is None:
+            return DEFAULT_CONTROLLER_NAME
 
-        return DEFAULT_CONTROLLER_NAME
+        if not isinstance(loader_name, str):
+            raise TypeError(
+                f"Expected str for loader name, got {type(loader_name).__name__}"
+            )
+        if len(loader_name.strip()) == 0:
+            raise ValueError("Loader name cannot be empty")
+        return loader_name
 
     @staticmethod
     def _is_subdevice(device_id: str | None) -> bool:
@@ -464,35 +469,17 @@ class YamlController(ClimateController):
         try:
             result = await op.async_set_value(new_value, target_device_id)
             success = bool(result)
-            if success and hasattr(self, "poller") and self.poller is not None:
-                if (
-                    getattr(self.poller, "_pure_network_state", None) is None
-                    and hasattr(self.loader, "state_getter")
-                    and self.loader.state_getter is not None
-                    and isinstance(self.loader.state_getter.value, dict)
-                ):
-                    import copy
-
-                    self.poller._pure_network_state = copy.deepcopy(
-                        self.loader.state_getter.value
-                    )
-                if getattr(
-                    self.poller, "_pure_network_state", None
-                ) is not None and isinstance(self.poller._pure_network_state, dict):
-                    self.poller._inject_value_into_state(
-                        op, self.poller._pure_network_state, new_value
-                    )
-                if (
-                    hasattr(self.loader, "state_getter")
-                    and self.loader.state_getter is not None
-                    and isinstance(self.loader.state_getter.value, dict)
-                ):
-                    self.poller._inject_value_into_state(
-                        op, self.loader.state_getter.value, new_value
-                    )
-            return result
+            poller = getattr(self, "poller", None)
+            if success and poller is not None:
+                sg = getattr(self.loader, "state_getter", None)
+                sg_val = sg.value if sg is not None else None
+                inject_fn = getattr(poller, "inject_optimistic_state", None)
+                if callable(inject_fn):
+                    inject_fn(op, new_value, sg_val)
         except (TimeoutError, OSError) as err:
             raise HomeAssistantError(f"Communication failed: {err}") from err
+        else:
+            return result
         finally:
             if not success:
                 await self.async_clear_pending_updates([property_name])
@@ -619,10 +606,11 @@ class YamlController(ClimateController):
 
     @property
     def service_schema_map(self) -> dict[Any, Any] | None:
-        """Return the voluptuous service schema map."""
-        if self.loader.service_schema_map is None:
+        """Return the service schema map."""
+        schema_map = getattr(self.loader, "service_schema_map", None)
+        if schema_map is None:
             return None
-        return dict(self.loader.service_schema_map)
+        return dict(schema_map)
 
     @property
     def operations(self) -> list[str]:
@@ -643,8 +631,9 @@ class YamlController(ClimateController):
     @property
     def last_poll_data(self) -> dict[str, Any] | None:
         """Return the last raw poll response, useful for diagnostics."""
-        if self.loader.state_getter is not None:
-            raw = self.loader.state_getter.value
+        sg = getattr(self.loader, "state_getter", None)
+        if sg is not None:
+            raw = sg.value
             return dict(raw) if isinstance(raw, dict) else None
         return None
 
@@ -656,7 +645,9 @@ class YamlController(ClimateController):
             conn_diag = self.connection.get_diagnostics()
             if isinstance(conn_diag, dict):
                 diag = dict(conn_diag)
-        if hasattr(self, "poller") and getattr(self.poller, "last_icmp_diagnostic", None):
+        if hasattr(self, "poller") and getattr(
+            self.poller, "last_icmp_diagnostic", None
+        ):
             diag["network_reachability"] = self.poller.last_icmp_diagnostic
         return diag
 
@@ -865,8 +856,8 @@ class YamlController(ClimateController):
 
         Direct poller access — no getattr/hasattr. Fulfills ClimateController ABC contract.
         """
-        pending = self.poller._pending_updates
-        if prop in pending:
+        pending = getattr(self.poller, "_pending_updates", None)
+        if isinstance(pending, dict) and prop in pending:
             current_target = pending[prop][0]
             if current_target != val:
                 return True

@@ -8,7 +8,7 @@
                     "device_type": "Type d'appareil"
                 },
                 "data_description": {
-                    "device_type": "Select the device profile corresponding to your hardware."
+                    "device_type": "Sélectionnez le profil d'appareil correspondant à votre équipement."
                 }
             },
             "samsung_2878": {
@@ -26,15 +26,15 @@
                     "temp_native_target": "Unité de température cible native"
                 },
                 "data_description": {
-                    "ip_address": "The local IPv4 address of the air conditioner (e.g. 192.168.1.100).",
-                    "port": "Communication port for legacy socket units (default: 2878).",
-                    "mac": "Hardware MAC address for unique device registry tracking.",
-                    "name": "Custom display name for this unit.",
-                    "token": "Leave blank to acquire token automatically via physical power button.",
-                    "cert": "Certificate file path (default: ac14k_m.pem).",
-                    "poll_interval": "Update polling frequency in HH:MM:SS format.",
-                    "temp_native_current": "Temperature unit reported by the unit's indoor sensor.",
-                    "temp_native_target": "Temperature unit used for setting target cooling or heating."
+                    "ip_address": "L'adresse IPv4 locale du climatiseur (ex. 192.168.1.100).",
+                    "port": "Port de communication pour les anciennes unités socket (par défaut : 2878).",
+                    "mac": "Adresse MAC matérielle pour le suivi unique dans le registre des appareils.",
+                    "name": "Nom d'affichage personnalisé pour cet appareil.",
+                    "token": "Laisser vide pour obtenir le jeton automatiquement via le bouton physique d'alimentation.",
+                    "cert": "Chemin du fichier de certificat (par défaut : ac14k_m.pem).",
+                    "poll_interval": "Fréquence d'actualisation au format HH:MM:SS.",
+                    "temp_native_current": "Unité de température signalée par le capteur intérieur de l'unité.",
+                    "temp_native_target": "Unité de température utilisée pour définir la consigne de refroidissement ou de chauffage."
                 }
             },
             "samsung_8888": {
@@ -50,13 +50,13 @@
                     "poll_interval": "Intervalle de mise à jour (format HH:MM:SS)"
                 },
                 "data_description": {
-                    "ip_address": "The local IPv4 address of the modern Samsung air conditioner.",
-                    "port": "HTTPS REST API port (default: 8888).",
-                    "mac": "Hardware MAC address for unique device registry tracking.",
-                    "name": "Custom display name for this unit.",
-                    "cert": "Certificate file path (default: ac14k_m.pem).",
-                    "token": "Leave blank to acquire token automatically via local listener.",
-                    "poll_interval": "Update polling frequency in HH:MM:SS format."
+                    "ip_address": "L'adresse IPv4 locale du climatiseur Samsung moderne.",
+                    "port": "Port de l'API REST HTTPS (par défaut : 8888).",
+                    "mac": "Adresse MAC matérielle pour le suivi unique dans le registre des appareils.",
+                    "name": "Nom d'affichage personnalisé pour cet appareil.",
+                    "cert": "Chemin du fichier de certificat (par défaut : ac14k_m.pem).",
+                    "token": "Laisser vide pour obtenir le jeton automatiquement via l'écouteur local.",
+                    "poll_interval": "Fréquence d'actualisation au format HH:MM:SS."
                 }
             },
             "mim_h03": {
@@ -72,13 +72,13 @@
                     "poll_interval": "Intervalle de mise à jour (format HH:MM:SS)"
                 },
                 "data_description": {
-                    "ip_address": "The local IPv4 address of the MIM-H03 heatpump controller.",
-                    "port": "HTTPS REST API port (default: 8888).",
-                    "mac": "Hardware MAC address of the MIM-H03 controller.",
-                    "name": "Custom display name for the controller.",
-                    "cert": "Certificate file path (default: ac14k_m.pem).",
-                    "token": "Leave blank to acquire token automatically.",
-                    "poll_interval": "Update polling frequency in HH:MM:SS format."
+                    "ip_address": "L'adresse IPv4 locale du contrôleur de pompe à chaleur MIM-H03.",
+                    "port": "Port de l'API REST HTTPS (par défaut : 8888).",
+                    "mac": "Adresse MAC matérielle du contrôleur MIM-H03.",
+                    "name": "Nom d'affichage personnalisé pour le contrôleur.",
+                    "cert": "Chemin du fichier de certificat (par défaut : ac14k_m.pem).",
+                    "token": "Laisser vide pour obtenir le jeton automatiquement.",
+                    "poll_interval": "Fréquence d'actualisation au format HH:MM:SS."
                 }
             },
             "rest_api": {
@@ -93,12 +93,12 @@
                     "poll_interval": "Intervalle de mise à jour (format HH:MM:SS)"
                 },
                 "data_description": {
-                    "ip_address": "The local or cloud REST API host address.",
-                    "device_id": "Unique hardware device identifier.",
-                    "token": "Bearer access token for API authorization.",
-                    "name": "Custom display name for this unit.",
-                    "cert": "Certificate file path for TLS validation.",
-                    "poll_interval": "Update polling frequency in HH:MM:SS format."
+                    "ip_address": "Adresse d'hôte de l'API REST locale ou dans le cloud.",
+                    "device_id": "Identifiant matériel unique de l'appareil.",
+                    "token": "Jeton d'accès Bearer pour l'autorisation de l'API.",
+                    "name": "Nom d'affichage personnalisé pour cet appareil.",
+                    "cert": "Chemin du fichier de certificat pour la validation TLS.",
+                    "poll_interval": "Fréquence d'actualisation au format HH:MM:SS."
                 }
             },
             "intesisbox": {
@@ -110,9 +110,9 @@
                     "poll_interval": "Intervalle de mise à jour (Secondes)"
                 },
                 "data_description": {
-                    "ip_address": "The local IPv4 address of the IntesisBox WMP gateway.",
-                    "mac": "Hardware MAC address of the gateway.",
-                    "poll_interval": "Update polling frequency in seconds."
+                    "ip_address": "L'adresse IPv4 locale de la passerelle IntesisBox WMP.",
+                    "mac": "Adresse MAC matérielle de la passerelle.",
+                    "poll_interval": "Fréquence d'actualisation en secondes."
                 }
             },
             "select_devices": {
@@ -122,7 +122,7 @@
                     "selected_devices": "Unités intérieures"
                 },
                 "data_description": {
-                    "selected_devices": "Choose the indoor AC units you want to integrate into Home Assistant."
+                    "selected_devices": "Choisissez les unités intérieures de climatisation que vous souhaitez intégrer à Home Assistant."
                 }
             },
             "reauth_confirm": {
@@ -139,10 +139,10 @@
                     "cert": "Chemin du certificat (Facultatif)"
                 },
                 "data_description": {
-                    "ip_address": "Updated local IPv4 address of the device.",
-                    "mac": "Updated MAC address for the device.",
-                    "token": "Updated authentication token.",
-                    "cert": "Updated certificate file path."
+                    "ip_address": "Adresse IPv4 locale mise à jour pour l'appareil.",
+                    "mac": "Adresse MAC mise à jour pour l'appareil.",
+                    "token": "Jeton d'authentification mis à jour.",
+                    "cert": "Chemin du fichier de certificat mis à jour."
                 }
             }
         },
@@ -185,7 +185,7 @@
             "unknown_error": "Une erreur inattendue a forcé l'interruption du processus de configuration.",
             "reauth_successful": "La réauthentification a réussi. Votre appareil est prêt à être utilisé.",
             "reconfigure_successful": "Les paramètres de réseau et de connectivité de l'appareil ont été mis à jour avec succès.",
-            "unique_id_mismatch": "The device does not match the previously configured device."
+            "unique_id_mismatch": "L'appareil ne correspond pas à l'appareil configuré précédemment."
         }
     },
     "options": {
@@ -202,12 +202,12 @@
                     "temp_native_target": "Unité de température cible native"
                 },
                 "data_description": {
-                    "connection_method": "Communication engine: aiohttp (modern), raw socket (unstable Wi-Fi), or requests (legacy).",
-                    "poll_interval": "Update polling frequency in HH:MM:SS format.",
-                    "enable_polling": "Enable periodic background polling of the device state.",
-                    "target_temperature_step": "Temperature adjustment granularity for UI controls.",
-                    "temp_native_current": "Temperature unit reported by the AC unit sensor.",
-                    "temp_native_target": "Temperature unit expected by the AC unit for setpoints."
+                    "connection_method": "Moteur de communication : aiohttp (moderne), raw socket (Wi-Fi instable) ou requests (hérité).",
+                    "poll_interval": "Fréquence d'actualisation au format HH:MM:SS.",
+                    "enable_polling": "Activer l'interrogation périodique en arrière-plan de l'état de l'appareil.",
+                    "target_temperature_step": "Granularité d'ajustement de la température pour les commandes de l'interface.",
+                    "temp_native_current": "Unité de température signalée par le capteur de l'appareil.",
+                    "temp_native_target": "Unité de température attendue par l'appareil pour les consignes."
                 }
             }
         },
@@ -245,28 +245,28 @@
             "message": "Échec de la définition de la propriété {property} : propriété introuvable."
         },
         "missing_temp_or_mode": {
-            "message": "No temperature or HVAC mode provided in set_temperature action."
+            "message": "Aucune température ni aucun mode CVC fourni dans l'action set_temperature."
         },
         "invalid_hvac_mode": {
-            "message": "Requested HVAC mode {hvac_mode} is not available."
+            "message": "Le mode CVC demandé {hvac_mode} n'est pas disponible."
         },
         "invalid_fan_mode": {
-            "message": "Requested fan mode {fan_mode} is not available."
+            "message": "Le mode de ventilation demandé {fan_mode} n'est pas disponible."
         },
         "invalid_swing_mode": {
-            "message": "Requested swing mode {swing_mode} is not available."
+            "message": "Le mode d'oscillation demandé {swing_mode} n'est pas disponible."
         },
         "invalid_preset_mode": {
-            "message": "Requested preset mode {preset_mode} is not available."
+            "message": "Le mode prédéfini demandé {preset_mode} n'est pas disponible."
         },
         "invalid_operation": {
-            "message": "Action set_property failed: {key} is not a valid operation for this device."
+            "message": "L'action set_property a échoué : {key} n'est pas une opération valide pour cet appareil."
         },
         "invalid_value_type": {
-            "message": "Action set_property failed: Invalid value type {type} for key {key}."
+            "message": "L'action set_property a échoué : type de valeur non valide {type} pour la clé {key}."
         },
         "device_unreachable": {
-            "message": "Device {device_name} ({host}) is unreachable. Check power and network connection."
+            "message": "L'appareil {device_name} ({host}) est inaccessible. Vérifiez l'alimentation et la connexion réseau."
         }
     },
     "issues": {
@@ -374,10 +374,10 @@
                 "name": "Volet horizontal"
             },
             "power_meter": {
-                "name": "Instant Power"
+                "name": "Puissance instantanée"
             },
             "energy_meter": {
-                "name": "Total Energy"
+                "name": "Énergie totale"
             }
         },
         "binary_sensor": {

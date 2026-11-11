@@ -1,18 +1,16 @@
 """Test Samsung Climate IP repairs flows."""
 
-from __future__ import annotations
-
 from unittest.mock import MagicMock, patch
 
-from homeassistant.components.repairs import ConfirmRepairFlow, RepairsFlow
-from homeassistant.data_entry_flow import FlowResultType
 import pytest
 
 from custom_components.climate_ip.repairs import async_create_fix_flow
+from homeassistant.components.repairs import ConfirmRepairFlow, RepairsFlow
+from homeassistant.data_entry_flow import FlowResultType
 
 
 @pytest.mark.asyncio
-async def test_async_create_fix_flow_signatures_and_types():
+async def test_async_create_fix_flow_signatures_and_types() -> None:
     """Test async_create_fix_flow with various parameter combinations and return types."""
     mock_hass = MagicMock()
 
@@ -38,7 +36,7 @@ async def test_async_create_fix_flow_signatures_and_types():
 
 
 @pytest.mark.asyncio
-async def test_auto_healing_repairs_flow_lifecycle():
+async def test_auto_healing_repairs_flow_lifecycle() -> None:
     """Test auto-healing repairs flow lifecycle from initial form to confirmed dismissal."""
     mock_hass = MagicMock()
     flow = await async_create_fix_flow(
@@ -73,7 +71,7 @@ async def test_auto_healing_repairs_flow_lifecycle():
 
 
 @pytest.mark.asyncio
-async def test_repairs_flow_without_placeholders():
+async def test_repairs_flow_without_placeholders() -> None:
     """Test repairs flow lifecycle when issue has no translation placeholders."""
     mock_hass = MagicMock()
     flow = await async_create_fix_flow(mock_hass, "plain_issue")

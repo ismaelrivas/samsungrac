@@ -1,9 +1,7 @@
-"""
-Platform that offers support for IP controlled climate device sensors.
+"""Platform that offers support for IP controlled climate device sensors.
+
 This file defines the Home Assistant sensor entities, adapted for DataUpdateCoordinator.
 """
-
-from __future__ import annotations
 
 import logging
 
@@ -159,7 +157,7 @@ class ClimateIpSensor(SamsungClimateEntity, SensorEntity):
         else:
             try:
                 self._attr_native_value = float(value)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 self._attr_native_value = None
                 msg = "%s Could not parse sensor value for %s: %s"  # pragma: no mutate
                 _LOGGER.warning(

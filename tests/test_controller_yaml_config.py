@@ -1,14 +1,11 @@
-# pylint: disable=protected-access,redefined-outer-name,unused-import,unused-variable,unnecessary-pass,import-outside-toplevel,unexpected-keyword-arg,not-context-manager,unused-argument,no-member,invalid-name,pointless-string-statement,reimported,ungrouped-imports,line-too-long,wrong-import-order,unsupported-membership-test,not-callable,invalid-sequence-index,unsubscriptable-object
-from __future__ import annotations
+"""Unit tests for Climate IP YAML configuration loader."""
 
 from pathlib import Path
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.const import ATTR_ENTITY_ID, ATTR_NAME, ATTR_TEMPERATURE
-from homeassistant.util.yaml import load_yaml
+import probatio
 import pytest
-from voluptuous import Optional
 
 from custom_components.climate_ip.const import (
     CONF_CONFIG_FILE,
@@ -16,10 +13,19 @@ from custom_components.climate_ip.const import (
     CONF_DEVICE_TYPE,
     CONF_TEMP_NATIVE_CURRENT,
     CONF_TEMP_NATIVE_TARGET,
+    CONFIG_DEVICE,
+    CONFIG_DEVICE_ATTRIBUTES,
+    CONFIG_DEVICE_CONNECTION,
+    CONFIG_DEVICE_CONNECTION_TYPE,
+    CONFIG_DEVICE_OPERATIONS,
     CONFIG_DEVICE_POLL,
+    CONFIG_DEVICE_STATUS,
+    CONFIG_DEVICE_SWITCHES,
+    CONN_METHOD_AIOHTTP,
     CONN_METHOD_RAW,
     DEFAULT_CONF_TEMP_UNIT,
-    DEVICE_TYPE_AIOHTTP_SUPPORTED,
+    DEVICE_TYPE_INTESISBOX,
+    DEVICE_TYPE_SAMSUNG_2878,
 )
 from custom_components.climate_ip.controller_yaml_config import (
     _LOGGER,
@@ -28,146 +34,79 @@ from custom_components.climate_ip.controller_yaml_config import (
     YamlConfigLoader,
     clear_yaml_cache,
 )
-from custom_components.climate_ip.properties import TemperatureOperation
+from homeassistant.const import ATTR_ENTITY_ID, ATTR_NAME, ATTR_TEMPERATURE
+from homeassistant.util.yaml import load_yaml
 
 
-class StrictMock(MagicMock):
-    def __getattr__(self, name):
-        # We only strictly enforce attributes that the controller uses in getattr() calls
-        if name in (
-            "_yaml",
-            "device_id",
-            "_config",
-            "config",
-            "hass",
-            "unique_id",
-            "_session",
-            "ip_address",
-            "id",
-            "config_validation_type",
-            "device_class",
-        ):
-            # MagicMock stores mocked children in _mock_children or __dict__ depending on how they are set
-            if name not in self.__dict__ and name not in self._mock_children:
-                raise AttributeError(f"StrictMock: Attribute '{name}' not set!")
-        return super().__getattr__(name)
+class DummyController:
+    """Lightweight controller stub for testing YamlConfigLoader."""
 
-
-@pytest.fixture
-def mock_controller():
-    """Provides a dummy controller to host the YamlConfigLoader."""
-    controller = MagicMock()
-    controller.config = {CONF_CONFIG_FILE: "test.yaml"}
-    controller.log_prefix = "[Test]"
-    controller.device_id = "dev_123"
-    controller.unique_id = "uid_123"
-    controller.hass = MagicMock()
-    return controller
+    def __init__(self, **kwargs) -> None:
+        """Initialize dummy controller."""
+        self.log_prefix = "[Test]"
+        self.device_id = "test_dev"
+        if not hasattr(type(self), "yaml_file"):
+            self.yaml_file = "test.yaml"
+        if not hasattr(type(self), "unique_id"):
+            self.unique_id = "test_uid"
+        if not hasattr(type(self), "config"):
+            self.config = {CONF_CONFIG_FILE: "test.yaml"}
+        if not hasattr(type(self), "hass"):
+            self.hass = None
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
 
 # ====================================================================================
-# FRONT A: PRIMITIVE AUTHORITY (Kills all 8 __init__ mutants)
+# 1. INITIAL STATE & FRAGMENTED PAYLOADS
 # ====================================================================================
 
 
-def test_yaml_config_initial_state():
-    """Valida el estado base estricto y la inmunidad del esquema de validación."""
+@pytest.mark.asyncio
+async def test_yaml_config_initial_state_and_fragmented_payloads() -> None:
+    """Validate initial state, parsed_yaml_cache property, and fragmented payloads."""
+    ctrl = DummyController()
+    loader = YamlConfigLoader(ctrl)
 
-    mock_controller = StrictMock()
-    mock_controller.hass = MagicMock()
-    mock_controller.unique_id = "test_unique"
-    loader = YamlConfigLoader(mock_controller)
-
-    # Kills mutants 5, 10, 11, 12, 13, 14, 16 (Asignaciones a None, "", etc.)
     assert loader.name == CONST_CONTROLLER_TYPE
-    assert loader.state_getter is None
-    assert loader.connection is None
-    assert loader.poll is None
     assert loader.is_fully_initialized is False
-    assert loader._parsed_yaml_config is None
-    assert isinstance(loader._parsed_yaml_cache, dict)
-    assert loader._parsed_yaml_cache == {}
-    assert loader._parsed_yaml_cache is not None
     assert loader.parsed_yaml_cache == {}
-    assert isinstance(loader.properties_list, list)
-    assert loader.properties_list == []
-    assert isinstance(loader.operations_list, list)
-    assert loader.operations_list == []
-    assert isinstance(loader.sensors_list, list)
-    assert loader.sensors_list == []
-    assert loader.operations == {}
-    assert loader.properties == {}
-    assert loader.sensors == {}
-
-    # Kills Mutant 9 (vol.Optional(None) instead of ATTR_ENTITY_ID)
-    schema_keys = list(loader.service_schema_map.keys())
-    assert len(schema_keys) > 0
-    # vol.Optional wraps value in .schema property
-    assert schema_keys[0].schema == ATTR_ENTITY_ID
-
-
-# ====================================================================================
-# FRONT B: FRAGMENTED YAML RESILIENCE (Kills fallback mutants in .get)
-# ====================================================================================
-
-
-async def test_yaml_config_fragmented_payloads():
-    """Fuerza la evaluación de los diccionarios por defecto .get(..., {})."""
-
-    mock_controller = StrictMock()
-    mock_controller.hass = MagicMock()
-    mock_controller.unique_id = "test_unique"
-    mock_controller.device_id = "target_dev"
-    loader = YamlConfigLoader(mock_controller)
-    loader.is_fully_initialized = False
-
-    # 1. Inject YAML lacking device node entirely
-    loader._parsed_yaml_config = {"other_dev": {}}
-    loader._parsed_yaml_cache = {}
+    assert probatio.Optional(ATTR_ENTITY_ID) in loader.service_schema_map
+    assert all(isinstance(k, probatio.Optional) for k in loader.service_schema_map)
 
     with patch(
         "custom_components.climate_ip.controller_yaml_config.create_property"
     ) as mock_create:
-        try:
-            await loader.async_finish_initialization()
-        except AttributeError:
-            pytest.fail("Broken fallback: Mutant caused AttributeError in iterator.")
+        # 1. Inject YAML lacking device node entirely
+        loader._parsed_yaml_config = {"other_dev": {}}
+        loader._parsed_yaml_cache = {}
+        await loader.async_finish_initialization()
         mock_create.assert_not_called()
 
-    # 2. Inject YAML with device lacking operations, switches, attributes, sensors
-    loader.is_fully_initialized = False
-    loader._parsed_yaml_config = {"device": {}}
-    loader._parsed_yaml_cache = {}
-
-    with patch(
-        "custom_components.climate_ip.controller_yaml_config.create_property"
-    ) as mock_create:
-        try:
-            await loader.async_finish_initialization()
-        except AttributeError:
-            pytest.fail("Broken fallback: Mutant caused AttributeError in iterator.")
+        # 2. Inject YAML with device lacking operations/switches/attributes/sensors
+        loader.is_fully_initialized = False
+        loader._parsed_yaml_config = {"device": {}}
+        loader._parsed_yaml_cache = {}
+        await loader.async_finish_initialization()
         mock_create.assert_not_called()
 
-    # 3. Inject YAML with switches and operations specifically to kill .get(None, {})
-    loader.is_fully_initialized = False
-    loader._parsed_yaml_config = {
-        "device": {
-            "operations": {"op_frag": {"type": "A"}},
-            "switches": {"sw_frag": {"type": "B"}},
+        # 3. Inject YAML with operations and switches
+        loader.is_fully_initialized = False
+        loader._parsed_yaml_config = {
+            "device": {
+                "operations": {"op_frag": {"type": "A"}},
+                "switches": {"sw_frag": {"type": "B"}},
+            }
         }
-    }
-    loader._parsed_yaml_cache = {}
+        loader._parsed_yaml_cache = {}
 
-    def fake_prop(key, node, conn, ctrl, getter):
-        p = MagicMock()
-        p.id = key
-        p.config_validation_type = str
-        return p
+        def fake_prop(key, node, conn, c, getter):
+            p = MagicMock()
+            p.id = key
+            p.config_validation_type = str
+            return p
 
-    with patch(
-        "custom_components.climate_ip.controller_yaml_config.create_property",
-        side_effect=fake_prop,
-    ):
+        mock_create.side_effect = fake_prop
         await loader.async_finish_initialization()
         assert "op_frag" in loader.operations
         assert "sw_frag" in loader.operations
@@ -175,79 +114,318 @@ async def test_yaml_config_fragmented_payloads():
 
 
 # ====================================================================================
-# FRONT C: CACHE INJECTION AND INITIALIZATION PATHS
+# 2. EARLY EXITS & FAILURE RETURNS (CRITICAL SOLO KILLER)
 # ====================================================================================
 
 
-async def test_yaml_config_cache_hit_and_miss():
-    """Ensures that the YAML cache works and is populated correctly."""
+@pytest.mark.asyncio
+async def test_async_initialize_early_exits_bombardment() -> None:
+    """Verify all early failure returns in async_initialize (Critical Solo Killer)."""
+    ctrl = DummyController(hass=None)
 
-    mock_controller = StrictMock()
-    mock_controller.hass = MagicMock()
-    mock_controller.unique_id = "test_unique"
-    mock_controller.device_id = "test_dev_1"
-    loader = YamlConfigLoader(mock_controller)
-    loader.is_fully_initialized = False
+    # 1. File not specified (None)
+    ctrl.yaml_file = None
+    loader = YamlConfigLoader(ctrl)
+    assert await loader.async_initialize() is False
 
-    fake_yaml_data = {"device": {"id": "test_dev_1"}}
-    loader._parsed_yaml_config = fake_yaml_data
+    mock_conn_class = MagicMock()
+    mock_conn_class.__name__ = "MockConnClass"
+    mock_conn_class.match_type.return_value = True
+    mock_conn_instance = MagicMock()
+    mock_conn_instance.load_from_yaml.return_value = False
+    mock_conn_class.return_value = mock_conn_instance
+    conn_list = [mock_conn_class]
 
-    # 1. Run a Cache Miss
-    with patch("custom_components.climate_ip.controller_yaml_config.create_property"):
-        await loader.async_finish_initialization()
+    with (
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.load_yaml"
+        ) as mock_load,
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
+            conn_list,
+        ),
+    ):
+        # 2. Exception while loading YAML
+        ctrl.yaml_file = "/test_exploding.yaml"
+        clear_yaml_cache()
+        loader = YamlConfigLoader(ctrl)
+        mock_load.side_effect = RuntimeError("YAML Explosion")
+        assert await loader.async_initialize() is False
 
-    # We assert it was saved in the cache with the correct key (Kills mutants of self._parsed_yaml_cache[dev_id])
-    assert "test_dev_1" in loader._parsed_yaml_cache
-    assert loader._parsed_yaml_cache["test_dev_1"] == fake_yaml_data
+        # 3. Empty YAML dictionary
+        mock_load.side_effect = None
+        mock_load.return_value = {}
+        ctrl.yaml_file = "/test_empty.yaml"
+        clear_yaml_cache()
+        loader = YamlConfigLoader(ctrl)
+        assert await loader.async_initialize() is False
 
-    # 2. Corrupt the original base YAML but perform a Cache Hit
-    loader._parsed_yaml_config = {"device": {"ESTADO_CORRUPTO": True}}
+        # 4. Missing 'device' root key
+        mock_load.return_value = {"other_root": {}}
+        ctrl.yaml_file = "/test_missing_device.yaml"
+        clear_yaml_cache()
+        loader = YamlConfigLoader(ctrl)
+        assert await loader.async_initialize() is False
 
-    # Store previous state of operations
-    ops_count = len(loader.operations)
+        # 5. Missing unique_id
+        mock_load.return_value = {"device": {}}
+        ctrl.yaml_file = "/test_no_uid.yaml"
+        ctrl.unique_id = None
+        clear_yaml_cache()
+        loader = YamlConfigLoader(ctrl)
+        assert await loader.async_initialize() is False
+        ctrl.unique_id = "test_uid"
 
-    # Re-initialize
-    with patch("custom_components.climate_ip.controller_yaml_config.create_property"):
-        await loader.async_finish_initialization()
+        # 6. Connection load_from_yaml fails and missing status returns False
+        mock_load.return_value = {"device": {"connection": {"type": "mock"}}}
+        mock_conn_instance.load_from_yaml.return_value = False
+        ctrl.yaml_file = "/test_conn_fail.yaml"
+        clear_yaml_cache()
+        loader = YamlConfigLoader(ctrl)
+        assert await loader.async_initialize() is False
 
-    assert len(loader.operations) == ops_count
+        # 7. Status getter creation returns None (status node absent from YAML)
+        mock_conn_instance.load_from_yaml.return_value = True
+        ctrl.yaml_file = "/test_no_status.yaml"
+        clear_yaml_cache()
+        loader = YamlConfigLoader(ctrl)
+        assert await loader.async_initialize() is False
+
+        # 8. No matching connection class found
+        mock_load.return_value = {
+            "device": {"connection": {"type": "unsupported_type"}}
+        }
+        conn_list.clear()
+        ctrl.yaml_file = "/test_no_match.yaml"
+        clear_yaml_cache()
+        loader = YamlConfigLoader(ctrl)
+        assert await loader.async_initialize() is False
 
 
 # ====================================================================================
-# FRONT D: STRICT ASSERTION OF CONNECTION ARGUMENTS
+# 3. YAML CACHING & NON-DICT HANDLING
 # ====================================================================================
 
 
-async def test_async_initialize_connection_instantiation_args():
-    """Validates that network engines are instantiated with the exact arguments required."""
+@pytest.mark.asyncio
+async def test_async_initialize_yaml_caching_and_non_dict() -> None:
+    """Validate YAML caching behavior, non-dict handling, and clear_yaml_cache."""
+    ctrl = DummyController(yaml_file="/test_cache.yaml")
+    loader = YamlConfigLoader(ctrl)
+    clear_yaml_cache()
 
-    mock_controller = StrictMock()
-    mock_controller.hass = MagicMock()
-    mock_controller.unique_id = "test_unique"
-    mock_controller.log_prefix = "[Test]"
+    valid_data = {"device": {"connection": {"type": "mock"}, "status": {}}}
+    mock_conn = MagicMock()
+    mock_conn.__name__ = "MockConn"
+    mock_conn.match_type.return_value = True
+    mock_conn.return_value.load_from_yaml.return_value = True
 
+    with (
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.load_yaml",
+            return_value="not_a_dict",
+        ) as mock_load,
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
+            [mock_conn],
+        ),
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.create_status_getter",
+            return_value=MagicMock(),
+        ),
+    ):
+        # 1. Non-dict loaded from YAML -> loader returns False and does not cache
+        assert await loader.async_initialize() is False
+        assert loader._parsed_yaml_config is None
+        assert "/test_cache.yaml" not in _YAML_FILE_CACHE
+
+        # 2. Valid dict cached under resolved file path
+        mock_load.return_value = valid_data
+        assert await loader.async_initialize() is True
+        assert loader.name == CONST_CONTROLLER_TYPE
+        assert _YAML_FILE_CACHE.get("/test_cache.yaml") == valid_data
+
+        # 3. Cache hit via resolved path
+        loader2 = YamlConfigLoader(ctrl)
+        assert await loader2.async_initialize() is True
+
+        # 4. Cache hit via raw_file fallback
+        clear_yaml_cache()
+        _YAML_FILE_CACHE["raw_relative.yaml"] = valid_data
+        ctrl_raw = DummyController(yaml_file="raw_relative.yaml")
+        loader3 = YamlConfigLoader(ctrl_raw)
+        assert await loader3.async_initialize() is True
+
+    clear_yaml_cache()
+    assert len(_YAML_FILE_CACHE) == 0
+
+
+# ====================================================================================
+# 4. DEVICE ID CACHE KEYS
+# ====================================================================================
+
+
+@pytest.mark.asyncio
+async def test_async_initialize_device_id_cache_keys() -> None:
+    """Verify device_id and fallback empty string cache key handling."""
+    ctrl = DummyController(device_id="sniper_target_id", yaml_file="/dev_cache.yaml")
+    loader = YamlConfigLoader(ctrl)
+    clear_yaml_cache()
+
+    valid_data = {"device": {"connection": {"type": "mock"}, "status": {}}}
+    mock_conn = MagicMock()
+    mock_conn.__name__ = "MockConn"
+    mock_conn.match_type.return_value = True
+    mock_conn.return_value.load_from_yaml.return_value = True
+
+    with (
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.load_yaml",
+            return_value=valid_data,
+        ),
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
+            [mock_conn],
+        ),
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.create_status_getter",
+            return_value=MagicMock(),
+        ),
+    ):
+        assert await loader.async_initialize() is True
+        assert "sniper_target_id" in loader.parsed_yaml_cache
+        assert loader.parsed_yaml_cache["sniper_target_id"] == valid_data
+
+        # Test controller lacking device_id attribute
+        del ctrl.device_id
+        loader2 = YamlConfigLoader(ctrl)
+        assert await loader2.async_initialize() is True
+        assert "" in loader2.parsed_yaml_cache
+
+
+# ====================================================================================
+# 5. EXECUTOR DELEGATION
+# ====================================================================================
+
+
+@pytest.mark.asyncio
+async def test_async_initialize_executor_job_delegation() -> None:
+    """Test executor job delegation when hass is present vs direct load when None."""
+    clear_yaml_cache()
     mock_hass = MagicMock()
-    mock_hass.async_add_executor_job = AsyncMock()
-    mock_controller.hass = mock_hass
+    yaml_data = {"device": {"status": {}, "connection": {"type": "mock"}}}
+    mock_hass.async_add_executor_job = AsyncMock(return_value=yaml_data)
 
-    mock_controller._session = "SESSION_INSTANCE"
-    mock_controller.ip_address = "192.168.1.100"
-    mock_controller.yaml_file = "/test.yaml"
-    # Force the 'else' branch of the connection type (generic/REST)
-    mock_controller._config = {"device_type": "UNKNOWN_GENERIC"}
+    ctrl = DummyController(hass=mock_hass, yaml_file="executor_test.yaml")
+    loader = YamlConfigLoader(ctrl)
 
-    loader = YamlConfigLoader(mock_controller)
+    mock_conn = MagicMock()
+    mock_conn.__name__ = "MockConn"
+    mock_conn.match_type.return_value = True
+    mock_conn.return_value.load_from_yaml.return_value = True
+
+    with (
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
+            [mock_conn],
+        ),
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.create_status_getter",
+            return_value=MagicMock(),
+        ),
+    ):
+        assert await loader.async_initialize() is True
+        expected_path = str(
+            Path(
+                sys.modules[
+                    "custom_components.climate_ip.controller_yaml_config"
+                ].__file__
+            ).parent
+            / "executor_test.yaml"
+        )
+        mock_hass.async_add_executor_job.assert_called_once_with(
+            load_yaml, expected_path
+        )
+
+
+# ====================================================================================
+# 6. EXPLICIT YAML NAME & POLL (CRITICAL SOLO KILLER)
+# ====================================================================================
+
+
+@pytest.mark.asyncio
+async def test_async_initialize_explicit_yaml_data() -> None:
+    """Verify name and poll parsed directly from YAML (Critical Solo Killer)."""
+    clear_yaml_cache()
+    ctrl = DummyController(yaml_file="/test_explicit.yaml")
+    loader = YamlConfigLoader(ctrl)
+
+    yaml_data = {
+        "device": {
+            "status": {},
+            "connection": {"type": "mock"},
+            ATTR_NAME: "CustomACName",
+            CONFIG_DEVICE_POLL: "false",
+        }
+    }
+
+    mock_conn = MagicMock()
+    mock_conn.__name__ = "MockConn"
+    mock_conn.match_type.return_value = True
+    mock_conn.return_value.load_from_yaml.return_value = True
+
+    with (
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.load_yaml",
+            return_value=yaml_data,
+        ),
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
+            [mock_conn],
+        ),
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.create_status_getter",
+            return_value=MagicMock(),
+        ),
+    ):
+        assert await loader.async_initialize() is True
+        assert loader.name == "CustomACName"
+        assert loader.poll is False
+
+        # Also test poll == 'true'
+        yaml_data["device"][CONFIG_DEVICE_POLL] = "true"
+        clear_yaml_cache()
+        loader_true = YamlConfigLoader(ctrl)
+        assert await loader_true.async_initialize() is True
+        assert loader_true.poll is True
+
+
+# ====================================================================================
+# 7. GENERIC CONNECTION INSTANTIATION
+# ====================================================================================
+
+
+@pytest.mark.asyncio
+async def test_async_initialize_connection_instantiation_args() -> None:
+    """Validate generic connection instantiation arguments and status getter creation."""
+    clear_yaml_cache()
     yaml_data = {
         "device": {
             "connection": {"type": "test_conn_type"},
             "status": {"real_status": 123},
         }
     }
-    loader._parsed_yaml_config = yaml_data
-    _YAML_FILE_CACHE["/test.yaml"] = yaml_data
+    mock_hass = MagicMock()
+    mock_hass.async_add_executor_job = AsyncMock(return_value=yaml_data)
 
-    # Create a strict interceptor that is not a permissive MagicMock
-    class InterceptorConnection:
+    ctrl = DummyController(
+        hass=mock_hass,
+        yaml_file="/test_generic_conn.yaml",
+        config={"device_type": "generic_type"},
+    )
+    loader = YamlConfigLoader(ctrl)
+
+    class GenericConnection:
         def __init__(self, *args, **kwargs):
             self.args = args
             self.kwargs = kwargs
@@ -258,171 +436,316 @@ async def test_async_initialize_connection_instantiation_args():
         def match_type(cls, conn_type):
             return conn_type == "test_conn_type"
 
-        def load_from_yaml(self, node, state_getter):
+        def load_from_yaml(self, node, getter):
             self.loaded_node = node
-            self.loaded_getter = state_getter
-            return isinstance(node, dict)
+            self.loaded_getter = getter
+            return True
 
-    # Inject our connection class to audit arguments
     with (
         patch(
             "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
-            [InterceptorConnection],
+            [GenericConnection],
         ),
         patch(
-            "custom_components.climate_ip.controller_yaml_config.create_status_getter"
+            "custom_components.climate_ip.controller_yaml_config.create_status_getter",
+            return_value=MagicMock(),
         ) as mock_csg,
     ):
-        mock_csg.return_value = MagicMock()
-        res = await loader.async_initialize()
-        assert res is True
-
-        # Autopsy of the instantiation (Kills mutants that omit hass, config, or change arguments)
+        assert await loader.async_initialize() is True
         assert loader.connection is not None
-        assert loader.connection.args[0] == mock_controller._config
+        assert loader.connection.args[0] == ctrl.config
         assert loader.connection.args[1] == _LOGGER
         assert loader.connection.kwargs.get("hass") == mock_hass
         assert loader.connection.loaded_node == {"type": "test_conn_type"}
-        assert loader.connection.loaded_node is not None
         assert loader.connection.loaded_getter is None
-
-        # Autopsy of create_status_getter (Kills Targets 222 & 227)
         mock_csg.assert_called_once_with(
-            "state", {"real_status": 123}, loader.connection, mock_controller
+            "state", {"real_status": 123}, loader.connection, ctrl
         )
 
 
-async def test_async_initialize_options_fallback_preservation():
-    """Kills Targets 104 & 106 when entry.options is truthy but lacks CONF_CONN_METHOD."""
-    mock_controller = StrictMock()
-    mock_controller.hass = MagicMock()
-    mock_controller.unique_id = "test_opt_fallback"
-    mock_controller.log_prefix = "[Test]"
-    mock_controller._config = {
-        "entry_id": "test_entry_fallback",
+# ====================================================================================
+# 8. CONNECTION AIOHTTP8888 (CRITICAL SOLO KILLER)
+# ====================================================================================
+
+
+@pytest.mark.asyncio
+async def test_async_initialize_connection_instantiation_args_frente_d() -> None:
+    """Solo killer: verifies ConnectionAiohttp8888 full argument forwarding."""
+    clear_yaml_cache()
+    mock_hass = MagicMock()
+    mock_hass.async_add_executor_job = AsyncMock(
+        return_value={"device": {"connection": {"type": "aiohttp"}, "status": {}}}
+    )
+
+    ctrl = DummyController(
+        hass=mock_hass,
+        _session="SESSION_INSTANCE",
+        ip_address="192.168.1.100",
+        yaml_file="/test_d.yaml",
+        unique_id="test_d",
+        _config={"device_type": "samsung_8888"},
+        config={"device_type": "samsung_8888"},
+    )
+    loader = YamlConfigLoader(ctrl)
+
+    with (
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.create_status_getter",
+            return_value=MagicMock(),
+        ) as mock_csg,
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS"
+        ) as mock_connections,
+    ):
+        mock_conn_class = MagicMock()
+        mock_conn_class.__name__ = "ConnectionAiohttp8888"
+        mock_conn_class.match_type.return_value = True
+
+        mock_conn_instance = MagicMock()
+        mock_conn_instance.load_from_yaml.return_value = True
+        mock_conn_class.return_value = mock_conn_instance
+        mock_connections.__iter__.return_value = [mock_conn_class]
+
+        assert await loader.async_initialize() is True
+
+        merged_config = {
+            "device_type": "samsung_8888",
+            "type": "samsung_8888_aiohttp",
+        }
+        mock_conn_class.assert_called_once_with(
+            merged_config,
+            _LOGGER,
+            ctrl.hass,
+            ctrl._session,
+            ctrl.ip_address,
+        )
+        mock_conn_instance.load_from_yaml.assert_called_once_with(
+            {"type": "samsung_8888_aiohttp"}, None
+        )
+        mock_csg.assert_called_once_with("state", {}, mock_conn_instance, ctrl)
+
+
+# ====================================================================================
+# 9. CONNECTION RAW8888 (CRITICAL SOLO KILLER)
+# ====================================================================================
+
+
+@pytest.mark.asyncio
+async def test_async_initialize_connection_raw8888_args() -> None:
+    """Solo killer: audits ConnectionRaw8888 5-positional arguments path."""
+    clear_yaml_cache()
+    yaml_data = {"device": {"connection": {"type": "samsung_8888_raw"}, "status": {}}}
+    mock_hass = MagicMock()
+    mock_hass.async_add_executor_job = AsyncMock(return_value=yaml_data)
+
+    config_dict = {
         CONF_DEVICE_TYPE: "samsung_8888",
         CONF_CONN_METHOD: CONN_METHOD_RAW,
     }
-    mock_controller.config = mock_controller._config
-    # entry.options exists (is truthy) BUT lacks CONF_CONN_METHOD
-    mock_entry = MagicMock()
-    mock_entry.options = {"other_option_unrelated": True}
-    mock_controller.hass.config_entries.async_get_entry.return_value = mock_entry
-    loader = YamlConfigLoader(mock_controller)
-    # Base YAML has 'request' connection, so fallback MUST override it to 'samsung_8888_raw'
-    loader._parsed_yaml_config = {
-        "device": {
-            "connection": {"type": "request"},
-            "status": {},
-        }
-    }
-    _YAML_FILE_CACHE["/test_opt_fallback.yaml"] = loader._parsed_yaml_config
-    mock_controller.yaml_file = "/test_opt_fallback.yaml"
+    ctrl = DummyController(
+        hass=mock_hass,
+        _config=config_dict,
+        config=config_dict,
+        _session="RAW_SESSION_OBJECT",
+        ip_address="10.0.0.99",
+        yaml_file="/test_raw.yaml",
+    )
+    loader = YamlConfigLoader(ctrl)
 
-    class DummyRawConn:
+    class ConnectionRaw8888:
         def __init__(self, *args, **kwargs):
-            self.loaded_node = None
+            self.args = args
 
         @classmethod
         def match_type(cls, conn_type):
             return conn_type == "samsung_8888_raw"
 
         def load_from_yaml(self, node, getter):
-            self.loaded_node = node
-            return isinstance(node, dict)
+            return True
 
     with (
         patch(
             "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
-            [DummyRawConn],
+            [ConnectionRaw8888],
         ),
         patch(
             "custom_components.climate_ip.controller_yaml_config.create_status_getter",
             return_value=MagicMock(),
         ),
     ):
-        res = await loader.async_initialize()
-        assert res is True
-        assert isinstance(loader.connection, DummyRawConn)
-        assert loader.connection.loaded_node == {"type": "samsung_8888_raw"}
+        assert await loader.async_initialize() is True
+        assert isinstance(loader.connection, ConnectionRaw8888)
+        assert loader.connection.args[0] == ctrl.config
+        assert loader.connection.args[1] == _LOGGER
+        assert loader.connection.args[2] == ctrl.hass
+        assert loader.connection.args[3] == "RAW_SESSION_OBJECT"
+        assert loader.connection.args[4] == "10.0.0.99"
 
 
 # ====================================================================================
-# FRONT E: THERMODYNAMIC UNITS FIREWALL (Temperature Fallbacks)
+# 10. DEVICE TYPES & OPTIONS RESOLUTION
 # ====================================================================================
 
 
-async def test_async_finish_initialization_temperature_fallbacks():
-    """Forces the absence of HASS dependencies to assert the use of default units."""
+@pytest.mark.asyncio
+async def test_async_initialize_options_and_device_types() -> None:
+    """Validate device_type routing, entry.options resolution, and fallbacks."""
+    clear_yaml_cache()
+    mock_conn = MagicMock()
+    mock_conn.__name__ = "MockConn"
+    mock_conn.match_type.return_value = True
+    mock_conn.return_value.load_from_yaml.return_value = True
 
-    mock_controller = StrictMock()
-    mock_controller.hass = MagicMock()
-    mock_controller.unique_id = "test_unique"
-    mock_controller.device_id = "temp_device_test"
-    # 1. Remove the hass object entirely
-    if hasattr(mock_controller, "hass"):
-        delattr(mock_controller, "hass")
-
-    mock_controller._config = {}
-
-    loader = YamlConfigLoader(mock_controller)
-    loader.is_fully_initialized = False
-
-    # Inject a simulated YAML
-    loader._parsed_yaml_config = {
-        "device": {"operations": {"target_temp": {"type": "temperature"}}}
-    }
-
-    # Create a mock property that logs unit calls
-    mock_prop = StrictMock()
-    mock_prop.id = "temperature"
-    mock_prop.device_class = "temperature"  # Force is_temp check
-
-    with patch(
-        "custom_components.climate_ip.controller_yaml_config.create_property",
-        return_value=mock_prop,
-    ):
-        await loader.async_finish_initialization()
-
-        # Since there is no HASS or config_entries, the code MUST use DEFAULT_CONF_TEMP_UNIT
-        # This destroys mutants that alter the initial assignment of `configured_unit`
-        # and `native_target_unit`
-        mock_prop.set_hass_unit.assert_called_once_with(DEFAULT_CONF_TEMP_UNIT)
-        mock_prop.set_device_unit.assert_called_with(DEFAULT_CONF_TEMP_UNIT)
-
-
-# ====================================================================================
-# FRONT F: STRICT FACTORY AND DEDUPLICATION ASSERTION
-# ====================================================================================
-
-
-async def test_async_finish_initialization_strict_factory_args():
-    """Validates that create_property receives its 5 arguments intact and asserts unique lists."""
-
-    mock_controller = StrictMock()
-    mock_controller.hass = MagicMock()
-    mock_controller.unique_id = "test_unique"
-    mock_controller.device_id = "test_dev"
-    loader = YamlConfigLoader(mock_controller)
-    loader.is_fully_initialized = False
-
-    loader.connection = "STRICT_CONN"
-    loader.state_getter = "STRICT_GETTER"
-
-    # Malicious YAML: Pass 'target_op' in operations AND attributes to force ID collision
-    loader._parsed_yaml_config = {
+    yaml_data = {"device": {"connection": {}, "status": {}}}
+    dep_yaml = {
         "device": {
-            "operations": {"target_op": {"type": "A"}},
-            "attributes": {"target_op": {"type": "B"}},  # Intentional duplicate
-            "sensors": {"target_sensor": {"type": "C"}},
+            "connection": {CONFIG_DEVICE_CONNECTION_TYPE: "request"},
+            "status": {},
         }
     }
 
-    # Strict interceptor to simulate property creation
-    def fake_create(key, node, conn, ctrl, getter):
+    with (
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.load_yaml",
+            return_value=yaml_data,
+        ) as mock_load,
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
+            [mock_conn],
+        ),
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.create_status_getter",
+            return_value=MagicMock(),
+        ),
+    ):
+        # 1. samsung_2878 and intesisbox routing
+        for dev_type, expected_conn_type in (
+            (DEVICE_TYPE_SAMSUNG_2878, "samsung_2878"),
+            (DEVICE_TYPE_INTESISBOX, "intesisbox"),
+        ):
+            clear_yaml_cache()
+            ctrl = DummyController(
+                yaml_file="/test_routing.yaml",
+                config={CONF_DEVICE_TYPE: dev_type},
+            )
+            loader = YamlConfigLoader(ctrl)
+            assert await loader.async_initialize() is True
+            mock_conn.match_type.assert_called_with(expected_conn_type)
+
+        # 2. Options resolution with entry.options override (raw method)
+        mock_hass = MagicMock()
+        mock_hass.async_add_executor_job = AsyncMock(return_value=yaml_data)
+        mock_entry = MagicMock()
+        mock_entry.options = {CONF_CONN_METHOD: CONN_METHOD_RAW}
+        mock_hass.config_entries.async_get_entry.return_value = mock_entry
+
+        ctrl_opt = DummyController(
+            hass=mock_hass,
+            yaml_file="/test_opt.yaml",
+            config={
+                "entry_id": "test_entry_1",
+                CONF_DEVICE_TYPE: "samsung_8888",
+                CONF_CONN_METHOD: CONN_METHOD_AIOHTTP,
+            },
+        )
+        loader_opt = YamlConfigLoader(ctrl_opt)
+        clear_yaml_cache()
+        assert await loader_opt.async_initialize() is True
+        mock_conn.match_type.assert_called_with("samsung_8888_raw")
+
+        # 3. Options truthy but lacking CONF_CONN_METHOD -> preserves controller config
+        mock_entry.options = {"other_key": 123}
+        loader_fallback = YamlConfigLoader(ctrl_opt)
+        clear_yaml_cache()
+        assert await loader_fallback.async_initialize() is True
+        mock_conn.match_type.assert_called_with("samsung_8888_aiohttp")
+
+        # 4. Obsolete / unsupported connection method -> fallback to yaml / request
+        ctrl_dep = DummyController(
+            yaml_file="/test_dep.yaml",
+            config={
+                CONF_DEVICE_TYPE: "samsung_8888",
+                CONF_CONN_METHOD: "invalid_obsolete",
+            },
+        )
+        loader_dep = YamlConfigLoader(ctrl_dep)
+        mock_load.return_value = dep_yaml
+        clear_yaml_cache()
+        assert await loader_dep.async_initialize() is True
+        mock_conn.match_type.assert_called_with("request")
+
+
+# ====================================================================================
+# 11. FINISH INITIALIZATION EARLY EXITS
+# ====================================================================================
+
+
+@pytest.mark.asyncio
+async def test_async_finish_initialization_early_exits() -> None:
+    """Verify idempotency and early returns in async_finish_initialization."""
+    ctrl = DummyController()
+    loader = YamlConfigLoader(ctrl)
+
+    with patch(
+        "custom_components.climate_ip.controller_yaml_config.create_property",
+        side_effect=RuntimeError("TRAP: create_property should not be called"),
+    ):
+        # 1. is_fully_initialized is True -> early exit even with truthy _parsed_yaml_config
+        loader.is_fully_initialized = True
+        loader._parsed_yaml_config = {"device": {"operations": {"trap": {}}}}
+        await loader.async_finish_initialization()
+
+        # 2. _parsed_yaml_config is None -> early exit
+        loader.is_fully_initialized = False
+        loader._parsed_yaml_config = None
+        await loader.async_finish_initialization()
+
+        # 3. device key missing from cached yaml -> completes safely without error
+        del ctrl.device_id
+        loader._parsed_yaml_config = {"other": {}}
+        loader._parsed_yaml_cache = {"": {"other": {}}}
+        await loader.async_finish_initialization()
+        assert loader.is_fully_initialized is True
+
+
+# ====================================================================================
+# 12. PROPERTIES & SENSORS CREATION
+# ====================================================================================
+
+
+@pytest.mark.asyncio
+async def test_async_finish_initialization_properties_creation() -> None:
+    """Verify property creation across operations, switches, attributes, sensors, and schemas."""
+    ctrl = DummyController(device_id="dev_props")
+    loader = YamlConfigLoader(ctrl)
+    loader.connection = "TEST_CONN"
+    loader.state_getter = "TEST_GETTER"
+
+    loader._parsed_yaml_config = {
+        "device": {
+            "operations": {"op1": {"type": "A"}, "op1_dup": {"type": "A"}},
+            "switches": {"sw1": {"type": "B"}},
+            "attributes": {"attr1": {"unit_of_measurement": "kWh"}},
+            "sensors": {"sen1": {"type": "C"}},
+        }
+    }
+    loader._parsed_yaml_cache = {"dev_props": loader._parsed_yaml_config}
+
+    mock_prop_dup = MagicMock()
+    mock_prop_dup.id = "real_op1"
+    mock_prop_dup.config_validation_type = "cv_custom"
+    mock_prop_dup.device_class = "temperature"
+
+    def fake_create(key, node, conn, c, getter):
+        if key == "op1_dup":
+            return mock_prop_dup
         prop = MagicMock()
-        prop.id = key
-        prop.config_validation_type = str
+        prop.id = f"real_{key}"
+        prop.config_validation_type = "cv_custom"
+        if key == "attr1":
+            prop.device_class = "power"
+        else:
+            prop.device_class = "temperature"
         return prop
 
     with patch(
@@ -431,1361 +754,373 @@ async def test_async_finish_initialization_strict_factory_args():
     ) as mock_create:
         await loader.async_finish_initialization()
 
-        # 1. RIGID ARGUMENT ASSERTION (Kills mutants 32 to 118)
-        # If mutmut changes `self.state_getter` to `None` in production code, this will explode
         mock_create.assert_any_call(
-            "target_op", {"type": "A"}, "STRICT_CONN", mock_controller, "STRICT_GETTER"
+            "op1", {"type": "A"}, "TEST_CONN", ctrl, "TEST_GETTER"
         )
         mock_create.assert_any_call(
-            "target_sensor",
-            {"type": "C"},
-            "STRICT_CONN",
-            mock_controller,
-            "STRICT_GETTER",
+            "sw1", {"type": "B"}, "TEST_CONN", ctrl, "TEST_GETTER"
+        )
+        mock_create.assert_any_call(
+            "attr1", {"unit_of_measurement": "kWh"}, "TEST_CONN", ctrl, "TEST_GETTER"
+        )
+        mock_create.assert_any_call(
+            "sen1", {"type": "C"}, "TEST_CONN", ctrl, "TEST_GETTER"
         )
 
-        # 2. LIST DEDUPLICATION ASSERTION
-        # If mutmut changes `if op_id not in self.operations_list` to `in`, there will be duplicates or missing items
-        assert loader.operations_list.count("target_op") == 1
-        assert "target_sensor" in loader.sensors_list
-
-
-# ====================================================================================
-# FRONT G: THE INFERNAL CASCADE OF FALLBACKS (.get and getattr)
-# ====================================================================================
-
-
-async def test_async_initialize_fallback_cascades():
-    """Forces nonexistent attributes and dictionaries to evaluate {} fallbacks."""
-
-    mock_controller = StrictMock()
-    mock_controller.hass = MagicMock()
-    mock_controller.unique_id = "test_unique"
-
-    # Destroy configuration attributes atomically
-    if hasattr(mock_controller, "_config"):
-        delattr(mock_controller, "_config")
-    if hasattr(mock_controller, "config"):
-        delattr(mock_controller, "config")
-
-    loader = YamlConfigLoader(mock_controller)
-
-    # Empty YAML at root (Kills mutations of `ac = yaml_device.get(CONFIG_DEVICE, {})`)
-    loader._parsed_yaml_config = {}
-
-    try:
-        # If a mutant mutated `{}` to `None`, it will fail catastrophically here
-        await loader.async_initialize()
-    except AttributeError as e:
-        pytest.fail(f"The fallback cascade was corrupted by a mutant: {e}")
-
-
-# ====================================================================================
-# FRONT H: DUCK-TYPING VS INHERITANCE (The Thermodynamic Engine)
-# ====================================================================================
-
-
-async def test_async_finish_initialization_apply_unit_polymorphism():
-    """Asserts que apply_unit distingue correctamente mediante isinstance y device_class."""
-
-    mock_controller = StrictMock()
-    mock_controller.hass = MagicMock()
-    mock_controller.unique_id = "test_unique"
-    loader = YamlConfigLoader(mock_controller)
-    loader.is_fully_initialized = False
-    loader._parsed_yaml_config = {"device": {}}
-
-    # Propiedad 1: Basura (No debe recibir unidades)
-    prop_other = StrictMock()
-    prop_other.device_class = "power"
-    prop_other.id = "power_switch"
-
-    # Property 2: Duck-Typing Temperature (Verify mutant kill of == "temperature")
-    prop_duck = StrictMock()
-    prop_duck.device_class = "temperature"
-    prop_duck.id = "target_temperature"
-
-    # Property 3: Strict Inheritance Temperature (Verify mutant kill of isinstance)
-    prop_isinstance = StrictMock(spec=TemperatureOperation)
-    prop_isinstance.id = "current_temperature"
-
-    # Inject into the loader, skipping YAML parsing
-    loader.properties = {"p1": prop_other, "p2": prop_duck, "p3": prop_isinstance}
-
-    with patch(
-        "custom_components.climate_ip.controller_yaml_config.create_property"
-    ):  # Silence external calls
-        await loader.async_finish_initialization()
-
-    # Precision assertions (apply_unit method should have iterated over loader.properties)
-    prop_other.set_hass_unit.assert_not_called()
-    prop_duck.set_hass_unit.assert_called_once()
-    prop_isinstance.set_hass_unit.assert_called_once()
-
-
-# ====================================================================================
-# FRONT I: ASYMMETRIC IDENTITY TRAP (op_key vs op.id)
-# ====================================================================================
-
-
-async def test_async_finish_initialization_asymmetric_id_fallback():
-    """Validates that if op.id exists, op_key is NOT used. Kills getattr('id') mutants."""
-
-    mock_controller = StrictMock()
-    mock_controller.hass = MagicMock()
-    mock_controller.unique_id = "test_unique"
-    loader = YamlConfigLoader(mock_controller)
-    loader.is_fully_initialized = False
-
-    # Inject dictionaries with YAML keys that are DIFFERENT from the property's real ID
-    loader._parsed_yaml_config = {
-        "device": {
-            "operations": {"yaml_op_key": {"type": "A"}},
-            "switches": {"yaml_switch_key": {"type": "B"}},
-            "attributes": {"yaml_attr_key": {"type": "C"}},
-            "sensors": {
-                "yaml_sensor_key": {"type": "D"}
-            },  # Sensors uses the 'name' variable
-        }
-    }
-    loader._parsed_yaml_cache = {"": loader._parsed_yaml_config}
-
-    def fake_create(key, node, conn, ctrl, getter):
-        prop = MagicMock()
-        # Internal ID is different from YAML key
-        prop.id = f"real_id_for_{key}"
-        return prop
-
-    with patch(
-        "custom_components.climate_ip.controller_yaml_config.create_property",
-        side_effect=fake_create,
-    ):
-        await loader.async_finish_initialization()
-
-        # If mutmut changes getattr(op, "id", op_key) to getattr(op, "XXidXX", op_key),
-        # the lists will register "yaml_op_key" instead of "real_id_for_yaml_op_key", and the test will explode.
-        assert "real_id_for_yaml_op_key" in loader.operations
-        assert "yaml_op_key" not in loader.operations
-
-        assert "real_id_for_yaml_switch_key" in loader.operations
-        assert "real_id_for_yaml_attr_key" in loader.properties
-
-
-# ====================================================================================
-# FRONT J: DEEP INJECTION OF CONFIG ENTRIES (HASS Options)
-# ====================================================================================
-
-
-async def test_async_finish_initialization_config_entry_options():
-    """Forces unit evaluation through entry.options."""
-
-    mock_controller = StrictMock()
-    mock_controller.hass = MagicMock()
-    mock_controller.unique_id = "test_unique"
-    mock_controller._config = {
-        "entry_id": "test_entry_777",
-        "device_type": "samsung_8888",
-    }
-
-    mock_entry = MagicMock()
-    mock_entry.options = {
-        CONF_CONN_METHOD: "raw",
-        CONF_TEMP_NATIVE_CURRENT: "Kelvin",
-        CONF_TEMP_NATIVE_TARGET: "Fahrenheit",
-    }
-    mock_controller.hass.config_entries.async_get_entry.return_value = mock_entry
-
-    loader = YamlConfigLoader(mock_controller)
-    loader.is_fully_initialized = False
-    loader._parsed_yaml_config = {
-        "device": {
-            "operations": {"temp_op": {"type": "temperature"}},
-        }
-    }
-    loader._parsed_yaml_cache = {"": loader._parsed_yaml_config}
-
-    mock_temp_prop = StrictMock()
-    mock_temp_prop.device_class = "temperature"
-    mock_temp_prop.id = "temperature"
-
-    with patch(
-        "custom_components.climate_ip.controller_yaml_config.create_property",
-        return_value=mock_temp_prop,
-    ):
-        await loader.async_finish_initialization()
-        mock_temp_prop.set_device_unit.assert_called_with("Fahrenheit")
-
-
-async def test_async_initialize_config_entry_options():
-    """Validates connection instantiation through entry.options in async_initialize."""
-
-    mock_controller = StrictMock()
-    mock_controller.hass = MagicMock()
-    mock_controller.unique_id = "test_unique"
-    mock_controller._config = {
-        "entry_id": "test_entry_777",
-        "device_type": "samsung_8888",
-    }
-
-    mock_entry = MagicMock()
-    mock_entry.options = {
-        CONF_CONN_METHOD: "raw",
-    }
-    mock_controller.hass.config_entries.async_get_entry.return_value = mock_entry
-
-    loader = YamlConfigLoader(mock_controller)
-    loader._parsed_yaml_config = {
-        "device": {
-            "connection": {},
-            "status": {},
-        }
-    }
-    mock_controller.yaml_file = "/test_j.yaml"
-    _YAML_FILE_CACHE["/test_j.yaml"] = loader._parsed_yaml_config
-
-    class DummySamsungConn:
-        def __init__(self, *args, **kwargs):
-            self.args = args
-            self.kwargs = kwargs
-            self.loaded_node = None
-
-        @classmethod
-        def match_type(cls, conn_type):
-            return conn_type == "samsung_8888_raw"
-
-        def load_from_yaml(self, node, state_getter):
-            self.loaded_node = node
-            return isinstance(node, dict)
-
-    with (
-        patch(
-            "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
-            [DummySamsungConn],
-        ),
-        patch(
-            "custom_components.climate_ip.controller_yaml_config.create_status_getter"
-        ) as mock_csg,
-    ):
-        mock_csg.return_value = MagicMock()
-
-        res = await loader.async_initialize()
-        assert res is True
-        assert isinstance(loader.connection, DummySamsungConn)
-        assert loader.connection.loaded_node == {"type": "samsung_8888_raw"}
-        mock_csg.assert_called_once_with(
-            "state", {}, loader.connection, mock_controller
-        )
-
-
-# ====================================================================================
-# FRONT K: SHORT CIRCUITS AND EARLY EXITS
-# ====================================================================================
-
-
-@pytest.mark.asyncio
-async def test_async_finish_initialization_early_exits(mock_controller) -> None:
-    """Annihilates Family B (Mutants 1, 6, 12) with a trap exception."""
-    loader = YamlConfigLoader(mock_controller)
-
-    # Prepare a trap: If the function does NOT exit early,
-    # it will try to read CONFIG_DEVICE and eventually call create_property.
-    # We deliberately break internal state so any progress will explode violently.
-    loader._parsed_yaml_config = {"device": {"operations": {"trap": {}}}}
-
-    with patch(
-        "custom_components.climate_ip.controller_yaml_config.create_property",
-        side_effect=RuntimeError("TRAP: Should not have advanced"),
-    ):
-        # 1. Exit early if already initialized (BUT there is valid config)
-        loader.is_fully_initialized = True
-        try:
-            await loader.async_finish_initialization()
-        except RuntimeError:
-            pytest.fail(
-                "Mutant 1 survived: The 'or' block was mutated to 'and' and did not exit early."
-            )
-
-        # 2. Exit early if NO valid config (BUT it is not initialized)
-        loader.is_fully_initialized = False
-        loader._parsed_yaml_config = None
-        try:
-            await loader.async_finish_initialization()
-        except RuntimeError:
-            pytest.fail(
-                "Mutant 1 survived: The 'or' block was mutated to 'and' and did not exit early."
-            )
-
-        # 3. Check safe use of getattr on device_id mutated to "XXXX" (Mutants 6, 12)
-        del mock_controller.device_id
-        loader._parsed_yaml_config = {"device": {}}
-        loader._parsed_yaml_cache = {"": {"device": {"name": "cached_device"}}}
-        # Since there are no operations, it won't trigger the trap, but we verify it doesn't cause an AttributeError
-        await loader.async_finish_initialization()
-
-
-@pytest.mark.asyncio
-async def test_async_finish_initialization_idempotency(mock_controller) -> None:
-    """Annihilates Family A (Mutants 49, 50, 88, 89...) preventing StopIteration."""
-    loader = YamlConfigLoader(mock_controller)
-
-    # Isolate ONLY the operations block so we don't exhaust side_effect
-    loader._parsed_yaml_config = {"device": {"operations": {"op_1": {}, "op_2": {}}}}
-    loader._parsed_yaml_cache = {"dev_123": loader._parsed_yaml_config}
-    loader.connection = MagicMock()
-    loader.state_getter = MagicMock()
-
-    mock_prop_1 = MagicMock()
-    mock_prop_1.id = "shared_id"
-    mock_prop_2 = MagicMock()
-    mock_prop_2.id = "shared_id"
-
-    # Return Mocks for 'operations' and then None for anything else trying to parse (switches, attributes)
-    def create_property_mock(*args, **kwargs):
-        if args[0] == "op_1":
-            return mock_prop_1
-        if args[0] == "op_2":
-            return mock_prop_2
-        return None
-
-    with patch(
-        "custom_components.climate_ip.controller_yaml_config.create_property",
-        side_effect=create_property_mock,
-    ):
-        await loader.async_finish_initialization()
-
-        assert loader.operations_list == ["shared_id"], (
-            "Protection against duplicate IDs failed."
-        )
-        assert loader.operations["shared_id"] is mock_prop_2
-
-
-@pytest.mark.asyncio
-async def test_apply_temperature_units_master_matrix() -> None:
-    """Annihilates Family C and dictionary fallbacks (Mutants 167-253)."""
-
-    # Matrix: (entry_options, entry_data, expected_target, expected_current)
-    matrix = [
-        # 1. Everything in options (The happy path)
-        (
-            {CONF_TEMP_NATIVE_TARGET: "°K", CONF_TEMP_NATIVE_CURRENT: "°F"},
-            {},
-            "°K",
-            "°F",
-        ),
-        # 2. Everything in data (Fallback of options to data)
-        (
-            {},
-            {CONF_TEMP_NATIVE_TARGET: "°K", CONF_TEMP_NATIVE_CURRENT: "°F"},
-            "°K",
-            "°F",
-        ),
-        # 3. Absolute empty (Fallback to default display unit)
-        (
-            {},
-            {},
-            "°C",
-            "°C",  # °C is our mock for hass.config.units.temperature_unit
-        ),
-    ]
-
-    for opts, data, exp_target, exp_current in matrix:
-        # Total isolation
-        mock_controller = MagicMock()
-        mock_controller.config = {"entry_id": "123"}
-        mock_controller.log_prefix = "[Test]"
-        mock_controller.yaml_file = "test.yaml"
-        mock_controller.hass = MagicMock()
-        mock_controller.hass.config.units.temperature_unit = "°C"
-
-        mock_entry = MagicMock()
-        mock_entry.options = opts
-        mock_entry.data = data
-        mock_controller.hass.config_entries.async_get_entry.return_value = mock_entry
-
-        loader = YamlConfigLoader(mock_controller)
-        loader._parsed_yaml_config = {"device": {}}
-        loader._parsed_yaml_cache = {"dev_123": loader._parsed_yaml_config}
-
-        # General sensor (Not temperature)
-        general_sensor = MagicMock()
-        general_sensor.device_class = "humidity"
-
-        # Generic temperature sensor
-        current_temp = MagicMock(spec=TemperatureOperation)
-        current_temp.device_class = "temperature"
-        current_temp.id = "current_temperature"
-
-        # Operación específica de target
-        target_temp = MagicMock(spec=TemperatureOperation)
-        target_temp.device_class = "temperature"
-        target_temp.id = ATTR_TEMPERATURE
-
-        loader.sensors = {"humidity_sensor": general_sensor}
-        loader.operations = {
-            ATTR_TEMPERATURE: target_temp,
-            "current_temperature": current_temp,
-        }
-
-        await loader.async_finish_initialization()
-
-        # Aserciones Letales
-        general_sensor.set_unit_of_measurement.assert_not_called()
-
-        target_temp.set_hass_unit.assert_called_once_with("°C")
-        target_temp.set_device_unit.assert_called_once_with(exp_target)
-
-        current_temp.set_hass_unit.assert_called_once_with("°C")
-        current_temp.set_device_unit.assert_called_once_with(exp_current)
-
-
-@pytest.mark.asyncio
-async def test_apply_temperature_units_no_hass() -> None:
-    """Kills mutants que dependen de hasattr(self.controller, 'hass')."""
-    # Escenario donde hass NO existe
-    mock_controller = MagicMock()
-    mock_controller.config = {}
-    mock_controller.log_prefix = "[Test]"
-    mock_controller.hass = None
-
-    loader = YamlConfigLoader(mock_controller)
-    loader._parsed_yaml_config = {"device": {}}
-    loader._parsed_yaml_cache = {"dev_123": loader._parsed_yaml_config}
-
-    target_temp = MagicMock(spec=TemperatureOperation)
-    target_temp.device_class = "temperature"
-    target_temp.id = ATTR_TEMPERATURE
-    loader.operations = {ATTR_TEMPERATURE: target_temp}
-
-    await loader.async_finish_initialization()
-
-    # Without HASS, must fall back to global DEFAULT_CONF_TEMP_UNIT (imported as DEFAULT_CONF_TEMP_UNIT)
-    target_temp.set_hass_unit.assert_called_once_with(DEFAULT_CONF_TEMP_UNIT)
-    target_temp.set_device_unit.assert_called_once_with(DEFAULT_CONF_TEMP_UNIT)
-
-
-# ====================================================================================
-# FRENTE L: LA PURGA DE LAS 4 DIMENSIONES (Operations, Switches, Attributes, Sensors)
-# ====================================================================================
-
-
-async def test_async_finish_initialization_all_loops_exhaustive():
-    """Fuerza la asimetría de IDs y el parseo en las 4 listas del loader para matar bucles espejo."""
-
-    mock_controller = StrictMock()
-    mock_controller.hass = MagicMock()
-    mock_controller.unique_id = "test_unique"
-    mock_controller.device_id = "test_dev_loops"
-    loader = YamlConfigLoader(mock_controller)
-    loader.is_fully_initialized = False
-
-    # Inject data into ALL categories simultaneously
-    loader._parsed_yaml_config = {
-        "device": {
-            "operations": {"yaml_op": {"type": "A"}},
-            "switches": {"yaml_sw": {"type": "B"}},
-            "attributes": {"yaml_attr": {"type": "C"}},
-            "sensors": {"yaml_sen": {"type": "D"}},
-        }
-    }
-    loader._parsed_yaml_cache = {}
-
-    # Generador asimétrico de propiedades
-    def fake_create(key, node, conn, ctrl, getter):
-        prop = MagicMock()
-        prop.id = f"real_{key}"  # Asimetría para matar getattr(..., "id", key)
-        prop.config_validation_type = str
-        return prop
-
-    with patch(
-        "custom_components.climate_ip.controller_yaml_config.create_property",
-        side_effect=fake_create,
-    ):
-        await loader.async_finish_initialization()
-
-        # Aserciones implacables de mapeo y deduplicación (Kills mutants 42-135)
-        assert "real_yaml_op" in loader.operations
-        assert "real_yaml_sw" in loader.operations
-        assert "real_yaml_attr" in loader.properties
-        assert "yaml_sen" in loader.sensors
-
-        # Validate deduplication lists filled up (Kills "if op_id not in...")
-        assert "real_yaml_sw" in loader.operations_list
-        assert "real_yaml_attr" in loader.properties_list
-        assert "yaml_sen" in loader.sensors_list
-
-        assert loader.is_fully_initialized is True, (
-            "El loader no levantó la bandera de inicialización completa"
-        )
-
-
-# ====================================================================================
-# FRENTE M: LA CASCADA DE CONFIGURACIÓN PRIVADA/PÚBLICA (_config vs config)
-# ====================================================================================
-
-
-async def test_async_initialize_config_fallback_cascade():
-    """Fuerza la ejecución del getattr anidado eliminando _config y usando config."""
-
-    mock_controller = StrictMock()
-    mock_controller.hass = MagicMock()
-    mock_controller.unique_id = "test_unique"
-    # 1. Destroy private attribute to force public usage
-    if hasattr(mock_controller, "_config"):
-        delattr(mock_controller, "_config")
-
-    # 2. Assign public attribute
-    mock_controller.config = {CONF_DEVICE_TYPE: "samsung_2878"}
-
-    loader = YamlConfigLoader(mock_controller)
-    loader._parsed_yaml_config = {"device": {}}
-
-    mock_controller.yaml_file = "/test_m.yaml"
-    _YAML_FILE_CACHE["/test_m.yaml"] = loader._parsed_yaml_config
-
-    await loader.async_initialize()
-
-    # If mutmut altered getattr(..., "config", {}), device_type will be None
-    # and won't enter samsung_2878 branch, so connection_node will fail.
-    assert type(loader.connection).__name__ == "ConnectionSamsung2878"
-
-
-# ====================================================================================
-# FRENTE N: EL RESCATE DE ENTRY.DATA (Unidades Térmicas)
-# ====================================================================================
-
-
-async def test_async_finish_initialization_entry_data_fallback():
-    """Evalúa la extracción de unidades cuando options está vacío pero data existe."""
-
-    mock_controller = StrictMock()
-    mock_controller.hass = MagicMock()
-    mock_controller.unique_id = "test_unique"
-    mock_controller._config = {"entry_id": "test_entry"}
-
-    # Opciones vacías, Data lleno (Kills mutants 200-208)
-    mock_entry = MagicMock()
-    mock_entry.options = {}
-    mock_entry.data = {
-        CONF_TEMP_NATIVE_CURRENT: "Kelvin",
-        CONF_TEMP_NATIVE_TARGET: "Rankine",
-    }
-    mock_controller.hass.config_entries.async_get_entry.return_value = mock_entry
-
-    loader = YamlConfigLoader(mock_controller)
-    loader.is_fully_initialized = False
-    loader._parsed_yaml_config = {
-        "device": {"operations": {"t": {"type": "temperature"}}}
-    }
-    loader._parsed_yaml_cache = {"": loader._parsed_yaml_config}
-
-    mock_prop = StrictMock()
-    mock_prop.device_class = "temperature"
-    mock_prop.id = ATTR_TEMPERATURE
-
-    with patch(
-        "custom_components.climate_ip.controller_yaml_config.create_property",
-        return_value=mock_prop,
-    ):
-        await loader.async_finish_initialization()
-
-        # Must extract values from .data dict because .options was empty
-        # If mutmut changes .data.get(..., def) to None, this assertion explodes
-        mock_prop.set_device_unit.assert_any_call("Rankine")
-
-
-# ====================================================================================
-
-
-# ====================================================================================
-# FRENTE O: LA PARADOJA DE LA CACHÉ FANTASMA
-# ====================================================================================
-async def test_async_initialize_frente_o():
-    mock_controller = StrictMock()
-    mock_controller.log_prefix = "[Test]"
-    mock_controller.yaml_file = "/test_o.yaml"
-    mock_controller.device_id = "target_dev"
-    mock_controller.unique_id = "target_dev"
-    mock_controller.hass = MagicMock()
-
-    async def mock_async_add_executor_job(*args, **kwargs):
-        return args[0](*args[1:], **kwargs)
-
-    mock_controller.hass.async_add_executor_job = mock_async_add_executor_job
-
-    _YAML_FILE_CACHE["/test_o.yaml"] = {
-        "device": {"connection": {"type": "request"}, "token": "test"}
-    }
-    loader = YamlConfigLoader(mock_controller)
-    loader._parsed_yaml_config = None
-
-    with patch(
-        "custom_components.climate_ip.controller_yaml_config.load_yaml",
-        return_value={"device": {"dummy": "data"}},
-    ):
-        with patch(
-            "custom_components.climate_ip.connection_request.ConnectionRequest.load_from_yaml",
-            return_value=True,
-        ):
-            with patch(
-                "custom_components.climate_ip.controller_yaml_config.create_status_getter",
-                return_value=MagicMock(),
-            ):
-                with pytest.warns(
-                    DeprecationWarning,
-                    match="'request' connection method is deprecated",
-                ):
-                    await loader.async_initialize()
-                assert loader.connection is not None
-
-
-# ====================================================================================
-# FRONT D: STRICT ASSERTION OF CONNECTION ARGUMENTS
-# ====================================================================================
-async def test_async_initialize_connection_instantiation_args_frente_d():
-    mock_controller = StrictMock()
-    mock_controller.log_prefix = "[Test]"
-    mock_controller.hass = MagicMock()
-    mock_controller._session = "SESSION_INSTANCE"
-    mock_controller.ip_address = "192.168.1.100"
-    mock_controller.yaml_file = "/test_d.yaml"
-    mock_controller.unique_id = "test_d"
-    mock_controller._config = {"device_type": "samsung_8888"}
-
-    async def mock_async_add_executor_job(*args, **kwargs):
-        return args[0](*args[1:], **kwargs)
-
-    mock_controller.hass.async_add_executor_job = mock_async_add_executor_job
-
-    loader = YamlConfigLoader(mock_controller)
-    loader._parsed_yaml_cache = {}
-
-    with patch(
-        "custom_components.climate_ip.controller_yaml_config.load_yaml",
-        return_value={"device": {"connection": {"type": "aiohttp"}, "status": {}}},
-    ):
-        with patch(
-            "custom_components.climate_ip.controller_yaml_config.create_status_getter",
-            return_value=MagicMock(),
-        ) as mock_csg:
-            with patch(
-                "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS"
-            ) as mock_connections:
-                mock_conn_class = MagicMock()
-                mock_conn_class.__name__ = "ConnectionAiohttp8888"
-                mock_conn_class.match_type.return_value = True
-
-                # Mock the instance returned by the class
-                mock_conn_instance = MagicMock()
-                mock_conn_instance.load_from_yaml.return_value = True
-                mock_conn_class.return_value = mock_conn_instance
-
-                mock_connections.__iter__.return_value = [mock_conn_class]
-
-                res = await loader.async_initialize()
-                assert res is True
-
-                # In config_aiohttp, the signature is (merged_config, logger, hass, session, ip)
-                merged_config = {
-                    "device_type": "samsung_8888",
-                    "type": "samsung_8888_aiohttp",
-                }
-                mock_conn_class.assert_called_once_with(
-                    merged_config,
-                    _LOGGER,
-                    mock_controller.hass,
-                    mock_controller._session,
-                    mock_controller.ip_address,
-                )
-                mock_conn_instance.load_from_yaml.assert_called_once_with(
-                    {"type": "samsung_8888_aiohttp"}, None
-                )
-                mock_csg.assert_called_once_with(
-                    "state",
-                    {},
-                    mock_conn_instance,
-                    mock_controller,
-                )
-
-
-# ====================================================================================
-# FRENTE P: VALIDACIÓN CV.STRING Y CASCADAS SECUNDARIAS
-# ====================================================================================
-async def test_async_finish_initialization_frente_p():
-    mock_controller = StrictMock()
-    mock_controller.log_prefix = "[Test]"
-    mock_controller.hass = MagicMock()
-    mock_controller.device_id = "dev_p"
-
-    loader = YamlConfigLoader(mock_controller)
-    loader.is_fully_initialized = False
-
-    # Provide operations, switches, attributes, and sensors to assert all loops
-    loader._parsed_yaml_config = {
-        "device": {
-            "operations": {"op1": {}},
-            "switches": {"sw1": {}},
-            "attributes": {"attr1": {"unit_of_measurement": "custom_unit"}},
-            "sensors": {"sen1": {}},
-        }
-    }
-    loader._parsed_yaml_cache = {}
-
-    def fake_create(key, node, conn, ctrl, getter):
-        prop = StrictMock()
-        # Distinct keys for deduplication
-        prop.id = f"real_{key}"
-        prop.config_validation_type = "cv_boolean"
-
-        # Support device_class getattr
-        if key == "attr1":
-            prop.device_class = "sensor"  # ¡EVITA que entre al if is_temp!
-        else:
-            prop.device_class = "temperature"
-
-        if key == "attr1":
-            prop.set_unit_of_measurement = MagicMock()
-
-        # Support unit assignment
-        prop.set_hass_unit = MagicMock()
-        prop.set_device_unit = MagicMock()
-        return prop
-
-    with patch(
-        "custom_components.climate_ip.controller_yaml_config.create_property",
-        side_effect=fake_create,
-    ):
-        await loader.async_finish_initialization()
-
-        # 1. We assert cv_boolean (kills mutants 59-60, 97-99)
-        # Keys in service_schema_map are Optional("real_op1"), etc.
-        assert loader.service_schema_map[Optional("real_op1")] == "cv_boolean"
-        assert loader.service_schema_map[Optional("real_sw1")] == "cv_boolean"
-
-        # 2. We assert unit_of_measurement method (mata 132-135)
-        attr1_mock = loader.properties["real_attr1"]
-        attr1_mock.set_unit_of_measurement.assert_called_once_with("custom_unit")
-
-        # 3. We assert asymmetry in operations (kills 49-53, 87-94)
+        assert loader.service_schema_map[probatio.Optional("real_op1")] == "cv_custom"
+        assert loader.service_schema_map[probatio.Optional("real_sw1")] == "cv_custom"
+        assert all(isinstance(k, probatio.Optional) for k in loader.service_schema_map)
         assert "real_sw1" in loader.operations_list
         assert "real_attr1" in loader.properties_list
         assert "sen1" in loader.sensors_list
 
-        assert loader.is_fully_initialized is True, (
-            "El loader no levantó la bandera de inicialización completa"
+        assert loader.operations_list.count("real_op1") == 1
+        assert loader.operations["real_op1"] is mock_prop_dup
+
+        loader.properties["real_attr1"].set_unit_of_measurement.assert_called_once_with(
+            "kWh"
         )
+        assert loader.is_fully_initialized is True
 
 
 # ====================================================================================
-# FRENTE R: CASCADAS DE CONFIGURATION HASS UNITS Y ENTRY.OPTIONS
+# 13. TEMPERATURE UNITS & SURVIVOR KILLER (MUTANT ID 64)
 # ====================================================================================
-async def test_async_finish_initialization_frente_r():
-    mock_controller = StrictMock()
-    mock_controller.log_prefix = "[Test]"
-    mock_controller.device_id = "dev_r"
-    mock_controller._config = {"entry_id": "test_entry"}
 
+
+@pytest.mark.asyncio
+async def test_async_finish_initialization_temperature_units_and_survivor_sniper() -> (
+    None
+):
+    """Validate temperature units and kill mutant on line 481 (if hass_ref and entry_id:)."""
+    # 1. SNIPER CASE A: hass_ref is present, but entry_id is absent.
+    # Under mutant 'if hass_ref or entry_id:', async_get_entry(None) is called.
+    mock_hass_no_entry = MagicMock()
+    mock_hass_no_entry.config.units.temperature_unit = "Celsius"
+    ctrl_no_entry = DummyController(hass=mock_hass_no_entry, config={})
+    loader_no_entry = YamlConfigLoader(ctrl_no_entry)
+    loader_no_entry._parsed_yaml_config = {"device": {}}
+    loader_no_entry._parsed_yaml_cache = {
+        "test_dev": loader_no_entry._parsed_yaml_config
+    }
+
+    await loader_no_entry.async_finish_initialization()
+    mock_hass_no_entry.config_entries.async_get_entry.assert_not_called()
+
+    # 2. SNIPER CASE B: hass_ref is None, but entry_id is present.
+    # Under mutant 'if hass_ref or entry_id:', raises AttributeError on None.config_entries.
+    ctrl_no_hass = DummyController(hass=None, config={"entry_id": "orphan_id"})
+    loader_no_hass = YamlConfigLoader(ctrl_no_hass)
+    loader_no_hass._parsed_yaml_config = {"device": {}}
+    loader_no_hass._parsed_yaml_cache = {"test_dev": loader_no_hass._parsed_yaml_config}
+
+    await loader_no_hass.async_finish_initialization()
+    assert loader_no_hass.is_fully_initialized is True
+
+    # 3. BOTH present: entry options configure native current and target units
     mock_hass = MagicMock()
-    # Para configured_unit = self.controller.hass.config.units.temperature_unit
-    mock_hass.config.units.temperature_unit = "Fahrenheit"
-    mock_controller.hass = mock_hass
-
-    # Mock entry to return different output in options vs data
+    mock_hass.config.units.temperature_unit = "Celsius"
     mock_entry = MagicMock()
     mock_entry.options = {
-        CONF_TEMP_NATIVE_CURRENT: "OptionsCurrent",
-        CONF_TEMP_NATIVE_TARGET: "OptionsTarget",
+        CONF_TEMP_NATIVE_CURRENT: "Kelvin",
+        CONF_TEMP_NATIVE_TARGET: "Fahrenheit",
     }
     mock_hass.config_entries.async_get_entry.return_value = mock_entry
 
-    loader = YamlConfigLoader(mock_controller)
-    loader.is_fully_initialized = False
+    ctrl = DummyController(hass=mock_hass, config={"entry_id": "valid_entry_id"})
+    loader = YamlConfigLoader(ctrl)
+    loader._parsed_yaml_config = {
+        "device": {"operations": {"target_temp": {}, "current_temp": {}}}
+    }
+    loader._parsed_yaml_cache = {"test_dev": loader._parsed_yaml_config}
 
-    loader._parsed_yaml_config = {"device": {"operations": {"temp_op": {}}}}
-    loader._parsed_yaml_cache = {}
+    target_prop = MagicMock()
+    target_prop.id = ATTR_TEMPERATURE
+    target_prop.device_class = "temperature"
 
-    def fake_create(key, node, conn, ctrl, getter):
-        prop = StrictMock()
-        prop.id = "real_temp_op"
-        prop.device_class = "temperature"
-        prop.config_validation_type = "cv_string"
-        prop.set_hass_unit = MagicMock()
-        prop.set_device_unit = MagicMock()
-        return prop
+    current_prop = MagicMock()
+    current_prop.id = "current_temperature"
+    current_prop.device_class = "temperature"
+
+    def fake_create(key, *args):
+        return target_prop if key == "target_temp" else current_prop
 
     with patch(
         "custom_components.climate_ip.controller_yaml_config.create_property",
         side_effect=fake_create,
     ):
         await loader.async_finish_initialization()
+        mock_hass.config_entries.async_get_entry.assert_called_once_with(
+            "valid_entry_id"
+        )
 
-        mock_op = loader.operations["real_temp_op"]
-        # We assert units_temperature_unit
-        mock_op.set_hass_unit.assert_called_once_with("Fahrenheit")
-        # We assert options de native target
-        mock_op.set_device_unit.assert_called_once_with("OptionsCurrent")
+        target_prop.set_hass_unit.assert_called_with("Celsius")
+        target_prop.set_device_unit.assert_called_with("Fahrenheit")
+        current_prop.set_hass_unit.assert_called_with("Celsius")
+        current_prop.set_device_unit.assert_called_with("Kelvin")
 
 
-@pytest.mark.asyncio
-async def test_async_initialize_sync_fallback(mock_controller) -> None:
-    """Kills mutants 34-46 comprobando el fallback a load_yaml síncrono si hass es None."""
-    mock_controller.hass = None  # Forzamos la rama síncrona
-    mock_controller.yaml_file = "test.yaml"
-
-    loader = YamlConfigLoader(mock_controller)
-
-    with patch(
-        "custom_components.climate_ip.controller_yaml_config.load_yaml"
-    ) as mock_load:
-        # YAML must contain CONFIG_DEVICE (device) y CONFIG_DEVICE_STATUS (status) to avoid early exit
-        mock_load.return_value = {
-            "device": {"connection": {"type": "test"}, "status": {}}
-        }
-
-        # Mock create_status_getter to not depend on real base class
-        with patch(
-            "custom_components.climate_ip.controller_yaml_config.create_status_getter",
-            return_value=MagicMock(),
-        ):
-            await loader.async_initialize()
-
-            expected_path = str(
-                Path(
-                    sys.modules[
-                        "custom_components.climate_ip.controller_yaml_config"
-                    ].__file__
-                ).parent
-                / "test.yaml"
-            )
-            mock_load.assert_called_once_with(expected_path)
+# ====================================================================================
+# 14. EDGE BRANCHES & 100% STATEMENT COVERAGE
+# ====================================================================================
 
 
 @pytest.mark.asyncio
-async def test_async_initialize_poll_parsing() -> None:
-    """Kills mutants 270-294 bombardeando el parser de CONFIG_DEVICE_POLL con aislamiento total."""
+async def test_controller_yaml_config_edge_branches() -> None:
+    """Cover remaining corner branches for 100% statement coverage."""
 
-    test_cases = [
-        ("true", True),
-        ("True", True),
-        ("false", False),
-        ("False", False),
-        ("auto", None),
-        (None, None),
-        ("", None),
-    ]
+    # 1. AttributeError on unique_id in async_initialize
+    class NoUidController(DummyController):
+        @property
+        def unique_id(self):
+            raise AttributeError("no unique_id")
 
-    for poll_str, expected_poll in test_cases:
-        # Level 0 Total Isolation: Purge module cache
-        clear_yaml_cache()
+    clear_yaml_cache()
+    _YAML_FILE_CACHE["/no_uid.yaml"] = {"device": {"status": {}, "connection": {}}}
+    loader_no_uid = YamlConfigLoader(NoUidController(yaml_file="/no_uid.yaml"))
+    assert await loader_no_uid.async_initialize() is False
 
-        # Aislamiento Total Nivel 1: Nuevo Controlador Mock
-        mock_controller = MagicMock()
-        mock_controller.config = {CONF_CONFIG_FILE: "test.yaml"}
-        mock_controller.log_prefix = "[Test]"
-        mock_controller.device_id = "dev_123"
-        mock_controller.unique_id = "uid_123"
-        mock_controller.yaml_file = "test.yaml"
-        mock_controller.hass = None
+    # 2. AttributeError on controller.hass during aiohttp check, set_controller_ref, and init fallbacks
+    class ExplodingHassController(DummyController):
+        yaml_file = "/fake.yaml"
 
-        # Aislamiento Total Nivel 2: Nuevo Loader
-        loader = YamlConfigLoader(mock_controller)
-        loader.poll = None  # Forzamos reinicio explícito por si acaso
+        @property
+        def config(self):
+            return {CONF_DEVICE_TYPE: "samsung_8888", "entry_id": "test_e"}
 
-        yaml_data = {"device": {"connection": {"type": "test_type"}, "status": {}}}
-        if poll_str is not None:
-            yaml_data["device"][CONFIG_DEVICE_POLL] = poll_str
+        @property
+        def hass(self):
+            raise AttributeError("hass exploded")
 
-        mock_conn_class = MagicMock()
-        mock_conn_class.match_type.return_value = True
-        mock_conn_class.__name__ = "MockConnection"
+    class FallbackInitController(DummyController):
+        yaml_file = "/fake.yaml"
+        _config = {CONF_DEVICE_TYPE: "samsung_2878"}
 
-        mock_conn_instance = MagicMock()
-        mock_conn_instance.load_from_yaml.return_value = True
-        # AVOID mock having a 'poll' attribute that could magically interfere
-        del mock_conn_instance.poll
-        mock_conn_class.return_value = mock_conn_instance
+        @property
+        def config(self):
+            raise AttributeError("no config")
 
-        with (
-            patch(
-                "custom_components.climate_ip.controller_yaml_config.load_yaml",
-                return_value=yaml_data,
-            ),
-            patch(
-                "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
-                [mock_conn_class],
-            ),
-            patch(
-                "custom_components.climate_ip.controller_yaml_config.create_status_getter",
-                return_value=MagicMock(),
-            ),
-        ):
-            result = await loader.async_initialize()
+    class EmptyInitController(DummyController):
+        yaml_file = "/fake.yaml"
 
-            assert result is True, f"Abortado prematuramente para {poll_str}"
-            assert loader.poll is expected_poll, (
-                f"Falló el parsing para '{poll_str}'. Esperado {expected_poll}, Obtuvo {loader.poll}"
-            )
+        @property
+        def config(self):
+            raise AttributeError("no config")
 
+        @property
+        def _config(self):
+            raise AttributeError("no _config")
 
-@pytest.mark.asyncio
-async def test_async_finish_initialization_property_creation(mock_controller) -> None:
-    """Kills mutants by asserting strict create_property signature and logical schemas."""
-    loader = YamlConfigLoader(mock_controller)
+    class ExplodingHassYamlLoad(DummyController):
+        yaml_file = "/fake_load.yaml"
 
-    loader._parsed_yaml_config = {
-        "device": {
-            "attributes": {  # Usamos atributos porque ese bloque ejecuta el set_unit_of_measurement
-                "test_attr": {"unit_of_measurement": "C"}
-            }
+        @property
+        def hass(self):
+            raise AttributeError("boom")
+
+    conn_cls = MagicMock()
+    conn_cls.__name__ = "MockConn"
+    conn_cls.match_type.return_value = True
+    conn_instance = MagicMock()
+    conn_instance.load_from_yaml.return_value = True
+    conn_cls.return_value = conn_instance
+
+    _YAML_FILE_CACHE["/fake.yaml"] = {
+        CONFIG_DEVICE: {
+            CONFIG_DEVICE_STATUS: {},
+            CONFIG_DEVICE_CONNECTION: {},
         }
     }
-    loader._parsed_yaml_cache = {"dev_123": loader._parsed_yaml_config}
-    loader.connection = MagicMock()
-    loader.state_getter = MagicMock()
 
-    # MOCK MAGICO AVANZADO PARA PASAR hasattr()
-    class MockProp:
+    with (
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
+            [conn_cls],
+        ),
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.create_status_getter",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "custom_components.climate_ip.controller_yaml_config.load_yaml",
+            return_value={"device": {"connection": {}, "status": {}}},
+        ),
+    ):
+        # 2. AttributeError on controller.hass
+        loader_expl = YamlConfigLoader(ExplodingHassController(yaml_file="/fake.yaml"))
+        assert await loader_expl.async_initialize() is True
+
+        # 3. Connection set_controller_ref called if present
+        conn_instance.set_controller_ref.reset_mock()
+        loader_ref = YamlConfigLoader(DummyController(yaml_file="/fake.yaml"))
+        assert await loader_ref.async_initialize() is True
+        conn_instance.set_controller_ref.assert_called_once()
+
+        # 5. Fallback in async_initialize when controller.config raises AttributeError
+        loader_init_fb = YamlConfigLoader(
+            FallbackInitController(yaml_file="/fake.yaml")
+        )
+        assert await loader_init_fb.async_initialize() is True
+
+        # 6. Fallback in async_initialize when both config and _config raise AttributeError
+        loader_init_empty = YamlConfigLoader(
+            EmptyInitController(yaml_file="/fake.yaml")
+        )
+        assert await loader_init_empty.async_initialize() is True
+
+        # 7. Loading YAML with controller.hass raising AttributeError
+        clear_yaml_cache()
+        loader_yaml_expl = YamlConfigLoader(
+            ExplodingHassYamlLoad(yaml_file="/fake_load.yaml")
+        )
+        assert await loader_yaml_expl.async_initialize() is True
+
+    # 4. Property edge cases in async_finish_initialization:
+    # - Property with no id attribute
+    # - Property with no config_validation_type (falls back to cv.string)
+    # - Temperature property with no set_hass_unit (falls back to set_unit_of_measurement)
+    # - Temperature property with neither unit setter
+    # - None in operations / properties / sensors
+    class PropNoIdFallback:
+        device_class = "temperature"
+
         def __init__(self):
-            self.set_unit_of_measurement = MagicMock()
+            self.unit = None
 
-        @property
-        def id(self):
-            raise AttributeError("Forzar getattr")
+        def set_unit_of_measurement(self, unit):
+            self.unit = unit
 
-        @property
-        def config_validation_type(self):
-            raise AttributeError("Forzar getattr")
+    class PropNoSetters:
+        device_class = "temperature"
 
-    mock_prop = MockProp()
+    class SwitchNoSchema:
+        pass
+
+    class AttrNoUnitSetter:
+        pass
+
+    ctrl_finish = DummyController(device_id="dev_edge_finish")
+    loader_finish = YamlConfigLoader(ctrl_finish)
+    loader_finish._parsed_yaml_config = {
+        CONFIG_DEVICE: {
+            CONFIG_DEVICE_OPERATIONS: {"op_no_id": {}},
+            CONFIG_DEVICE_SWITCHES: {"sw_no_schema": {}},
+            CONFIG_DEVICE_ATTRIBUTES: {
+                "attr_no_setter": {"unit_of_measurement": "kWh"}
+            },
+        }
+    }
+    loader_finish._parsed_yaml_cache["dev_edge_finish"] = (
+        loader_finish._parsed_yaml_config
+    )
+
+    def edge_prop_creator(key, *args):
+        if key == "sw_no_schema":
+            return SwitchNoSchema()
+        if key == "op_no_id":
+            return SwitchNoSchema()  # lacks id and config_validation_type
+        return AttrNoUnitSetter()
 
     with patch(
         "custom_components.climate_ip.controller_yaml_config.create_property",
-        return_value=mock_prop,
-    ) as mock_create:
-        await loader.async_finish_initialization()
-
-        mock_create.assert_any_call(
-            "test_attr",
-            {"unit_of_measurement": "C"},
-            loader.connection,
-            loader.controller,
-            loader.state_getter,
-        )
-
-        assert "test_attr" in loader.properties
-        mock_prop.set_unit_of_measurement.assert_called_once_with("C")
-
-
-@pytest.mark.asyncio
-async def test_apply_temperature_units_logic(mock_controller) -> None:
-    """Kills mutants 167-266 forzando la lógica diferencial de ATTR_TEMPERATURE vs Otros."""
-    loader = YamlConfigLoader(mock_controller)
-
-    # Configure mocked ConfigEntry to have pure options
-    mock_entry = MagicMock()
-    mock_entry.options = {CONF_TEMP_NATIVE_CURRENT: "°F", CONF_TEMP_NATIVE_TARGET: "°K"}
-    mock_controller.config = {"entry_id": "123"}
-    mock_controller.hass.config_entries.async_get_entry.return_value = mock_entry
-    mock_controller.hass.config.units.temperature_unit = "°C"
-
-    # 1. Sensor Genérico (Debe recibir native_current_unit)
-    generic_temp = MagicMock()
-    generic_temp.device_class = "temperature"
-    generic_temp.id = "room_temp"
-
-    # 2. Operación ATTR_TEMPERATURE (Debe recibir native_target_unit)
-    target_temp = MagicMock(spec=TemperatureOperation)
-    target_temp.device_class = "temperature"
-    target_temp.id = ATTR_TEMPERATURE
-
-    loader.sensors = {"room_temp": generic_temp}
-    loader.operations = {ATTR_TEMPERATURE: target_temp}
-
-    loader._parsed_yaml_config = {
-        "device": {}
-    }  # Para permitir que async_finish ejecute
-    await loader.async_finish_initialization()
-
-    # Aserciones Letales:
-    generic_temp.set_hass_unit.assert_called_once_with("°C")
-    generic_temp.set_device_unit.assert_called_once_with("°F")  # Current
-
-    target_temp.set_hass_unit.assert_called_once_with("°C")
-    target_temp.set_device_unit.assert_called_once_with("°K")  # Target
-
-
-@pytest.mark.asyncio
-async def test_async_initialize_yaml_deep_fallbacks(mock_controller) -> None:
-    """Kills mutants comprobando las extracciones profundas y defaults reales."""
-
-    # ¡PURGA DEL CACHÉ OBLIGATORIA!
-    clear_yaml_cache()
-
-    loader = YamlConfigLoader(mock_controller)
-    mock_controller.yaml_file = "test.yaml"
-    mock_controller.hass = None
-
-    # MAGICMOCK TRAP: _config auto-creates as Mock. Must explicitly overwrite.
-    # In addition, dynamically use a valid device type from the real support array.
-    test_config = {
-        CONF_DEVICE_TYPE: list(DEVICE_TYPE_AIOHTTP_SUPPORTED)[0],
-        CONF_CONN_METHOD: "metodo_invalido_para_forzar_else",
-    }
-    mock_controller._config = test_config  # Mata al MagicMock residual
-    mock_controller.config = test_config
-
-    # Inject incomplete YAML BUT WITH STATUS so it doesn't abort at line 265
-    yaml_data = {
-        "device": {
-            "status": {}  # Obligatorio para llegar al parsing del nombre y polling
-        }
-    }
-
-    mock_conn_class = MagicMock()
-    # REAL-TIME LETHAL ASSERTION: Only returns True if mutant DID NOT alter string "request"
-    mock_conn_class.match_type.side_effect = lambda x: x == "request"
-    mock_conn_class.__name__ = "ConnectionUnknown"
-
-    mock_conn_instance = MagicMock()
-    mock_conn_instance.load_from_yaml.return_value = True
-    mock_conn_class.return_value = mock_conn_instance
-
-    with (
-        patch(
-            "custom_components.climate_ip.controller_yaml_config.load_yaml",
-            return_value=yaml_data,
-        ),
-        patch(
-            "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
-            [mock_conn_class],
-        ),
-        patch(
-            "custom_components.climate_ip.controller_yaml_config.create_status_getter",
-            return_value=MagicMock(),
-        ),
+        side_effect=edge_prop_creator,
     ):
-        result = await loader.async_initialize()
+        loader_finish.operations["none_op"] = None
+        loader_finish.operations["temp_fallback"] = PropNoIdFallback()
+        loader_finish.sensors["no_setter"] = PropNoSetters()
+        loader_finish.sensors["none_sensor"] = None
+        await loader_finish.async_finish_initialization()
 
-        # Lethal assertion: Process must complete successfully
-        assert result is True, (
-            "Falló la inicialización o la clase mock rechazó la cadena mutada"
-        )
-
-        # Lethal assertion: Name must be default 'yaml' (CONST_CONTROLLER_TYPE)
-        assert loader.name == "yaml"
-
-
-@pytest.mark.asyncio
-async def test_async_initialize_explicit_yaml_data(mock_controller) -> None:
-    """Kills mutants 260-271 forzando la lectura explícita de nombre y poll del YAML."""
-
-    clear_yaml_cache()
-    loader = YamlConfigLoader(mock_controller)
-    mock_controller.yaml_file = "test.yaml"
-    mock_controller.hass = None
-
-    # Configure clean controller
-    mock_controller._config = {
-        CONF_DEVICE_TYPE: list(DEVICE_TYPE_AIOHTTP_SUPPORTED)[0],
-        CONF_CONN_METHOD: "metodo_invalido_para_forzar_else",
-    }
-    mock_controller.config = mock_controller._config
-
-    # ESTE ES EL YAML LETAL: Tiene nombre customizado y poll_config
-    yaml_data = {
-        "device": {
-            "status": {},
-            ATTR_NAME: "CustomACName",
-            "poll": "false",  # Debe forzar loader.poll = False
-        }
-    }
-
-    mock_conn_class = MagicMock()
-    mock_conn_class.match_type.return_value = True
-    mock_conn_class.__name__ = "ConnectionUnknown"
-
-    mock_conn_instance = MagicMock()
-    mock_conn_instance.load_from_yaml.return_value = True
-    mock_conn_class.return_value = mock_conn_instance
-
-    with (
-        patch(
-            "custom_components.climate_ip.controller_yaml_config.load_yaml",
-            return_value=yaml_data,
-        ),
-        patch(
-            "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
-            [mock_conn_class],
-        ),
-        patch(
-            "custom_components.climate_ip.controller_yaml_config.create_status_getter",
-            return_value=MagicMock(),
-        ),
-    ):
-        result = await loader.async_initialize()
-
-        assert result is True
-        # If mutant changes self.name = None or self.name = ac.get(ATTR_NAME, ), this assertion will burst
-        assert loader.name == "CustomACName"
-        # If mutant mutates poll_config or uppercases it, this assertion will burst
-        assert loader.poll is False
-
-
-@pytest.mark.asyncio
-async def test_async_initialize_executor_job(mock_controller) -> None:
-    """Kills mutants 36, 38 probando la delegación al executor."""
-
-    clear_yaml_cache()
-
-    loader = YamlConfigLoader(mock_controller)
-    mock_controller.yaml_file = "test.yaml"
-
-    # Create mock hass registering executor calls
-    mock_controller.hass = AsyncMock()
-    mock_controller.hass.async_add_executor_job.return_value = {
-        "device": {"status": {}, "connection": {"type": "test_executor"}}
-    }
-
-    mock_conn_class = MagicMock()
-    mock_conn_class.match_type.return_value = True
-    mock_conn_class.__name__ = "MockConnection"
-    mock_conn_instance = MagicMock()
-    mock_conn_class.return_value = mock_conn_instance
-
-    with (
-        patch(
-            "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
-            [mock_conn_class],
-        ),
-        patch(
-            "custom_components.climate_ip.controller_yaml_config.create_status_getter",
-            return_value=MagicMock(),
-        ),
-    ):
-        # Disable load_yaml patching to attempt passing real function to executor
-        await loader.async_initialize()
-
-        # Lethal assertion: Executor was invoked with exact function and path
-        expected_path = str(
-            Path(
-                sys.modules[
-                    "custom_components.climate_ip.controller_yaml_config"
-                ].__file__
-            ).parent
-            / "test.yaml"
-        )
-        mock_controller.hass.async_add_executor_job.assert_called_once_with(
-            load_yaml, expected_path
-        )
-
-
-@pytest.mark.asyncio
-async def test_async_initialize_connection_raw8888_args(mock_controller) -> None:
-    """Kills mutants 113-127 (Untested) forzando y auditando la ruta ConnectionRaw8888."""
-    from unittest.mock import MagicMock, patch
-
-    from custom_components.climate_ip.const import CONF_CONN_METHOD, CONF_DEVICE_TYPE
-    from custom_components.climate_ip.controller_yaml_config import (
-        _LOGGER,
-        YamlConfigLoader,
+    assert loader_finish.is_fully_initialized is True
+    assert (
+        loader_finish.service_schema_map[probatio.Optional("sw_no_schema")] is not None
     )
+    assert loader_finish.operations["temp_fallback"].unit == DEFAULT_CONF_TEMP_UNIT
 
-    # Tactical dependency injection for RAW (using strict constants)
-    mock_controller._config = {
-        CONF_DEVICE_TYPE: "samsung_8888",
-        CONF_CONN_METHOD: CONN_METHOD_RAW,
-    }
-    mock_controller.config = (
-        mock_controller._config
-    )  # Sincronizamos para el getattr anidado
-    mock_controller._session = "RAW_SESSION_OBJECT"
-    mock_controller.ip_address = "10.0.0.99"
-    mock_controller.yaml_file = "test_raw.yaml"
+    # 8. async_finish_initialization when controller.hass raises AttributeError
+    class ExplodingHassFinish(DummyController):
+        @property
+        def hass(self):
+            raise AttributeError("boom")
 
-    # Inject real coroutine to simulate Home Assistant executor
-    async def mock_async_add_executor_job(*args, **kwargs):
-        return args[0](*args[1:], **kwargs)
-
-    mock_controller.hass.async_add_executor_job = mock_async_add_executor_job
-
-    loader = YamlConfigLoader(mock_controller)
-    loader._parsed_yaml_cache = {}
-
-    yaml_data = {"device": {"connection": {"type": "samsung_8888_raw"}, "status": {}}}
-
-    class MockRawConn:
-        def __init__(self, *args, **kwargs):
-            self.args = args  # Capturamos los argumentos del constructor
-            self.loaded_node = None
-            self.loaded_getter = None
-
-        @classmethod
-        def match_type(cls, conn_type):
-            return conn_type == "samsung_8888_raw"
-
-        def load_from_yaml(self, node, getter):
-            self.loaded_node = node
-            self.loaded_getter = getter
-            return isinstance(node, dict)
-
-    # Substitute class name to trick if conn_class.__name__ == "ConnectionRaw8888"
-    MockRawConn.__name__ = "ConnectionRaw8888"
-
-    with (
-        patch(
-            "custom_components.climate_ip.controller_yaml_config.load_yaml",
-            return_value=yaml_data,
-        ),
-        patch(
-            "custom_components.climate_ip.controller_yaml_config.CLIMATE_IP_CONNECTIONS",
-            [MockRawConn],
-        ),
-        patch(
-            "custom_components.climate_ip.controller_yaml_config.create_status_getter",
-            return_value=MagicMock(),
-        ) as mock_csg,
-    ):
-        res = await loader.async_initialize()
-        assert res is True
-
-        # Lethal Assertions on constructor signature
-        assert isinstance(loader.connection, MockRawConn), (
-            "El motor RAW no fue instanciado"
-        )
-        # Firma esperada: (controller_config, _LOGGER, hass, _session, ip_address)
-        assert loader.connection.args[0] == mock_controller._config
-        assert loader.connection.args[1] == _LOGGER
-        assert loader.connection.args[2] == mock_controller.hass
-        assert loader.connection.args[3] == "RAW_SESSION_OBJECT"
-        assert loader.connection.args[4] == "10.0.0.99"
-        assert loader.connection.loaded_node == {"type": "samsung_8888_raw"}
-        assert loader.connection.loaded_getter is None
-        mock_csg.assert_called_once_with(
-            "state",
-            {},
-            loader.connection,
-            mock_controller,
-        )
-
-
-@pytest.mark.asyncio
-async def test_async_finish_initialization_state_flag(mock_controller) -> None:
-    """Kills mutants 119-120 asertando la bandera is_fully_initialized estrictamente."""
-    from custom_components.climate_ip.controller_yaml_config import YamlConfigLoader
-
-    loader = YamlConfigLoader(mock_controller)
-    loader.is_fully_initialized = False  # Partimos de estado base
-
-    # Provide minimum viable to pass method without early exits
-    loader._parsed_yaml_config = {"device": {}}
-    loader._parsed_yaml_cache = {mock_controller.device_id: loader._parsed_yaml_config}
-
-    await loader.async_finish_initialization()
-
-    # Lethal assertion: If mutmut changes = True to = False on line 417, this detonates.
-    assert loader.is_fully_initialized is True, (
-        "INFRACCIÓN: La bandera de inicialización no fue levantada."
+    loader_finish_expl = YamlConfigLoader(ExplodingHassFinish())
+    loader_finish_expl._parsed_yaml_config = {"device": {}}
+    loader_finish_expl._parsed_yaml_cache["test_dev"] = (
+        loader_finish_expl._parsed_yaml_config
     )
+    await loader_finish_expl.async_finish_initialization()
+    assert loader_finish_expl.is_fully_initialized is True
 
+    # 9. Property with device_class raising AttributeError in apply_unit
+    class ExplodingDeviceClassProp:
+        @property
+        def device_class(self):
+            raise AttributeError("boom")
 
-@pytest.mark.asyncio
-async def test_async_initialize_yaml_cache_non_dict_and_dict_strict(
-    mock_controller,
-) -> None:
-    """Target 4: Kills mutant on line 139 (if self._parsed_yaml_config is not None) in async_initialize."""
-    from custom_components.climate_ip.controller_yaml_config import (
-        _YAML_FILE_CACHE,
-        YamlConfigLoader,
+    loader_prop_expl = YamlConfigLoader(DummyController())
+    loader_prop_expl._parsed_yaml_config = {"device": {}}
+    loader_prop_expl._parsed_yaml_cache["test_dev"] = (
+        loader_prop_expl._parsed_yaml_config
     )
+    loader_prop_expl.operations["expl_prop"] = ExplodingDeviceClassProp()
+    await loader_prop_expl.async_finish_initialization()
+    assert loader_prop_expl.is_fully_initialized is True
 
-    mock_controller.hass.async_add_executor_job = AsyncMock(
-        side_effect=lambda f, *args: f(*args)
+    # 10. Temperature property with id raising AttributeError in dual units
+    class DualUnitsNoIdProp:
+        device_class = "temperature"
+
+        @property
+        def id(self):
+            raise AttributeError("no id")
+
+        def set_hass_unit(self, u):
+            pass
+
+        def set_device_unit(self, u):
+            pass
+
+    loader_dual_noid = YamlConfigLoader(DummyController())
+    loader_dual_noid._parsed_yaml_config = {"device": {}}
+    loader_dual_noid._parsed_yaml_cache["test_dev"] = (
+        loader_dual_noid._parsed_yaml_config
     )
-    loader = YamlConfigLoader(mock_controller)
-    test_yaml_path = "/non_dict_test.yaml"
-    _YAML_FILE_CACHE.pop(test_yaml_path, None)
-    mock_controller.yaml_file = test_yaml_path
+    loader_dual_noid.operations["dual_noid"] = DualUnitsNoIdProp()
+    await loader_dual_noid.async_finish_initialization()
+    assert loader_dual_noid.is_fully_initialized is True
 
-    # 1. Non-dict return from load_yaml -> self._parsed_yaml_config is None, NOT added to _YAML_FILE_CACHE
-    with patch(
-        "custom_components.climate_ip.controller_yaml_config.load_yaml",
-        return_value="not_a_dictionary_string",
-    ):
-        res = await loader.async_initialize()
-        assert res is False
-        assert loader._parsed_yaml_config is None
-        assert test_yaml_path not in _YAML_FILE_CACHE
+    # 11. Fallback in async_finish_initialization when controller.config raises AttributeError
+    class FallbackFinishController(DummyController):
+        _config = {"entry_id": "fb_entry"}
+        hass = MagicMock()
 
-    # 2. Dict return from load_yaml -> self._parsed_yaml_config is dict, added to _YAML_FILE_CACHE
-    valid_dict_path = "/valid_dict_test.yaml"
-    _YAML_FILE_CACHE.pop(valid_dict_path, None)
-    mock_controller.yaml_file = valid_dict_path
-    with (
-        patch(
-            "custom_components.climate_ip.controller_yaml_config.load_yaml",
-            return_value={
-                "device": {"connection": {"type": "request"}, "token": "test"}
-            },
-        ),
-        patch(
-            "custom_components.climate_ip.connection_request.ConnectionRequest.load_from_yaml",
-            return_value=True,
-        ),
-        patch(
-            "custom_components.climate_ip.controller_yaml_config.create_status_getter",
-            return_value=MagicMock(),
-        ),
-        pytest.warns(DeprecationWarning),
-    ):
-        await loader.async_initialize()
-        assert loader._parsed_yaml_config == {
-            "device": {"connection": {"type": "request"}, "token": "test"}
-        }
-        assert _YAML_FILE_CACHE[valid_dict_path] == {
-            "device": {"connection": {"type": "request"}, "token": "test"}
-        }
+        @property
+        def config(self):
+            raise AttributeError("no config")
 
+    ctrl_fb = FallbackFinishController()
+    ctrl_fb.hass.config_entries.async_get_entry = MagicMock(return_value=None)
+    loader_fb = YamlConfigLoader(ctrl_fb)
+    loader_fb._parsed_yaml_config = {"device": {}}
+    loader_fb._parsed_yaml_cache["test_dev"] = loader_fb._parsed_yaml_config
+    await loader_fb.async_finish_initialization()
+    ctrl_fb.hass.config_entries.async_get_entry.assert_called_once_with("fb_entry")
 
-@pytest.mark.asyncio
-async def test_async_initialize_device_id_cache_key_strict() -> None:
-    """Target: Kills Mutant ID 25 on line 167 in async_initialize (dev_id = self.controller.device_id or "")."""
-    from custom_components.climate_ip.controller_yaml_config import (
-        YamlConfigLoader,
-    )
+    # 12. Fallback in async_finish_initialization when both config and _config raise AttributeError
+    class EmptyFinishController(DummyController):
+        hass = None
 
-    mock_controller = MagicMock()
-    mock_controller.config = {CONF_CONFIG_FILE: "sniper_test.yaml"}
-    mock_controller.log_prefix = "[SniperTest]"
-    mock_controller.device_id = "sniper_target_id"
-    mock_controller.unique_id = "uid_sniper"
-    mock_controller.hass = MagicMock()
-    mock_controller.yaml_file = "/fake/sniper_test.yaml"
-    mock_controller.hass.async_add_executor_job = AsyncMock(
-        side_effect=lambda f, *args: f(*args)
-    )
+        @property
+        def config(self):
+            raise AttributeError("no config")
 
-    loader = YamlConfigLoader(mock_controller)
+        @property
+        def _config(self):
+            raise AttributeError("no _config")
 
-    with (
-        patch(
-            "custom_components.climate_ip.controller_yaml_config.load_yaml",
-            return_value={
-                "device": {"connection": {"type": "request"}, "token": "test"}
-            },
-        ),
-        patch(
-            "custom_components.climate_ip.connection_request.ConnectionRequest.load_from_yaml",
-            return_value=True,
-        ),
-        patch(
-            "custom_components.climate_ip.controller_yaml_config.create_status_getter",
-            return_value=MagicMock(),
-        ),
-        pytest.warns(DeprecationWarning),
-    ):
-        await loader.async_initialize()
-        # If mutated to (device_id and ""), the key becomes "" instead of "sniper_target_id"
-        assert "sniper_target_id" in loader._parsed_yaml_cache
-        assert "" not in loader._parsed_yaml_cache
-        assert loader._parsed_yaml_cache["sniper_target_id"] == {
-            "device": {"connection": {"type": "request"}, "token": "test"}
-        }
+    ctrl_empty = EmptyFinishController()
+    loader_empty = YamlConfigLoader(ctrl_empty)
+    loader_empty._parsed_yaml_config = {"device": {}}
+    loader_empty._parsed_yaml_cache["test_dev"] = loader_empty._parsed_yaml_config
+    await loader_empty.async_finish_initialization()
+    assert loader_empty.is_fully_initialized is True

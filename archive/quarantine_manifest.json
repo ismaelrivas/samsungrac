@@ -90,6 +90,90 @@
       "reason": "25 completely shadowed tests in mutmut usage map with 0 unique mutant kills and 0 unique line coverage",
       "sha256": "67626f81516288c297627834260aa8fcfb2d9279851dc4160d1eaa58e896473e",
       "test_count": 25
+    },
+    "test_connection__concurrency.py": {
+      "original_path": "config/custom_components/climate_ip/tests/test_connection__concurrency.py",
+      "quarantined_at": "2026-11-07T19:57:27.140124+00:00",
+      "reason": "Consolidated into orthogonal test_connection.py",
+      "sha256": "264d88515daf0dd885cb99324f67deec60df9825acc40050d091d889c8b8ecd4",
+      "test_count": 2
+    },
+    "test_connection__placeholders.py": {
+      "original_path": "config/custom_components/climate_ip/tests/test_connection__placeholders.py",
+      "quarantined_at": "2026-11-07T19:57:27.140124+00:00",
+      "reason": "Consolidated into orthogonal test_connection.py",
+      "sha256": "f1883b1a6ce1b90874f5660d38bac42e7767e3ab6c7a28c8da020972a4e2834e",
+      "test_count": 2
+    },
+    "test_climate__obsolete.py": {
+      "original_path": "config/custom_components/climate_ip/tests/test_climate.py",
+      "quarantined_at": "2026-11-07T20:47:50.781536+00:00",
+      "reason": "12 completely shadowed tests in mutmut usage map with 0 unique mutant kills; consolidated into canonical orthogonal test_climate.py",
+      "sha256": "1bc164e0e86e4ead3f9060607ad7b67b934cf8d9cc0f63e3b550654e2cc7f1e0",
+      "test_count": 12
+    },
+    "test_connection_raw__keep_alive.py": {
+      "original_path": "config/custom_components/climate_ip/tests/test_connection_raw__keep_alive.py",
+      "quarantined_at": "2026-11-08T00:55:00+00:00",
+      "reason": "Redundant satellite suite consolidated into orthogonal test_connection_raw__basics.py; 0 unique kills and 100% shadowed in mutmut usage map",
+      "sha256": "32b4e607819704ec24fdd7c91a5863a88f6061bfc4890c4da97a80eafe0058e3",
+      "test_count": 3
+    },
+    "test_controller_yaml_config__errors.py": {
+      "original_path": "config/custom_components/climate_ip/tests/test_controller_yaml_config__errors.py",
+      "quarantined_at": "2026-11-08T02:36:17.496970+00:00",
+      "reason": "Consolidated into canonical orthogonal test_controller_yaml_config.py",
+      "sha256": "e37c66683ef957f76cdb9d03b1942b73f69bc473f6a946895ce81a230e177c7c",
+      "test_count": 6
+    },
+    "test_diagnostics_coverage.py": {
+      "original_path": "config/custom_components/climate_ip/tests/test_diagnostics_coverage.py",
+      "quarantined_at": "2026-11-08T03:00:00+00:00",
+      "reason": "Consolidated into canonical orthogonal test_diagnostics.py",
+      "sha256": "5aa3aa78e0370f47cf733c460e6eb39ca36be51b24bba078efe0e2fda4743e39",
+      "test_count": 1
+    },
+    "test_helpers__advanced.py": {
+      "original_path": "config/custom_components/climate_ip/tests/test_helpers__advanced.py",
+      "quarantined_at": "2026-11-08T03:26:13.705100+00:00",
+      "reason": "Consolidated into canonical orthogonal test_helpers.py",
+      "sha256": "3936afc5b9b393d28f6f44ec0a1908c26d8d890b4553ae77924f05e61ba190e6",
+      "test_count": 95
+    },
+    "test_state__typing.py": {
+      "original_path": "config/custom_components/climate_ip/tests/test_state__typing.py",
+      "quarantined_at": "2026-11-08T04:44:32.828733+00:00",
+      "reason": "Consolidated into canonical orthogonal test_state.py",
+      "sha256": "43871733b53b2779400e61d14687c8b9fc45362347540163e3d4f49d7da301d0",
+      "test_count": 3
+    },
+    "test_token_acquirer_yaml__common.py": {
+      "original_path": "config/custom_components/climate_ip/tests/test_token_acquirer_yaml__common.py",
+      "quarantined_at": "2026-11-08T05:21:20.261214+00:00",
+      "reason": "Consolidated into canonical orthogonal test_token_acquirer_yaml.py",
+      "sha256": "c36e23a805dde8a3a079f1ea387495f9ee608a72bedfa46f81ed339098614b15",
+      "test_count": 5
+    },
+    "test_token_acquirer_yaml__coverage.py": {
+      "original_path": "config/custom_components/climate_ip/tests/test_token_acquirer_yaml__coverage.py",
+      "quarantined_at": "2026-11-08T05:21:20.261214+00:00",
+      "reason": "Consolidated into canonical orthogonal test_token_acquirer_yaml.py",
+      "sha256": "203a0c8f600b6407cfb7c9cae0116ba1540c4664450d12a618467c2af469e262",
+      "test_count": 5
+    },
+    "test_token_acquirer_yaml__listener.py": {
+      "original_path": "config/custom_components/climate_ip/tests/test_token_acquirer_yaml__listener.py",
+      "quarantined_at": "2026-11-08T05:21:20.261214+00:00",
+      "reason": "Consolidated into canonical orthogonal test_token_acquirer_yaml.py",
+      "sha256": "7204893c12574fc6a8d2869440a7d4ed5d29242aacfa52e937d54769b900ef66",
+      "test_count": 35
+    },
+    "test_token_acquirer_yaml__stream.py": {
+      "original_path": "config/custom_components/climate_ip/tests/test_token_acquirer_yaml__stream.py",
+      "quarantined_at": "2026-11-08T05:21:20.261214+00:00",
+      "reason": "Consolidated into canonical orthogonal test_token_acquirer_yaml.py",
+      "sha256": "e9c75ad14aa6003b27d11c7dc4de376abadeba02bb2cf1dd2dc59a7937ee4d3e",
+      "test_count": 45
     }
   }
 }

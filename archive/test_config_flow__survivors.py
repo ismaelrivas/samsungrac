@@ -5,8 +5,6 @@ import asyncio
 import contextlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 from custom_components.climate_ip.config_flow_helpers import _AUTH_FLOW_CACHE
 from custom_components.climate_ip.const import (
@@ -17,6 +15,8 @@ from custom_components.climate_ip.const import (
     DEVICE_TYPE_SMARTTHINGS_DHW,
     DEVICE_TYPE_SMARTTHINGS_HVAC,
 )
+import pytest
+
 from homeassistant.config_entries import SOURCE_RECONFIGURE
 from homeassistant.const import CONF_DEVICE_ID, CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 from homeassistant.core import HomeAssistant
@@ -33,16 +33,14 @@ async def test_kill_auth_file_not_found(hass):
     with patch(
         "custom_components.climate_ip.config_flow_helpers.load_yaml",
         return_value={"device": {}},
-    ):
-        with pytest.raises(ValueError, match="No 'auth_flow_file' found in"):
-            await flow._load_auth_flow_config(DEVICE_TYPE_SAMSUNG_2878)
+    ), pytest.raises(ValueError, match="No 'auth_flow_file' found in"):
+        await flow._load_auth_flow_config(DEVICE_TYPE_SAMSUNG_2878)
 
     # 2. Test missing "device" key entirely
     with patch(
         "custom_components.climate_ip.config_flow_helpers.load_yaml", return_value={}
-    ):
-        with pytest.raises(ValueError, match="No 'auth_flow_file' found in"):
-            await flow._load_auth_flow_config(DEVICE_TYPE_SAMSUNG_2878)
+    ), pytest.raises(ValueError, match="No 'auth_flow_file' found in"):
+        await flow._load_auth_flow_config(DEVICE_TYPE_SAMSUNG_2878)
 
 
 async def test_kill_create_entry_device_id(hass):

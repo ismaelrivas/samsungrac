@@ -3,9 +3,6 @@
 
 from unittest.mock import MagicMock
 
-import probatio as vol
-import pytest
-
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
 from custom_components.climate_ip.const import (
     CONF_CERT,
@@ -18,6 +15,9 @@ from custom_components.climate_ip.const import (
     DEVICE_TYPE_SAMSUNG_8888,
     DEVICE_TYPE_SMARTTHINGS_HVAC,
 )
+import probatio as vol
+import pytest
+
 from homeassistant.const import CONF_IP_ADDRESS, CONF_MAC, CONF_TOKEN
 from homeassistant.util.yaml import load_yaml
 

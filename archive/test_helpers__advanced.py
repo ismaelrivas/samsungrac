@@ -7,8 +7,6 @@ import ssl
 import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from custom_components.climate_ip.const import (
     MAX_POLL_INTERVAL,
     MIN_POLL_INTERVAL,
@@ -36,6 +34,8 @@ from custom_components.climate_ip.helpers import (
     stream_wrapper,
     tolerant_header_parsing,
 )
+import pytest
+
 from homeassistant.const import EntityCategory
 
 
@@ -254,9 +254,8 @@ class TestResolveCertPath:
 
     def test_resolve_cert_path_hass_attribute_error(self):
         """Test resolve_cert_path when hass raises AttributeError (Strict Fail-Fast)."""
-        import pytest
-
         from custom_components.climate_ip.helpers import resolve_cert_path
+        import pytest
 
         class FaultyHass:
             @property
@@ -828,9 +827,8 @@ def test_tolerant_header_parsing_strict_mutants():
     """Kill Mutants 5, 7, and 8 in monkey-patch variable assignments."""
     import http.client
 
-    import urllib3.connection as connection_mod
-
     from custom_components.climate_ip.helpers import tolerant_header_parsing
+    import urllib3.connection as connection_mod
 
     orig_parse = http.client.parse_headers
     orig_conn = connection_mod.assert_header_parsing
@@ -851,10 +849,9 @@ def test_tolerant_assert_strict_forwarding():
     """Kill Mutant 1 which sends None instead of original headers."""
     import http.client
 
-    import urllib3.connection as connection_mod
-
     import custom_components.climate_ip.helpers as helpers_mod
     from custom_components.climate_ip.helpers import tolerant_header_parsing
+    import urllib3.connection as connection_mod
 
     mock_orig = MagicMock()
     test_headers = http.client.HTTPMessage()

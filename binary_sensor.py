@@ -1,7 +1,5 @@
 """Platform that offers diagnostic connectivity binary sensors for Climate IP devices."""
 
-from __future__ import annotations
-
 import logging
 
 from homeassistant.components.binary_sensor import (
@@ -51,15 +49,13 @@ async def async_setup_entry(
 
     if entities_to_add:
         _LOGGER.debug(
-            "%s Adding diagnostic connectivity binary sensors to Home Assistant.",
+            "%s Adding diagnostic connectivity binary sensors to Home Assistant",
             coordinators[0].log_prefix,
         )
         async_add_entities(entities_to_add)
 
 
-class ClimateIPConnectivitySensor(
-    SamsungClimateEntity, BinarySensorEntity
-):
+class ClimateIPConnectivitySensor(SamsungClimateEntity, BinarySensorEntity):
     """Representation of a Climate IP connectivity diagnostic binary sensor."""
 
     entity_description: BinarySensorEntityDescription
@@ -83,7 +79,7 @@ class ClimateIPConnectivitySensor(
         return self.coordinator.log_prefix
 
     @property
-    def device_info(self) -> DeviceInfo | None:
+    def device_info(self) -> DeviceInfo:
         """Return device information for the device registry."""
         return self.coordinator.device_info
 

@@ -3,9 +3,9 @@
 
 from dataclasses import FrozenInstanceError
 
+from custom_components.climate_ip.state import ClimateIPDeviceState
 import pytest
 
-from custom_components.climate_ip.state import ClimateIPDeviceState
 from homeassistant.components.climate import HVACMode
 
 

@@ -80,7 +80,9 @@ async def test_live_emulator_connection_and_commands(
 
 
 @pytest.mark.asyncio
-async def test_intesisbox_loop_breaker_window_purging_and_alternation_boundary() -> None:
+async def test_intesisbox_loop_breaker_window_purging_and_alternation_boundary() -> (
+    None
+):
     """Shadowed test for loop breaker window purging and alternation boundaries."""
     conn = ConnectionIntesisBox(
         config={CONF_IP_ADDRESS: "127.0.0.1", CONF_PORT: 3310},

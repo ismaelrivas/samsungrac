@@ -1,25 +1,22 @@
 # pylint: disable=import-outside-toplevel,line-too-long,too-many-branches,too-many-instance-attributes,too-many-locals,too-many-return-statements,too-many-statements,unused-import
 """YAML configuration loader for climate_ip controllers."""
 
-from __future__ import annotations
-
+import contextlib
 import logging
 from pathlib import Path
 from typing import Any
 
-from homeassistant.const import (
-    ATTR_ENTITY_ID,
-    ATTR_NAME,
-    ATTR_TEMPERATURE,
-)
-import homeassistant.helpers.config_validation as cv
+import probatio
+
+from homeassistant.const import ATTR_ENTITY_ID, ATTR_NAME, ATTR_TEMPERATURE
+from homeassistant.helpers import config_validation as cv
 from homeassistant.util.yaml import load_yaml
-import voluptuous as vol
 
 from .connection import CLIMATE_IP_CONNECTIONS, Connection
 from .const import (
     CONF_CONN_METHOD,
     CONF_DEVICE_TYPE,
+    CONF_ENTRY_ID,
     CONF_TEMP_NATIVE_CURRENT,
     CONF_TEMP_NATIVE_TARGET,
     CONFIG_DEVICE,
@@ -31,12 +28,14 @@ from .const import (
     CONFIG_DEVICE_SENSORS,
     CONFIG_DEVICE_STATUS,
     CONFIG_DEVICE_SWITCHES,
+    CONFIG_UNIT_OF_MEASUREMENT,
     CONN_METHOD_AIOHTTP,
     CONN_METHOD_RAW,
     DEFAULT_CONF_TEMP_UNIT,
     DEVICE_TYPE_AIOHTTP_SUPPORTED,
     DEVICE_TYPE_INTESISBOX,
     DEVICE_TYPE_SAMSUNG_2878,
+    PROPERTY_TYPE_TEMP,
 )
 from .properties import TemperatureOperation, create_property, create_status_getter
 
@@ -51,7 +50,7 @@ _YAML_FILE_CACHE: dict[str, dict[str, Any]] = {}
 def clear_yaml_cache() -> None:
     """Clear the YAML file content cache to allow reloading from disk."""
     if _YAML_FILE_CACHE:
-        _LOGGER.info("Clearing YAML file cache to force re-read on reload.")
+        _LOGGER.info("Clearing YAML file cache to force re-read on reload")
         _YAML_FILE_CACHE.clear()
 
 
@@ -69,8 +68,8 @@ class YamlConfigLoader:
         self.sensors: dict[str, Any] = {}
         self.sensors_list: list[str] = []
 
-        self.service_schema_map: dict[Any, Any] = {
-            vol.Optional(ATTR_ENTITY_ID): cv.comp_entity_ids
+        self.service_schema_map: dict[probatio.Marker, Any] = {
+            probatio.Optional(ATTR_ENTITY_ID): cv.comp_entity_ids
         }
 
         self.connection: Connection | None = None
@@ -87,12 +86,50 @@ class YamlConfigLoader:
         """Return the parsed YAML cache for the current device."""
         return self._parsed_yaml_cache
 
-    async def async_initialize(self) -> bool:
+    def _get_hass(self) -> Any | None:
+        """Safely retrieve the HomeAssistant instance from the controller."""
+        try:
+            return self.controller.hass
+        except AttributeError:
+            return None
+
+    def _get_controller_config(self) -> dict[str, Any]:
+        """Safely retrieve the configuration dictionary from the controller."""
+        cfg = getattr(self.controller, "config", None) or getattr(
+            self.controller, "_config", None
+        )
+        return dict(cfg) if isinstance(cfg, dict) else {}
+
+    def _register_operation_nodes(self, nodes: dict[str, Any]) -> None:
+        """Instantiate and register operation or switch nodes into the loader."""
+        for op_key, node_cfg in nodes.items():
+            op = create_property(  # pragma: no mutate
+                op_key,
+                node_cfg,
+                self.connection,
+                self.controller,
+                self.state_getter,
+            )
+            if op is not None:  # pragma: no mutate
+                try:
+                    op_id = op.id
+                except AttributeError:
+                    op_id = op_key  # pragma: no mutate
+                self.operations[op_id] = op  # pragma: no mutate
+                try:
+                    schema = op.config_validation_type
+                except AttributeError:
+                    schema = cv.string
+                self.service_schema_map[probatio.Optional(op_id)] = (
+                    schema  # pragma: no mutate
+                )
+
+    async def async_initialize(self) -> bool:  # noqa: C901
         """Perform initial YAML configuration loading and set up the base connection."""
         raw_file = self.controller.yaml_file
         if raw_file is None:
             _LOGGER.error(  # pragma: no mutate
-                "%s No configuration file specified. Aborting initialization.",  # pragma: no mutate
+                "%s No configuration file specified. Aborting initialization",  # pragma: no mutate
                 self.controller.log_prefix,  # pragma: no mutate
             )  # pragma: no mutate
             return False
@@ -122,10 +159,7 @@ class YamlConfigLoader:
         else:
             try:
                 raw_loaded_yaml: Any
-                try:
-                    hass_ref = self.controller.hass
-                except AttributeError:
-                    hass_ref = None
+                hass_ref = self._get_hass()
 
                 if hass_ref is not None:  # pragma: no mutate
                     raw_loaded_yaml = await hass_ref.async_add_executor_job(
@@ -146,19 +180,17 @@ class YamlConfigLoader:
                     self.controller.log_prefix,  # pragma: no mutate
                     file,  # pragma: no mutate
                 )  # pragma: no mutate
-            except Exception as exc:  # pylint: disable=import-outside-toplevel,broad-exception-caught
-                _LOGGER.error(  # pragma: no mutate
-                    "%s Error loading YAML configuration %s: %s",  # pragma: no mutate
+            except Exception:  # pylint: disable=import-outside-toplevel,broad-exception-caught
+                _LOGGER.exception(  # pragma: no mutate
+                    "%s Error loading YAML configuration %s",  # pragma: no mutate
                     self.controller.log_prefix,  # pragma: no mutate
                     file,  # pragma: no mutate
-                    exc,  # pragma: no mutate
-                    exc_info=True,  # pragma: no mutate
                 )  # pragma: no mutate
                 return False
 
         if not self._parsed_yaml_config:
             _LOGGER.error(
-                "%s YAML configuration is empty or could not be read.",
+                "%s YAML configuration is empty or could not be read",
                 self.controller.log_prefix,
             )
             return False
@@ -179,17 +211,9 @@ class YamlConfigLoader:
             return False
 
         ac = yaml_device[CONFIG_DEVICE]
-
         connection_node = ac.get(CONFIG_DEVICE_CONNECTION, {}).copy()
 
-        # Sanitized configuration dictionary access
-        try:
-            controller_config = self.controller.config
-        except AttributeError:
-            try:
-                controller_config = self.controller._config
-            except AttributeError:
-                controller_config = {}
+        controller_config = self._get_controller_config()
         device_type = controller_config.get(CONF_DEVICE_TYPE)
 
         if device_type == DEVICE_TYPE_SAMSUNG_2878:
@@ -204,12 +228,8 @@ class YamlConfigLoader:
             connection_node[CONFIG_DEVICE_CONNECTION_TYPE] = "intesisbox"
         elif device_type in DEVICE_TYPE_AIOHTTP_SUPPORTED:
             conn_method = controller_config.get(CONF_CONN_METHOD, CONN_METHOD_AIOHTTP)
-
-            entry_id = controller_config.get("entry_id")
-            try:
-                hass_ref = self.controller.hass
-            except AttributeError:
-                hass_ref = None
+            entry_id = controller_config.get(CONF_ENTRY_ID)
+            hass_ref = self._get_hass()
 
             if hass_ref is not None and entry_id:
                 entry = hass_ref.config_entries.async_get_entry(entry_id)
@@ -238,7 +258,7 @@ class YamlConfigLoader:
                 _LOGGER.warning(
                     "%s [DEPRECATED] Using obsolete 'request' (synchronous) engine. "
                     "Please reconfigure this device via Integrations UI -> Reconfigure "
-                    "to use Modern (aiohttp) or Robust (raw socket) for better performance and stability.",
+                    "to use Modern (aiohttp) or Robust (raw socket) for better performance and stability",
                     self.controller.log_prefix,
                 )
                 connection_node[CONFIG_DEVICE_CONNECTION_TYPE] = (
@@ -274,12 +294,9 @@ class YamlConfigLoader:
                     conn_class.__name__,
                     conn_type_str,
                 )
+                hass_ref = self._get_hass()
                 try:
-                    hass_ref = self.controller.hass
-                except AttributeError:
-                    hass_ref = None
-                try:
-                    session_ref = self.controller._session
+                    session_ref = self.controller._session  # noqa: SLF001
                 except AttributeError:
                     session_ref = None
                 try:
@@ -296,7 +313,10 @@ class YamlConfigLoader:
                         session_ref,
                         ip_ref,
                     )
-                elif conn_class.__name__ in ("ConnectionRaw8888", "ConnectionIntesisBox"):
+                elif conn_class.__name__ in (
+                    "ConnectionRaw8888",
+                    "ConnectionIntesisBox",
+                ):
                     self.connection = conn_class(
                         controller_config,
                         _LOGGER,
@@ -324,10 +344,8 @@ class YamlConfigLoader:
             )
             return False
 
-        try:
+        with contextlib.suppress(AttributeError):
             self.connection.set_controller_ref(self.controller)
-        except AttributeError:
-            pass
 
         _LOGGER.debug(
             "%s Connection object created successfully. Type: %s",
@@ -375,56 +393,13 @@ class YamlConfigLoader:
 
         ac = yaml_device.get(CONFIG_DEVICE, {}) if yaml_device else {}
 
-        nodes = ac.get(CONFIG_DEVICE_OPERATIONS, {})
-        for op_key in nodes.keys():
-            op = create_property(
-                op_key,
-                nodes[op_key],
-                self.connection,
-                self.controller,
-                self.state_getter,
-            )
-            if op is not None:
-                try:
-                    op_id = op.id
-                except AttributeError:
-                    op_id = op_key
-                self.operations[op_id] = op
-                try:
-                    schema = op.config_validation_type
-                except AttributeError:
-                    schema = cv.string
-                self.service_schema_map[vol.Optional(op_id)] = schema
-
-        nodes = ac.get(CONFIG_DEVICE_SWITCHES, {})
-        for op_key in nodes.keys():
-            op = create_property(  # pragma: no mutate
-                op_key,
-                nodes[op_key],
-                self.connection,
-                self.controller,
-                self.state_getter,
-            )
-            if op is not None:  # pragma: no mutate
-                try:
-                    op_id = op.id
-                except AttributeError:
-                    op_id = op_key  # pragma: no mutate
-                self.operations[op_id] = op  # pragma: no mutate
-                if op_id not in self.operations_list:  # pragma: no mutate
-                    self.operations_list.append(op_id)  # pragma: no mutate
-                try:
-                    schema = op.config_validation_type
-                except AttributeError:
-                    schema = cv.string
-                self.service_schema_map[vol.Optional(op_id)] = (
-                    schema  # pragma: no mutate
-                )
+        self._register_operation_nodes(ac.get(CONFIG_DEVICE_OPERATIONS, {}))
+        self._register_operation_nodes(ac.get(CONFIG_DEVICE_SWITCHES, {}))
 
         nodes = ac.get(CONFIG_DEVICE_ATTRIBUTES, {})
-        for key in nodes.keys():
+        for key, node_cfg in nodes.items():
             prop = create_property(  # pragma: no mutate
-                key, nodes[key], self.connection, self.controller, self.state_getter
+                key, node_cfg, self.connection, self.controller, self.state_getter
             )
             if prop is not None:  # pragma: no mutate
                 try:
@@ -432,22 +407,20 @@ class YamlConfigLoader:
                 except AttributeError:
                     prop_id = key  # pragma: no mutate
                 self.properties[prop_id] = prop  # pragma: no mutate
-                if "unit_of_measurement" in nodes[key]:  # pragma: no mutate
-                    try:
+                if CONFIG_UNIT_OF_MEASUREMENT in node_cfg:  # pragma: no mutate
+                    with contextlib.suppress(AttributeError):
                         prop.set_unit_of_measurement(
-                            nodes[key]["unit_of_measurement"]
+                            node_cfg[CONFIG_UNIT_OF_MEASUREMENT]
                         )  # pragma: no mutate
-                    except AttributeError:
-                        pass
 
         node_sensors = ac.get(CONFIG_DEVICE_SENSORS, {})
         _LOGGER.debug(
             "%s Loading %d sensors", self.controller.log_prefix, len(node_sensors)
         )  # pragma: no mutate
-        for name in node_sensors.keys():
+        for name, sensor_cfg in node_sensors.items():
             prop = create_property(  # pragma: no mutate
                 name,  # pragma: no mutate
-                node_sensors[name],  # pragma: no mutate
+                sensor_cfg,  # pragma: no mutate
                 self.connection,  # pragma: no mutate
                 self.controller,  # pragma: no mutate
                 self.state_getter,  # pragma: no mutate
@@ -458,10 +431,7 @@ class YamlConfigLoader:
 
         # Apply temperature units from config/options.
         configured_unit = DEFAULT_CONF_TEMP_UNIT
-        try:
-            hass_ref = self.controller.hass
-        except AttributeError:
-            hass_ref = None
+        hass_ref = self._get_hass()
 
         if hass_ref:
             configured_unit = hass_ref.config.units.temperature_unit
@@ -469,15 +439,8 @@ class YamlConfigLoader:
         native_current_unit = DEFAULT_CONF_TEMP_UNIT  # pragma: no mutate
         native_target_unit = DEFAULT_CONF_TEMP_UNIT  # pragma: no mutate
 
-        try:
-            controller_config = self.controller.config
-        except AttributeError:
-            try:
-                controller_config = self.controller._config
-            except AttributeError:
-                controller_config = {}
-
-        entry_id = controller_config.get("entry_id")
+        controller_config = self._get_controller_config()
+        entry_id = controller_config.get(CONF_ENTRY_ID)
         if hass_ref and entry_id:
             entry = hass_ref.config_entries.async_get_entry(
                 entry_id
@@ -515,7 +478,7 @@ class YamlConfigLoader:
 
             is_temp = (
                 isinstance(prop_instance, TemperatureOperation)
-                or device_class == "temperature"
+                or device_class == PROPERTY_TYPE_TEMP
             )
 
             if is_temp:
@@ -536,7 +499,7 @@ class YamlConfigLoader:
                         configured_unit,
                     )  # pragma: no mutate
                 except AttributeError:
-                    try:
+                    with contextlib.suppress(AttributeError):
                         prop_instance.set_unit_of_measurement(configured_unit)
                         try:
                             prop_id = prop_instance.id
@@ -548,8 +511,6 @@ class YamlConfigLoader:
                             configured_unit,
                             prop_id or "unknown",
                         )  # pragma: no mutate
-                    except AttributeError:
-                        pass
 
         for op in self.operations.values():
             apply_unit(op)

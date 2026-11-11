@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from custom_components.climate_ip.controller import ClimateController
+from custom_components.climate_ip.controller import ClimateController, ControllerError
 
 
 class DummyController(ClimateController):
@@ -121,41 +121,75 @@ class DummyController(ClimateController):
         pass
 
 
-@pytest.mark.parametrize(
-    ("unique_id", "expected_prefix"),
-    [
-        (
-            "12345",
-            "[12345]",
-        ),  # <--- CORREGIDO: El slicing devuelve la cadena entera si es corta
-        ("123456", "[123456]"),
-        ("1234567", "[234567]"),
-        (None, "[myName]"),  # <--- CORREGIDO: Actualizado al nombre que realmente corta
-    ],
-)
-def test_controller_log_prefix_truncation(unique_id, expected_prefix) -> None:
-    """Test the log_prefix boundary arithmetic for unique_id truncation."""
-    logger = logging.getLogger(__name__)
-    controller = DummyController({}, logger, uid_override=unique_id)
-    assert controller.log_prefix == expected_prefix
+class PristineDummyController(DummyController):
+    """Pristine dummy controller that executes ABC log_prefix without shadowing."""
+
+    def __init__(self, uid: str | None, name: str | None) -> None:
+        super().__init__({}, logging.getLogger("test_pristine"), uid_override=uid)
+        self._name = name
 
 
-def test_controller_base_init_state() -> None:
-    """Test the base state initialization to kill mutmut mutations."""
+async def test_controller_base_init_and_getters() -> None:
+    """Test the base state initialization, default callbacks, and common getters."""
+    assert issubclass(ControllerError, Exception)
+    err = ControllerError("test_error_message")
+    assert str(err) == "test_error_message"
+
     logger = logging.getLogger(__name__)
     controller = DummyController({"test": "config"}, logger)
     assert controller._logger is logger
     assert controller._connection is None
     assert controller.discovered_devices is None
+    assert controller._token_refreshed_callback is None
+    assert controller.hass is None
 
+    # Callbacks must be initialized to their explicit default handlers, not None
+    assert (
+        controller.on_ssl_config_updated
+        is ClimateController._default_on_ssl_config_updated
+    )
+    assert (
+        controller.on_push_update_callback
+        is ClimateController._default_on_push_update_callback
+    )
+    assert (
+        controller.request_refresh_callback
+        is ClimateController._default_request_refresh_callback
+    )
+    assert (
+        controller.on_offline_callback is ClimateController._default_on_offline_callback
+    )
+    assert (
+        controller.on_connection_failed_callback
+        is ClimateController._default_on_connection_failed_callback
+    )
 
-def test_controller_host_property() -> None:
-    """Cover the host property to kill untested mutants."""
-    logger = logging.getLogger(__name__)
-    controller = DummyController({}, logger)
+    # Verify invoking default callbacks executes without raising exceptions
+    assert controller.on_ssl_config_updated({"ssl": True}) is None
+    assert await controller.on_push_update_callback({"data": 1}) is None
+    assert await controller.on_push_update_callback(None) is None
+    assert await controller.request_refresh_callback() is None
+    assert controller.on_offline_callback("device_offline") is None
+    assert controller.on_connection_failed_callback() is None
+
+    # Base getters and diagnostic properties
+    assert controller.config == {"test": "config"}
+    assert controller.connection is None
+    controller._connection = "mock_conn"
+    assert controller.connection == "mock_conn"
+    assert controller.raw_state is None
+    assert controller.last_poll_data is None
+    assert controller.connection_diagnostics == {}
+    assert controller.get_diagnostics() == {}
+
+    # Token property
+    assert controller.token is None
+    controller._token = "test_token_123"
+    assert controller.token == "test_token_123"
+
+    # Host property delegating to ip_address
     controller.ip_address = "192.168.1.50"
     assert controller.host == "192.168.1.50"
-
     controller.ip_address = None
     assert controller.host is None
 
@@ -175,154 +209,60 @@ def test_controller_token_callback_lifecycle() -> None:
     mock_cb.assert_called_once_with("new_auth_token_xyz")
 
     # 3. Invalid token inputs -> raise TypeError
-    with pytest.raises(TypeError, match="new_token must be a non-empty string"):
-        controller.on_token_refreshed("")
-    with pytest.raises(TypeError, match="new_token must be a non-empty string"):
-        controller.on_token_refreshed("   ")
-    with pytest.raises(TypeError, match="new_token must be a non-empty string"):
-        controller.on_token_refreshed(None)  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="new_token must be a non-empty string"):
-        controller.on_token_refreshed(12345)  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="new_token must be a non-empty string"):
-        controller.on_token_refreshed(["token"])  # type: ignore[arg-type]
+    for invalid_token in ("", "   ", None, 12345, ["token"]):
+        with pytest.raises(TypeError, match="new_token must be a non-empty string"):
+            controller.on_token_refreshed(invalid_token)  # type: ignore[arg-type]
 
 
-def test_controller_port_explicit_integer() -> None:
-    """Test Case 1: Initialize with explicit integer port and verify exact value and type."""
+def test_controller_port_resolution_and_validation() -> None:
+    """Test port default fallbacks, explicit ints, string integer parsing, and validation."""
     logger = logging.getLogger(__name__)
 
-    # Standard explicit port
-    controller = DummyController({"port": 2878}, logger)
-    assert controller.port == 2878
-    assert isinstance(controller.port, int)
-    assert type(controller.port) is int
+    # Default fallback when missing or None
+    assert DummyController({}, logger).port == 8888
+    assert DummyController({"port": None}, logger).port == 8888
 
-    # Boundary valid integer ports: 1 and 65535
-    controller_min = DummyController({"port": 1}, logger)
-    assert controller_min.port == 1
-    assert isinstance(controller_min.port, int)
+    # Explicit integer port resolution and range boundaries
+    for valid_int in (1, 2878, 8888, 65535):
+        ctrl = DummyController({"port": valid_int}, logger)
+        assert ctrl.port == valid_int
+        assert isinstance(ctrl.port, int)
 
-    controller_max = DummyController({"port": 65535}, logger)
-    assert controller_max.port == 65535
-    assert isinstance(controller_max.port, int)
-
-    controller_8888 = DummyController({"port": 8888}, logger)
-    assert controller_8888.port == 8888
-    assert isinstance(controller_8888.port, int)
-
-
-def test_controller_port_default_fallback() -> None:
-    """Test Case 2: Initialize with empty config or None port and verify default fallback."""
-    logger = logging.getLogger(__name__)
-
-    # Empty dictionary
-    controller_empty = DummyController({}, logger)
-    assert controller_empty.port == 8888
-    assert isinstance(controller_empty.port, int)
-    assert type(controller_empty.port) is int
-
-    # Explicit None port
-    controller_none = DummyController({"port": None}, logger)
-    assert controller_none.port == 8888
-    assert isinstance(controller_none.port, int)
-    assert type(controller_none.port) is int
-
-
-def test_controller_port_string_coercion_and_validation() -> None:
-    """Test Case 3: Test valid string integer coercion and invalid string rejection."""
-    logger = logging.getLogger(__name__)
-
-    # Valid string port coercion
-    controller_str = DummyController({"port": "8888"}, logger)
-    assert controller_str.port == 8888
-    assert isinstance(controller_str.port, int)
-    assert type(controller_str.port) is int
-
-    # Valid string port with whitespace and boundaries
-    controller_ws = DummyController({"port": " 2878 "}, logger)
-    assert controller_ws.port == 2878
-
-    controller_str_min = DummyController({"port": "1"}, logger)
-    assert controller_str_min.port == 1
-
-    controller_str_max = DummyController({"port": "65535"}, logger)
-    assert controller_str_max.port == 65535
-
-    # Invalid non-numeric strings raise ValueError
-    with pytest.raises(ValueError, match="Invalid port string"):
-        _ = DummyController({"port": "invalid_port"}, logger).port
-
-    with pytest.raises(ValueError, match="Invalid port string"):
-        _ = DummyController({"port": ""}, logger).port
-
-    with pytest.raises(ValueError, match="Invalid port string"):
-        _ = DummyController({"port": "   "}, logger).port
-
-    with pytest.raises(ValueError, match="Invalid port string"):
-        _ = DummyController({"port": "88.88"}, logger).port
-
-    with pytest.raises(ValueError, match="Invalid port string"):
-        _ = DummyController({"port": "-1"}, logger).port
-
-    # Out-of-range string integers raise ValueError
-    with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
-        _ = DummyController({"port": "0"}, logger).port
-
-    with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
-        _ = DummyController({"port": "65536"}, logger).port
-
-    with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
-        _ = DummyController({"port": "99999"}, logger).port
-
-
-def test_controller_port_invalid_types_and_ranges() -> None:
-    """Test Case 4: Pass invalid configurations and assert ValueError or TypeError is raised."""
-    logger = logging.getLogger(__name__)
+    # Valid string integer coercion and whitespace handling
+    for valid_str, expected_int in (
+        ("8888", 8888),
+        (" 2878 ", 2878),
+        ("1", 1),
+        ("65535", 65535),
+    ):
+        ctrl = DummyController({"port": valid_str}, logger)
+        assert ctrl.port == expected_int
+        assert isinstance(ctrl.port, int)
 
     # Out-of-range integer values -> ValueError
-    with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
-        _ = DummyController({"port": -1}, logger).port
+    for out_int in (-1, 0, 65536, 99999):
+        with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
+            _ = DummyController({"port": out_int}, logger).port
 
-    with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
-        _ = DummyController({"port": 0}, logger).port
+    # Invalid non-numeric strings -> ValueError
+    for inv_str in ("invalid_port", "", "   ", "88.88", "-1"):
+        with pytest.raises(ValueError, match="Invalid port string"):
+            _ = DummyController({"port": inv_str}, logger).port
 
-    with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
-        _ = DummyController({"port": 65536}, logger).port
-
-    with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
-        _ = DummyController({"port": 99999}, logger).port
+    # Out-of-range string integers -> ValueError
+    for out_str in ("0", "65536", "99999"):
+        with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
+            _ = DummyController({"port": out_str}, logger).port
 
     # Unsupported types -> TypeError
-    with pytest.raises(TypeError, match="Unsupported port type"):
-        _ = DummyController({"port": []}, logger).port
-
-    with pytest.raises(TypeError, match="Unsupported port type"):
-        _ = DummyController({"port": {}}, logger).port
-
-    with pytest.raises(TypeError, match="Unsupported port type"):
-        _ = DummyController({"port": (8888,)}, logger).port
-
-    with pytest.raises(TypeError, match="Unsupported port type"):
-        _ = DummyController({"port": 88.88}, logger).port
-
-    with pytest.raises(TypeError, match="Unsupported port type"):
-        _ = DummyController({"port": True}, logger).port
-
-    with pytest.raises(TypeError, match="Unsupported port type"):
-        _ = DummyController({"port": False}, logger).port
+    for inv_type in ([], {}, (8888,), 88.88, True, False):
+        with pytest.raises(TypeError, match="Unsupported port type"):
+            _ = DummyController({"port": inv_type}, logger).port
 
 
-class PristineDummyController(DummyController):
-    """Pristine dummy controller that executes ABC log_prefix without shadowing."""
-
-    def __init__(self, uid: str | None, name: str | None) -> None:
-        super().__init__({}, logging.getLogger("test_pristine"), uid_override=uid)
-        self._name = name
-
-
-@pytest.mark.parametrize(
-    ("uid", "name", "expected_prefix"),
-    [
+def test_controller_log_prefix_resolution() -> None:
+    """Achieves 100% branch coverage on ClimateController.log_prefix."""
+    cases = (
         # Case A: Fallbacks
         (None, None, "[NO:ID]"),
         ("", None, "[NO_ID]"),
@@ -342,27 +282,15 @@ class PristineDummyController(DummyController):
         # Fallback to name property when unique_id is None
         (None, "00:11:22:33:44:55", "[334455]"),
         (None, "LivingRoom_AC", "[ngRoom:AC]"),
-    ],
-)
-def test_controller_log_prefix_coverage(
-    uid: str | None, name: str | None, expected_prefix: str
-) -> None:
-    """Achieves 100% branch coverage on ClimateController.log_prefix (kills Mutant 34)."""
-    controller = PristineDummyController(uid, name)
-    assert controller.log_prefix == expected_prefix
-
-
-def test_controller_base_getters_coverage() -> None:
-    """Test ClimateController base getters for 100% coverage."""
-    cfg = {"host": "192.168.1.50"}
-    ctrl = DummyController(cfg, logging.getLogger("test_getters"))
-    ctrl._connection = "mock_conn"
-    ctrl._token = "test_token_123"
-
-    assert ctrl.connection == "mock_conn"
-    assert ctrl.config == cfg
-    assert ctrl.raw_state is None
-    assert ctrl.last_poll_data is None
-    assert ctrl.connection_diagnostics == {}
-    assert ctrl.get_diagnostics() == {}
-    assert ctrl.token == "test_token_123"
+        # Truncation boundary checks (clean_mac[-6:] vs entire slice)
+        ("12345", None, "[12345]"),
+        ("123456", None, "[123456]"),
+        ("1234567", None, "[234567]"),
+        (None, "DummyName", "[myName]"),
+        # UUID boundary conditions (kills 'or' mutant on len == 36 and count("-") == 4)
+        ("001122334455_" + "0" * 36, None, f"[334455:{'0' * 36}]"),
+        ("001122334455_a-b-c-d-e", None, "[334455:a-b-c-d-e]"),
+    )
+    for uid, name, expected_prefix in cases:
+        controller = PristineDummyController(uid, name)
+        assert controller.log_prefix == expected_prefix

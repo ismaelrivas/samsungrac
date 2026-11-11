@@ -1,7 +1,5 @@
 """The Samsung Climate IP integration."""
 
-from __future__ import annotations
-
 import asyncio
 import logging
 from typing import Any
@@ -39,10 +37,10 @@ DEFAULT_UNKNOWN = "Unknown"
 type ClimateIPConfigEntry = ConfigEntry[dict[str, SamsungClimateCoordinator]]
 
 PLATFORMS: list[Platform] = [
+    Platform.BINARY_SENSOR,
     Platform.CLIMATE,
     Platform.SENSOR,
     Platform.SWITCH,
-    Platform.BINARY_SENSOR,
 ]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -80,7 +78,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) 
     if entry.version > CONFIG_ENTRY_VERSION:
         # Guard against downgrades.
         _LOGGER.error(
-            "Config entry version %s is newer than integration supports (%s). Update integration.",
+            "Config entry version %s is newer than integration supports (%s); update integration",
             entry.version,
             CONFIG_ENTRY_VERSION,
         )
@@ -106,7 +104,7 @@ async def _async_safe_shutdown(target: Any) -> None:
             res = target.async_shutdown()
             if asyncio.iscoroutine(res) or hasattr(res, "__await__"):
                 await res
-        except Exception as ex:  # pylint: disable=broad-exception-caught
+        except Exception as ex:  # pylint: disable=broad-exception-caught # noqa: BLE001
             _LOGGER.warning("Error during safe shutdown of %s: %s", target, ex)
 
 
@@ -144,7 +142,6 @@ async def _async_setup_single_device(
             "%s Failed to initialize controller for %s",
             controller.log_prefix,
             device_name,
-            exc_info=True,
         )
         await _async_safe_shutdown(controller)
         return device_id, None
@@ -181,7 +178,7 @@ async def _async_setup_single_device(
 def _build_device_setup_tasks(
     hass: HomeAssistant,
     entry: ClimateIPConfigEntry,
-    devices_config: list[dict[str, Any]],
+    devices_config: Any,
     session: Any,
 ) -> list[Any]:
     """Build list of concurrent setup tasks for sub-devices."""
@@ -308,7 +305,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) ->
             for dev_id, coord in coordinators.items():
                 try:
                     await _async_safe_shutdown(coord)
-                except Exception as ex:
+                except Exception as ex:  # noqa: BLE001
                     _LOGGER.error(
                         "Failed clean shutdown for device %s during rollback: %s",
                         dev_id,
@@ -352,7 +349,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -
                 _LOGGER.debug("Executing async_shutdown for device ID: %s", device_id)
                 try:
                     await _async_safe_shutdown(coordinator)
-                except Exception as ex:
+                except Exception as ex:  # noqa: BLE001
                     _LOGGER.error(
                         "Failed to cleanly shutdown coordinator for device %s: %s",
                         device_id,
@@ -378,11 +375,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ClimateIPConfigEntry) -
             clear_yaml_cache()
 
         _LOGGER.info(
-            "Teardown complete. Config entry %s fully unloaded.", entry.entry_id
+            "Teardown complete. Config entry %s fully unloaded", entry.entry_id
         )
     else:
         _LOGGER.warning(
-            "Platform unload failed for entry %s. Aborting teardown to prevent unstable state.",
+            "Platform unload failed for entry %s; aborting teardown to prevent unstable state",
             entry.entry_id,
         )
 

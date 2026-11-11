@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
 from custom_components.climate_ip.properties import PROPERTY_TYPE_SWITCH
 from custom_components.climate_ip.switch import SamsungClimateSwitch, async_setup_entry
 from homeassistant.components.switch import SwitchEntityDescription
@@ -15,7 +14,7 @@ from homeassistant.const import EntityCategory
 @pytest.fixture
 def base_switch_entity() -> SamsungClimateSwitch:
     """Fixture base con coordinador mockeado. Aísla el constructor para pruebas puras."""
-    mock_coordinator = MagicMock(spec=SamsungClimateCoordinator)
+    mock_coordinator = MagicMock()
     mock_coordinator.unique_id = "test_mac_123"
     mock_coordinator.device_info = {"identifiers": {("climate_ip", "test_mac_123")}}
     mock_coordinator.controller = MagicMock()
@@ -33,14 +32,11 @@ def base_switch_entity() -> SamsungClimateSwitch:
         icon="mdi:toggle-switch",
     )
 
-    # Temporarily patch _update_state only during instantiation
-    # Prevents _update_state from overwriting initial __init__ values
-    with patch.object(SamsungClimateSwitch, "_update_state"):
-        switch = SamsungClimateSwitch(
-            coordinator=mock_coordinator,
-            description=description,
-            operation=mock_prop,
-        )
+    switch = SamsungClimateSwitch(
+        coordinator=mock_coordinator,
+        description=description,
+        operation=mock_prop,
+    )
 
     mock_platform_data = MagicMock()
     mock_platform_data.platform_name = "climate_ip"
@@ -89,26 +85,50 @@ class DummySwitchPropFallback:
 # ============================================================
 
 
-def test_switch_initialization(base_switch_entity: SamsungClimateSwitch) -> None:
+def test_switch_initialization() -> None:
     """Aniquila Mutantes 1, 4, 5, 6, 7 y 8 en __init__.
+
     Asserts estrictamente las asignaciones estructurales iniciales.
     """
+    mock_coordinator = MagicMock()
+    mock_coordinator.unique_id = "test_mac_123"
+    mock_coordinator.device_info = {"identifiers": {("climate_ip", "test_mac_123")}}
+
+    mock_prop = MagicMock()
+    mock_prop.id = "test_switch_id"
+    mock_prop.value = "unknown"
+
+    description = SwitchEntityDescription(
+        key="test_switch_id",
+        translation_key="test_switch_id",
+        device_class=None,
+        entity_category=EntityCategory.CONFIG,
+        icon="mdi:toggle-switch",
+    )
+
+    with patch.object(SamsungClimateSwitch, "_update_state"):
+        entity = SamsungClimateSwitch(
+            coordinator=mock_coordinator,
+            description=description,
+            operation=mock_prop,
+        )
+
     # Mutant 1: super().__init__(None) -> fails because coordinator would not be assigned.
-    assert base_switch_entity.coordinator is not None
+    assert entity.coordinator is not None
 
     # Mutant 5: self._attr_is_on = ""
-    assert base_switch_entity._attr_is_on is None, (
+    assert entity._attr_is_on is None, (
         "Debe ser estrictamente None, no un string vacío."
     )
 
     # Mutants 6 and 7: self._attr_has_entity_name = None / False
-    assert base_switch_entity._attr_has_entity_name is True
+    assert entity._attr_has_entity_name is True
 
     # Mutant 8: self._attr_unique_id = None
-    assert base_switch_entity._attr_unique_id == "test_mac_123_test_switch_id"
+    assert entity._attr_unique_id == "test_mac_123_test_switch_id"
 
     # Annihilates Mutant 9: self._attr_device_info = None
-    assert base_switch_entity._attr_device_info == {
+    assert entity._attr_device_info == {
         "identifiers": {("climate_ip", "test_mac_123")}
     }, "El device_info no se asignó o fue corrompido con None."
 
@@ -118,22 +138,12 @@ def test_switch_initialization(base_switch_entity: SamsungClimateSwitch) -> None
 # ============================================================
 
 
-def test_update_state_value_extraction(
-    base_switch_entity: SamsungClimateSwitch,
-) -> None:
-    """Annihilates Mutant 1 (value = None in initial extraction).
-    If it extracts None, it will ignore the real value and state will end up as None instead of True.
-    """
-    base_switch_entity._operation.value = "on"
-    base_switch_entity._update_state()
-    assert base_switch_entity._attr_is_on is True
-
-
 @pytest.mark.parametrize("input_value", ["on", "On", True])
 def test_update_state_on_matrix(
     base_switch_entity: SamsungClimateSwitch, input_value
 ) -> None:
     """Aniquila Mutantes 2 al 10.
+
     Garantiza que cualquier alteración en la lista ["on", "On", True],
     su operador 'in', o la asignación final 'self._attr_is_on = True' falle matemáticamente.
     """
@@ -149,6 +159,7 @@ def test_update_state_off_matrix(
     base_switch_entity: SamsungClimateSwitch, input_value
 ) -> None:
     """Aniquila Mutantes 11 al 19.
+
     Garantiza que cualquier alteración en la lista ["off", "Off", False],
     su operador lógico, o la asignación final 'self._attr_is_on = False' falle.
     """
@@ -163,6 +174,7 @@ def test_update_state_unknown_fallback(
     base_switch_entity: SamsungClimateSwitch,
 ) -> None:
     """Annihilates Mutant 20.
+
     Guarantees the 'else' branch strictly assigns None, not an empty string or other value.
     """
     base_switch_entity._operation.value = "garbage_unrecognized_data"
@@ -176,7 +188,6 @@ def test_update_state_missing_value_attribute(
     base_switch_entity: SamsungClimateSwitch,
 ) -> None:
     """Eliminate Mutant 6 for fallback when 'value' attribute is missing."""
-    # Delete the 'value' attribute
     del base_switch_entity._operation.value
     base_switch_entity._update_state()
     assert base_switch_entity._attr_is_on is None
@@ -188,27 +199,37 @@ def test_update_state_missing_value_attribute(
 
 
 @pytest.mark.asyncio
-async def test_async_turn_on(base_switch_entity: SamsungClimateSwitch) -> None:
-    """Valida la delegación asíncrona de encendido."""
+async def test_async_turn_on_and_off(base_switch_entity: SamsungClimateSwitch) -> None:
+    """Valida la delegación asíncrona de encendido y apagado."""
     base_switch_entity.coordinator.async_set_property = AsyncMock(return_value=True)
 
     await base_switch_entity.async_turn_on()
-
     base_switch_entity.coordinator.async_set_property.assert_awaited_once_with(
         "test_switch_id", "on"
     )
 
-
-@pytest.mark.asyncio
-async def test_async_turn_off(base_switch_entity: SamsungClimateSwitch) -> None:
-    """Valida la delegación asíncrona de apagado."""
-    base_switch_entity.coordinator.async_set_property = AsyncMock(return_value=True)
+    base_switch_entity.coordinator.async_set_property.reset_mock()
 
     await base_switch_entity.async_turn_off()
-
     base_switch_entity.coordinator.async_set_property.assert_awaited_once_with(
         "test_switch_id", "off"
     )
+
+
+def test_switch_available_and_coordinator_update(
+    base_switch_entity: SamsungClimateSwitch,
+) -> None:
+    """Test switch.available and _handle_coordinator_update callback."""
+    # Available delegates to super().available
+    base_switch_entity.coordinator.last_update_success = True
+    assert base_switch_entity.available is True
+
+    # _handle_coordinator_update calls _update_state and super()._handle_coordinator_update()
+    base_switch_entity._operation.value = "on"
+    with patch.object(base_switch_entity, "async_write_ha_state") as mock_write:
+        base_switch_entity._handle_coordinator_update()
+        assert base_switch_entity.is_on is True
+        mock_write.assert_called_once()
 
 
 # ============================================================
@@ -272,13 +293,14 @@ async def test_async_setup_entry_strict_mapping(
 async def test_async_setup_entry_fallbacks(
     mock_parse_category, mock_desc_class
 ) -> None:
-    """Kills mutants en los operadores lógicos del fallback de iconos."""
+    """Kills mutants en fallbacks de iconos, diccionarios de operaciones y coordinadores."""
     hass = MagicMock()
     entry = MagicMock()
     mock_coord = MagicMock()
 
-    mock_coord.controller.operations = [DummySwitchPropFallback()]
-    entry.runtime_data = {"dev_1": mock_coord}
+    # Operations as dict and runtime_data as non-dict coordinator to cover both branches
+    mock_coord.controller.operations = {"dev_key": DummySwitchPropFallback()}
+    entry.runtime_data = mock_coord
 
     mock_parse_category.return_value = None
     async_add_entities = MagicMock()
@@ -293,64 +315,6 @@ async def test_async_setup_entry_fallbacks(
         device_class=None,
         entity_category=None,
         icon="mdi:toggle-switch",
-    )
-
-
-@pytest.mark.asyncio
-@patch("custom_components.climate_ip.switch.SamsungClimateSwitch")
-async def test_async_setup_entry_single_coordinator_and_dict_ops(
-    mock_switch_class,
-) -> None:
-    """Kills mutants en las ramas de manejo de diccionarios para coordinadores y operaciones."""
-    hass = MagicMock()
-    entry = MagicMock()
-    mock_coord = MagicMock()
-
-    # Supply operations as Dictionary instead of list
-    mock_coord.controller.operations = {"key_ignorado": DummySwitchPropFallback()}
-
-    # Supply coordinator_data directly, not as dictionary
-    entry.runtime_data = mock_coord
-
-    async_add_entities = MagicMock()
-
-    await async_setup_entry(hass, entry, async_add_entities)
-
-    assert mock_switch_class.call_count == 1
-    async_add_entities.assert_called_once()
-
-
-@pytest.mark.asyncio
-@patch("custom_components.climate_ip.switch.SamsungClimateSwitch")
-async def test_async_setup_entry_get_property_object_failure(mock_switch_class) -> None:
-    """Eliminate mutants 9, 10, 11 by strict execution tracing of string operations."""
-    hass = MagicMock()
-    entry = MagicMock()
-    mock_coord = MagicMock()
-
-    # Create valid object as "witness" loop advanced
-    # If mutmut changes string validation to None or inverts 'if', object
-    # either uncalled or processed erroneously.
-    valid_op_after_string = DummySwitchPropValid()
-    valid_op_after_string.match_type = MagicMock(return_value=True)
-    valid_op_after_string.is_valid = MagicMock(return_value=True)
-
-    mock_coord.controller.operations = ["string_op", valid_op_after_string]
-    mock_coord.controller.get_property_object.return_value = None
-    entry.runtime_data = {"dev_1": mock_coord}
-
-    async_add_entities = MagicMock()
-    await async_setup_entry(hass, entry, async_add_entities)
-
-    # Mutant 10: Ensures get_property_object receives exactly "string_op"
-    mock_coord.controller.get_property_object.assert_called_once_with("string_op")
-
-    # Mutants 9 and 11: If string object evaluation fails correctly (prop_obj is None),
-    # the loop must 'continue' and process 'valid_op_after_string'.
-    # If mutmut inverts logic ('if prop_obj is None: op = prop_obj'), iteration will explode
-    # or stop. Therefore, we require the class to be instantiated EXACTLY 1 time.
-    assert mock_switch_class.call_count == 1, (
-        "El bucle no manejó el string_op correctamente o abortó la iteración."
     )
     async_add_entities.assert_called_once()
 
@@ -367,15 +331,15 @@ async def test_async_setup_entry_continue_vs_break(
     entry = MagicMock()
     mock_coord = MagicMock()
 
-    # Mutant 21: Object without 'id' attribute
+    # Object without 'id' attribute
     class NoIdProp:
         pass
 
-    # Mutant 25: ID is "power"
+    # ID is "power"
     class PowerProp:
         id = "power"
 
-    # Mutant 30: Invalid for device state
+    # Invalid for device state
     class InvalidProp:
         id = "invalid_switch"
 
@@ -390,9 +354,10 @@ async def test_async_setup_entry_continue_vs_break(
     valid_prop.is_valid = MagicMock(return_value=True)
 
     # CRITICAL ORDER: Elements to skip go FIRST.
-    # If any mutates 'continue' to 'break', iteration aborts
-    # before processing final 'valid_prop', leaving call_count at 0.
+    # String op with no resolved object, NoIdProp, PowerProp, InvalidProp
+    mock_coord.controller.get_property_object.return_value = None
     mock_coord.controller.operations = [
+        "unresolved_string_prop",
         NoIdProp(),
         PowerProp(),
         InvalidProp(),
@@ -406,7 +371,12 @@ async def test_async_setup_entry_continue_vs_break(
 
     await async_setup_entry(hass, entry, async_add_entities)
 
-    # Lethal assertion
+    # Verifies string op lookup failure was handled
+    mock_coord.controller.get_property_object.assert_called_once_with(
+        "unresolved_string_prop"
+    )
+
+    # Lethal assertion: if any filter breaks instead of continuing, call_count == 0
     assert mock_switch_class.call_count == 1, (
         "La iteración se detuvo prematuramente. Un filtro usó 'break' en lugar de 'continue'."
     )
@@ -467,8 +437,6 @@ async def test_async_setup_entry_get_property_object_success(
     mock_coord.controller.operations = ["string_op_valid"]
 
     valid_prop = DummySwitchPropValid()
-    valid_prop.match_type = MagicMock(return_value=True)
-    valid_prop.is_valid = MagicMock(return_value=True)
 
     # Configure factory to return valid object
     mock_coord.controller.get_property_object.return_value = valid_prop
@@ -488,19 +456,3 @@ async def test_async_setup_entry_get_property_object_success(
         "Valid string operation did not instantiate entity. "
         "Mutant 11 inverted the 'is not None' check."
     )
-
-
-def test_switch_available_and_coordinator_update(
-    base_switch_entity: SamsungClimateSwitch,
-) -> None:
-    """Test switch.available and _handle_coordinator_update callback."""
-    # Available delegates to super().available
-    base_switch_entity.coordinator.last_update_success = True
-    assert base_switch_entity.available is True
-
-    # _handle_coordinator_update calls _update_state and super()._handle_coordinator_update()
-    base_switch_entity._operation.value = "on"
-    with patch.object(base_switch_entity, "async_write_ha_state") as mock_write:
-        base_switch_entity._handle_coordinator_update()
-        assert base_switch_entity.is_on is True
-        mock_write.assert_called_once()

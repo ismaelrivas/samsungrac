@@ -7,14 +7,13 @@ from pathlib import Path
 import ssl
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
-import pytest
-
 from custom_components.climate_ip.exceptions import (
     AuthTurnedOffError,
     CannotConnect,
     TokenAcquisitionError,
 )
 from custom_components.climate_ip.token_acquirer_yaml import GenericYamlTokenAcquirer
+import pytest
 
 from .test_token_acquirer_yaml__common import mock_hass, stream_config
 

@@ -1,7 +1,5 @@
 """Raw socket connection engine for Samsung devices on port 8888."""
 
-from __future__ import annotations
-
 import logging
 from pathlib import Path
 import time
@@ -138,9 +136,8 @@ class ConnectionRaw8888(Connection):
     ) -> None:
         """Initialize the connection."""
         super().__init__(config, logger, hass=hass)
-        self._hass = hass
 
-        self._host: str = ip_address or cast(str, config.get(CONF_IP_ADDRESS, ""))
+        self._host: str = ip_address or config.get(CONF_IP_ADDRESS, "")
         self._cert: str | None = self._resolve_cert_path(config.get(CONF_CERT))
         self._controller: ClimateController | None = None
         self._client: Samsung8888Client | None = None
@@ -414,7 +411,7 @@ class ConnectionRaw8888(Connection):
             await self._async_handle_embedded_command(
                 method, url, headers, device_state, auth_ctx
             )
-        except (CannotConnect, AuthError):
+        except CannotConnect, AuthError:
             raise  # pragma: no mutate
         except Exception as e:
             raise CannotConnect(
@@ -449,20 +446,6 @@ class ConnectionRaw8888(Connection):
         try:
             async with self.async_lock:
                 resp, err = await client.request(method, path, body, req_headers)
-
-            if err:
-                raise CannotConnect(f"API Error: {err}")  # pragma: no mutate
-
-            if debug_enabled:
-                elapsed = time.perf_counter() - start_time  # pragma: no mutate
-                _LOGGER.debug(
-                    "%s [RAW] Request completed in %.3f seconds",
-                    self.log_prefix,
-                    elapsed,
-                )  # pragma: no mutate
-
-            return resp, None
-
         except CannotConnect:
             if _is_probe:
                 return None, None
@@ -476,6 +459,21 @@ class ConnectionRaw8888(Connection):
             OSError,
         ) as e:
             raise CannotConnect(f"Socket error: {e}") from e  # pragma: no mutate
+        else:
+            if err:
+                if _is_probe:
+                    return None, None
+                raise CannotConnect(f"API Error: {err}")  # pragma: no mutate
+
+            if debug_enabled:
+                elapsed = time.perf_counter() - start_time  # pragma: no mutate
+                _LOGGER.debug(
+                    "%s [RAW] Request completed in %.3f seconds",
+                    self.log_prefix,
+                    elapsed,
+                )  # pragma: no mutate
+
+            return resp, None
 
     async def close(self) -> None:
         """Close the connection and release resources safely."""

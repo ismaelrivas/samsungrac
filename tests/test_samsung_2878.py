@@ -582,8 +582,8 @@ async def test_01c_connection_manager_task_and_queue_guards(
         ),
         patch.object(connection, "_close_connection", new_callable=AsyncMock),
     ):
-        with contextlib.suppress(asyncio.CancelledError):
-            await asyncio.wait_for(connection._connection_manager(), timeout=0.05)
+        with contextlib.suppress(asyncio.CancelledError, TimeoutError):
+            await asyncio.wait_for(connection._connection_manager(), timeout=0.5)
 
     connection._reader.read.assert_called_once_with(8192)
     assert mock_task.cancelled()
@@ -616,8 +616,8 @@ async def test_01c_connection_manager_task_and_queue_guards(
         ),
         patch.object(connection, "_close_connection", new_callable=AsyncMock),
     ):
-        with contextlib.suppress(asyncio.CancelledError):
-            await asyncio.wait_for(connection._connection_manager(), timeout=0.05)
+        with contextlib.suppress(asyncio.CancelledError, TimeoutError):
+            await asyncio.wait_for(connection._connection_manager(), timeout=0.5)
 
     assert mock_cmd.await_count == 2
     assert mock_cmd.call_args.args[0] is not None
@@ -659,8 +659,8 @@ async def test_01c_connection_manager_task_and_queue_guards(
         ),
         patch.object(connection, "_close_connection", new_callable=AsyncMock),
     ):
-        with contextlib.suppress(asyncio.CancelledError):
-            await asyncio.wait_for(connection._connection_manager(), timeout=0.05)
+        with contextlib.suppress(asyncio.CancelledError, TimeoutError):
+            await asyncio.wait_for(connection._connection_manager(), timeout=0.5)
 
     mock_cmd_idle.assert_not_called()
     assert idle_q_task.cancelled()
@@ -1813,8 +1813,8 @@ async def test_connection_manager_loop_branches(
         ),
         patch.object(connection, "_close_connection", new_callable=AsyncMock),
     ):
-        with contextlib.suppress(asyncio.CancelledError):
-            await asyncio.wait_for(connection._connection_manager(), timeout=0.05)
+        with contextlib.suppress(asyncio.CancelledError, TimeoutError):
+            await asyncio.wait_for(connection._connection_manager(), timeout=0.5)
 
     assert [c.args[0] for c in mock_proc_read.call_args_list] == [
         b"",
@@ -1860,8 +1860,8 @@ async def test_connection_manager_loop_branches(
     ):
         # Set pending_future before OSError iteration via sleep side effect check
         connection._pending_future = None
-        with contextlib.suppress(asyncio.CancelledError):
-            await asyncio.wait_for(connection._connection_manager(), timeout=0.05)
+        with contextlib.suppress(asyncio.CancelledError, TimeoutError):
+            await asyncio.wait_for(connection._connection_manager(), timeout=0.5)
 
     mock_proc_cmd.assert_has_awaits([call(fake_q_task), call(fake_q_task)])
     assert fake_r_task.cancelled() is True

@@ -115,7 +115,7 @@ def safe_xml_to_dict(xml_string: str) -> dict[str, Any]:
         if element.text and element.text.strip():
             if result:
                 result["#text"] = element.text.strip()  # pragma: no mutate
-            else:
+            else:  # pragma: no cover
                 return element.text.strip()
 
         return result

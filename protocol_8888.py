@@ -1,12 +1,11 @@
 # pylint: disable=duplicate-code,implicit-str-concat,line-too-long,too-many-branches,too-many-instance-attributes,too-many-locals,too-many-statements
-"""
-Pure Python library for Samsung AC (Port 8888).
+"""Pure Python library for Samsung AC (Port 8888).
+
 Supports Raw Sockets and SSL auto-negotiation (Legacy vs Modern).
 """
 
-from __future__ import annotations
-
 import asyncio
+import contextlib
 import json
 import logging
 import re
@@ -113,14 +112,14 @@ class Samsung8888Client:
                     self.log_prefix,
                     ", ".join(applied_opts),
                 )
-        except Exception:  # pylint: disable=broad-exception-caught
+        except Exception:  # pylint: disable=broad-exception-caught # noqa: BLE001
             pass  # Ignore if options not supported on this platform.
 
         if self.cert_path:
             try:
                 # Modern Python 3.9+ idiom for offloading blocking calls to a thread
                 await asyncio.to_thread(ctx.load_cert_chain, self.cert_path)
-            except Exception as e:  # pylint: disable=broad-exception-caught
+            except Exception as e:  # pylint: disable=broad-exception-caught # noqa: BLE001
                 _LOGGER.warning(
                     "%s Error loading certificate %s: %s",
                     self.log_prefix,
@@ -164,7 +163,7 @@ class Samsung8888Client:
                     self.log_prefix,
                     negotiated_tls,
                 )
-            except Exception:  # pylint: disable=broad-exception-caught
+            except Exception:  # pylint: disable=broad-exception-caught # noqa: BLE001
                 pass
         except TimeoutError as exc:
             raise CannotConnect(
@@ -176,7 +175,7 @@ class Samsung8888Client:
     async def close(self) -> None:
         """Close and clean up the socket writer and reader."""
         _LOGGER.debug(
-            "%s [Samsung8888Client] Closing and cleaning up resources...",
+            "%s [Samsung8888Client] Closing and cleaning up resources",
             self.log_prefix,
         )
 
@@ -194,7 +193,7 @@ class Samsung8888Client:
                     )
                     if self._writer.transport:
                         self._writer.transport.abort()
-                except Exception as e:  # pylint: disable=broad-exception-caught
+                except Exception as e:  # pylint: disable=broad-exception-caught # noqa: BLE001
                     _LOGGER.warning(
                         "%s [Samsung8888Client] Error during wait_closed, "
                         "forcing abort: %s",
@@ -204,7 +203,7 @@ class Samsung8888Client:
                     if self._writer.transport:
                         self._writer.transport.abort()
 
-            except Exception as e:  # pylint: disable=broad-exception-caught
+            except Exception as e:  # pylint: disable=broad-exception-caught # noqa: BLE001
                 _LOGGER.debug(
                     "%s [Samsung8888Client] Error closing writer: %s",
                     self.log_prefix,
@@ -292,10 +291,8 @@ class Samsung8888Client:
 
                 if key == "content-length":
                     has_content_length_header = True
-                    try:
+                    with contextlib.suppress(ValueError):
                         content_length = int(val)
-                    except ValueError:
-                        pass  # Ignore invalid non-numeric Content-Length header values from device
                 elif key == "content-type":
                     content_type = val
 
@@ -323,7 +320,7 @@ class Samsung8888Client:
             except TimeoutError as exc:
                 await self.close()
                 raise CannotConnect("Timeout reading response body") from exc
-            except Exception:  # pylint: disable=broad-exception-caught
+            except Exception:  # pylint: disable=broad-exception-caught # noqa: BLE001
                 resp_body = ""
         elif content_length == 0 and has_cl_header:
             resp_body = ""  # Explicitly 0 — do not read.
@@ -359,7 +356,7 @@ class Samsung8888Client:
 
             except TimeoutError:
                 _LOGGER.debug(
-                    "%s [RAW] Socket chunk read timed out (5.0s limit reached).",
+                    "%s [RAW] Socket chunk read timed out (5.0s limit reached)",
                     self.log_prefix,
                 )
 
@@ -371,12 +368,10 @@ class Samsung8888Client:
     def _log_masked_response(self, resp_body: str) -> None:
         """Compact, mask sensitive data, and log the response body."""
         log_body = resp_body.replace("\r", "").replace("\n", "")
-        try:
+        with contextlib.suppress(Exception):
             json_obj = json_loads(resp_body)
             masked_obj = mask_sensitive_data(json_obj)
             log_body = json_dumps(masked_obj)
-        except Exception:  # pylint: disable=broad-exception-caught
-            pass  # Keep cleaned string if not valid JSON.
 
         _LOGGER.debug(
             "%s Response body received: '%s'",
@@ -401,7 +396,7 @@ class Samsung8888Client:
                     writer = self._writer
                     reader = self._reader
                     if writer is None or reader is None:
-                        raise CannotConnect("No connection established")
+                        raise CannotConnect("No connection established")  # noqa: TRY301
 
                     request_bytes = self._build_request_bytes(
                         method, path, headers=headers, body=body
@@ -443,11 +438,11 @@ class Samsung8888Client:
                     self._log_masked_response(resp_body)
 
                     if status_code == 401:
-                        raise AuthError("401 Unauthorized")
+                        raise AuthError("401 Unauthorized")  # noqa: TRY301
                     if status_code not in (200, 204):
                         return None, f"HTTP {status_code}: {resp_body}"
 
-                    return resp_body, None
+                    return resp_body, None  # noqa: TRY300
 
                 except CannotConnect:
                     # Already closed by the inner handler; propagate directly.
@@ -467,7 +462,7 @@ class Samsung8888Client:
                     raise
                 except asyncio.CancelledError:
                     _LOGGER.debug(
-                        "%s [RAW] Request was cancelled by coordinator timeout. Closing socket.",
+                        "%s [RAW] Request was cancelled by coordinator timeout. Closing socket",
                         self.log_prefix,
                     )
                     await self.close()

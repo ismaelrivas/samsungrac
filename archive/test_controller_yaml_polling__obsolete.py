@@ -5,6 +5,7 @@
 Quarantined 94 completely shadowed tests with zero unique mutant kills
 and zero unique line coverage to accelerate mutmut and pytest execution.
 """
+
 import copy
 import re
 import time
@@ -69,6 +70,7 @@ class DummyController(NakedObj):
 # =========================================================================
 # ARCHIVED TESTS (94 COMPLETELY SHADOWED TESTS)
 # =========================================================================
+
 
 # --- Archived from test_controller_yaml_polling__annihilation.py ---
 def test_mutant_apply_anti_flicker_global_evict_return_stops_iteration():
@@ -2722,4 +2724,3 @@ def test_yaml_state_poller_initial_state():
     assert len(poller._pending_updates) == 0
     assert isinstance(poller._prop_template_key_cache, dict)
     assert len(poller._prop_template_key_cache) == 0
-

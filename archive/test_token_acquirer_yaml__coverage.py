@@ -4,10 +4,9 @@
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from custom_components.climate_ip.exceptions import TokenAcquisitionError
 from custom_components.climate_ip.token_acquirer_yaml import GenericYamlTokenAcquirer
+import pytest
 
 from .test_token_acquirer_yaml__common import listener_config, mock_hass, stream_config
 

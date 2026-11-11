@@ -12,8 +12,6 @@ import tempfile
 import time
 from unittest.mock import ANY, AsyncMock, MagicMock, call, patch
 
-import pytest
-
 from custom_components.climate_ip.const import (
     CONF_CERT,
     PROTOCOL_2878_DPLUG,
@@ -31,6 +29,8 @@ from custom_components.climate_ip.samsung_2878 import (
     RECONNECT_FACTOR,
     ConnectionSamsung2878,
 )
+import pytest
+
 from homeassistant.const import CONF_MAC
 
 
@@ -821,9 +821,8 @@ async def test_async_execute_timeout_and_success(connection):
     with patch(
         "custom_components.climate_ip.samsung_2878.asyncio.timeout",
         side_effect=TimeoutError,
-    ):
-        with pytest.raises(CannotConnect, match="Timeout waiting for connection"):
-            await connection.async_execute(None, None, "<Test/>", None)
+    ), pytest.raises(CannotConnect, match="Timeout waiting for connection"):
+        await connection.async_execute(None, None, "<Test/>", None)
 
     # 3. Éxito: Encolado de comando correcto
     connection._is_ready.set()
@@ -2320,8 +2319,7 @@ async def test_establish_connection_strict_sockets(connection):
 
 @pytest.mark.asyncio
 async def test_read_full_response_unified_assault(connection):
-    """
-    Asedio Maestro a _read_full_response.
+    """Asedio Maestro a _read_full_response.
     Reemplaza todos los tests fragmentados. Kills mutants en 0.001s sin cuelgues de CPU.
     """
     from unittest.mock import AsyncMock

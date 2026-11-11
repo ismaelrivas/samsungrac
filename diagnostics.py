@@ -1,7 +1,5 @@
 """Diagnostics support for climate_ip."""
 
-from __future__ import annotations
-
 from dataclasses import asdict
 import re
 from typing import TYPE_CHECKING, Any, Final, Protocol, cast, runtime_checkable
@@ -81,8 +79,7 @@ def _get_mac_threat_patterns(entry: ClimateIPConfigEntry) -> set[str]:
     # Also inspect title and unique_id for embedded MAC patterns
     for item in (entry.title, entry.unique_id):
         if isinstance(item, str):
-            for match in RE_MAC_DUID.findall(item):
-                candidates.append(match)
+            candidates.extend(RE_MAC_DUID.findall(item))
 
     for candidate in candidates:
         stripped = candidate.strip()
@@ -166,31 +163,24 @@ def _extract_raw_device_state(coordinator: SamsungClimateCoordinator) -> dict[st
     devices_state: dict[str, Any] = {}
 
     for device_id, device in coordinator.devices.items():
-        try:
-            devices_state[device_id] = device.raw_state
-        except AttributeError:
-            try:
-                devices_state[device_id] = device.device_state
-            except AttributeError:
-                pass
+        st = getattr(device, "raw_state", None) or getattr(device, "device_state", None)
+        if st is not None:
+            devices_state[device_id] = st
 
     if not devices_state:
         ctrl = coordinator.controller
-        try:
-            devices_state[KEY_MAIN_DEVICE] = ctrl.raw_state
-        except AttributeError:
-            try:
-                devices_state[KEY_MAIN_DEVICE] = ctrl.device_state
-            except AttributeError:
-                try:
-                    devices_state[KEY_MAIN_DEVICE] = ctrl.last_poll_data
-                except AttributeError:
-                    pass
+        st = (
+            getattr(ctrl, "raw_state", None)
+            or getattr(ctrl, "device_state", None)
+            or getattr(ctrl, "last_poll_data", None)
+        )
+        if st is not None:
+            devices_state[KEY_MAIN_DEVICE] = st
 
     return devices_state
 
 
-async def async_get_config_entry_diagnostics(
+async def async_get_config_entry_diagnostics(  # noqa: C901
     hass: HomeAssistant, entry: ClimateIPConfigEntry
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
@@ -286,10 +276,8 @@ async def async_get_config_entry_diagnostics(
         diagnostics_data["bootstrapping"]["active_entities"] = total_entities
 
     # Determine target host for active probe and runtime telemetry lookup
-    target_host: str | None = None
-    if isinstance(entry.data, dict):
-        target_host = entry.data.get("host") or entry.data.get("ip_address")
-    if not target_host and isinstance(entry.options, dict):
+    target_host: str | None = entry.data.get("host") or entry.data.get("ip_address")
+    if not target_host:
         target_host = entry.options.get("host") or entry.options.get("ip_address")
     if not target_host and isinstance(entry_data, SamsungClimateCoordinator):
         ctrl = entry_data.controller
@@ -339,7 +327,8 @@ async def async_get_config_entry_diagnostics(
 
     diagnostics_data["network_diagnostics"] = {
         "privileged_probe_support": _can_use_icmp_privileged(),
-        "last_runtime_check": last_runtime_check or {
+        "last_runtime_check": last_runtime_check
+        or {
             "is_reachable": None,
             "status": "not_recorded",
         },

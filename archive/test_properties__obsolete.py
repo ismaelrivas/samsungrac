@@ -33,7 +33,6 @@ from custom_components.climate_ip.exceptions import AuthError, CannotConnect
 from custom_components.climate_ip.properties import *
 
 
-
 def test_device_property_init(mock_connection, mock_controller):
     """Assert strict initial state to kill __init__ mutants."""
     prop = DeviceProperty("test_id", mock_connection, mock_controller, "mock_getter")
@@ -329,9 +328,7 @@ def test_getjsonstatus_mutants():
     op.calculate_value_from_state(None)
 
 
-def test_device_property_connection_fallback_dict(
-    mock_connection, mock_controller
-):
+def test_device_property_connection_fallback_dict(mock_connection, mock_controller):
     """Verify mutant kill silencioso node.get(CONFIG_DEVICE_CONNECTION)."""
     from custom_components.climate_ip.properties import DeviceProperty
 
@@ -427,9 +424,7 @@ def test_load_from_yaml_missing_connection_and_values(mock_connection, mock_cont
     assert op.load_from_yaml({"name": "test_op"}) is False
 
 
-def test_getjsonstatus_calculate_value_json_strict(
-    mock_connection, mock_controller
-):
+def test_getjsonstatus_calculate_value_json_strict(mock_connection, mock_controller):
     """Kill json_loads(None) and render_template parameter mutants."""
     getter = GetJsonStatus("test_json_strict", mock_connection, mock_controller)
     # Give it a template referencing device_state

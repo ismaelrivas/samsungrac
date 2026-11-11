@@ -46,12 +46,11 @@ def get_schema_marker(schema: probatio.Schema, key_name: str):
 
 
 # -----------------------------------------------------------------------------
-# 1. Tests for _get_base_samsung_schema (Kills Mutants 2-6, 11-15, 17-21, 30-35, 37-40, 51-58, 67, 69, 72, 73)
+# 1. Tests for _get_base_samsung_schema
 # -----------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_base_samsung_schema_empty_defaults():
+def test_base_samsung_schema_empty_defaults():
     """Test _get_base_samsung_schema defaults when flow_data is completely empty."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
@@ -77,13 +76,13 @@ async def test_base_samsung_schema_empty_defaults():
     assert name_key.default() == ""
     assert name_type is str
 
-    # 4. Token (Kills M30-M35)
+    # 4. Token
     tok_key, tok_type = get_schema_marker(schema, CONF_TOKEN)
     assert isinstance(tok_key, probatio.Optional)
     assert tok_key.default() == ""
     assert tok_type is str
 
-    # 5. Cert (Kills M37-M40)
+    # 5. Cert
     cert_key, cert_type = get_schema_marker(schema, CONF_CERT)
     assert isinstance(cert_key, probatio.Optional)
     assert cert_key.default() == DEFAULT_CONF_CERT_FILE
@@ -95,13 +94,13 @@ async def test_base_samsung_schema_empty_defaults():
     assert poll_key.default() == str(datetime.timedelta(seconds=DEFAULT_POLL_INTERVAL))
     assert poll_selector.config["type"] == TextSelectorType.TEXT
 
-    # 7. Enable Polling (is_8888=False -> Kills M51, M53-M58)
+    # 7. Enable Polling (is_8888=False)
     poll_flag_key, poll_flag_type = get_schema_marker(schema, CONF_ENABLE_POLLING)
     assert isinstance(poll_flag_key, probatio.Optional)
     assert poll_flag_key.default() is DEFAULT_ENABLE_POLLING
     assert poll_flag_type is bool
 
-    # 8. Temp Native Current & Target (Kills M67, M69, M72, M73)
+    # 8. Temp Native Current & Target
     curr_key, curr_selector = get_schema_marker(schema, CONF_TEMP_NATIVE_CURRENT)
     assert isinstance(curr_key, probatio.Optional)
     assert curr_key.default() == DEFAULT_CONF_TEMP_UNIT
@@ -121,8 +120,7 @@ async def test_base_samsung_schema_empty_defaults():
     ]
 
 
-@pytest.mark.asyncio
-async def test_base_samsung_schema_populated_values_and_optional_mac():
+def test_base_samsung_schema_populated_values_and_optional_mac():
     """Test _get_base_samsung_schema with populated flow_data and optional mac."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
@@ -170,9 +168,8 @@ async def test_base_samsung_schema_populated_values_and_optional_mac():
     assert targ_key.default() == UnitOfTemperature.FAHRENHEIT
 
 
-@pytest.mark.asyncio
-async def test_base_samsung_schema_poll_interval_matrix():
-    """Test all poll interval conversion branches in _get_base_samsung_schema (Kills M2-M6, M11-M15)."""
+def test_base_samsung_schema_poll_interval_matrix():
+    """Test all poll interval conversion branches in _get_base_samsung_schema."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
 
@@ -189,8 +186,7 @@ async def test_base_samsung_schema_poll_interval_matrix():
     assert poll_key2.default() == ""
 
 
-@pytest.mark.asyncio
-async def test_samsung_2878_and_8888_schema_differences():
+def test_samsung_2878_and_8888_schema_differences():
     """Test _get_samsung_2878_schema and _get_samsung_8888_schema methods."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
@@ -206,12 +202,11 @@ async def test_samsung_2878_and_8888_schema_differences():
 
 
 # -----------------------------------------------------------------------------
-# 2. Tests for _get_smartthings_token (Kills Mutants 3, 4)
+# 2. Tests for _get_smartthings_token
 # -----------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_get_smartthings_token_discovery_branches():
+def test_get_smartthings_token_discovery_branches():
     """Test _get_smartthings_token when SmartThings entry is present, has access_token, or is missing."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
@@ -234,12 +229,11 @@ async def test_get_smartthings_token_discovery_branches():
 
 
 # -----------------------------------------------------------------------------
-# 3. Tests for _get_rest_api_schema (Kills Mutants 5, 6, 8, 9, 10, 16-18, 20-23, 36)
+# 3. Tests for _get_rest_api_schema
 # -----------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_rest_api_schema_smartthings_hvac_defaults():
+def test_rest_api_schema_smartthings_hvac_defaults():
     """Test _get_rest_api_schema for SMARTTHINGS_HVAC with token auto-fill and host default."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
@@ -251,7 +245,6 @@ async def test_rest_api_schema_smartthings_hvac_defaults():
 
     flow.flow_data = {
         CONF_DEVICE_TYPE: DEVICE_TYPE_SMARTTHINGS_HVAC,
-        # No IP, no token, no poll interval provided
     }
 
     schema = flow._get_rest_api_schema()
@@ -282,9 +275,8 @@ async def test_rest_api_schema_smartthings_hvac_defaults():
     assert poll_key.default() == str(datetime.timedelta(seconds=DEFAULT_POLL_INTERVAL))
 
 
-@pytest.mark.asyncio
-async def test_rest_api_schema_smartthings_dhw_defaults():
-    """Test _get_rest_api_schema for SMARTTHINGS_DHW (Kills M5 is_st DHW condition flip)."""
+def test_rest_api_schema_smartthings_dhw_defaults():
+    """Test _get_rest_api_schema for SMARTTHINGS_DHW."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
     flow.hass.config_entries.async_entries.return_value = []
@@ -305,8 +297,7 @@ async def test_rest_api_schema_smartthings_dhw_defaults():
     assert token_key.default() == ""
 
 
-@pytest.mark.asyncio
-async def test_rest_api_schema_non_smartthings_device():
+def test_rest_api_schema_non_smartthings_device():
     """Test _get_rest_api_schema for non-SmartThings generic REST device."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
@@ -323,7 +314,7 @@ async def test_rest_api_schema_non_smartthings_device():
         getattr(ip_key1, "default", None)
     )
     dev_id_key1, _ = get_schema_marker(schema1, CONF_DEVICE_ID)
-    assert dev_id_key1 is None  # Not present for non-ST
+    assert dev_id_key1 is None
 
     # 2. With IP in flow_data -> Required(CONF_IP_ADDRESS, default="10.0.0.5")
     flow.flow_data = {
@@ -338,9 +329,8 @@ async def test_rest_api_schema_non_smartthings_device():
     assert tok_key2.default() == "direct_token"
 
 
-@pytest.mark.asyncio
-async def test_rest_api_schema_poll_interval_matrix():
-    """Test poll interval conversion branches in _get_rest_api_schema (Kills M6, M8-10, M16-18, M20-21)."""
+def test_rest_api_schema_poll_interval_matrix():
+    """Test poll interval conversion branches in _get_rest_api_schema."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
     flow.hass.config_entries.async_entries.return_value = []
@@ -374,12 +364,11 @@ async def test_rest_api_schema_poll_interval_matrix():
 
 
 # -----------------------------------------------------------------------------
-# 4. Tests for Newly Centralized Schemas & Dynamic Schema Factory (Phase 3)
+# 4. Tests for Newly Centralized Schemas & Dynamic Schema Factory
 # -----------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_get_user_schema():
+def test_get_user_schema():
     """Test _get_user_schema renders initial device selection schema with dropdown mode."""
     flow = ClimateIpConfigFlow()
     schema = flow._get_user_schema()
@@ -391,8 +380,7 @@ async def test_get_user_schema():
     assert selector.config["mode"] == SelectSelectorMode.DROPDOWN
 
 
-@pytest.mark.asyncio
-async def test_get_intesisbox_schema_defaults_and_user_input():
+def test_get_intesisbox_schema_defaults_and_user_input():
     """Test _get_intesisbox_schema defaults and user_input population."""
     flow = ClimateIpConfigFlow()
     flow.flow_data = {}
@@ -438,60 +426,7 @@ async def test_get_intesisbox_schema_defaults_and_user_input():
     assert mac_key3.description == {"suggested_value": "11:22:33:44:55:66"}
 
 
-@pytest.mark.asyncio
-async def test_get_reconfigure_schema():
-    """Test _get_reconfigure_schema without and with suggested values."""
-    flow = ClimateIpConfigFlow()
-
-    # 1. suggested_values is None
-    schema_none = flow._get_reconfigure_schema(suggested_values=None)
-    ip_key, ip_type = get_schema_marker(schema_none, CONF_IP_ADDRESS)
-    assert isinstance(ip_key, probatio.Required)
-    assert ip_type is str
-
-    mac_key, mac_type = get_schema_marker(schema_none, CONF_MAC)
-    assert isinstance(mac_key, probatio.Optional)
-    assert mac_type is str
-
-    tok_key, tok_type = get_schema_marker(schema_none, CONF_TOKEN)
-    assert isinstance(tok_key, probatio.Optional)
-    assert tok_type is str
-
-    cert_key, cert_type = get_schema_marker(schema_none, CONF_CERT)
-    assert isinstance(cert_key, probatio.Optional)
-    assert cert_type is str
-
-    # 2. suggested_values provided with ClimateIpConfigFlow (inherits add_suggested_values_to_schema)
-    suggested = {
-        CONF_IP_ADDRESS: "192.168.1.55",
-        CONF_MAC: "123456789ABC",
-        CONF_TOKEN: "reconfig_token",
-        CONF_CERT: "custom_cert.pem",
-    }
-    schema_suggested = flow._get_reconfigure_schema(suggested_values=suggested)
-    ip_s, _ = get_schema_marker(schema_suggested, CONF_IP_ADDRESS)
-    assert ip_s.description == {"suggested_value": "192.168.1.55"}
-
-    # 3. DummyFlow standalone without add_suggested_values_to_schema
-    class StandaloneFlow(ConfigFlowSchemasMixin):
-        flow_data = {}
-        hass = None
-
-    standalone = StandaloneFlow()
-    schema_fallback = standalone._get_reconfigure_schema(suggested_values=suggested)
-    assert schema_fallback is not None
-
-    # 4. DummyFlow with custom add_suggested_values_to_schema lambda
-    called = []
-    standalone.add_suggested_values_to_schema = lambda s, v: called.append((s, v)) or s
-    schema_dummy = standalone._get_reconfigure_schema(suggested_values=suggested)
-    assert schema_dummy is not None
-    assert len(called) == 1
-    assert called[0][1] == suggested
-
-
-@pytest.mark.asyncio
-async def test_get_select_devices_schema():
+def test_get_select_devices_schema():
     """Test _get_select_devices_schema across all default-key resolution strategies."""
     flow = ClimateIpConfigFlow()
     flow.flow_data = {}
@@ -522,8 +457,7 @@ async def test_get_select_devices_schema():
     assert key4.default() == ["devA", "devB"]
 
 
-@pytest.mark.asyncio
-async def test_build_device_config_schema_factory():
+def test_build_device_config_schema_factory():
     """Test build_device_config_schema factory across all device families and contexts."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
@@ -583,30 +517,6 @@ async def test_build_device_config_schema_factory():
     assert poll_key_attr.default() == 60
 
 
-def test_format_poll_interval_helper() -> None:
-    """Test format_poll_interval for int, numeric str, fallback str, and fallback defaults."""
-    from custom_components.climate_ip.helpers import format_poll_interval
-
-    # 1. Integer seconds
-    assert format_poll_interval(60) == "0:01:00"
-    assert format_poll_interval(120) == "0:02:00"
-    assert format_poll_interval(0) == "0:00:00"
-
-    # 2. Numeric string
-    assert format_poll_interval("60") == "0:01:00"
-    assert format_poll_interval("120") == "0:02:00"
-
-    # 3. "0:01:30" string fallback
-    assert format_poll_interval("0:01:30") == "0:01:30"
-    assert format_poll_interval("invalid_str") == "invalid_str"
-
-    # 4. Non-numeric non-string fallback to default_seconds
-    assert format_poll_interval(None, default_seconds=45) == "0:00:45"
-    assert format_poll_interval(object(), default_seconds=30) == "0:00:30"
-    assert format_poll_interval([], default_seconds=60) == "0:01:00"
-    assert format_poll_interval(None) == "0:01:00"
-
-
 def test_schema_default_poll_interval_custom_seconds():
     """Test format_poll_interval uses _default_poll_interval_seconds() in base samsung and rest api schemas."""
     flow = ClimateIpConfigFlow()
@@ -629,10 +539,14 @@ def test_schema_default_poll_interval_custom_seconds():
 
 
 def test_schema_mac_required_defaults_to_false():
-    """Test that mac_required defaults to False in samsung 2878, samsung 8888, and build_device_config_schema."""
+    """Test that mac_required defaults to False and strictly checks bool type."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
     flow.flow_data = {}
+
+    # Strict bool type check on mac_required
+    with pytest.raises(TypeError, match="mac_required must be a strict bool"):
+        flow._get_base_samsung_schema(mac_required="invalid", is_8888=False)
 
     # 1. _get_samsung_2878_schema without mac_required
     schema_2878 = flow._get_samsung_2878_schema()
@@ -670,7 +584,7 @@ def test_build_device_config_schema_does_not_overwrite_existing_device_type():
 
 
 def test_async_show_reconfigure_form_calls_async_show_form():
-    """Test _async_show_reconfigure_form delegates to async_show_form with correct arguments."""
+    """Test _async_show_reconfigure_form delegates to async_show_form and verifies reconfigure schema."""
     flow = ClimateIpConfigFlow()
     flow.hass = MagicMock()
     flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888}
@@ -715,6 +629,36 @@ def test_async_show_reconfigure_form_calls_async_show_form():
     assert kwargs2["step_id"] == "reconfigure_confirm"
     assert kwargs2["errors"] == errors
     assert kwargs2["description_placeholders"] == placeholders
+
+    # 3. Base schema markers when suggested_values is None
+    schema_none = flow._get_reconfigure_schema(suggested_values=None)
+    ip_k, ip_t = get_schema_marker(schema_none, CONF_IP_ADDRESS)
+    assert isinstance(ip_k, probatio.Required)
+    assert ip_t is str
+    mac_k, mac_t = get_schema_marker(schema_none, CONF_MAC)
+    assert isinstance(mac_k, probatio.Optional)
+    assert mac_t is str
+    tok_k, tok_t = get_schema_marker(schema_none, CONF_TOKEN)
+    assert isinstance(tok_k, probatio.Optional)
+    assert tok_t is str
+    cert_k, cert_t = get_schema_marker(schema_none, CONF_CERT)
+    assert isinstance(cert_k, probatio.Optional)
+    assert cert_t is str
+
+    # 4. Standalone fallback when add_suggested_values_to_schema is missing or custom
+    class StandaloneFlow(ConfigFlowSchemasMixin):
+        flow_data = {}
+        hass = None
+
+    standalone = StandaloneFlow()
+    assert standalone._get_reconfigure_schema(suggested_values=suggested) is not None
+
+    called = []
+    standalone.add_suggested_values_to_schema = lambda s, v: called.append((s, v)) or s
+    schema_dummy = standalone._get_reconfigure_schema(suggested_values=suggested)
+    assert schema_dummy is not None
+    assert len(called) == 1
+    assert called[0][1] == suggested
 
 
 def test_current_reconfigure_suggested_branches():

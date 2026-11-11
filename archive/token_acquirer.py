@@ -1,8 +1,6 @@
 # pylint: disable=no-else-raise,too-many-branches,too-many-locals,too-many-statements
 """Helper to acquire a token from older Samsung AC units in phases."""
 
-from __future__ import annotations
-
 import asyncio
 import logging
 from pathlib import Path
@@ -66,8 +64,7 @@ class SamsungTokenAcquirer:
         self._writer: asyncio.StreamWriter | None = None
 
     async def _connect(self) -> dict[str, Any] | None:
-        """
-        Establish a connection to the device by trying different certificate
+        """Establish a connection to the device by trying different certificate
         and cipher strategies. Returns a dictionary with the successful
         certificate path and verify mode.
         """
@@ -248,8 +245,7 @@ class SamsungTokenAcquirer:
         ) from last_error
 
     async def async_initiate_pairing(self) -> dict[str, Any] | None:
-        """
-        Phase 1: Connects, puts the device in pairing mode,
+        """Phase 1: Connects, puts the device in pairing mode,
         and returns the successful connection config.
         """
         _LOGGER.info("Initiating pairing for %s", self._ip_address)  # pragma: no mutate
@@ -298,8 +294,7 @@ class SamsungTokenAcquirer:
             ) from exc  # pragma: no mutate
 
     async def async_wait_for_token(self) -> str:
-        """
-        Phase 2: Waits for the user to press the power button and retrieves the token.
+        """Phase 2: Waits for the user to press the power button and retrieves the token.
         """
         if not self._reader:
             raise TokenAcquisitionError(
@@ -336,10 +331,9 @@ class SamsungTokenAcquirer:
                         "Authentication failed: The device was likely turned off "
                         "instead of on (ErrorCode 301)."
                     )
-                else:
-                    raise TokenAcquisitionError(
-                        f"Authentication failed with ErrorCode {error_code}"
-                    )
+                raise TokenAcquisitionError(
+                    f"Authentication failed with ErrorCode {error_code}"
+                )
 
             token_match = TOKEN_RE.search(decoded_buffer)
             if token_match:
@@ -361,7 +355,7 @@ class SamsungTokenAcquirer:
             self._writer.close()
             try:
                 await self._writer.wait_closed()
-            except (ssl.SSLError, ConnectionResetError, asyncio.CancelledError):
+            except ssl.SSLError, ConnectionResetError, asyncio.CancelledError:
                 _LOGGER.debug(
                     "Ignoring non-critical error during connection close."
                 )  # pragma: no mutate

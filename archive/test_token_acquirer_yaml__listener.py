@@ -8,13 +8,12 @@ import re
 import ssl
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
-import pytest
-
 from custom_components.climate_ip.exceptions import CannotConnect, TokenAcquisitionError
 from custom_components.climate_ip.token_acquirer_yaml import (
     GenericYamlTokenAcquirer,
     _extract_token,
 )
+import pytest
 
 from .test_token_acquirer_yaml__common import listener_config, mock_hass
 

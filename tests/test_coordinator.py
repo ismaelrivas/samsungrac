@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import timedelta
+import logging
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
@@ -247,6 +248,165 @@ async def test_01_debouncer_primitives_immediate_and_turn_off() -> None:
 
 
 @pytest.mark.asyncio
+async def test_02_debouncer_in_flight_completion_and_superseded_queue(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Verify PropertyDebouncer in-flight completion branches and debounce queue superseding."""
+    mock_coord = MagicMock()
+    mock_coord.hass.loop.time.return_value = 100.0
+    mock_coord.safe_unique_id = "uid_123"
+    debouncer = PropertyDebouncer(mock_coord, delay=3.0)
+
+    # 1. Line 817: _on_in_flight_completed generation mismatch vs match
+    debouncer._generation = 10
+    debouncer._last_activities["temp"] = 50.0
+    debouncer._in_flight.add("temp")
+    pending_cmd = AsyncMock()
+    debouncer._pending_payloads["temp"] = (pending_cmd, (), {}, 10)
+
+    # 1A: Generation mismatch (captured_generation != self._generation)
+    with patch.object(debouncer, "_dispatch_pending_payload") as mock_dispatch:
+        debouncer._on_in_flight_completed("temp", captured_generation=9)
+        assert "temp" not in debouncer._in_flight
+        assert debouncer._last_activities["temp"] == 50.0
+        assert "temp" in debouncer._pending_payloads
+        mock_dispatch.assert_not_called()
+
+    # 1B: Generation match (captured_generation == self._generation)
+    debouncer._in_flight.add("temp")
+    mock_coord.hass.loop.time.return_value = 110.0
+    # Timer is still ticking, so dispatch should NOT occur yet
+    debouncer._timers["temp"] = MagicMock()
+    with patch.object(debouncer, "_dispatch_pending_payload") as mock_dispatch:
+        debouncer._on_in_flight_completed("temp", captured_generation=10)
+        assert "temp" not in debouncer._in_flight
+        assert debouncer._last_activities["temp"] == 110.0
+        mock_dispatch.assert_not_called()
+
+    # 2. Line 821: _on_in_flight_completed condition logic & truth table
+    #    "if prop in self._pending_payloads and prop not in self._timers:"
+    debouncer._generation = 1
+
+    # Case A: prop in _pending_payloads AND prop in _timers (timer still ticking)
+    debouncer._pending_payloads["temp"] = (pending_cmd, (), {}, 1)
+    debouncer._timers["temp"] = MagicMock()
+    debouncer._in_flight.add("temp")
+    with patch.object(debouncer, "_dispatch_pending_payload") as mock_dispatch:
+        debouncer._on_in_flight_completed("temp", 1)
+        mock_dispatch.assert_not_called()
+        assert "temp" in debouncer._pending_payloads
+
+    # Case B: prop NOT in _pending_payloads AND prop NOT in _timers
+    debouncer._pending_payloads.clear()
+    debouncer._timers.clear()
+    debouncer._in_flight.add("temp")
+    with patch.object(debouncer, "_dispatch_pending_payload") as mock_dispatch:
+        debouncer._on_in_flight_completed("temp", 1)
+        mock_dispatch.assert_not_called()
+
+    # Case C: prop in _pending_payloads AND prop NOT in _timers (timer expired during flight)
+    debouncer._pending_payloads["temp"] = (pending_cmd, (), {}, 1)
+    debouncer._timers.clear()
+    debouncer._in_flight.add("temp")
+    with patch.object(debouncer, "_dispatch_pending_payload") as mock_dispatch:
+        debouncer._on_in_flight_completed("temp", 1)
+        mock_dispatch.assert_called_once_with("temp")
+
+    # Case D: prop NOT in _pending_payloads AND prop in _timers
+    debouncer._pending_payloads.clear()
+    debouncer._timers["temp"] = MagicMock()
+    debouncer._in_flight.add("temp")
+    with patch.object(debouncer, "_dispatch_pending_payload") as mock_dispatch:
+        debouncer._on_in_flight_completed("temp", 1)
+        mock_dispatch.assert_not_called()
+
+    # 3. Lines 731-736, 821-822, 892-897: End-to-end coalescence and superseded queue
+    debouncer.cancel_all()
+    created_tasks: list[tuple[Any, Any, str]] = []
+
+    def _capture_bg_task(hass_arg: Any, coro: Any, *, name: str) -> MagicMock:
+        created_tasks.append((hass_arg, coro, name))
+        return MagicMock()
+
+    mock_coord.config_entry.async_create_background_task.side_effect = _capture_bg_task
+
+    with (
+        patch(
+            "custom_components.climate_ip.coordinator.async_call_later"
+        ) as mock_call_later,
+        caplog.at_level(logging.DEBUG),
+    ):
+        mock_timer_handle = MagicMock()
+        mock_call_later.return_value = mock_timer_handle
+        mock_coord.hass.loop.time.return_value = 200.0
+
+        # Step 1: In-flight command starts (simulating an ongoing wire operation)
+        event_wire = asyncio.Event()
+
+        async def _wire_command(*args: Any, **kwargs: Any) -> bool:
+            await event_wire.wait()
+            return True
+
+        cmd_wire = AsyncMock(side_effect=_wire_command)
+        task1 = asyncio.create_task(
+            debouncer.async_execute("fan_mode", cmd_wire, val="low")
+        )
+        await asyncio.sleep(0)
+        assert "fan_mode" in debouncer._in_flight
+        assert "fan_mode" not in debouncer._pending_payloads
+
+        # Step 2: Second command arrives while fan_mode is in-flight -> queued into _pending_payloads
+        cmd_queued1 = AsyncMock(return_value=True)
+        res_q1 = await debouncer.async_execute(
+            "fan_mode", cmd_queued1, "arg1", val="medium"
+        )
+        assert res_q1 is DEBOUNCE_QUEUED
+        assert "fan_mode" in debouncer._pending_payloads
+        assert "[Debouncer] Command for 'fan_mode' was superseded" not in caplog.text
+
+        # Step 3: Third command arrives while fan_mode already has a pending payload in queue
+        # -> Lines 892-897: Supersedes the previous queued command!
+        cmd_queued2 = AsyncMock(return_value=True)
+        res_q2 = await debouncer.async_execute(
+            "fan_mode", cmd_queued2, "arg2", val="high"
+        )
+        assert res_q2 is DEBOUNCE_QUEUED
+        assert (
+            "[Debouncer] Command for 'fan_mode' was superseded in debounce queue by new value=high"
+            in caplog.text
+        )
+        queued_payload = debouncer._pending_payloads["fan_mode"]
+        assert queued_payload[0] is cmd_queued2
+        assert queued_payload[1] == ("arg2",)
+
+        # Step 4: Timer fires while fan_mode is STILL in-flight
+        # -> Lines 731-736: Timer pops, notices in-flight, holds payload without dispatching
+        timer_cb = mock_call_later.call_args.args[2]
+        timer_cb()
+        assert "fan_mode" not in debouncer._timers
+        assert "fan_mode" in debouncer._pending_payloads
+        assert (
+            "[Debouncer] Timer expired for 'fan_mode' while previous command is still in-flight; holding payload for coalescence"
+            in caplog.text
+        )
+        assert created_tasks == []
+
+        # Step 5: Wire command finishes -> Lines 821-822: _on_in_flight_completed flushes held payload
+        event_wire.set()
+        await task1
+        # Flushed payload is popped and now in-flight as background task
+        assert "fan_mode" in debouncer._in_flight
+        assert "fan_mode" not in debouncer._pending_payloads
+        assert len(created_tasks) == 1
+        _, bg_coro, bg_name = created_tasks.pop()
+        assert bg_name == f"{DOMAIN}_uid_123_debouncer_fan_mode"
+        await bg_coro
+        assert "fan_mode" not in debouncer._in_flight
+        cmd_queued2.assert_awaited_once_with("arg2")
+        cmd_queued1.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_03_debouncer_async_execute_delayed_and_zombies() -> None:
     """Verify PropertyDebouncer queued timer firing, anti-zombie shield, and error handlers."""
     mock_coord = MagicMock()
@@ -324,6 +484,7 @@ async def test_03_debouncer_async_execute_delayed_and_zombies() -> None:
         debouncer.cancel_all()
         await zombie_coro
         cmd_zombie.assert_not_awaited()
+        assert "temp" not in debouncer._last_activities
 
         # 3. Delayed command returns False -> triggers _async_handle_delayed_failure
         debouncer._last_activities["temp"] = 103.5
@@ -364,8 +525,9 @@ async def test_03_debouncer_async_execute_delayed_and_zombies() -> None:
         cmd_no_entry.assert_not_awaited()
 
 
-def test_04_coordinator_init_polling_and_device_info(hass: Any) -> None:
+def test_04_coordinator_init_polling_and_device_info() -> None:
     """Verify SamsungClimateCoordinator.__init__ polling interval math and DeviceInfo branches."""
+    hass = MagicMock()
     mock_ctrl = MagicMock()
     mock_ctrl.unique_id = "ac_main"
     mock_ctrl.log_prefix = "[ac_main]"

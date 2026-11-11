@@ -1,8 +1,7 @@
 # pylint: disable=import-outside-toplevel,consider-using-in,duplicate-code,too-few-public-methods,too-many-arguments,too-many-branches,too-many-instance-attributes,too-many-positional-arguments,unused-import
 # custom_components/climate_ip/connection_request_tls_auto.py
 # pylint: disable=import-outside-toplevel,line-too-long
-"""
-Synchronous connection engine using requests with tolerance for mTLS renegotiation.
+"""Synchronous connection engine using requests with tolerance for mTLS renegotiation.
 
 TARGET DEVICES:
 - Samsung SmartThings HVAC (connection type: 'request_tls_auto')
@@ -13,8 +12,6 @@ necessary for some devices that do not support Keep-Alive correctly or require
 frequent TLS renegotiation.
 """
 
-from __future__ import annotations
-
 import asyncio
 from collections.abc import Mapping
 import copy
@@ -23,14 +20,16 @@ from pathlib import Path
 import re
 import ssl
 from typing import Any, cast
+from unittest.mock import NonCallableMock
 import warnings
+
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.exceptions import InsecureRequestWarning
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.template import Template
 from homeassistant.util.json import JSON_DECODE_EXCEPTIONS, json_loads
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.exceptions import InsecureRequestWarning
 
 from .connection import _HOST_LOCKS, Connection, register_connection
 from .const import (
@@ -68,7 +67,7 @@ class SamsungHTTPAdapter(HTTPAdapter):
             ssl_context.minimum_version = ssl.TLSVersion.TLSv1
         ssl_context.set_ciphers("ALL:@SECLEVEL=0")
         kwargs["ssl_context"] = ssl_context
-        return super().init_poolmanager(*args, **kwargs)
+        return super().init_poolmanager(*args, **kwargs)  # type: ignore[no-untyped-call]
 
 
 def _mask_request_params(params: dict[str, Any], _log_prefix: str) -> dict[str, Any]:
@@ -112,11 +111,12 @@ class ConnectionRequestBase(Connection):
         hass_config: dict[str, Any] | None,
         _logger: logging.Logger,
         insecure_ssl: bool = False,
-        timeout: int | float = 30,
+        timeout: float = 30,
         retry_delay: float = 1.0,
         debug: bool = False,
-        hass: Any | None = None,
+        hass: HomeAssistant | None = None,
     ) -> None:
+        """Initialize the base requests connection."""
         super().__init__(hass_config or {}, _logger, hass=hass)
         self._params: dict[str, Any] = {"timeout": timeout}
         self._max_retries = 3
@@ -168,13 +168,13 @@ class ConnectionRequestBase(Connection):
         if self._params and "headers" in self._params:
             self._params["headers"]["authorization"] = f"Bearer {token}"
             _LOGGER.info(
-                "%s [Auth] Updated Authorization header with new token.",
+                "%s [Auth] Updated Authorization header with new token",
                 self.log_prefix,
             )
 
     async def close(self) -> None:
         """Async wrapper for closing resources. Standardized to not use custom thread pools."""
-        _LOGGER.debug("%s [ConnectionRequest] Closing resources...", self.log_prefix)
+        _LOGGER.debug("%s [ConnectionRequest] Closing resources", self.log_prefix)
 
     @property
     def is_async_native(self) -> bool:
@@ -256,13 +256,16 @@ class ConnectionRequestBase(Connection):
             self._params[CONF_CERT] = cert_file
 
     def load_from_yaml(self, node: dict[str, Any] | None, connection_base: Any) -> bool:
-        # pylint: disable=import-outside-toplevel,protected-access
+        """Load configuration from YAML node and base connection."""
         if connection_base is not None:
-            self._params.update(connection_base._params.copy())
-            self._condition_template = connection_base._condition_template
-            self._insecure_ssl = connection_base._insecure_ssl
-            self._retry_delay = connection_base._retry_delay
-            self._debug = connection_base._debug
+            base_params = getattr(connection_base, "_params", {})
+            self._params.update(base_params.copy())
+            self._condition_template = getattr(
+                connection_base, "_condition_template", None
+            )
+            self._insecure_ssl = getattr(connection_base, "_insecure_ssl", False)
+            self._retry_delay = getattr(connection_base, "_retry_delay", 1.0)
+            self._debug = getattr(connection_base, "_debug", False)
 
         if node is not None:
             self._params.update(node.get(CONFIG_DEVICE_CONNECTION_PARAMS, {}))
@@ -284,9 +287,9 @@ class ConnectionRequestBase(Connection):
         return True
 
     def create_updated(self, yaml_node: dict[str, Any] | None) -> ConnectionRequestBase:
-        """
+        """Create a copy of this connection object updated from a YAML node.
+
         FIX for Pylint E1128: Implement create_updated in base class.
-        Creates a copy of this connection object updated from a YAML node.
         """
         # Generic instantiation of the current class type (e.g. ConnectionRequestTlsAuto)
         new_instance = type(self)(
@@ -299,7 +302,7 @@ class ConnectionRequestBase(Connection):
             hass=self._hass,
         )
         new_instance.load_from_yaml(yaml_node, self)
-        new_instance._controller = self._controller
+        new_instance.set_controller_ref(self._controller)
         return new_instance
 
     async def async_execute(
@@ -312,15 +315,13 @@ class ConnectionRequestBase(Connection):
         _is_probe: bool = False,
         _is_poll: bool = False,
     ) -> tuple[str | None, dict[str, str] | None]:
-        """
+        """Base implementation for synchronous request engines.
+
         FIX for Pylint W0223: Overriding abstract method from base Connection class.
-        Base implementation for synchronous request engines.
         """
         raise NotImplementedError(
             f"{self.__class__.__name__} is a synchronous engine and does not support async_execute."
         )
-
-        # pylint: disable=import-outside-toplevel,too-many-statements
 
     def execute_internal(
         self,
@@ -338,8 +339,6 @@ class ConnectionRequestBase(Connection):
         params = self._params.copy()
         if template is not None:
             try:
-                from unittest.mock import NonCallableMock
-
                 async_render = getattr(template, "async_render", None)
                 rendered_template = (
                     async_render(value=value, device_id=device_id)
@@ -415,7 +414,7 @@ class ConnectionRequestBase(Connection):
                         raise AuthError(f"Auth failed: {status}") from e
                     if 500 <= status < 600 and attempt < self._max_retries - 1:
                         _LOGGER.debug(
-                            "%s Server error (%s). Delegating retry to async loop.",
+                            "%s Server error (%s); delegating retry to async loop",
                             self.log_prefix,
                             status,
                         )
@@ -424,16 +423,14 @@ class ConnectionRequestBase(Connection):
 
                 except requests.exceptions.Timeout as e:
                     if attempt < self._max_retries - 1:
-                        _LOGGER.warning(
-                            "%s Timeout, delegating retry...", self.log_prefix
-                        )
+                        _LOGGER.warning("%s Timeout, delegating retry", self.log_prefix)
                         raise RetryNextAttempt("Request timed out") from e
                     raise CannotConnect("Request timed out") from e
 
                 except requests.exceptions.ConnectionError as e:
                     if attempt < self._max_retries - 1:
                         _LOGGER.warning(
-                            "%s Connection error, delegating retry...", self.log_prefix
+                            "%s Connection error, delegating retry", self.log_prefix
                         )
                         raise RetryNextAttempt("Connection error") from e
                     raise CannotConnect("Failed to establish a connection") from e
@@ -493,9 +490,9 @@ class ConnectionRequestTlsAuto(ConnectionRequestBase):
         _is_probe: bool = False,
         _is_poll: bool = False,
     ) -> tuple[str | None, dict[str, str] | None]:
-        """
+        """This engine is strictly synchronous; async calls are not supported.
+
         FIX for Pylint W0223: Overriding abstract method from base Connection class.
-        This engine is strictly synchronous; async calls are not supported.
         """
         raise NotImplementedError(
             "ConnectionRequestTlsAuto is a synchronous engine and does not support async_execute. "

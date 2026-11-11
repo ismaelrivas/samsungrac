@@ -5,12 +5,11 @@
 import ssl
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from custom_components.climate_ip.token_acquirer_yaml import (
     GenericYamlTokenAcquirer,
     _extract_token,
 )
+import pytest
 
 
 @pytest.fixture

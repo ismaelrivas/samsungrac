@@ -60,224 +60,6 @@ _LOGGER = logging.getLogger(__name__)
 DEBOUNCE_QUEUED: Final = True
 
 
-class PropertyDebouncer:
-    """Debounces outgoing commands per property to shield hardware from request flooding."""
-
-    def __init__(
-        self,
-        coordinator: SamsungClimateCoordinator,
-        delay: float = DEFAULT_DEBOUNCE_DELAY,
-    ) -> None:
-        """Initialize the property debouncer."""
-        self.coordinator = coordinator
-        self.delay = delay
-        self._timers: dict[str, Callable[[], None]] = {}
-        # 🛡️ Updated typing to include the Generation ID (int) at the end of the tuple
-        self._pending_payloads: dict[
-            str,
-            tuple[
-                Callable[..., Coroutine[Any, Any, bool]],
-                tuple[Any, ...],
-                dict[str, Any],
-                int,
-            ],
-        ] = {}
-        self._last_activities: dict[str, float] = {}
-        self._generation: int = 0  # 🛡️ The core of the Anti-Zombie Shield
-
-    @property
-    def hass(self) -> HomeAssistant:
-        """Return the HomeAssistant instance from the coordinator."""
-        return self.coordinator.hass
-
-    @property
-    def is_active(self) -> bool:
-        """Return True if there are active debouncing timers or pending payloads."""
-        return bool(self._timers or self._pending_payloads)
-
-    def has_pending(self, property_name: str) -> bool:
-        """Return True if a command for the given property is queued."""
-        return property_name in self._pending_payloads
-
-    def _cancel_timer(self, property_name: str) -> None:
-        """Cancel and remove an active timer for a property if present."""
-        unsub = self._timers.pop(property_name, None)
-        if unsub is not None:
-            unsub()
-
-    def cancel_all(self) -> None:
-        """Cancel all active timers, clear pending payloads, and poison active zombies."""
-        self._generation += (
-            1  # 💥 Global poisoning: any queued task will be invalidated
-        )
-
-        _LOGGER.debug(
-            "[Debouncer] Purge requested. Generation incremented to %s",
-            self._generation,
-        )
-
-        for unsub in self._timers.values():
-            unsub()
-        self._timers.clear()
-        self._pending_payloads.clear()
-        self._last_activities.clear()
-
-    async def _async_handle_delayed_failure(self, prop: str) -> None:
-        """Clear pending controller prediction and request coordinator refresh on failure."""
-        await self.coordinator.controller.async_clear_pending_updates([prop])
-        await self.coordinator.async_request_refresh()
-
-    async def async_execute(
-        self,
-        property_name: str,
-        coroutine_func: Callable[..., Coroutine[Any, Any, bool]],
-        *args: Any,
-        val: Any = None,
-        **kwargs: Any,
-    ) -> bool:
-        """Execute a command with trailing debouncing per property."""
-        now = self.hass.loop.time()
-        last_activity = self._last_activities.get(property_name)
-
-        # Immediate execution for turn-off commands (aborts any pending debounced commands across all properties)
-        if val is None:
-            raise ValueError(
-                "async_execute requires an explicit 'val' keyword argument."
-            )
-        effective_val = val
-        is_turn_off = (
-            property_name == ATTR_HVAC_MODE
-            and effective_val in (HVACMode.OFF, HVACMode.OFF.value)
-        ) or (
-            property_name == ATTR_POWER
-            and (
-                effective_val == 0
-                or (
-                    isinstance(effective_val, str)
-                    and effective_val.lower() in FALSY_STRINGS
-                )
-            )
-        )
-
-        if is_turn_off:
-            _LOGGER.debug(
-                "[Debouncer] Immediate turn-off requested for '%s'. Aborting all pending commands",
-                property_name,
-            )
-            self.cancel_all()
-            self._last_activities[property_name] = now
-            return await coroutine_func(*args, **kwargs)
-
-        # Immediate execution if this specific property has not been modified within trailing window
-        if last_activity is None or (now - last_activity >= self.delay):
-            self._cancel_timer(property_name)
-            self._pending_payloads.pop(property_name, None)
-            self._last_activities[property_name] = now
-            _LOGGER.debug(
-                "[Debouncer] Immediate execution for property '%s' with args=%s, kwargs=%s",
-                property_name,
-                args,
-                kwargs,
-            )  # pragma: no mutate
-            return await coroutine_func(*args, **kwargs)
-
-        # Rapid command for this property within trailing window: update timestamp and reset timer
-        self._last_activities[property_name] = now
-        self._cancel_timer(property_name)
-        _LOGGER.debug(
-            "[Debouncer] Resetting %.1fs countdown timer for property '%s'",
-            self.delay,
-            property_name,
-        )  # pragma: no mutate
-
-        # 🛡️ Package the payload with the CURRENT Generation ID
-        self._pending_payloads[property_name] = (
-            coroutine_func,
-            args,
-            kwargs,
-            self._generation,
-        )
-
-        @callback
-        def _fire_delayed(_now: Any = None) -> None:
-            prop = property_name
-            self._timers.pop(prop, None)
-            payload = self._pending_payloads.pop(prop, None)
-
-            if payload is not None:
-                # 🛡️ Unpack the generation ID captured when the task was queued
-                func, p_args, p_kwargs, captured_generation = payload
-                exec_time = self.hass.loop.time()
-                self._last_activities[prop] = exec_time
-                _LOGGER.debug(
-                    "[Debouncer] Executing delayed queued command for property: '%s'",
-                    prop,
-                )  # pragma: no mutate
-
-                async def _task_runner() -> None:
-                    # 🛡️ THE ANTI-ZOMBIE SHIELD:
-                    # The timer expired, but the background task just entered the Event Loop.
-                    # We check if the user smashed another button invoking cancel_all() in the meantime.
-                    if self._generation != captured_generation:
-                        _LOGGER.debug(
-                            "[Debouncer] 🧟 Zombie task intercepted and destroyed for '%s'. Task Gen: %s vs Current Gen: %s",
-                            prop,
-                            captured_generation,
-                            self._generation,
-                        )
-                        return
-
-                    try:
-                        success = await func(*p_args, **p_kwargs)
-                        if not success:
-                            _LOGGER.warning(
-                                "[Debouncer] Delayed command for '%s' returned failure. Reverting optimistic state",
-                                prop,
-                            )
-                            await self._async_handle_delayed_failure(prop)
-                    except (TimeoutError, UpdateFailed, CannotConnect, OSError) as err:
-                        _LOGGER.debug(
-                            "[Debouncer] Network error executing delayed command for '%s': %s",
-                            prop,
-                            err,
-                            exc_info=True,
-                        )  # pragma: no mutate
-                        await self._async_handle_delayed_failure(prop)
-                    except Exception:  # pylint: disable=broad-exception-caught
-                        _LOGGER.exception(
-                            "[Debouncer] Unexpected error executing delayed command for '%s'",
-                            prop,
-                        )  # pragma: no mutate
-                        await self._async_handle_delayed_failure(prop)
-
-                task_coro = _task_runner()
-                safe_uid = self.coordinator.safe_unique_id
-                task_name = f"{DOMAIN}_{safe_uid}_debouncer_{prop}"
-                entry: ConfigEntry | None = self.coordinator.config_entry
-                if entry is not None:
-                    entry.async_create_background_task(
-                        self.hass,
-                        task_coro,
-                        name=task_name,
-                    )
-                else:
-                    task_coro.close()
-                    _LOGGER.error(
-                        "[Debouncer] config_entry is None during delayed execution for '%s'. Aborting task",
-                        prop,
-                    )
-
-        self._timers[property_name] = async_call_later(
-            self.hass, self.delay, _fire_delayed
-        )
-        _LOGGER.debug(
-            "[Debouncer] Queued command for property '%s' with %.1fs delay",
-            property_name,
-            self.delay,
-        )  # pragma: no mutate
-        return DEBOUNCE_QUEUED
-
-
 class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
     """Manages data fetching for Samsung Climate devices."""
 
@@ -867,3 +649,266 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
         _LOGGER.debug(
             "%s Coordinator shutdown complete", self.log_prefix
         )  # pragma: no mutate
+
+
+class PropertyDebouncer:
+    """Debounces outgoing commands per property to shield hardware from request flooding."""
+
+    def __init__(
+        self,
+        coordinator: SamsungClimateCoordinator,
+        delay: float = DEFAULT_DEBOUNCE_DELAY,
+    ) -> None:
+        """Initialize the property debouncer."""
+        self.coordinator = coordinator
+        self.delay = delay
+        self._timers: dict[str, Callable[[], None]] = {}
+        self._pending_payloads: dict[
+            str,
+            tuple[
+                Callable[..., Coroutine[Any, Any, bool]],
+                tuple[Any, ...],
+                dict[str, Any],
+                int,
+            ],
+        ] = {}
+        self._last_activities: dict[str, float] = {}
+        self._in_flight: set[str] = set()
+        self._generation: int = 0
+
+    @property
+    def hass(self) -> HomeAssistant:
+        """Return the HomeAssistant instance from the coordinator."""
+        return self.coordinator.hass
+
+    @property
+    def is_active(self) -> bool:
+        """Return True if there are active debouncing timers, pending payloads, or in-flight commands."""
+        return bool(self._timers or self._pending_payloads or self._in_flight)
+
+    def has_pending(self, property_name: str) -> bool:
+        """Return True if a command for the given property is queued."""
+        return property_name in self._pending_payloads
+
+    def _cancel_timer(self, property_name: str) -> None:
+        """Cancel and remove an active timer for a property if present."""
+        unsub = self._timers.pop(property_name, None)
+        if unsub is not None:
+            unsub()
+
+    def cancel_all(self) -> None:
+        """Cancel all active timers, clear pending payloads, and poison active zombies."""
+        self._generation += 1
+        _LOGGER.debug(
+            "[Debouncer] Purge requested. Generation incremented to %s",
+            self._generation,
+        )
+        for unsub in self._timers.values():
+            unsub()
+        self._timers.clear()
+        self._pending_payloads.clear()
+        self._last_activities.clear()
+        self._in_flight.clear()
+
+    async def _async_handle_delayed_failure(self, prop: str) -> None:
+        """Clear pending controller prediction and request coordinator refresh on failure."""
+        await self.coordinator.controller.async_clear_pending_updates([prop])
+        await self.coordinator.async_request_refresh()
+
+    @callback
+    def _schedule_timer(self, property_name: str, delay: float) -> None:
+        """Schedule or reschedule the trailing timer for a property."""
+        self._cancel_timer(property_name)
+
+        @callback
+        def _fire_delayed(_now: Any = None) -> None:
+            prop = property_name
+            self._timers.pop(prop, None)
+
+            # If this property is still in-flight on the wire, keep payload in
+            # _pending_payloads so subsequent changes continue coalescing in memory.
+            # On-flight completion (notify_in_flight_done) will flush it immediately.
+            if prop in self._in_flight:
+                _LOGGER.debug(  # pragma: no mutate
+                    "[Debouncer] Timer expired for '%s' while previous command is still in-flight; holding payload for coalescence",
+                    prop,
+                )  # pragma: no mutate
+                return
+
+            self._dispatch_pending_payload(prop)
+
+        self._timers[property_name] = async_call_later(self.hass, delay, _fire_delayed)
+
+    @callback
+    def _dispatch_pending_payload(self, prop: str) -> None:
+        """Pop and spawn background execution for a pending property payload."""
+        payload = self._pending_payloads.pop(prop, None)
+        if payload is None:
+            return
+
+        func, p_args, p_kwargs, captured_generation = payload
+        exec_time = self.hass.loop.time()
+        self._last_activities[prop] = exec_time
+        self._in_flight.add(prop)
+        _LOGGER.debug(
+            "[Debouncer] Executing delayed queued command for property: '%s'",
+            prop,
+        )  # pragma: no mutate
+
+        async def _task_runner() -> None:
+            try:
+                if self._generation != captured_generation:
+                    _LOGGER.debug(
+                        "[Debouncer] 🧟 Zombie task intercepted and destroyed for '%s'. Task Gen: %s vs Current Gen: %s",
+                        prop,
+                        captured_generation,
+                        self._generation,
+                    )
+                    return
+
+                success = await func(*p_args, **p_kwargs)
+                if not success:
+                    _LOGGER.warning(
+                        "[Debouncer] Delayed command for '%s' returned failure. Reverting optimistic state",
+                        prop,
+                    )
+                    await self._async_handle_delayed_failure(prop)
+            except (TimeoutError, UpdateFailed, CannotConnect, OSError) as err:
+                _LOGGER.debug(
+                    "[Debouncer] Network error executing delayed command for '%s': %s",
+                    prop,
+                    err,
+                    exc_info=True,
+                )  # pragma: no mutate
+                await self._async_handle_delayed_failure(prop)
+            except Exception:  # pylint: disable=broad-exception-caught
+                _LOGGER.exception(
+                    "[Debouncer] Unexpected error executing delayed command for '%s'",
+                    prop,
+                )  # pragma: no mutate
+                await self._async_handle_delayed_failure(prop)
+            finally:
+                self._on_in_flight_completed(prop, captured_generation)
+
+        task_coro = _task_runner()
+        safe_uid = self.coordinator.safe_unique_id
+        task_name = f"{DOMAIN}_{safe_uid}_debouncer_{prop}"
+        entry: ConfigEntry | None = self.coordinator.config_entry
+        if entry is not None:
+            entry.async_create_background_task(
+                self.hass,
+                task_coro,
+                name=task_name,
+            )
+        else:
+            self._in_flight.discard(prop)
+            task_coro.close()
+            _LOGGER.error(
+                "[Debouncer] config_entry is None during delayed execution for '%s'. Aborting task",
+                prop,
+            )
+
+    @callback
+    def _on_in_flight_completed(self, prop: str, captured_generation: int) -> None:
+        """Update activity timestamp after wire completion and flush held payloads."""
+        self._in_flight.discard(prop)
+        if self._generation != captured_generation:
+            return
+        self._last_activities[prop] = self.hass.loop.time()
+        # If a payload was held because its timer expired while prop was in-flight, flush it now
+        if prop in self._pending_payloads and prop not in self._timers:
+            self._dispatch_pending_payload(prop)
+
+    async def async_execute(
+        self,
+        property_name: str,
+        coroutine_func: Callable[..., Coroutine[Any, Any, bool]],
+        *args: Any,
+        val: Any = None,
+        **kwargs: Any,
+    ) -> bool:
+        """Execute a command with leading-edge immediate dispatch and in-flight/trailing coalescence."""
+        now = self.hass.loop.time()
+        last_activity = self._last_activities.get(property_name)
+
+        if val is None:
+            raise ValueError(
+                "async_execute requires an explicit 'val' keyword argument."
+            )
+        effective_val = val
+        is_turn_off = (
+            property_name == ATTR_HVAC_MODE
+            and effective_val in (HVACMode.OFF, HVACMode.OFF.value)
+        ) or (
+            property_name == ATTR_POWER
+            and (
+                effective_val == 0
+                or (
+                    isinstance(effective_val, str)
+                    and effective_val.lower() in FALSY_STRINGS
+                )
+            )
+        )
+
+        if is_turn_off:
+            _LOGGER.debug(
+                "[Debouncer] Immediate turn-off requested for '%s'. Aborting all pending commands",
+                property_name,
+            )
+            self.cancel_all()
+            captured_gen = self._generation
+            self._last_activities[property_name] = now
+            self._in_flight.add(property_name)
+            try:
+                return await coroutine_func(*args, **kwargs)
+            finally:
+                self._on_in_flight_completed(property_name, captured_gen)
+
+        # Leading-edge immediate execution ONLY if property is not currently in-flight
+        # AND outside the trailing cooldown window since the last completed command.
+        if property_name not in self._in_flight and (
+            last_activity is None or (now - last_activity >= self.delay)
+        ):
+            self._cancel_timer(property_name)
+            self._pending_payloads.pop(property_name, None)
+            captured_gen = self._generation
+            self._last_activities[property_name] = now
+            self._in_flight.add(property_name)
+            _LOGGER.debug(
+                "[Debouncer] Immediate execution for property '%s' with args=%s, kwargs=%s",
+                property_name,
+                args,
+                kwargs,
+            )  # pragma: no mutate
+            try:
+                return await coroutine_func(*args, **kwargs)
+            finally:
+                self._on_in_flight_completed(property_name, captured_gen)
+
+        # Coalesce into _pending_payloads
+        if property_name in self._pending_payloads:
+            _LOGGER.debug(  # pragma: no mutate
+                "[Debouncer] Command for '%s' was superseded in debounce queue by new value=%s",
+                property_name,
+                effective_val,
+            )  # pragma: no mutate
+        self._last_activities[property_name] = now
+        _LOGGER.debug(
+            "[Debouncer] Resetting %.1fs countdown timer for property '%s'",
+            self.delay,
+            property_name,
+        )  # pragma: no mutate
+
+        self._pending_payloads[property_name] = (
+            coroutine_func,
+            args,
+            kwargs,
+            self._generation,
+        )
+        self._schedule_timer(property_name, self.delay)
+        _LOGGER.debug(
+            "[Debouncer] Queued command for property '%s' with %.1fs delay",
+            property_name,
+            self.delay,
+        )  # pragma: no mutate
+        return DEBOUNCE_QUEUED

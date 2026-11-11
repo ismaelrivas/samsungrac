@@ -1,8 +1,6 @@
 # pylint: disable=import-outside-toplevel,too-many-public-methods,useless-return,missing-function-docstring
 """Base class for a climate device controller. Strict enforcement."""
 
-from __future__ import annotations
-
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Coroutine
 import logging
@@ -13,7 +11,7 @@ from homeassistant.const import CONF_PORT, UnitOfTemperature
 if TYPE_CHECKING:
     from .state import ClimateIPDeviceState
 
-from .const import PORT_SAMSUNG_8888  # noqa: F401
+from .const import PORT_SAMSUNG_8888
 
 
 class ControllerError(Exception):
@@ -25,67 +23,128 @@ class ControllerInterface(Protocol):
     """Protocol for climate controllers. Defines the mandatory contract."""
 
     @property
-    def hass(self) -> Any | None: ...
-    @property
-    def config(self) -> dict[str, Any]: ...
-    @property
-    def log_prefix(self) -> str: ...
-    @property
-    def unique_id(self) -> str | None: ...
-    @property
-    def device_id(self) -> str | None: ...
-    @property
-    def port(self) -> int | str | None: ...
-    @property
-    def ip_address(self) -> str | None: ...
-    @property
-    def _session(self) -> Any | None: ...
-    @property
-    def poll(self) -> bool | None: ...
-    @property
-    def climate_state(self) -> ClimateIPDeviceState: ...
-    @property
-    def operations(self) -> Any: ...
-    @property
-    def sensors(self) -> Any: ...
-    @property
-    def attributes(self) -> list[str]: ...
-    @property
-    def state_attributes(self) -> dict[str, Any]: ...
-    @property
-    def device_state(self) -> dict[str, Any] | None: ...
-    @property
-    def pure_device_state(self) -> dict[str, Any] | None: ...
-    @property
-    def token(self) -> str | None: ...
-    @property
-    def connection(self) -> Any | None: ...
-    @property
-    def raw_state(self) -> dict[str, Any] | None: ...
-    @property
-    def last_poll_data(self) -> dict[str, Any] | None: ...
-    @property
-    def connection_diagnostics(self) -> dict[str, Any]: ...
+    def hass(self) -> Any | None:
+        """Return the Home Assistant instance."""
 
-    def get_diagnostics(self) -> dict[str, Any]: ...
+    @property
+    def config(self) -> dict[str, Any]:
+        """Return controller configuration."""
 
-    def get_property(self, property_name: str) -> Any: ...
-    def get_property_object(self, property_name: str) -> Any: ...
-    async def async_get_status(self) -> dict[str, Any] | None: ...
+    @property
+    def log_prefix(self) -> str:
+        """Return logging prefix."""
+
+    @property
+    def unique_id(self) -> str | None:
+        """Return controller unique identifier."""
+
+    @property
+    def device_id(self) -> str | None:
+        """Return target device identifier."""
+
+    @property
+    def port(self) -> int | str | None:
+        """Return connection port."""
+
+    @property
+    def ip_address(self) -> str | None:
+        """Return connection IP address."""
+
+    @property
+    def _session(self) -> Any | None:
+        """Return shared aiohttp ClientSession."""
+
+    @property
+    def poll(self) -> bool | None:
+        """Return polling requirement."""
+
+    @property
+    def climate_state(self) -> ClimateIPDeviceState:
+        """Return normalized climate state object."""
+
+    @property
+    def operations(self) -> Any:
+        """Return operations dictionary."""
+
+    @property
+    def sensors(self) -> Any:
+        """Return sensors dictionary."""
+
+    @property
+    def attributes(self) -> list[str]:
+        """Return list of attributes."""
+
+    @property
+    def state_attributes(self) -> dict[str, Any]:
+        """Return state attributes dictionary."""
+
+    @property
+    def device_state(self) -> dict[str, Any] | None:
+        """Return device state dictionary."""
+
+    @property
+    def pure_device_state(self) -> dict[str, Any] | None:
+        """Return pure device state dictionary."""
+
+    @property
+    def token(self) -> str | None:
+        """Return authentication token."""
+
+    @property
+    def connection(self) -> Any | None:
+        """Return connection engine instance."""
+
+    @property
+    def raw_state(self) -> dict[str, Any] | None:
+        """Return raw device state dictionary."""
+
+    @property
+    def last_poll_data(self) -> dict[str, Any] | None:
+        """Return last polled data dictionary."""
+
+    @property
+    def connection_diagnostics(self) -> dict[str, Any]:
+        """Return connection diagnostics."""
+
+    def get_diagnostics(self) -> dict[str, Any]:
+        """Return controller diagnostics."""
+
+    def get_property(self, property_name: str) -> Any:
+        """Get property instance by name."""
+
+    def get_property_object(self, property_name: str) -> Any:
+        """Get raw property object by name."""
+
+    async def async_get_status(self) -> dict[str, Any] | None:
+        """Get status from device."""
+
     async def async_set_property(
         self, property_name: str, new_value: Any, device_id: str | None = None
-    ) -> bool: ...
+    ) -> bool:
+        """Set property value."""
+
     async def async_predict_and_correct_state(
         self,
         current_hass_state: ClimateIPDeviceState,
         property_name: str,
         new_value: Any,
-    ) -> tuple[Any, dict[str, Any]]: ...
-    async def async_shutdown(self) -> None: ...
-    async def async_merge_device_state(self, data: dict[str, Any]) -> bool: ...
-    async def async_clear_pending_updates(self, keys: list[str]) -> None: ...
-    def is_property_superseded(self, prop: str, val: Any) -> bool: ...
-    def clear_state_cache(self) -> None: ...
+    ) -> tuple[Any, dict[str, Any]]:
+        """Predict and correct optimistic state."""
+
+    async def async_shutdown(self) -> None:
+        """Shutdown controller resources."""
+
+    async def async_merge_device_state(self, data: dict[str, Any]) -> bool:
+        """Merge partial device state."""
+
+    async def async_clear_pending_updates(self, keys: list[str]) -> None:
+        """Clear pending updates for specified keys."""
+
+    def is_property_superseded(self, prop: str, val: Any) -> bool:
+        """Check if property update is superseded."""
+
+    def clear_state_cache(self) -> None:
+        """Clear cached state."""
 
     # Contratos de Callbacks
     def register_token_callback(
@@ -93,8 +152,11 @@ class ControllerInterface(Protocol):
         callback: (
             Callable[[str], Coroutine[Any, Any, None]] | Callable[[str], None] | None
         ),
-    ) -> None: ...
-    def on_token_refreshed(self, new_token: str) -> None: ...
+    ) -> None:
+        """Register callback for token refresh."""
+
+    def on_token_refreshed(self, new_token: str) -> None:
+        """Notify controller of refreshed token."""
 
     on_ssl_config_updated: Callable[[dict[str, Any]], Coroutine[Any, Any, None] | None]
     on_push_update_callback: Callable[
@@ -103,6 +165,28 @@ class ControllerInterface(Protocol):
     request_refresh_callback: Callable[[], Coroutine[Any, Any, None]]
     on_offline_callback: Callable[[str], Coroutine[Any, Any, None] | None]
     on_connection_failed_callback: Callable[[], Coroutine[Any, Any, None] | None]
+
+
+def _default_on_ssl_config_updated(ssl_config: dict[str, Any]) -> None:
+    """Default no-op fallback for SSL configuration update callback."""
+
+
+async def _default_on_push_update_callback(
+    data: dict[str, Any] | None = None,
+) -> None:
+    """Default no-op fallback for push update callback."""
+
+
+async def _default_request_refresh_callback() -> None:
+    """Default no-op fallback for request refresh callback."""
+
+
+def _default_on_offline_callback(reason: str) -> None:
+    """Default no-op fallback for offline notification callback."""
+
+
+def _default_on_connection_failed_callback() -> None:
+    """Default no-op fallback for connection failure callback."""
 
 
 class ClimateController(ABC):
@@ -136,27 +220,13 @@ class ClimateController(ABC):
             [], Coroutine[Any, Any, None] | None
         ] = self._default_on_connection_failed_callback
 
-    @staticmethod  # noqa: B027
-    def _default_on_ssl_config_updated(ssl_config: dict[str, Any]) -> None:  # noqa: B027
-        """Default no-op fallback for SSL configuration update callback."""
-
-    @staticmethod  # noqa: B027
-    async def _default_on_push_update_callback(  # noqa: B027
-        data: dict[str, Any] | None = None,
-    ) -> None:  # noqa: B027
-        """Default no-op fallback for push update callback."""
-
-    @staticmethod  # noqa: B027
-    async def _default_request_refresh_callback() -> None:  # noqa: B027
-        """Default no-op fallback for request refresh callback."""
-
-    @staticmethod  # noqa: B027
-    def _default_on_offline_callback(reason: str) -> None:  # noqa: B027
-        """Default no-op fallback for offline notification callback."""
-
-    @staticmethod  # noqa: B027
-    def _default_on_connection_failed_callback() -> None:  # noqa: B027
-        """Default no-op fallback for connection failure callback."""
+    _default_on_ssl_config_updated = staticmethod(_default_on_ssl_config_updated)
+    _default_on_push_update_callback = staticmethod(_default_on_push_update_callback)
+    _default_request_refresh_callback = staticmethod(_default_request_refresh_callback)
+    _default_on_offline_callback = staticmethod(_default_on_offline_callback)
+    _default_on_connection_failed_callback = staticmethod(
+        _default_on_connection_failed_callback
+    )
 
     @staticmethod
     @abstractmethod

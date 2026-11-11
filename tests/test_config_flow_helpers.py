@@ -779,12 +779,14 @@ async def test_test_connection_safe_exceptions(hass_mock):
         assert "bad token" in res["error_details"]
 
     # AbortFlow
-    with patch(
-        "homeassistant.helpers.aiohttp_client.async_get_clientsession",
-        side_effect=AbortFlow("reauth_successful"),
+    with (
+        patch(
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+            side_effect=AbortFlow("reauth_successful"),
+        ),
+        pytest.raises(AbortFlow),
     ):
-        with pytest.raises(AbortFlow):
-            await flow._test_connection_safe()
+        await flow._test_connection_safe()
 
     # Generic Exception
     with patch(

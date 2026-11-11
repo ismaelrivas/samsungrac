@@ -2,8 +2,6 @@
 """Simplified tests for atomic push update isolation."""
 
 # pylint: disable=import-outside-toplevel
-from __future__ import annotations
-
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
