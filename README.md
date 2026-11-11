@@ -2,7 +2,7 @@
 
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Core%202026.x%20Ready-blue?style=for-the-badge&logo=home-assistant)
 ![Mutation Score](https://img.shields.io/badge/Mutation%20Score-100%25-brightgreen.svg)
-![Unit Tests](https://img.shields.io/badge/Unit%20Tests-1657%20Passed-brightgreen?style=for-the-badge)
+![Unit Tests](https://img.shields.io/badge/Unit%20Tests-826%20Passed-brightgreen?style=for-the-badge)
 ![Quality Scale](https://img.shields.io/badge/Quality%20Scale-Gold%20Master-gold?style=for-the-badge)
 ![HACS](https://img.shields.io/badge/HACS-Custom%20Repository-orange?style=for-the-badge)
 
@@ -12,12 +12,13 @@ A highly resilient, mathematically verified, and asynchronously optimized custom
 
 ## 🏆 Version History & Release Notes (v10.0.1b10)
 
-This release delivers a comprehensive modular refactoring of the Config Flow architecture, full eradication of anti-patterns AP-1 through AP-7, an expanded 1,657 unit test baseline, and 100.0% Absolute Zero mutation immunity across all 27 integration modules.
+This release delivers a comprehensive modular refactoring of the Config Flow architecture, streamlined core connection & controller engines aligned with Home Assistant Core 2026.10 / Python 3.14 standards, full eradication of anti-patterns AP-1 through AP-7, and a consolidated **826-test orthogonal baseline** (**97.31% total coverage**).
 
 **Engineering Highlights:**
-* 📐 **Modular Config Flow Architecture:** Compacted `config_flow.py` to a 271-line skinny orchestrator and modularized into `config_flow_schemas.py`, `config_flow_helpers.py`, and `config_flow_discovery.py`.
-* 🛡️ **Zero Mutation Survivors:** Reached 100% Absolute Zero mutation score across all 27 integration modules under Python 3.14 native standards (0 Survivors, 0 Untested, 0 Invalid).
-* 🧪 **Zero-Defect Test Baseline:** Expanded test suite to **1,657 unit tests** with a 100% pass rate and >96.6% coverage (100% on `config_flow.py` and `diagnostics.py`).
+* 📐 **Modular Config Flow Architecture:** Compacted `config_flow.py` to a 271-line skinny orchestrator and modularized into `config_flow_schemas.py`, `config_flow_helpers.py`, and `config_flow_discovery.py`, alongside parameterless Core 2026.10 `OptionsFlowHandler` compatibility.
+* ⚙️ **Core 2026.10 Modernization & Engine Hardening:** Streamlined `connection_aiohttp.py`, `samsung_2878.py`, `climate.py`, `coordinator.py`, `controller.py`, `controller_yaml*.py`, and `properties.py` with Python 3.14 native lazy annotations, `probatio` validation schemas, and clean optimistic state encapsulation (`ALL GREEN` across Ruff, Mypy, Pylint HA plugins, Hassfest, and Prek).
+* 🛡️ **Mutation-Hardened Reliability:** Reinforced refactored core modules (`config_flow*`, `connection_aiohttp.py`, `samsung_2878.py`, `climate.py`, `properties.py`) with mutation-tested boundary and type assertions under Python 3.14 FastFork execution.
+* 🧪 **Consolidated Orthogonal Test Baseline:** Deduplicated redundant test suites into canonical test modules, achieving **826 passed unit tests** (0 failed, 0 skipped) with **97.31% total coverage** (**96.63%** across all 33 integration modules; **100%** on `config_flow.py` and `diagnostics.py`).
 * 🥇 **Home Assistant Gold Quality Scale:** Attained full Gold tier status (`quality_scale.yaml`), including entity icon mappings (`icons.json`), rich high-resolution brand assets, and multi-language translations (`en`, `es`, `fr`, `de`).
 
 ---

@@ -1,10 +1,11 @@
 """Unit tests for SamsungClimateCoordinator and PropertyDebouncer (coordinator.py)."""
 
 import asyncio
+from collections.abc import Callable, Iterator
 from datetime import timedelta
 import logging
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -50,62 +51,327 @@ from homeassistant.components.climate import ATTR_HVAC_MODE, HVACMode
 from homeassistant.const import CONF_MAC, CONF_TOKEN
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers import device_registry as dr, issue_registry as ir
-from homeassistant.helpers.update_coordinator import UpdateFailed
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+
+
+@pytest.fixture(autouse=True)
+def auto_clear_yaml_cache() -> None:
+    """No-op override of yaml cache fixture for isolated coordinator unit tests."""
+    return
+
+
+@pytest.fixture(autouse=True)
+def force_task_cancellation() -> None:
+    """No-op override of async teardown fixture; event_loop handles task cleanup."""
+    return
+
+
+@pytest.fixture(autouse=True)
+def auto_mock_network() -> None:
+    """No-op override of network patch fixture for isolated coordinator unit tests."""
+    return
+
+
+@pytest.fixture(autouse=True)
+def ruthless_aiohttp_teardown() -> None:
+    """No-op override of aiohttp teardown fixture for isolated coordinator unit tests."""
+    return
+
+
+@pytest.fixture(autouse=True)
+def block_unmocked_network_io() -> None:
+    """No-op override of global network monkeypatch for isolated coordinator tests."""
+    return
+
+
+@pytest.fixture(autouse=True)
+def _silence_coordinator_logger() -> Iterator[None]:
+    """Skip expensive traceback formatting in non-log coordinator tests."""
+    logger = logging.getLogger("custom_components.climate_ip.coordinator")
+    prev_level = logger.level
+    logger.setLevel(logging.CRITICAL + 1)
+    try:
+        yield
+    finally:
+        logger.setLevel(prev_level)
+
+
+class _StubLoop:
+    """Lightweight event loop double supporting time() and immediate call_soon()."""
+
+    def __init__(self, now: float = 100.0) -> None:
+        self.now = now
+
+    def time(self) -> float:
+        return self.now
+
+    def call_soon(self, callback: Callable[..., Any], *args: Any) -> None:
+        callback(*args)
+
+
+class _StubConfigEntries:
+    """Lightweight config_entries manager recording async_update_entry calls."""
+
+    def __init__(self) -> None:
+        self.updates: list[
+            tuple[Any, dict[str, Any] | None, dict[str, Any] | None]
+        ] = []
+
+    def async_update_entry(
+        self,
+        entry: Any,
+        *,
+        data: dict[str, Any] | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> None:
+        self.updates.append((entry, data, options))
+
+
+class _StubHass:
+    """Minimal in-memory HomeAssistant double."""
+
+    def __init__(self, now: float = 100.0) -> None:
+        self.loop = _StubLoop(now)
+        self.config_entries = _StubConfigEntries()
+
+
+class _StubEntry:
+    """Minimal in-memory ConfigEntry double."""
+
+    def __init__(
+        self,
+        *,
+        options: dict[str, Any] | None = None,
+        data: dict[str, Any] | None = None,
+        unique_id: str | None = "entry_uid",
+        entry_id: str = "entry_id",
+    ) -> None:
+        self.options: dict[str, Any] = {} if options is None else options
+        self.data: dict[str, Any] = {} if data is None else data
+        self.unique_id = unique_id
+        self.entry_id = entry_id
+        self.unload_callbacks: list[Any] = []
+        self.bg_tasks: list[tuple[Any, Any, str]] = []
+        self.reauth_calls: list[Any] = []
+
+    def async_on_unload(self, func: Any) -> None:
+        self.unload_callbacks.append(func)
+
+    def async_create_background_task(self, hass: Any, coro: Any, *, name: str) -> str:
+        self.bg_tasks.append((hass, coro, name))
+        return "bg_task"
+
+    def async_start_reauth(self, hass: Any) -> None:
+        self.reauth_calls.append(hass)
+
+
+class _StubController:
+    """Minimal in-memory ControllerInterface double with explicit typed attributes."""
+
+    def __init__(self) -> None:
+        self.unique_id: str | None = "uid_default"
+        self.log_prefix = "[uid_default]"
+        self.poll = True
+        self.climate_state: Any = None
+        self.name: str | None = None
+        self.ip_address: str | None = None
+        self.host: str | None = None
+        self.on_push_update_callback: Any = None
+        self.on_ssl_config_updated: Any = None
+        self.request_refresh_callback: Any = None
+        self.on_connection_failed_callback: Any = None
+        self.on_offline_callback: Any = None
+        self.token_callbacks: list[Any] = []
+        self.clear_cache_calls = 0
+        self.superseded_calls: list[tuple[str, Any]] = []
+        self.superseded_result = False
+        self.get_status_calls = 0
+        self.get_status_exc: BaseException | None = None
+        self.merge_calls: list[dict[str, Any]] = []
+        self.merge_result = True
+        self.merge_exc: BaseException | None = None
+        self.set_prop_calls: list[tuple[str, Any, str | None]] = []
+        self.set_prop_result: Any = True
+        self.predict_calls: list[tuple[Any, str, Any]] = []
+        self.predict_corrections: dict[str, Any] = {}
+        self.cleared_pending: list[list[str]] = []
+        self.shutdown_calls = 0
+        self.shutdown_exc: BaseException | None = None
+
+    def register_token_callback(self, callback: Any) -> None:
+        self.token_callbacks.append(callback)
+
+    def clear_state_cache(self) -> None:
+        self.clear_cache_calls += 1
+
+    def is_property_superseded(self, prop: str, val: Any) -> bool:
+        self.superseded_calls.append((prop, val))
+        return self.superseded_result
+
+    async def async_get_status(self) -> None:
+        self.get_status_calls += 1
+        if self.get_status_exc is not None:
+            raise self.get_status_exc
+
+    async def async_merge_device_state(self, data: dict[str, Any]) -> bool:
+        self.merge_calls.append(data)
+        if self.merge_exc is not None:
+            raise self.merge_exc
+        return self.merge_result
+
+    async def async_set_property(
+        self, prop: str, val: Any, device_id: str | None = None
+    ) -> Any:
+        self.set_prop_calls.append((prop, val, device_id))
+        return self.set_prop_result
+
+    async def async_predict_and_correct_state(
+        self, state: Any, prop: str, val: Any
+    ) -> tuple[None, dict[str, Any]]:
+        self.predict_calls.append((state, prop, val))
+        return None, self.predict_corrections
+
+    async def async_clear_pending_updates(self, props: list[str]) -> None:
+        self.cleared_pending.append(props)
+
+    async def async_shutdown(self) -> None:
+        self.shutdown_calls += 1
+        if self.shutdown_exc is not None:
+            raise self.shutdown_exc
+
+
+class _StubDebouncer:
+    """Lightweight debouncer double for coordinator command tests."""
+
+    def __init__(self) -> None:
+        self.cancel_calls = 0
+        self.execute_calls: list[tuple[str, Any, tuple[Any, ...], dict[str, Any]]] = []
+        self.outcomes: list[Any] = []
+
+    def cancel_all(self) -> None:
+        self.cancel_calls += 1
+
+    async def async_execute(
+        self, prop: str, func: Any, *args: Any, **kwargs: Any
+    ) -> Any:
+        self.execute_calls.append((prop, func, args, kwargs))
+        outcome = self.outcomes.pop(0) if self.outcomes else True
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+
+class _StubDebouncerCoord:
+    """Lightweight coordinator double for PropertyDebouncer unit tests."""
+
+    def __init__(self, now: float = 100.0) -> None:
+        self.hass = _StubHass(now)
+        self.safe_unique_id = "uid_123"
+        self.config_entry: _StubEntry | None = _StubEntry()
+        self.controller = _StubController()
+        self.refresh_calls = 0
+
+    async def async_request_refresh(self) -> None:
+        self.refresh_calls += 1
+
+
+class _StubCmd:
+    """Fast async command recorder replacing AsyncMock in debouncer loops."""
+
+    def __init__(self, result: bool = True, exc: BaseException | None = None) -> None:
+        self.result = result
+        self.exc = exc
+        self.calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    async def __call__(self, *args: Any, **kwargs: Any) -> bool:
+        self.calls.append((args, kwargs))
+        if self.exc is not None:
+            raise self.exc
+        return self.result
+
+
+class _StubTimer:
+    """Fast timer unsubscribe recorder replacing MagicMock."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self) -> None:
+        self.calls += 1
+
+
+class _StubTimeout:
+    """Lightweight asyncio.timeout context manager double."""
+
+    def __init__(self) -> None:
+        self.delays: list[float] = []
+
+    def __call__(self, delay: float) -> _StubTimeout:
+        self.delays.append(delay)
+        return self
+
+    async def __aenter__(self) -> None:
+        return None
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
+
+
+class _LogCapture(logging.Handler):
+    """Lightweight in-memory log handler avoiding caplog fixture overhead."""
+
+    def __init__(self) -> None:
+        super().__init__(logging.DEBUG)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
+class _StubIssue:
+    """Minimal issue object with dismissed_version attribute."""
+
+    def __init__(self, dismissed_version: str | None) -> None:
+        self.dismissed_version = dismissed_version
+
+
+class _StubRegistry:
+    """Minimal issue registry double."""
+
+    def __init__(self) -> None:
+        self.issue: _StubIssue | None = None
+        self.queries: list[tuple[str, str]] = []
+
+    def async_get_issue(self, domain: str, issue_id: str) -> _StubIssue | None:
+        self.queries.append((domain, issue_id))
+        return self.issue
 
 
 def _make_bare_coordinator(
-    hass: Any = None,
-    controller: Any = None,
-    entry: Any = None,
+    hass: _StubHass | None = None,
+    controller: _StubController | None = None,
+    entry: _StubEntry | None = None,
 ) -> SamsungClimateCoordinator:
     """Create a bare SamsungClimateCoordinator without invoking __init__."""
     coord: SamsungClimateCoordinator = object.__new__(SamsungClimateCoordinator)
-    coord.hass = hass if hass is not None else MagicMock()
-    if controller is None:
-        controller = MagicMock(
-            spec=[
-                "unique_id",
-                "log_prefix",
-                "climate_state",
-                "async_get_status",
-                "clear_state_cache",
-                "async_merge_device_state",
-                "is_property_superseded",
-                "async_set_property",
-                "async_predict_and_correct_state",
-                "async_clear_pending_updates",
-                "async_shutdown",
-            ]
-        )
-        controller.unique_id = "uid_default"
-        controller.log_prefix = "[uid_default]"
-    coord.controller = controller
-    coord.config_entry = (
-        entry
-        if entry is not None
-        else MagicMock(options={}, data={}, unique_id="entry_uid", entry_id="entry_id")
-    )
+    coord.hass = hass if hass is not None else _StubHass()  # type: ignore[assignment]
+    coord.controller = controller if controller is not None else _StubController()  # type: ignore[assignment]
+    coord.config_entry = entry if entry is not None else _StubEntry()  # type: ignore[assignment]
     coord.devices = {}
     coord._global_network_lock = asyncio.Lock()
     coord.device_info = {"name": "Test AC"}
-    coord.data = None
+    coord.data = None  # type: ignore[assignment]
     coord.last_update_success = True
     return coord
 
 
-@pytest.mark.asyncio
 async def test_01_debouncer_primitives_immediate_and_turn_off() -> None:
     """Verify PropertyDebouncer init, helpers, validation, turn-off bypasses, and window boundaries."""
-    mock_coord = MagicMock()
-    mock_coord.hass = MagicMock()
-    mock_coord.hass.loop.time.return_value = 100.0
-    mock_coord.controller.async_clear_pending_updates = AsyncMock()
-    mock_coord.async_request_refresh = AsyncMock()
-
-    debouncer = PropertyDebouncer(mock_coord)
-    assert debouncer.coordinator is mock_coord
+    coord = _StubDebouncerCoord(now=100.0)
+    debouncer = PropertyDebouncer(coord)  # type: ignore[arg-type]
+    assert debouncer.coordinator is coord
     assert debouncer.delay == DEFAULT_DEBOUNCE_DELAY
-    assert debouncer.hass is mock_coord.hass
+    assert debouncer.hass is coord.hass
     assert debouncer._timers == {}
     assert debouncer._pending_payloads == {}
     assert debouncer._last_activities == {}
@@ -113,34 +379,45 @@ async def test_01_debouncer_primitives_immediate_and_turn_off() -> None:
     assert debouncer.is_active is False
     assert debouncer.has_pending("temp") is False
 
-    custom_debouncer = PropertyDebouncer(mock_coord, delay=5.5)
+    custom_debouncer = PropertyDebouncer(coord, delay=5.5)  # type: ignore[arg-type]
     assert custom_debouncer.delay == 5.5
 
     # _cancel_timer with active timer vs missing timer
-    unsub = MagicMock()
+    unsub = _StubTimer()
     debouncer._timers["temp"] = unsub
     assert debouncer.is_active is True
     assert debouncer.has_pending("temp") is False
     debouncer._cancel_timer("temp")
-    unsub.assert_called_once_with()
+    assert unsub.calls == 1
     assert "temp" not in debouncer._timers
     assert debouncer.is_active is False
     debouncer._cancel_timer("nonexistent")
 
+    # is_active solo branches (_pending_payloads alone and _in_flight alone)
+    debouncer._pending_payloads["temp"] = (_StubCmd(), (), {}, 0)
+    assert debouncer.is_active is True
+    debouncer._pending_payloads.clear()
+    assert debouncer.is_active is False
+
+    debouncer._in_flight.add("temp")
+    assert debouncer.is_active is True
+    debouncer._in_flight.clear()
+    assert debouncer.is_active is False
+
     # has_pending & cancel_all across multiple calls
-    unsub_1 = MagicMock()
-    unsub_2 = MagicMock()
+    unsub_1 = _StubTimer()
+    unsub_2 = _StubTimer()
     debouncer._timers["p1"] = unsub_1
     debouncer._timers["p2"] = unsub_2
-    debouncer._pending_payloads["p1"] = (AsyncMock(), (), {}, 0)
+    debouncer._pending_payloads["p1"] = (_StubCmd(), (), {}, 0)
     debouncer._last_activities["p1"] = 42.0
     assert debouncer.is_active is True
     assert debouncer.has_pending("p1") is True
 
     debouncer.cancel_all()
     assert debouncer._generation == 1
-    unsub_1.assert_called_once_with()
-    unsub_2.assert_called_once_with()
+    assert unsub_1.calls == 1
+    assert unsub_2.calls == 1
     assert debouncer._timers == {}
     assert debouncer._pending_payloads == {}
     assert debouncer._last_activities == {}
@@ -151,17 +428,15 @@ async def test_01_debouncer_primitives_immediate_and_turn_off() -> None:
 
     # _async_handle_delayed_failure
     await debouncer._async_handle_delayed_failure("target_temp")
-    mock_coord.controller.async_clear_pending_updates.assert_awaited_once_with(
-        ["target_temp"]
-    )
-    mock_coord.async_request_refresh.assert_awaited_once_with()
+    assert coord.controller.cleared_pending == [["target_temp"]]
+    assert coord.refresh_calls == 1
 
     # async_execute: 1. Missing val raises ValueError
-    debouncer = PropertyDebouncer(mock_coord, delay=3.0)
+    debouncer = PropertyDebouncer(coord, delay=3.0)  # type: ignore[arg-type]
     with pytest.raises(
         ValueError, match="async_execute requires an explicit 'val' keyword argument."
     ):
-        await debouncer.async_execute("temp", AsyncMock())
+        await debouncer.async_execute("temp", _StubCmd())
 
     # 2. Turn-off immediate bypasses even when inside active trailing window
     turn_off_cases: list[tuple[str, Any, bool]] = [
@@ -173,26 +448,30 @@ async def test_01_debouncer_primitives_immediate_and_turn_off() -> None:
         (ATTR_POWER, "FALSE", True),
         (ATTR_POWER, "off", True),
     ]
+    dummy_pending = (_StubCmd(), (), {}, 0)
     for prop, val, expected_ret in turn_off_cases:
         debouncer._last_activities[prop] = 99.5
-        stale_timer = MagicMock()
+        stale_timer = _StubTimer()
         debouncer._timers["other"] = stale_timer
-        debouncer._pending_payloads["other"] = (AsyncMock(), (), {}, 0)
+        debouncer._pending_payloads["other"] = dummy_pending
         gen_before = debouncer._generation
-        cmd = AsyncMock(return_value=expected_ret)
+        cmd = _StubCmd(result=expected_ret)
 
         res = await debouncer.async_execute(prop, cmd, "pos1", val=val, extra_kw="kw1")
         assert res is expected_ret
-        cmd.assert_awaited_once_with("pos1", extra_kw="kw1")
-        stale_timer.assert_called_once_with()
+        assert cmd.calls == [(("pos1",), {"extra_kw": "kw1"})]
+        assert stale_timer.calls == 1
         assert debouncer._generation == gen_before + 1
         assert debouncer._pending_payloads == {}
         assert debouncer._last_activities == {prop: 100.0}
 
-    # 3. Non-turn-off commands inside trailing window MUST queue (not bypass!)
+    # 3. Non-turn-off commands inside trailing window MUST queue (not bypass)
+    def _fake_call_later(_hass: Any, _delay: float, _cb: Any) -> _StubTimer:
+        return _StubTimer()
+
     with patch(
         "custom_components.climate_ip.coordinator.async_call_later",
-        return_value=MagicMock(),
+        new=_fake_call_later,
     ):
         non_off_cases: list[tuple[str, Any]] = [
             (ATTR_HVAC_MODE, HVACMode.COOL),
@@ -211,237 +490,317 @@ async def test_01_debouncer_primitives_immediate_and_turn_off() -> None:
             debouncer._timers.clear()
             debouncer._pending_payloads.clear()
             debouncer._last_activities[prop] = 99.0
-            cmd = AsyncMock(return_value=True)
+            cmd = _StubCmd(result=True)
 
             res = await debouncer.async_execute(prop, cmd, val=val)
             assert res is DEBOUNCE_QUEUED
-            cmd.assert_not_awaited()
+            assert cmd.calls == []
             assert prop in debouncer._pending_payloads
 
     # 4. Immediate execution when property has no prior activity or window elapsed (>= delay)
     debouncer.cancel_all()
-    stale_unsub = MagicMock()
+    stale_unsub = _StubTimer()
     debouncer._timers["fan_mode"] = stale_unsub
-    debouncer._pending_payloads["fan_mode"] = (AsyncMock(), (), {}, 0)
-    mock_coord.hass.loop.time.return_value = 200.0
+    debouncer._pending_payloads["fan_mode"] = dummy_pending
+    coord.hass.loop.now = 200.0
 
-    cmd_first = AsyncMock(return_value=False)
+    cmd_first = _StubCmd(result=False)
     res_first = await debouncer.async_execute(
         "fan_mode", cmd_first, "arg_a", val="high", kw="v"
     )
     assert res_first is False
-    cmd_first.assert_awaited_once_with("arg_a", kw="v")
-    stale_unsub.assert_called_once_with()
+    assert cmd_first.calls == [(("arg_a",), {"kw": "v"})]
+    assert stale_unsub.calls == 1
     assert "fan_mode" not in debouncer._pending_payloads
     assert debouncer._last_activities["fan_mode"] == 200.0
 
     # Exact boundary: 203.0 - 200.0 == 3.0 (>= delay -> immediate)
-    mock_coord.hass.loop.time.return_value = 203.0
-    cmd_boundary = AsyncMock(return_value=True)
+    coord.hass.loop.now = 203.0
+    cmd_boundary = _StubCmd(result=True)
     res_boundary = await debouncer.async_execute(
         "fan_mode", cmd_boundary, "arg_b", val="low", kw="v2"
     )
     assert res_boundary is True
-    cmd_boundary.assert_awaited_once_with("arg_b", kw="v2")
+    assert cmd_boundary.calls == [(("arg_b",), {"kw": "v2"})]
     assert "fan_mode" not in debouncer._pending_payloads
     assert debouncer._last_activities["fan_mode"] == 203.0
 
 
-@pytest.mark.asyncio
-async def test_02_debouncer_in_flight_completion_and_superseded_queue(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Verify PropertyDebouncer in-flight completion branches and debounce queue superseding."""
-    mock_coord = MagicMock()
-    mock_coord.hass.loop.time.return_value = 100.0
-    mock_coord.safe_unique_id = "uid_123"
-    debouncer = PropertyDebouncer(mock_coord, delay=3.0)
+async def test_02_debouncer_in_flight_completion_and_burst_coalescence() -> None:
+    """Verify in-flight completion truth table, superseded queue, and multi-property burst coalescence."""
+    coord = _StubDebouncerCoord(now=100.0)
+    debouncer = PropertyDebouncer(coord, delay=3.0)  # type: ignore[arg-type]
 
-    # 1. Line 817: _on_in_flight_completed generation mismatch vs match
+    # 1. _on_in_flight_completed generation mismatch vs match & truth table
     debouncer._generation = 10
     debouncer._last_activities["temp"] = 50.0
     debouncer._in_flight.add("temp")
-    pending_cmd = AsyncMock()
+    pending_cmd = _StubCmd()
     debouncer._pending_payloads["temp"] = (pending_cmd, (), {}, 10)
 
-    # 1A: Generation mismatch (captured_generation != self._generation)
-    with patch.object(debouncer, "_dispatch_pending_payload") as mock_dispatch:
+    dispatch_calls: list[str] = []
+
+    def _record_dispatch(prop: str) -> None:
+        dispatch_calls.append(prop)
+
+    with patch.object(debouncer, "_dispatch_pending_payload", new=_record_dispatch):
+        # 1A: Generation mismatch
         debouncer._on_in_flight_completed("temp", captured_generation=9)
         assert "temp" not in debouncer._in_flight
         assert debouncer._last_activities["temp"] == 50.0
         assert "temp" in debouncer._pending_payloads
-        mock_dispatch.assert_not_called()
+        assert dispatch_calls == []
 
-    # 1B: Generation match (captured_generation == self._generation)
-    debouncer._in_flight.add("temp")
-    mock_coord.hass.loop.time.return_value = 110.0
-    # Timer is still ticking, so dispatch should NOT occur yet
-    debouncer._timers["temp"] = MagicMock()
-    with patch.object(debouncer, "_dispatch_pending_payload") as mock_dispatch:
+        # 1B: Generation match while timer still ticking
+        debouncer._in_flight.add("temp")
+        coord.hass.loop.now = 110.0
+        debouncer._timers["temp"] = _StubTimer()
         debouncer._on_in_flight_completed("temp", captured_generation=10)
         assert "temp" not in debouncer._in_flight
         assert debouncer._last_activities["temp"] == 110.0
-        mock_dispatch.assert_not_called()
+        assert dispatch_calls == []
 
-    # 2. Line 821: _on_in_flight_completed condition logic & truth table
-    #    "if prop in self._pending_payloads and prop not in self._timers:"
-    debouncer._generation = 1
+        # 2. Truth table for "if prop in self._pending_payloads and prop not in self._timers:"
+        debouncer._generation = 1
 
-    # Case A: prop in _pending_payloads AND prop in _timers (timer still ticking)
-    debouncer._pending_payloads["temp"] = (pending_cmd, (), {}, 1)
-    debouncer._timers["temp"] = MagicMock()
-    debouncer._in_flight.add("temp")
-    with patch.object(debouncer, "_dispatch_pending_payload") as mock_dispatch:
+        # Case A: in _pending_payloads AND in _timers
+        debouncer._pending_payloads["temp"] = (pending_cmd, (), {}, 1)
+        debouncer._timers["temp"] = _StubTimer()
+        debouncer._in_flight.add("temp")
         debouncer._on_in_flight_completed("temp", 1)
-        mock_dispatch.assert_not_called()
+        assert dispatch_calls == []
         assert "temp" in debouncer._pending_payloads
 
-    # Case B: prop NOT in _pending_payloads AND prop NOT in _timers
-    debouncer._pending_payloads.clear()
-    debouncer._timers.clear()
-    debouncer._in_flight.add("temp")
-    with patch.object(debouncer, "_dispatch_pending_payload") as mock_dispatch:
+        # Case B: NOT in _pending_payloads AND NOT in _timers
+        debouncer._pending_payloads.clear()
+        debouncer._timers.clear()
+        debouncer._in_flight.add("temp")
         debouncer._on_in_flight_completed("temp", 1)
-        mock_dispatch.assert_not_called()
+        assert dispatch_calls == []
 
-    # Case C: prop in _pending_payloads AND prop NOT in _timers (timer expired during flight)
-    debouncer._pending_payloads["temp"] = (pending_cmd, (), {}, 1)
-    debouncer._timers.clear()
-    debouncer._in_flight.add("temp")
-    with patch.object(debouncer, "_dispatch_pending_payload") as mock_dispatch:
+        # Case C: in _pending_payloads AND NOT in _timers (timer expired during flight)
+        debouncer._pending_payloads["temp"] = (pending_cmd, (), {}, 1)
+        debouncer._timers.clear()
+        debouncer._in_flight.add("temp")
         debouncer._on_in_flight_completed("temp", 1)
-        mock_dispatch.assert_called_once_with("temp")
+        assert dispatch_calls == ["temp"]
+        dispatch_calls.clear()
 
-    # Case D: prop NOT in _pending_payloads AND prop in _timers
-    debouncer._pending_payloads.clear()
-    debouncer._timers["temp"] = MagicMock()
-    debouncer._in_flight.add("temp")
-    with patch.object(debouncer, "_dispatch_pending_payload") as mock_dispatch:
+        # Case D: NOT in _pending_payloads AND in _timers
+        debouncer._pending_payloads.clear()
+        debouncer._timers["temp"] = _StubTimer()
+        debouncer._in_flight.add("temp")
         debouncer._on_in_flight_completed("temp", 1)
-        mock_dispatch.assert_not_called()
+        assert dispatch_calls == []
 
-    # 3. Lines 731-736, 821-822, 892-897: End-to-end coalescence and superseded queue
+    # 3. End-to-end slow in-flight coalescence and superseded queue
     debouncer.cancel_all()
-    created_tasks: list[tuple[Any, Any, str]] = []
+    assert coord.config_entry is not None
+    coord.config_entry.bg_tasks.clear()
+    timer_callbacks: list[Callable[[], None]] = []
 
-    def _capture_bg_task(hass_arg: Any, coro: Any, *, name: str) -> MagicMock:
-        created_tasks.append((hass_arg, coro, name))
-        return MagicMock()
+    def _capture_call_later(_hass: Any, _delay: float, cb: Any) -> _StubTimer:
+        timer_callbacks.append(cb)
+        return _StubTimer()
 
-    mock_coord.config_entry.async_create_background_task.side_effect = _capture_bg_task
+    coord_logger = logging.getLogger("custom_components.climate_ip.coordinator")
+    log_cap = _LogCapture()
+    prev_level = coord_logger.level
+    coord_logger.setLevel(logging.DEBUG)
+    coord_logger.addHandler(log_cap)
+    try:
+        with patch(
+            "custom_components.climate_ip.coordinator.async_call_later",
+            new=_capture_call_later,
+        ):
+            coord.hass.loop.now = 200.0
+            event_wire = asyncio.Event()
 
-    with (
-        patch(
-            "custom_components.climate_ip.coordinator.async_call_later"
-        ) as mock_call_later,
-        caplog.at_level(logging.DEBUG),
-    ):
-        mock_timer_handle = MagicMock()
-        mock_call_later.return_value = mock_timer_handle
-        mock_coord.hass.loop.time.return_value = 200.0
+            async def _wire_command(*_args: Any, **_kwargs: Any) -> bool:
+                await event_wire.wait()
+                return True
 
-        # Step 1: In-flight command starts (simulating an ongoing wire operation)
-        event_wire = asyncio.Event()
+            task1 = asyncio.create_task(
+                debouncer.async_execute("fan_mode", _wire_command, val="low")
+            )
+            await asyncio.sleep(0)
+            assert "fan_mode" in debouncer._in_flight
+            assert "fan_mode" not in debouncer._pending_payloads
 
-        async def _wire_command(*args: Any, **kwargs: Any) -> bool:
-            await event_wire.wait()
-            return True
+            cmd_queued1 = _StubCmd(result=True)
+            res_q1 = await debouncer.async_execute(
+                "fan_mode", cmd_queued1, "arg1", val="medium"
+            )
+            assert res_q1 is DEBOUNCE_QUEUED
+            assert "fan_mode" in debouncer._pending_payloads
+            assert not any(
+                "[Debouncer] Command for 'fan_mode' was superseded" in msg
+                for msg in log_cap.messages
+            )
 
-        cmd_wire = AsyncMock(side_effect=_wire_command)
-        task1 = asyncio.create_task(
-            debouncer.async_execute("fan_mode", cmd_wire, val="low")
-        )
-        await asyncio.sleep(0)
-        assert "fan_mode" in debouncer._in_flight
-        assert "fan_mode" not in debouncer._pending_payloads
+            cmd_queued2 = _StubCmd(result=True)
+            res_q2 = await debouncer.async_execute(
+                "fan_mode", cmd_queued2, "arg2", val="high"
+            )
+            assert res_q2 is DEBOUNCE_QUEUED
+            assert any(
+                "[Debouncer] Command for 'fan_mode' was superseded in debounce queue by new value=high"
+                in msg
+                for msg in log_cap.messages
+            )
+            queued_payload = debouncer._pending_payloads["fan_mode"]
+            assert queued_payload[0] is cmd_queued2
+            assert queued_payload[1] == ("arg2",)
 
-        # Step 2: Second command arrives while fan_mode is in-flight -> queued into _pending_payloads
-        cmd_queued1 = AsyncMock(return_value=True)
-        res_q1 = await debouncer.async_execute(
-            "fan_mode", cmd_queued1, "arg1", val="medium"
-        )
-        assert res_q1 is DEBOUNCE_QUEUED
-        assert "fan_mode" in debouncer._pending_payloads
-        assert "[Debouncer] Command for 'fan_mode' was superseded" not in caplog.text
+            # Timer fires while fan_mode is STILL in-flight -> holds payload
+            timer_callbacks[-1]()
+            assert "fan_mode" not in debouncer._timers
+            assert "fan_mode" in debouncer._pending_payloads
+            assert any(
+                "[Debouncer] Timer expired for 'fan_mode' while previous command is still in-flight; holding payload for coalescence"
+                in msg
+                for msg in log_cap.messages
+            )
+            assert coord.config_entry.bg_tasks == []
 
-        # Step 3: Third command arrives while fan_mode already has a pending payload in queue
-        # -> Lines 892-897: Supersedes the previous queued command!
-        cmd_queued2 = AsyncMock(return_value=True)
-        res_q2 = await debouncer.async_execute(
-            "fan_mode", cmd_queued2, "arg2", val="high"
-        )
-        assert res_q2 is DEBOUNCE_QUEUED
-        assert (
-            "[Debouncer] Command for 'fan_mode' was superseded in debounce queue by new value=high"
-            in caplog.text
-        )
-        queued_payload = debouncer._pending_payloads["fan_mode"]
-        assert queued_payload[0] is cmd_queued2
-        assert queued_payload[1] == ("arg2",)
+            # Wire command finishes -> flushes held payload
+            event_wire.set()
+            await task1
+            assert "fan_mode" in debouncer._in_flight
+            assert "fan_mode" not in debouncer._pending_payloads
+            assert len(coord.config_entry.bg_tasks) == 1
+            _, bg_coro, bg_name = coord.config_entry.bg_tasks.pop()
+            assert bg_name == f"{DOMAIN}_uid_123_debouncer_fan_mode"
+            await bg_coro
+            assert "fan_mode" not in debouncer._in_flight
+            assert cmd_queued2.calls == [(("arg2",), {})]
+            assert cmd_queued1.calls == []
+    finally:
+        coord_logger.removeHandler(log_cap)
+        coord_logger.setLevel(prev_level)
 
-        # Step 4: Timer fires while fan_mode is STILL in-flight
-        # -> Lines 731-736: Timer pops, notices in-flight, holds payload without dispatching
-        timer_cb = mock_call_later.call_args.args[2]
-        timer_cb()
-        assert "fan_mode" not in debouncer._timers
-        assert "fan_mode" in debouncer._pending_payloads
-        assert (
-            "[Debouncer] Timer expired for 'fan_mode' while previous command is still in-flight; holding payload for coalescence"
-            in caplog.text
-        )
-        assert created_tasks == []
+    # 4. Multi-property burst coalescence & mid-stream turn-off purge
+    debouncer.cancel_all()
+    coord.config_entry.bg_tasks.clear()
+    wire_dispatches: list[tuple[str, Any]] = []
+    prop_timers: dict[str, Callable[[], None]] = {}
 
-        # Step 5: Wire command finishes -> Lines 821-822: _on_in_flight_completed flushes held payload
-        event_wire.set()
-        await task1
-        # Flushed payload is popped and now in-flight as background task
-        assert "fan_mode" in debouncer._in_flight
-        assert "fan_mode" not in debouncer._pending_payloads
-        assert len(created_tasks) == 1
-        _, bg_coro, bg_name = created_tasks.pop()
-        assert bg_name == f"{DOMAIN}_uid_123_debouncer_fan_mode"
-        await bg_coro
-        assert "fan_mode" not in debouncer._in_flight
-        cmd_queued2.assert_awaited_once_with("arg2")
-        cmd_queued1.assert_not_awaited()
+    async def _wire_sink(prop: str, val: Any) -> bool:
+        wire_dispatches.append((prop, val))
+        return True
 
-
-@pytest.mark.asyncio
-async def test_03_debouncer_async_execute_delayed_and_zombies() -> None:
-    """Verify PropertyDebouncer queued timer firing, anti-zombie shield, and error handlers."""
-    mock_coord = MagicMock()
-    mock_coord.hass.loop.time.return_value = 100.0
-    mock_coord.safe_unique_id = "uid_123"
-    mock_coord.controller.async_clear_pending_updates = AsyncMock()
-    mock_coord.async_request_refresh = AsyncMock()
-
-    created_tasks: list[tuple[Any, Any, str]] = []
-
-    def _capture_bg_task(hass_arg: Any, coro: Any, *, name: str) -> MagicMock:
-        created_tasks.append((hass_arg, coro, name))
-        return MagicMock()
-
-    mock_coord.config_entry.async_create_background_task.side_effect = _capture_bg_task
-    debouncer = PropertyDebouncer(mock_coord, delay=3.0)
+    def _capture_prop_timer(_hass: Any, _delay: float, cb: Any) -> _StubTimer:
+        prop_timers[f"t{len(prop_timers)}"] = cb
+        return _StubTimer()
 
     with patch(
-        "custom_components.climate_ip.coordinator.async_call_later"
-    ) as mock_call_later:
-        unsub_handle = MagicMock()
-        mock_call_later.return_value = unsub_handle
+        "custom_components.climate_ip.coordinator.async_call_later",
+        new=_capture_prop_timer,
+    ):
+        burst_steps: list[tuple[float, str, Any, Any]] = [
+            (300.0, "temperature", 25.0, True),
+            (301.0, "temperature", 24.0, DEBOUNCE_QUEUED),
+            (302.0, "hvac_mode", "fan_only", True),
+            (303.0, "temperature", 22.0, DEBOUNCE_QUEUED),
+            (304.0, "hvac_mode", "dry", DEBOUNCE_QUEUED),
+            (305.0, "temperature", 20.0, DEBOUNCE_QUEUED),
+            (306.0, "hvac_mode", "heat", DEBOUNCE_QUEUED),
+            (307.0, "temperature", 18.0, DEBOUNCE_QUEUED),
+            (308.0, "hvac_mode", "heat_cool", DEBOUNCE_QUEUED),
+            (309.0, "temperature", 16.0, DEBOUNCE_QUEUED),
+        ]
+        for ts, prop, val, expected in burst_steps:
+            coord.hass.loop.now = ts
+            assert (
+                await debouncer.async_execute(prop, _wire_sink, prop, val, val=val)
+                is expected
+            )
+        assert len(wire_dispatches) == 2
 
+        coord.hass.loop.now = 313.0
+        # Last two scheduled callbacks belong to hvac_mode (308.0) and temperature (309.0)
+        cb_list = list(prop_timers.values())
+        cb_list[-2]()
+        cb_list[-1]()
+        assert len(coord.config_entry.bg_tasks) == 2
+        for _, coro, _ in coord.config_entry.bg_tasks:
+            await coro
+        coord.config_entry.bg_tasks.clear()
+
+        coord.hass.loop.now = 325.0
+        assert (
+            await debouncer.async_execute(
+                "hvac_mode", _wire_sink, "hvac_mode", "off", val=HVACMode.OFF
+            )
+            is True
+        )
+        assert wire_dispatches == [
+            ("temperature", 25.0),
+            ("hvac_mode", "fan_only"),
+            ("hvac_mode", "heat_cool"),
+            ("temperature", 16.0),
+            ("hvac_mode", "off"),
+        ]
+        assert debouncer.is_active is False
+
+        # Mid-stream turn-off purges multiple queued properties simultaneously
+        coord.hass.loop.now = 400.0
+        await debouncer.async_execute(
+            "temperature", _wire_sink, "temperature", 25.0, val=25.0
+        )
+        coord.hass.loop.now = 401.0
+        await debouncer.async_execute(
+            "temperature", _wire_sink, "temperature", 22.0, val=22.0
+        )
+        await debouncer.async_execute(
+            "hvac_mode", _wire_sink, "hvac_mode", "cool", val="cool"
+        )
+        await debouncer.async_execute(
+            "hvac_mode", _wire_sink, "hvac_mode", "dry", val="dry"
+        )
+        assert debouncer.has_pending("temperature") is True
+        assert debouncer.has_pending("hvac_mode") is True
+        gen_before = debouncer._generation
+        coord.hass.loop.now = 402.0
+        assert (
+            await debouncer.async_execute(ATTR_POWER, _wire_sink, ATTR_POWER, 0, val=0)
+            is True
+        )
+        assert debouncer._generation == gen_before + 1
+        assert debouncer.has_pending("temperature") is False
+        assert debouncer.has_pending("hvac_mode") is False
+        assert debouncer._timers == {}
+
+
+async def test_03_debouncer_async_execute_delayed_and_zombies() -> None:
+    """Verify PropertyDebouncer queued timer firing, anti-zombie shield, and error handlers."""
+    coord = _StubDebouncerCoord(now=100.0)
+    assert coord.config_entry is not None
+    debouncer = PropertyDebouncer(coord, delay=3.0)  # type: ignore[arg-type]
+
+    timer_calls: list[tuple[Any, float, Any]] = []
+    unsub_handle = _StubTimer()
+
+    def _capture_call_later(hass_arg: Any, delay_arg: float, cb: Any) -> _StubTimer:
+        timer_calls.append((hass_arg, delay_arg, cb))
+        return unsub_handle
+
+    with patch(
+        "custom_components.climate_ip.coordinator.async_call_later",
+        new=_capture_call_later,
+    ):
         # Seed active window + previous timer to verify _cancel_timer on rapid re-queue
-        prev_timer = MagicMock()
+        prev_timer = _StubTimer()
         debouncer._timers["temp"] = prev_timer
         debouncer._last_activities["temp"] = 99.0
-        mock_coord.hass.loop.time.return_value = 100.5
+        coord.hass.loop.now = 100.5
 
-        cmd_ok = AsyncMock(return_value=True)
+        cmd_ok = _StubCmd(result=True)
         res = await debouncer.async_execute(
             "temp", cmd_ok, "p_arg", val=22.0, kw_arg="k"
         )
         assert res is True
-        prev_timer.assert_called_once_with()
+        assert prev_timer.calls == 1
         assert debouncer._last_activities["temp"] == 100.5
         assert debouncer._timers["temp"] is unsub_handle
         assert debouncer._pending_payloads["temp"] == (
@@ -450,117 +809,113 @@ async def test_03_debouncer_async_execute_delayed_and_zombies() -> None:
             {"kw_arg": "k"},
             0,
         )
-        mock_call_later.assert_called_once()
-        assert mock_call_later.call_args.args[0] is mock_coord.hass
-        assert mock_call_later.call_args.args[1] == 3.0
-        fire_cb = mock_call_later.call_args.args[2]
+        assert len(timer_calls) == 1
+        assert timer_calls[0][0] is coord.hass
+        assert timer_calls[0][1] == 3.0
+        fire_cb = timer_calls[0][2]
 
         # 1. Fire delayed command that returns True -> no failure revert
-        mock_coord.hass.loop.time.return_value = 103.5
+        coord.hass.loop.now = 103.5
         fire_cb()
         assert "temp" not in debouncer._timers
         assert "temp" not in debouncer._pending_payloads
         assert debouncer._last_activities["temp"] == 103.5
-        assert len(created_tasks) == 1
-        hass_arg, coro, task_name = created_tasks.pop()
-        assert hass_arg is mock_coord.hass
+        assert len(coord.config_entry.bg_tasks) == 1
+        hass_arg, coro, task_name = coord.config_entry.bg_tasks.pop()
+        assert hass_arg is coord.hass
         assert task_name == f"{DOMAIN}_uid_123_debouncer_temp"
         await coro
-        cmd_ok.assert_awaited_once_with("p_arg", kw_arg="k")
-        mock_coord.controller.async_clear_pending_updates.assert_not_awaited()
-        mock_coord.async_request_refresh.assert_not_awaited()
+        assert cmd_ok.calls == [(("p_arg",), {"kw_arg": "k"})]
+        assert coord.controller.cleared_pending == []
+        assert coord.refresh_calls == 0
 
         # Orphan fire when payload is already popped -> no-op
         fire_cb()
-        assert created_tasks == []
+        assert coord.config_entry.bg_tasks == []
 
         # 2. Zombie task (generation incremented after _fire_delayed scheduled task)
         debouncer._last_activities["temp"] = 103.5
-        cmd_zombie = AsyncMock(return_value=True)
+        cmd_zombie = _StubCmd(result=True)
         await debouncer.async_execute("temp", cmd_zombie, val=23.0)
-        fire_zombie = mock_call_later.call_args.args[2]
-        fire_zombie()
-        _, zombie_coro, _ = created_tasks.pop()
+        timer_calls[-1][2]()
+        _, zombie_coro, _ = coord.config_entry.bg_tasks.pop()
         debouncer.cancel_all()
         await zombie_coro
-        cmd_zombie.assert_not_awaited()
+        assert cmd_zombie.calls == []
         assert "temp" not in debouncer._last_activities
 
         # 3. Delayed command returns False -> triggers _async_handle_delayed_failure
         debouncer._last_activities["temp"] = 103.5
-        cmd_false = AsyncMock(return_value=False)
+        cmd_false = _StubCmd(result=False)
         await debouncer.async_execute("temp", cmd_false, "x", val=24.0)
-        mock_call_later.call_args.args[2]()
-        _, false_coro, _ = created_tasks.pop()
+        timer_calls[-1][2]()
+        _, false_coro, _ = coord.config_entry.bg_tasks.pop()
         await false_coro
-        mock_coord.controller.async_clear_pending_updates.assert_awaited_once_with(
-            ["temp"]
-        )
-        mock_coord.async_request_refresh.assert_awaited_once_with()
-        mock_coord.controller.async_clear_pending_updates.reset_mock()
-        mock_coord.async_request_refresh.reset_mock()
+        assert coord.controller.cleared_pending == [["temp"]]
+        assert coord.refresh_calls == 1
+        coord.controller.cleared_pending.clear()
+        coord.refresh_calls = 0
 
-        # 4. Delayed command raises network error (CannotConnect) and generic Exception (RuntimeError)
+        # 4. Delayed command raises CannotConnect and RuntimeError
         for err in (CannotConnect("offline"), RuntimeError("boom")):
             debouncer._last_activities["temp"] = 103.5
-            cmd_err = AsyncMock(side_effect=err)
+            cmd_err = _StubCmd(exc=err)
             await debouncer.async_execute("temp", cmd_err, val=25.0)
-            mock_call_later.call_args.args[2]()
-            _, err_coro, _ = created_tasks.pop()
+            timer_calls[-1][2]()
+            _, err_coro, _ = coord.config_entry.bg_tasks.pop()
             await err_coro
-            mock_coord.controller.async_clear_pending_updates.assert_awaited_once_with(
-                ["temp"]
-            )
-            mock_coord.async_request_refresh.assert_awaited_once_with()
-            mock_coord.controller.async_clear_pending_updates.reset_mock()
-            mock_coord.async_request_refresh.reset_mock()
+            assert coord.controller.cleared_pending == [["temp"]]
+            assert coord.refresh_calls == 1
+            coord.controller.cleared_pending.clear()
+            coord.refresh_calls = 0
 
         # 5. config_entry is None when _fire_delayed runs -> closes coroutine cleanly
         debouncer._last_activities["temp"] = 103.5
-        cmd_no_entry = AsyncMock(return_value=True)
+        cmd_no_entry = _StubCmd(result=True)
         await debouncer.async_execute("temp", cmd_no_entry, val=26.0)
-        mock_coord.config_entry = None
-        mock_call_later.call_args.args[2]()
-        assert created_tasks == []
-        cmd_no_entry.assert_not_awaited()
+        saved_entry = coord.config_entry
+        coord.config_entry = None
+        timer_calls[-1][2]()
+        assert saved_entry.bg_tasks == []
+        assert cmd_no_entry.calls == []
 
 
-def test_04_coordinator_init_polling_and_device_info() -> None:
-    """Verify SamsungClimateCoordinator.__init__ polling interval math and DeviceInfo branches."""
-    hass = MagicMock()
-    mock_ctrl = MagicMock()
-    mock_ctrl.unique_id = "ac_main"
-    mock_ctrl.log_prefix = "[ac_main]"
-    mock_ctrl.poll = True
+def test_04_coordinator_init_polling() -> None:
+    """Verify SamsungClimateCoordinator.__init__ callback wiring and polling interval math."""
+    hass = _StubHass()
+    ctrl = _StubController()
+    ctrl.unique_id = "ac_main"
+    ctrl.log_prefix = "[ac_main]"
+    cleanup_calls = 0
+
+    def _fake_cleanup(_self: Any) -> None:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
 
     with patch.object(
-        SamsungClimateCoordinator, "_async_cleanup_auto_healing_issue_if_ignored"
-    ) as mock_cleanup:
-        # 1. Default polling (True, 60s), standalone Samsung device with valid MAC and options name override
-        entry = MagicMock(
+        SamsungClimateCoordinator,
+        "_async_cleanup_auto_healing_issue_if_ignored",
+        new=_fake_cleanup,
+    ):
+        # 1. Default polling (60s), callback injection, and standalone DeviceInfo
+        entry = _StubEntry(
             options={CONF_NAME: "  Living Room AC  "},
             data={CONF_MAC: " aa:bb:cc:dd:ee:ff ", CONF_NAME: "Fallback Name"},
-            unique_id="entry_uid",
-            entry_id="entry_id",
         )
-        coord = SamsungClimateCoordinator(hass, mock_ctrl, entry)
-        assert coord.controller is mock_ctrl
+        coord = SamsungClimateCoordinator(hass, ctrl, entry)  # type: ignore[arg-type]
+        assert coord.controller is ctrl
         assert coord.devices == {}
         assert isinstance(coord.debouncer, PropertyDebouncer)
         assert coord.debouncer.coordinator is coord
         assert coord.debouncer.delay == DEFAULT_DEBOUNCE_DELAY
         assert isinstance(coord._global_network_lock, asyncio.Lock)
         assert coord.config_entry is entry
-        mock_ctrl.register_token_callback.assert_called_once_with(
-            coord._async_save_new_token
-        )
-        assert mock_ctrl.on_push_update_callback == coord.async_handle_push_update
-        assert mock_ctrl.on_ssl_config_updated == coord._async_save_ssl_config
-        assert mock_ctrl.request_refresh_callback == coord.async_request_refresh
-        assert (
-            mock_ctrl.on_connection_failed_callback == coord._async_on_connection_failed
-        )
-        assert mock_ctrl.on_offline_callback == coord._async_handle_persistent_offline
+        assert ctrl.token_callbacks == [coord._async_save_new_token]
+        assert ctrl.on_push_update_callback == coord.async_handle_push_update
+        assert ctrl.on_ssl_config_updated == coord._async_save_ssl_config
+        assert ctrl.request_refresh_callback == coord.async_request_refresh
+        assert ctrl.on_connection_failed_callback == coord._async_on_connection_failed
+        assert ctrl.on_offline_callback == coord._async_handle_persistent_offline
         assert coord.update_interval == timedelta(seconds=DEFAULT_POLL_INTERVAL)
         assert coord.device_info == {
             "identifiers": {(DOMAIN, "ac_main")},
@@ -568,65 +923,108 @@ def test_04_coordinator_init_polling_and_device_info() -> None:
             "manufacturer": MANUFACTURER_SAMSUNG,
             "connections": {(dr.CONNECTION_NETWORK_MAC, "aa:bb:cc:dd:ee:ff")},
         }
-        mock_cleanup.assert_called_once_with()
+        assert cleanup_calls == 1
 
-        # 2. String enable_polling ("True" vs "False"), interval clamping & invalid interval fallback
-        entry_str_true = MagicMock(
-            options={CONF_ENABLE_POLLING: "True", CONF_POLL_INTERVAL: "5"},
-            data={},
+        # 2. String enable_polling, clamping & invalid interval fallback, ctrl.poll=False
+        coord_min = SamsungClimateCoordinator(
+            hass,  # type: ignore[arg-type]
+            ctrl,  # type: ignore[arg-type]
+            _StubEntry(
+                options={CONF_ENABLE_POLLING: "True", CONF_POLL_INTERVAL: "5"},
+                data={},
+            ),  # type: ignore[arg-type]
         )
-        coord_min = SamsungClimateCoordinator(hass, mock_ctrl, entry_str_true)
         assert coord_min.update_interval == timedelta(seconds=MIN_POLL_INTERVAL)
 
-        entry_max = MagicMock(
-            options={
-                CONF_ENABLE_POLLING: "yes",
-                CONF_POLL_INTERVAL: MAX_POLL_INTERVAL + 100,
-            },
-            data={},
+        coord_max = SamsungClimateCoordinator(
+            hass,  # type: ignore[arg-type]
+            ctrl,  # type: ignore[arg-type]
+            _StubEntry(
+                options={
+                    CONF_ENABLE_POLLING: "yes",
+                    CONF_POLL_INTERVAL: MAX_POLL_INTERVAL + 100,
+                },
+                data={},
+            ),  # type: ignore[arg-type]
         )
-        coord_max = SamsungClimateCoordinator(hass, mock_ctrl, entry_max)
         assert coord_max.update_interval == timedelta(seconds=MAX_POLL_INTERVAL)
 
-        entry_bad_int = MagicMock(
+        entry_bad_int = _StubEntry(
             options={CONF_ENABLE_POLLING: True, CONF_POLL_INTERVAL: "invalid"},
             data={},
         )
-        coord_bad_int = SamsungClimateCoordinator(hass, mock_ctrl, entry_bad_int)
+        coord_bad_int = SamsungClimateCoordinator(
+            hass,
+            ctrl,
+            entry_bad_int,  # type: ignore[arg-type]
+        )
         assert coord_bad_int.update_interval == timedelta(seconds=DEFAULT_POLL_INTERVAL)
 
-        entry_str_false = MagicMock(
-            options={CONF_ENABLE_POLLING: "False", CONF_POLL_INTERVAL: 30},
-            data={CONF_ENABLE_POLLING: True},
+        coord_off = SamsungClimateCoordinator(
+            hass,  # type: ignore[arg-type]
+            ctrl,  # type: ignore[arg-type]
+            _StubEntry(
+                options={CONF_ENABLE_POLLING: "False", CONF_POLL_INTERVAL: 30},
+                data={CONF_ENABLE_POLLING: True},
+            ),  # type: ignore[arg-type]
         )
-        coord_off = SamsungClimateCoordinator(hass, mock_ctrl, entry_str_false)
         assert coord_off.update_interval is None
 
-        entry_data_false = MagicMock(
-            options={},
-            data={CONF_ENABLE_POLLING: False, CONF_POLL_INTERVAL: 30},
+        coord_data_off = SamsungClimateCoordinator(
+            hass,  # type: ignore[arg-type]
+            ctrl,  # type: ignore[arg-type]
+            _StubEntry(
+                options={},
+                data={CONF_ENABLE_POLLING: False, CONF_POLL_INTERVAL: 30},
+            ),  # type: ignore[arg-type]
         )
-        coord_data_off = SamsungClimateCoordinator(hass, mock_ctrl, entry_data_false)
         assert coord_data_off.update_interval is None
 
-        mock_ctrl.poll = False
-        coord_no_poll = SamsungClimateCoordinator(hass, mock_ctrl, entry_bad_int)
-        assert coord_no_poll.update_interval is None
-        mock_ctrl.poll = True
-
-        # 3. Standalone IntesisBox with whitespace options name, data name fallback, empty MAC, and malformed MAC
-        entry_data_name = MagicMock(
-            options={CONF_NAME: "   "},
-            data={CONF_NAME: "  Data Name AC  "},
+        ctrl.poll = False
+        coord_no_poll = SamsungClimateCoordinator(
+            hass,
+            ctrl,
+            entry_bad_int,  # type: ignore[arg-type]
         )
-        coord_data_name = SamsungClimateCoordinator(hass, mock_ctrl, entry_data_name)
+        assert coord_no_poll.update_interval is None
+
+
+def test_05_coordinator_init_device_info() -> None:
+    """Verify SamsungClimateCoordinator.__init__ DeviceInfo branches for standalone and sub-devices."""
+    hass = _StubHass()
+    ctrl = _StubController()
+    ctrl.unique_id = "ac_main"
+    ctrl.log_prefix = "[ac_main]"
+    base_entry = _StubEntry(options={}, data={})
+
+    def _noop_cleanup(_self: Any) -> None:
+        return None
+
+    with patch.object(
+        SamsungClimateCoordinator,
+        "_async_cleanup_auto_healing_issue_if_ignored",
+        new=_noop_cleanup,
+    ):
+        # 1. Whitespace options name falls back to data name
+        coord_data_name = SamsungClimateCoordinator(
+            hass,  # type: ignore[arg-type]
+            ctrl,  # type: ignore[arg-type]
+            _StubEntry(
+                options={CONF_NAME: "   "},
+                data={CONF_NAME: "  Data Name AC  "},
+            ),  # type: ignore[arg-type]
+        )
         assert coord_data_name.device_info["name"] == "Data Name AC"
 
-        entry_intesis = MagicMock(
-            options={CONF_NAME: "   "},
-            data={CONF_DEVICE_TYPE: DEVICE_TYPE_INTESISBOX, CONF_MAC: "   "},
+        # 2. Standalone IntesisBox with empty MAC
+        coord_intesis = SamsungClimateCoordinator(
+            hass,  # type: ignore[arg-type]
+            ctrl,  # type: ignore[arg-type]
+            _StubEntry(
+                options={CONF_NAME: "   "},
+                data={CONF_DEVICE_TYPE: DEVICE_TYPE_INTESISBOX, CONF_MAC: "   "},
+            ),  # type: ignore[arg-type]
         )
-        coord_intesis = SamsungClimateCoordinator(hass, mock_ctrl, entry_intesis)
         assert coord_intesis.device_info == {
             "identifiers": {(DOMAIN, "ac_main")},
             "name": f"{DEFAULT_INTESISBOX_NAME_PREFIX} ac_main",
@@ -634,16 +1032,18 @@ def test_04_coordinator_init_polling_and_device_info() -> None:
             "connections": set(),
         }
 
-        entry_samsung_default = MagicMock(
-            options={},
-            data={CONF_MAC: "bad_mac"},
-        )
+        # 3. Malformed MAC triggers ValueError fallback
+        def _bad_mac(_mac: str) -> str:
+            raise ValueError("bad mac")
+
         with patch(
             "custom_components.climate_ip.coordinator.dr.format_mac",
-            side_effect=ValueError("bad mac"),
+            new=_bad_mac,
         ):
             coord_bad_mac = SamsungClimateCoordinator(
-                hass, mock_ctrl, entry_samsung_default
+                hass,  # type: ignore[arg-type]
+                ctrl,  # type: ignore[arg-type]
+                _StubEntry(options={}, data={CONF_MAC: "bad_mac"}),  # type: ignore[arg-type]
             )
         assert coord_bad_mac.device_info == {
             "identifiers": {(DOMAIN, "ac_main")},
@@ -652,11 +1052,11 @@ def test_04_coordinator_init_polling_and_device_info() -> None:
             "connections": set(),
         }
 
-        # 4. Sub-device branches (with/without parent_unique_id, with/without redundant prefix, missing name/id)
+        # 4. Sub-device branches
         coord_sub_parent = SamsungClimateCoordinator(
-            hass,
-            mock_ctrl,
-            entry,
+            hass,  # type: ignore[arg-type]
+            ctrl,  # type: ignore[arg-type]
+            base_entry,  # type: ignore[arg-type]
             device_info={CONF_SUBDEVICE_ID: "0", CONF_NAME: "  Bedroom  "},
             parent_unique_id="gateway_uid",
         )
@@ -668,9 +1068,9 @@ def test_04_coordinator_init_polling_and_device_info() -> None:
         }
 
         coord_sub_redundant = SamsungClimateCoordinator(
-            hass,
-            mock_ctrl,
-            entry,
+            hass,  # type: ignore[arg-type]
+            ctrl,  # type: ignore[arg-type]
+            base_entry,  # type: ignore[arg-type]
             device_info={CONF_SUBDEVICE_ID: "0", CONF_NAME: "ID 0 (Bedroom)"},
             parent_unique_id=None,
         )
@@ -681,19 +1081,18 @@ def test_04_coordinator_init_polling_and_device_info() -> None:
         }
 
         coord_sub_unnamed = SamsungClimateCoordinator(
-            hass,
-            mock_ctrl,
-            entry,
+            hass,  # type: ignore[arg-type]
+            ctrl,  # type: ignore[arg-type]
+            base_entry,  # type: ignore[arg-type]
             device_info={CONF_SUBDEVICE_ID: None, CONF_NAME: "   "},
         )
         assert coord_sub_unnamed.device_info["name"] == DEFAULT_SUBDEVICE_NAME
 
 
-def test_05_coordinator_callbacks_and_auto_healing_switch() -> None:
+def test_06_coordinator_callbacks_and_auto_healing_switch() -> None:
     """Verify issue cleanup, token/SSL persistence callbacks, failure callbacks, and RAW switch."""
-    hass = MagicMock()
-    hass.loop.call_soon.side_effect = lambda fn, *a: fn(*a)
-    entry = MagicMock(
+    hass = _StubHass()
+    entry = _StubEntry(
         options={"keep": 1},
         data={
             "host": "192.168.1.10",
@@ -703,198 +1102,221 @@ def test_05_coordinator_callbacks_and_auto_healing_switch() -> None:
         unique_id="u1",
         entry_id="e1",
     )
-    coord = _make_bare_coordinator(hass=hass, entry=entry)
-    coord.debouncer = MagicMock()
-    coord.async_set_update_error = MagicMock()
+    stub_ctrl = _StubController()
+    coord = _make_bare_coordinator(hass=hass, controller=stub_ctrl, entry=entry)
+    stub_debouncer = _StubDebouncer()
+    coord.debouncer = stub_debouncer  # type: ignore[assignment]
+    update_errors: list[Exception] = []
+
+    def _record_update_error(err: Exception) -> None:
+        update_errors.append(err)
+
+    coord.async_set_update_error = _record_update_error  # type: ignore[method-assign]
 
     # 1. _async_cleanup_auto_healing_issue_if_ignored
-    mock_registry = MagicMock()
+    registry = _StubRegistry()
+    get_reg_calls: list[Any] = []
+    deleted_issues: list[tuple[Any, str, str]] = []
+
+    def _fake_async_get(hass_arg: Any) -> _StubRegistry:
+        get_reg_calls.append(hass_arg)
+        return registry
+
+    def _fake_delete_issue(hass_arg: Any, domain: str, issue_id: str) -> None:
+        deleted_issues.append((hass_arg, domain, issue_id))
+
     with (
         patch(
             "custom_components.climate_ip.coordinator.ir.async_get",
-            return_value=mock_registry,
-        ) as mock_get_reg,
+            new=_fake_async_get,
+        ),
         patch(
-            "custom_components.climate_ip.coordinator.ir.async_delete_issue"
-        ) as mock_del_issue,
+            "custom_components.climate_ip.coordinator.ir.async_delete_issue",
+            new=_fake_delete_issue,
+        ),
     ):
-        # Issue missing -> no delete
-        mock_registry.async_get_issue.return_value = None
+        registry.issue = None
         coord._async_cleanup_auto_healing_issue_if_ignored()
-        mock_get_reg.assert_called_once_with(hass)
-        mock_registry.async_get_issue.assert_called_once_with(
-            DOMAIN, f"{ISSUE_AUTO_HEALING_RAW}_uid_default"
-        )
-        mock_del_issue.assert_not_called()
+        assert get_reg_calls == [hass]
+        assert registry.queries == [(DOMAIN, f"{ISSUE_AUTO_HEALING_RAW}_uid_default")]
+        assert deleted_issues == []
 
-        # Issue present but not dismissed -> no delete
-        mock_registry.async_get_issue.return_value = MagicMock(dismissed_version=None)
+        registry.issue = _StubIssue(dismissed_version=None)
         coord._async_cleanup_auto_healing_issue_if_ignored()
-        mock_del_issue.assert_not_called()
+        assert deleted_issues == []
 
-        # Issue present and dismissed -> deleted
-        mock_registry.async_get_issue.return_value = MagicMock(
-            dismissed_version="2026.10.0"
-        )
+        registry.issue = _StubIssue(dismissed_version="2026.10.0")
         coord._async_cleanup_auto_healing_issue_if_ignored()
-        mock_del_issue.assert_called_once_with(
-            hass, DOMAIN, f"{ISSUE_AUTO_HEALING_RAW}_uid_default"
-        )
+        assert deleted_issues == [
+            (hass, DOMAIN, f"{ISSUE_AUTO_HEALING_RAW}_uid_default")
+        ]
 
     # 2. _async_save_new_token (same token vs new token)
     coord._async_save_new_token("tok_1")
-    hass.config_entries.async_update_entry.assert_not_called()
+    assert hass.config_entries.updates == []
 
     coord._async_save_new_token("tok_2")
-    hass.config_entries.async_update_entry.assert_called_once_with(
-        entry,
-        data={
-            "host": "192.168.1.10",
-            CONF_TOKEN: "tok_2",
-            CONF_SSL_CONFIG_KEY: {"c": 1},
-        },
-    )
-    hass.config_entries.async_update_entry.reset_mock()
+    assert hass.config_entries.updates == [
+        (
+            entry,
+            {
+                "host": "192.168.1.10",
+                CONF_TOKEN: "tok_2",
+                CONF_SSL_CONFIG_KEY: {"c": 1},
+            },
+            None,
+        )
+    ]
+    hass.config_entries.updates.clear()
 
     # 3. _async_save_ssl_config (same config vs new config)
     coord._async_save_ssl_config({"c": 1})
-    hass.config_entries.async_update_entry.assert_not_called()
+    assert hass.config_entries.updates == []
 
     coord._async_save_ssl_config({"c": 2})
-    hass.config_entries.async_update_entry.assert_called_once_with(
-        entry,
-        data={
-            "host": "192.168.1.10",
-            CONF_TOKEN: "tok_1",
-            CONF_SSL_CONFIG_KEY: {"c": 2},
-        },
-    )
-    hass.config_entries.async_update_entry.reset_mock()
+    assert hass.config_entries.updates == [
+        (
+            entry,
+            {
+                "host": "192.168.1.10",
+                CONF_TOKEN: "tok_1",
+                CONF_SSL_CONFIG_KEY: {"c": 2},
+            },
+            None,
+        )
+    ]
+    hass.config_entries.updates.clear()
 
     # 4. _async_on_connection_failed & _async_handle_persistent_offline
     coord._async_on_connection_failed()
-    coord.debouncer.cancel_all.assert_called_once_with()
-    coord.controller.clear_state_cache.assert_called_once_with()
-    err_conn = coord.async_set_update_error.call_args.args[0]
-    assert isinstance(err_conn, UpdateFailed)
-    assert str(err_conn) == ERR_PERSISTENT_CONNECTION_FAILURE
+    assert stub_debouncer.cancel_calls == 1
+    assert stub_ctrl.clear_cache_calls == 1
+    assert len(update_errors) == 1
+    assert isinstance(update_errors[0], UpdateFailed)
+    assert str(update_errors[0]) == ERR_PERSISTENT_CONNECTION_FAILURE
 
-    coord.debouncer.reset_mock()
-    coord.controller.clear_state_cache.reset_mock()
-    coord.async_set_update_error.reset_mock()
+    stub_debouncer.cancel_calls = 0
+    stub_ctrl.clear_cache_calls = 0
+    update_errors.clear()
 
     coord._async_handle_persistent_offline("ARP lost")
-    coord.debouncer.cancel_all.assert_called_once_with()
-    coord.controller.clear_state_cache.assert_called_once_with()
-    err_off = coord.async_set_update_error.call_args.args[0]
-    assert isinstance(err_off, UpdateFailed)
-    assert str(err_off) == f"{ERR_DEVICE_OFFLINE_PREFIX}: ARP lost"
+    assert stub_debouncer.cancel_calls == 1
+    assert stub_ctrl.clear_cache_calls == 1
+    assert len(update_errors) == 1
+    assert isinstance(update_errors[0], UpdateFailed)
+    assert str(update_errors[0]) == f"{ERR_DEVICE_OFFLINE_PREFIX}: ARP lost"
 
     # 5. _async_switch_to_raw_engine (with device_info name and fallback to safe_unique_id)
+    created_issues: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    def _fake_create_issue(*args: Any, **kwargs: Any) -> None:
+        created_issues.append((args, kwargs))
+
     with patch(
-        "custom_components.climate_ip.coordinator.ir.async_create_issue"
-    ) as mock_create_issue:
+        "custom_components.climate_ip.coordinator.ir.async_create_issue",
+        new=_fake_create_issue,
+    ):
         coord.device_info = {"name": "Kitchen AC"}
         coord._async_switch_to_raw_engine()
-        hass.config_entries.async_update_entry.assert_called_once_with(
-            entry, options={"keep": 1, CONF_CONN_METHOD: CONN_METHOD_RAW}
-        )
-        mock_create_issue.assert_called_once_with(
-            hass,
-            DOMAIN,
-            f"{ISSUE_AUTO_HEALING_RAW}_uid_default",
-            is_fixable=True,
-            is_persistent=False,
-            severity=ir.IssueSeverity.WARNING,
-            translation_key=ISSUE_AUTO_HEALING_RAW,
-            translation_placeholders={"device_name": "Kitchen AC"},
-            data={"device_name": "Kitchen AC"},
-        )
+        assert hass.config_entries.updates == [
+            (entry, None, {"keep": 1, CONF_CONN_METHOD: CONN_METHOD_RAW})
+        ]
+        assert created_issues == [
+            (
+                (hass, DOMAIN, f"{ISSUE_AUTO_HEALING_RAW}_uid_default"),
+                {
+                    "is_fixable": True,
+                    "is_persistent": False,
+                    "severity": ir.IssueSeverity.WARNING,
+                    "translation_key": ISSUE_AUTO_HEALING_RAW,
+                    "translation_placeholders": {"device_name": "Kitchen AC"},
+                    "data": {"device_name": "Kitchen AC"},
+                },
+            )
+        ]
 
-        mock_create_issue.reset_mock()
+        created_issues.clear()
         coord.device_info = {}
         coord._async_switch_to_raw_engine()
-        mock_create_issue.assert_called_once_with(
-            hass,
-            DOMAIN,
-            f"{ISSUE_AUTO_HEALING_RAW}_uid_default",
-            is_fixable=True,
-            is_persistent=False,
-            severity=ir.IssueSeverity.WARNING,
-            translation_key=ISSUE_AUTO_HEALING_RAW,
-            translation_placeholders={"device_name": "uid_default"},
-            data={"device_name": "uid_default"},
-        )
+        assert created_issues == [
+            (
+                (hass, DOMAIN, f"{ISSUE_AUTO_HEALING_RAW}_uid_default"),
+                {
+                    "is_fixable": True,
+                    "is_persistent": False,
+                    "severity": ir.IssueSeverity.WARNING,
+                    "translation_key": ISSUE_AUTO_HEALING_RAW,
+                    "translation_placeholders": {"device_name": "uid_default"},
+                    "data": {"device_name": "uid_default"},
+                },
+            )
+        ]
 
 
-@pytest.mark.asyncio
-async def test_06_coordinator_async_update_data() -> None:
+async def test_07_coordinator_async_update_data() -> None:
     """Verify _async_update_data polling timeout, auto-healing switch, and exception translations."""
-    coord = _make_bare_coordinator()
-    sentinel_state = MagicMock(name="climate_state")
-    coord.controller.climate_state = sentinel_state
-    coord.controller.async_get_status = AsyncMock()
+    stub_ctrl = _StubController()
+    coord = _make_bare_coordinator(controller=stub_ctrl)
+    sentinel_state = object()
+    stub_ctrl.climate_state = sentinel_state
 
     # 1. Success path with timeout check
+    timeout_stub = _StubTimeout()
     with patch(
-        "custom_components.climate_ip.coordinator.asyncio.timeout"
-    ) as mock_timeout:
-        mock_timeout.return_value.__aenter__ = AsyncMock()
-        mock_timeout.return_value.__aexit__ = AsyncMock(return_value=None)
+        "custom_components.climate_ip.coordinator.asyncio.timeout",
+        new=timeout_stub,
+    ):
         res = await coord._async_update_data()
         assert res is sentinel_state
-        mock_timeout.assert_called_once_with(NETWORK_POLL_TIMEOUT)
-        coord.controller.async_get_status.assert_awaited_once_with()
+        assert timeout_stub.delays == [NETWORK_POLL_TIMEOUT]
+        assert stub_ctrl.get_status_calls == 1
 
     # 2. InvalidHeaderError when not RAW -> triggers _async_switch_to_raw_engine
     coord.config_entry.options = {CONF_CONN_METHOD: "aiohttp"}
-    coord.controller.async_get_status = AsyncMock(
-        side_effect=InvalidHeaderError("bad header")
-    )
-    with patch.object(coord, "_async_switch_to_raw_engine") as mock_switch:
+    stub_ctrl.get_status_exc = InvalidHeaderError("bad header")
+    switch_calls = 0
+
+    def _record_switch() -> None:
+        nonlocal switch_calls
+        switch_calls += 1
+
+    with patch.object(coord, "_async_switch_to_raw_engine", new=_record_switch):
         with pytest.raises(UpdateFailed, match=ERR_AUTO_HEALING_RAW_IN_PROGRESS):
             await coord._async_update_data()
-        mock_switch.assert_called_once_with()
+        assert switch_calls == 1
 
-    # 3. InvalidHeaderError when already RAW -> does NOT switch, raises RAW parsing failure
-    coord.config_entry.options = {CONF_CONN_METHOD: CONN_METHOD_RAW}
-    with patch.object(coord, "_async_switch_to_raw_engine") as mock_switch_raw:
+        # 3. InvalidHeaderError when already RAW -> does NOT switch, raises RAW parsing failure
+        coord.config_entry.options = {CONF_CONN_METHOD: CONN_METHOD_RAW}
         with pytest.raises(
             UpdateFailed, match="Data parsing failed on RAW engine: bad header"
         ):
             await coord._async_update_data()
-        mock_switch_raw.assert_not_called()
+        assert switch_calls == 1
 
     # 4. ConfigEntryAuthFailed -> clears cache and re-raises
-    coord.controller.clear_state_cache.reset_mock()
-    coord.controller.async_get_status = AsyncMock(
-        side_effect=ConfigEntryAuthFailed("expired")
-    )
+    stub_ctrl.clear_cache_calls = 0
+    stub_ctrl.get_status_exc = ConfigEntryAuthFailed("expired")
     with pytest.raises(ConfigEntryAuthFailed, match="expired"):
         await coord._async_update_data()
-    coord.controller.clear_state_cache.assert_called_once_with()
+    assert stub_ctrl.clear_cache_calls == 1
 
     # 5. AuthError -> clears cache and raises ConfigEntryAuthFailed
-    coord.controller.clear_state_cache.reset_mock()
-    coord.controller.async_get_status = AsyncMock(
-        side_effect=AuthError("401 unauthorized")
-    )
+    stub_ctrl.clear_cache_calls = 0
+    stub_ctrl.get_status_exc = AuthError("401 unauthorized")
     with pytest.raises(
         ConfigEntryAuthFailed, match="Authentication failed: 401 unauthorized"
     ):
         await coord._async_update_data()
-    coord.controller.clear_state_cache.assert_called_once_with()
+    assert stub_ctrl.clear_cache_calls == 1
 
     # 6. UpdateFailed -> re-raises directly without clearing cache
-    coord.controller.clear_state_cache.reset_mock()
-    coord.controller.async_get_status = AsyncMock(
-        side_effect=UpdateFailed("direct failure")
-    )
+    stub_ctrl.clear_cache_calls = 0
+    stub_ctrl.get_status_exc = UpdateFailed("direct failure")
     with pytest.raises(UpdateFailed, match="direct failure"):
         await coord._async_update_data()
-    coord.controller.clear_state_cache.assert_not_called()
+    assert stub_ctrl.clear_cache_calls == 0
 
-    # 7. Network errors (TimeoutError, CannotConnect, OSError), Data errors (ValueError, TypeError, KeyError), Fatal Exception
+    # 7. Network, Data, and Fatal errors
     error_matrix: list[tuple[Exception, str]] = [
         (TimeoutError("timed out"), "Network error during update: timed out"),
         (CannotConnect("refused"), "Network error during update: refused"),
@@ -905,221 +1327,221 @@ async def test_06_coordinator_async_update_data() -> None:
         (RuntimeError("unexpected"), "Fatal error: unexpected"),
     ]
     for exc, expected_msg in error_matrix:
-        coord.controller.clear_state_cache.reset_mock()
-        coord.controller.async_get_status = AsyncMock(side_effect=exc)
+        stub_ctrl.clear_cache_calls = 0
+        stub_ctrl.get_status_exc = exc
         with pytest.raises(UpdateFailed, match=expected_msg):
             await coord._async_update_data()
-        coord.controller.clear_state_cache.assert_called_once_with()
+        assert stub_ctrl.clear_cache_calls == 1
 
 
-@pytest.mark.asyncio
-async def test_07_coordinator_async_handle_push_update() -> None:
+async def test_08_coordinator_async_handle_push_update() -> None:
     """Verify async_handle_push_update state merging, debounce suppression, flicker guard, and error branches."""
-    coord = _make_bare_coordinator()
+    stub_ctrl = _StubController()
+    stub_entry = _StubEntry()
+    coord = _make_bare_coordinator(controller=stub_ctrl, entry=stub_entry)
     coord.debouncer = PropertyDebouncer(coord)
-    coord.async_set_updated_data = MagicMock()
-    coord.async_set_update_error = MagicMock()
-    coord.controller.async_merge_device_state = AsyncMock(return_value=True)
+    updated_data_calls: list[Any] = []
+    update_error_calls: list[Exception] = []
+
+    def _record_updated_data(data: Any) -> None:
+        updated_data_calls.append(data)
+
+    def _record_update_error(err: Exception) -> None:
+        update_error_calls.append(err)
+
+    coord.async_set_updated_data = _record_updated_data  # type: ignore[method-assign]
+    coord.async_set_update_error = _record_update_error  # type: ignore[method-assign]
 
     # 1. new_data is None -> ignored
     await coord.async_handle_push_update(None)
-    coord.controller.async_merge_device_state.assert_not_awaited()
-    coord.async_set_updated_data.assert_not_called()
+    assert stub_ctrl.merge_calls == []
+    assert updated_data_calls == []
 
     # 2. Controller rejects merge (False) -> ignored
-    coord.controller.async_merge_device_state.return_value = False
+    stub_ctrl.merge_result = False
     await coord.async_handle_push_update({"junk": 1})
-    coord.controller.async_merge_device_state.assert_awaited_once_with({"junk": 1})
-    coord.async_set_updated_data.assert_not_called()
+    assert stub_ctrl.merge_calls == [{"junk": 1}]
+    assert updated_data_calls == []
 
     # 3. Merge succeeds, but debouncer is active -> suppressed
-    coord.controller.async_merge_device_state.return_value = True
-    coord.debouncer._pending_payloads["temp"] = (AsyncMock(), (), {}, 0)
+    stub_ctrl.merge_result = True
+    stub_ctrl.climate_state = "state_active"
+    coord.debouncer._pending_payloads["temp"] = (_StubCmd(), (), {}, 0)
     await coord.async_handle_push_update({"power": "on"})
-    coord.async_set_updated_data.assert_not_called()
+    assert updated_data_calls == []
     coord.debouncer._pending_payloads.clear()
 
     # 4. Debouncer inactive: identical state when last_update_success is True -> suppressed
-    coord.controller.climate_state = "state_a"
-    coord.data = "state_a"
+    stub_ctrl.climate_state = "state_a"
+    coord.data = "state_a"  # type: ignore[assignment]
     coord.last_update_success = True
     await coord.async_handle_push_update({"power": "on"})
-    coord.async_set_updated_data.assert_not_called()
+    assert updated_data_calls == []
 
-    # 5. Identical state when last_update_success is False -> broadcasts recovery!
+    # 5. Identical state when last_update_success is False -> broadcasts recovery
     coord.last_update_success = False
     await coord.async_handle_push_update({"power": "on"})
-    coord.async_set_updated_data.assert_called_once_with("state_a")
-    coord.async_set_updated_data.reset_mock()
+    assert updated_data_calls == ["state_a"]
+    updated_data_calls.clear()
 
-    # 6. Different state when last_update_success is True -> broadcasts update!
+    # 6. Different state when last_update_success is True -> broadcasts update
     coord.last_update_success = True
-    coord.controller.climate_state = "state_b"
+    stub_ctrl.climate_state = "state_b"
     await coord.async_handle_push_update({"power": "off"})
-    coord.async_set_updated_data.assert_called_once_with("state_b")
+    assert updated_data_calls == ["state_b"]
 
     # 7. CancelledError -> re-raised cleanly
-    coord.controller.async_merge_device_state.side_effect = asyncio.CancelledError()
+    stub_ctrl.merge_exc = asyncio.CancelledError()
     with pytest.raises(asyncio.CancelledError):
         await coord.async_handle_push_update({"power": "on"})
 
-    # 8. AuthError / ConfigEntryAuthFailed -> clears cache, sets error, starts reauth (if config_entry present)
+    # 8. AuthError / ConfigEntryAuthFailed -> clears cache, sets error, starts reauth
     for auth_exc in (AuthError("bad token"), ConfigEntryAuthFailed("expired")):
-        coord.controller.clear_state_cache.reset_mock()
-        coord.async_set_update_error.reset_mock()
-        coord.config_entry.async_start_reauth.reset_mock()
-        coord.controller.async_merge_device_state.side_effect = auth_exc
+        stub_ctrl.clear_cache_calls = 0
+        update_error_calls.clear()
+        stub_entry.reauth_calls.clear()
+        stub_ctrl.merge_exc = auth_exc
 
         await coord.async_handle_push_update({"power": "on"})
-        coord.controller.clear_state_cache.assert_called_once_with()
-        err_arg = coord.async_set_update_error.call_args.args[0]
-        assert isinstance(err_arg, ConfigEntryAuthFailed)
-        assert f"Authentication failed: {auth_exc}" in str(err_arg)
-        coord.config_entry.async_start_reauth.assert_called_once_with(coord.hass)
+        assert stub_ctrl.clear_cache_calls == 1
+        assert len(update_error_calls) == 1
+        assert isinstance(update_error_calls[0], ConfigEntryAuthFailed)
+        assert f"Authentication failed: {auth_exc}" in str(update_error_calls[0])
+        assert stub_entry.reauth_calls == [coord.hass]
 
     # Auth failure when config_entry is None -> does not fail
     coord.config_entry = None  # type: ignore[assignment]
-    coord.controller.async_merge_device_state.side_effect = AuthError("no entry")
+    stub_ctrl.merge_exc = AuthError("no entry")
     await coord.async_handle_push_update({"power": "on"})
 
     # 9. Generic Exception -> clears cache and sets UpdateFailed
-    coord.controller.clear_state_cache.reset_mock()
-    coord.async_set_update_error.reset_mock()
-    coord.controller.async_merge_device_state.side_effect = RuntimeError("push boom")
+    stub_ctrl.clear_cache_calls = 0
+    update_error_calls.clear()
+    stub_ctrl.merge_exc = RuntimeError("push boom")
     await coord.async_handle_push_update({"power": "on"})
-    coord.controller.clear_state_cache.assert_called_once_with()
-    push_err = coord.async_set_update_error.call_args.args[0]
-    assert isinstance(push_err, UpdateFailed)
-    assert str(push_err) == "Push update failed: push boom"
+    assert stub_ctrl.clear_cache_calls == 1
+    assert len(update_error_calls) == 1
+    assert isinstance(update_error_calls[0], UpdateFailed)
+    assert str(update_error_calls[0]) == "Push update failed: push boom"
 
 
-@pytest.mark.asyncio
-async def test_08_coordinator_locked_set_property() -> None:
+async def test_09_coordinator_locked_set_property() -> None:
     """Verify _locked_set_property superseding guards, lock spacing sleep, and strict bool check."""
-    coord = _make_bare_coordinator()
+    stub_ctrl = _StubController()
+    coord = _make_bare_coordinator(controller=stub_ctrl)
     coord.debouncer = PropertyDebouncer(coord)
-    coord.controller.is_property_superseded = MagicMock(return_value=False)
-    coord.controller.async_set_property = AsyncMock(return_value=True)
+    sleep_calls: list[float] = []
+
+    async def _fake_sleep(delay: float) -> None:
+        sleep_calls.append(delay)
 
     with patch(
         "custom_components.climate_ip.coordinator.asyncio.sleep",
-        new_callable=AsyncMock,
-    ) as mock_sleep:
+        new=_fake_sleep,
+    ):
         # 1. Superseded by debouncer.has_pending
-        coord.debouncer._pending_payloads["temp"] = (AsyncMock(), (), {}, 0)
+        coord.debouncer._pending_payloads["temp"] = (_StubCmd(), (), {}, 0)
         assert await coord._locked_set_property("temp", 22.0, "dev_1") is True
-        coord.controller.is_property_superseded.assert_not_called()
-        coord.controller.async_set_property.assert_not_awaited()
-        mock_sleep.assert_not_awaited()
+        assert stub_ctrl.superseded_calls == []
+        assert stub_ctrl.set_prop_calls == []
+        assert sleep_calls == []
         coord.debouncer._pending_payloads.clear()
 
         # 2. Superseded by controller.is_property_superseded
-        coord.controller.is_property_superseded.return_value = True
+        stub_ctrl.superseded_result = True
         assert await coord._locked_set_property("temp", 22.0, "dev_1") is True
-        coord.controller.is_property_superseded.assert_called_once_with("temp", 22.0)
-        coord.controller.async_set_property.assert_not_awaited()
-        mock_sleep.assert_not_awaited()
+        assert stub_ctrl.superseded_calls == [("temp", 22.0)]
+        assert stub_ctrl.set_prop_calls == []
+        assert sleep_calls == []
 
         # 3. Normal execution returning True and False with exact hardware spacing sleep
-        coord.controller.is_property_superseded.return_value = False
+        stub_ctrl.superseded_result = False
         assert await coord._locked_set_property("temp", 23.0, "dev_1") is True
-        coord.controller.async_set_property.assert_awaited_once_with(
-            "temp", 23.0, "dev_1"
-        )
-        mock_sleep.assert_awaited_once_with(HARDWARE_BREATHING_ROOM_SEC)
+        assert stub_ctrl.set_prop_calls == [("temp", 23.0, "dev_1")]
+        assert sleep_calls == [HARDWARE_BREATHING_ROOM_SEC]
 
-        coord.controller.async_set_property.reset_mock()
-        mock_sleep.reset_mock()
-        coord.controller.async_set_property.return_value = False
+        stub_ctrl.set_prop_calls.clear()
+        sleep_calls.clear()
+        stub_ctrl.set_prop_result = False
         assert await coord._locked_set_property("fan_mode", "low", None) is False
-        coord.controller.async_set_property.assert_awaited_once_with(
-            "fan_mode", "low", None
-        )
-        mock_sleep.assert_awaited_once_with(HARDWARE_BREATHING_ROOM_SEC)
+        assert stub_ctrl.set_prop_calls == [("fan_mode", "low", None)]
+        assert sleep_calls == [HARDWARE_BREATHING_ROOM_SEC]
 
         # 4. Non-bool return raises TypeError
-        coord.controller.async_set_property.return_value = "invalid_truthy_str"
+        stub_ctrl.set_prop_result = "invalid_truthy_str"
         with pytest.raises(TypeError, match="expected bool"):
             await coord._locked_set_property("fan_mode", "low")
 
 
-@pytest.mark.asyncio
-async def test_09_coordinator_async_set_property_and_failure_rollback() -> None:
+async def test_10_coordinator_async_set_property_and_failure_rollback() -> None:
     """Verify async_set_property prediction, Enum unwrapping, corrections, and rollback on all failure types."""
-    coord = _make_bare_coordinator()
-    coord.debouncer = MagicMock()
-    coord.debouncer.async_execute = AsyncMock(return_value=True)
-    coord.async_set_updated_data = MagicMock()
-    coord.async_request_refresh = AsyncMock()
-    coord.controller.async_clear_pending_updates = AsyncMock()
+    stub_ctrl = _StubController()
+    coord = _make_bare_coordinator(controller=stub_ctrl)
+    stub_debouncer = _StubDebouncer()
+    coord.debouncer = stub_debouncer  # type: ignore[assignment]
+    updated_data: list[Any] = []
+    refresh_calls = 0
 
-    existing_state = MagicMock(name="existing_state")
-    predicted_state = MagicMock(name="predicted_state")
-    coord.data = existing_state
-    coord.controller.climate_state = predicted_state
-    coord.controller.async_predict_and_correct_state = AsyncMock(
-        return_value=(None, {"fan_mode": HVACMode.AUTO, "swing": "on"})
-    )
+    def _record_updated_data(data: Any) -> None:
+        updated_data.append(data)
+
+    async def _record_refresh() -> None:
+        nonlocal refresh_calls
+        refresh_calls += 1
+
+    coord.async_set_updated_data = _record_updated_data  # type: ignore[method-assign]
+    coord.async_request_refresh = _record_refresh  # type: ignore[method-assign]
+
+    existing_state = object()
+    predicted_state = object()
+    coord.data = existing_state  # type: ignore[assignment]
+    stub_ctrl.climate_state = predicted_state
+    stub_ctrl.predict_corrections = {"fan_mode": HVACMode.AUTO, "swing": "on"}
 
     # 1. Success path with existing self.data, Enum new_value, and Enum/str corrections
     await coord.async_set_property(ATTR_HVAC_MODE, HVACMode.COOL, device_id="sub_1")
-    coord.controller.async_predict_and_correct_state.assert_awaited_once_with(
-        existing_state, ATTR_HVAC_MODE, "cool"
-    )
-    coord.async_set_updated_data.assert_called_once_with(predicted_state)
-    assert coord.debouncer.async_execute.await_args_list == [
-        call(
+    assert stub_ctrl.predict_calls == [(existing_state, ATTR_HVAC_MODE, "cool")]
+    assert updated_data == [predicted_state]
+    assert stub_debouncer.execute_calls == [
+        (
             ATTR_HVAC_MODE,
             coord._locked_set_property,
-            ATTR_HVAC_MODE,
-            "cool",
-            "sub_1",
-            val="cool",
+            (ATTR_HVAC_MODE, "cool", "sub_1"),
+            {"val": "cool"},
         ),
-        call(
+        (
             "fan_mode",
             coord._locked_set_property,
-            "fan_mode",
-            "auto",
-            "sub_1",
-            val="auto",
+            ("fan_mode", "auto", "sub_1"),
+            {"val": "auto"},
         ),
-        call(
+        (
             "swing",
             coord._locked_set_property,
-            "swing",
-            "on",
-            "sub_1",
-            val="on",
+            ("swing", "on", "sub_1"),
+            {"val": "on"},
         ),
     ]
-    coord.async_request_refresh.assert_not_awaited()
+    assert refresh_calls == 0
 
     # 2. Fallback to _create_device_state() when self.data is None, and partial False result rollback
-    coord.data = None
-    coord.controller.async_predict_and_correct_state.reset_mock()
-    coord.controller.async_predict_and_correct_state.return_value = (
-        None,
-        {"fan_mode": "high"},
-    )
-    coord.debouncer.async_execute = AsyncMock(side_effect=[True, False])
+    coord.data = None  # type: ignore[assignment]
+    stub_ctrl.predict_calls.clear()
+    stub_ctrl.predict_corrections = {"fan_mode": "high"}
+    stub_debouncer.outcomes = [True, False]
 
     with pytest.raises(
         HomeAssistantError, match="Failed to set property hvac_mode to dry"
     ):
         await coord.async_set_property(ATTR_HVAC_MODE, "dry")
 
-    coord.controller.async_predict_and_correct_state.assert_awaited_once_with(
-        predicted_state, ATTR_HVAC_MODE, "dry"
-    )
-    coord.debouncer.cancel_all.assert_called_once_with()
-    coord.controller.async_clear_pending_updates.assert_awaited_once_with(
-        [ATTR_HVAC_MODE, "fan_mode"]
-    )
-    coord.async_request_refresh.assert_awaited_once_with()
+    assert stub_ctrl.predict_calls == [(predicted_state, ATTR_HVAC_MODE, "dry")]
+    assert stub_debouncer.cancel_calls == 1
+    assert stub_ctrl.cleared_pending == [[ATTR_HVAC_MODE, "fan_mode"]]
+    assert refresh_calls == 1
 
     # 3. CannotConnect / OSError label and host resolution fallbacks
-    coord.controller.async_predict_and_correct_state.return_value = (None, {})
+    stub_ctrl.predict_corrections = {}
     label_host_cases: list[
         tuple[dict[str, Any], str | None, str | None, str | None, Exception, str]
     ] = [
@@ -1150,83 +1572,82 @@ async def test_09_coordinator_async_set_property_and_failure_rollback() -> None:
     ]
     for dev_info, ctrl_name, ip_addr, host, exc, expected_err in label_host_cases:
         coord.device_info = dev_info
-        coord.controller.name = ctrl_name
-        coord.controller.ip_address = ip_addr
-        coord.controller.host = host
-        coord.debouncer.cancel_all.reset_mock()
-        coord.controller.async_clear_pending_updates.reset_mock()
-        coord.async_request_refresh.reset_mock()
-        coord.debouncer.async_execute = AsyncMock(side_effect=exc)
+        stub_ctrl.name = ctrl_name
+        stub_ctrl.ip_address = ip_addr
+        stub_ctrl.host = host
+        stub_debouncer.cancel_calls = 0
+        stub_ctrl.cleared_pending.clear()
+        refresh_calls = 0
+        stub_debouncer.outcomes = [exc]
 
         with pytest.raises(
             HomeAssistantError,
             match=r"^" + expected_err.replace("(", r"\(").replace(")", r"\)") + r"$",
         ):
             await coord.async_set_property("temp", 21.0)
-        coord.debouncer.cancel_all.assert_called_once_with()
-        coord.controller.async_clear_pending_updates.assert_awaited_once_with(["temp"])
-        coord.async_request_refresh.assert_awaited_once_with()
+        assert stub_debouncer.cancel_calls == 1
+        assert stub_ctrl.cleared_pending == [["temp"]]
+        assert refresh_calls == 1
 
     # 4. Data errors (ValueError, TypeError, KeyError), CancelledError, and generic Exception
     for data_exc in (ValueError("bad v"), TypeError("bad t"), KeyError("bad k")):
-        coord.debouncer.cancel_all.reset_mock()
-        coord.controller.async_clear_pending_updates.reset_mock()
-        coord.async_request_refresh.reset_mock()
-        coord.debouncer.async_execute = AsyncMock(side_effect=data_exc)
+        stub_debouncer.cancel_calls = 0
+        stub_ctrl.cleared_pending.clear()
+        refresh_calls = 0
+        stub_debouncer.outcomes = [data_exc]
         with pytest.raises(
             HomeAssistantError, match=f"Data error setting property temp: {data_exc}"
         ):
             await coord.async_set_property("temp", 21.0)
-        coord.debouncer.cancel_all.assert_called_once_with()
-        coord.controller.async_clear_pending_updates.assert_awaited_once_with(["temp"])
-        coord.async_request_refresh.assert_awaited_once_with()
+        assert stub_debouncer.cancel_calls == 1
+        assert stub_ctrl.cleared_pending == [["temp"]]
+        assert refresh_calls == 1
 
-    coord.debouncer.cancel_all.reset_mock()
-    coord.controller.async_clear_pending_updates.reset_mock()
-    coord.async_request_refresh.reset_mock()
-    coord.debouncer.async_execute = AsyncMock(side_effect=asyncio.CancelledError())
+    stub_debouncer.cancel_calls = 0
+    stub_ctrl.cleared_pending.clear()
+    refresh_calls = 0
+    stub_debouncer.outcomes = [asyncio.CancelledError()]
     with pytest.raises(asyncio.CancelledError):
         await coord.async_set_property("temp", 21.0)
-    coord.debouncer.cancel_all.assert_called_once_with()
-    coord.controller.async_clear_pending_updates.assert_awaited_once_with(["temp"])
-    coord.async_request_refresh.assert_awaited_once_with()
+    assert stub_debouncer.cancel_calls == 1
+    assert stub_ctrl.cleared_pending == [["temp"]]
+    assert refresh_calls == 1
 
-    coord.debouncer.cancel_all.reset_mock()
-    coord.controller.async_clear_pending_updates.reset_mock()
-    coord.async_request_refresh.reset_mock()
-    coord.debouncer.async_execute = AsyncMock(side_effect=RuntimeError("unexpected"))
+    stub_debouncer.cancel_calls = 0
+    stub_ctrl.cleared_pending.clear()
+    refresh_calls = 0
+    stub_debouncer.outcomes = [RuntimeError("unexpected")]
     with pytest.raises(
         HomeAssistantError, match="Failed to set property temp: unexpected"
     ):
         await coord.async_set_property("temp", 21.0)
-    coord.debouncer.cancel_all.assert_called_once_with()
-    coord.controller.async_clear_pending_updates.assert_awaited_once_with(["temp"])
-    coord.async_request_refresh.assert_awaited_once_with()
+    assert stub_debouncer.cancel_calls == 1
+    assert stub_ctrl.cleared_pending == [["temp"]]
+    assert refresh_calls == 1
 
 
-@pytest.mark.asyncio
-async def test_10_coordinator_properties_and_shutdown() -> None:
+async def test_11_coordinator_properties_and_shutdown() -> None:
     """Verify coordinator identifier/connection properties and async_shutdown error handling."""
-    coord = _make_bare_coordinator()
-    coord.debouncer = MagicMock()
+    stub_ctrl = _StubController()
+    coord = _make_bare_coordinator(controller=stub_ctrl)
+    stub_debouncer = _StubDebouncer()
+    coord.debouncer = stub_debouncer  # type: ignore[assignment]
 
     # 1. log_prefix, unique_id, safe_unique_id, auto_healing_issue_id
-    coord.controller.log_prefix = "[custom_prefix]"
-    coord.controller.unique_id = "  ctrl.uid 1  "
+    stub_ctrl.log_prefix = "[custom_prefix]"
+    stub_ctrl.unique_id = "  ctrl.uid 1  "
     assert coord.log_prefix == "[custom_prefix]"
     assert coord.unique_id == "  ctrl.uid 1  "
     assert coord.safe_unique_id == "ctrl_uid_1"
     assert coord.auto_healing_issue_id == f"{ISSUE_AUTO_HEALING_RAW}_ctrl_uid_1"
 
-    # Fallback when controller.unique_id is None or whitespace
     for empty_ctrl_uid in (None, "   "):
-        coord.controller.unique_id = empty_ctrl_uid
+        stub_ctrl.unique_id = empty_ctrl_uid
         coord.config_entry.unique_id = "  entry.uid 2  "
         assert coord.safe_unique_id == "entry_uid_2"
 
-    # Fallback when config_entry.unique_id is also None or whitespace
     for empty_entry_uid in (None, "   "):
-        coord.controller.unique_id = "   "
+        stub_ctrl.unique_id = "   "
         coord.config_entry.unique_id = empty_entry_uid
         coord.config_entry.entry_id = "  entry.id 3  "
         assert coord.safe_unique_id == "entry_id_3"
@@ -1243,31 +1664,31 @@ async def test_10_coordinator_properties_and_shutdown() -> None:
     assert coord.connection_method is None
 
     # 3. async_shutdown (normal, tolerated network errors, CancelledError, unexpected Exception)
-    with patch(
-        "homeassistant.helpers.update_coordinator.DataUpdateCoordinator.async_shutdown",
-        new_callable=AsyncMock,
-    ) as mock_super_shutdown:
-        coord.controller.async_shutdown = AsyncMock()
+    super_shutdown_calls = 0
+
+    async def _fake_super_shutdown(_self: Any) -> None:
+        nonlocal super_shutdown_calls
+        super_shutdown_calls += 1
+
+    with patch.object(
+        DataUpdateCoordinator, "async_shutdown", new=_fake_super_shutdown
+    ):
         await coord.async_shutdown()
-        coord.debouncer.cancel_all.assert_called_once_with()
-        mock_super_shutdown.assert_awaited_once_with()
-        coord.controller.async_shutdown.assert_awaited_once_with()
+        assert stub_debouncer.cancel_calls == 1
+        assert super_shutdown_calls == 1
+        assert stub_ctrl.shutdown_calls == 1
 
         for net_exc in (
             TimeoutError("timeout"),
             CannotConnect("cannot"),
             OSError("os"),
         ):
-            coord.controller.async_shutdown = AsyncMock(side_effect=net_exc)
+            stub_ctrl.shutdown_exc = net_exc
             await coord.async_shutdown()
 
-        coord.controller.async_shutdown = AsyncMock(
-            side_effect=asyncio.CancelledError()
-        )
+        stub_ctrl.shutdown_exc = asyncio.CancelledError()
         with pytest.raises(asyncio.CancelledError):
             await coord.async_shutdown()
 
-        coord.controller.async_shutdown = AsyncMock(
-            side_effect=RuntimeError("shutdown boom")
-        )
+        stub_ctrl.shutdown_exc = RuntimeError("shutdown boom")
         await coord.async_shutdown()

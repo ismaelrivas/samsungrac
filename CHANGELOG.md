@@ -1,17 +1,17 @@
 # Changelog
 
-## [10.0.1b10] - 2026-11-05
+## [10.0.1b10] - 2026-11-11
 
-### Architecture & Config Flow Modularization
+### Architecture, Core 2026.10 Compliance & Engine Streamlining
 - **Skinny Orchestrator (`config_flow.py`)**: Compacted orchestrator from over 1,000 lines down to 271 lines, delegating domain logic cleanly to mixins with zero raw network I/O and zero `probatio` imports.
-- **Centralized Schema Architecture (`config_flow_schemas.py`)**: Extracted all form schemas, field selectors, and dynamic schema generators into a dedicated schemas mixin.
-- **Robust Flow Helpers (`config_flow_helpers.py`)**: Centralized pairing, background task management, safe exception mapping, and credential storage.
-- **Core 2026.10 Lifecycle Compliance**: Updated `OptionsFlowHandler` to support zero-argument instantiation while maintaining backward-compatible config entry binding. Eliminated all 7 anti-patterns (AP-1 through AP-7).
+- **Centralized Schema & Helper Mixins**: Extracted form schemas (`config_flow_schemas.py`), pairing/credential helpers (`config_flow_helpers.py`), and multi-unit discovery (`config_flow_discovery.py`).
+- **Core 2026.10 Lifecycle & Toolchain Compliance**: Updated `OptionsFlowHandler` to support zero-argument instantiation, purged `from __future__ import annotations` and `voluptuous` in favor of native Python 3.14 lazy annotations and `probatio`, eliminated anti-patterns AP-1 through AP-7, and passed Ruff, Mypy, Pylint (HA plugins), Hassfest, and Prek checks.
+- **Connection & Controller Hardening**: Streamlined `connection_aiohttp.py`, `samsung_2878.py`, `climate.py`, `coordinator.py`, `controller.py`, `controller_yaml.py`, `controller_yaml_config.py`, `controller_yaml_polling.py`, and `properties.py`, encapsulating optimistic state injection in `YamlStatePoller.inject_optimistic_state`.
 
-### Quality Assurance & Ultra Mutation Immunity
-- **Absolute Zero Mutation Immunity (100.0%)**: All 27 integration files achieved 100.0% Ultra Mutation score with 0 Survivors, 0 Untested, and 0 Invalid mutants across 10,330 evaluated mutations.
-- **Test Hardening & Suite Expansion**: Expanded unit test suite to **1,657 passed unit tests** (>96.6% total coverage, 100% on `config_flow.py` and `diagnostics.py`).
-- **Deterministic Toolchain Execution**: Hardened `mutmut_run.sh` to enforce the Python 3.14 container environment and resolved FastFork worker watchdog thresholds.
+### Quality Assurance & Canonical Test Consolidation
+- **Canonical Orthogonal Test Suite**: Deduplicated fragmented test suites into canonical test modules (`test_helpers.py`, `test_state.py`, `test_token_acquirer_yaml.py`, `test_controller_yaml_polling.py`, consolidated `test_coordinator.py` and `test_properties.py`), archiving superseded suites under `archive/quarantine_manifest.json`.
+- **Verified Test & Coverage Baseline**: Achieved **826 passed unit tests** (0 failed, 0 skipped) with **97.31% total coverage** (**96.63%** across all 33 integration modules; **100%** on `config_flow.py` and `diagnostics.py`).
+- **Deterministic Mutation & Toolchain Execution**: Reinforced refactored modules (`config_flow*`, `connection_aiohttp.py`, `samsung_2878.py`, `climate.py`, `properties.py`) against survivors and aligned `mutmut_run.sh` / FastFork execution with Python 3.14.
 
 ## [10.0.1b9] - 2026-11-01
 
