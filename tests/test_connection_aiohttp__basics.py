@@ -4,7 +4,6 @@
 from http import HTTPStatus
 import logging
 import ssl
-import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
@@ -1995,97 +1994,97 @@ async def test_async_probe_ssl_version_attribute_error(
     assert res == "OK"
 
 
-def test_build_8888_ssl_context_empty_cert():
-    """Test build_8888_ssl_context with empty cert_path disables verification."""
-    with (
-        patch.dict(
-            sys.modules, {"custom_components.climate_ip.config_flow_helpers": None}
-        ),
-        patch("ssl.create_default_context") as mock_create_ctx,
-    ):
-        mock_ctx = MagicMock(spec=ssl.SSLContext)
-        mock_create_ctx.return_value = mock_ctx
-        res = ConnectionAiohttp8888.build_8888_ssl_context("")
-        mock_create_ctx.assert_called_once()
-        assert res is mock_ctx
-        assert mock_ctx.check_hostname is False
-        assert mock_ctx.verify_mode == ssl.CERT_NONE
-
-
-def test_build_8888_ssl_context_with_config_flow_helpers():
-    """Test build_8888_ssl_context uses cf_helpers.ssl when available in sys.modules."""
-    mock_cf_helpers = MagicMock()
-    mock_ctx = MagicMock(spec=ssl.SSLContext)
-    mock_cf_helpers.ssl.create_default_context.return_value = mock_ctx
-    with patch.dict(
-        sys.modules,
-        {"custom_components.climate_ip.config_flow_helpers": mock_cf_helpers},
-    ):
-        res = ConnectionAiohttp8888.build_8888_ssl_context("")
-        mock_cf_helpers.ssl.create_default_context.assert_called_once()
-        assert res is mock_ctx
-        assert mock_ctx.check_hostname is False
-        assert mock_ctx.verify_mode == ssl.CERT_NONE
-
-
-def test_build_8888_ssl_context_with_cert_file_exists():
-    """Test build_8888_ssl_context with valid cert_path loads verify locations."""
+def test_resolve_8888_cert_file():
+    """Test resolve_8888_cert_file returns only existing resolved certificate files."""
     import os
 
     import custom_components.climate_ip.connection_aiohttp as conn_mod
 
     expected_dir = os.path.dirname(conn_mod.__file__)
 
+    # 1. Empty cert_path
+    assert ConnectionAiohttp8888.resolve_8888_cert_file("") is None
+
+    # 2. Resolved path that exists
     with (
-        patch.dict(
-            sys.modules, {"custom_components.climate_ip.config_flow_helpers": None}
-        ),
         patch(
             "custom_components.climate_ip.helpers.resolve_cert_path",
             return_value="/resolved/ca.pem",
         ) as mock_resolve,
         patch("os.path.exists", return_value=True),
     ):
-        with patch("ssl.create_default_context") as mock_create_ctx:
-            mock_ctx = MagicMock(spec=ssl.SSLContext)
-            mock_create_ctx.return_value = mock_ctx
-            res = ConnectionAiohttp8888.build_8888_ssl_context("ca.pem")
-            mock_resolve.assert_called_once_with("ca.pem", expected_dir)
-            mock_ctx.load_verify_locations.assert_called_once_with(
-                cafile="/resolved/ca.pem"
-            )
-            assert res is mock_ctx
+        assert ConnectionAiohttp8888.resolve_8888_cert_file("ca.pem") == (
+            "/resolved/ca.pem"
+        )
+        mock_resolve.assert_called_once_with("ca.pem", expected_dir)
 
-
-def test_build_8888_ssl_context_with_nonexistent_cert():
-    """Test build_8888_ssl_context when cert file does not exist."""
-    import os
-
-    import custom_components.climate_ip.connection_aiohttp as conn_mod
-
-    expected_dir = os.path.dirname(conn_mod.__file__)
-
+    # 3. Resolved path missing on disk
     with (
-        patch.dict(
-            sys.modules, {"custom_components.climate_ip.config_flow_helpers": None}
-        ),
         patch(
             "custom_components.climate_ip.helpers.resolve_cert_path",
             return_value="/nonexistent/ca.pem",
-        ) as mock_resolve,
+        ),
         patch("os.path.exists", return_value=False),
     ):
-        with patch("ssl.create_default_context") as mock_create_ctx:
-            mock_ctx = MagicMock(spec=ssl.SSLContext)
-            mock_ctx.check_hostname = True
-            mock_ctx.verify_mode = ssl.CERT_REQUIRED
-            mock_create_ctx.return_value = mock_ctx
-            res = ConnectionAiohttp8888.build_8888_ssl_context("ca.pem")
-            mock_resolve.assert_called_once_with("ca.pem", expected_dir)
-            assert not mock_ctx.load_verify_locations.called
-            assert mock_ctx.check_hostname is True
-            assert mock_ctx.verify_mode == ssl.CERT_REQUIRED
-            assert res is mock_ctx
+        assert ConnectionAiohttp8888.resolve_8888_cert_file("ca.pem") is None
+
+    # 4. Unresolvable cert_path
+    with patch(
+        "custom_components.climate_ip.helpers.resolve_cert_path", return_value=None
+    ):
+        assert ConnectionAiohttp8888.resolve_8888_cert_file("ca.pem") is None
+
+
+def test_build_8888_ssl_context_matches_runtime_context():
+    """Test build_8888_ssl_context builds the same context as _create_ssl_context."""
+    from custom_components.climate_ip.connection_aiohttp import DEFAULT_SSL_CIPHERS
+
+    with (
+        patch.object(
+            ConnectionAiohttp8888,
+            "resolve_8888_cert_file",
+            return_value="/resolved/ca.pem",
+        ),
+        patch(
+            "custom_components.climate_ip.helpers.create_samsung_ssl_context"
+        ) as mock_create,
+    ):
+        res = ConnectionAiohttp8888.build_8888_ssl_context("ca.pem")
+        assert res is mock_create.return_value
+        mock_create.assert_called_once_with(
+            cert_path="/resolved/ca.pem",
+            ciphers=DEFAULT_SSL_CIPHERS,
+            verify_mode=ssl.CERT_NONE,
+        )
+
+    with patch(
+        "custom_components.climate_ip.helpers.create_samsung_ssl_context"
+    ) as mock_create:
+        ConnectionAiohttp8888.build_8888_ssl_context("")
+        assert mock_create.call_args.kwargs["cert_path"] is None
+
+
+def test_build_8888_ssl_context_real_context_is_legacy_compatible():
+    """Test the real context accepts TLSv1, skips verification and loads the client cert."""
+    with (
+        patch.object(ssl.SSLContext, "load_cert_chain") as mock_chain,
+        patch.object(ssl.SSLContext, "load_verify_locations"),
+        patch.object(
+            ConnectionAiohttp8888,
+            "resolve_8888_cert_file",
+            return_value="/resolved/ca.pem",
+        ),
+    ):
+        ctx = ConnectionAiohttp8888.build_8888_ssl_context("ca.pem")
+
+    assert ctx.check_hostname is False
+    assert ctx.verify_mode == ssl.CERT_NONE
+    assert ctx.minimum_version == ssl.TLSVersion.TLSv1
+    mock_chain.assert_called_once_with("/resolved/ca.pem")
+
+    ctx_empty = ConnectionAiohttp8888.build_8888_ssl_context("")
+    assert ctx_empty.check_hostname is False
+    assert ctx_empty.verify_mode == ssl.CERT_NONE
 
 
 @pytest.mark.asyncio

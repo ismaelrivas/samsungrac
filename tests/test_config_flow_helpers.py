@@ -7,9 +7,11 @@ import os
 import ssl
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
+import aiohttp
 import pytest
 
 from custom_components.climate_ip.config_flow import ClimateIpConfigFlow
+from custom_components.climate_ip.connection_aiohttp import ConnectionAiohttp8888
 from custom_components.climate_ip.const import (
     CONF_CERT,
     CONF_CONFIG_FILE,
@@ -450,37 +452,16 @@ async def test_wait_token_safe_exceptions(hass_mock):
 # -----------------------------------------------------------------------------
 
 
-def test_build_ssl_context_empty_and_valid():
-    """Test _build_ssl_context with empty cert and resolved cert file."""
-    # 1. Empty cert_path
+def test_build_ssl_context_is_runtime_8888_context():
+    """Test the flow uses the shared 8888 context builder (TLSv1 + client cert)."""
+    assert (
+        ClimateIpConfigFlow._build_ssl_context
+        is ConnectionAiohttp8888.build_8888_ssl_context
+    )
     ctx_empty = ClimateIpConfigFlow._build_ssl_context("")
     assert ctx_empty.check_hostname is False
     assert ctx_empty.verify_mode == ssl.CERT_NONE
-
-    # 2. Valid existing cert_path
-    with (
-        patch(
-            "custom_components.climate_ip.helpers.resolve_cert_path",
-            return_value="/path/to/cert.pem",
-        ),
-        patch("os.path.exists", return_value=True),
-        patch.object(ssl.SSLContext, "load_verify_locations") as mock_load,
-    ):
-        ctx_cert = ClimateIpConfigFlow._build_ssl_context("cert.pem")
-        assert isinstance(ctx_cert, ssl.SSLContext)
-        mock_load.assert_called_once_with(cafile="/path/to/cert.pem")
-
-    # 3. Non-existent resolved cert_path
-    with (
-        patch(
-            "custom_components.climate_ip.helpers.resolve_cert_path",
-            return_value=None,
-        ),
-        patch.object(ssl.SSLContext, "load_verify_locations") as mock_load,
-    ):
-        ctx_none = ClimateIpConfigFlow._build_ssl_context("nonexistent.pem")
-        assert isinstance(ctx_none, ssl.SSLContext)
-        mock_load.assert_not_called()
+    assert ctx_empty.minimum_version == ssl.TLSVersion.TLSv1
 
 
 # -----------------------------------------------------------------------------
@@ -2968,3 +2949,168 @@ async def test_cf_helpers_process_reconfigure_smartthings_skips_mac_resolution(
 
         assert res["reason"] == "reconfigure_successful"
         mock_resolve.assert_not_called()
+
+
+# -----------------------------------------------------------------------------
+# Raw socket fallback of the 8888 connection test (legacy firmware headers)
+# -----------------------------------------------------------------------------
+
+
+def _header_violation_error() -> aiohttp.ClientResponseError:
+    """Build the error aiohttp raises for the legacy 'X-API-Version : v1.0.0' header."""
+    return aiohttp.ClientResponseError(
+        request_info=MagicMock(),
+        history=(),
+        status=400,
+        message="Invalid header token:\n\n  b'X-API-Version : v1.0.0'\n                 ^",
+    )
+
+
+def _flow_8888(hass_mock) -> ClimateIpConfigFlow:
+    """Build an 8888 flow with a token and the default certificate."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass_mock
+    flow.flow_data = {
+        CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_8888,
+        CONF_IP_ADDRESS: "1.1.1.1",
+        CONF_TOKEN: "tok8888",
+        CONF_CERT: "ac14k_m.pem",
+    }
+    hass_mock.async_add_executor_job = AsyncMock(
+        side_effect=[MagicMock(), "/resolved/ac14k_m.pem"]
+    )
+    return flow
+
+
+@pytest.mark.asyncio
+async def test_test_connection_safe_8888_header_violation_raw_success(hass_mock):
+    """Test the 8888 test falls back to the raw engine on malformed headers."""
+    flow = _flow_8888(hass_mock)
+
+    with (
+        patch(
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession"
+        ) as mock_sess,
+        patch(
+            "custom_components.climate_ip.connection_aiohttp.Samsung8888Client"
+        ) as mock_client_cls,
+    ):
+        mock_sess.return_value.get.side_effect = _header_violation_error()
+        mock_client = mock_client_cls.return_value
+        mock_client.request = AsyncMock(return_value=('{"Devices": []}', None))
+        mock_client.close = AsyncMock()
+
+        res = await flow._test_connection_safe()
+
+    assert res == {"ok": True}
+    hass_mock.async_add_executor_job.assert_called_with(
+        ConnectionAiohttp8888.resolve_8888_cert_file, "ac14k_m.pem"
+    )
+    mock_client_cls.assert_called_once_with(
+        "1.1.1.1", PORT_SAMSUNG_8888, "/resolved/ac14k_m.pem"
+    )
+    mock_client.request.assert_awaited_once_with(
+        "GET",
+        "/devices",
+        headers={
+            "Authorization": "Bearer tok8888",
+            "Content-Type": "application/json",
+        },
+    )
+    mock_client.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_test_connection_safe_8888_bad_http_message_raw_success(hass_mock):
+    """Test an unwrapped BadHttpMessage also triggers the raw fallback."""
+    error = aiohttp.http_exceptions.BadHttpMessage("Invalid header token")
+    flow = _flow_8888(hass_mock)
+
+    with (
+        patch(
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession"
+        ) as mock_sess,
+        patch(
+            "custom_components.climate_ip.connection_aiohttp.Samsung8888Client"
+        ) as mock_client_cls,
+    ):
+        mock_sess.return_value.get.side_effect = error
+        mock_client_cls.return_value.request = AsyncMock(return_value=("{}", None))
+        mock_client_cls.return_value.close = AsyncMock()
+
+        res = await flow._test_connection_safe()
+
+    assert res == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_test_connection_safe_8888_header_violation_raw_error(hass_mock):
+    """Test a raw engine HTTP error maps to cannot_connect and still closes the socket."""
+    flow = _flow_8888(hass_mock)
+
+    with (
+        patch(
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession"
+        ) as mock_sess,
+        patch(
+            "custom_components.climate_ip.connection_aiohttp.Samsung8888Client"
+        ) as mock_client_cls,
+    ):
+        mock_sess.return_value.get.side_effect = _header_violation_error()
+        mock_client = mock_client_cls.return_value
+        mock_client.request = AsyncMock(return_value=(None, "HTTP 500: boom"))
+        mock_client.close = AsyncMock()
+
+        res = await flow._test_connection_safe()
+
+    assert res == {"ok": False, "error": "cannot_connect"}
+    mock_client.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_test_connection_safe_8888_header_violation_raw_auth_error(hass_mock):
+    """Test a 401 from the raw engine maps to invalid_auth and still closes the socket."""
+    flow = _flow_8888(hass_mock)
+
+    with (
+        patch(
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession"
+        ) as mock_sess,
+        patch(
+            "custom_components.climate_ip.connection_aiohttp.Samsung8888Client"
+        ) as mock_client_cls,
+    ):
+        mock_sess.return_value.get.side_effect = _header_violation_error()
+        mock_client = mock_client_cls.return_value
+        mock_client.request = AsyncMock(side_effect=AuthError("401 Unauthorized"))
+        mock_client.close = AsyncMock()
+
+        res = await flow._test_connection_safe()
+
+    assert res["ok"] is False
+    assert res["error"] == "invalid_auth"
+    mock_client.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_test_connection_safe_8888_other_response_error_no_fallback(hass_mock):
+    """Test a genuine HTTP error reply does not trigger the raw fallback."""
+    error = aiohttp.ClientResponseError(
+        request_info=MagicMock(), history=(), status=500, message="Server Error"
+    )
+    flow = _flow_8888(hass_mock)
+
+    with (
+        patch(
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession"
+        ) as mock_sess,
+        patch(
+            "custom_components.climate_ip.connection_aiohttp.Samsung8888Client"
+        ) as mock_client_cls,
+    ):
+        mock_sess.return_value.get.side_effect = error
+
+        res = await flow._test_connection_safe()
+
+    assert res == {"ok": False, "error": "cannot_connect"}
+    mock_client_cls.assert_not_called()

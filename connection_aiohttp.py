@@ -12,7 +12,6 @@ import logging
 import os
 from pathlib import Path
 import ssl
-import sys
 from typing import TYPE_CHECKING, Any, Self
 
 import aiohttp
@@ -49,6 +48,7 @@ from .helpers import (
     format_placeholders,
     resolve_cert_path,
 )
+from .protocol_8888 import Samsung8888Client
 
 if TYPE_CHECKING:
     from .controller_yaml import YamlController
@@ -260,23 +260,25 @@ class ConnectionAiohttp8888(Connection):
         return type_str == CONNECTION_TYPE_AIOHTTP_8888
 
     @staticmethod
-    def build_8888_ssl_context(cert_path: str) -> ssl.SSLContext:
-        """Build SSL context for Samsung 8888 devices in executor thread."""
-        cf_helpers = sys.modules.get("custom_components.climate_ip.config_flow_helpers")
-        ssl_mod = getattr(cf_helpers, "ssl", ssl)
-        ssl_context: ssl.SSLContext = ssl_mod.create_default_context()
+    def resolve_8888_cert_file(cert_path: str | None) -> str | None:
+        """Resolve a certificate name or path to an existing file (sync, executor-safe)."""
+        if not cert_path:
+            return None
+        resolved = helpers.resolve_cert_path(cert_path, os.path.dirname(__file__))
+        return resolved if resolved and os.path.exists(resolved) else None
 
-        if cert_path:
-            resolved_cert = helpers.resolve_cert_path(
-                cert_path, os.path.dirname(__file__)
-            )
-            if resolved_cert and os.path.exists(resolved_cert):
-                with contextlib.suppress(Exception):
-                    ssl_context.load_verify_locations(cafile=resolved_cert)
-        else:
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
-        return ssl_context
+    @staticmethod
+    def build_8888_ssl_context(cert_path: str) -> ssl.SSLContext:
+        """Build the runtime SSL context for Samsung 8888 devices (sync, executor-safe).
+
+        Legacy units only complete the handshake with TLSv1, weak ciphers and the
+        .pem presented as client certificate (mTLS), as in _create_ssl_context.
+        """
+        return helpers.create_samsung_ssl_context(
+            cert_path=ConnectionAiohttp8888.resolve_8888_cert_file(cert_path),
+            ciphers=DEFAULT_SSL_CIPHERS,
+            verify_mode=ssl.CERT_NONE,
+        )
 
     @classmethod
     async def async_test_8888_connection(
@@ -295,13 +297,54 @@ class ConnectionAiohttp8888(Connection):
         ssl_context = await hass.async_add_executor_job(
             cls.build_8888_ssl_context, cert_path
         )
-        async with session.get(
-            f"https://{ip_address}:{PORT_SAMSUNG_8888}/devices",
-            headers=headers,
-            ssl=ssl_context,
-            timeout=GLOBAL_HTTP_TIMEOUT,  # type: ignore[arg-type] # pragma: no mutate
-        ) as resp:
-            return resp.status == 200
+        try:
+            async with session.get(
+                f"https://{ip_address}:{PORT_SAMSUNG_8888}/devices",
+                headers=headers,
+                ssl=ssl_context,
+                timeout=GLOBAL_HTTP_TIMEOUT,  # type: ignore[arg-type] # pragma: no mutate
+            ) as resp:
+                return resp.status == 200
+        except (
+            aiohttp.ClientResponseError,
+            aiohttp.http_exceptions.BadHttpMessage,
+        ) as err:
+            if not cls._is_http_protocol_violation(err):
+                raise
+            _LOGGER.debug(
+                "Malformed HTTP headers during 8888 connection test, retrying with raw socket: %s",
+                err,
+            )  # pragma: no mutate
+        return await cls._async_test_8888_connection_raw(
+            hass, ip_address, headers, cert_path
+        )
+
+    @classmethod
+    async def _async_test_8888_connection_raw(
+        cls,
+        hass: HomeAssistant,
+        ip_address: str,
+        headers: dict[str, str],
+        cert_path: str,
+    ) -> bool:
+        """Repeat the 8888 connection test with the raw socket engine.
+
+        Mirrors the runtime fallback for firmwares sending malformed headers
+        (e.g. "X-API-Version : v1.0.0") that aiohttp rejects.
+        """
+        cert_file = await hass.async_add_executor_job(
+            cls.resolve_8888_cert_file, cert_path
+        )
+        client = Samsung8888Client(ip_address, PORT_SAMSUNG_8888, cert_file)
+        try:
+            _, error = await client.request("GET", "/devices", headers=headers)
+        finally:
+            await client.close()
+        if error is not None:
+            _LOGGER.warning(
+                "8888 raw connection test failed: %s", error
+            )  # pragma: no mutate
+        return error is None
 
     @classmethod
     async def async_validate_rest_device(
