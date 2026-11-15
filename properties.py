@@ -50,6 +50,9 @@ from .const import (
     DEFAULT_CACHE_KEY_ID,
     DEFAULT_JSON_STATUS_PAYLOAD,
     DEGREE_SYMBOL,
+    DOMAIN,
+    ERR_PROPERTY_SET_FAILED,
+    ERR_TEMPLATE_RENDER_FAILED,
     FALLBACK_DEVICE_ID,
     ID_DELIMITER,
     KEY_DEFAULT,
@@ -676,7 +679,13 @@ class DeviceProperty:
                     e,
                 )
                 raise HomeAssistantError(
-                    f"Template evaluation failed for {self.id}: {e}"
+                    f"Template evaluation failed for {self.id}: {e}",
+                    translation_domain=DOMAIN,
+                    translation_key=ERR_TEMPLATE_RENDER_FAILED,
+                    translation_placeholders={
+                        "property": str(self.id),
+                        "error": str(e),
+                    },
                 ) from e
 
         if v is not None:
@@ -779,7 +788,13 @@ class GetJsonStatus(DeviceProperty):
                     e,
                 )
                 raise HomeAssistantError(
-                    f"Template evaluation failed for {self.id}: {e}"
+                    f"Template evaluation failed for {self.id}: {e}",
+                    translation_domain=DOMAIN,
+                    translation_key=ERR_TEMPLATE_RENDER_FAILED,
+                    translation_placeholders={
+                        "property": str(self.id),
+                        "error": str(e),
+                    },
                 ) from e
             else:
                 if isinstance(v, str):
@@ -1106,11 +1121,23 @@ class DeviceOperation(DeviceProperty):
                 )
             except (CannotConnect, AuthError) as e:
                 raise HomeAssistantError(
-                    f"Connection error: could not set value for {self.id}"
+                    f"Connection error: could not set value for {self.id}",
+                    translation_domain=DOMAIN,
+                    translation_key=ERR_PROPERTY_SET_FAILED,
+                    translation_placeholders={
+                        "property": str(self.id),
+                        "error": str(e),
+                    },
                 ) from e  # pragma: no mutate
             except (TimeoutError, OSError) as e:
                 raise HomeAssistantError(
-                    f"Unexpected error when setting {self.id}"
+                    f"Unexpected error when setting {self.id}",
+                    translation_domain=DOMAIN,
+                    translation_key=ERR_PROPERTY_SET_FAILED,
+                    translation_placeholders={
+                        "property": str(self.id),
+                        "error": str(e),
+                    },
                 ) from e  # pragma: no mutate
             else:
                 return response is not None
@@ -1121,7 +1148,13 @@ class DeviceOperation(DeviceProperty):
                 )
             except (CannotConnect, AuthError) as e:
                 raise HomeAssistantError(
-                    f"Connection error: could not set value for {self.id}"
+                    f"Connection error: could not set value for {self.id}",
+                    translation_domain=DOMAIN,
+                    translation_key=ERR_PROPERTY_SET_FAILED,
+                    translation_placeholders={
+                        "property": str(self.id),
+                        "error": str(e),
+                    },
                 ) from e  # pragma: no mutate
             else:
                 return True
@@ -1551,11 +1584,25 @@ class TemperatureOperation(BasicNumericOperation):
                     err,
                 )
                 raise HomeAssistantError(
-                    f"Error rendering unit template: {err}"
+                    f"Error rendering unit template: {err}",
+                    translation_domain=DOMAIN,
+                    translation_key=ERR_TEMPLATE_RENDER_FAILED,
+                    translation_placeholders={
+                        "property": str(self.id),
+                        "error": str(err),
+                    },
                 ) from err
             except (TypeError, ValueError) as e:
                 _LOGGER.error("Error parsing unit template: %s", e)
-                raise HomeAssistantError(f"Error parsing unit template: {e}") from e
+                raise HomeAssistantError(
+                    f"Error parsing unit template: {e}",
+                    translation_domain=DOMAIN,
+                    translation_key=ERR_TEMPLATE_RENDER_FAILED,
+                    translation_placeholders={
+                        "property": str(self.id),
+                        "error": str(e),
+                    },
+                ) from e
 
         v = None
         if self.status_template is not None and device_state is not None:
@@ -1571,7 +1618,13 @@ class TemperatureOperation(BasicNumericOperation):
                     err,
                 )
                 raise HomeAssistantError(
-                    f"Error rendering status template: {err}"
+                    f"Error rendering status template: {err}",
+                    translation_domain=DOMAIN,
+                    translation_key=ERR_TEMPLATE_RENDER_FAILED,
+                    translation_placeholders={
+                        "property": str(self.id),
+                        "error": str(err),
+                    },
                 ) from err
             except (TypeError, ValueError) as e:
                 _LOGGER.error(
@@ -1580,7 +1633,15 @@ class TemperatureOperation(BasicNumericOperation):
                     self.id,
                     e,
                 )
-                raise HomeAssistantError(f"Error rendering status template: {e}") from e
+                raise HomeAssistantError(
+                    f"Error rendering status template: {e}",
+                    translation_domain=DOMAIN,
+                    translation_key=ERR_TEMPLATE_RENDER_FAILED,
+                    translation_placeholders={
+                        "property": str(self.id),
+                        "error": str(e),
+                    },
+                ) from e
 
         if v is not None:
             return self._convert_dev_to_hass_with_unit(v, device_unit)
@@ -1604,10 +1665,24 @@ class TemperatureOperation(BasicNumericOperation):
                 self._device_unit = _parse_temperature_unit(unit)
             except TemplateError as err:
                 raise HomeAssistantError(
-                    f"Could not render unit template: {err}"
+                    f"Could not render unit template: {err}",
+                    translation_domain=DOMAIN,
+                    translation_key=ERR_TEMPLATE_RENDER_FAILED,
+                    translation_placeholders={
+                        "property": str(self.id),
+                        "error": str(err),
+                    },
                 ) from err
             except (TypeError, ValueError) as e:
-                raise HomeAssistantError(f"Could not render unit template: {e}") from e
+                raise HomeAssistantError(
+                    f"Could not render unit template: {e}",
+                    translation_domain=DOMAIN,
+                    translation_key=ERR_TEMPLATE_RENDER_FAILED,
+                    translation_placeholders={
+                        "property": str(self.id),
+                        "error": str(e),
+                    },
+                ) from e
 
         v = self.calculate_value_from_state(device_state)
         if v is not None:

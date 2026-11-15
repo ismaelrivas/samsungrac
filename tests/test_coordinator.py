@@ -28,7 +28,9 @@ from custom_components.climate_ip.const import (
     DOMAIN,
     ERR_AUTO_HEALING_RAW_IN_PROGRESS,
     ERR_DEVICE_OFFLINE_PREFIX,
+    ERR_DEVICE_UNREACHABLE,
     ERR_PERSISTENT_CONNECTION_FAILURE,
+    ERR_PROPERTY_SET_FAILED,
     HARDWARE_BREATHING_ROOM_SEC,
     ISSUE_AUTO_HEALING_RAW,
     MANUFACTURER_INTESIS,
@@ -1532,8 +1534,14 @@ async def test_10_coordinator_async_set_property_and_failure_rollback() -> None:
 
     with pytest.raises(
         HomeAssistantError, match="Failed to set property hvac_mode to dry"
-    ):
+    ) as exc_info:
         await coord.async_set_property(ATTR_HVAC_MODE, "dry")
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == ERR_PROPERTY_SET_FAILED
+    assert exc_info.value.translation_placeholders == {
+        "property": "hvac_mode",
+        "error": "dry",
+    }
 
     assert stub_ctrl.predict_calls == [(predicted_state, ATTR_HVAC_MODE, "dry")]
     assert stub_debouncer.cancel_calls == 1
@@ -1543,7 +1551,16 @@ async def test_10_coordinator_async_set_property_and_failure_rollback() -> None:
     # 3. CannotConnect / OSError label and host resolution fallbacks
     stub_ctrl.predict_corrections = {}
     label_host_cases: list[
-        tuple[dict[str, Any], str | None, str | None, str | None, Exception, str]
+        tuple[
+            dict[str, Any],
+            str | None,
+            str | None,
+            str | None,
+            Exception,
+            str,
+            str,
+            str,
+        ]
     ] = [
         (
             {"name": "Bedroom AC"},
@@ -1552,6 +1569,8 @@ async def test_10_coordinator_async_set_property_and_failure_rollback() -> None:
             "10.0.0.1",
             CannotConnect("down"),
             "Device 'Bedroom AC' (192.168.1.50) is unreachable. Check power and network connection.",
+            "Bedroom AC",
+            "192.168.1.50",
         ),
         (
             {},
@@ -1560,6 +1579,8 @@ async def test_10_coordinator_async_set_property_and_failure_rollback() -> None:
             "10.0.0.1",
             OSError("net down"),
             "Device 'CtrlName' (10.0.0.1) is unreachable. Check power and network connection.",
+            "CtrlName",
+            "10.0.0.1",
         ),
         (
             {},
@@ -1568,9 +1589,20 @@ async def test_10_coordinator_async_set_property_and_failure_rollback() -> None:
             None,
             CannotConnect("down"),
             "Device 'uid_default' (unknown) is unreachable. Check power and network connection.",
+            "uid_default",
+            "unknown",
         ),
     ]
-    for dev_info, ctrl_name, ip_addr, host, exc, expected_err in label_host_cases:
+    for (
+        dev_info,
+        ctrl_name,
+        ip_addr,
+        host,
+        exc,
+        expected_err,
+        exp_label,
+        exp_host,
+    ) in label_host_cases:
         coord.device_info = dev_info
         stub_ctrl.name = ctrl_name
         stub_ctrl.ip_address = ip_addr
@@ -1583,8 +1615,14 @@ async def test_10_coordinator_async_set_property_and_failure_rollback() -> None:
         with pytest.raises(
             HomeAssistantError,
             match=r"^" + expected_err.replace("(", r"\(").replace(")", r"\)") + r"$",
-        ):
+        ) as exc_info:
             await coord.async_set_property("temp", 21.0)
+        assert exc_info.value.translation_domain == DOMAIN
+        assert exc_info.value.translation_key == ERR_DEVICE_UNREACHABLE
+        assert exc_info.value.translation_placeholders == {
+            "device_name": exp_label,
+            "host": exp_host,
+        }
         assert stub_debouncer.cancel_calls == 1
         assert stub_ctrl.cleared_pending == [["temp"]]
         assert refresh_calls == 1
@@ -1597,8 +1635,14 @@ async def test_10_coordinator_async_set_property_and_failure_rollback() -> None:
         stub_debouncer.outcomes = [data_exc]
         with pytest.raises(
             HomeAssistantError, match=f"Data error setting property temp: {data_exc}"
-        ):
+        ) as exc_info:
             await coord.async_set_property("temp", 21.0)
+        assert exc_info.value.translation_domain == DOMAIN
+        assert exc_info.value.translation_key == ERR_PROPERTY_SET_FAILED
+        assert exc_info.value.translation_placeholders == {
+            "property": "temp",
+            "error": str(data_exc),
+        }
         assert stub_debouncer.cancel_calls == 1
         assert stub_ctrl.cleared_pending == [["temp"]]
         assert refresh_calls == 1
@@ -1619,8 +1663,14 @@ async def test_10_coordinator_async_set_property_and_failure_rollback() -> None:
     stub_debouncer.outcomes = [RuntimeError("unexpected")]
     with pytest.raises(
         HomeAssistantError, match="Failed to set property temp: unexpected"
-    ):
+    ) as exc_info:
         await coord.async_set_property("temp", 21.0)
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == ERR_PROPERTY_SET_FAILED
+    assert exc_info.value.translation_placeholders == {
+        "property": "temp",
+        "error": "unexpected",
+    }
     assert stub_debouncer.cancel_calls == 1
     assert stub_ctrl.cleared_pending == [["temp"]]
     assert refresh_calls == 1

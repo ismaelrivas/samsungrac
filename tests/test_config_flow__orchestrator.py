@@ -13,6 +13,7 @@ from custom_components.climate_ip.const import (
     CONF_CONN_METHOD,
     CONF_DEVICE_TYPE,
     CONF_POLL_INTERVAL,
+    DEVICE_TYPE_INTESISBOX,
     DEVICE_TYPE_MIM_H03,
     DEVICE_TYPE_SAMSUNG_2878,
     DEVICE_TYPE_SAMSUNG_8888,
@@ -197,6 +198,15 @@ async def test_reauth_confirm_mutants_and_routing() -> None:
         res = await flow.async_step_reauth_confirm({})
         assert res == {"step": "samsung_8888"}
         mock_8888.assert_called_once()
+
+    # 7. user_input provided: route to INTESISBOX
+    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_INTESISBOX, CONF_TOKEN: "old_tok"}
+    with patch.object(
+        flow, "async_step_intesisbox", return_value={"step": "intesisbox"}
+    ) as mock_intesis:
+        res = await flow.async_step_reauth_confirm({})
+        assert res == {"step": "intesisbox"}
+        mock_intesis.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -478,12 +488,12 @@ async def test_config_flow_async_remove(hass: HomeAssistant) -> None:
 
 
 async def test_config_flow_async_get_options_flow() -> None:
-    """Assert async_get_options_flow returns OptionsFlowHandler bound to entry."""
+    """Assert async_get_options_flow returns an unbound OptionsFlowHandler."""
     mock_entry = MockConfigEntry(domain="climate_ip", title="Test", data={})
     options_flow = ClimateIpConfigFlow.async_get_options_flow(mock_entry)
 
     assert isinstance(options_flow, OptionsFlowHandler)
-    assert options_flow._config_entry is mock_entry
+    assert options_flow._config_entry is None
 
 
 async def test_config_flow_options_falsy_values(hass: HomeAssistant) -> None:
@@ -500,6 +510,7 @@ async def test_config_flow_options_falsy_values(hass: HomeAssistant) -> None:
     )
 
     options_flow = ClimateIpConfigFlow.async_get_options_flow(mock_entry)
+    options_flow._config_entry = mock_entry
     schema = options_flow._get_options_schema()
 
     conn_marker = next(

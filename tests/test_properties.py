@@ -30,6 +30,9 @@ from custom_components.climate_ip.const import (
     CONFIG_UNIT_OF_MEASUREMENT,
     CONFIG_VALUE_MAP,
     DEFAULT_JSON_STATUS_PAYLOAD,
+    DOMAIN,
+    ERR_PROPERTY_SET_FAILED,
+    ERR_TEMPLATE_RENDER_FAILED,
     KEY_DEVICE_CONFIG,
     KEY_DEVICE_MODE,
     KEY_DEVICE_STATE,
@@ -728,8 +731,11 @@ async def test_device_property_validation_calculation_and_async_update() -> None
     prop._status_template = Template("{{ 1 / 0 }}", ctrl.hass)
     with pytest.raises(
         HomeAssistantError, match="Template evaluation failed for test_prop"
-    ):
+    ) as exc_info:
         prop.calculate_value_from_state({"power": "on"})
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == ERR_TEMPLATE_RENDER_FAILED
+    assert exc_info.value.translation_placeholders["property"] == "test_prop"
 
     # Base async_set_value always returns False
     assert await prop.async_set_value("off") is False
@@ -928,8 +934,11 @@ def test_get_json_status_calculate_value_from_state() -> None:
     g._status_template = Template("{{ 1 / 0 }}", ctrl.hass)
     with pytest.raises(
         HomeAssistantError, match="Template evaluation failed for test_json"
-    ):
+    ) as exc_info:
         g.calculate_value_from_state({"val": "ok"})
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == ERR_TEMPLATE_RENDER_FAILED
+    assert exc_info.value.translation_placeholders["property"] == "test_json"
 
 
 async def test_get_json_status_async_update_state() -> None:
@@ -1291,8 +1300,14 @@ async def test_device_operation_async_set_value_async_native() -> None:
         (OSError("net"), "Unexpected error when setting test_op"),
     ):
         conn.execute_error = err
-        with pytest.raises(HomeAssistantError, match=msg_pat):
+        with pytest.raises(HomeAssistantError, match=msg_pat) as exc_info:
             await op.async_set_value("on")
+        assert exc_info.value.translation_domain == DOMAIN
+        assert exc_info.value.translation_key == ERR_PROPERTY_SET_FAILED
+        assert exc_info.value.translation_placeholders == {
+            "property": "test_op",
+            "error": str(err),
+        }
 
 
 async def test_device_operation_async_set_value_sync_mode() -> None:
@@ -1315,8 +1330,14 @@ async def test_device_operation_async_set_value_sync_mode() -> None:
         with pytest.raises(
             HomeAssistantError,
             match="Connection error: could not set value for test_sync_op",
-        ):
+        ) as exc_info:
             await op.async_set_value("val")
+        assert exc_info.value.translation_domain == DOMAIN
+        assert exc_info.value.translation_key == ERR_PROPERTY_SET_FAILED
+        assert exc_info.value.translation_placeholders == {
+            "property": "test_sync_op",
+            "error": str(err),
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -1739,23 +1760,55 @@ async def test_temperature_operation_state_calculation_and_async_update() -> Non
 
     # 4. Unit template errors in calculate_value_from_state and async_update_state
     op._unit_template = Template("{{ 1 / 0 }}", ctrl.hass)
-    with pytest.raises(HomeAssistantError, match="Error rendering unit template"):
+    with pytest.raises(
+        HomeAssistantError, match="Error rendering unit template"
+    ) as exc_info:
         op.calculate_value_from_state({"temp_unit": "C"})
-    with pytest.raises(HomeAssistantError, match="Could not render unit template"):
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == ERR_TEMPLATE_RENDER_FAILED
+    assert exc_info.value.translation_placeholders["property"] == "test_temp"
+
+    with pytest.raises(
+        HomeAssistantError, match="Could not render unit template"
+    ) as exc_info:
         await op.async_update_state(device_state_override={"temp_unit": "C"})
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == ERR_TEMPLATE_RENDER_FAILED
+    assert exc_info.value.translation_placeholders["property"] == "test_temp"
 
     op._unit_template = Template("{{ 'unknown' }}", ctrl.hass)
-    with pytest.raises(HomeAssistantError, match="Error parsing unit template"):
+    with pytest.raises(
+        HomeAssistantError, match="Error parsing unit template"
+    ) as exc_info:
         op.calculate_value_from_state({"temp_unit": "unknown"})
-    with pytest.raises(HomeAssistantError, match="Could not render unit template"):
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == ERR_TEMPLATE_RENDER_FAILED
+    assert exc_info.value.translation_placeholders["property"] == "test_temp"
+
+    with pytest.raises(
+        HomeAssistantError, match="Could not render unit template"
+    ) as exc_info:
         await op.async_update_state(device_state_override={"temp_unit": "unknown"})
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == ERR_TEMPLATE_RENDER_FAILED
+    assert exc_info.value.translation_placeholders["property"] == "test_temp"
 
     # 5. Status template TemplateError and TypeError in calculate_value_from_state
     op._unit_template = None
     op._status_template = Template("{{ 1 / 0 }}", ctrl.hass)
-    with pytest.raises(HomeAssistantError, match="Error rendering status template"):
+    with pytest.raises(
+        HomeAssistantError, match="Error rendering status template"
+    ) as exc_info:
         op.calculate_value_from_state({"current_temp": "70"})
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == ERR_TEMPLATE_RENDER_FAILED
+    assert exc_info.value.translation_placeholders["property"] == "test_temp"
 
     op._status_template = 123  # type: ignore[assignment]
-    with pytest.raises(HomeAssistantError, match="Error rendering status template"):
+    with pytest.raises(
+        HomeAssistantError, match="Error rendering status template"
+    ) as exc_info:
         op.calculate_value_from_state({"current_temp": "70"})
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == ERR_TEMPLATE_RENDER_FAILED
+    assert exc_info.value.translation_placeholders["property"] == "test_temp"

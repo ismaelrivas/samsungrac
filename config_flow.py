@@ -222,6 +222,8 @@ class ClimateIpConfigFlow(
                     return await self.async_step_mim_h03()
                 case const.DEVICE_TYPE_SAMSUNG_2878:
                     return await self.async_step_samsung_2878()
+                case const.DEVICE_TYPE_INTESISBOX:
+                    return await self.async_step_intesisbox()
                 case _:
                     return await self.async_step_samsung_8888()
 
@@ -240,7 +242,7 @@ class ClimateIpConfigFlow(
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
         """Get the options flow for this handler."""
-        return OptionsFlowHandler(config_entry)
+        return OptionsFlowHandler()
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None

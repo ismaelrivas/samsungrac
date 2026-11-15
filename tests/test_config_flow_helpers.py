@@ -2720,6 +2720,12 @@ async def test_cf_helpers_process_reconfigure_no_mac_does_not_abort_mismatch(has
         ),
         patch.object(
             flow,
+            "_test_connection_safe",
+            new_callable=AsyncMock,
+            return_value={"ok": True},
+        ),
+        patch.object(
+            flow,
             "async_update_reload_and_abort",
             return_value={
                 "type": FlowResultType.ABORT,
@@ -2847,6 +2853,12 @@ async def test_cf_helpers_process_reconfigure_success_updates_entry(hass_mock):
         patch.object(
             flow, "_async_validate_cert_path", new_callable=AsyncMock, return_value=True
         ),
+        patch.object(
+            flow,
+            "_test_connection_safe",
+            new_callable=AsyncMock,
+            return_value={"ok": True},
+        ),
         patch.object(flow, "async_update_reload_and_abort") as mock_update,
     ):
         mock_update.return_value = {
@@ -2887,6 +2899,12 @@ async def test_cf_helpers_process_reconfigure_mac_matches_case_insensitive(hass_
         patch.object(
             flow, "_async_validate_cert_path", new_callable=AsyncMock, return_value=True
         ),
+        patch.object(
+            flow,
+            "_test_connection_safe",
+            new_callable=AsyncMock,
+            return_value={"ok": True},
+        ),
         patch.object(flow, "async_update_reload_and_abort") as mock_update,
     ):
         mock_update.return_value = {
@@ -2924,6 +2942,12 @@ async def test_cf_helpers_process_reconfigure_empty_cert_clears_and_warns(hass_m
             new_callable=AsyncMock,
             return_value=None,
         ),
+        patch.object(
+            flow,
+            "_test_connection_safe",
+            new_callable=AsyncMock,
+            return_value={"ok": True},
+        ),
         patch.object(flow, "async_update_reload_and_abort") as mock_update,
         patch("logging.Logger.warning") as mock_warn,
     ):
@@ -2957,6 +2981,12 @@ async def test_cf_helpers_process_reconfigure_smartthings_skips_mac_resolution(
         patch.object(
             flow, "_async_resolve_mac_and_set_unique_id", new_callable=AsyncMock
         ) as mock_resolve,
+        patch.object(
+            flow,
+            "_test_connection_safe",
+            new_callable=AsyncMock,
+            return_value={"ok": True},
+        ),
         patch.object(flow, "async_update_reload_and_abort") as mock_update,
     ):
         mock_update.return_value = {
@@ -2968,3 +2998,64 @@ async def test_cf_helpers_process_reconfigure_smartthings_skips_mac_resolution(
 
         assert res["reason"] == "reconfigure_successful"
         mock_resolve.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cf_helpers_process_reconfigure_connection_test_failed(hass_mock):
+    """Test _async_process_reconfigure_input returns form with error when connection test fails."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass_mock
+    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
+    rec_entry = MagicMock(
+        unique_id="112233445566", title="Test AC", data={"old": "val"}
+    )
+
+    user_input = {
+        CONF_IP_ADDRESS: "1.1.1.1",
+        CONF_MAC: "112233445566",
+        CONF_TOKEN: "valid_token",
+    }
+
+    for conn_res, expected_err in (
+        ({"ok": False, "error": "invalid_auth"}, "invalid_auth"),
+        ({"ok": False}, "cannot_connect"),
+    ):
+        with (
+            patch.object(
+                flow,
+                "_async_resolve_mac_and_set_unique_id",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch.object(
+                flow,
+                "_async_validate_cert_path",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch.object(
+                flow,
+                "_test_connection_safe",
+                new_callable=AsyncMock,
+                return_value=conn_res,
+            ),
+            patch.object(
+                flow,
+                "_current_reconfigure_suggested",
+                return_value={"ip_address": "1.1.1.1"},
+            ),
+            patch.object(
+                flow,
+                "_async_show_reconfigure_form",
+                return_value={"type": FlowResultType.FORM},
+            ) as mock_form,
+            patch.object(flow, "async_update_reload_and_abort") as mock_update,
+        ):
+            res = await flow._async_process_reconfigure_input(rec_entry, user_input)
+
+        assert res["type"] == FlowResultType.FORM
+        mock_form.assert_called_once_with(
+            {"base": expected_err},
+            {"ip_address": "1.1.1.1"},
+        )
+        mock_update.assert_not_called()

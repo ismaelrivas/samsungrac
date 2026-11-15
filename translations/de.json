@@ -267,6 +267,9 @@
         },
         "device_unreachable": {
             "message": "Gerät {device_name} ({host}) ist nicht erreichbar. Stromversorgung und Netzwerkverbindung prüfen."
+        },
+        "template_render_failed": {
+            "message": "Fehler beim Auswerten des Templates für Eigenschaft {property}: {error}"
         }
     },
     "issues": {
