@@ -17,10 +17,12 @@ from custom_components.climate_ip.const import (
     DEFAULT_CONF_TEMP_UNIT,
     DEFAULT_CONTROLLER_NAME,
     DEVICE_TYPE_SAMSUNG_2878,
+    DOMAIN,
     ERR_CACHE_UNINITIALIZED,
     ERR_INVALID_DEVICE_MODE,
     ERR_MISSING_INIT_CONFIG,
     ERR_MISSING_IP,
+    ERR_PROPERTY_SET_FAILED,
     ERR_UNREGISTERED_PROPERTY,
     MAIN_DEVICE_ID,
     PORT_SAMSUNG_8888,
@@ -1074,8 +1076,14 @@ async def test_yaml_controller_async_set_property_fail_fast_branches() -> None:
     ctrl.poller.clear_pending_updates.reset_mock()
     with pytest.raises(
         HomeAssistantError, match="Communication failed: Connection timed out"
-    ):
+    ) as exc_info:
         await ctrl.async_set_property("target_temperature", 22)
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == ERR_PROPERTY_SET_FAILED
+    assert exc_info.value.translation_placeholders == {
+        "property": "target_temperature",
+        "error": "Connection timed out",
+    }
     ctrl.poller.clear_pending_updates.assert_called_once_with(["target_temperature"])
 
     # 6b. OSError -> HomeAssistantError + rollback
@@ -1083,8 +1091,14 @@ async def test_yaml_controller_async_set_property_fail_fast_branches() -> None:
     ctrl.poller.clear_pending_updates.reset_mock()
     with pytest.raises(
         HomeAssistantError, match="Communication failed: Socket unreachable"
-    ):
+    ) as exc_info:
         await ctrl.async_set_property("target_temperature", 22)
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == ERR_PROPERTY_SET_FAILED
+    assert exc_info.value.translation_placeholders == {
+        "property": "target_temperature",
+        "error": "Socket unreachable",
+    }
     ctrl.poller.clear_pending_updates.assert_called_once_with(["target_temperature"])
 
     # 6c. Domain exceptions propagate directly + rollback

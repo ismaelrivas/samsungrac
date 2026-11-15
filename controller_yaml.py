@@ -53,6 +53,7 @@ from .const import (
     ERR_MISSING_INIT_CONFIG,
     ERR_MISSING_IP,
     ERR_PROPERTY_NOT_FOUND,
+    ERR_PROPERTY_SET_FAILED,
     ERR_UNREGISTERED_PROPERTY,
     EXCLUDED_SUBDEVICE_IDS,
     ID_DELIMITER,
@@ -477,7 +478,15 @@ class YamlController(ClimateController):
                 if callable(inject_fn):
                     inject_fn(op, new_value, sg_val)
         except (TimeoutError, OSError) as err:
-            raise HomeAssistantError(f"Communication failed: {err}") from err
+            raise HomeAssistantError(
+                f"Communication failed: {err}",
+                translation_domain=DOMAIN,
+                translation_key=ERR_PROPERTY_SET_FAILED,
+                translation_placeholders={
+                    "property": property_name,
+                    "error": str(err),
+                },
+            ) from err
         else:
             return result
         finally:

@@ -1067,6 +1067,14 @@ class ConfigFlowHelpersMixin(_FlowMixinBase):
             )
             return await self.async_step_initiate_pairing()
 
+        test_result = await self._test_connection_safe()
+        if not test_result.get("ok"):
+            errors["base"] = str(test_result.get("error") or "cannot_connect")
+            return self._async_show_reconfigure_form(
+                errors,
+                self._current_reconfigure_suggested(),
+            )
+
         updated_data = {**reconfigure_entry.data, **self.flow_data}
         _LOGGER.info(
             "Reconfigure: updated entry '%s' with new connectivity parameters",

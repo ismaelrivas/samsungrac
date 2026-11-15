@@ -18,8 +18,26 @@ from custom_components.climate_ip.const import (
     DEFAULT_CLIMATE_IP_TEMP_MAX,
     DEFAULT_CLIMATE_IP_TEMP_MIN,
     DEFAULT_TARGET_TEMP_STEP,
+    DOMAIN,
+    ERR_INVALID_FAN_MODE,
+    ERR_INVALID_HVAC_MODE,
+    ERR_INVALID_OPERATION,
+    ERR_INVALID_PRESET_MODE,
+    ERR_INVALID_SWING_MODE,
+    ERR_INVALID_VALUE_TYPE,
+    ERR_MISSING_TEMP_OR_MODE,
 )
 from custom_components.climate_ip.coordinator import SamsungClimateCoordinator
+from custom_components.climate_ip.exceptions import (
+    AuthError,
+    AuthTurnedOffError,
+    CannotConnect,
+    CertNotFound,
+    ClimateIPHomeAssistantError,
+    InvalidHeaderError,
+    RetryNextAttempt,
+    TokenAcquisitionError,
+)
 from homeassistant.components.climate import ClimateEntityDescription
 from homeassistant.components.climate.const import (
     ATTR_FAN_MODE,
@@ -308,8 +326,11 @@ async def test_public_async_set_hvac_mode_behavior(
     # Invalid mode raises ServiceValidationError
     with pytest.raises(
         ServiceValidationError, match="Requested HVAC mode 'heat' is not available"
-    ):
+    ) as exc_info:
         await base_climate_entity.async_set_hvac_mode(HVACMode.HEAT)
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == ERR_INVALID_HVAC_MODE
+    assert exc_info.value.translation_placeholders == {"hvac_mode": "heat"}
 
 
 async def test_public_async_set_fan_mode_behavior(
@@ -326,8 +347,11 @@ async def test_public_async_set_fan_mode_behavior(
 
     with pytest.raises(
         ServiceValidationError, match="Requested fan mode 'turbo' is not available"
-    ):
+    ) as exc_info:
         await base_climate_entity.async_set_fan_mode("turbo")
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == ERR_INVALID_FAN_MODE
+    assert exc_info.value.translation_placeholders == {"fan_mode": "turbo"}
 
 
 async def test_async_set_temperature(base_climate_entity: ClimateIP) -> None:
@@ -363,8 +387,10 @@ async def test_async_set_temperature(base_climate_entity: ClimateIP) -> None:
     # 4. Both missing raises ServiceValidationError
     with pytest.raises(
         ServiceValidationError, match="No temperature or HVAC mode provided"
-    ):
+    ) as exc_info:
         await base_climate_entity.async_set_temperature()
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == ERR_MISSING_TEMP_OR_MODE
 
 
 async def test_async_set_swing_mode(base_climate_entity: ClimateIP) -> None:
@@ -379,8 +405,11 @@ async def test_async_set_swing_mode(base_climate_entity: ClimateIP) -> None:
 
     with pytest.raises(
         ServiceValidationError, match="Requested swing mode 'invalid' is not available"
-    ):
+    ) as exc_info:
         await base_climate_entity.async_set_swing_mode("invalid")
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == ERR_INVALID_SWING_MODE
+    assert exc_info.value.translation_placeholders == {"swing_mode": "invalid"}
 
 
 async def test_async_set_preset_mode(base_climate_entity: ClimateIP) -> None:
@@ -395,8 +424,11 @@ async def test_async_set_preset_mode(base_climate_entity: ClimateIP) -> None:
 
     with pytest.raises(
         ServiceValidationError, match="Requested preset mode 'invalid' is not available"
-    ):
+    ) as exc_info:
         await base_climate_entity.async_set_preset_mode("invalid")
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == ERR_INVALID_PRESET_MODE
+    assert exc_info.value.translation_placeholders == {"preset_mode": "invalid"}
 
 
 async def test_async_service_set_property(
@@ -413,14 +445,24 @@ async def test_async_service_set_property(
     )
 
     # Invalid key raises ServiceValidationError
-    with pytest.raises(ServiceValidationError, match="is not a valid operation"):
+    with pytest.raises(
+        ServiceValidationError, match="is not a valid operation"
+    ) as exc_info:
         await base_climate_entity.async_service_set_property("invalid_key", "on")
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == ERR_INVALID_OPERATION
+    assert exc_info.value.translation_placeholders == {"key": "invalid_key"}
 
     # Invalid value type raises ServiceValidationError
-    with pytest.raises(ServiceValidationError, match="Invalid value type 'list'"):
+    with pytest.raises(
+        ServiceValidationError, match="Invalid value type 'list'"
+    ) as exc_info:
         await base_climate_entity.async_service_set_property(
             "beep", ["invalid", "list"]
         )
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == ERR_INVALID_VALUE_TYPE
+    assert exc_info.value.translation_placeholders == {"type": "list", "key": "beep"}
 
 
 def test_climate_invalid_temp_step_fallback(
@@ -658,3 +700,31 @@ async def test_modern_async_setup_entry() -> None:
     assert first_call_args[1].key == "samsung_ac"
     async_add_entities.assert_called_once()
     assert len(async_add_entities.call_args[0][0]) == 2
+
+
+def test_climate_ip_home_assistant_error_preserves_translations() -> None:
+    """Verify ClimateIPHomeAssistantError subclasses retain translation metadata on positional init."""
+    cases = [
+        (CannotConnect("conn err"), "cannot_connect"),
+        (InvalidHeaderError("hdr err"), "invalid_response"),
+        (AuthError("auth err"), "invalid_auth"),
+        (CertNotFound("cert err"), "cert_not_found"),
+        (TokenAcquisitionError("tok err"), "token_acquisition_failed"),
+        (AuthTurnedOffError("off err"), "auth_failed_turned_off"),
+        (RetryNextAttempt("retry err"), None),
+    ]
+    for err, expected_key in cases:
+        assert isinstance(err, ClimateIPHomeAssistantError)
+        assert err.translation_domain == DOMAIN
+        assert err.translation_key == expected_key
+        assert str(err) != ""
+
+    custom = CannotConnect(
+        "custom msg",
+        translation_domain="custom_domain",
+        translation_key="custom_key",
+        translation_placeholders={"host": "192.0.2.1"},
+    )
+    assert custom.translation_domain == "custom_domain"
+    assert custom.translation_key == "custom_key"
+    assert custom.translation_placeholders == {"host": "192.0.2.1"}

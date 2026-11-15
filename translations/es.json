@@ -267,6 +267,9 @@
         },
         "device_unreachable": {
             "message": "El dispositivo {device_name} ({host}) no está disponible. Comprueba la alimentación y la conexión de red."
+        },
+        "template_render_failed": {
+            "message": "Error al evaluar la plantilla para la propiedad {property}: {error}"
         }
     },
     "issues": {
