@@ -369,3 +369,94 @@ async def test_execute_embedded_command_parsing_error(
                 "GET", "/main", data=None, headers={}, device_state={"some": "state"}
             )
         assert "Embedded command parsing error" in str(exc_info.value)
+
+
+def _conn_with_embedded(connection_config, mock_logger, mock_hass, mock_session):
+    """Build a connection whose embedded command is a mock (shared by post_delay tests)."""
+    conn = ConnectionAiohttp8888(
+        connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+    )
+    conn._shared_state.initialized = True
+    conn._try_connection = AsyncMock()
+
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.text.return_value = '{"result": "ok"}'
+    mock_response.headers = {"Content-Type": "application/json"}
+    mock_response.version = MagicMock(major=1, minor=1)
+    mock_context = AsyncMock()
+    mock_context.__aenter__.return_value = mock_response
+    mock_session.request.return_value = mock_context
+
+    embedded_mock = MagicMock()
+    embedded_mock.check_execute_condition = MagicMock(return_value=True)
+    embedded_mock.params = {"url": "/embedded"}
+    embedded_mock.connection_template = None
+    embedded_mock.async_execute = AsyncMock()
+    embedded_mock._post_delay = 3.0
+    conn._embedded_command = embedded_mock
+    return conn, embedded_mock
+
+
+async def test_async_execute_embedded_command_post_delay(
+    connection_config, mock_logger, mock_hass, mock_session
+):
+    """post_delay waits after the embedded command, before the main command (MIM-H03)."""
+    with patch("os.path.exists", return_value=True):
+        conn, embedded_mock = _conn_with_embedded(
+            connection_config, mock_logger, mock_hass, mock_session
+        )
+        with patch(
+            "custom_components.climate_ip.connection_aiohttp.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as mock_sleep:
+            await conn.async_execute(
+                "PUT", "/main", data=None, headers={}, device_state={"some": "state"}
+            )
+
+        embedded_mock.async_execute.assert_called_once()
+        mock_sleep.assert_awaited_once_with(3.0)
+
+
+async def test_async_execute_embedded_command_post_delay_skipped_when_not_executed(
+    connection_config, mock_logger, mock_hass, mock_session
+):
+    """No wait when the embedded command's condition prevents it from running."""
+    with patch("os.path.exists", return_value=True):
+        conn, embedded_mock = _conn_with_embedded(
+            connection_config, mock_logger, mock_hass, mock_session
+        )
+        embedded_mock.check_execute_condition.return_value = False
+        with patch(
+            "custom_components.climate_ip.connection_aiohttp.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as mock_sleep:
+            await conn.async_execute(
+                "PUT", "/main", data=None, headers={}, device_state={"some": "state"}
+            )
+
+        embedded_mock.async_execute.assert_not_called()
+        mock_sleep.assert_not_awaited()
+
+
+def test_create_updated_reads_post_delay(
+    connection_config, mock_logger, mock_hass, mock_session
+):
+    """post_delay is read from the embedded connection node and defaults to 0."""
+    with patch("os.path.exists", return_value=True):
+        conn = ConnectionAiohttp8888(
+            connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
+        )
+        updated = conn.create_updated(
+            {
+                "params": {"url": "/mode"},
+                "connection": {"params": {"url": "/operation"}, "post_delay": 3},
+            }
+        )
+        assert updated._embedded_command._post_delay == 3.0
+        assert updated._post_delay == 0.0
+
+        no_delay = conn.create_updated(
+            {"params": {"url": "/mode"}, "connection": {"params": {"url": "/operation"}}}
+        )
+        assert no_delay._embedded_command._post_delay == 0.0
