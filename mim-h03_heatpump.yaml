@@ -84,6 +84,15 @@ device:
         'High': { value : '2', connection: { params: { json: { "Wind": { "speedLevel": 2 } } } } }
       state_node: 'Wind.speedLevel'
       status_template: '{{ device_state.Wind.speedLevel }}'
+    swing: # swing_mode (indoor units report supportedWindModes "Up_And_Low" and "Fix")
+      type: modes
+      connection:
+        params: { method: 'PUT', url: 'https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__/wind' }
+      values:
+        'off': { value : 'Fix', connection: { params: { json: { "Wind": { "direction": "Fix" } } } } }
+        'vertical': { value : 'Up_And_Low', connection: { params: { json: { "Wind": { "direction": "Up_And_Low" } } } } }
+      state_node: 'Wind.direction'
+      status_template: '{{ device_state.Wind.direction }}'
     temperature:
       type: number
       connection:
