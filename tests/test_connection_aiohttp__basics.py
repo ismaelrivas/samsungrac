@@ -241,12 +241,13 @@ def test_prepare_request_headers_unit(
     )
     assert headers["Authorization"] == "Bearer my_token"
     assert headers["Content-Type"] == "application/json"
+    assert headers["Accept-Encoding"] == "identity"
     assert "Connection" not in headers
 
-    # 2. Force close connection active
+    # 2. Force close connection active (preserves caller-supplied Accept-Encoding)
     conn._force_close_connection = True
     headers_close = conn._prepare_request_headers(
-        headers={"Custom": "Header"},
+        headers={"Custom": "Header", "Accept-Encoding": "gzip"},
         current_token="my_token",
         host="192.168.1.100",
         dev_id="dev123",
@@ -255,6 +256,7 @@ def test_prepare_request_headers_unit(
     assert headers_close["Authorization"] == "Bearer my_token"
     assert headers_close["Content-Type"] == "application/json"
     assert headers_close["Custom"] == "Header"
+    assert headers_close["Accept-Encoding"] == "gzip"
     assert headers_close["Connection"] == "close"
 
     # 3. Missing token raises AuthError
@@ -1138,66 +1140,63 @@ async def test_embedded_command_strict_fallbacks_to_main(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("is_poll", "keep_alive", "should_close"),
-    [
+async def test_async_execute_periodic_reset_truth_table(
+    mock_session, mock_logger, mock_hass
+):
+    """Verify mutant kill for logical operators (and/or/not) in periodic poll close evaluation."""
+    for is_poll, keep_alive, should_close in (
         (True, False, True),  # CASE 1: is poll and no keep_alive -> MUST close
         (True, True, False),  # CASE 2: is poll but keep_alive=True -> does NOT close
         (False, False, False),  # CASE 3: not poll -> does NOT close
-        (False, True, False),  # CASO 4: Camino feliz normal → NO cierra
-    ],
-)
-async def test_async_execute_periodic_reset_truth_table(
-    mock_session, mock_logger, mock_hass, is_poll, keep_alive, should_close
-):
-    """Verify mutant kill for logical operators (and/or/not) in periodic poll close evaluation."""
-    conn = ConnectionAiohttp8888(
-        config={"keep_alive": keep_alive, "token": "tok"},
-        logger=mock_logger,
-        hass=mock_hass,
-        session=mock_session,
-        ip_address="1.1.1.1",
-    )
-    conn._shared_state.initialized = True
-    conn._keep_alive = keep_alive
+        (False, True, False),  # CASO 4: Camino feliz normal -> NO cierra
+    ):
+        conn = ConnectionAiohttp8888(
+            config={"keep_alive": keep_alive, "token": "tok"},
+            logger=mock_logger,
+            hass=mock_hass,
+            session=mock_session,
+            ip_address="1.1.1.1",
+        )
+        conn._shared_state.initialized = True
+        conn._keep_alive = keep_alive
 
-    # OPEN local session so closure is observable
-    mock_local = AsyncMock()
-    mock_local.closed = False
-    conn._shared_state.local_session = mock_local
+        # OPEN local session so closure is observable
+        mock_local = AsyncMock()
+        mock_local.closed = False
+        conn._shared_state.local_session = mock_local
 
-    # Main session mock so _async_execute_request doesn't blow up
-    mock_response = AsyncMock()
-    mock_response.status = 200
-    mock_response.text.return_value = "{}"
-    mock_response.headers = {}
-    mock_response.version = None
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__.return_value = mock_response
-    mock_session.request.return_value = mock_ctx
-    # Also prepare local session for request following closure
-    mock_local.request.return_value = mock_ctx
+        # Main session mock so _async_execute_request doesn't blow up
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text.return_value = "{}"
+        mock_response.headers = {}
+        mock_response.version = None
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__.return_value = mock_response
+        mock_session.request.return_value = mock_ctx
+        # Also prepare local session for request following closure
+        mock_local.request.return_value = mock_ctx
 
-    # Patch _async_execute_request to isolate _is_poll logic only
-    with patch.object(
-        conn, "_async_execute_request", new_callable=AsyncMock
-    ) as mock_req:
-        mock_req.return_value = ("{}", {})
+        # Patch _async_execute_request to isolate _is_poll logic only
+        with patch.object(
+            conn, "_async_execute_request", new_callable=AsyncMock
+        ) as mock_req:
+            mock_req.return_value = ("{}", {})
 
-        await conn.async_execute("GET", "/test", None, {}, _is_poll=is_poll)
+            await conn.async_execute("GET", "/test", None, {}, _is_poll=is_poll)
 
-        if should_close:
-            # CASE 1: must have called close() and reset local_session to None
-            mock_local.close.assert_called_once()
-            assert conn._shared_state.local_session is None, (
-                f"Estado no reseteado a None (is_poll={is_poll}, keep_alive={keep_alive})"
-            )
-        else:
-            # CASES 2, 3, 4: must NOT have closed anything
-            mock_local.close.assert_not_called()
-            assert conn._shared_state.local_session is mock_local, (
-                f"Local session improperly deleted (is_poll={is_poll}, keep_alive={keep_alive})"
-            )
+            if should_close:
+                # CASE 1: must have called close() and reset local_session to None
+                mock_local.close.assert_called_once()
+                assert conn._shared_state.local_session is None, (
+                    f"Estado no reseteado a None (is_poll={is_poll}, keep_alive={keep_alive})"
+                )
+            else:
+                # CASES 2, 3, 4: must NOT have closed anything
+                mock_local.close.assert_not_called()
+                assert conn._shared_state.local_session is mock_local, (
+                    f"Local session improperly deleted (is_poll={is_poll}, keep_alive={keep_alive})"
+                )
 
 
 # ====================================================================================
@@ -1456,9 +1455,10 @@ async def test_try_connection_strict_token_and_port(
     args, kwargs = mock_session.request.call_args
 
     # MILLIMETRIC ASSERTIONS
-    assert kwargs["headers"]["Authorization"] == "Bearer CTRL_TOK", (
-        "Mutant broke controller token fallback"
-    )
+    assert kwargs["headers"] == {
+        "Authorization": "Bearer CTRL_TOK",
+        "Accept-Encoding": "identity",
+    }, "Mutant broke headers in _try_connection"
     assert args[1] == "https://1.1.1.1:7777", "Mutant broke port in _try_connection"
 
 
@@ -1688,31 +1688,31 @@ async def test_async_execute_embedded_template_sync_render(
     assert call_kwargs["data"] == '{"a":1}'
 
 
-@pytest.mark.parametrize("invalid_token", [None, "", "   "])
 def test_aiohttp_init_without_token_raises_auth_error(
-    invalid_token, mock_logger, mock_hass, mock_session
+    mock_logger, mock_hass, mock_session
 ):
     """Test __init__ immediately raises AuthError when token is missing or empty."""
-    config = {} if invalid_token is None else {CONF_TOKEN: invalid_token}
-    with (
-        patch(
-            "custom_components.climate_ip.connection_aiohttp._LOGGER.error"
-        ) as mock_log_error,
-        pytest.raises(
-            AuthError,
-            match=r"\[aiohttp_init\] aiohttp engine started without a token\.",
-        ),
-    ):
-        ConnectionAiohttp8888(
-            config=config,
-            logger=mock_logger,
-            hass=mock_hass,
-            session=mock_session,
-            ip_address="192.168.1.100",
+    for invalid_token in (None, "", "   "):
+        config = {} if invalid_token is None else {CONF_TOKEN: invalid_token}
+        with (
+            patch(
+                "custom_components.climate_ip.connection_aiohttp._LOGGER.error"
+            ) as mock_log_error,
+            pytest.raises(
+                AuthError,
+                match=r"\[aiohttp_init\] aiohttp engine started without a token\.",
+            ),
+        ):
+            ConnectionAiohttp8888(
+                config=config,
+                logger=mock_logger,
+                hass=mock_hass,
+                session=mock_session,
+                ip_address="192.168.1.100",
+            )
+        mock_log_error.assert_called_once_with(
+            "[aiohttp_init] aiohttp engine started without a token. This will fail."
         )
-    mock_log_error.assert_called_once_with(
-        "[aiohttp_init] aiohttp engine started without a token. This will fail."
-    )
 
 
 @pytest.mark.asyncio
@@ -2011,12 +2011,13 @@ def test_resolve_8888_cert_file():
             "custom_components.climate_ip.helpers.resolve_cert_path",
             return_value="/resolved/ca.pem",
         ) as mock_resolve,
-        patch("os.path.exists", return_value=True),
+        patch("os.path.exists", return_value=True) as mock_exists,
     ):
         assert ConnectionAiohttp8888.resolve_8888_cert_file("ca.pem") == (
             "/resolved/ca.pem"
         )
         mock_resolve.assert_called_once_with("ca.pem", expected_dir)
+        mock_exists.assert_called_once_with("/resolved/ca.pem")
 
     # 3. Resolved path missing on disk
     with (
@@ -2024,9 +2025,10 @@ def test_resolve_8888_cert_file():
             "custom_components.climate_ip.helpers.resolve_cert_path",
             return_value="/nonexistent/ca.pem",
         ),
-        patch("os.path.exists", return_value=False),
+        patch("os.path.exists", return_value=False) as mock_exists,
     ):
         assert ConnectionAiohttp8888.resolve_8888_cert_file("ca.pem") is None
+        mock_exists.assert_called_once_with("/nonexistent/ca.pem")
 
     # 4. Unresolvable cert_path
     with patch(
@@ -2118,6 +2120,7 @@ async def test_async_test_8888_connection_statuses():
             headers={
                 "Authorization": "Bearer valid_tok",
                 "Content-Type": "application/json",
+                "Accept-Encoding": "identity",
             },
             ssl=mock_ssl,
             timeout=10,
@@ -2154,6 +2157,189 @@ async def test_async_test_8888_connection_statuses():
             mock_hass, "192.168.1.100", "tok", "cert.pem"
         )
         assert res_201 is False
+
+
+@pytest.mark.asyncio
+async def test_async_test_8888_connection_raw_fallback_and_errors():
+    """Test async_test_8888_connection raw fallback on header violations and error branches."""
+    mock_hass = MagicMock()
+    mock_ssl = MagicMock()
+    mock_session = MagicMock()
+    header_err = aiohttp.ClientResponseError(
+        request_info=MagicMock(),
+        history=(),
+        status=400,
+        message="Invalid header token:\n\n  b'X-API-Version : v1.0.0'\n                 ^",
+    )
+    expected_headers = {
+        "Authorization": "Bearer valid_tok",
+        "Content-Type": "application/json",
+        "Accept-Encoding": "identity",
+    }
+
+    # 1. ClientResponseError 400 with header violation -> raw fallback succeeds
+    mock_hass.async_add_executor_job = AsyncMock(
+        side_effect=[mock_ssl, "/resolved/ac14k_m.pem"]
+    )
+    mock_session.get.side_effect = header_err
+    with (
+        patch(
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+            return_value=mock_session,
+        ),
+        patch(
+            "custom_components.climate_ip.connection_aiohttp.Samsung8888Client"
+        ) as mock_client_cls,
+        patch(
+            "custom_components.climate_ip.connection_aiohttp._LOGGER.warning"
+        ) as mock_warn,
+    ):
+        mock_client = mock_client_cls.return_value
+        mock_client.request = AsyncMock(return_value=('{"Devices": []}', None))
+        mock_client.close = AsyncMock()
+
+        res_ok = await ConnectionAiohttp8888.async_test_8888_connection(
+            mock_hass, "192.168.1.100", "valid_tok", "ac14k_m.pem"
+        )
+
+        assert res_ok is True
+        mock_hass.async_add_executor_job.assert_called_with(
+            ConnectionAiohttp8888.resolve_8888_cert_file, "ac14k_m.pem"
+        )
+        mock_client_cls.assert_called_once_with(
+            "192.168.1.100", 8888, "/resolved/ac14k_m.pem"
+        )
+        mock_client.request.assert_awaited_once_with(
+            "GET", "/devices", headers=expected_headers
+        )
+        mock_client.close.assert_awaited_once()
+        mock_warn.assert_not_called()
+
+    # 2. Unwrapped BadHttpMessage -> raw fallback succeeds
+    mock_hass.async_add_executor_job = AsyncMock(
+        side_effect=[mock_ssl, "/resolved/ac14k_m.pem"]
+    )
+    mock_session.get.side_effect = aiohttp.http_exceptions.BadHttpMessage(
+        "Invalid header token"
+    )
+    with (
+        patch(
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+            return_value=mock_session,
+        ),
+        patch(
+            "custom_components.climate_ip.connection_aiohttp.Samsung8888Client"
+        ) as mock_client_cls,
+    ):
+        mock_client = mock_client_cls.return_value
+        mock_client.request = AsyncMock(return_value=("{}", None))
+        mock_client.close = AsyncMock()
+
+        res_bad = await ConnectionAiohttp8888.async_test_8888_connection(
+            mock_hass, "192.168.1.100", "valid_tok", "ac14k_m.pem"
+        )
+        assert res_bad is True
+        mock_client.close.assert_awaited_once()
+
+    # 3. Raw engine returns an error string -> logs warning, closes socket, returns False
+    mock_hass.async_add_executor_job = AsyncMock(
+        side_effect=[mock_ssl, "/resolved/ac14k_m.pem"]
+    )
+    mock_session.get.side_effect = header_err
+    with (
+        patch(
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+            return_value=mock_session,
+        ),
+        patch(
+            "custom_components.climate_ip.connection_aiohttp.Samsung8888Client"
+        ) as mock_client_cls,
+        patch(
+            "custom_components.climate_ip.connection_aiohttp._LOGGER.warning"
+        ) as mock_warn,
+    ):
+        mock_client = mock_client_cls.return_value
+        mock_client.request = AsyncMock(return_value=(None, "HTTP 500: boom"))
+        mock_client.close = AsyncMock()
+
+        res_err = await ConnectionAiohttp8888.async_test_8888_connection(
+            mock_hass, "192.168.1.100", "valid_tok", "ac14k_m.pem"
+        )
+        assert res_err is False
+        mock_warn.assert_called_once()
+        mock_client.close.assert_awaited_once()
+
+    # 4. Raw engine raises CannotConnect -> logs warning, closes socket, returns False
+    mock_hass.async_add_executor_job = AsyncMock(
+        side_effect=[mock_ssl, "/resolved/ac14k_m.pem"]
+    )
+    mock_session.get.side_effect = header_err
+    with (
+        patch(
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+            return_value=mock_session,
+        ),
+        patch(
+            "custom_components.climate_ip.connection_aiohttp.Samsung8888Client"
+        ) as mock_client_cls,
+        patch(
+            "custom_components.climate_ip.connection_aiohttp._LOGGER.warning"
+        ) as mock_warn,
+    ):
+        mock_client = mock_client_cls.return_value
+        mock_client.request = AsyncMock(side_effect=CannotConnect("socket timeout"))
+        mock_client.close = AsyncMock()
+
+        res_conn = await ConnectionAiohttp8888.async_test_8888_connection(
+            mock_hass, "192.168.1.100", "valid_tok", "ac14k_m.pem"
+        )
+        assert res_conn is False
+        mock_warn.assert_called_once()
+        mock_client.close.assert_awaited_once()
+
+    # 5. Raw engine raises AuthError -> closes socket and propagates AuthError
+    mock_hass.async_add_executor_job = AsyncMock(
+        side_effect=[mock_ssl, "/resolved/ac14k_m.pem"]
+    )
+    mock_session.get.side_effect = header_err
+    with (
+        patch(
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+            return_value=mock_session,
+        ),
+        patch(
+            "custom_components.climate_ip.connection_aiohttp.Samsung8888Client"
+        ) as mock_client_cls,
+    ):
+        mock_client = mock_client_cls.return_value
+        mock_client.request = AsyncMock(side_effect=AuthError("401 Unauthorized"))
+        mock_client.close = AsyncMock()
+
+        with pytest.raises(AuthError):
+            await ConnectionAiohttp8888.async_test_8888_connection(
+                mock_hass, "192.168.1.100", "valid_tok", "ac14k_m.pem"
+            )
+        mock_client.close.assert_awaited_once()
+
+    # 6. Genuine ClientResponseError 500 -> re-raised without calling raw client
+    mock_hass.async_add_executor_job = AsyncMock(return_value=mock_ssl)
+    mock_session.get.side_effect = aiohttp.ClientResponseError(
+        request_info=MagicMock(), history=(), status=500, message="Server Error"
+    )
+    with (
+        patch(
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+            return_value=mock_session,
+        ),
+        patch(
+            "custom_components.climate_ip.connection_aiohttp.Samsung8888Client"
+        ) as mock_client_cls,
+        pytest.raises(aiohttp.ClientResponseError),
+    ):
+        await ConnectionAiohttp8888.async_test_8888_connection(
+            mock_hass, "192.168.1.100", "valid_tok", "ac14k_m.pem"
+        )
+    mock_client_cls.assert_not_called()
 
 
 @pytest.mark.asyncio

@@ -15,7 +15,7 @@ import ssl
 from typing import TYPE_CHECKING, Any, Self
 
 import aiohttp
-from aiohttp.hdrs import AUTHORIZATION, CONNECTION, CONTENT_TYPE
+from aiohttp.hdrs import ACCEPT_ENCODING, AUTHORIZATION, CONNECTION, CONTENT_TYPE
 import yarl
 
 from homeassistant.const import CONF_MAC, CONF_PORT, CONF_TOKEN
@@ -73,6 +73,7 @@ DEFAULT_PORT = 8888  # pragma: no mutate
 DEFAULT_SSL_CIPHERS = "ALL:@SECLEVEL=0"  # pragma: no mutate
 HEADER_VALUE_JSON = "application/json"  # pragma: no mutate
 HEADER_VALUE_CLOSE = "close"  # pragma: no mutate
+HEADER_VALUE_IDENTITY = "identity"  # pragma: no mutate
 KEEPALIVE_TIMEOUT = 75  # pragma: no mutate
 
 _HEADER_VIOLATION_MARKERS = ("invalid header", "header token")  # pragma: no mutate
@@ -293,6 +294,7 @@ class ConnectionAiohttp8888(Connection):
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
+            "Accept-Encoding": HEADER_VALUE_IDENTITY,
         }
         ssl_context = await hass.async_add_executor_job(
             cls.build_8888_ssl_context, cert_path
@@ -338,6 +340,11 @@ class ConnectionAiohttp8888(Connection):
         client = Samsung8888Client(ip_address, PORT_SAMSUNG_8888, cert_file)
         try:
             _, error = await client.request("GET", "/devices", headers=headers)
+        except CannotConnect as err:
+            _LOGGER.warning(
+                "8888 raw connection test failed: %s", err
+            )  # pragma: no mutate
+            return False
         finally:
             await client.close()
         if error is not None:
@@ -485,7 +492,10 @@ class ConnectionAiohttp8888(Connection):
                 return None  # type: ignore[unreachable]
 
             current_token, _ = self._auth_context
-            probe_headers = {AUTHORIZATION: AUTH_BEARER_PREFIX.format(current_token)}
+            probe_headers = {
+                AUTHORIZATION: AUTH_BEARER_PREFIX.format(current_token),
+                ACCEPT_ENCODING: HEADER_VALUE_IDENTITY,
+            }
 
             if (
                 not self._config.get(CONF_USE_HTTP)
@@ -646,6 +656,7 @@ class ConnectionAiohttp8888(Connection):
         )
         req_headers.setdefault(AUTHORIZATION, AUTH_BEARER_PREFIX.format(current_token))
         req_headers.setdefault(CONTENT_TYPE, HEADER_VALUE_JSON)
+        req_headers.setdefault(ACCEPT_ENCODING, HEADER_VALUE_IDENTITY)
         if self._force_close_connection:
             req_headers[CONNECTION] = HEADER_VALUE_CLOSE
 

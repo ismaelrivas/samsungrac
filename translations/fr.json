@@ -267,6 +267,9 @@
         },
         "device_unreachable": {
             "message": "L'appareil {device_name} ({host}) est inaccessible. Vérifiez l'alimentation et la connexion réseau."
+        },
+        "template_render_failed": {
+            "message": "Échec de l'évaluation du modèle pour la propriété {property} : {error}"
         }
     },
     "issues": {

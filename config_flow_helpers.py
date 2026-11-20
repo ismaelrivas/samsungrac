@@ -440,7 +440,9 @@ class ConfigFlowHelpersMixin(_FlowMixinBase):
                 ip_address=ip_addr, mac_address=mac_val
             )
 
-            if error_reason is not None:
+            if error_reason is not None and not (
+                step_id == "mim_h03" and error_reason == "mac_resolve_failed"
+            ):
                 errors["base"] = error_reason
                 req = error_reason == "mac_resolve_failed"
                 return self.async_show_form(
@@ -1066,6 +1068,14 @@ class ConfigFlowHelpersMixin(_FlowMixinBase):
                 self.hass, ip_val, auth_flow_dict, target_cert
             )
             return await self.async_step_initiate_pairing()
+
+        test_result = await self._test_connection_safe()
+        if not test_result.get("ok"):
+            errors["base"] = str(test_result.get("error") or "cannot_connect")
+            return self._async_show_reconfigure_form(
+                errors,
+                self._current_reconfigure_suggested(),
+            )
 
         updated_data = {**reconfigure_entry.data, **self.flow_data}
         _LOGGER.info(

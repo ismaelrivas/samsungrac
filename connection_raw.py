@@ -166,6 +166,7 @@ class ConnectionRaw8888(Connection):
 
     @_is_connected.setter
     def _is_connected(self, value: bool) -> None:
+        """Set shared connected state."""
         self._shared_state.connected = value
 
     @staticmethod

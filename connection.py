@@ -260,7 +260,20 @@ class Connection:
             and isinstance(raw_state["Devices"], list)
             and raw_state["Devices"]
         ):
-            raw_state = raw_state["Devices"][0]
+            devices_list = raw_state["Devices"]
+            target_id = getattr(self._controller, "device_id", None)
+            raw_state = (
+                next(
+                    (
+                        d
+                        for d in devices_list
+                        if isinstance(d, dict) and str(d.get("id")) == str(target_id)
+                    ),
+                    devices_list[0],
+                )
+                if target_id
+                else devices_list[0]
+            )
 
         try:
             async_render = getattr(condition, "async_render", None)

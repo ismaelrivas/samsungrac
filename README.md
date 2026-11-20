@@ -2,7 +2,7 @@
 
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Core%202026.x%20Ready-blue?style=for-the-badge&logo=home-assistant)
 ![Mutation Score](https://img.shields.io/badge/Mutation%20Score-100%25-brightgreen.svg)
-![Unit Tests](https://img.shields.io/badge/Unit%20Tests-826%20Passed-brightgreen?style=for-the-badge)
+![Unit Tests](https://img.shields.io/badge/Unit%20Tests-830%20Passed-brightgreen?style=for-the-badge)
 ![Quality Scale](https://img.shields.io/badge/Quality%20Scale-Gold%20Master-gold?style=for-the-badge)
 ![HACS](https://img.shields.io/badge/HACS-Custom%20Repository-orange?style=for-the-badge)
 
@@ -10,16 +10,16 @@ A highly resilient, mathematically verified, and asynchronously optimized custom
 
 ---
 
-## 🏆 Version History & Release Notes (v10.0.1b10)
+## 🏆 Version History & Release Notes (v10.0.1b11)
 
-This release delivers a comprehensive modular refactoring of the Config Flow architecture, streamlined core connection & controller engines aligned with Home Assistant Core 2026.10 / Python 3.14 standards, full eradication of anti-patterns AP-1 through AP-7, and a consolidated **826-test orthogonal baseline** (**97.31% total coverage**).
+This release introduces targeted compatibility and multi-unit fixes for Samsung MIM-H03 centralized controllers alongside Phase 1 Master Plan improvements, backed by **830 passed unit tests** (**97.33% total coverage**, **100%** on `config_flow.py` and `diagnostics.py`).
 
 **Engineering Highlights:**
-* 📐 **Modular Config Flow Architecture:** Compacted `config_flow.py` to a 271-line skinny orchestrator and modularized into `config_flow_schemas.py`, `config_flow_helpers.py`, and `config_flow_discovery.py`, alongside parameterless Core 2026.10 `OptionsFlowHandler` compatibility.
-* ⚙️ **Core 2026.10 Modernization & Engine Hardening:** Streamlined `connection_aiohttp.py`, `samsung_2878.py`, `climate.py`, `coordinator.py`, `controller.py`, `controller_yaml*.py`, and `properties.py` with Python 3.14 native lazy annotations, `probatio` validation schemas, and clean optimistic state encapsulation (`ALL GREEN` across Ruff, Mypy, Pylint HA plugins, Hassfest, and Prek).
-* 🛡️ **Mutation-Hardened Reliability:** Reinforced refactored core modules (`config_flow*`, `connection_aiohttp.py`, `samsung_2878.py`, `climate.py`, `properties.py`) with mutation-tested boundary and type assertions under Python 3.14 FastFork execution.
-* 🧪 **Consolidated Orthogonal Test Baseline:** Deduplicated redundant test suites into canonical test modules, achieving **826 passed unit tests** (0 failed, 0 skipped) with **97.31% total coverage** (**96.63%** across all 33 integration modules; **100%** on `config_flow.py` and `diagnostics.py`).
-* 🥇 **Home Assistant Gold Quality Scale:** Attained full Gold tier status (`quality_scale.yaml`), including entity icon mappings (`icons.json`), rich high-resolution brand assets, and multi-language translations (`en`, `es`, `fr`, `de`).
+* 🌐 **LibSHP/1.0 HTTP Compatibility:** Enforces `Accept-Encoding: identity` in `ConnectionAiohttp8888` (`connection_aiohttp.py`) so embedded MIM-H03 / port-8888 HTTP servers never choke on compressed responses.
+* 🔀 **MIM-H03 Split Mode & Multi-Unit Condition Routing:** Splits `operations.hvac` in `mim-h03_heatpump.yaml` into `.../mode` plus conditional `.../operation` power-on calls, backed by accurate `device_id` sub-device routing in `Connection.check_execute_condition()`.
+* 📡 **Cross-Subnet MIM-H03 Onboarding:** Allows `mim_h03` setup to continue when L2 ARP MAC lookup fails across VLANs/subnets, resolving the hardware `unique_id` directly from the coordinator UUID during discovery.
+* 🧪 **Verified Core 2026.10 Baseline:** **830 passed unit tests** (0 failed) with **97.33% total coverage** and `ALL GREEN` across Ruff, Mypy, Pylint HA plugins, Hassfest, Translations, Licenses, and Prek.
+* 🙏 **Acknowledgments:** Special thanks to **[@valdenny](https://github.com/valdenny)** (Daniele Valenti) for the real-world MIM-H03 findings and fixes contributed in [PR #30](https://github.com/ismaelrivas/samsungrac/pull/30) that inspired these adaptations.
 
 ---
 
@@ -383,3 +383,4 @@ This integration provides full support for Home Assistant's native **Diagnostics
 * **License:** MIT License
 * **Maintainer:** Senior Home Assistant Core Integration Team
 * **Quality Standard:** Home Assistant Core 2026.x Gold Master Standard
+* **Acknowledgments:** Thanks to **[@valdenny](https://github.com/valdenny)** (Daniele Valenti) for the MIM-H03 hardware diagnostics and fixes in [PR #30](https://github.com/ismaelrivas/samsungrac/pull/30).

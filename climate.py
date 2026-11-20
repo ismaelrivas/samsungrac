@@ -38,6 +38,14 @@ from .const import (
     DEFAULT_CLIMATE_IP_TEMP_MAX,
     DEFAULT_CLIMATE_IP_TEMP_MIN,
     DEFAULT_TARGET_TEMP_STEP,
+    DOMAIN,
+    ERR_INVALID_FAN_MODE,
+    ERR_INVALID_HVAC_MODE,
+    ERR_INVALID_OPERATION,
+    ERR_INVALID_PRESET_MODE,
+    ERR_INVALID_SWING_MODE,
+    ERR_INVALID_VALUE_TYPE,
+    ERR_MISSING_TEMP_OR_MODE,
 )
 from .coordinator import SamsungClimateCoordinator
 from .entity import SamsungClimateEntity
@@ -299,14 +307,19 @@ class ClimateIP(SamsungClimateEntity, ClimateEntity):
         elif hvac_mode is None:
             # Only raise an error if BOTH parameters are missing
             raise ServiceValidationError(
-                f"[{self.coordinator.log_prefix}] No temperature or HVAC mode provided in set_temperature action."
+                f"[{self.coordinator.log_prefix}] No temperature or HVAC mode provided in set_temperature action.",
+                translation_domain=DOMAIN,
+                translation_key=ERR_MISSING_TEMP_OR_MODE,
             )
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
         if hvac_mode not in self.hvac_modes:
             raise ServiceValidationError(
-                f"[{self.coordinator.log_prefix}] Requested HVAC mode '{hvac_mode}' is not available."
+                f"[{self.coordinator.log_prefix}] Requested HVAC mode '{hvac_mode}' is not available.",
+                translation_domain=DOMAIN,
+                translation_key=ERR_INVALID_HVAC_MODE,
+                translation_placeholders={"hvac_mode": str(hvac_mode)},
             )
         await self.coordinator.async_set_property(ATTR_HVAC_MODE, hvac_mode)
 
@@ -314,7 +327,10 @@ class ClimateIP(SamsungClimateEntity, ClimateEntity):
         """Set new target fan mode."""
         if fan_mode not in self.fan_modes:
             raise ServiceValidationError(
-                f"[{self.coordinator.log_prefix}] Requested fan mode '{fan_mode}' is not available."
+                f"[{self.coordinator.log_prefix}] Requested fan mode '{fan_mode}' is not available.",
+                translation_domain=DOMAIN,
+                translation_key=ERR_INVALID_FAN_MODE,
+                translation_placeholders={"fan_mode": str(fan_mode)},
             )
         await self.coordinator.async_set_property(ATTR_FAN_MODE, fan_mode)
 
@@ -322,7 +338,10 @@ class ClimateIP(SamsungClimateEntity, ClimateEntity):
         """Set new target swing operation."""
         if swing_mode not in self.swing_modes:
             raise ServiceValidationError(
-                f"[{self.coordinator.log_prefix}] Requested swing mode '{swing_mode}' is not available."
+                f"[{self.coordinator.log_prefix}] Requested swing mode '{swing_mode}' is not available.",
+                translation_domain=DOMAIN,
+                translation_key=ERR_INVALID_SWING_MODE,
+                translation_placeholders={"swing_mode": str(swing_mode)},
             )
         await self.coordinator.async_set_property(ATTR_SWING_MODE, swing_mode)
 
@@ -330,7 +349,10 @@ class ClimateIP(SamsungClimateEntity, ClimateEntity):
         """Set new target preset mode."""
         if preset_mode not in self.preset_modes:
             raise ServiceValidationError(
-                f"[{self.coordinator.log_prefix}] Requested preset mode '{preset_mode}' is not available."
+                f"[{self.coordinator.log_prefix}] Requested preset mode '{preset_mode}' is not available.",
+                translation_domain=DOMAIN,
+                translation_key=ERR_INVALID_PRESET_MODE,
+                translation_placeholders={"preset_mode": str(preset_mode)},
             )
         await self.coordinator.async_set_property(ATTR_PRESET_MODE, preset_mode)
 
@@ -346,12 +368,21 @@ class ClimateIP(SamsungClimateEntity, ClimateEntity):
         """Set a property on the device via action call with strict validation."""
         if key not in self.coordinator.controller.operations:
             raise ServiceValidationError(
-                f"Action set_property failed: '{key}' is not a valid operation for this device."
+                f"Action set_property failed: '{key}' is not a valid operation for this device.",
+                translation_domain=DOMAIN,
+                translation_key=ERR_INVALID_OPERATION,
+                translation_placeholders={"key": str(key)},
             )
 
         if not isinstance(value, str | int | float | bool):
             raise ServiceValidationError(
-                f"Action set_property failed: Invalid value type '{type(value).__name__}' for key '{key}'."
+                f"Action set_property failed: Invalid value type '{type(value).__name__}' for key '{key}'.",
+                translation_domain=DOMAIN,
+                translation_key=ERR_INVALID_VALUE_TYPE,
+                translation_placeholders={
+                    "type": type(value).__name__,
+                    "key": str(key),
+                },
             )
 
         _LOGGER.debug(

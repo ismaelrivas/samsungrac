@@ -723,6 +723,12 @@ async def test_reconfigure_existing_token_no_pairing(hass, mock_setup_entry):
         patch(
             "custom_components.climate_ip.config_flow.GenericYamlTokenAcquirer"
         ) as mock_acq,
+        patch.object(
+            flow,
+            "_test_connection_safe",
+            new_callable=AsyncMock,
+            return_value={"ok": True},
+        ),
         patch.object(hass.config_entries, "async_reload", new=AsyncMock()),
         patch.object(hass.config_entries, "async_update_entry") as mock_update,
     ):
@@ -776,6 +782,12 @@ async def test_reconfigure_smartthings_no_pairing(hass, mock_setup_entry):
         patch(
             "custom_components.climate_ip.config_flow.GenericYamlTokenAcquirer"
         ) as mock_acq,
+        patch.object(
+            flow,
+            "_test_connection_safe",
+            new_callable=AsyncMock,
+            return_value={"ok": True},
+        ),
         patch.object(hass.config_entries, "async_reload", new=AsyncMock()),
         patch.object(hass.config_entries, "async_update_entry") as mock_update,
     ):
@@ -940,6 +952,12 @@ async def test_reconfigure_cert_cleared_warning(hass, mock_setup_entry, caplog):
     with (
         caplog.at_level(
             logging.WARNING, logger="custom_components.climate_ip.config_flow"
+        ),
+        patch.object(
+            flow,
+            "_test_connection_safe",
+            new_callable=AsyncMock,
+            return_value={"ok": True},
         ),
         patch.object(hass.config_entries, "async_reload", new=AsyncMock()),
     ):
@@ -1734,6 +1752,12 @@ async def test_async_step_reconfigure_confirm_mutants_killer(
                 flow, "_async_resolve_mac_and_set_unique_id", return_value=None
             ),
             patch.object(flow, "_async_validate_cert_path", return_value=True),
+            patch.object(
+                flow,
+                "_test_connection_safe",
+                new_callable=AsyncMock,
+                return_value={"ok": True},
+            ),
             patch.object(
                 flow,
                 "async_update_reload_and_abort",
@@ -3008,6 +3032,12 @@ async def test_reconfigure_update_entry_called_with_real_entry(
     with (
         patch.object(flow, "_async_resolve_mac_and_set_unique_id", return_value=None),
         patch.object(flow, "_async_validate_cert_path", return_value=True),
+        patch.object(
+            flow,
+            "_test_connection_safe",
+            new_callable=AsyncMock,
+            return_value={"ok": True},
+        ),
         patch.object(
             flow,
             "async_update_reload_and_abort",

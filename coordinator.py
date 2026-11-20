@@ -39,7 +39,9 @@ from .const import (
     DOMAIN,
     ERR_AUTO_HEALING_RAW_IN_PROGRESS,
     ERR_DEVICE_OFFLINE_PREFIX,
+    ERR_DEVICE_UNREACHABLE,
     ERR_PERSISTENT_CONNECTION_FAILURE,
+    ERR_PROPERTY_SET_FAILED,
     FALSY_STRINGS,
     HARDWARE_BREATHING_ROOM_SEC,
     ISSUE_AUTO_HEALING_RAW,
@@ -538,7 +540,13 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 or "unknown"
             )
             raise HomeAssistantError(
-                f"Device '{dev_label}' ({dev_host}) is unreachable. Check power and network connection."
+                f"Device '{dev_label}' ({dev_host}) is unreachable. Check power and network connection.",
+                translation_domain=DOMAIN,
+                translation_key=ERR_DEVICE_UNREACHABLE,
+                translation_placeholders={
+                    "device_name": str(dev_label),
+                    "host": str(dev_host),
+                },
             ) from None  # pragma: no mutate
 
         except (ValueError, TypeError, KeyError) as err:
@@ -548,7 +556,13 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 self.log_prefix,
             )  # pragma: no mutate
             raise HomeAssistantError(
-                f"Data error setting property {property_name}: {err}"
+                f"Data error setting property {property_name}: {err}",
+                translation_domain=DOMAIN,
+                translation_key=ERR_PROPERTY_SET_FAILED,
+                translation_placeholders={
+                    "property": str(property_name),
+                    "error": str(err),
+                },
             ) from err  # pragma: no mutate
 
         except asyncio.CancelledError:
@@ -561,7 +575,13 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 "%s Error setting properties", self.log_prefix
             )  # pragma: no mutate
             raise HomeAssistantError(
-                f"Failed to set property {property_name}: {err}"
+                f"Failed to set property {property_name}: {err}",
+                translation_domain=DOMAIN,
+                translation_key=ERR_PROPERTY_SET_FAILED,
+                translation_placeholders={
+                    "property": str(property_name),
+                    "error": str(err),
+                },
             ) from err  # pragma: no mutate
 
         if not all(results):
@@ -571,7 +591,13 @@ class SamsungClimateCoordinator(DataUpdateCoordinator[ClimateIPDeviceState]):
                 self.log_prefix,
             )  # pragma: no mutate
             raise HomeAssistantError(
-                f"Failed to set property {property_name} to {new_value}"
+                f"Failed to set property {property_name} to {new_value}",
+                translation_domain=DOMAIN,
+                translation_key=ERR_PROPERTY_SET_FAILED,
+                translation_placeholders={
+                    "property": str(property_name),
+                    "error": str(new_value),
+                },
             )
 
     async def _async_handle_set_property_failure(

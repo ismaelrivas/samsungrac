@@ -506,6 +506,7 @@ async def test_test_connection_safe_8888_success(hass_mock):
         assert mock_get.call_args.kwargs["headers"] == {
             "Authorization": "Bearer tok8888",
             "Content-Type": "application/json",
+            "Accept-Encoding": "identity",
         }
 
 
@@ -1173,6 +1174,75 @@ async def test_cf_helpers_process_samsung_device_step_mac_resolve_failed(hass_mo
             ip_address="1.2.3.4", mac_address="AA:BB:CC:DD:EE:FF"
         )
         mock_schema.assert_called_once_with(mac_required=True)
+
+
+@pytest.mark.asyncio
+async def test_cf_helpers_process_samsung_device_step_mim_h03_skips_mac_resolve_failed(
+    hass_mock,
+):
+    """Test _async_process_samsung_device_step allows mim_h03 to continue when ARP fails."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass_mock
+    flow.flow_data = {}
+
+    with (
+        patch.object(
+            flow,
+            "_async_resolve_mac_and_set_unique_id",
+            new_callable=AsyncMock,
+            return_value="mac_resolve_failed",
+        ) as mock_resolve,
+        patch.object(
+            flow,
+            "async_step_test_connection",
+            new_callable=AsyncMock,
+            return_value={
+                "type": FlowResultType.SHOW_PROGRESS,
+                "step_id": "test_connection",
+            },
+        ) as mock_test_conn,
+    ):
+        user_input = {CONF_IP_ADDRESS: "192.168.10.50", CONF_TOKEN: "tok"}
+        res = await flow._async_process_samsung_device_step(
+            "mim_h03", is_8888=True, user_input=user_input
+        )
+
+        assert res["step_id"] == "test_connection"
+        mock_resolve.assert_called_once_with(
+            ip_address="192.168.10.50", mac_address=None
+        )
+        mock_test_conn.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_cf_helpers_process_samsung_device_step_mim_h03_other_error_still_returns_form(
+    hass_mock,
+):
+    """Test _async_process_samsung_device_step still shows form for mim_h03 on non-ARP errors."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass_mock
+    flow.flow_data = {}
+
+    with (
+        patch.object(
+            flow,
+            "_async_resolve_mac_and_set_unique_id",
+            new_callable=AsyncMock,
+            return_value="cannot_connect",
+        ),
+        patch.object(
+            flow, "_get_samsung_8888_schema", return_value="schema_8888"
+        ) as mock_schema,
+    ):
+        user_input = {CONF_IP_ADDRESS: "192.168.10.50"}
+        res = await flow._async_process_samsung_device_step(
+            "mim_h03", is_8888=True, user_input=user_input
+        )
+
+        assert res["type"] == FlowResultType.FORM
+        assert res["step_id"] == "mim_h03"
+        assert res["errors"] == {"base": "cannot_connect"}
+        mock_schema.assert_called_once_with(mac_required=False)
 
 
 @pytest.mark.asyncio
@@ -2701,6 +2771,12 @@ async def test_cf_helpers_process_reconfigure_no_mac_does_not_abort_mismatch(has
         ),
         patch.object(
             flow,
+            "_test_connection_safe",
+            new_callable=AsyncMock,
+            return_value={"ok": True},
+        ),
+        patch.object(
+            flow,
             "async_update_reload_and_abort",
             return_value={
                 "type": FlowResultType.ABORT,
@@ -2828,6 +2904,12 @@ async def test_cf_helpers_process_reconfigure_success_updates_entry(hass_mock):
         patch.object(
             flow, "_async_validate_cert_path", new_callable=AsyncMock, return_value=True
         ),
+        patch.object(
+            flow,
+            "_test_connection_safe",
+            new_callable=AsyncMock,
+            return_value={"ok": True},
+        ),
         patch.object(flow, "async_update_reload_and_abort") as mock_update,
     ):
         mock_update.return_value = {
@@ -2868,6 +2950,12 @@ async def test_cf_helpers_process_reconfigure_mac_matches_case_insensitive(hass_
         patch.object(
             flow, "_async_validate_cert_path", new_callable=AsyncMock, return_value=True
         ),
+        patch.object(
+            flow,
+            "_test_connection_safe",
+            new_callable=AsyncMock,
+            return_value={"ok": True},
+        ),
         patch.object(flow, "async_update_reload_and_abort") as mock_update,
     ):
         mock_update.return_value = {
@@ -2905,6 +2993,12 @@ async def test_cf_helpers_process_reconfigure_empty_cert_clears_and_warns(hass_m
             new_callable=AsyncMock,
             return_value=None,
         ),
+        patch.object(
+            flow,
+            "_test_connection_safe",
+            new_callable=AsyncMock,
+            return_value={"ok": True},
+        ),
         patch.object(flow, "async_update_reload_and_abort") as mock_update,
         patch("logging.Logger.warning") as mock_warn,
     ):
@@ -2938,6 +3032,12 @@ async def test_cf_helpers_process_reconfigure_smartthings_skips_mac_resolution(
         patch.object(
             flow, "_async_resolve_mac_and_set_unique_id", new_callable=AsyncMock
         ) as mock_resolve,
+        patch.object(
+            flow,
+            "_test_connection_safe",
+            new_callable=AsyncMock,
+            return_value={"ok": True},
+        ),
         patch.object(flow, "async_update_reload_and_abort") as mock_update,
     ):
         mock_update.return_value = {
@@ -2949,6 +3049,67 @@ async def test_cf_helpers_process_reconfigure_smartthings_skips_mac_resolution(
 
         assert res["reason"] == "reconfigure_successful"
         mock_resolve.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cf_helpers_process_reconfigure_connection_test_failed(hass_mock):
+    """Test _async_process_reconfigure_input returns form with error when connection test fails."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass_mock
+    flow.flow_data = {CONF_DEVICE_TYPE: DEVICE_TYPE_SAMSUNG_2878}
+    rec_entry = MagicMock(
+        unique_id="112233445566", title="Test AC", data={"old": "val"}
+    )
+
+    user_input = {
+        CONF_IP_ADDRESS: "1.1.1.1",
+        CONF_MAC: "112233445566",
+        CONF_TOKEN: "valid_token",
+    }
+
+    for conn_res, expected_err in (
+        ({"ok": False, "error": "invalid_auth"}, "invalid_auth"),
+        ({"ok": False}, "cannot_connect"),
+    ):
+        with (
+            patch.object(
+                flow,
+                "_async_resolve_mac_and_set_unique_id",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch.object(
+                flow,
+                "_async_validate_cert_path",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch.object(
+                flow,
+                "_test_connection_safe",
+                new_callable=AsyncMock,
+                return_value=conn_res,
+            ),
+            patch.object(
+                flow,
+                "_current_reconfigure_suggested",
+                return_value={"ip_address": "1.1.1.1"},
+            ),
+            patch.object(
+                flow,
+                "_async_show_reconfigure_form",
+                return_value={"type": FlowResultType.FORM},
+            ) as mock_form,
+            patch.object(flow, "async_update_reload_and_abort") as mock_update,
+        ):
+            res = await flow._async_process_reconfigure_input(rec_entry, user_input)
+
+        assert res["type"] == FlowResultType.FORM
+        mock_form.assert_called_once_with(
+            {"base": expected_err},
+            {"ip_address": "1.1.1.1"},
+        )
+        mock_update.assert_not_called()
 
 
 # -----------------------------------------------------------------------------
@@ -3015,6 +3176,7 @@ async def test_test_connection_safe_8888_header_violation_raw_success(hass_mock)
         headers={
             "Authorization": "Bearer tok8888",
             "Content-Type": "application/json",
+            "Accept-Encoding": "identity",
         },
     )
     mock_client.close.assert_awaited_once()
@@ -3045,7 +3207,7 @@ async def test_test_connection_safe_8888_bad_http_message_raw_success(hass_mock)
 
 @pytest.mark.asyncio
 async def test_test_connection_safe_8888_header_violation_raw_error(hass_mock):
-    """Test a raw engine HTTP error maps to cannot_connect and still closes the socket."""
+    """Test raw HTTP error or CannotConnect maps to cannot_connect and closes the socket."""
     flow = _flow_8888(hass_mock)
 
     with (
@@ -3064,6 +3226,26 @@ async def test_test_connection_safe_8888_header_violation_raw_error(hass_mock):
         res = await flow._test_connection_safe()
 
     assert res == {"ok": False, "error": "cannot_connect"}
+    mock_client.close.assert_awaited_once()
+
+    # Also verify CannotConnect from Samsung8888Client maps cleanly to cannot_connect
+    flow_conn_err = _flow_8888(hass_mock)
+    with (
+        patch(
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession"
+        ) as mock_sess,
+        patch(
+            "custom_components.climate_ip.connection_aiohttp.Samsung8888Client"
+        ) as mock_client_cls,
+    ):
+        mock_sess.return_value.get.side_effect = _header_violation_error()
+        mock_client = mock_client_cls.return_value
+        mock_client.request = AsyncMock(side_effect=CannotConnect("socket timeout"))
+        mock_client.close = AsyncMock()
+
+        res_conn = await flow_conn_err._test_connection_safe()
+
+    assert res_conn == {"ok": False, "error": "cannot_connect"}
     mock_client.close.assert_awaited_once()
 
 

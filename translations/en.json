@@ -267,6 +267,9 @@
         },
         "device_unreachable": {
             "message": "Device {device_name} ({host}) is unreachable. Check power and network connection."
+        },
+        "template_render_failed": {
+            "message": "Failed to evaluate template for property {property}: {error}"
         }
     },
     "issues": {
