@@ -440,7 +440,9 @@ class ConfigFlowHelpersMixin(_FlowMixinBase):
                 ip_address=ip_addr, mac_address=mac_val
             )
 
-            if error_reason is not None:
+            if error_reason is not None and not (
+                step_id == "mim_h03" and error_reason == "mac_resolve_failed"
+            ):
                 errors["base"] = error_reason
                 req = error_reason == "mac_resolve_failed"
                 return self.async_show_form(

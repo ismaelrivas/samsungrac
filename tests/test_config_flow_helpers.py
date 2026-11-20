@@ -525,6 +525,7 @@ async def test_test_connection_safe_8888_success(hass_mock):
         assert mock_get.call_args.kwargs["headers"] == {
             "Authorization": "Bearer tok8888",
             "Content-Type": "application/json",
+            "Accept-Encoding": "identity",
         }
 
 
@@ -1192,6 +1193,75 @@ async def test_cf_helpers_process_samsung_device_step_mac_resolve_failed(hass_mo
             ip_address="1.2.3.4", mac_address="AA:BB:CC:DD:EE:FF"
         )
         mock_schema.assert_called_once_with(mac_required=True)
+
+
+@pytest.mark.asyncio
+async def test_cf_helpers_process_samsung_device_step_mim_h03_skips_mac_resolve_failed(
+    hass_mock,
+):
+    """Test _async_process_samsung_device_step allows mim_h03 to continue when ARP fails."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass_mock
+    flow.flow_data = {}
+
+    with (
+        patch.object(
+            flow,
+            "_async_resolve_mac_and_set_unique_id",
+            new_callable=AsyncMock,
+            return_value="mac_resolve_failed",
+        ) as mock_resolve,
+        patch.object(
+            flow,
+            "async_step_test_connection",
+            new_callable=AsyncMock,
+            return_value={
+                "type": FlowResultType.SHOW_PROGRESS,
+                "step_id": "test_connection",
+            },
+        ) as mock_test_conn,
+    ):
+        user_input = {CONF_IP_ADDRESS: "192.168.10.50", CONF_TOKEN: "tok"}
+        res = await flow._async_process_samsung_device_step(
+            "mim_h03", is_8888=True, user_input=user_input
+        )
+
+        assert res["step_id"] == "test_connection"
+        mock_resolve.assert_called_once_with(
+            ip_address="192.168.10.50", mac_address=None
+        )
+        mock_test_conn.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_cf_helpers_process_samsung_device_step_mim_h03_other_error_still_returns_form(
+    hass_mock,
+):
+    """Test _async_process_samsung_device_step still shows form for mim_h03 on non-ARP errors."""
+    flow = ClimateIpConfigFlow()
+    flow.hass = hass_mock
+    flow.flow_data = {}
+
+    with (
+        patch.object(
+            flow,
+            "_async_resolve_mac_and_set_unique_id",
+            new_callable=AsyncMock,
+            return_value="cannot_connect",
+        ),
+        patch.object(
+            flow, "_get_samsung_8888_schema", return_value="schema_8888"
+        ) as mock_schema,
+    ):
+        user_input = {CONF_IP_ADDRESS: "192.168.10.50"}
+        res = await flow._async_process_samsung_device_step(
+            "mim_h03", is_8888=True, user_input=user_input
+        )
+
+        assert res["type"] == FlowResultType.FORM
+        assert res["step_id"] == "mim_h03"
+        assert res["errors"] == {"base": "cannot_connect"}
+        mock_schema.assert_called_once_with(mac_required=False)
 
 
 @pytest.mark.asyncio
