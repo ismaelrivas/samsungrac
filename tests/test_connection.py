@@ -5,6 +5,7 @@ import asyncio
 import dataclasses
 import inspect
 import logging
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from jinja2 import Template
@@ -546,6 +547,66 @@ def test_check_execute_condition_devices_list_unwrapping():
     # Case 1: Valid Devices list with dict
     conn.condition_template = _TMPL_TARGET_TEMP_24
     assert conn.check_execute_condition({"Devices": [{"target_temp": 24}]}) is True
+
+    # Case 1b: Controller is None -> selects Devices[0]
+    conn._controller = None
+    assert (
+        conn.check_execute_condition(
+            {"Devices": [{"id": "0", "target_temp": 24}, {"target_temp": 18}]}
+        )
+        is True
+    )
+
+    # Case 1c: Controller with specific device_id -> skips non-dict and mismatched entries
+    conn._controller = SimpleNamespace(device_id="032001002")
+    assert (
+        conn.check_execute_condition(
+            {
+                "Devices": [
+                    "not_a_dict",
+                    {"id": "0", "target_temp": 18},
+                    {"id": "032001002", "target_temp": 24},
+                ]
+            }
+        )
+        is True
+    )
+
+    # Case 1d: Numeric vs string ID coercion in both directions
+    conn._controller = SimpleNamespace(device_id=2)
+    assert (
+        conn.check_execute_condition(
+            {
+                "Devices": [
+                    {"id": "0", "target_temp": 18},
+                    {"id": "2", "target_temp": 24},
+                ]
+            }
+        )
+        is True
+    )
+    conn._controller = SimpleNamespace(device_id="2")
+    assert (
+        conn.check_execute_condition(
+            {"Devices": [{"id": 0, "target_temp": 18}, {"id": 2, "target_temp": 24}]}
+        )
+        is True
+    )
+
+    # Case 1e: Unmatched device_id falls back to Devices[0]
+    conn._controller = SimpleNamespace(device_id="999")
+    assert (
+        conn.check_execute_condition(
+            {
+                "Devices": [
+                    {"id": "0", "target_temp": 24},
+                    {"id": "1", "target_temp": 18},
+                ]
+            }
+        )
+        is True
+    )
+    conn._controller = None
 
     # Case 2: Empty Devices list does not throw IndexError (kills slow-killed mutant 36, 38)
     conn.condition_template = _TMPL_DEVICES_EMPTY

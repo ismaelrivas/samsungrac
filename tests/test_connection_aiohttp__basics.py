@@ -242,12 +242,13 @@ def test_prepare_request_headers_unit(
     )
     assert headers["Authorization"] == "Bearer my_token"
     assert headers["Content-Type"] == "application/json"
+    assert headers["Accept-Encoding"] == "identity"
     assert "Connection" not in headers
 
-    # 2. Force close connection active
+    # 2. Force close connection active (preserves caller-supplied Accept-Encoding)
     conn._force_close_connection = True
     headers_close = conn._prepare_request_headers(
-        headers={"Custom": "Header"},
+        headers={"Custom": "Header", "Accept-Encoding": "gzip"},
         current_token="my_token",
         host="192.168.1.100",
         dev_id="dev123",
@@ -256,6 +257,7 @@ def test_prepare_request_headers_unit(
     assert headers_close["Authorization"] == "Bearer my_token"
     assert headers_close["Content-Type"] == "application/json"
     assert headers_close["Custom"] == "Header"
+    assert headers_close["Accept-Encoding"] == "gzip"
     assert headers_close["Connection"] == "close"
 
     # 3. Missing token raises AuthError
@@ -1457,9 +1459,10 @@ async def test_try_connection_strict_token_and_port(
     args, kwargs = mock_session.request.call_args
 
     # MILLIMETRIC ASSERTIONS
-    assert kwargs["headers"]["Authorization"] == "Bearer CTRL_TOK", (
-        "Mutant broke controller token fallback"
-    )
+    assert kwargs["headers"] == {
+        "Authorization": "Bearer CTRL_TOK",
+        "Accept-Encoding": "identity",
+    }, "Mutant broke headers in _try_connection"
     assert args[1] == "https://1.1.1.1:7777", "Mutant broke port in _try_connection"
 
 
@@ -2119,6 +2122,7 @@ async def test_async_test_8888_connection_statuses():
             headers={
                 "Authorization": "Bearer valid_tok",
                 "Content-Type": "application/json",
+                "Accept-Encoding": "identity",
             },
             ssl=mock_ssl,
             timeout=10,

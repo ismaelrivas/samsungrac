@@ -1,5 +1,20 @@
 # Changelog
 
+## [10.0.1b11] - 2026-11-20
+
+### MIM-H03 Compatibility & Multi-Unit Fixes
+- **HTTP Compression Compatibility (`connection_aiohttp.py`)**: Enforced `Accept-Encoding: identity` across `ConnectionAiohttp8888` (`async_test_8888_connection`, `_try_connection`, and `_prepare_request_headers`) to prevent `LibSHP/1.0` embedded HTTP servers on MIM-H03 and port-8888 units from failing on compressed payloads, while preserving caller-supplied `Accept-Encoding` headers.
+- **Multi-Unit Condition Routing (`connection.py`)**: Fixed `Connection.check_execute_condition()` to select the matching sub-device entry in `raw_state["Devices"]` by `self._controller.device_id` before falling back to `Devices[0]`.
+- **MIM-H03 Split HVAC Endpoints (`mim-h03_heatpump.yaml`)**: Split `operations.hvac` commands into `PUT .../devices/__DEVICE_ID__/mode` (`{"Mode": {"modes": [...]}}`) with a conditional chained call to `.../operation` (`{"Operation": {"power": "On"}}` when `device_state.Operation.power == 'Off'`), preserving `heat_cool` and `optimistic_cascades`, and routing `'off'` directly to `.../operation`.
+- **Cross-Subnet MIM-H03 Onboarding (`config_flow_helpers.py`)**: Allowed the `mim_h03` configuration step to proceed when L2 ARP MAC resolution fails (`mac_resolve_failed`), since the true `unique_id` is subsequently resolved from the coordinator's `uuid` during `/devices` discovery.
+- **Phase 1 Master Plan Improvements**: Includes Phase 1 robustness and error-handling improvements (D-01, D-03, D-08) merged since `v10.0.1b10`.
+
+### Quality Assurance
+- **Verified Test & Coverage Baseline**: **830 passed** unit tests (0 failed) with **97.33% total coverage** (**100%** on `config_flow.py` and `diagnostics.py`), passing all Home Assistant Core 2026.10 toolchain checks (`ruff`, `mypy`, `pylint`, `hassfest`, `translations`, `licenses`, and `prek`).
+
+### Acknowledgments
+- Special thanks to **[@valdenny](https://github.com/valdenny)** (Daniele Valenti) for diagnosing and reporting the real-world MIM-H03 hardware issues in [PR #30](https://github.com/ismaelrivas/samsungrac/pull/30) (`LibSHP/1.0` HTTP compression sensitivity, `/mode` + `/operation` endpoint split, and cross-subnet multi-unit onboarding behavior).
+
 ## [10.0.1b10] - 2026-11-11
 
 ### Architecture, Core 2026.10 Compliance & Engine Streamlining
