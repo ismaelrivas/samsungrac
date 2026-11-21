@@ -385,6 +385,7 @@ class ConnectionAiohttp8888(Connection):
         new_conn.load_from_yaml(yaml_node, self)
 
         if yaml_node is not None:
+            new_conn._post_delay = float(yaml_node.get(CONFIG_DEVICE_POST_DELAY, 0))
             if (
                 conn_tmpl := yaml_node.get(CONFIG_DEVICE_CONNECTION_TEMPLATE)
             ) is not None:
@@ -395,9 +396,6 @@ class ConnectionAiohttp8888(Connection):
 
             if (embedded_node := yaml_node.get(CONFIG_DEVICE_CONNECTION)) is not None:
                 new_conn._embedded_command = new_conn.create_updated(embedded_node)
-                new_conn._embedded_command._post_delay = float(
-                    embedded_node.get(CONFIG_DEVICE_POST_DELAY, 0)
-                )
                 if (
                     cond_str := embedded_node.get(CONFIG_DEVICE_CONDITION_TEMPLATE)
                 ) is not None:
@@ -408,6 +406,11 @@ class ConnectionAiohttp8888(Connection):
         # pylint: enable=protected-access
 
         return new_conn  # type: ignore[return-value]
+
+    @property
+    def post_delay(self) -> float:
+        """Seconds to wait after this command runs as an embedded command."""
+        return self._post_delay
 
     @property
     def is_async_native(self) -> bool:
@@ -776,8 +779,8 @@ class ConnectionAiohttp8888(Connection):
                     ),  # pragma: no mutate
                     device_state=device_state,
                 )
-                post_delay = getattr(self._embedded_command, "_post_delay", 0)
-                if isinstance(post_delay, (int, float)) and post_delay > 0:
+                post_delay = self._embedded_command.post_delay
+                if post_delay > 0:
                     _LOGGER.debug(
                         "%s [async_execute] Waiting %.1fs after embedded command",
                         self.log_prefix,

@@ -797,6 +797,7 @@ async def test_async_execute_embedded_command_kwargs_strict(
     embed_mock.connection_template.async_render = MagicMock(
         return_value='{"method": "PUT", "url": "/embed", "json": {"key": "val"}, "headers": {"X": "Y"}}'
     )
+    embed_mock.post_delay = 0.0
     conn._embedded_command = embed_mock
     conn._shared_state.initialized = True
     conn._shared_state.ssl_context = MagicMock()
@@ -1058,6 +1059,7 @@ async def test_embedded_command_without_template_and_empty_params_skips(
     embed_mock.check_execute_condition.return_value = True
     embed_mock.connection_template = None
     embed_mock.params = {}  # <--- Empty -> bool({}) is False -> enters else: embedded_params = None
+    embed_mock.post_delay = 0.0
     conn._embedded_command = embed_mock
 
     await conn.async_execute("GET", "/main", None, {}, device_state={"state": "on"})
@@ -1106,6 +1108,7 @@ async def test_embedded_command_strict_fallbacks_to_main(
     # TRICK: Irrelevant key so bool(_params) is True
     # but intentionally omit 'method', 'url', 'json', and 'headers'
     embed_mock.params = {"dummy_key": "force_execution"}
+    embed_mock.post_delay = 0.0
     conn._embedded_command = embed_mock
 
     # Execute main with NON-empty headers → if fallback mutates to None, test fails

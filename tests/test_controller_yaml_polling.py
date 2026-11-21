@@ -1452,9 +1452,16 @@ async def test_async_shutdown() -> None:
         mock_sleep.assert_awaited_once_with(1.0)
 
 
+def _mim_h03_identifiers(ctrl: Any, *device_ids: str) -> None:
+    """Give the controller's YAML cache the MIM-H03 'identifiers' section."""
+    ident = {"device": {"identifiers": {"path_to_devices": ["Devices"], "id": ["id"]}}}
+    ctrl.loader._parsed_yaml_cache = {dev_id: ident for dev_id in device_ids}
+
+
 def test_pure_network_state_selects_unit_by_id() -> None:
     """Multi-unit gateways (MIM-H03) list the Wi-Fi kit as Devices[0]: pick the unit by id."""
     poller = YamlStatePoller(DummyController(device_id="032001001"))
+    _mim_h03_identifiers(poller.controller, "032001001", "99")
     unit = {"id": "032001001", "power": "off"}
     poller._pure_network_state = {
         "Devices": [
@@ -1472,6 +1479,7 @@ def test_pure_network_state_selects_unit_by_id() -> None:
 def test_inject_value_into_state_targets_unit_node() -> None:
     """Optimistic values and cascades land on the controller's unit, not on Devices[0]."""
     poller = YamlStatePoller(DummyController(device_id="032001001"))
+    _mim_h03_identifiers(poller.controller, "032001001")
     poller._get_state_node_from_prop = MagicMock(return_value="Operation.power")
     prop = MagicMock(spec=["convert_hass_to_dev", "apply_optimistic_cascades"])
     prop.convert_hass_to_dev.return_value = "Off"
