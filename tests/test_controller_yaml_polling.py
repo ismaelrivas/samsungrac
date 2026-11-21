@@ -1450,3 +1450,42 @@ async def test_async_shutdown() -> None:
     ) as mock_sleep:
         await poller.async_shutdown()
         mock_sleep.assert_awaited_once_with(1.0)
+
+
+def test_pure_network_state_selects_unit_by_id() -> None:
+    """Multi-unit gateways (MIM-H03) list the Wi-Fi kit as Devices[0]: pick the unit by id."""
+    poller = YamlStatePoller(DummyController(device_id="032001001"))
+    unit = {"id": "032001001", "power": "off"}
+    poller._pure_network_state = {
+        "Devices": [
+            {"id": "0", "power": "on"},
+            {"id": "032001000", "power": "on"},
+            unit,
+        ]
+    }
+    assert poller.pure_network_state == unit
+
+    poller.controller.device_id = "99"
+    assert poller.pure_network_state == {"id": "0", "power": "on"}
+
+
+def test_inject_value_into_state_targets_unit_node() -> None:
+    """Optimistic values and cascades land on the controller's unit, not on Devices[0]."""
+    poller = YamlStatePoller(DummyController(device_id="032001001"))
+    poller._get_state_node_from_prop = MagicMock(return_value="Operation.power")
+    prop = MagicMock(spec=["convert_hass_to_dev", "apply_optimistic_cascades"])
+    prop.convert_hass_to_dev.return_value = "Off"
+    state: dict[str, Any] = {
+        "Devices": [
+            {"id": "0", "Operation": {"power": "On"}},
+            {"id": "032001000", "Operation": {"power": "On"}},
+            {"id": "032001001", "Operation": {"power": "On"}},
+        ]
+    }
+
+    poller._inject_value_into_state(prop, state, "off")
+
+    assert state["Devices"][2]["Operation"]["power"] == "Off"
+    assert state["Devices"][1]["Operation"]["power"] == "On"
+    assert state["Devices"][0]["Operation"]["power"] == "On"
+    prop.apply_optimistic_cascades.assert_any_call(state["Devices"][2], "off", "Off")

@@ -685,9 +685,12 @@ class YamlStatePoller:
                 pass
 
         state_node = self._get_state_node_from_prop(prop)
+        unit_node = self._find_unit_node(device_state)
         if state_node and isinstance(state_node, str):
             target_nodes = [device_state]
-            if (
+            if unit_node is not None and not state_node.startswith("Devices"):
+                target_nodes.append(unit_node)
+            elif (
                 not state_node.startswith("Devices")
                 and "Devices" in device_state
                 and isinstance(device_state["Devices"], list)
@@ -702,6 +705,8 @@ class YamlStatePoller:
         if hasattr(prop, "apply_optimistic_cascades"):
             try:
                 prop.apply_optimistic_cascades(device_state, value, dev_val)
+                if unit_node is not None:
+                    prop.apply_optimistic_cascades(unit_node, value, dev_val)
             except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
                 _LOGGER.debug(
                     "%s [Prop %s] apply_optimistic_cascades failed: %s",
@@ -720,6 +725,16 @@ class YamlStatePoller:
                     e,
                     exc_info=True,
                 )
+
+    def _find_unit_node(self, state: Any) -> dict[str, Any] | None:
+        """Return this controller's unit from a multi-unit 'Devices' payload, if present."""
+        if not isinstance(state, dict) or not isinstance(state.get("Devices"), list):
+            return None
+        target_id = str(getattr(self.controller, "device_id", "") or "")
+        for dev in state["Devices"]:
+            if isinstance(dev, dict) and str(dev.get("id")) == target_id:
+                return dev
+        return None
 
     def _find_device_node(self, raw_state: Any) -> dict[str, Any] | None:
         """Locate the target device dictionary in the raw network payload."""
@@ -1246,7 +1261,10 @@ class YamlStatePoller:
             and len(devices) > 0
             and isinstance(devices[0], dict)
         ):
-            return devices[0]
+            # Multi-unit gateways (e.g. MIM-H03) list the Wi-Fi kit itself as
+            # Devices[0]: select this controller's unit by id.
+            unit_node = self._find_unit_node(st)
+            return unit_node if unit_node is not None else devices[0]
         return dict(st)
 
     def get_hass_attr_for_op_id(self, op_id: str) -> str:

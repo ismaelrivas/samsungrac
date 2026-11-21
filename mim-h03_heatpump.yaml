@@ -42,13 +42,13 @@ device:
       connection:
         params: { method: 'PUT', url: 'https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__/mode' }
       values:
-        cool: { value : 'Opmode_Cool', connection: { params: { json: { "Mode": { "modes": ["Opmode_Cool"] } } }, connection: { params: { json: { "Operation": { "power" : "On" } }, url: 'https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__/operation' }, condition_template: "{% if device_state.Operation.power == 'Off' -%}1{%- else -%}0{%- endif %}" } } }
-        heat: { value : 'Opmode_Heat', connection: { params: { json: { "Mode": { "modes": ["Opmode_Heat"] } } }, connection: { params: { json: { "Operation": { "power" : "On" } }, url: 'https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__/operation' }, condition_template: "{% if device_state.Operation.power == 'Off' -%}1{%- else -%}0{%- endif %}" } } }
+        cool: { value : 'Opmode_Cool', connection: { params: { json: { "Mode": { "modes": ["Opmode_Cool"] } } }, connection: { params: { json: { "Operation": { "power" : "On" } }, url: 'https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__/operation' }, condition_template: "{% if device_state.Operation.power == 'Off' -%}1{%- else -%}0{%- endif %}", post_delay: 3 } } }
+        heat: { value : 'Opmode_Heat', connection: { params: { json: { "Mode": { "modes": ["Opmode_Heat"] } } }, connection: { params: { json: { "Operation": { "power" : "On" } }, url: 'https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__/operation' }, condition_template: "{% if device_state.Operation.power == 'Off' -%}1{%- else -%}0{%- endif %}", post_delay: 3 } } }
         'off': { value: 'Off', connection: { params: { json: { "Operation": { "power" : "Off" } }, url: 'https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__/operation' } } }
-        auto: { value : 'Opmode_Auto', connection: { params: { json: { "Mode": { "modes": ["Opmode_Auto"] } } }, connection: { params: { json: { "Operation": { "power" : "On" } }, url: 'https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__/operation' }, condition_template: "{% if device_state.Operation.power == 'Off' -%}1{%- else -%}0{%- endif %}" } } }
-        heat_cool: { value : 'Opmode_Auto', connection: { params: { json: { "Mode": { "modes": ["Opmode_Auto"] } } }, connection: { params: { json: { "Operation": { "power" : "On" } }, url: 'https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__/operation' }, condition_template: "{% if device_state.Operation.power == 'Off' -%}1{%- else -%}0{%- endif %}" } } }
-        fan_only: { value : 'Opmode_Fan', connection: { params: { json: { "Mode": { "modes": ["Opmode_Fan"] } } }, connection: { params: { json: { "Operation": { "power" : "On" } }, url: 'https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__/operation' }, condition_template: "{% if device_state.Operation.power == 'Off' -%}1{%- else -%}0{%- endif %}" } } }
-        dry: { value : 'Opmode_Dry', connection: { params: { json: { "Mode": { "modes": ["Opmode_Dry"] } } }, connection: { params: { json: { "Operation": { "power" : "On" } }, url: 'https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__/operation' }, condition_template: "{% if device_state.Operation.power == 'Off' -%}1{%- else -%}0{%- endif %}" } } }
+        auto: { value : 'Opmode_Auto', connection: { params: { json: { "Mode": { "modes": ["Opmode_Auto"] } } }, connection: { params: { json: { "Operation": { "power" : "On" } }, url: 'https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__/operation' }, condition_template: "{% if device_state.Operation.power == 'Off' -%}1{%- else -%}0{%- endif %}", post_delay: 3 } } }
+        heat_cool: { value : 'Opmode_Auto', connection: { params: { json: { "Mode": { "modes": ["Opmode_Auto"] } } }, connection: { params: { json: { "Operation": { "power" : "On" } }, url: 'https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__/operation' }, condition_template: "{% if device_state.Operation.power == 'Off' -%}1{%- else -%}0{%- endif %}", post_delay: 3 } } }
+        fan_only: { value : 'Opmode_Fan', connection: { params: { json: { "Mode": { "modes": ["Opmode_Fan"] } } }, connection: { params: { json: { "Operation": { "power" : "On" } }, url: 'https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__/operation' }, condition_template: "{% if device_state.Operation.power == 'Off' -%}1{%- else -%}0{%- endif %}", post_delay: 3 } } }
+        dry: { value : 'Opmode_Dry', connection: { params: { json: { "Mode": { "modes": ["Opmode_Dry"] } } }, connection: { params: { json: { "Operation": { "power" : "On" } }, url: 'https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__/operation' }, condition_template: "{% if device_state.Operation.power == 'Off' -%}1{%- else -%}0{%- endif %}", post_delay: 3 } } }
       # NOTA: Los status_template ahora deben apuntar a la raíz del objeto del dispositivo seleccionado,
       # ya que el controlador se encargará de pasar el objeto correcto.
       # La lógica original es correcta si el controlador pasa el sub-objeto del dispositivo.
@@ -84,6 +84,15 @@ device:
         'High': { value : '2', connection: { params: { json: { "Wind": { "speedLevel": 2 } } } } }
       state_node: 'Wind.speedLevel'
       status_template: '{{ device_state.Wind.speedLevel }}'
+    swing: # swing_mode (indoor units report supportedWindModes "Up_And_Low" and "Fix")
+      type: modes
+      connection:
+        params: { method: 'PUT', url: 'https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__/wind' }
+      values:
+        'off': { value : 'Fix', connection: { params: { json: { "Wind": { "direction": "Fix" } } } } }
+        'vertical': { value : 'Up_And_Low', connection: { params: { json: { "Wind": { "direction": "Up_And_Low" } } } } }
+      state_node: 'Wind.direction'
+      status_template: '{{ device_state.Wind.direction }}'
     temperature:
       type: number
       connection:

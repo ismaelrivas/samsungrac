@@ -38,6 +38,7 @@ from .const import (
     CONFIG_DEVICE_CONNECTION,
     CONFIG_DEVICE_CONNECTION_PARAMS,
     CONFIG_DEVICE_CONNECTION_TEMPLATE,
+    CONFIG_DEVICE_POST_DELAY,
     GLOBAL_HTTP_TIMEOUT,
     MAIN_DEVICE_ID,
     NETWORK_POLL_TIMEOUT,
@@ -120,6 +121,9 @@ class ConnectionAiohttp8888(Connection):
         self._cert_path: str | None = None
         self._shared_state = AiohttpSharedState()
         self._embedded_command: ConnectionAiohttp8888 | None = None
+        # Seconds to wait after this command runs as an embedded command,
+        # before the parent command is sent (e.g. MIM-H03 power-on settle time).
+        self._post_delay: float = 0.0
         self._keep_alive: bool = config.get(CONF_KEEP_ALIVE, True)
 
         if not self._token or not self._token.strip():
@@ -391,6 +395,9 @@ class ConnectionAiohttp8888(Connection):
 
             if (embedded_node := yaml_node.get(CONFIG_DEVICE_CONNECTION)) is not None:
                 new_conn._embedded_command = new_conn.create_updated(embedded_node)
+                new_conn._embedded_command._post_delay = float(
+                    embedded_node.get(CONFIG_DEVICE_POST_DELAY, 0)
+                )
                 if (
                     cond_str := embedded_node.get(CONFIG_DEVICE_CONDITION_TEMPLATE)
                 ) is not None:
@@ -769,6 +776,14 @@ class ConnectionAiohttp8888(Connection):
                     ),  # pragma: no mutate
                     device_state=device_state,
                 )
+                post_delay = getattr(self._embedded_command, "_post_delay", 0)
+                if isinstance(post_delay, (int, float)) and post_delay > 0:
+                    _LOGGER.debug(
+                        "%s [async_execute] Waiting %.1fs after embedded command",
+                        self.log_prefix,
+                        post_delay,
+                    )
+                    await asyncio.sleep(post_delay)
         except (CannotConnect, AuthError) as e:
             _LOGGER.warning(
                 "%s [async_execute] Embedded command failed due to connection error: %s",
