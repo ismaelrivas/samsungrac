@@ -91,6 +91,7 @@ async def test_async_execute_with_embedded_command_condition_not_met(
         embedded_mock.check_execute_condition = MagicMock(return_value=False)
         embedded_mock.params = {}
         embedded_mock.connection_template = None
+        embedded_mock.post_delay = 0.0
         conn._embedded_command = embedded_mock
 
         await conn.async_execute(
@@ -124,6 +125,7 @@ async def test_async_execute_with_embedded_command_no_condition(
         embedded_mock.params = {"url": "/embedded"}
         embedded_mock.connection_template = None
         embedded_mock.async_execute = AsyncMock()
+        embedded_mock.post_delay = 0.0
         conn._embedded_command = embedded_mock
 
         await conn.async_execute(
@@ -241,6 +243,7 @@ async def test_execute_embedded_command_connection_error_logs_warning_and_raises
         embedded_mock.connection_template = None
         error = CannotConnect("API Failure")
         embedded_mock.async_execute = AsyncMock(side_effect=error)
+        embedded_mock.post_delay = 0.0
         conn._embedded_command = embedded_mock
 
         with pytest.raises(CannotConnect):
@@ -264,6 +267,7 @@ def test_set_controller_ref_propagates_to_embedded(
             connection_config, mock_logger, mock_hass, mock_session, "192.168.1.100"
         )
         embedded_mock = MagicMock()
+        embedded_mock.post_delay = 0.0
         conn._embedded_command = embedded_mock
 
         mock_controller = MagicMock()
@@ -294,6 +298,7 @@ async def test_execute_embedded_command_device_state_none(
 
         embedded_mock = MagicMock()
         embedded_mock.async_execute = AsyncMock()
+        embedded_mock.post_delay = 0.0
         conn._embedded_command = embedded_mock
 
         mock_response = AsyncMock(
@@ -336,6 +341,7 @@ async def test_execute_embedded_command_network_error(
         embedded_mock.async_execute = AsyncMock(
             side_effect=aiohttp.ClientError("Socket dropped")
         )
+        embedded_mock.post_delay = 0.0
         conn._embedded_command = embedded_mock
 
         with pytest.raises(CannotConnect) as exc_info:
@@ -362,6 +368,7 @@ async def test_execute_embedded_command_parsing_error(
         mock_tmpl = MagicMock()
         mock_tmpl.async_render.return_value = "invalid json {["
         embedded_mock.connection_template = mock_tmpl
+        embedded_mock.post_delay = 0.0
         conn._embedded_command = embedded_mock
 
         with pytest.raises(CannotConnect) as exc_info:
@@ -393,7 +400,7 @@ def _conn_with_embedded(connection_config, mock_logger, mock_hass, mock_session)
     embedded_mock.params = {"url": "/embedded"}
     embedded_mock.connection_template = None
     embedded_mock.async_execute = AsyncMock()
-    embedded_mock._post_delay = 3.0
+    embedded_mock.post_delay = 3.0
     conn._embedded_command = embedded_mock
     return conn, embedded_mock
 
@@ -453,10 +460,13 @@ def test_create_updated_reads_post_delay(
                 "connection": {"params": {"url": "/operation"}, "post_delay": 3},
             }
         )
-        assert updated._embedded_command._post_delay == 3.0
-        assert updated._post_delay == 0.0
+        assert updated._embedded_command.post_delay == 3.0
+        assert updated.post_delay == 0.0
 
         no_delay = conn.create_updated(
-            {"params": {"url": "/mode"}, "connection": {"params": {"url": "/operation"}}}
+            {
+                "params": {"url": "/mode"},
+                "connection": {"params": {"url": "/operation"}},
+            }
         )
-        assert no_delay._embedded_command._post_delay == 0.0
+        assert no_delay._embedded_command.post_delay == 0.0
