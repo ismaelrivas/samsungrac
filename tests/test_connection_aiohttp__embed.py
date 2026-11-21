@@ -393,7 +393,7 @@ def _conn_with_embedded(connection_config, mock_logger, mock_hass, mock_session)
     embedded_mock.params = {"url": "/embedded"}
     embedded_mock.connection_template = None
     embedded_mock.async_execute = AsyncMock()
-    embedded_mock._post_delay = 3.0
+    embedded_mock.post_delay = 3.0
     conn._embedded_command = embedded_mock
     return conn, embedded_mock
 
@@ -407,7 +407,7 @@ async def test_async_execute_embedded_command_post_delay(
             connection_config, mock_logger, mock_hass, mock_session
         )
         with patch(
-            "custom_components.climate_ip.connection_aiohttp.asyncio.sleep",
+            "custom_components.climate_ip.connection.asyncio.sleep",
             new_callable=AsyncMock,
         ) as mock_sleep:
             await conn.async_execute(
@@ -428,7 +428,7 @@ async def test_async_execute_embedded_command_post_delay_skipped_when_not_execut
         )
         embedded_mock.check_execute_condition.return_value = False
         with patch(
-            "custom_components.climate_ip.connection_aiohttp.asyncio.sleep",
+            "custom_components.climate_ip.connection.asyncio.sleep",
             new_callable=AsyncMock,
         ) as mock_sleep:
             await conn.async_execute(
@@ -453,10 +453,13 @@ def test_create_updated_reads_post_delay(
                 "connection": {"params": {"url": "/operation"}, "post_delay": 3},
             }
         )
-        assert updated._embedded_command._post_delay == 3.0
-        assert updated._post_delay == 0.0
+        assert updated._embedded_command.post_delay == 3.0
+        assert updated.post_delay == 0.0
 
         no_delay = conn.create_updated(
-            {"params": {"url": "/mode"}, "connection": {"params": {"url": "/operation"}}}
+            {
+                "params": {"url": "/mode"},
+                "connection": {"params": {"url": "/operation"}},
+            }
         )
-        assert no_delay._embedded_command._post_delay == 0.0
+        assert no_delay._embedded_command.post_delay == 0.0

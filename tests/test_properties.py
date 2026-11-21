@@ -312,6 +312,26 @@ def test_template_helpers_and_temperature_unit_normalization() -> None:
         assert render_template(Template("{{ 42 }}", hass)) == 42
         assert render_template(Template("{{ val }}", hass), val=7) == 7
 
+        # Mutable parsed results must be isolated from HA's _cached_parse_result LRU cache
+        payload_1 = {"Devices": [{"Wind": {"speedLevel": 0}}]}
+        rendered_1 = render_template(
+            Template("{{ device_state }}", hass), device_state=payload_1
+        )
+        assert rendered_1 == {"Devices": [{"Wind": {"speedLevel": 0}}]}
+        rendered_1["Devices"][0]["Wind"]["speedLevel"] = "0"
+        payload_2 = {"Devices": [{"Wind": {"speedLevel": 0}}]}
+        rendered_2 = render_template(
+            Template("{{ device_state }}", hass), device_state=payload_2
+        )
+        assert rendered_2 is not rendered_1
+        assert rendered_2["Devices"][0]["Wind"]["speedLevel"] == 0
+
+        list_tmpl = Template("{{ [1, [2]] }}", hass)
+        list_1 = render_template(list_tmpl)
+        list_1[1].append(99)
+        list_2 = render_template(list_tmpl)
+        assert list_2 == [1, [2]]
+
         clear_template_warning_cache()
         render_template(Template("{{ undefined_var }}", hass))
         assert len(_WARNED_TEMPLATE_MESSAGES) == 1
@@ -914,7 +934,12 @@ def test_get_json_status_calculate_value_from_state() -> None:
     g = GetJsonStatus("test_json", _StubConnection(is_async_native=False), ctrl)
 
     assert g.calculate_value_from_state(None) is None
-    assert g.calculate_value_from_state({"raw": 1}) == {"raw": 1}
+    raw_input = {"raw": [1]}
+    calc_raw = g.calculate_value_from_state(raw_input)
+    assert calc_raw == {"raw": [1]}
+    assert calc_raw is not raw_input
+    calc_raw["raw"].append(2)
+    assert raw_input == {"raw": [1]}
 
     # Modern Template parses JSON into dict directly (non-str branch)
     g._status_template = Template('{"result": "{{ device_state.val }}"}', ctrl.hass)

@@ -138,8 +138,10 @@ class ConnectionRequestBase(Connection):
         )
 
     def set_controller_ref(self, controller: Any) -> None:
-        """Allows the property to set a reference to the main controller."""
+        """Allow the property to set a reference to the main controller."""
         self._controller = controller
+        if self._embedded_command is not None:
+            self._embedded_command.set_controller_ref(controller)
 
     @property
     def log_prefix(self) -> str:
@@ -268,6 +270,7 @@ class ConnectionRequestBase(Connection):
             self._debug = getattr(connection_base, "_debug", False)
 
         if node is not None:
+            self.post_delay = self._parse_post_delay(node)
             self._params.update(node.get(CONFIG_DEVICE_CONNECTION_PARAMS, {}))
             self._insecure_ssl = node.get("insecure_ssl", self._insecure_ssl)
             self._params["timeout"] = node.get("timeout", self._params["timeout"])
@@ -301,8 +304,8 @@ class ConnectionRequestBase(Connection):
             self._debug,
             hass=self._hass,
         )
-        new_instance.load_from_yaml(yaml_node, self)
         new_instance.set_controller_ref(self._controller)
+        new_instance.load_from_yaml(yaml_node, self)
         return new_instance
 
     async def async_execute(
@@ -453,9 +456,9 @@ class ConnectionRequestBase(Connection):
         device_id: str | None = None,
     ) -> Any:
         """Synchronously executes the command."""
-        if self.embedded_command is not None:
-            self.embedded_command.set_controller_ref(self._controller)
-            self.embedded_command.execute(template, value, device_state, device_id)
+        self._execute_embedded_sync(
+            self.embedded_command, template, value, device_state, device_id
+        )
 
         if not self.check_execute_condition(device_state):
             _LOGGER.debug("%s Execute condition not met, skipping", self.log_prefix)

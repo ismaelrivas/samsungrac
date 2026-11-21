@@ -1,6 +1,7 @@
 # pylint: disable=too-many-branches,too-many-instance-attributes
 """Device property classes for the climate_ip integration."""
 
+import copy
 import dataclasses
 import logging
 import math
@@ -149,7 +150,14 @@ def render_template(template: Template | str | None | Any, **kwargs: Any) -> Any
     if template is None or isinstance(template, str):
         return template
     if isinstance(template, Template):
-        return template.async_render(kwargs, parse_result=True, log_fn=_template_log_fn)
+        rendered = template.async_render(
+            kwargs, parse_result=True, log_fn=_template_log_fn
+        )
+        if isinstance(rendered, (dict, list, set)):
+            # Deep-copy mutable parsed containers so in-place state mutations
+            # cannot poison Home Assistant's global _cached_parse_result LRU cache.
+            return copy.deepcopy(rendered)
+        return rendered
     raise TypeError(
         f"Expected HomeAssistant Template or str, got {type(template).__name__}"
     )
@@ -804,7 +812,11 @@ class GetJsonStatus(DeviceProperty):
                     except (*JSON_DECODE_EXCEPTIONS,):
                         return v
                 return v
-        return device_state
+        return (
+            copy.deepcopy(device_state)
+            if isinstance(device_state, (dict, list, set))
+            else device_state
+        )
 
     async def async_update_state(
         self, device_state_override: dict[str, Any] | None = None, *_args: Any

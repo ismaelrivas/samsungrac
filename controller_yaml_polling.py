@@ -726,15 +726,23 @@ class YamlStatePoller:
                     exc_info=True,
                 )
 
+    def _match_device_by_id(
+        self, devices_list: list[Any], id_path: Any
+    ) -> dict[str, Any] | None:
+        """Return the entry in devices_list matching this controller's device_id."""
+        target_id = str(getattr(self.controller, "device_id", "") or "")
+        for dev in devices_list:
+            if isinstance(dev, dict):
+                curr_id = get_value_by_path(dev, id_path)
+                if curr_id is not None and str(curr_id) == target_id:
+                    return dev
+        return None
+
     def _find_unit_node(self, state: Any) -> dict[str, Any] | None:
         """Return this controller's unit from a multi-unit 'Devices' payload, if present."""
         if not isinstance(state, dict) or not isinstance(state.get("Devices"), list):
             return None
-        target_id = str(getattr(self.controller, "device_id", "") or "")
-        for dev in state["Devices"]:
-            if isinstance(dev, dict) and str(dev.get("id")) == target_id:
-                return dev
-        return None
+        return self._match_device_by_id(state["Devices"], ["id"])
 
     def _find_device_node(self, raw_state: Any) -> dict[str, Any] | None:
         """Locate the target device dictionary in the raw network payload."""
@@ -769,18 +777,8 @@ class YamlStatePoller:
         if not isinstance(devices_list, list) or len(devices_list) == 0:
             return raw_state
 
-        # 3. Match target device ID (strictly evaluating default fallback to "")
-        target_id = str(getattr(self.controller, "device_id", ""))
-
-        matched_device = None
-        for dev in devices_list:
-            if isinstance(dev, dict):
-                curr_id = get_value_by_path(dev, id_path)
-                if curr_id is not None and str(curr_id) == target_id:
-                    matched_device = dev
-                    break
-
-        # Fallback to the matched device, or the first item if no exact match found
+        # 3. Match target device ID (fallback to first item if unmatched)
+        matched_device = self._match_device_by_id(devices_list, id_path)
         return (
             matched_device
             if matched_device is not None
