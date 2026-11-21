@@ -9,6 +9,9 @@
 - **Migrated `requests` Engine `hass`, Controller Propagation & Identity Compression (`connection_request.py`, `connection_request_tls_auto.py`)**: Fixed `ConnectionRequest.create_updated()` and `ConnectionRequestPrint.create_updated()` to pass `hass=self._hass` (resolving `Template(..., None)` skipping condition templates on 9.x-migrated entries), ensured `set_controller_ref()` propagates to `_embedded_command` prior to YAML loading, and defaulted `Accept-Encoding: identity` in `ConnectionRequestBase.execute_internal()` (matching `connection_aiohttp.py` while preserving explicit headers) to prevent MIM-H03 / port 8888 firmware connection drops.
 - **Template Cache Mutation Isolation (`properties.py`)**: Added `copy.deepcopy` for mutable parsed containers (`dict`, `list`, `set`) returned by `render_template()` and by `GetJsonStatus.calculate_value_from_state()` when `status_template` is unset, preventing in-place state mutations from poisoning Home Assistant's global `_cached_parse_result` LRU cache across polls and config entry reloads.
 
+### Fixed
+- **Samsung RAC Swing Mode Payloads (`samsungrac.yaml`)**: samsungrac (8888): swing `off`/`both` now send a flat `{"direction": ...}` body to `/devices/0/wind` (`Fix` / `All`) instead of a nested `Wind` object rejected by real units; `both` reads back `All`/`Rotation`. Fixes #44.
+
 ### Quality Assurance
 - **Verified Test & Coverage Baseline**: **841 passed** unit tests (0 failed) with **97.50% total coverage** (**100%** on `config_flow.py` and `diagnostics.py`), passing all Home Assistant Core 2026.10 toolchain checks (`ruff`, `mypy`, `pylint`, `hassfest`, `translations`, `licenses`, and `prek`).
 

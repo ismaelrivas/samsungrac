@@ -59,18 +59,22 @@ class EmulatorHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # pylint: disable=arguments-differ
         """Suppress default HTTP request logging."""
 
+    def _send_json(self, status: int, body: dict) -> None:
+        """Send a JSON HTTP response with Connection: close."""
+        data = json.dumps(body).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header(
+            "Connection", "close"
+        )  # Prevent keep-alive to allow clean shutdown
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_GET(self):  # pylint: disable=invalid-name
         """Handle GET requests."""
         if self.path == "/devices":
-            data = json.dumps(self.server.device_state).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header(
-                "Connection", "close"
-            )  # Prevent keep-alive to allow clean shutdown
-            self.end_headers()
-            self.wfile.write(data)
+            self._send_json(200, self.server.device_state)
         else:
             self.send_response(404)
             self.send_header("Connection", "close")
@@ -106,17 +110,17 @@ class EmulatorHandler(BaseHTTPRequestHandler):
                 del payload["options"]
             device["Mode"].update(payload)
         elif self.path == "/devices/0/wind":
+            if isinstance(payload, dict) and "Wind" in payload:
+                self._send_json(
+                    400, {"error": "nested Wind payload not accepted on /wind"}
+                )
+                self.server.command_queue.put(
+                    {"path": self.path, "payload": payload, "status": 400}
+                )
+                return
             device["Wind"].update(payload)
 
-        data = json.dumps({}).encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(data)))
-        self.send_header(
-            "Connection", "close"
-        )  # Prevent keep-alive to allow clean shutdown
-        self.end_headers()
-        self.wfile.write(data)
+        self._send_json(200, {})
 
         # Signal that a command was received
         self.server.command_queue.put({"path": self.path, "payload": payload})
@@ -172,4 +176,5 @@ def emulator_8888():
     }
 
     server.shutdown()
+    thread.join(timeout=5)
     server.server_close()
