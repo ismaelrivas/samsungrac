@@ -421,21 +421,25 @@ def _make_tp6x_wrapped_error() -> aiohttp.ClientResponseError:
     return _make_response_error(400, _TP6X_PARSER_MESSAGE, processing)
 
 
-@pytest.mark.parametrize(
-    "message",
-    [
+def test_is_http_protocol_violation_response_error_message_markers():
+    """Status 400 plus either marker (case-insensitive) is a violation, even without cause."""
+    for message in (
         _TP6X_PARSER_MESSAGE,
         "INVALID HEADER value",
         "Bad header token found",
-    ],
-)
-def test_is_http_protocol_violation_response_error_message_markers(message):
-    """Status 400 plus either marker (case-insensitive) is a violation, even without cause."""
+    ):
+        assert (
+            ConnectionAiohttp8888._is_http_protocol_violation(
+                _make_response_error(400, message)
+            )
+            is True
+        )
+
     assert (
         ConnectionAiohttp8888._is_http_protocol_violation(
-            _make_response_error(400, message)
+            _make_response_error(500, "INVALID HEADER value")
         )
-        is True
+        is False
     )
 
 
