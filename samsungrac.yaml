@@ -158,15 +158,15 @@ device:
       connection:
         params: { method: 'PUT', url: 'https://__CLIMATE_IP_HOST__:8888/devices/0/wind' }
       values:
-        'off': { value : "Fix", connection: { params: { json: { "Wind": { "direction" : "Fix" } } } } }
+        'off': { value : "Fix", connection: { params: { json: { "direction": "Fix" } } } }
         'vertical': { value : "Up_And_Low", connection: { params: { json: { "direction": "Up_And_Low" } } } }
         'horizontal': { value : "Left_And_Right", connection: { params: { json: { "direction": "Left_And_Right" } } } }
-        'both': { value : "Rotation", connection: { params: { json: { "Wind": { "direction" : "Rotation" } } } } }
+        'both': { value : "All", connection: { params: { json: { "direction": "All" } } } }
       state_node: 'Wind.direction'
       status_template: >-
         {% set d = device_state.Wind.direction if device_state.Wind is defined else '' %}
         {% if d in ['Fix', 'Fixed', 'Off', 'off'] %}Fix
-        {% elif d in ['All', 'Rotation'] %}Rotation
+        {% elif d in ['All', 'Rotation'] %}All
         {% else %}{{ d }}{% endif %}
     good_sleep:
       type: number

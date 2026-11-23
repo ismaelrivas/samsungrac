@@ -1,5 +1,28 @@
 # Changelog
 
+## [10.0.1b12] - 2026-11-23
+
+### MIM-H03 Power-On Ordering, Vertical Swing & Legacy Engine Fixes
+- **Multi-Unit `pure_network_state` & Optimistic Target Routing (`controller_yaml_polling.py`)**: Resolved the controller's unit node by `device_id` (reusing shared helper `_match_device_by_id` alongside `_find_device_node`) so `pure_network_state` and `_inject_value_into_state` / `apply_optimistic_cascades()` target the sub-device instead of overwriting or reading `Devices[0]` (the MIM-H03 Wi-Fi kit) ([#48](https://github.com/ismaelrivas/samsungrac/pull/48)).
+- **Embedded Command `post_delay` (`connection.py`, `connection_aiohttp.py`, `connection_raw.py`, `connection_request.py`, `connection_request_tls_auto.py`, `const.py`, `mim-h03_heatpump.yaml`)**: Added `CONFIG_DEVICE_POST_DELAY = "post_delay"` with unified parsing/delay helpers on base `Connection` (`post_delay` property), configuring `post_delay: 3` after conditional power-on in `mim-h03_heatpump.yaml` so `/mode` waits 3 s after `Off -> On` power-up ([#48](https://github.com/ismaelrivas/samsungrac/pull/48)).
+- **MIM-H03 Vertical Swing Support (`mim-h03_heatpump.yaml`)**: Exposed `Wind.direction` (`off` -> `Fix`, `vertical` -> `Up_And_Low`) via `PUT .../devices/__DEVICE_ID__/wind` ([#48](https://github.com/ismaelrivas/samsungrac/pull/48)) and translated remaining configuration file comments to English.
+- **Migrated `requests` Engine `hass`, Controller Propagation & Identity Compression (`connection_request.py`, `connection_request_tls_auto.py`)**: Fixed `ConnectionRequest.create_updated()` and `ConnectionRequestPrint.create_updated()` to pass `hass=self._hass` (resolving `Template(..., None)` skipping condition templates on 9.x-migrated entries), ensured `set_controller_ref()` propagates to `_embedded_command` prior to YAML loading, and defaulted `Accept-Encoding: identity` in `ConnectionRequestBase.execute_internal()` (matching `connection_aiohttp.py` while preserving explicit headers) to prevent MIM-H03 / port 8888 firmware connection drops.
+- **Template Cache Mutation Isolation (`properties.py`)**: Added `copy.deepcopy` for mutable parsed containers (`dict`, `list`, `set`) returned by `render_template()` and by `GetJsonStatus.calculate_value_from_state()` when `status_template` is unset, preventing in-place state mutations from poisoning Home Assistant's global `_cached_parse_result` LRU cache across polls and config entry reloads.
+
+### Legacy Port 8888 Config Flow & Raw Availability
+- **Runtime TLS Context & Raw Fallback in 8888 Connection Test (`connection_aiohttp.py`)**: Updated `ConnectionAiohttp8888.build_8888_ssl_context()` to match the runtime mTLS context (TLSv1, `DEFAULT_SSL_CIPHERS`, client `.pem` certificate) and added `_async_test_8888_connection_raw()` fallback (mapping `CannotConnect` cleanly to `cannot_connect`) when legacy 2016-era Samsung port-8888 firmwares emit malformed HTTP headers (e.g., `X-API-Version : v1.0.0`) during onboarding or reconfiguration ([#42](https://github.com/ismaelrivas/samsungrac/pull/42)).
+- **Shared Availability State Across Raw Connection Copies (`connection_raw.py`)**: Added `RawSharedState` shared across `ConnectionRaw8888.create_updated()` copies and updated `_is_connected` after successful requests and on `close()`, allowing the poller to ride out transient errors with cached state instead of marking entities `unavailable` on single errors ([#42](https://github.com/ismaelrivas/samsungrac/pull/42)).
+
+### Fixed
+- **Samsung RAC Swing Mode Payloads (`samsungrac.yaml`)**: Updated `off` (`Fix`) and `both` (`All`) swing commands to send a flat `{"direction": ...}` body to `/devices/0/wind` instead of a nested `Wind` object rejected by real port-8888 units, while mapping both `All` and `Rotation` readbacks to `both` ([#44](https://github.com/ismaelrivas/samsungrac/issues/44)).
+
+### Quality Assurance
+- **Verified Test & Coverage Baseline**: **847 passed** unit tests (0 failed, 1 skipped) with **97.74% total coverage** (**100%** on `config_flow.py` and `diagnostics.py`), passing all Home Assistant Core 2026.10 toolchain checks (`ruff`, `mypy`, `pylint`, `hassfest`, `translations`, `licenses`, and `prek`).
+
+### Acknowledgments
+- Special thanks to **[@valdenny](https://github.com/valdenny)** (Daniele Valenti) for testing `v10.0.1b11` on live MIM-H03 hardware, diagnosing the `Devices[0]` state leak and `<1 s` power-on settle requirement, and contributing [PR #48](https://github.com/ismaelrivas/samsungrac/pull/48).
+- Special thanks to **[@cyberMelo](https://github.com/cyberMelo)** for diagnosing and fixing legacy 2016 port-8888 TLS onboarding/raw fallback and `ConnectionRaw8888` shared availability state across live multi-unit hardware in [PR #42](https://github.com/ismaelrivas/samsungrac/pull/42).
+
 ## [10.0.1b11] - 2026-11-20
 
 ### MIM-H03 Compatibility & Multi-Unit Fixes

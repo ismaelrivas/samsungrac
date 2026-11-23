@@ -95,6 +95,8 @@ class ConnectionRaw8888(Connection):
         if not yaml_node:
             return new_conn
 
+        new_conn.post_delay = self._parse_post_delay(yaml_node)
+
         if CONF_KEEP_ALIVE in yaml_node:
             new_conn._keep_alive = yaml_node[CONF_KEEP_ALIVE]
 
@@ -323,6 +325,7 @@ class ConnectionRaw8888(Connection):
             headers=embedded_params.get("headers", headers),
             device_state=device_state,
         )
+        await self._async_wait_embedded_post_delay(self._embedded_command)
 
     def _get_active_clients(self) -> list[Any]:
         """Yield all active raw socket clients associated with this connection."""

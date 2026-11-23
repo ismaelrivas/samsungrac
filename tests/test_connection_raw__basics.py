@@ -1050,3 +1050,44 @@ async def test_async_reset_client_close_error(
     conn._client = mock_client
     await conn._handle_periodic_reset(is_poll=True)
     assert conn._client is None
+
+
+async def test_raw_create_updated_and_embedded_post_delay(
+    connection_config, mock_logger, mock_hass
+):
+    """Test ConnectionRaw8888 parses post_delay and waits after embedded command."""
+    conn = ConnectionRaw8888(
+        connection_config, mock_logger, mock_hass, None, "192.168.1.100"
+    )
+    updated = conn.create_updated(
+        {
+            "params": {"url": "/mode"},
+            "connection": {"params": {"url": "/operation"}, "post_delay": 3},
+        }
+    )
+    assert updated.post_delay == 0.0
+    assert updated._embedded_command is not None
+    assert updated._embedded_command.post_delay == 3.0
+
+    embedded_mock = MagicMock()
+    embedded_mock.check_execute_condition = MagicMock(return_value=True)
+    embedded_mock.connection_template = None
+    embedded_mock.params = {"url": "/operation"}
+    embedded_mock.post_delay = 3.0
+    embedded_mock.async_execute = AsyncMock()
+    conn._embedded_command = embedded_mock
+
+    with patch(
+        "custom_components.climate_ip.connection.asyncio.sleep",
+        new_callable=AsyncMock,
+    ) as mock_sleep:
+        await conn._async_handle_embedded_command(
+            "PUT",
+            "/mode",
+            {},
+            {"power": "Off"},
+            ("test_token", "192.168.1.100", "032001000", ""),
+        )
+
+    embedded_mock.async_execute.assert_awaited_once()
+    mock_sleep.assert_awaited_once_with(3.0)

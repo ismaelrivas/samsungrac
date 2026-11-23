@@ -5,11 +5,13 @@ from abc import abstractmethod
 import asyncio
 import dataclasses
 import logging
+import time
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.template import Template
 
+from .const import CONFIG_DEVICE_POST_DELAY
 from .exceptions import CannotConnect, RetryNextAttempt
 
 CLIMATE_IP_CONNECTIONS: list[type[Connection]] = []
@@ -50,6 +52,7 @@ class Connection:
         self._controller: Any | None = None
         self._condition_template: Template | None = None
         self._connection_template: Template | None = None
+        self._post_delay: float = 0.0
 
     @property
     def params(self) -> dict[str, Any]:
@@ -75,6 +78,81 @@ class Connection:
     def connection_template(self, value: Template | None) -> None:
         """Set the connection template."""
         self._connection_template = value
+
+    @property
+    def post_delay(self) -> float:
+        """Return seconds to wait after executing as an embedded command."""
+        return self._post_delay
+
+    @post_delay.setter
+    def post_delay(self, value: float) -> None:
+        """Set seconds to wait after executing as an embedded command."""
+        self._post_delay = float(value)
+
+    @staticmethod
+    def _parse_post_delay(yaml_node: dict[str, Any] | None) -> float:
+        """Parse positive post_delay seconds from a YAML connection node."""
+        if not isinstance(yaml_node, dict):
+            return 0.0
+        raw_delay = yaml_node.get(CONFIG_DEVICE_POST_DELAY)
+        if raw_delay is None or isinstance(raw_delay, bool):
+            return 0.0
+        try:
+            delay = float(raw_delay)
+        except TypeError, ValueError:
+            return 0.0
+        return delay if delay > 0 else 0.0
+
+    @staticmethod
+    def _resolve_post_delay(embedded: Any) -> float:
+        """Safely extract positive numeric post_delay from an embedded command."""
+        delay = getattr(embedded, "post_delay", 0.0)
+        if (
+            isinstance(delay, (int, float))
+            and not isinstance(delay, bool)
+            and delay > 0
+        ):
+            return float(delay)
+        return 0.0
+
+    async def _async_wait_embedded_post_delay(self, embedded: Any) -> None:
+        """Wait asynchronously after executing an embedded command when post_delay > 0."""
+        delay = self._resolve_post_delay(embedded)
+        if delay > 0:
+            _log = self._logger or logging.getLogger(__name__)
+            _log.debug(
+                "%s [async_execute] Waiting %.1fs after embedded command",
+                self.log_prefix,
+                delay,
+            )
+            await asyncio.sleep(delay)
+
+    def _execute_embedded_sync(
+        self,
+        embedded: Any,
+        template: Any,
+        value: Any,
+        device_state: Any,
+        device_id: str | None = None,
+    ) -> None:
+        """Execute a synchronous embedded command and honor its post_delay."""
+        if embedded is None:
+            return
+        _log = self._logger or logging.getLogger(__name__)
+        _log.debug("%s Executing embedded command", self.log_prefix)
+        if hasattr(embedded, "set_controller_ref"):
+            embedded.set_controller_ref(self._controller)
+        delay = self._resolve_post_delay(embedded)
+        if delay > 0 and not embedded.check_execute_condition(device_state):
+            return
+        embedded.execute(template, value, device_state, device_id)
+        if delay > 0:
+            _log.debug(
+                "%s [execute] Waiting %.1fs after embedded command",
+                self.log_prefix,
+                delay,
+            )
+            time.sleep(delay)
 
     @property
     def log_prefix(self) -> str:

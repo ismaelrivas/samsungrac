@@ -4,20 +4,20 @@
 #   curl -v -k -H "Content-Type: application/json" -H "Authorization: Bearer __CLIMATE_IP_TOKEN__" --cert ac14k_m.pem -X GET https://__CLIMATE_IP_HOST__:8888/devices/
 device:
   auth_flow_file: 'auth_flows/samsungrac_auth.yaml'
-  # --- NUEVA SECCIÓN ---
-  # Mapa para extraer identificadores únicos del estado inicial del dispositivo.
+  # --- DEVICE IDENTIFIERS ---
+  # Map to extract unique identifiers from the initial device state.
   identifiers:
-    # Ruta en el JSON de estado para encontrar la lista de dispositivos.
+    # Path in the status JSON to find the list of devices.
     path_to_devices: ["Devices"]
-    # Clave para el ID del dispositivo (usado en las URLs de los comandos).
+    # Key for the device ID (used in command URLs).
     id: ["id"]
-    # Clave para el UUID (usado como unique_id en Home Assistant).
+    # Key for the UUID (used as unique_id in Home Assistant).
     uuid: ["uuid"]
 
-  # --- RESTO DEL FICHERO ---
+  # --- DEVICE CONFIGURATION ---
   poll: true
   name: 'mim-h03_heatpump'
-  # El bloque 'unique_id' se elimina porque ahora es manejado por el controlador
+  # The 'unique_id' block is omitted because it is now managed by the controller.
   connection:
     type: request
     params:
@@ -27,9 +27,9 @@ device:
     type: 'json_status'
     connection:
       params: { method : 'GET', url: 'https://__CLIMATE_IP_HOST__:8888/devices' }
-    # El status_template ahora es manejado internamente por el controlador,
-    # que actualizará las propiedades basándose en el dispositivo seleccionado.
-    # Se puede dejar o quitar, pero el controlador usará el estado completo.
+    # status_template is now handled internally by the controller,
+    # which updates properties based on the selected device.
+    # Kept for reference; the controller operates on the full payload.
     status_template: '{{ device_state }}'
   operations:
     hvac: # hvac_mode
@@ -49,9 +49,9 @@ device:
         heat_cool: { value : 'Opmode_Auto', connection: { params: { json: { "Mode": { "modes": ["Opmode_Auto"] } } }, connection: { params: { json: { "Operation": { "power" : "On" } }, url: 'https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__/operation' }, condition_template: "{% if device_state.Operation.power == 'Off' -%}1{%- else -%}0{%- endif %}", post_delay: 3 } } }
         fan_only: { value : 'Opmode_Fan', connection: { params: { json: { "Mode": { "modes": ["Opmode_Fan"] } } }, connection: { params: { json: { "Operation": { "power" : "On" } }, url: 'https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__/operation' }, condition_template: "{% if device_state.Operation.power == 'Off' -%}1{%- else -%}0{%- endif %}", post_delay: 3 } } }
         dry: { value : 'Opmode_Dry', connection: { params: { json: { "Mode": { "modes": ["Opmode_Dry"] } } }, connection: { params: { json: { "Operation": { "power" : "On" } }, url: 'https://__CLIMATE_IP_HOST__:8888/devices/__DEVICE_ID__/operation' }, condition_template: "{% if device_state.Operation.power == 'Off' -%}1{%- else -%}0{%- endif %}", post_delay: 3 } } }
-      # NOTA: Los status_template ahora deben apuntar a la raíz del objeto del dispositivo seleccionado,
-      # ya que el controlador se encargará de pasar el objeto correcto.
-      # La lógica original es correcta si el controlador pasa el sub-objeto del dispositivo.
+      # NOTE: status_template expressions must reference the root of the selected device object,
+      # as the controller handles passing the matching sub-device object.
+      # The original logic applies directly when the controller passes the device sub-object.
       state_node: 'Mode.modes.0'
       status_template: "{% if device_state.Operation.power == 'Off' -%}Off{%- elif device_state.Operation.power == 'On' -%}{{ device_state.Mode.modes.0 }}{%- endif %}"
     power:

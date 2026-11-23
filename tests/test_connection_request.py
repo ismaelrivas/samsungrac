@@ -9,7 +9,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests  # type: ignore[import-untyped]
 
-from custom_components.climate_ip.connection_request import ConnectionRequest
+from custom_components.climate_ip.connection_request import (
+    ConnectionRequest,
+    ConnectionRequestPrint,
+)
 from custom_components.climate_ip.connection_request_tls_auto import (
     ConnectionRequestTlsAuto,
 )
@@ -73,6 +76,16 @@ def test_request_execute_success(connection_config, mock_logger, mock_response):
 
             result = conn.execute(mock_template, None, None)
             assert result == {"result": "ok"}
+            sent_headers = mock_session.request.call_args.kwargs["headers"]
+            assert sent_headers["Accept-Encoding"] == "identity"
+
+            # Explicit Accept-Encoding (any case) is preserved
+            mock_template.render.return_value = '{"method": "GET", "url": "/test", "headers": {"accept-encoding": "gzip"}}'
+            conn.execute(mock_template, None, None)
+            assert (
+                mock_session.request.call_args.kwargs["headers"]["accept-encoding"]
+                == "gzip"
+            )
 
 
 def test_execute_auth_error(connection_config, mock_logger):
@@ -218,3 +231,102 @@ def test_request_embedded_command_skipped_when_condition_not_met(connection_clas
     # The embedded command is executed BEFORE the main condition check
     embedded.execute.assert_called_once()
     assert result == {}
+
+
+@pytest.mark.parametrize(
+    "connection_class", [ConnectionRequest, ConnectionRequestPrint]
+)
+def test_request_create_updated_propagates_hass_and_post_delay(
+    connection_class, connection_config, mock_logger
+):
+    """create_updated preserves hass on condition templates and parses post_delay."""
+    tmpl_hass = MagicMock(data={})
+    with patch("os.path.exists", return_value=True):
+        with pytest.warns(
+            DeprecationWarning, match="'request' connection method is deprecated"
+        ):
+            base = connection_class(connection_config, mock_logger, hass=tmpl_hass)
+        ctrl = MagicMock(device_id="032001000")
+        base.set_controller_ref(ctrl)
+
+        with pytest.warns(
+            DeprecationWarning, match="'request' connection method is deprecated"
+        ):
+            updated = base.create_updated(
+                {
+                    "params": {"url": "/mode"},
+                    "connection": {
+                        "params": {"url": "/operation"},
+                        "condition_template": "{% if device_state.Operation.power == 'Off' -%}1{%- else -%}0{%- endif %}",
+                        "post_delay": 3,
+                    },
+                }
+            )
+
+    assert updated._hass is tmpl_hass
+    assert updated._embedded_command is not None
+    assert updated._embedded_command._hass is tmpl_hass
+    assert updated._embedded_command.post_delay == 3.0
+    assert updated.post_delay == 0.0
+    assert (
+        updated._embedded_command.check_execute_condition(
+            {
+                "Devices": [
+                    {"id": "0", "Operation": {"power": "On"}},
+                    {"id": "032001000", "Operation": {"power": "Off"}},
+                ]
+            }
+        )
+        is True
+    )
+    assert (
+        updated._embedded_command.check_execute_condition(
+            {
+                "Devices": [
+                    {"id": "0", "Operation": {"power": "On"}},
+                    {"id": "032001000", "Operation": {"power": "On"}},
+                ]
+            }
+        )
+        is False
+    )
+
+
+@pytest.mark.parametrize(
+    "connection_class", [ConnectionRequest, ConnectionRequestTlsAuto]
+)
+def test_request_execute_embedded_honors_post_delay(connection_class):
+    """Request engines wait post_delay after an executed embedded command."""
+    tmpl_hass = MagicMock(data={})
+    conn = _make_request_connection(connection_class)
+    with patch("os.path.exists", return_value=True):
+        with pytest.warns(DeprecationWarning, match="connection method is deprecated"):
+            embedded = connection_class(
+                {"token": "mock_token", "cert": "cert.pem"},
+                MagicMock(),
+                hass=tmpl_hass,
+            )
+    embedded.load_from_yaml(
+        {
+            "params": {"url": "/operation"},
+            "condition_template": "{% if device_state.Operation.power == 'Off' -%}1{%- else -%}0{%- endif %}",
+            "post_delay": 3,
+        },
+        None,
+    )
+    embedded.execute = MagicMock()
+    conn._embedded_command = embedded
+
+    with (
+        patch.object(
+            conn, "execute_internal", return_value=('{"ok": true}', True, 200)
+        ),
+        patch("custom_components.climate_ip.connection.time.sleep") as mock_sleep,
+    ):
+        conn.execute(None, None, {"Operation": {"power": "On"}})
+        embedded.execute.assert_not_called()
+        mock_sleep.assert_not_called()
+
+        conn.execute(None, None, {"Operation": {"power": "Off"}})
+        embedded.execute.assert_called_once()
+        mock_sleep.assert_called_once_with(3.0)

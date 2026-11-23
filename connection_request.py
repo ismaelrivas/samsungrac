@@ -161,8 +161,10 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
         )
 
     def set_controller_ref(self, controller: Any) -> None:
-        """Allows the property to set a reference to the main controller."""
+        """Allow the property to set a reference to the main controller."""
         self._controller = controller
+        if self._embedded_command is not None:
+            self._embedded_command.set_controller_ref(controller)
 
     @property
     def is_async_native(self) -> bool:
@@ -385,6 +387,7 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
             self._parent = connection_base
 
         if node:
+            self.post_delay = self._parse_post_delay(node)
             self._params.update(node.get(CONFIG_DEVICE_CONNECTION_PARAMS, {}))
             if CONF_KEEP_ALIVE in node:
                 self._keep_alive = node[CONF_KEEP_ALIVE]
@@ -470,6 +473,25 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                         )
                         raise ConnectionError("Connection is closing")
                     try:
+                        # --- ADAPTIVE KEEP-ALIVE LOGIC ---
+                        # If we previously detected stability issues (timeouts likely due
+                        # to missing Content-Length), we strictly force 'Connection: close'.
+                        # Always shallow-copy headers to avoid mutating self._params and
+                        # force Accept-Encoding: identity (MIM/8888 firmware drops compressed).
+                        raw_headers = params.get("headers")
+                        headers_copy = (
+                            dict(raw_headers)
+                            if isinstance(raw_headers, Mapping)
+                            else {}
+                        )
+                        if not any(
+                            k.lower() == "accept-encoding" for k in headers_copy
+                        ):
+                            headers_copy["Accept-Encoding"] = "identity"
+                        if self._force_close_connection:
+                            headers_copy["Connection"] = "close"
+                        params["headers"] = headers_copy
+
                         _LOGGER.debug(
                             "%s Request (attempt %s/%s): %s",
                             self.log_prefix,
@@ -477,21 +499,6 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                             REQUEST_MAX_RETRIES,
                             mask_sensitive_data(params),
                         )
-
-                        # --- ADAPTIVE KEEP-ALIVE LOGIC ---
-                        # If we previously detected stability issues (timeouts likely due
-                        # to missing Content-Length), we strictly force 'Connection: close'.
-                        # pivot: Use a fresh copy of headers to avoid mutating self._params
-                        # via shallow reference.
-                        if self._force_close_connection:
-                            # Ensure we don't fail if headers key is missing or None
-                            if "headers" not in params or params["headers"] is None:
-                                params["headers"] = {}
-                            else:
-                                # Shallow copy the headers dict to detach from self._params
-                                params["headers"] = params["headers"].copy()
-
-                            params["headers"]["Connection"] = "close"
 
                         # --- OPTIMIZATION: Fast Fail on First Attempt ---
                         # If we are seemingly in "stable" mode (keep-alive) but the device
@@ -861,13 +868,9 @@ class ConnectionRequestBase(Connection):  # pylint: disable=import-outside-tople
                 "%s [Legacy|Periodic Reset] New session created", self.log_prefix
             )
 
-        if self.embedded_command:
-            _LOGGER.debug("%s Executing embedded command", self.log_prefix)
-
-            if hasattr(self.embedded_command, "set_controller_ref"):
-                self.embedded_command.set_controller_ref(self._controller)
-            # Pass device_id to the nested command.
-            self.embedded_command.execute(template, value, device_state, device_id)
+        self._execute_embedded_sync(
+            self.embedded_command, template, value, device_state, device_id
+        )
 
         if not self.check_execute_condition(device_state):
             _LOGGER.debug(
@@ -916,9 +919,9 @@ class ConnectionRequest(ConnectionRequestBase):  # pylint: disable=import-outsid
 
     def create_updated(self, yaml_node: dict[str, Any] | None) -> ConnectionRequest:
         """Create a new child connection instance with updated YAML configuration."""
-        c = ConnectionRequest(None, _LOGGER, session=self._session)
-        c.load_from_yaml(yaml_node, self)
+        c = ConnectionRequest(None, _LOGGER, hass=self._hass, session=self._session)
         c.set_controller_ref(self._controller)
+        c.load_from_yaml(yaml_node, self)
 
         # Register this new instance as a child so it receives session updates
         self._children.add(c)
@@ -939,7 +942,10 @@ class ConnectionRequestPrint(ConnectionRequestBase):  # pylint: disable=import-o
         self, yaml_node: dict[str, Any] | None
     ) -> ConnectionRequestPrint:
         """Create a new dry-run connection instance with updated YAML configuration."""
-        c = ConnectionRequestPrint(None, _LOGGER, session=self._session)
+        c = ConnectionRequestPrint(
+            None, _LOGGER, hass=self._hass, session=self._session
+        )
+        c.set_controller_ref(self._controller)
         c.load_from_yaml(yaml_node, self)
         return c
 

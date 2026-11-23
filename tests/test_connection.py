@@ -635,3 +635,54 @@ def test_all_registered_connections_match_type(conn_cls, matching_type, unmatche
     assert conn_cls.match_type(matching_type) is True
     assert conn_cls.match_type(unmatched_type) is False
     assert conn_cls.match_type("unknown_nonexistent_type") is False
+
+
+async def test_connection_post_delay_helpers():
+    """Test post_delay property, parsing edge cases, and async/sync wait helpers."""
+    conn = Connection({}, _LOGGER)
+    assert conn.post_delay == 0.0
+    conn.post_delay = 2
+    assert conn.post_delay == 2.0
+
+    # _parse_post_delay edge cases
+    assert Connection._parse_post_delay(None) == 0.0
+    assert Connection._parse_post_delay({}) == 0.0
+    assert Connection._parse_post_delay({"post_delay": None}) == 0.0
+    assert Connection._parse_post_delay({"post_delay": True}) == 0.0
+    assert Connection._parse_post_delay({"post_delay": "invalid"}) == 0.0
+    assert Connection._parse_post_delay({"post_delay": -1}) == 0.0
+    assert Connection._parse_post_delay({"post_delay": "2.5"}) == 2.5
+
+    # _resolve_post_delay ignores bool / MagicMock / <=0
+    assert Connection._resolve_post_delay(SimpleNamespace(post_delay=True)) == 0.0
+    assert Connection._resolve_post_delay(MagicMock()) == 0.0
+    assert Connection._resolve_post_delay(SimpleNamespace(post_delay=1.5)) == 1.5
+
+    # _async_wait_embedded_post_delay awaits only for positive numeric delay
+    with patch(
+        "custom_components.climate_ip.connection.asyncio.sleep",
+        new_callable=AsyncMock,
+    ) as mock_async_sleep:
+        await conn._async_wait_embedded_post_delay(SimpleNamespace(post_delay=0.0))
+        mock_async_sleep.assert_not_awaited()
+        await conn._async_wait_embedded_post_delay(SimpleNamespace(post_delay=3.0))
+        mock_async_sleep.assert_awaited_once_with(3.0)
+
+    # _execute_embedded_sync handles None, condition skip, and sleep when executed
+    conn._execute_embedded_sync(None, None, None, {})
+
+    embedded_skip = MagicMock()
+    embedded_skip.post_delay = 3.0
+    embedded_skip.check_execute_condition.return_value = False
+    with patch("custom_components.climate_ip.connection.time.sleep") as mock_sync_sleep:
+        conn._execute_embedded_sync(embedded_skip, None, None, {})
+    embedded_skip.execute.assert_not_called()
+    mock_sync_sleep.assert_not_called()
+
+    embedded_run = MagicMock()
+    embedded_run.post_delay = 3.0
+    embedded_run.check_execute_condition.return_value = True
+    with patch("custom_components.climate_ip.connection.time.sleep") as mock_sync_sleep:
+        conn._execute_embedded_sync(embedded_run, None, "val", {"k": 1}, "dev1")
+    embedded_run.execute.assert_called_once_with(None, "val", {"k": 1}, "dev1")
+    mock_sync_sleep.assert_called_once_with(3.0)
